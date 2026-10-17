@@ -228,7 +228,8 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel'})
 ADMIN_ROUTES = frozenset({
-    '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/activate-base',
+    '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
+    '/api/activate-base',
     '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
     '/api/mcp-call',
@@ -1276,7 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
         writes = {'/api/apply-layers': self.apply_layers,
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
-                  '/api/element': self.add_part, '/api/restore': self.restore, '/api/report': self.problem_report,
+                  '/api/element': self.add_part, '/api/restore': self.restore, '/api/add-project': self.add_project, '/api/report': self.problem_report,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
@@ -1413,7 +1414,9 @@ class Handler(BaseHTTPRequestHandler):
         except StoreError as error:
             return self.refuse(error, 404)
         said = home.staying(project.project_id, left, made)  # the agents at work on the base left stay on it
-        self.send(200, {**plain(made), **({'agents': said} if said else {})})
+        # and as data, for the page to say in its own words, never the command line's
+        self.send(200, {**plain(made), **({'agents': said} if said else {}),
+                        **home.staying_agents(project.project_id, left, made)})
 
     def remove_base(self, given: dict[str, Any]) -> None:
         """Take one base out of the project, as `metaform map remove-base <name> --confirm` does, only with `confirm`
@@ -1789,11 +1792,32 @@ class Handler(BaseHTTPRequestHandler):
         project, backup = str(given.get('project', '')), given.get('backup')
         if home.project(project) is None:
             return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        named = backup if isinstance(backup, str) and backup else None
+        # a restore clears first, and a clear stops the agents at work: with any at work it is asked first, naming
+        # them, as a clear is (UX review round 2, 2026-10-17, project-scope F2)
+        if given.get('confirm') is not True and home.at_work(project):
+            return self.send(409, {'error': 'Agents are at work on this project.',
+                                   'caution': home.restore_caution(project, named),
+                                   'next': 'If you are sure: send confirm true'})
         try:
-            restored = home.restore_project(project, backup if isinstance(backup, str) and backup else None)
+            restored = home.restore_project(project, named)
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, restored.to_dict())
+
+    def add_project(self, given: dict[str, Any]) -> None:
+        """Map a folder… on the page: the folder registered as `metaform start` registers it, named by the folder,
+        `home.register_folder`, answered with the project and whether it was registered now; its registration is
+        announced like every write, so every open page lists it (UX review round 2, 2026-10-17, PROPOSED-VIEW-D)."""
+        path = given.get('path')
+        if not isinstance(path, str) or not path.strip():
+            return self.send(400, {'error': 'Map a folder takes the path of a folder.'})
+        try:
+            project, created = home.register_folder(path.strip())
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        found = home.project(project)
+        self.send(200, {'project': project, 'created': created, 'path': found.path if found else path.strip()})
 
     def problem_report(self, given: dict[str, Any]) -> None:
         """A tester's problem report, as `metaform report` makes it, with the page's browser and console errors,
@@ -2913,7 +2937,8 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
 
 def with_glyphs(given: dict[str, str], found: Any) -> Any:
     """A work read's records, each with what the map module keeps on it under `map`, its glyph, its preferred agent,
-    eligible agents and whether the person holds it, as `map work` shows it, VIEW-040, MAP-058 and BASE-035. Its tables, STORE-045,
+    eligible agents, the tickets it waits on and whether the person holds it, as `map work` shows it, VIEW-040, VIEW-042,
+    MAP-058 and BASE-035. Its tables, STORE-045,
     are read once each: running `map work` over every ticket again only to add these cost more than the work read
     itself, and the page reads work on every ticket change. With map not on the surface the records are returned as they
     are.
@@ -2942,6 +2967,13 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
+            # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every
+            # agent starter does (UX review round 2, held-and-signals F2: the page never received it)
+            try:
+                for row in rows('after', 'work_id', {}):
+                    held.setdefault(str(row['work_id']), {})['after_work'] = row['works']
+            except StoreError:
+                pass  # a map store below version 17 keeps no order between tickets
             # its item at its address, `<address>#<n>`, and its title, MCP-037, as the full-size dock's agent list says
             for row in rows('numbered', 'item_id', {'kind': 'work'}):
                 held.setdefault(str(row['item_id']), {}).update(
@@ -3087,9 +3119,12 @@ def based(base: str | None) -> dict[str, str] | None:
 PERSONS_WRITES = frozenset({
     '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
-    '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
+    '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
-    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel'})
+    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel',
+    # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
+    # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
+    '/api/move', '/api/ticket', '/api/distribute'})
 
 
 class _Vouched(threading.local):

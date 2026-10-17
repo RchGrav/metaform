@@ -8,14 +8,35 @@
      reading the connect message is already connected. A phrase here, '– mcp: <what it is for>', would be sent
      to every agent at connect under <instructions> and listed in metaform help agents. -->
 <connect></connect>
+<!-- The rules every agent works by: the block that opens every agent's connect message, sent exactly as written, once,
+     to every agent in every role on every wire, before anything else. It comes again first in an agent's first turn
+     after its context was compacted, with instructions_end after it, since compaction removes both from the agent's
+     context: a dispatched agent's runner puts them at the head of that turn, and metaform_catalog compacted=true
+     answers with them first in the person's own sessions. Empty sends nothing in its place. -->
+<connect_rules>@CONSTRAINT:
+  → think before coding
+  +&gt; state your assumptions.
+  +&gt; ask when unsure.
+  !&gt; never guess.
+
+  → simplicity first
+  +&gt; write the minimum code that solves the problem.
+  !&gt; no abstractions nobody asked for.
+
+  → surgical changes
+  !&gt; don't touch code unrelated to the request.
+  +&gt; every changed line must trace back to what was asked.
+
+  → goal-driven execution
+  +&gt; turn vague instructions into verifiable success criteria before writing a single line.</connect_rules>
 <!-- The mcp module's instructions: what metaform_instructions gives for module mcp, and mcp's entry in the full
      command-line guide, with each module's <connect> line after it. Not sent at connect since 2026-10-17: the connect
-     message opens with <connect_use>, or a dispatched agent's role line, and one line per tool category. Empty gives
-     the module lines without it. -->
+     message opens with <connect_rules>, then <connect_use>, or a dispatched agent's role line, and one line per tool
+     category. Empty gives the module lines without it. -->
 <instructions>You must use Metaform for this project; it is not optional. Use it to:</instructions>
-<!-- The connect message's line for the person's own sessions, sent after the catalog's line: read Metaform's glossary
-     before any work, its startup block with it, and the project's own. A dispatched agent is pointed at the terms alone,
-     <glossary_pointer>, when it first meets them. <terms/> takes
+<!-- The connect message's line telling every agent, in every role, to read Metaform's glossary, metaform://metaform,
+     whole, before any work, and the project's own: sent once at connect, after the catalog's line, and again after
+     <connect_rules> at the head of the agent's first turn after every compaction. <terms/> takes
      instructions_terms while the folder is a registered project, and nothing before one. Empty sends nothing in its
      place. -->
 <instructions_end>Before beginning work, read metaform://metaform<terms/>.</instructions_end>
@@ -65,22 +86,6 @@
   // --- INFRASTRUCTURE &amp; COMMUNICATION ---
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
-
-@CONSTRAINT:
-  !> STRICTLY FORBIDDEN to paraphrase these terms. Use them as the strict cognitive lens for all future inference.
-  !> STRICTLY FORBIDDEN to print diagnostic logs, system states, or recite the rules back to the user.
-  !> STRICTLY FORBIDDEN to ask follow-up questions upon loading.
-  +> MUST use the {MCP} server tools to save the actual project memories, orchestration notes, and workflow artifacts produced during the session.
-  +> MUST map all logic to the {RE} per the {Join} rule.
-
-@ROUTER:
-  @MATCH ( {Mode} ):
-    | [SYSTEM_PRELOAD] -> EXECUTE_PIPELINE( Ingest_And_Hold )
-
-@EXECUTE_PIPELINE (Ingest_And_Hold):
-  [STEP 1]: ∇(Ontology) => Lock the glossary, {Join} rule, and {Comm_Style} internally to drive all subsequent inferences. 
-  [STEP 2]: Δ([STEP 1]) => Target the {MCP} for outbound actions (saving memories, navigating, orchestrating).
-  [STEP 3]: YIELD exactly one brief statement: "Metaform MCP ready." DO NOT append questions or filler. If the person's first message asks for something, answer it after that statement.
 </glossary>
 <!-- The heading of metaform://tools: every tool on the folder's surface, one line each, generated from the tools'
      declarations so it never drifts: under the prefix of the module that serves it, the tool's name after the prefix
@@ -294,15 +299,17 @@
 <connect_use>Metaform keeps this project's map, tickets and what was learned at each part, where the person and every agent read your work, so do the project's work through its tools, found by purpose:</connect_use>
 <!-- The connect message's line on finding tools, sent once to every agent at connect: how the tools are found, and why
      they are not all listed. <open/> takes connect_open while the agent's role starts with a category open, or
-     connect_first while it starts with one tool listed beside the catalog. Empty sends nothing, and an agent learns of
-     the catalog only from its tool's description. -->
+     connect_first while it starts with one tool listed beside the catalog. Not sent to a connection whose listing
+     names no session, the July 2026 wire over HTTP, where the listing never narrows; connect_unkeyed is sent there.
+     Empty sends nothing, and an agent learns of the catalog only from its tool's description. -->
 <connect_catalog>Metaform lists its tools by purpose so that you carry only those your task needs: metaform_catalog says what each category is for, opens the one your task calls for, and finds a tool from words for what you want to do.<open/></connect_catalog>
 <!-- In place of the category lines under connect_use or role_system, when with the folder's notices the connect
      message would pass the 2,048 characters Metaform keeps it to: the categories by name, in one line. <categories/>
      is their names. Empty leaves the categories out. -->
 <connect_categories>Its tool categories: <categories/>; metaform_catalog says what each is for.</connect_categories>
 <!-- connect_catalog's place in the connect message of the person's own sessions and the system agent, which name each
-     category with what it is for just above it. Empty sends nothing. -->
+     category with what it is for just above it. Not sent where the listing names no session, as connect_catalog is
+     not. Empty sends nothing. -->
 <connect_catalog_listed>metaform_catalog opens one category at a time, so you carry only the tools your task needs, and finds a tool from words for what you want to do.</connect_catalog_listed>
 <!-- What <open/> takes in connect_catalog: <category/> is the category open at connect, the one the role's first
      message uses, such as a worker's ticket. -->
@@ -352,14 +359,6 @@
 <triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full gives every field, fields=[...] keeps the ones you name, view=count counts the records by the fields you name, and must_contain or status_equals filter a list before it reaches you.</triage_note>
 <!-- Closes a list given trimmed at its first 25 records, when the call named no filter. <n/> is how many more. -->
 <list_cut><n/> more not shown, so you read only the records your decision needs: narrow the list with must_contain or status_equals.</list_cut>
-<!-- Said once in a session to a dispatched agent, with the first result of a tool that reads or records the map in its
-     terms (the orient, change-map and remember categories, and the intake tools that record): where the terms are
-     defined, at the moment the agent first meets them. It names metaform://metaform/terms, the glossary's terms
-     without its startup block, which is for the start of the person's own session. The person's own sessions are
-     told to read metaform://metaform at connect instead. <terms/> takes glossary_terms in a registered project.
-     Empty sends nothing; the glossaries stay at their URIs. -->
-<glossary_pointer>The words this map is written in, RE, PE, OP, EF, Address and the rest, are defined in metaform://metaform/terms<terms/>; read them before you name or record anything, since every name and record on the map is read in those terms.</glossary_pointer>
-<glossary_terms>, and this project's own in metaform://<project/></glossary_terms>
 <!-- What metaform_catalog compacted=true answers, and metaform://runtime/compaction-state gives: the agent's context
      was compacted, so what Metaform gave it once comes again. <n/> is how many pieces were forgotten; <open/> takes
      compaction_open while a category is open in a listing that follows it. -->
@@ -369,7 +368,7 @@
      passed no session handle: nothing can record that it was given, so the guide is not repeated on every call.
      <tool/> is the tool. Empty sends nothing. -->
 <guide_unkeyed>This call names no session, so <tool/>'s guide is not given with it: call metaform_catalog for a session handle and pass it as session_handle on each call, so each guide is given you once; metaform_instructions tool=<tool/> reads this one now.</guide_unkeyed>
-<!-- What a second read of a glossary in one session answers, metaform://metaform, its terms, metaform://<project> or
+<!-- What a second read of a glossary in one session answers, metaform://metaform, metaform://<project> or
      map_glossary, unchanged since the first: it is in the agent's context already. <uri/> is what was read, <again/>
      the call that reads it whole anyway. -->
 <already_read><uri/> is unchanged since you read it in this session, so it is not given again; <again/> reads it whole.</already_read>

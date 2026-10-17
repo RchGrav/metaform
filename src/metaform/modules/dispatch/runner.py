@@ -89,6 +89,7 @@ from metaform.module import (
     WITHHELD,
     Context,
     Stop,
+    agent_opening,
     child_environment,
     code_print,
     context,
@@ -919,12 +920,17 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
     # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
-    bound = await asyncio.to_thread(store.bound_base)
-    if bound is not None:
-        os.environ[BASE_VARIABLE] = bound.id
-        store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
-                      write_layer=store.write_layer)
-        ctx = replace(ctx, store=store)
+    # The person's own agent is the one runner that follows the active metaform, the map the page shows, and its
+    # agent's MCP server with it: nothing pins it (decision of 2026-10-17, pending Rich's confirmation).
+    if role(ctx.nouns, str(ctx.nouns['id'])) == 'system':
+        os.environ.pop(BASE_VARIABLE, None)
+    else:
+        bound = await asyncio.to_thread(store.bound_base)
+        if bound is not None:
+            os.environ[BASE_VARIABLE] = bound.id
+            store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
+                          write_layer=store.write_layer)
+            ctx = replace(ctx, store=store)
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
     command = argv(start_command(ctx, agent))
     resume = str(ctx.nouns['resume']) if ctx.nouns.get('resume') else None
@@ -1355,7 +1361,10 @@ class Session:
                                     # what a conversation is about, so the person's next Call or Chat on it resumes it,
                                     # and what its agent is, so the person's system agent is told from an intake or a
                                     # sentinel whatever its work id hangs on, PROJ-026
-                                    'about': str(ctx.nouns.get('talk') or 'system') if system else None,
+                                    # an intake agent is about the intake, never the system: it is not the
+                                    # person's own agent (UX review round 2, 2026-10-17, combined F3)
+                                    'about': str(ctx.nouns.get('talk') or 'system')
+                                    if system and self.role != 'intake' else None,
                                     'role': self.role}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
@@ -2055,11 +2064,13 @@ class Session:
                                             f'gave once ({gone} pieces) at their next use.')
 
     def compaction_line(self) -> str:
-        """The line a turn after a compaction opens with: what the agent works on, and that what Metaform gave it once
-        comes again at its next use."""
+        """What a turn after a compaction opens with: first the rules every agent works by and the order to read the
+        glossary, `agent_opening`, as its connect message opened, since the compaction removed them from its context;
+        then what the agent works on, and that what Metaform gave it once comes again at its next use."""
         who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
             if self.at and self.role in ('worker', 'prep') else ''
-        return prompt('compacted', who=who)
+        return '\n\n'.join(part for part in (agent_opening(self.store.project_id), prompt('compacted', who=who))
+                             if part)
 
     async def notice(self, said: dict[str, Any]) -> None:
         """One of ACP's session notices, the agent's own word on its state, such as an MCP server it could not start:
@@ -3569,7 +3580,8 @@ class Session:
         if self.ending:
             return
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
-        pinned = await asyncio.to_thread(self.store.bound_base)  # the metaform this runner stays on, `dispatch`
+        # the metaform this runner stays on, `dispatch`; none for the person's own agent, which follows the active one
+        pinned = None if self.role == 'system' else await asyncio.to_thread(self.store.bound_base)
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
                    origin=origin(), base=pinned.id if pinned is not None else None)
         def take() -> None:
@@ -3618,7 +3630,7 @@ class Session:
             await asyncio.to_thread(started_well, self.store, self.work_id, self.agent)
         # every runner stays in the metaform it began in, whichever becomes active later, `dispatch`; one started by
         # an older starter, with none named, is bound here to the one it took its ticket in
-        bound = await asyncio.to_thread(self.store.bound_base)
+        bound = None if self.role == 'system' else await asyncio.to_thread(self.store.bound_base)
         if bound is not None:
             self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
         await self.save_state()

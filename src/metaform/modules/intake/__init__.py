@@ -1210,11 +1210,15 @@ def _mapped_elsewhere(store: Store) -> str | None:
     """That the project has a finished intake in another metaform than the active one, which has none, with the
     command that makes one of them active; None when no other has one, MCP-009."""
     others = store.intake_bases()
-    if not others:
+    # the one named to go back to is the map the person last made active, as the page's empty base and an empty map
+    # read name it, never merely the newest, such as a trial intake never worked on (UX review round 2, 2026-10-17,
+    # project-scope F3)
+    kept = store.kept_map()
+    if not others or kept is None:
         return None
     active = store.active_base()
     return (f'Intake: none in the active map {active.name if active is not None else "(none yet)"}; this project has '
-            f'a finished intake in {", ".join(others)}. To work on it again: metaform map activate {others[-1]} '
+            f'a finished intake in {", ".join(others)}. To work on it again: metaform map activate {kept.name} '
             '--confirm')
 
 

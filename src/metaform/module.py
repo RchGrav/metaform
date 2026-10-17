@@ -196,6 +196,12 @@ class Verb:
     command line's help after `details`, and over MCP the person's own sessions, the system agent and a sentinel, with
     the tool's guide. An agent at work on a ticket, an intake or a conversation does not act for the person that way,
     so it is not handed what is said to them.
+
+    `person_decides`, given the call's context, says the caution when this one call is the person's decision by what
+    it asks, though the verb is not, such as `map work` releasing a held ticket or `dispatch start` starting one: None
+    when it is not. Such a call runs only with the person's consent, through the same channels as a `person_says`
+    verb, and needs no `--confirm` at their own terminal; any other is refused with the caution and the command the
+    person runs. It reads only the record the call names; a call it cannot read is left to say what is wrong itself.
     """
     name: str
     run: VerbFunction
@@ -222,6 +228,7 @@ class Verb:
     page: str | None = None
     category: str | None = None
     person_details: str = ''
+    person_decides: Callable[[Context], str | None] | None = None
 
     def __post_init__(self) -> None:
         if self.category is not None and self.category not in CATEGORY_NAMES:
@@ -823,6 +830,18 @@ def record_shown(session: str | None, key: str, value: Any) -> Any:
 COMPACTED_KEY = 'pending:compacted'
 
 
+def agent_opening(project: str | None) -> str:
+    """What opens every agent's connect message and its first turn after each compaction, as the person wrote them:
+    the rules every agent works by, the mcp module's `connect_rules`, then the order to read Metaform's glossary whole
+    and the project's own, `instructions_end`. `project` is the folder's project, None before one. '' when both are
+    empty."""
+    from . import prompt_files
+    own = (prompt_files.module('mcp', 'instructions_terms', project=project) or ''
+           if project is not None and project != 'metaform' else '')
+    return '\n\n'.join(part for part in (prompt_files.module('mcp', 'connect_rules'),
+                                         prompt_files.module('mcp', 'instructions_end', terms=own)) if part)
+
+
 def forget_shown(session: str | None) -> int:
     """Forget what an agent session was shown, but what its AI tool itself holds, such as the tools it lists, so each
     piece is given again at its next use: the agent's context was compacted, CTX-045. The number forgotten."""
@@ -860,6 +879,18 @@ def caution_of(verb: Verb, ctx: Context) -> str:
         if said:
             return said
     return verb.caution
+
+
+def decided(verb: Verb, ctx: Context) -> str | None:
+    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`; None when it is not,
+    and when the call cannot be read, such as a ticket that is not there, so the call itself says what is wrong."""
+    if verb.person_decides is None or verb.person_says:
+        return None
+    from .data import StoreError
+    try:
+        return verb.person_decides(ctx)
+    except (Stop, StoreError):
+        return None
 
 
 def agent_caller() -> str | None:

@@ -164,7 +164,16 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
 
 def roots(ctx: Context) -> Any:
     """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025."""
-    return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    found = _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    return _kept_elsewhere(_store(ctx), found) if not found.entry and not found.elements else found
+
+
+def _kept_elsewhere(store: Store, result: Any) -> Any:
+    """An empty read of an empty active map, with a notice naming the base that keeps the project's map: an agent
+    connecting there is otherwise left to think the project unmapped (UX review round 2, 2026-10-17, project-scope
+    F4). Asked only of an empty read, so a mapped base pays nothing."""
+    said = store.kept_map_said()
+    return _with_notices(result, [Notice('map', said)]) if said else result
 
 
 def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
@@ -367,6 +376,8 @@ def _missing(store: Store, address: str) -> Stop:
     addresses = [one.element.address for one in store.graph(raw=True, limit=0).elements]
     nearest = list(dict.fromkeys((*difflib.get_close_matches(address, addresses, n=5, cutoff=0.6), *children)))[:5]
     message = f'No element {address} in context here.'
+    if not addresses and (kept := store.kept_map_said()):  # an empty active map beside the project's own
+        return Stop(f'{message} {kept}.', 'tell the person; the switch is theirs')
     if nearest:
         return Stop(f'{message} Nearest: {", ".join(nearest)}.', f'metaform map where {nearest[0]}')
     return Stop(message, f'metaform map children address={shlex.quote(prefix)}')
@@ -480,7 +491,8 @@ def identity(ctx: Context) -> Any:
 
 
 def children(ctx: Context) -> Any:
-    return _store(ctx).children(ctx.nouns['address'], **_paging(ctx))
+    found = _store(ctx).children(ctx.nouns['address'], **_paging(ctx))
+    return _kept_elsewhere(_store(ctx), found) if not found.results and not ctx.nouns['address'] else found
 
 
 def layers(ctx: Context) -> Any:
@@ -542,7 +554,15 @@ def history(ctx: Context) -> Any:
 
 
 def bases(ctx: Context) -> Any:
-    return _other_project(ctx).bases(**_paging(ctx))
+    """The project's bases, each with whether it holds a finished map and when it was last made active, so a surface
+    showing an empty one can point to the map the person last worked on (UX review round 2, 2026-10-17, project-scope
+    F3)."""
+    store = _other_project(ctx)
+    found = store.bases(**_paging(ctx))
+    when = home.activations(store.project_id)
+    return found._replace(results=tuple(
+        home.BaseRead(**{field.name: getattr(base, field.name) for field in dataclasses.fields(base)},
+                      mapped=store.base_mapped(base), activated=when.get(base.id)) for base in found.results))
 
 
 def _switched(store: Store, switch: Callable[[], home.Base]) -> home.Base:
@@ -1303,6 +1323,8 @@ def work(ctx: Context) -> Any:
         # filtered by it, where `done` is a time.
         listed['results'] = [{**{name: value for name, value in row.items() if name not in UNLISTED},
                               'status': 'done' if row.get('done') else 'open'} for row in listed['results']]
+        if not listed['results'] and node is None and (kept := store.kept_map_said()):
+            notices.append(Notice('map', kept))  # no ticket because the active map is empty, not because none is open
         return _with_notices(listed, notices)
     if op == 'add':
         node = _named(store, nouns, notices)
@@ -1313,8 +1335,8 @@ def work(ctx: Context) -> Any:
         writer = _agent_writing(ctx)
         if writer and not nouns.get('held'):  # work never writes its own successor work and starts it
             nouns['held'] = True
-            notices.append(Notice('held', f'A ticket a {writer} agent writes waits in Backlog, held, until the person '
-                                          'releases it or starts it: no agent starts it by itself.'))
+            notices.append(Notice('held', f'A ticket {_article(writer)} {writer} agent writes waits in Backlog, held, '
+                                          'until the person releases it or starts it: no agent starts it by itself.'))
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         with store.atomic():
             added = store.add_work(node, nouns.get('condition'),
@@ -1431,13 +1453,62 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _agent_writing(ctx: Context) -> str | None:
-    """The role of the Metaform agent writing this ticket, from the environment its runner sets, or None for the person
-    and a session they run outside dispatch; the page is the person's. UX review round 1, runaway F5: a ticket an
-    agent writes is held, so work cannot write its successor and have it started with no one deciding."""
+    """The role of the Metaform agent writing this ticket, or None for the person and a session they run outside
+    dispatch; the page is the person's. UX review round 1, runaway F5: a ticket an agent writes is held, so work cannot
+    write its successor and have it started with no one deciding. Any identity its runner sets says so, or, with them
+    all cleared, a dispatch runner above it: a cleared role alone wrote a ticket that was started (round 2,
+    held-and-signals)."""
     if ctx.surface not in ('mcp', 'cli'):
         return None
     role = os.environ.get('METAFORM_ROLE')
-    return role if role and role != 'none' else None
+    if role and role != 'none':
+        return role
+    from metaform import caller
+    return 'dispatched' if caller.dispatched() else None
+
+
+def _article(word: str) -> str:
+    return 'an' if word[:1].lower() in 'aeiou' else 'a'
+
+
+RELEASE_PAGE = "the ticket's card on the board (drag it to To do, or its Start agent)"  # where the person releases one
+
+
+def releases(ctx: Context) -> str | None:
+    """The caution of a `map work` call that releases a ticket held for the person, `Verb.person_decides`: a held
+    Backlog ticket put in To do or Doing, taken, or edited to held=false, and a ticket the person holds edited to
+    hold=false, taken or moved to Doing. Releasing lets an agent starter start it, so it is the person's decision on
+    every surface; None for any other call, which reads nothing (UX review round 2, held-and-signals: a sentinel's
+    proposal released by the sentinel in its next call was started)."""
+    nouns = ctx.nouns
+    op = str(nouns.get('op', 'read' if 'id' in nouns else 'list'))
+    column = nouns.get('column') if op == 'move' else None
+    frees_held = op == 'take' or column in ('todo', 'doing') or op == 'edit' and 'held' in nouns and not nouns['held']
+    frees_hold = op == 'take' or column == 'doing' or op == 'edit' and 'hold' in nouns and not nouns['hold']
+    if not (frees_held or frees_hold) or not nouns.get('id'):
+        return None
+    store = _store(ctx)
+    work_id = _work_id(store, str(nouns['id']))
+    record = store.ticket(work_id).work
+    if record.done or record.taken:
+        return None
+    held = frees_held and record.held
+    hold = frees_hold and bool(_settings(store, [work_id]).get(work_id, {}).get('hold'))
+    if not (held or hold):
+        return None
+    named = ticket_name(store, work_id)
+    return (f'This releases {named}, {"held in Backlog" if held else "held from agents"} for the person: once released '
+            'an agent starts on it by itself.')
+
+
+def ticket_name(store: Store, work_id: str) -> str:
+    """A ticket as the person reads it, `<address>#<n> "<title>"`, MCP-037; its id's first characters when it has no
+    number."""
+    found = store.numbers_of('work', [work_id]).get(work_id)
+    if found is None:
+        return f'ticket {work_id[:8]}'
+    item, title, _ = found
+    return f'{item} "{title}"' if title else item
 
 
 def _may_write_ticket(ctx: Context) -> None:
@@ -1545,17 +1616,28 @@ def _glyphed(store: Store, result: Any) -> Any:
 
 
 def _distribute(store: Store, agents: Any) -> Page[WorkRecord]:
-    """Distribute the work over N agents, VIEW-040: the first N glyphs, given in turn to the tickets not done and not
-    taken, To do first and then Backlog, each in its board order. A ticket taken or done keeps its glyph, so an agent
-    at work never changes character; an exclude record is no ticket."""
+    """Distribute the work over N agents, VIEW-040: the first N glyphs, given in turn to the tickets that start by
+    themselves, in To do, not held for the person and waiting on no open ticket, in board order. A held ticket keeps
+    no glyph from it: a dealing is no decision about each held ticket, and a glyph agent took them all after its own
+    (UX review round 2, held-and-signals). A ticket taken or done keeps its glyph, so an agent at work never changes
+    character; an exclude record is no ticket."""
     if isinstance(agents, bool) or not isinstance(agents, int) or not 1 <= agents <= len(AGENT_GLYPHS):
         raise Stop(f'Work is distributed over 1 to {len(AGENT_GLYPHS)} agents, one glyph each; {agents!r} is not one of '
                    'those.', 'metaform map work op=distribute agents=<n>')
     with store.atomic():
-        waiting = [record for record in store.work(open=True, limit=0).results
-                   if not record.taken and (record.task or '').strip()]
-        # the board's order: To do before Backlog, each by its place, a ticket with none after, then as written
-        waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
+        opened = store.work(open=True, limit=0).results
+        open_ids = {record.id for record in opened}
+        candidates = [record for record in opened if not record.taken and not record.held and (record.task or '').strip()]
+        kept = _settings(store, [record.id for record in candidates])
+
+        def waits(record: WorkRecord) -> bool:
+            own = kept.get(record.id, {})
+            after: Any = own.get('after_work')
+            return bool(own.get('hold')) or isinstance(after, list) and any(
+                str(one) in open_ids for one in cast(list[Any], after))
+        waiting = [record for record in candidates if not waits(record)]
+        # the board's order: by its place, a ticket with none after, then as written
+        waiting.sort(key=lambda record: (record.position is None, record.position or 0))
         _assign(store, {record.id: AGENT_GLYPHS[place % agents] for place, record in enumerate(waiting)})
     return Page(tuple(waiting), None)
 
@@ -1678,9 +1760,10 @@ WORK_NOUNS = (
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
-    _noun('held', 'add and edit: put it in Backlog, where it waits: Autostart and Start all never start it; the '
-                  'person releases it to To do, starts it on its own, or gives it an agent\'s glyph. A ticket an '
-                  'agent of Metaform writes is always held.', 'bool'),
+    _noun('held', 'add and edit: put it in Backlog, where it waits: no agent starter starts it, Autostart, Start '
+                  'all, Distribute and an agent\'s glyph among them; the person releases it to To do or starts it '
+                  'on its own. A ticket an agent of Metaform writes is always held, and releasing one is the '
+                  'person\'s decision.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
                    'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
@@ -1694,8 +1777,9 @@ WORK_NOUNS = (
     _noun('after_work', 'add and edit: the work ids this ticket waits on, as a JSON list; no agent starts it '
                         'automatically until each of them is done. [] waits on none.', 'json',
           {'type': 'array', 'items': {'type': 'string'}}),
-    _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets not done and not taken are given the first '
-                    'that many glyphs in turn, To do first and then Backlog.', 'int'),
+    _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets that start by themselves, in To do, not '
+                    'held, not waiting on another, are given the first that many glyphs in turn, in board order.',
+          'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
                 'questions, knowledge layers and modules\' memories. '
@@ -1903,9 +1987,12 @@ MODULE = Module(
                             'proposed gitignore change is recorded for review. Documents, specifications, notes and '
                             'working files are preserved. Marking a record does not remove files or change gitignore. '
                             'Unneeded legacy migration code is marked for review. A store at an earlier layout is '
-                            'updated by Metaform when it opens it. The person writes a ticket, or the sentinel and '
-                            'the system agent for them, held=true until agents take it; a role the person holds back, '
-                            'roles_without_authority, writes none, since work is planned before a ticket exists.',
+                            'updated by Metaform when it opens it. The person writes one, and so do the agents that '
+                            'serve them, the system agent, a talk, the sentinel and the intake; a ticket an agent '
+                            'writes is held in Backlog until the person releases it or starts it, and releasing a held '
+                            'ticket, or lifting the person\'s hold, is the person\'s decision. A role in '
+                            'roles_without_authority, a worker or a merge preparation by default, writes none and says '
+                            'what it found in its own ticket\'s note.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
                          'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),
@@ -1914,7 +2001,8 @@ MODULE = Module(
                        ('metaform map work condition=broken open=true', 'List the parts recorded broken, with their open tasks.'),
                        ('metaform map work id=<work id>', ('Read one ticket with its node, how much is held there, '
                                                            'and the nodes it links.')),
-)),
+),
+             person_decides=releases, page=RELEASE_PAGE),
         Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',
              nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),

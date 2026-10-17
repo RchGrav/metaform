@@ -92,6 +92,30 @@ def agent() -> str | None:
     return _agent_above(os.getpid(), own) or _leader_agent(os.getpid(), own)
 
 
+def dispatched() -> str | None:
+    """Why this process works for an agent Metaform dispatched, in a few words; None when nothing says so: an identity
+    name its runner set, or, with those cleared, a dispatch runner of this home above it (Linux). A session the person
+    runs outside dispatch is not dispatched, though it is no more the person's consent (`unconsented`)."""
+    named = [name for name in IDENTITY if os.environ.get(name)]
+    if named:
+        return f'{named[0]} is set'
+    if not sys.platform.startswith('linux'):
+        return None
+    own, pid, seen = _same(home.home()), os.getppid(), 0
+    while pid > 1 and seen < DEPTH:
+        seen += 1
+        argv = _argv(pid)
+        if argv and agent_process(argv) == 'a Metaform dispatch runner':
+            environ = _environ(pid)
+            if environ is None or _home_of(environ) == own:
+                return f'a Metaform dispatch runner (process {pid}) is above it'
+        parent = _parent(pid)
+        if parent is None or parent == pid:
+            return None
+        pid = parent
+    return None
+
+
 def terminal() -> str | None:
     """Why this process is not at the person's own interactive terminal; None when it is: it has a controlling
     terminal, runs in that terminal's foreground, and neither it nor the terminal's session leader was started by an

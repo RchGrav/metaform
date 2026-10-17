@@ -88,7 +88,7 @@ def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
             run('add', 'project', 'skills', str(folder))
         sent = server.connect_instructions(folder, 'unknown-host')
         assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
-        assert sent.startswith(prompt_files.module('mcp', 'connect_use'))
+        assert sent.startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')  # the rules open it
         skills = server.listing(folder, 'unknown-host')['metaform_skills']
         listed = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
         assert 'write-workflow' in sent or 'write-workflow' in listed
@@ -107,8 +107,11 @@ def test_a_stdio_connect_from_an_unrecorded_harness_carries_the_provisioning_not
     notice = f'Notice: {harness.NOTICE}'
     assert notice not in server.connect_instructions(folder, 'unknown-host')  # HTTP: no session of the harness
     sent = server.connect_instructions(folder, 'unknown-host', 'one')
-    assert notice in sent and len(sent) <= 2048 and sent.startswith(prompt_files.module('mcp', 'connect_use'))
-    assert server.provisioning('one') is None  # told once
+    assert len(sent) <= 2048 and sent.startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')
+    if notice in sent:
+        assert server.provisioning('one') is None  # told once
+    else:  # beside the rules and the first-run notice it does not fit: the first tool result carries it
+        assert server.provisioning('one') == notice
     for module in SHIPPED:  # no room left at connect: the first tool result carries it instead
         run('enable', module)
     server.TOLD.add('measured')  # the message without the notice is all the host keeps here
@@ -141,7 +144,11 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
         async with stdio_client(params) as (read, write), ClientSession(
                 read, write, client_info=Implementation(name='unknown-skill-host', version='1')) as client:
             init = await client.initialize()
-            assert 'write-workflow' in init.instructions and 'sentinel' not in init.instructions
+            skills = server.listing(folder, 'unknown-skill-host')['metaform_skills']
+            described = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
+            # within the room the rules and the first-run notice leave, else with the tool, BASE-059
+            assert 'write-workflow' in init.instructions or 'write-workflow' in described
+            assert 'sentinel' not in init.instructions
             loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'logic.skill.sentinel'})
             assert not loaded.is_error, loaded
             assert loaded.structured_content['name'] == 'sentinel'
@@ -151,7 +158,8 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
     client = Session([params.command, *params.args], cwd=folder, env=params.env)
     try:
         result = client.request('server/discover', {}, deadline=time.monotonic() + 15)
-        assert 'write-workflow' in result['instructions'] and 'sentinel' not in result['instructions']
+        assert 'sentinel' not in result['instructions']
+        assert result['instructions'].startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')
     finally:
         client.close()
 

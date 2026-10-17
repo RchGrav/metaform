@@ -43,8 +43,25 @@ def test_permission_signal_is_cleared_by_its_answer(dispatch, run):
     assert waiting[0]['message_id'] == question.id
     run('map', 'reply', question.id, 'answer=Allow once', cwd=dispatch.folder)
     eventually(lambda: dispatch.logged('permission'))
-    assert not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']
+    # the answer goes to the agent first, then its signal is cleared, runner.answered: waited for, not raced
+    eventually(lambda: not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting'], 10)
     assert [row for row in signals(dispatch, run, False) if row['signal'] == 'permission-waiting']
+
+
+@pytest.mark.req('PROJ-026')
+def test_a_permission_request_outlives_a_switch_of_the_map_and_says_its_base(dispatch, run):
+    """UX review round 2, 2026-10-17 (combined F4): after map add-base, dispatch signals returned [] while the agent
+    pinned to main still waited for an answer nobody was asked. Signals are the project's, each with its base."""
+    from metaform import home
+    main = home.active_base('proj')
+    dispatch.start('ask', FAKE_ACP_ASK_HOLD='1')
+    eventually(dispatch.questions)
+    eventually(lambda: [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting'])
+    run('map', 'add-base', 'fresh', '--confirm', cwd=dispatch.folder)
+    assert home.active_base('proj').name == 'fresh'
+    waiting = [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']
+    assert len(waiting) == 1 and waiting[0]['base'] == main.id, waiting
+    dispatch.stop()
 
 
 @pytest.mark.cli_process

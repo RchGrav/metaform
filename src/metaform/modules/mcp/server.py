@@ -23,6 +23,7 @@ import functools
 import hashlib
 import inspect
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -38,6 +39,7 @@ import anyio
 
 from metaform import events, home, prompt_files, settings
 from metaform.data import (
+    BASE_VARIABLE,
     NewerStore,
     Store,
     StoreError,
@@ -56,11 +58,13 @@ from metaform.module import (
     PersonsDecision,
     Stop,
     Verb,
+    agent_opening,
     call,
     caution_of,
     chassis_version,
     command_summary,
     context,
+    decided,
     feedback,
     forget_shown,
     instructions,
@@ -610,14 +614,16 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
     """The connect message, MCP-007 and MCP-029: only what every agent of the role needs before its first call, each
     piece for the reason it states, the rest left to the moment it is needed.
 
-    The person's own sessions get `connect_use` and the system agent its role's line, each followed by one line per
+    Every agent, in every role and on every wire, is first given the rules it works by, `connect_rules`, exactly as
+    written and once. Then the person's own sessions get `connect_use` and the system agent its role's line, each
+    followed by one line per
     tool category it may open with what the category is for, so it has one map of the tools, by purpose, or, when the
     whole would pass the characters the host keeps, the categories named in one line, `connect_categories`; a dispatched
     agent of another role gets its role's line, which says which categories it is given and why, since a category it
     does not open names work its role does not do. Then the line on the catalog, with the category open at connect or
-    the tool listed beside it; the person's own sessions the order to read the glossary before beginning work,
-    `instructions_end`, since its startup block is for the start of their session alone; a dispatched agent is pointed
-    at the terms with its first tool that reads or records the map in them, `glossary_pointer`. Then, to a connection
+    the tool listed beside it; to every agent the order to read the glossary, metaform://metaform, whole, before
+    beginning work, `instructions_end`; the rules and that order come again first in the agent's first turn after each
+    compaction, `agent_opening`. Then, to a connection
     whose calls name no session (`keyed` False: the July 2026 wire over HTTP, which has no session header), how to name
     one, `connect_unkeyed`; else the compaction line to a session no runner follows, which alone can say its context
     was compacted. Then the folder's project to the person's own sessions, the notices the folder's state calls for,
@@ -628,6 +634,7 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
     named = catalog.role()
     project = project_for(folder)
     states = startup_notices(folder, project)
+    rules = prompt_files.module('mcp', 'connect_rules') or ''
     lines: list[str] = []
     if named is None or named == 'system':
         head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
@@ -638,14 +645,15 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
     held = prompt_files.module('mcp', 'connect_open', category=opened) if opened and keyed else \
         prompt_files.module('mcp', 'connect_first', tool=', '.join(first)) if first and keyed else ''
     listed = named is None or named == 'system'  # its categories were each said above, with what each is for
-    if said := (prompt_files.module('mcp', 'connect_catalog_listed') if listed else
-                prompt_files.module('mcp', 'connect_catalog', open=f' {held}' if held else '')):
+    # Where the listing names no session it never narrows, so the line saying a category is opened in place of the
+    # last would be false there; connect_unkeyed below says how this connection is used instead.
+    if keyed and (said := (prompt_files.module('mcp', 'connect_catalog_listed') if listed else
+                           prompt_files.module('mcp', 'connect_catalog', open=f' {held}' if held else ''))):
         lines.append(said)
-    if named is None:
-        own = (prompt_files.module('mcp', 'instructions_terms', project=project) or ''
-               if project is not None and project != 'metaform' else '')
-        if said := prompt_files.module('mcp', 'instructions_end', terms=own):
-            lines.append(said)
+    own = (prompt_files.module('mcp', 'instructions_terms', project=project) or ''
+           if project is not None and project != 'metaform' else '')
+    if said := prompt_files.module('mcp', 'instructions_end', terms=own):
+        lines.append(said)
     if not keyed:
         said = prompt_files.module('mcp', 'connect_unkeyed', handle=HANDLE)
     elif session is None or session.startswith('process:'):  # no runner hears this session's compaction
@@ -656,11 +664,19 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
         lines.append(said)
     if named is None and project is not None and (said := prompt_files.module('mcp', 'connect_here', project=project)):
         lines.append(said)
-    text = '\n\n'.join([*lines, *states])
+    text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
     if lines and (named is None or named == 'system') and len(text) > HOST_KEEPS:  # past the budget: the names alone
         names = prompt_files.module('mcp', 'connect_categories', categories=', '.join(openable(folder))) or ''
         lines[0] = '\n'.join(part for part in (lines[0].split('\n', 1)[0], names) if part)
-        text = '\n\n'.join([*lines, *states])
+        text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
+        # Still past it, as with intake's first-run notice: the catalog's line, which its tool's description says too,
+        # then the head over the names, so the rules, the glossary's order and the notices arrive whole.
+        for drop in (prompt_files.module('mcp', 'connect_catalog_listed'), lines[0].split('\n', 1)[0]):
+            if len(text) <= HOST_KEEPS or not drop or names == drop:
+                continue
+            lines = [line for line in lines if line != drop] if drop in lines else \
+                [lines[0].split('\n', 1)[1] if line is lines[0] and '\n' in line else line for line in lines]
+            text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
     if named is None:
         notice = provisioning(session)
         if notice is not None and session is not None and len(text) + 2 + len(notice) <= HOST_KEEPS:
@@ -730,7 +746,8 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
                 ['metaform', 'restore', 'project', project, *([backup] if backup else [])]), 'Restore')
         restored = home.restore_project(project, backup)
         return False, [result_json({'project': project, 'said': restored.said, 'backup': restored.backup.name,
-                                    'held_before': restored.held_before, 'back': restored.back})]
+                                    'held_before': restored.held_before, 'back': restored.back,
+                                    **({'stopped': list(restored.stopped)} if restored.stopped else {})})]
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         again = f'ask the person to clear {project} again'
@@ -809,6 +826,9 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments), verb.page)
     if verb.caution and not (confirmed or consented):
         raise Stop(caution_of(verb, made), f'If you are sure: call {name} with confirm true')
+    deciding = None if consented else decided(verb, made)
+    if deciding:  # the person's decision by what this call asks, such as releasing a held ticket: their answer runs it
+        raise persons_decision(deciding, person_command(module.id, verb, arguments), verb.page)
     lines.extend(f'Notice: {key}: {message}' for key, message in notices)
     return made
 
@@ -918,19 +938,6 @@ def glossary(folder: Path) -> str:
     modules' rules are metaform://tools, the project's own terms metaform://<project>, each read once on its own. The
     text is `metaform instructions metaform`'s, MCP-003, made in one place."""
     return module_instructions(folder, 'metaform') or ''
-
-
-def glossary_terms(folder: Path) -> str:
-    """metaform://metaform/terms: the system glossary's term definitions alone, from its first `// ---` heading to its
-    `@CONSTRAINT:` block, what an agent reads in the middle of its work to name and record things in those terms. The
-    rest, the state, constraints, router and pipeline around them, is the start of the person's own session, so a
-    dispatched agent is never handed startup orders mid-task. The glossary as written when it has no such markers."""
-    text = glossary(folder)
-    start, end = text.find('// ---'), text.find('@CONSTRAINT:')
-    if start < 0 or end <= start:
-        return text
-    head = text.rfind('\n', 0, start) + 1  # the heading line whole, with its indent
-    return text[head:end].rstrip() + '\n'
 
 
 def tool_index(folder: Path) -> list[tuple[str, str]]:
@@ -1170,8 +1177,7 @@ def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) 
     tools is called, from the module's prompts.xml, and the tool's own guide, from its declaration, for the call's `op`
     alone when the tool has ops. A line given already in the session, with this tool or another, is not given again,
     `Given`. Each heading is the mcp module's `module_guide` and `tool_guide` prompt; an empty one leaves that part out.
-    A dispatched agent's first tool that reads or records the map in its terms says where the terms are defined,
-    `glossary_pointer`; the person's own sessions were told at connect. First, the line the runner left when the
+    Every agent was told at connect to read the glossary. First, the line the runner left when the
     agent's context was compacted inside a turn, `compacted`, so the agent hears it at its next call rather than at
     its next turn; and once, the provisioning notice a stdio connect had no room for, MCP-028, to the person's own
     sessions only. A call that names no session gets no guide, only how to name one, `guide_unkeyed`: nothing could
@@ -1203,28 +1209,8 @@ def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) 
         key = f'guide:tool:{listed.name}' + (f':op={op}' if op else '')
         if ctx.seen(key, _digest(text)) != _digest(text) and (new := given.new(said.split('\n'))):
             parts.append(heading + '\n' + '\n'.join(new).strip('\n'))
-    if catalog.role() is not None and in_terms(listed) and ctx.seen('announce:glossary', 1) is None:
-        project = project_for(folder)
-        own = prompt_files.module('mcp', 'glossary_terms', project=project) \
-            if project is not None and project != 'metaform' else ''
-        pointer = prompt_files.module('mcp', 'glossary_pointer', terms=own or '')
-        if pointer:
-            parts.append(pointer)
     given.keep()
     return '\n\n'.join(parts)
-
-
-# The categories whose tools read or record the map in its terms, so a dispatched agent's first use of one says where
-# the terms are defined, glossary_pointer; an intake's own tools only once they record, since its procedure and status
-# name nothing on the map.
-TERMS_CATEGORIES = ('orient', 'change-map', 'remember')
-TERMS_WRITTEN = ('intake',)
-
-
-def in_terms(listed: Listed) -> bool:
-    """Whether a tool reads or records the map in its terms, so its first use points to where they are defined."""
-    held = set(listed.categories)
-    return bool(held & set(TERMS_CATEGORIES)) or (bool(held & set(TERMS_WRITTEN)) and listed.effect != 'read')
 
 
 class Given:
@@ -1423,9 +1409,10 @@ def catalog_line(one: Listed) -> str:
 
 
 def compaction_state(folder: Path, session: str | None, follows: bool = True) -> str:
-    """What a session is told once its agent's context was compacted: the record of what it was given is forgotten,
-    so each piece comes again at its next use, and, when its listing follows it, the category it has open, which its
-    AI tool still lists."""
+    """What a session is told once its agent's context was compacted: first the rules every agent works by and the
+    order to read the glossary, `agent_opening`, since compaction removed them from its context; then that the record
+    of what it was given is forgotten, so each piece comes again at its next use, and, when its listing follows it, the
+    category it has open, which its AI tool still lists."""
     gone = forget_shown(session)
     try:  # CTX-045's topic, as the runner publishes it on ACP's signal, for a module that keeps more per session
         context('mcp', folder, surface='mcp', session=session).publish(
@@ -1434,7 +1421,8 @@ def compaction_state(folder: Path, session: str | None, follows: bool = True) ->
         pass
     opened = open_category(folder, session) if follows else None
     held = prompt_files.module('mcp', 'compaction_open', category=opened) if opened else ''
-    return prompt_files.module('mcp', 'compaction_state', n=str(gone), open=f' {held}' if held else '') or ''
+    said = prompt_files.module('mcp', 'compaction_state', n=str(gone), open=f' {held}' if held else '') or ''
+    return '\n\n'.join(part for part in (agent_opening(project_for(folder)), said) if part)
 
 
 def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | None:
@@ -1466,7 +1454,8 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
     if found is None:
         return None
     module, verb = found
-    return consent.form(name, _asked_caution(folder, module, verb, arguments) or None, consent.held(
+    said = _decided(folder, module, verb, arguments) or _asked_caution(folder, module, verb, arguments)
+    return consent.form(name, said or None, consent.held(
         {key: value for key, value in arguments.items() if key in verb.switches}, folder), folder)
 
 
@@ -1488,9 +1477,9 @@ def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
     found = tools(folder).get(name)
     if found is None:
         return False
-    _, verb = found
-    return verb.person_says or bool(consent.held({key: value for key, value in arguments.items()
-                                                  if key in verb.switches}, folder))
+    module, verb = found
+    return verb.person_says or bool(_decided(folder, module, verb, arguments)) or bool(consent.held(
+        {key: value for key, value in arguments.items() if key in verb.switches}, folder))
 
 
 def persons_line(folder: Path, name: str, arguments: dict[str, Any]) -> str:
@@ -1527,6 +1516,21 @@ def ask_in_chat(folder: Path, name: str, arguments: dict[str, Any], ask: consent
     ask_consent = cast(Callable[..., dict[str, Any]], asking[0][1])
     return ask_consent(Store(project), ask.message, tool=name, command=persons_line(folder, name, arguments),
                        caution=ask.message)
+
+
+def _decided(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
+    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`, as the call itself
+    would say it; empty when it is not, or when the call cannot be read, which the call then says."""
+    if verb.person_decides is None:
+        return ''
+    try:
+        nouns, switches, _ = tool_arguments(module.id, verb, dict(arguments), ignore=PER_CALL, folder=folder)
+        project = arguments.get('project')
+        made = context(module.id, folder, project=project if isinstance(project, str) else None, nouns=nouns,
+                       switches=switches, surface='mcp')
+    except (Stop, StoreError):
+        return ''
+    return decided(verb, made) or ''
 
 
 def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str, Any]) -> str:
@@ -1586,6 +1590,12 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
         return True, [(f'Error: {type(error).__name__}: {error}\nNext: call {OWN}_feedback and say what you '
                        'called')], None
+    if os.environ.get('METAFORM_ROLE') == 'system':  # the one agent that follows the active map, `map_moved`
+        moved: str | None = None
+        with anyio.CancelScope(shield=True):  # its verb's effect landed: a cancel now never loses the result
+            moved = await anyio.to_thread.run_sync(map_moved, ctx.project)
+        if moved:
+            lines.append(f'Notice: map: {moved}')
     if lines and isinstance(result, str):  # one block, so no host's way of joining blocks runs the lines into the text
         return False, ['\n'.join(lines) + '\n' + result], None
     blocks = ['\n'.join(lines)] if lines else []
@@ -1600,6 +1610,32 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
         blocks.append(result if isinstance(result, str) else result_json(result))
     data = None if result is None or isinstance(result, str) else plain(result)
     return False, blocks, cast(dict[str, Any], data) if isinstance(data, dict) else None
+
+
+# The active metaform each project's map tools last read here, for the person's own agent, which follows it, `map_moved`.
+_READ_ON: dict[str, str] = {}
+
+
+def map_moved(project: str | None) -> str | None:
+    """For the person's own agent, the one that follows the active metaform, what its next call is told when the map
+    it reads changed since its last call: which map it reads now and that the other is kept. Said once per change, in
+    the result of the call that first reads it; nothing for any other agent, which stays on its own metaform, nor for
+    a first call (decision of 2026-10-17, pending Rich's confirmation; the wording is his to give)."""
+    if not project or os.environ.get('METAFORM_ROLE') != 'system' or os.environ.get(BASE_VARIABLE):
+        return None
+    try:
+        now = home.active_base(project)
+    except (OSError, StoreError, Stop):
+        return None
+    if now is None:
+        return None
+    before = _READ_ON.get(project)
+    _READ_ON[project] = now.id
+    if before is None or before == now.id:
+        return None
+    left = home.base_by_id(project, before)
+    kept = f'; {left.name} is kept as it was' if left is not None else ''
+    return f'The person made {now.name} the active map: your map tools read {now.name} from here{kept}.'
 
 
 async def _threaded(run: Any, ctx: Any) -> Any:
@@ -1708,9 +1744,6 @@ INSTRUCTIONS_URI = 'metaform://instructions'
 # The system glossary, the mcp module's glossary prompt, which the connect instructions tell every agent to read first.
 # It replaced metaform://glossary, with no alias kept (Phase 1c, item 8).
 GLOSSARY_URI = 'metaform://metaform'
-# The glossary's term definitions alone, which a dispatched agent is pointed to with its first tool that reads or records
-# the map in those terms, glossary_pointer: the startup block around them is for the start of the person's own session.
-TERMS_URI = 'metaform://metaform/terms'
 TOOLS_URI = 'metaform://tools'  # each tool in one line and the modules' rules, for a host that defers tool descriptions
 # What a session reads once its agent's context was compacted, as metaform_catalog compacted=true answers: the record of
 # what it was given is forgotten, so each piece comes again at its next use, CTX-045. Read, it forgets.
@@ -1808,10 +1841,6 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
                'description': 'Read first: the terms every agent works by in Metaform, the mcp module\'s glossary '
                               'prompt as written.',
                'mime_type': 'text/plain'},
-              {'uri': TERMS_URI, 'name': 'Metaform terms',
-               'description': 'The terms of Metaform\'s glossary alone, without its startup block: read them before '
-                              'you name or record anything on the map.',
-               'mime_type': 'text/plain'},
               *([{'uri': own, 'name': 'Project glossary',
                   'description': "This project's own terms after the peer register standard, generated from its map.",
                   'mime_type': 'text/plain'}] if own else []),
@@ -1834,15 +1863,14 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
 def glossary_repeat(folder: Path, session: str | None, uri: str) -> str | None:
     """The line a second read of a glossary in one session answers with while it is unchanged, `already_read`: the
     first is still in the agent's context, so the text is not given twice; None for the first read, a changed one, or
-    a session that keeps no record. `uri` is metaform://metaform, its terms alone, or the project's own."""
+    a session that keeps no record. `uri` is metaform://metaform or the project's own."""
     if session is None:
         return None
-    text = glossary(folder) if uri == GLOSSARY_URI else glossary_terms(folder) if uri == TERMS_URI else \
-        project_glossary_text(folder)
+    text = glossary(folder) if uri == GLOSSARY_URI else project_glossary_text(folder)
     digest = _digest(text)
     if record_shown(session, f'doc:{uri}', digest) != digest:
         return None
-    again = (f'call {OWN}_instructions with module=metaform' if uri in (GLOSSARY_URI, TERMS_URI) else
+    again = (f'call {OWN}_instructions with module=metaform' if uri == GLOSSARY_URI else
              'call map_glossary with view=full')
     return prompt_files.module('mcp', 'already_read', uri=uri, again=again)
 
@@ -1859,8 +1887,6 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
     read first, so it is Metaform's own glossary whatever the folder's project or modules are called."""
     if uri == GLOSSARY_URI:
         return await anyio.to_thread.run_sync(glossary, folder), 'text/plain'
-    if uri == TERMS_URI:
-        return await anyio.to_thread.run_sync(glossary_terms, folder), 'text/plain'
     for module in await anyio.to_thread.run_sync(surface, folder):
         for held in module.resources:
             fields = held.matched(uri)
@@ -2585,7 +2611,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             error, blocks = run_catalog(folder, given, session, listing_follows)
         except Stop as stop:
             return _error(stop, folder)
-        return error, (['\n'.join(notices)] if notices else []) + (['\n'.join(told)] if told else []) + blocks
+        before = (['\n'.join(notices)] if notices else []) + (['\n'.join(told)] if told else [])
+        # after a compaction the rules and the glossary's order come first in the turn, compaction_state
+        return error, blocks + before if given.get('compacted') is True else before + blocks
 
     def run_task(run_id: str) -> dict[str, Any] | None:
         """The task a verb declared `task='run'` answers with: the workflow run it just made, by its run id."""
@@ -2725,7 +2753,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             said = await anyio.to_thread.run_sync(compaction_state, folder, session_of(ctx), follows(ctx))
             return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=said,
                                                                                  mime_type='text/plain')])
-        if uri in (GLOSSARY_URI, TERMS_URI) or uri == await anyio.to_thread.run_sync(project_uri, folder):
+        if uri == GLOSSARY_URI or uri == await anyio.to_thread.run_sync(project_uri, folder):
             repeat = await anyio.to_thread.run_sync(glossary_repeat, folder, session_of(ctx), uri)
             if repeat:
                 return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=repeat,

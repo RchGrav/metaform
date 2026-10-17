@@ -12,8 +12,9 @@
 <orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say: metaform instructions memory.</orient>
 <!-- The line under the counts an agent is told at its node, MCP-039: what a new memory is, and the call that reads the
      memories at one address. Shown once per agent session under the counts in map where, the ticket read and the
-     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is written
-     as it is, for the agent to fill. Empty leaves the line out and the counts stand alone. -->
+     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is filled
+     with the address that holds new memories, or each of them, the call given once per address; else with each
+     address that holds any, so no placeholder is sent. Empty leaves the line out and the counts stand alone. -->
 <counts>New = recorded by the last session here. Read them: metaform memory read_graph node=&lt;address&gt;</counts>
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->

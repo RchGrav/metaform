@@ -21,6 +21,7 @@ import sqlite3
 import stat
 import sys
 import threading
+import time
 import uuid
 from collections.abc import Callable, Generator, Iterable
 from contextlib import closing, contextmanager, suppress
@@ -633,8 +634,34 @@ def register(record: Project) -> Path:
         if created:
             shutil.rmtree(folder)
         raise
-    changes.note(record.project_id)
+    # the project's registration, said as such, so an open page adds it to its chooser without a reload, PROPOSED in
+    # UX review round 2 (2026-10-17, new-project-intake F2): a bare note reads as a change of the project's bases
+    changes.note(record.project_id, tables={PROJECTS_TABLE}, about={'kinds': {'project'}})
     return folder
+
+
+PROJECTS_TABLE = 'home.projects'  # what a change to the registered projects names on `map.changed`
+
+
+def register_folder(path: Path | str) -> tuple[str, bool]:
+    """The project of a folder, registered under the folder's own name when it has none, and whether it was
+    registered now: a name another folder holds takes the next free number, so nothing is asked, as `metaform start`
+    and the page's Map a folder… both name it. A folder inside a registered project's source is that project."""
+    folder = Path(path).expanduser().resolve()
+    if not folder.is_dir():
+        raise StoreError(f'No folder at {folder}.', 'name a folder that exists')
+    if is_home_path(folder):
+        raise StoreError(f"{folder} is inside Metaform's own home, which is never mapped.", 'name a project folder')
+    held = folder_project(folder)
+    if held is not None:
+        return held, False
+    named = project_id_for(folder)
+    chosen, number = named, 2
+    while project(chosen) is not None:
+        suffix = f'-{number}'
+        chosen, number = named[:64 - len(suffix)] + suffix, number + 1
+    add_project(chosen, folder)
+    return chosen, True
 
 
 @_cached
@@ -843,6 +870,15 @@ class Base:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class BaseRead(Base):
+    """A base as the list of bases reads it: whether it holds a finished map, and when the person last made it the
+    active one, so a surface showing an empty base points to the map the person last worked on (UX review round 2,
+    2026-10-17, project-scope F3)."""
+    mapped: bool = False
+    activated: str | None = None
+
+
 _ACTIVE = ('SELECT m.id, m.name, m.created FROM active_bases a '
            'JOIN bases m ON m.id = a.base_id WHERE a.project_id=?')
 
@@ -917,8 +953,51 @@ def _create_base(db: sqlite3.Connection, project_id: str, name: str, base_id: st
         db.execute('INSERT INTO active_bases(project_id, base_id) VALUES (?, ?) '
                    'ON CONFLICT(project_id) DO UPDATE SET base_id=excluded.base_id',
                    (project_id, record.id))
+        _activated(db, record.id)
     changes.note(project_id)  # the project's bases changed; announced when the command ends, VIEW-018
     return record
+
+
+ACTIVATED = 'activated:'  # the meta key, before a base's id, of when that base was last made the active one
+
+
+def _activated(db: sqlite3.Connection, base_id: str) -> None:
+    """Record, in the project's own meta, that a base was made the active one now: the base a person last worked on
+    is the one an empty base points back to, UX review round 2 (2026-10-17, project-scope F3). Nanoseconds, so two
+    switches within one second keep their order; no schema change, since meta is a table of keys."""
+    db.execute('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+               (ACTIVATED + base_id, f'{time.time_ns():020d}'))
+
+
+def activations(project_id: str) -> dict[str, str]:
+    """When each base of the project was last made active, by base id, as comparable text; a base never made active
+    since this was recorded has none."""
+    folder = project_folder(project_id)
+    if folder is None:
+        return {}
+    with project_db(folder) as db:
+        rows = db.execute('SELECT key, value FROM meta WHERE key LIKE ?', (ACTIVATED + '%',)).fetchall()
+    return {str(key)[len(ACTIVATED):]: _stamp(str(value)) for key, value in rows}
+
+
+def _stamp(nanoseconds: str) -> str:
+    """An activation's time, kept in nanoseconds, as ISO 8601 UTC to the microsecond: read by a person, and still
+    ordered as text."""
+    try:
+        return datetime.fromtimestamp(int(nanoseconds) / 1e9, UTC).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+    except (ValueError, OverflowError, OSError):
+        return ''
+
+
+def last_active(project_id: str, among: Iterable[Base]) -> Base | None:
+    """Of `among`, the base most recently made active: the one the person last worked on. A base with no record of
+    it counts as made active when it was created, and the later created wins a tie."""
+    when = activations(project_id)
+    chosen = list(among)
+    if not chosen:
+        return None
+    order = {form.id: place for place, form in enumerate(bases(project_id))}
+    return max(chosen, key=lambda form: (when.get(form.id, ''), form.created, order.get(form.id, -1)))
 
 
 def add_base(project_id: str, name: str, *, activate: bool = True) -> Base:
@@ -1034,6 +1113,7 @@ def activate_base(project_id: str, name: str) -> Base:
             return Base(row[0], project_id, name, row[1], True)
         db.execute('INSERT INTO active_bases(project_id, base_id) VALUES (?, ?) '
                    'ON CONFLICT(project_id) DO UPDATE SET base_id=excluded.base_id', (project_id, row[0]))
+        _activated(db, str(row[0]))
     changes.note(project_id)
     return Base(row[0], project_id, name, row[1], True)
 
@@ -1083,6 +1163,11 @@ AT_WORK: dict[str, Callable[[str, str | None, bool], tuple[str, ...]]] = {}
 # agent starter that the clear's own stops wake start nothing on a map being deleted (UX review round 2, 2026-10-17,
 # ux-verify-combined F1). A module registers its own under its id.
 HALTS: dict[str, Callable[[str, str, str | None], Any]] = {}
+# The agents that follow the active metaform rather than staying on the one they began on: each module's function
+# naming, for a project, the ones it runs now, one line each, such as the person's own agent, which reads whatever map
+# the page shows (decision of 2026-10-17, pending Rich's confirmation). A switch names them apart from the agents at
+# work, which stay. A module registers its own under its id.
+FOLLOWERS: dict[str, Callable[[str], tuple[str, ...]]] = {}
 
 
 @contextmanager
@@ -1113,18 +1198,44 @@ def carry_out(project_id: str) -> None:
 
 
 def staying(project_id: str, left: Base | None, now: Base | None) -> str | None:
-    """What a switch of the active metaform from `left` to `now` says of the agents at work on `left`: they stay on
-    it, where their tickets are, listed and stopped as before, STORE-041. None when nothing changed or none works."""
+    """What a switch of the active metaform from `left` to `now` says of the agents: those at work on `left` stay on
+    it, where their tickets are, listed and stopped as before, STORE-041; the person's own agent follows the switch
+    and reads `now`, `FOLLOWERS`. None when nothing changed or no agent runs."""
+    found = staying_agents(project_id, left, now)
+    working, following = found['staying'], found['following']
+    said: list[str] = []
+    if working:
+        count = counted(len(working), 'agent', 'agents')
+        one = len(working) == 1
+        said.append(f'{count[:1].upper()}{count[1:]} at work on {found["left"]} {"stays" if one else "stay"} on it, '
+                    f'where {"its" if one else "their"} work is: {"; ".join(working)}. {"It is" if one else "They are"} '
+                    'still listed under Agents, where Stop ends one; metaform dispatch sessions lists them too.')
+    if following:
+        one = len(following) == 1
+        said.append(f'{"; ".join(following)} {"follows" if one else "follow"} the switch and '
+                    f'{"reads" if one else "read"} {found["now"]} from here.')
+    return ' '.join(said) or None
+
+
+def staying_agents(project_id: str, left: Base | None, now: Base | None) -> dict[str, Any]:
+    """`staying` as data, for a surface that says it in its own words: the base left and the one now active, the
+    agents at work that stay on the base left, one line each, and the agents that follow to the one now active."""
     if left is None or now is None or left.id == now.id:
-        return None
-    working = at_work(project_id, left.id)
-    if not working:
-        return None
-    count = counted(len(working), 'agent', 'agents')
-    return (f'{count[:1].upper()}{count[1:]} at work on {left.name} '
-            f'{"stays" if len(working) == 1 else "stay"} on it, where {"its" if len(working) == 1 else "their"} '
-            f'work is: {"; ".join(working)}. metaform dispatch sessions lists them and metaform dispatch stop <id> '
-            'ends one.')
+        return {'left': None, 'now': None, 'staying': [], 'following': []}
+    return {'left': left.name, 'now': now.name, 'staying': list(at_work(project_id, left.id)),
+            'following': list(followers(project_id))}
+
+
+def followers(project_id: str) -> tuple[str, ...]:
+    """The agents of the project that follow the active metaform, one line each, `FOLLOWERS`."""
+    _hooked()
+    found: list[str] = []
+    for named in list(FOLLOWERS.values()):
+        try:
+            found += named(project_id)
+        except (OSError, sqlite3.Error, Stop, StoreError):
+            continue
+    return tuple(found)
 
 
 def at_work(project_id: str, base_id: str | None = None, *, stop: bool = False) -> tuple[str, ...]:
@@ -1174,12 +1285,23 @@ def switch_caution(project_id: str, target: str | None = None) -> str:
         return f'{target} is already the active map of {project_id}; nothing changes.'
     if active is None:
         return 'This changes the active map for every agent and the page of the project.'
-    held = holds_said(holds_of(project_id, active.id))
-    # an agent at work stays on the base it began on, where its ticket is, so a switch takes it out of view only
-    leaving = (f' On {active.name}, the active map now, {held} leave the view of the page and of every agent; '
-               'agents at work there stay on it, with their tickets.') if held else ''
-    return (f'This changes the active map for every agent and the page of the project.{leaving} {active.name} is '
-            f'kept whole: metaform map activate {active.name} --confirm switches back.')
+    counts = dict(holds_of(project_id, active.id))
+    # An agent at work stays on the base it began on, where its ticket is, still listed and stoppable, so it is said
+    # apart from what leaves view, which it does not (UX review round 2, 2026-10-17, project-scope F5); the person's
+    # own agent follows the switch.
+    working = counts.pop('agents', 0)
+    held = holds_said(counts)
+    leaving = f' On {active.name}, the active map now, {held} leave the view of the page and of every agent.' \
+        if held else ''
+    one = working == 1
+    stays = (f' {counted(working, "agent", "agents").capitalize()} at work there {"stays" if one else "stay"} on it '
+             f'with {"its ticket" if one else "their tickets"}, still listed under Agents, where Stop ends one.'
+             if working else '')
+    following = followers(project_id)
+    follows = (f' {"; ".join(following)} {"follows" if len(following) == 1 else "follow"} the switch.'
+               if following else '')
+    return (f'This changes the active map for every agent and the page of the project.{leaving}{stays}{follows} '
+            f'{active.name} is kept whole: metaform map activate {active.name} --confirm switches back.')
 
 
 def remove_caution(project_id: str, name: str) -> str:
@@ -1437,11 +1559,14 @@ class Restored:
     """A backup brought back, and the backup of what the project held before, when it held anything."""
     backup: Backup
     held_before: str | None = None
+    stopped: tuple[str, ...] = ()  # the agents at work on what it replaced, stopped first by its clear, `AT_WORK`
 
     @property
     def said(self) -> str:
-        return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}. The conversations '
-                'with agents were kept, with everything said since the backup.')
+        stopped = (f' Stopped {counted(len(self.stopped), "agent", "agents")} at work on what it replaced first: '
+                   f'{"; ".join(self.stopped)}.' if self.stopped else '')
+        return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.{stopped} The '
+                'conversations with agents were kept, with everything said since the backup.')
 
     @property
     def back(self) -> str | None:
@@ -1451,7 +1576,8 @@ class Restored:
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before,
-                **({'restore_before': self.back} if self.back else {})}
+                **({'restore_before': self.back} if self.back else {}),
+                **({'stopped': list(self.stopped)} if self.stopped else {})}
 
 
 def restore_caution(project_id: str, name: str | None = None) -> str:
@@ -1465,7 +1591,11 @@ def restore_caution(project_id: str, name: str | None = None) -> str:
     now = to_clear(project_id, agents=False)
     replaced = f'replaces what it holds now, {now.held}, which is backed up first' if now.bases else \
         'replaces nothing, since it holds no map now'
-    return f'Restoring {project_id} from backup {chosen.name} brings back {chosen.held}, and {replaced}.'
+    # a restore clears first, and a clear stops the agents at work, so the caution names them as a clear's does
+    working = at_work(project_id) if now.bases else ()
+    stops = (f' It stops {counted(len(working), "agent", "agents")} at work on it first: {"; ".join(working)}.'
+             if working else '')
+    return f'Restoring {project_id} from backup {chosen.name} brings back {chosen.held}, and {replaced}.{stops}'
 
 
 def restore_project(project_id: str, name: str | None = None) -> Restored:
@@ -1481,7 +1611,8 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
                          f'{project_id} has no backup a clear made; each one a restore made of what it replaced is '
                          'restored by its name.' if known else f'{project_id} has no backup.',
                          f'metaform list backups {project_id}')
-    before = clear_project(project_id, made_by='restore').backup
+    cleared = clear_project(project_id, made_by='restore')
+    before = cleared.backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
     folder = _folder_of_project(project_id)
@@ -1496,12 +1627,13 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
         if rows.get('active'):
             db.execute('INSERT INTO active_bases(project_id, base_id) VALUES (?, ?)',
                        (project_id, rows['active']))
+            _activated(db, str(rows['active']))
     changes.note(project_id)
     try:
         carry_out(project_id)
     except (OSError, sqlite3.Error, Stop):
         pass  # the restore stands; what the backup's stores hold of them is still there, carried by the next read
-    return Restored(chosen, before)
+    return Restored(chosen, before, cleared.agents)
 
 
 def removal_caution(project_id: str) -> str:
@@ -1560,7 +1692,7 @@ def forget_project(project_id: str) -> None:
         db.execute('DELETE FROM active_bases WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM bases WHERE project_id=?', (project_id,))
         db.execute('DELETE FROM projects WHERE project_id=?', (project_id,))
-    changes.note(project_id)
+    changes.note(project_id, tables={PROJECTS_TABLE}, about={'kinds': {'project'}})
 
 
 def _remove_tree(path: Path, failed: list[tuple[str, str]]) -> None:

@@ -6,6 +6,7 @@ import ast
 import asyncio
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -623,10 +624,13 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
     """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
     forgotten, all but the category its AI tool still lists, and the compacted line naming the ticket and its node is
-    left for the agent's next tool call, else the next turn opens with it, said once; in_progress and failed change
-    nothing, and nothing is sent on the signal itself."""
+    left for the agent's next tool call, else the next turn opens with it, said once, after the rules and the order to
+    read the glossary, which come first; in_progress and failed change nothing, and nothing is sent on the signal
+    itself."""
     from metaform import shown
-    from metaform.module import COMPACTED_KEY
+    from metaform.module import COMPACTED_KEY, agent_opening
+    opening = agent_opening('proj') + '\n\nYour context was compacted'
+    assert opening.startswith('@CONSTRAINT:') and 'read metaform://metaform' in opening
     gates = tmp_path / 'turns'
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), FAKE_ACP_COMPACT=statuses)
@@ -641,11 +645,11 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     if completed:
         eventually(lambda: shown.peek(runner, 'guide:tool:map_work') is None)
         left = eventually(lambda: shown.peek(runner, COMPACTED_KEY))
-        assert left.startswith('Your context was compacted') and f'ticket {dispatch.id} at ' in left
+        assert left.startswith(opening) and f'ticket {dispatch.id} at ' in left
     assert len(dispatch.received('session/prompt')) == 1, 'the signal itself sends nothing'
     run('dispatch', 'message', dispatch.id, 'go', 'on', cwd=dispatch.folder)
     said = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
-    assert said.startswith('Your context was compacted') is completed
+    assert said.startswith(opening) is completed
     assert said.endswith('go on') and (f'ticket {dispatch.id} at ' in said) is completed
     assert shown.peek(runner, 'catalog:open') == 'remember'
     assert (shown.peek(runner, 'guide:tool:map_work') is None) is completed
@@ -959,7 +963,10 @@ def test_start_refuses_a_ticket_when_every_agent_slot_is_in_use(dispatch, run):
     assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['free'] == 0
     refused = run('dispatch', 'start', other, 'claude', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
-    assert 'held by ' + dispatch.id[:8] in refused.stdout + refused.stderr, 'it names what holds the slot'
+    said = refused.stdout + refused.stderr
+    # it names what holds the slot and the ticket refused as the person reads them (round 2, held-and-signals F6)
+    assert 'held by code.engine#1 "Write notes.txt"' in said and 'code.engine#2 "Another change":' in said, said
+    assert not re.search('[0-9a-f]{32}', said.split('\nNext:')[0]), said
     assert not dispatch.store.ticket(other).work.taken
     dispatch.stop()
 
@@ -1465,15 +1472,16 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
     from metaform.modules.dispatch import read_sessions
     ctx = chassis.context('dispatch', dispatch.folder, project='proj', nouns={'thread': False})
     read = read_sessions(ctx)
-    lines = [sql for sql in executed if 'FROM "dispatch.lines"' in sql or 'FROM "dispatch.session_lines"' in sql]
+    # the signals are the project's since version 18, `dispatch.signals` (UX review round 2, combined F4)
+    read_from = ('FROM "dispatch.lines"', 'FROM "dispatch.session_lines"', 'FROM "dispatch.signals"')
+    lines = [sql for sql in executed if any(table in sql for table in read_from)]
     assert len(lines) == 2 and all(' WHERE ' in sql for sql in lines), lines
     assert len(read['sessions']) == 40 and [one['signal'] for one in read['signals']] == ['stopped-open']
     assert read['states'] == {f'ended-{number}': {'about': 'system' if number < 2 else None, 'intake': None}
                               for number in range(40)}
     executed.clear()
     assert read_sessions(ctx)['states'] == read['states']
-    assert len([sql for sql in executed if 'FROM "dispatch.lines"' in sql or 'FROM "dispatch.session_lines"' in sql]) \
-        == 1, executed  # the signals alone
+    assert len([sql for sql in executed if any(table in sql for table in read_from)]) == 1, executed  # the signals
     shown = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
     assert shown['states'] == read['states'] and shown['signals'] == read['signals']
 
@@ -1497,31 +1505,33 @@ def glyphed(dispatch, run, *tickets):
 @pytest.mark.cli_process
 def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dispatch, run):
     """VIEW-040: tickets with the same glyph are one agent's, done one at a time. The agent started on
-    a ticket with a glyph takes that glyph's tickets one after another in board order, To do before Backlog, each by
-    its place, the next taken when the one before is done; a ticket of another glyph, one with none, and one taken
-    by someone else are not its own."""
+    a ticket with a glyph takes that glyph's tickets one after another in To do's board order, by its place, the next
+    taken when the one before is done; a ticket of another glyph, one with none, and one taken by someone else are not
+    its own, and a held Backlog ticket of its glyph waits for the person to release it (UX review round 2,
+    held-and-signals F3: the glyph agent worked every held ticket after its own)."""
     run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     other, held, later, top, loose, busy = glyphed(
         dispatch, run, ('Another agent', 'moth', False), ('Held', 'kite', True), ('Later', 'kite', False),
         ('Top', 'kite', False), ('No glyph', None, False), ('Busy', 'kite', False))
     dispatch.store.move_work(top, 'todo', 0)
-    dispatch.store.move_work(held, 'backlog', 0)  # placed first in Backlog, and still after every To do ticket
+    dispatch.store.move_work(held, 'backlog', 0)  # placed first in Backlog: held, so never the agent's next
     dispatch.store.take_work(busy, by='someone')
     [unplaced] = glyphed(dispatch, run, ('Unplaced', 'kite', False))  # in To do with no place: after those placed
     assert dispatch.store.ticket(unplaced).work.position is None and dispatch.store.ticket(held).work.position == 0
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 5) == 0, dispatch.process.stderr.read().decode()
-    worked = [dispatch.id, top, later, unplaced, held]
+    worked = [dispatch.id, top, later, unplaced]
     assert dispatch.logged('work') == worked
     order = [('start' if entry.get('message', {}).get('method') == 'initialize' else 'done')
              for entry in dispatch.entries() if 'done' in entry or entry.get('message', {}).get('method') == 'initialize']
-    assert order == ['start', 'done'] * 5, 'one agent at a time: each starts after the ticket before it is done'
+    assert order == ['start', 'done'] * 4, 'one agent at a time: each starts after the ticket before it is done'
     sessions = [item.extra for item in dispatch.items('session')]
     assert [session['work_id'] for session in sessions] == worked
     assert {(session['state'], session['how']) for session in sessions} == {('ended', 'the ticket is done')}
     assert all(dispatch.store.ticket(work_id).work.done for work_id in worked)
-    for work_id in (other, loose):
+    for work_id in (other, loose, held):
         assert dispatch.store.ticket(work_id).work.taken is None
+    assert dispatch.store.ticket(held).work.held
     assert dispatch.store.ticket(busy).work.taken_by == 'someone'
 
 
@@ -1550,7 +1560,9 @@ def test_a_ticket_whose_glyph_has_an_agent_at_work_is_not_started_and_another_gl
     for verb in ('start', 'run'):
         refused = run('dispatch', verb, later, 'claude', cwd=dispatch.folder, env=dispatch.env('done'), ok=False)
         said = refused.stdout + refused.stderr
-        assert refused.returncode != 0 and 'kite' in said and dispatch.id in said, said
+        # the ticket worked is named as the person reads it, never by its id (round 2, held-and-signals F6)
+        assert refused.returncode != 0 and 'kite' in said and '"Write notes.txt"' in said, said
+        assert not re.search('[0-9a-f]{32}', said), said
     assert dispatch.store.ticket(later).work.taken is None
     own = run('dispatch', 'run', other, 'claude', '--json', cwd=dispatch.folder, env=dispatch.env('done'))
     assert json.loads(own.stdout)['work_id'] == other
@@ -1945,6 +1957,33 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+@pytest.mark.req('VIEW-045')
+def test_an_intake_agent_is_never_taken_for_the_persons_own_agent(dispatch, run, dispatch_runners):
+    """UX review round 2, 2026-10-17 (combined F3): every intake runner was said to be about the system, so the page
+    called it "Your system agent", My agent opened the intake, and a broadcast left it out as the person's own chat
+    agent. It is about no conversation, is no system session, and a broadcast reaches it."""
+    from metaform.modules.dispatch import session_state, system_sessions
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work_id = started['work_id']
+    row = eventually(lambda: next((one for one in module_sessions(dispatch) if one['work_id'] == work_id
+                                   and one['state'] == 'running'), None))
+    state = eventually(lambda: session_state(dispatch.store, str(row['session_id'])))
+    assert state.get('about') is None and state.get('role') == 'intake', state
+    assert not system_sessions(dispatch.store), 'no system agent runs'
+    told = json.loads(run('dispatch', 'broadcast', '--json', '--', 'pause a moment', cwd=dispatch.folder).stdout)
+    assert [one['work_id'] for one in told['recipients']] == [work_id], told
+    run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+def module_sessions(dispatch):
+    """Every session row of the project, as dispatch keeps them."""
+    from metaform.data import Store
+    with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
+        return [dict(one) for one in tx.rows('agent_sessions', limit=0).results]
 
 
 @pytest.mark.req('VIEW-045')
@@ -3402,7 +3441,9 @@ def test_a_clear_and_a_restore_keep_every_conversation_and_merge_what_was_said_s
 @pytest.mark.req('STORE-045')
 def test_carrying_the_conversations_out_of_every_metaform_is_idempotent_and_never_drops_a_row(dispatch):
     """The carry out of each metaform's store: run twice, cut short, or over a row the project holds already, every
-    row is there once; the project's row, written since, is kept over the metaform's copy; signals stay with the map."""
+    row is there once; the project's row, written since, is kept over the metaform's copy. The signals a runner on
+    older code raised beside a map are the project's since version 18, each saying the base it was raised on (UX
+    review round 2, 2026-10-17, combined F4)."""
     import shutil
 
     from metaform import home
@@ -3435,7 +3476,10 @@ def test_carrying_the_conversations_out_of_every_metaform_is_idempotent_and_neve
     for base in home.bases('proj'):
         with Store('proj', base=base.id, module='dispatch').tables(write=False) as tx:
             assert tx.rows('sessions', limit=0).results == ()
-            assert [row['kind'] for row in tx.rows('lines', limit=0).results] == ['signal'], 'the map\'s own stays'
+            assert tx.rows('lines', limit=0).results == (), 'carried, signals among them'
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        [raised] = tx.rows('signals', limit=0).results
+    assert json.loads(raised['text'])['base'] in {base.id for base in home.bases('proj')}
 
 
 @pytest.mark.req('VIEW-045')
@@ -3484,9 +3528,17 @@ def test_a_worker_keeps_its_base_when_another_becomes_active_and_stays_listed_co
     dispatch.start('hold')
     row = dispatch.session().extra
     assert row['state'] == 'running' and row['base'] == main.id, 'pinned to the base it began on'
+    # the caution says the agent stays, still listed and stoppable, apart from what leaves view (UX review round 2,
+    # 2026-10-17, project-scope F5): it said the agent left the view of the page and of every agent
+    caution = run('map', 'add-base', 'fresh', cwd=dispatch.folder, ok=False)
+    said = caution.stdout + caution.stderr
+    assert 'One agent at work there stays on it with its ticket, still listed under Agents' in said, said
+    assert 'agent at work leave' not in said and 'agents at work leave' not in said, said
     said = run('map', 'add-base', 'fresh', '--confirm', '--json', cwd=dispatch.folder).stdout
     assert home.active_base('proj').name == 'fresh'
-    assert 'One agent at work on main stays on it' in said and dispatch.id in said, said
+    # named by its ticket, never its 32-character id (UX review round 2, project-scope F5)
+    assert "One agent at work on main stays on it" in said and "'Write notes.txt'" in said, said
+    assert dispatch.id not in said.split('stays on it')[1].split('open ticket')[0], said
     fresh = Store('proj')
     fresh.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
     fresh.add_element('parts', NODE)
@@ -3502,6 +3554,25 @@ def test_a_worker_keeps_its_base_when_another_becomes_active_and_stays_listed_co
     eventually(lambda: dispatch.process.poll() is not None)
     eventually(lambda: dispatch.session().extra['state'] == 'ended')
     assert Store('proj', base=main.id).ticket(dispatch.id).work.taken, 'its ticket stays in main, taken as it was'
+
+
+@pytest.mark.req('BASE-052')
+def test_a_worker_that_dies_on_a_base_no_longer_active_has_its_ticket_freed_there_by_reset(dispatch, run):
+    """UX review round 2, 2026-10-17 (project-scope F7): a worker killed on a base no longer active left its ticket
+    taken, `dispatch reset` released nothing, and only activating that base again freed it. Reset reads each dead
+    runner's ticket in the base it was pinned to, frees it there and says which base."""
+    from metaform import home
+    from metaform.data import Store
+    main = home.active_base('proj')
+    dispatch.start('hold')
+    eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+    run('map', 'add-base', 'fresh', '--confirm', cwd=dispatch.folder)
+    os.kill(dispatch.process.pid, signal.SIGKILL)
+    eventually(lambda: dispatch.process.poll() is not None)
+    reset = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
+    assert dispatch.id in reset['sessions_ended'] and dispatch.id in reset['released'], reset
+    assert reset['on_bases'] == {dispatch.id: 'main'}, reset
+    assert not Store('proj', base=main.id).ticket(dispatch.id).work.taken, 'freed in main, with fresh active'
 
 
 @pytest.mark.req('VIEW-045')
@@ -3520,10 +3591,18 @@ def test_the_persons_agent_is_the_same_conversation_after_a_switch_to_an_empty_b
     dispatch.start('hold', 'system=true')
     first = dispatch.session().extra
     eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
-    run('map', 'add-base', 'empty', '--confirm', cwd=dispatch.folder)
+    # The person's own agent follows the active base, the map the page shows: nothing pins its runner or its agent's
+    # MCP server, and a switch says it follows (UX review round 2, 2026-10-17, project-scope F1; decision pending
+    # Rich's confirmation). Workers stay pinned, the test above.
+    assert first['base'] is None, first
+    environ = Path(f'/proc/{dispatch.process.pid}/environ')
+    if environ.exists():
+        assert b'METAFORM_BASE=' not in environ.read_bytes(), 'its runner is pinned to no base'
+    said = run('map', 'add-base', 'empty', '--confirm', cwd=dispatch.folder).stdout
+    assert 'Your own agent, Claude Code, follows the switch and reads empty from here.' in said, said
     assert home.active_base('proj').name == 'empty' and not Store('proj').roots(limit=1).entry
     again = module.system(context('dispatch', dispatch.folder, project='proj'))
-    assert (again['state'], again['session_id']) == ('running', first['session_id']), again
+    assert (again['state'], again['session_id'], again['base']) == ('running', first['session_id'], 'empty'), again
     found = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['sessions']
     assert [one['session_id'] for one in found if one['state'] == 'running'] == [first['session_id']]
     dispatch.stop()
@@ -3539,13 +3618,35 @@ def test_a_clear_stops_the_agents_at_work_first_and_says_so(dispatch, run):
     dispatch.start('hold')
     row = dispatch.session().extra
     caution = run('clear', 'project', cwd=dispatch.folder, ok=False).stderr
-    assert 'It stops one agent at work on it first' in caution and dispatch.id in caution, caution
+    assert "It stops one agent at work on it first: Claude Code on 'Write notes.txt'" in caution, caution
     said = run('clear', 'project', '--confirm', cwd=dispatch.folder).stdout
     assert 'Stopped one agent at work on it first' in said, said
     eventually(lambda: dispatch.process.poll() is not None)
     assert dispatch.session().extra['session_id'] == row['session_id']
     assert dispatch.session().extra['state'] == 'ended', 'stopped before its store went, and its row kept'
     assert not home.bases('proj'), 'nothing made the cleared map again'
+
+
+@pytest.mark.req('PROJ-030')
+def test_a_restore_while_an_agent_works_asks_first_names_it_and_says_it_stopped_it(dispatch, run):
+    """UX review round 2, 2026-10-17 (project-scope F2): a restore clears first, and the clear stopped the agent at
+    work with no caution and no word of it. It is refused without --confirm, naming the agent, and its result says
+    the agent was stopped."""
+    from metaform import home
+    kept = home.backup_project('proj')
+    assert kept is not None
+    dispatch.start('hold')
+    eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+    refused = run('restore', 'project', 'proj', kept.name, cwd=dispatch.folder, ok=False)
+    said = refused.stdout + refused.stderr
+    assert refused.returncode != 0 and "It stops one agent at work on it first: Claude Code on 'Write notes.txt'" \
+        in said and '--confirm' in said, said
+    assert dispatch.process.poll() is None, 'nothing was stopped'
+    restored = run('restore', 'project', 'proj', kept.name, '--confirm', cwd=dispatch.folder).stdout
+    assert "Stopped one agent at work on what it replaced first: Claude Code on 'Write notes.txt'." in restored, \
+        restored
+    assert home.restore_project('proj', kept.name).to_dict().get('stopped') is None, 'nothing at work the second time'
+    eventually(lambda: dispatch.process.poll() is not None)
 
 
 @pytest.mark.req('VIEW-045')

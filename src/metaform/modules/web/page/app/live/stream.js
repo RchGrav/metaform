@@ -7,7 +7,6 @@ import {S, read} from '/page/app/core/reads.js';
 import {renderChips} from '/page/app/header/layers.js';
 import {withProviders, joinOf} from '/page/app/graph/data.js';
 import {attend} from '/page/app/figures/attention.js';
-import {G, start3D} from '/page/app/map3d/graph3d.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
 import {renderLegend} from '/page/app/views/lens.js';
 import {build2D} from '/page/app/map2d/build.js';
@@ -18,8 +17,8 @@ import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
-  agentsChanged, linesOnly, listen, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
-import {listBases, loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
+  agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
+import {listBases, loadGraph, loadProject, fillProjects, goToProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
@@ -61,11 +60,18 @@ async function follow(found) {
   if (found && found.layer !== LIVE.layer) {
     Object.assign(LIVE, {layer: found.layer, base: found.base_id, seen: ''});
     if (S.base !== found.base_id) {
-      const named = (await listBases()).find(item => item.id === found.base_id)?.name || 'a base of its own';
-      drawIntake();
-      toast(`An intake is being recorded in ${named}, beside the map shown here, which stays as it is with its `
-        + `tickets and chats. Choose ${named} in the base list to watch it.`);
-      return;
+      const listed = await listBases();
+      // beside a base the page shows; a page that shows none, its project cleared or never mapped, shows the base
+      // the intake makes, which is the project's only one
+      if (S.base && listed.some(item => item.id === S.base)) {
+        const named = listed.find(item => item.id === found.base_id)?.name || 'a base of its own';
+        drawIntake();
+        toast(`An intake is being recorded in ${named}, beside the map shown here, which stays as it is with its `
+          + `tickets and chats. Choose ${named} in the base list to watch it.`);
+        return;
+      }
+      S.base = found.base_id;
+      await listBases();
     }
     S.layers = (await read('layers', {limit: 0})).results; renderChips();
     drawIntake();
@@ -117,28 +123,107 @@ export async function recordingNow() {
  * the person watches an intake where it is recorded. Only a change written into the intake being recorded does it,
  * once for that intake, so a person who goes back is left there; nothing else in another project ever switches the
  * page, and a change of tickets or agents elsewhere is not even looked at. */
-const ELSEWHERE = {followed: new Set(), busy: false};
-async function intakeElsewhere(payload) {
+/* An intake agent starting in another project takes the page there too, at its launch, not at its first record, which
+ * may be minutes later: its session's change names its `intake-` work id (UX review round 2, 2026-10-17,
+ * new-project-intake F1 and F3). Each test is decided from the event alone, before any read, and an event that comes
+ * while one is read is kept, the latest in one slot, and read once the read in hand is done, never dropped (CLAUDE.md
+ * section 2, rules 2 and 4). */
+const ELSEWHERE = {followed: new Set(), busy: false, pending: null};
+/* The intake agent's work id an event names, or null. */
+function intakeWork(payload) {
+  const works = payload.work_ids;
+  if (!Array.isArray(works)) return null;
+  for (let at = 0; at < works.length; at++) if (String(works[at]).startsWith('intake-')) return String(works[at]);
+  return null;
+}
+/* Whether an event of another project can concern an intake there: a write that may be into the layer being recorded,
+ * or the intake agent's own session. A change of that project's bases alone never is, nor a change of its tickets or
+ * of any other agent. */
+function mayBeIntake(payload) {
+  if (intakeWork(payload)) return true;
+  if (!payload.base_id) return false;
   const named = payload.tables;
-  if (ELSEWHERE.busy || named === 'dispatch' || ticketsOnly(payload)) return;
+  if (named === 'dispatch' || ticketsOnly(payload)) return false;
+  if (!Array.isArray(named)) return true;
+  for (let at = 0; at < named.length; at++) {
+    const table = String(named[at]);
+    if (table !== 'intake.recorder' && !opTable(table)) return false;
+  }
+  return true;
+}
+async function intakeElsewhere(payload) {
+  if (!mayBeIntake(payload)) return;
+  if (ELSEWHERE.busy) { ELSEWHERE.pending = payload; return; }
   ELSEWHERE.busy = true;
   try {
-    const found = (await getJson(`/api/intake-recording?project=${encodeURIComponent(payload.project)}`)).results?.[0];
+    const project = payload.project, work = intakeWork(payload);
+    if (work) return await intakeStarting(project, work);
+    const found = (await getJson(`/api/intake-recording?project=${encodeURIComponent(project)}`)).results?.[0];
     // only a change written into the intake being recorded: an intake happening now, never an old one left unfinished
     if (!found || payload.base_id !== found.base_id) return;
-    const key = `${payload.project}/${found.base_id}/${found.layer.name}`;
-    if (ELSEWHERE.followed.has(key) || payload.project === S.project) return;
+    const key = `${project}/${found.base_id}/${found.layer.name}`;
+    if (ELSEWHERE.followed.has(key) || project === S.project) return;
     ELSEWHERE.followed.add(key);
-    S.projects = (await getJson('/api/projects')).projects || [];  // a first run registers its folder just before
-    if (!G) start3D();  // a page opened with no project has not drawn a 3D map yet
-    toProject(payload.project);
-    fill($('#proj'),
-      ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
-    await loadProject();
-    listen();
-    toast(`An intake started in ${payload.project}; the page follows it there.`);
+    await goToProject(project, `An intake started in ${project}; the page follows it there.`);
   } catch (error) { /* a project that cannot be read now is not followed */ }
-  finally { ELSEWHERE.busy = false; }
+  finally {
+    ELSEWHERE.busy = false;
+    const next = ELSEWHERE.pending;
+    ELSEWHERE.pending = null;
+    if (next) intakeElsewhere(next);
+  }
+}
+/* An intake agent of another project, launched or running: the page goes there, where its bar shows it starting and
+ * its chat; one that ended without starting is said with why, and the page stays. Once per intake. */
+async function intakeStarting(project, work) {
+  const key = `${project}/${work}`;
+  if (ELSEWHERE.followed.has(key) || project === S.project) return;
+  const read = await getJson(`/api/dispatch-sessions?project=${encodeURIComponent(project)}&id=${
+    encodeURIComponent(work)}&thread=false`);
+  const sessions = read.sessions || [];
+  const now = sessions.findLast(one => one.work_id === work) || null;
+  if (!now) return;
+  ELSEWHERE.followed.add(key);
+  if (now.state === 'running' || now.state === 'starting') {
+    await goToProject(project, `An intake agent is starting in ${project}; the page follows it there.`);
+  } else if (/did not start|failed/.test(String(now.how || ''))) {
+    toast(`The intake agent in ${project} did not start: ${String(now.how).replace(/^it (failed|did not start):?\s*/, '')}`);
+  }
+}
+/* A change to the registered projects, or a project opened from its folder, VIEW-002: the chooser lists what is
+ * registered now, read once for a burst of them, and the page goes to the project the person opened, whichever it
+ * shows (UX review round 2, 2026-10-17, new-project-intake F2). Decided from the event alone. */
+const PROJECTS = {busy: false, again: false, open: null};
+function projectsChange(payload) {
+  const named = payload.tables;
+  if (payload.base_id || !Array.isArray(named)) return false;
+  let projects = false, opened = false;
+  for (let at = 0; at < named.length; at++) {
+    if (named[at] === 'home.projects') projects = true;
+    else if (named[at] === 'web.opened') opened = true;
+    else return false;
+  }
+  if (opened && payload.project !== S.project) PROJECTS.open = payload.project;
+  if (projects || opened) heardProjects();
+  return true;
+}
+async function heardProjects() {
+  if (PROJECTS.busy) { PROJECTS.again = true; return; }
+  PROJECTS.busy = true;
+  try {
+    do {
+      PROJECTS.again = false;
+      const open = PROJECTS.open;
+      PROJECTS.open = null;
+      if (open && open !== S.project) {
+        await goToProject(open, `The page went to ${open}, opened from its folder.`);
+      } else {
+        S.projects = (await getJson('/api/projects')).projects || [];
+        fillProjects();
+      }
+    } while (PROJECTS.again);
+  } catch (error) { /* the chooser stays as it was until the next change */ }
+  finally { PROJECTS.busy = false; }
 }
 /* Whether a change is to an agent's thread lines alone, as its kinds say, or its tables when it says no kinds. Each
  * test here runs per event and allocates nothing. */
@@ -167,6 +252,7 @@ const drawnAlready = payload => payload.base_id === S.base && typeof payload.seq
   && typeof S.seq === 'number' && payload.seq <= S.seq && allTables(payload.tables, opTable);
 export async function changed(event) {
   if (event.topic !== 'map.changed') return;
+  if (event.payload && projectsChange(event.payload)) return;
   if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
   if (event.payload?.project !== S.project) return;
   const named = event.payload.tables;

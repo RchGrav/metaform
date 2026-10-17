@@ -17,7 +17,7 @@ import {queuedRows, deliverQueued, startFailed} from '/page/app/dock/send.js';
 import {messagesOf} from '/page/app/board/messages.js';
 import {D, ticketOf, agentAt} from '/page/app/agents/dispatch.js';
 import {agentName, summonAgent, drawDockTab} from '/page/app/agents/pickers.js';
-import {isIntake, workPart} from '/page/app/session/tools.js';
+import {isIntake, workPart, isSystemState} from '/page/app/session/tools.js';
 import {galleryRows, threadRows} from '/page/app/session/apps.js';
 import {drawPlan, drawSession} from '/page/app/session/text.js';
 import {SESSIONPOP} from '/page/app/session/settings.js';
@@ -120,7 +120,7 @@ async function readThread(target, openedSession, chat) {
 /* The system agent is known by what its session is about, however it was started: by the page, the phone or the
  * command line. A conversation about a node hangs on the same held ticket and stays the person's chat. */
 function knownAsSystem(chat, state) {
-  if (!chat || state?.about !== 'system' || chat.source === 'system') return;
+  if (!chat || !isSystemState(state, chat.target) || chat.source === 'system') return;
   Object.assign(chat, {source: 'system', label: 'your system agent'});
   DOCK.label = chat.label;
   drawTabs();

@@ -300,8 +300,10 @@ def test_automatic_recovery_stops_orphans_before_returning_ticket_and_preserves_
     assert dispatch.session().extra['state'] == 'ended'
     assert [(item.extra, item.value) for item in dispatch.items('note')
             if item.extra['kind'] not in ('signal', 'progress')] == transcript
-    assert {'not-smooth', 'requeue'} <= {json.loads(item.value)['signal'] for item in dispatch.items('note')
-                                        if item.extra['kind'] == 'signal'}
+    # signals are the project's own table since dispatch's version 18, read through dispatch signals
+    raised = {one['signal'] for active in ('true', 'false') for one in json.loads(
+        run('dispatch', 'signals', f'id={dispatch.id}', f'active={active}', '--json', cwd=dispatch.folder).stdout)['signals']}
+    assert {'not-smooth', 'requeue'} <= raised
     again = json.loads(run('dispatch', 'recover', '--json', cwd=dispatch.folder).stdout)
     assert again['released'] == []
 
@@ -829,7 +831,7 @@ def test_an_older_runner_without_status_whose_pid_is_that_runner_reads_running_a
     [found] = module.sessions(Store('proj', module='dispatch'))
     assert found['state'] == 'running'
     ctx = SimpleNamespace(folder=dispatch.folder, project='proj')
-    with pytest.raises(Stop, match=dispatch.id):
+    with pytest.raises(Stop, match='Write notes.txt'):
         module.startable(ctx, dispatch.store, dispatch.store.ticket(later).work, 'claude')
     assert dispatch.session().extra['state'] == 'running'
 

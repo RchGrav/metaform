@@ -9,7 +9,7 @@ import {clockOf} from '/page/app/dock/embody.js';
 import {wrote, movable} from '/page/app/board/history.js';
 import {D, SESSIONS_DRAWN, glyphOf, glyphFor} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
-import {isIntake} from '/page/app/session/tools.js';
+import {isIntake, isSystemSession} from '/page/app/session/tools.js';
 import {sessionTask} from '/page/app/dock/threads.js';
 
 /* The window stays beside the map while the agents answer, a window and never a dialog. Send gives the text to the
@@ -21,7 +21,7 @@ const B = {project: null, sending: false, told: null};
 const box = $('#broadcast'), say = $('#broadcast textarea'), send = $('#broadcast .send');
 const mineOnly = $('#broadcast .system');
 const running = () => D.sessions.filter(one => one.state === 'running');
-const isMine = session => D.states?.[session.session_id]?.about === 'system';
+const isMine = session => isSystemSession(session, D.states);
 /* The sessions a broadcast reaches now: every running one, the person's own chat agent only when ticked. */
 const reached = () => running().filter(one => mineOnly.checked || !isMine(one));
 function drawBroadcast() {

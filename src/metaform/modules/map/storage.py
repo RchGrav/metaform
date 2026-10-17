@@ -142,8 +142,8 @@ def _work_row(tx: Tx, work_id: str) -> Any:
 def _ticket_changed(tx: Tx, *work_ids: str, kind: str = "ticket") -> None:
     """The tickets this write changes, said on its `map.changed`, so a dispatch runner reads only its own, BASE-053.
     `kind` says what changed: `ticket` for anything that can decide whether it starts or ends, `note` for its words
-    alone, its note, title or links, and `step` for its plan and steps, so the agent starter, which starts nothing for
-    words or steps, reads nothing for them (UX review round 1, runaway F3)."""
+    alone, its note, title, links or reviewed mark, and `step` for its plan and steps, so the agent starter, which
+    starts nothing for words or steps, reads nothing for them (UX review round 1, runaway F3)."""
     for work_id in work_ids:
         tx.concern(work_id=work_id, kind=kind)
 
@@ -211,7 +211,7 @@ def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
         )
 
 
-WORDS_ONLY = frozenset({"note", "title", "links"})  # an edit of these changes no start, `_ticket_changed`
+WORDS_ONLY = frozenset({"note", "title", "links", "reviewed"})  # an edit of these changes no start, `_ticket_changed`
 
 
 def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:

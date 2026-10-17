@@ -27,7 +27,7 @@ import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/boa
 import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
-import {isIntake, workPart} from '/page/app/session/tools.js';
+import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
@@ -222,31 +222,36 @@ async function startAllTickets(tickets, pick, startAll) {
   for (const button of buttons) button.disabled = true;
   drawBoard();
   const {count} = startAllLabel(offered.length);  // what the label said, from the read made when it opened
-  const pending = offered.slice(0, count);
-  const waiting = offered.length - pending.length;
-  for (const ticket of offered.slice(pending.length)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
+  for (const ticket of offered.slice(count)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
   const label = startAll.textContent;
   startAll.textContent = 'Stop starting';
-  let started = 0, left = 0;
-  for (const ticket of pending) {
+  // A ticket refused spends no slot: the next offered takes its turn, so one ticket that cannot start does not leave
+  // the slot idle and the rest unstarted (UX review round 2, held-and-signals F2).
+  let started = 0, left = 0, failed = 0, tried = 0;
+  for (const ticket of offered) {
+    if (started >= count) break;
+    tried++;
     const button = buttons[tickets.indexOf(ticket)];
     if (START.cancel) { left++; button.disabled = false; continue; }
     try {
       if (await startAgent(ticket.id, agent, {...launchOwn(), batch: START.batch})) {
         started++; button.textContent = 'Starting';
       }
-      else { button.disabled = false; button.textContent = 'Retry'; }
-    } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
+      else { failed++; button.disabled = false; button.textContent = 'Retry'; }
+    } catch (error) { toast(error.message); failed++; button.disabled = false; button.textContent = 'Retry'; }
   }
+  for (const ticket of offered.slice(tried)) {  // not reached: they wait for a slot, as their label says
+    buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
+  }
+  const waiting = offered.length - tried;
   pick.hold(false);
   D.starting = false;
   startAll.textContent = label;
   startAll.disabled = !buttons.some(button => !button.disabled);
-  if (started === pending.length) $('#dispatch').hidden = true;
+  if (!failed && !left) $('#dispatch').hidden = true;
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
-    + (started + left < pending.length ? ` ${pending.length - started - left} could not start; retry their tickets.`
-      : '')
+    + (failed ? ` ${failed} could not start; retry their tickets.` : '')
     + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
       ? 'with Autostart agents checked they start as agents finish.'
       : 'they wait until you start them or check Autostart agents.') : ''));
@@ -322,7 +327,8 @@ export async function renderAgents(only = null) {
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent)].join('\n'),
+    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent),
+      onOtherBase(one)].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
@@ -335,7 +341,7 @@ export async function renderAgents(only = null) {
 const SETUP = {closed: null};
 function setupNotice() {
   const waiting = D.signals.filter(one => one.signal === 'setup-not-working' && one.active !== false);
-  const talking = D.sessions.some(one => one.state === 'running' && D.states[one.session_id]?.about === 'system');
+  const talking = D.sessions.some(one => one.state === 'running' && isSystemSession(one, D.states));
   const raised = waiting.map(one => one.signal_key).sort().join(' ');
   if (!waiting.length || talking || raised === SETUP.closed) {
     if (bannered('setup')) unbanner('setup');
@@ -406,8 +412,16 @@ async function readDispatch() {
 }
 /* One agent at work in the key: whether the part of the map it uses shows in white, its glyph, its name and what it
  * works on, opening its thread, and Chat. */
+/* The name of the base an agent's session is pinned to when it is not the base shown, else empty: an agent at work on
+ * a base the page does not show is still listed and stoppable here, and says where it works (UX review round 2,
+ * 2026-10-17, project-scope F5). */
+export function onOtherBase(one) {
+  if (!one.base || one.base === S.base) return '';
+  for (let at = 0; at < S.bases.length; at++) if (S.bases[at].id === one.base) return S.bases[at].name;
+  return 'another base';
+}
 function agentRow(one) {
-  const name = agentName(one.agent);
+  const name = agentName(one.agent), elsewhere = onOtherBase(one);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
     h('input', {type: 'checkbox', class: 'inuse', checked: !INUSE.off.has(one.work_id),
@@ -416,7 +430,7 @@ function agentRow(one) {
     h('button', {class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
       title: `${name} on work ${one.work_id}: working`, onclick: () => agentAt(one.work_id, one.session_id)},
     h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, name),
-    h('small', {}, `on ${workPart(one.work_id)} · working`)),
+    h('small', {}, `on ${workPart(one.work_id)} · working${elsewhere ? ` · on ${elsewhere}` : ''}`)),
     chatButton({id: one.work_id}, `${name} on ${workPart(one.work_id)}`));
 }
 // what an agent works on, cut short, is its button's tooltip, `expandCut`: the button's click is its own

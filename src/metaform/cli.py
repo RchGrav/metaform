@@ -45,7 +45,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, caution_of, on_this_system
+from .module import Verb, call, caution_of, decided, on_this_system
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -423,6 +423,7 @@ def remove(args: list[str], folder: Path) -> None:
 def restore(args: list[str], folder: Path) -> None:
     """`restore project [<project>] [<backup>]`: a backup is brought back, the newest when none is named, PROJ-030. A
     `--confirm` the person pastes with it is taken as said: the restore backs up what it replaces first."""
+    confirm = '--confirm' in args
     args = [arg for arg in args if arg != '--confirm']
     if args[:1] != ['project'] or len(args) > 3:
         raise Stop('restore needs: project [<project>] [<backup>].', 'metaform restore project')
@@ -432,6 +433,11 @@ def restore(args: list[str], folder: Path) -> None:
     if caller.unconsented():  # a restore replaces the map the person and every agent sees, CLI-011
         raise caller.persons_decision(home.restore_caution(project_id, args[2] if len(args) == 3 else None),
                                       shlex.join(['metaform', 'restore', *args]), 'Restore')
+    # A restore clears first, and a clear stops the agents at work: with any at work it asks first and names them,
+    # as clear project does (UX review round 2, 2026-10-17, project-scope F2).
+    if not confirm and home.at_work(project_id):
+        raise Stop(home.restore_caution(project_id, args[2] if len(args) == 3 else None),
+                   f'If you are sure: {shlex.join(["metaform", "restore", *args, "--confirm"])}')
     restored = home.restore_project(project_id, args[2] if len(args) == 3 else None)
     out(restored.said)
     if restored.held_before:
@@ -1138,6 +1144,11 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         if verb.person_says and acting:  # the person's decision: an agent's --confirm never runs it, CLI-011
             raise caller.persons_decision(caution_of(verb, ctx), confirm, verb.page)
         raise Stop(caution_of(verb, ctx), f'If you are sure: {confirm}')
+    # a call that is the person's decision by what it asks, such as releasing a held ticket: it runs on their consent
+    # alone, from their terminal or the page, and needs no --confirm there (UX review round 2, held-and-signals)
+    deciding = decided(verb, ctx)
+    if deciding and caller.unconsented():
+        raise caller.persons_decision(deciding, shlex.join(['metaform', identifier, *rest]), verb.page)
     if inspect.iscoroutinefunction(verb.run):
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:
