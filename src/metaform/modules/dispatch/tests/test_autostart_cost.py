@@ -62,6 +62,13 @@ def test_a_pass_with_nothing_to_start_reads_once_and_takes_no_write_lock(dispatc
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
     monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
     dispatch.store.take_work(dispatch.id, by='claude 0123456789abcdef')  # the one slot is in use
+    # held as the admission gate counts it, by a live runner in the ledger (integration wave 2: the gate counts the
+    # runners that run, not the tickets taken)
+    import os
+    holder = module.ledger() / f'{os.getpid()}.json'
+    holder.parent.mkdir(parents=True, exist_ok=True)
+    holder.write_text(json.dumps({'pid': os.getpid(), 'born': recovery.identity(os.getpid()) or '',
+                                  'project': dispatch.store.project_id, 'work_id': dispatch.id, 'kind': 'worker'}))
     calls = Counter()
     atomic, work = Store.atomic, Store.__getattr__
 

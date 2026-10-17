@@ -189,7 +189,7 @@ def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switch
 @pytest.mark.req('CLI-011')
 def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(run, project):
     run('enable', 'dispatch')
-    call = ('dispatch', 'autostart', '--dispatch-autostart', '--dispatch-agents', '50')
+    call = ('dispatch', 'autostart', '--dispatch-autostart', '--dispatch-agents', '12')  # within the cap of 17
     refused = run(*call, cwd=project, env={'METAFORM_ROLE': 'system'}, ok=False)
     assert refused.returncode == 2, refused.stdout + refused.stderr
     assert 'dispatch_agents, dispatch_autostart are set only by the person' in refused.stderr

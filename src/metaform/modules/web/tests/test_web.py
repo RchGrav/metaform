@@ -8661,10 +8661,12 @@ def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes
     assert page.locator('#board .start-all').is_disabled()
     # A stale click queued before the board disabled must not replace the launch window or submit another batch.
     page.evaluate('async () => { await document.querySelector("#board .start-all").onclick(); }')
-    assert page.locator('#dispatch .start-all').is_disabled()
+    # while the run goes on its button is Stop starting, which ends the run between two starts (spawn-gate-stop-all)
+    assert page.locator('#dispatch .start-all').text_content() == 'Stop starting'
     assert [one['work_id'] for one in sent] == [failed]
     held[0].fulfill(status=400, content_type='application/json', body=json.dumps({'error': 'Fixture refusal'}))
-    page.wait_for_function('() => !document.querySelector("#dispatch .start-all").disabled')
+    page.wait_for_function('() => { const all = document.querySelector("#dispatch .start-all");'
+                           ' return !all.disabled && all.textContent !== "Stop starting"; }')
     assert page.is_visible('#dispatch')
     assert page.locator(f'#dispatch .ticket[data-id="{failed}"] .start').is_enabled()
     assert page.locator(f'#dispatch .ticket[data-id="{success}"] .start').is_disabled()
