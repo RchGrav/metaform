@@ -84,7 +84,7 @@ settings.boolean('web_node_shapes', True, scope='global',
 # what is bright. One choice of look, settings cleanup 2026-10-15, which removed web_graphics, its shadow that the page
 # rewrote from the theme. Written only when the person picks a theme; until then each browser keeps the theme it last
 # showed, so nobody's look changed when it became a setting. The names are page/index.html's #theme options.
-THEMES = ('space', 'black', 'midnight', 'graphite', 'plum', 'forest', 'ember', 'paper', 'mist')
+THEMES = ('space', 'black', 'midnight', 'graphite', 'plum', 'forest', 'ember', 'paper', 'mist', 'glass', 'tinted-glass')
 settings.choice('web_theme', list(THEMES), 'space', scope='global',
                 help="The page's theme: space draws the 3D map in outer space; every other theme draws it flat.",
                 details='Chosen in the View menu, with U for space and back, or here, and kept for every browser. '
