@@ -36,7 +36,7 @@
     {"read": "ledger/report.py", "line": 12},
     {"say": "The report only adds the cents it is given, so every total inherits the lost cent. The fix belongs in parse_amount."},
     {"step": "The report is correct; the cent is lost where the typed amount becomes cents."},
-    {"remember": {"name": "parse_amount truncates cents", "observations": ["ledger/amounts.py parse_amount computes int(float(text) * 100), which truncates: 19.99 becomes 1998 cents. Parse with decimal.Decimal and round to the cent."]}},
+    {"remember": {"name": "parse_amount truncates cents", "observations": ["ledger/amounts.py parse_amount computes int(float(text) * 100), which truncates: 19.99 becomes 1998 cents.", "Parse with decimal.Decimal and round to the cent."]}},
     {"say": "Found it. Parse with Decimal and round to the cent instead of truncating. Closing the ticket."},
     {"done": {"resolution": "parse_amount in ledger/amounts.py truncates float(text) * 100, so 19.99 becomes 1998 cents. Parse the text with decimal.Decimal and round to the cent instead.", "why": "The cent is lost where the typed amount becomes cents, and every total inherits it."}}
    ]
@@ -57,7 +57,7 @@
     {"read": "ledger/amounts.py", "line": 9},
     {"step": "The report already returns cents per category; the share is each total over the month's total."},
     {"say": "Noting for the next agent here that the report works in cents and leaves the formatting to the command line."},
-    {"remember": {"name": "monthly report works in whole cents", "observations": ["month_totals returns cents per category; ledger/cli.py formats them with format_cents and prints the lines."]}},
+    {"remember": {"name": "monthly report works in whole cents", "observations": ["month_totals returns cents per category.", "ledger/cli.py formats them with format_cents and prints the lines."]}},
     {"read": "ledger/store.py", "line": 20},
     {"say": "Planned: the command line divides each total by the month's total and prints a whole percent beside it."},
     {"step": "Planned the share column in ledger/cli.py; month_totals stays as it is."},
@@ -79,7 +79,7 @@
     {"step": "append writes ledger.json in place; an interrupted write truncates the only copy."},
     {"say": "Safer: write the entries to ledger.json.tmp, then os.replace it over ledger.json in one step."},
     {"read": "ledger/cli.py", "line": 15},
-    {"remember": {"name": "ledger.json has one copy", "observations": ["Ledger.append rewrites ledger.json in place with write_text; there is no backup or temporary file."]}},
+    {"remember": {"name": "ledger.json has one copy", "observations": ["Ledger.append rewrites ledger.json in place with write_text.", "There is no backup or temporary file."]}},
     {"say": "Recorded that here for whoever works on the store next. The command line needs no change."},
     {"step": "The fix is in Ledger.append alone: write a temporary file and replace ledger.json with it."},
     {"done": {"resolution": "Ledger.append should write ledger.json.tmp and os.replace it over ledger.json, so a crash leaves the old file whole.", "why": "Replacing a file is one step on every system; rewriting it in place is not."}}

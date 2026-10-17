@@ -1148,3 +1148,44 @@ def test_no_shipped_prompt_or_verb_text_tells_an_agent_to_store_everything_it_le
     assert not [(one, text[:80]) for text in texts for one in gone if one in (text or '')]
     assert 'Record each memory at the RE whose goal it serves' in (modules / 'memory' / 'resources' / 'prompts.xml') \
         .read_text(encoding='utf-8')
+
+
+def test_an_observation_counts_as_one_fact_by_its_form_alone():
+    """One sentence is one fact whatever it says; a second sentence, a semicolon or a line break outside code and
+    quotes is a second fact. Abbreviations, initials, decimals, paths and quoted text do not end a sentence."""
+    from metaform.modules.memory import _facts
+    single = ['Routes are ejected, never packed on delete.', 'Rich\'s home had voice_tts=browser on 2026-10-16.',
+              'parse_amount truncates: 19.99 becomes 1998 cents.', 'Uses e.g. Decimal, cf. ledger/amounts.py.',
+              'J. Smith wrote server.py.', 'Run `a; b. C` once.', 'Rich said "Stop. Go on; now." at noon.',
+              'Done!', 'No trailing stop']
+    compound = ['Routes drift. They are ejected.', 'month_totals returns cents; cli.py formats them.',
+                'First line.\nSecond line.', 'Fixed on 2026-10-16. 3 tests cover it.', 'Is it held? Yes.']
+    assert [text for text in single if _facts(text) != 1] == []
+    assert [text for text in compound if _facts(text) == 1] == []
+
+
+def test_a_memory_write_holding_several_facts_in_one_observation_is_refused_saying_to_split_it(run, mapped):
+    """create_entities and add_observations refuse an observation with more than one fact, naming each, with why and
+    the step that fixes it, and write nothing of the call; split into one fact each, the same call is kept. The tool
+    and its argument say so before the agent records."""
+    from metaform.modules.memory import MODULE
+    verbs = {verb.name: verb for verb in MODULE.verbs}
+    for name, noun, field_ in (('create_entities', 'entities', 'observations'),
+                               ('add_observations', 'observations', 'contents')):
+        assert 'one fact' in verbs[name].summary
+        schema = next(one for one in verbs[name].nouns if one.name == noun).schema
+        assert schema is not None and 'one fact each' in schema['items']['properties'][field_]['description']
+    prose = 'Routes drift under load; the ejector packs them. Nobody noticed.'
+    refused = m(run, 'create_entities', J([entity('drift', 'finding', 'Held alone.', prose)]), ROUTE, cwd=mapped,
+                ok=False)
+    assert refused.returncode == 2 and "1 observation(s) hold more than one fact: 'drift'" in refused.stderr
+    assert 'marked stale and corrected alone' in refused.stderr and 'Next: split each into one observation' in \
+        refused.stderr
+    assert mj(run, 'read_graph', cwd=mapped) == {'entities': [], 'relations': []}
+    mj(run, 'create_entities', J([entity('drift', 'finding', 'Routes drift under load.')]), ROUTE, cwd=mapped)
+    refused = m(run, 'add_observations', J([{'entityName': 'drift', 'contents': ['Fine.', prose]}]), cwd=mapped,
+                ok=False)
+    assert refused.returncode == 2 and 'hold more than one fact' in refused.stderr
+    split = ['Routes drift under load.', 'The ejector packs them.', 'Nobody noticed.']
+    mj(run, 'add_observations', J([{'entityName': 'drift', 'contents': split}]), cwd=mapped)
+    assert mj(run, 'open_nodes', J(['drift']), cwd=mapped)['entities'][0]['observations'] == split
