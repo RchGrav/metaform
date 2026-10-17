@@ -8,7 +8,7 @@ import {S} from '/page/app/core/reads.js';
 import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph, mascotDriven, driveMascot, releaseMascot, dropHeld} from '/page/app/figures/mascot.js';
-import {BUBBLE, say} from '/page/app/figures/cut.js';
+import {BUBBLE, say, readFor} from '/page/app/figures/cut.js';
 import {sight, viewing, approachPoint, capture} from '/page/app/figures/eyes.js';
 import {mayAnnounce, speakReply} from '/page/voice.js';
 import {ASKING, flushAsk} from '/page/app/figures/ask.js';
@@ -399,7 +399,7 @@ const MASCOT_ACTS = {
   // person's voice settings speak, VIEW-005
   say: (payload, node, {own}) => {
     const text = String(payload.text || '');
-    say(text.slice(0, 280), Math.min(12, 3 + text.length / 18), null, own, own ? '' : MASCOT.glyph || '');
+    say(text.slice(0, 280), readFor(text.slice(0, 280)), null, own, own ? '' : MASCOT.glyph || '');
     if (!payload.speak) return null;
     const aloud = mayAnnounce();
     if (aloud) speakReply(text.slice(0, 280));

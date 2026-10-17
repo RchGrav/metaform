@@ -48,6 +48,13 @@ export function say(text, seconds = 4, onClick = null, who = null, name = '') {
   el.classList.add('on');
   wake3d(seconds * 1000);
 }
+/* How long a line stays up: time to read it, 3 s and a second for each 15 letters, at most 30 s. A Chinese, Japanese
+ * or Korean character holds as much as a word's worth of letters, so it counts as 3. */
+const WIDE = /[ᄀ-ᇿ⺀-鿿가-힯豈-﫿＀-￯]/g;
+export function readFor(text) {
+  const words = String(text || '');
+  return Math.min(30, 3 + (words.length + 2 * (words.match(WIDE)?.length || 0)) / 15);
+}
 export function hush() { BUBBLE.until = 0; BUBBLE.el?.classList.remove('on'); }
 export function placeBubble() {  // over the mascot as it is drawn: the large map's figure, else the 2D one
   if (!BUBBLE.el) return;

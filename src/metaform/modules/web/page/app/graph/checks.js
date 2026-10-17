@@ -12,7 +12,7 @@ import {S, MEM} from '/page/app/core/reads.js';
 import {graphData, READY} from '/page/app/graph/data.js';
 import {ROAM, embody, bodies, characters} from '/page/app/figures/agents.js';
 import {MASCOT, mascotGlyph, mascotDriven} from '/page/app/figures/mascot.js';
-import {BUBBLE, say, CUT, cutMode, cutLink} from '/page/app/figures/cut.js';
+import {BUBBLE, say, readFor, CUT, cutMode, cutLink} from '/page/app/figures/cut.js';
 import {ATTN, mascotEvent} from '/page/app/figures/attention.js';
 import {EYE, mascotEyes} from '/page/app/figures/eyes.js';
 import {mascotScreen, figureAt} from '/page/app/figures/ask.js';
@@ -113,7 +113,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   figures2d: figures2dDrawn, figures: figuresDrawn, mascot: mascotState,
   // the voice's hooks into the mascot, `MASCOT`: what it says, shown in its bubble, and whether it is speaking now,
   // which makes it talk in its own way; and a feeling or a walk as its system agent asks, as the event stream does
-  mascotSaid: text => say(String(text || '').slice(0, 280), Math.min(12, 3 + String(text || '').length / 18)),
+  mascotSaid: text => say(String(text || '').slice(0, 280), readFor(String(text || '').slice(0, 280))),
   mascotSpeaking: on => { MASCOT.speaking = Boolean(on); wake3d(); },
   mascotEvent: payload => mascotEvent({project: S.project, ...payload}),
   // a body for a conversation agent, `BODIES`: give one, list them, and the characters to choose among

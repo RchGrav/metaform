@@ -8,7 +8,7 @@ import {onScreen} from '/page/app/graph/checks.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {SPOT} from '/page/app/figures/walk.js';
 import {MASCOT} from '/page/app/figures/mascot.js';
-import {BUBBLE, bubble, say, hush, CUT} from '/page/app/figures/cut.js';
+import {BUBBLE, bubble, say, readFor, hush, CUT} from '/page/app/figures/cut.js';
 import {G} from '/page/app/map3d/graph3d.js';
 import {hovered} from '/page/app/map3d/pick3d.js';
 import {DOCK} from '/page/app/dock/embody.js';
@@ -99,7 +99,7 @@ export function mascotHeard(target, lines) {
   if (onMap.some(said => sameWords(words).includes(sameWords(said)))) return;
   const short = words.length > 160 ? words.slice(0, 157) + '…' : words;
   const own = ROAM.figures.get(DOCK.mine)?.talk ? DOCK.mine : null;  // an embodied system agent answers from its figure
-  say(short, Math.min(12, 3 + words.length / 25), () => agentAt(DOCK.mine), own);
+  say(short, readFor(short), () => agentAt(DOCK.mine), own);
 }
 function clickMascot(event) {  // a click on the mascot where no node takes it: a word with it
   if (CUT.on || hovered || !mascotAt(event.clientX, event.clientY)) return;
