@@ -262,6 +262,7 @@ def test_reset_of_a_dead_intake_needs_no_ticket_or_progress_counter(dispatch, mo
                                'state': 'running', 'runner': 'dead-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
     monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])
     result = module.reset(context('dispatch', dispatch.folder, project='proj'))
-    assert result == {'released': [], 'sessions_ended': ['intake-dead'], 'still_working': []}
+    assert result == {'released': [], 'sessions_ended': ['intake-dead'], 'still_working': [], 'kept_for_you': [],
+                      'deferred': []}
     with store.tables(write=False) as tx:
         assert tx.get('agent_sessions', {'session_id': 'intake-session'})['state'] == 'ended'

@@ -127,20 +127,67 @@ def _pidfd_call(number: int, *args: Any) -> int:
 
 
 def stop_adapter(held: dict[str, Any]) -> None:
-    """Stop only the recorded adapter's group. Unknown or reused roots do not authorize killing another process."""
+    """Stop only the recorded adapter's group, and the group of each terminal the runner recorded for the session.
+    Unknown or reused roots do not authorize killing another process."""
     pid, expected = held.get('adapter_pid'), held.get('adapter_identity')
     if not isinstance(pid, int) or not isinstance(expected, str) or not expected:
         raise ValueError('the adapter identity was not recorded')
     current = identity(pid)
     if current is None or current not in ('', expected):
         raise ValueError('the adapter identity cannot be verified')
+    stop_group(pid, expected)
+    stop_terminals(held)
+
+
+def stop_terminals(held: dict[str, Any]) -> None:
+    """Stop the group of each terminal the runner recorded for the session; one whose pid holds another birth is
+    gone already."""
+    raw: Any = held.get('terminals') or []
+    for terminal in cast(list[Any], raw) if isinstance(raw, list) else []:
+        one = cast(dict[str, Any], terminal) if isinstance(terminal, dict) else {}
+        if isinstance(one.get('pid'), int) and isinstance(one.get('identity'), str) and one['identity']:
+            stop_group(int(one['pid']), str(one['identity']))
+
+
+def swept(held: dict[str, Any]) -> None:
+    """What a runner verifiably dead left running is stopped: its agent's group, its leader alive or ended, and its
+    terminals'. An agent pid that holds another birth, as every pid does after the machine restarts, means its group
+    is gone, since a group's id is not reused while it has members; one that cannot be inspected raises."""
+    pid, expected = held.get('adapter_pid'), held.get('adapter_identity')
+    if not isinstance(pid, int) or not isinstance(expected, str) or not expected:
+        raise ValueError('the adapter identity was not recorded')
+    stop_group(pid, expected)
+    stop_terminals(held)
+
+
+def stop_group(pid: int, expected: str) -> None:
+    """Stop the process group whose leader was born `expected`. A leader that has ended leaves its group to be ended by
+    its id: the kernel gives no new process that id while the group has members, so the group is still the recorded
+    one. A pid that holds another birth means the recorded group is gone, since its id was free to be reused. UX
+    review round 1, 2026-10-17 (interrupt-failure-recovery F3, dispatch-concurrency F6): an agent whose leader exited
+    when its runner died left its children, builds, servers and test runs, running for good."""
+    current = identity(pid)
+    if current is None:
+        raise ValueError('the agent identity cannot be verified')
+    if current not in ('', expected):
+        return
     if os.name == 'nt':
+        if current == '':  # Windows keeps no group by the leader's id once it has ended
+            return
         # Numeric taskkill cannot bind descendant cleanup to the birth we inspected.
         raise ValueError('safe process-group signalling is unavailable; Windows descendants need manual cleanup')
     members = group_members(pid)
     if not members:
         return
-    if current != expected or os.getpgid(pid) != pid or identity(pid) != expected:
+    if current == '':  # the leader is gone and its group lives on
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        if group_members(pid):  # a single confirmation, not a poll
+            raise ValueError('the agent group has not finished terminating; run dispatch recover again')
+        return
+    if os.getpgid(pid) != pid or identity(pid) != expected:
         raise ValueError('the surviving agent group cannot be verified')
     if not sys.platform.startswith('linux'):
         raise ValueError('safe process-group signalling is unavailable; the agent needs manual cleanup')
@@ -249,8 +296,9 @@ def recover(ctx: Context) -> dict[str, Any]:
 def gone(held: dict[str, Any]) -> bool:
     """Whether a session's runner and its agent are verifiably no longer running, from the births recorded when its
     ticket was taken: the runner's PID is absent or holds another process's birth, as after a crash or a restart of
-    the machine, and so is the agent's, or the agent's surviving group is stopped here, `stop_adapter`. False when any
-    of it cannot be established: a missing record or an uninspectable process is never taken for death."""
+    the machine, and the agent's group, whatever of it survived with its leader alive or gone, and each terminal's the
+    runner recorded, are stopped here, `swept`. False when any of it cannot be established: a missing record or
+    an uninspectable process is never taken for death."""
     runner, born = held.get('runner_pid'), held.get('runner_identity')
     if not isinstance(runner, int) or not isinstance(born, str) or not born:
         return False
@@ -260,14 +308,10 @@ def gone(held: dict[str, Any]) -> bool:
     adapter, adapter_born = held.get('adapter_pid'), held.get('adapter_identity')
     if not isinstance(adapter, int) or not isinstance(adapter_born, str) or not adapter_born:
         return False
-    now = identity(adapter)
-    if now is None:
+    try:  # the runner died: what it left of its agent and terminals is stopped first, or the session waits
+        swept(held)
+    except (OSError, ValueError, subprocess.SubprocessError):
         return False
-    if now == adapter_born:  # the runner died and left its agent running: stopped first, or the session waits
-        try:
-            stop_adapter(held)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return False
     return True
 
 
@@ -300,4 +344,11 @@ def settle(ctx: Context) -> list[str]:
             with own.tables() as tx:
                 tx.update('agent_sessions', {'session_id': row['session_id']}, {'state': 'ended', 'how': DEAD})
         settled.append(str(row['session_id']))
+        # the board shows the crash and what comes of it, UX review round 1, 2026-10-17 (interrupt-failure-recovery
+        # F5): settle published nothing, so a dead runner's resume came unannounced
+        from .signals import publish
+        publish(ctx, 'not-smooth', work_id=str(row['work_id']), session_id=str(row['session_id']),
+                key=str(row['session_id']),
+                reason='its runner died; while Autostart agents is checked it resumes in place once its wait is over '
+                       'and an agent slot is free')
     return settled

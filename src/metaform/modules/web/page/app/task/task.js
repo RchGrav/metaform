@@ -77,7 +77,7 @@ export function giveWork(id, text = '') {
   if (!$('#task .pickhost').firstChild) {
     $('#task .pickhost').append(PICKERS.task ||= agentPicker({label: 'Preferred agent', kept: true}));
   }
-  PICKERS.task.set(defaultAgent(element.address));
+  PICKERS.task.set(defaultAgent());
   fill($('#task .eligibility'), eligibilityPicker([], agents => { K.eligible = agents; }));
   $('#task .title').textContent = `Add Task · ${named(element)}`;
   $('#task .text').replaceChildren(...(text ? [text] : []));

@@ -81,7 +81,8 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     with page.expect_response(lambda response: '/api/eligible' in response.url):
         card.locator('.eligible input.any').check()
     page.wait_for_function(f'() => document.querySelector(\'#board .card[data-id="{work_id}"] .eligible summary\').textContent === "Eligible agents: Any agent"')
-    assert card.locator('select.agent').input_value() == 'codex'
+    # the Default agent, Claude Code, whatever the ticket's area (UX review round 1, 2026-10-17)
+    assert card.locator('select.agent').input_value() == 'claude'
     assert problems == []
 
 
@@ -115,6 +116,9 @@ def test_start_window_skips_ineligible_first_ticket_without_losing_its_glyph(run
     page.click('#board .start-all')
     choose_agent(page, '#dispatch', 'codex')
     assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == [later, any_agent]
+    # what it starts is said before the click, from the slots read as the window opened, UX review round 1
+    page.wait_for_function('() => document.querySelector("#dispatch .start-all").textContent === "Start 2 of 2"')
+    assert 'agent slots free of 5' in page.inner_text('#dispatch .slots')
     page.click('#dispatch .start-all')
     page.wait_for_selector('#dispatch', state='hidden')
     assert [one['work_id'] for one in sent] == [later, any_agent]

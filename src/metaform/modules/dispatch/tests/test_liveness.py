@@ -383,6 +383,81 @@ def test_a_session_whose_runner_and_agent_died_with_the_machine_is_settled_for_t
 
 
 @pytest.mark.req('MAP-049')
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='a leaderless group is read with ps here, on Linux')
+@pytest.mark.parametrize('cleanup', ['settle', 'reset'])
+def test_a_runner_killed_alone_leaves_nothing_of_its_agent_running_once_settled_or_reset(dispatch, run, cleanup):
+    """UX review round 1, 2026-10-17 (interrupt-failure-recovery F3, dispatch-concurrency F6): a runner killed alone
+    let its agent end on its closed stdin, but what the agent had started, a build, a server, a test run, kept running
+    for good, and settle and reset took the session for gone while a new agent took its ticket. The group the runner
+    recorded is ended, its leader gone or not."""
+    from metaform.module import context
+    from metaform.modules.dispatch import recovery
+    from metaform.modules.dispatch.tests.test_dispatch import gone
+
+    dispatch.start('hold')
+    [grandchild] = eventually(lambda: dispatch.logged('grandchild'))
+    dispatch.process.kill()
+    dispatch.process.wait()
+    assert gone(dispatch.logged('pid'), limit=15), 'the agent ends with its stdin'
+    assert alive(grandchild), 'what it started outlives it'
+    if cleanup == 'settle':
+        assert len(recovery.settle(context('dispatch', dispatch.folder, project='proj'))) == 1
+    else:
+        reset = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
+        assert reset['released'] == [dispatch.id] and reset['deferred'] == [], reset
+    assert gone([grandchild]), 'the group its runner recorded is ended'
+
+
+@pytest.mark.req('MAP-049')
+@pytest.mark.skipif(os.name == 'nt', reason='the stand-in runners are POSIX sleeps')
+def test_after_a_crash_the_supervisor_resumes_no_more_sessions_than_the_slots_and_the_rest_wait(dispatch, run,
+                                                                                               monkeypatch):
+    """UX review round 1, 2026-10-17 (interrupt-failure-recovery F1, settings-govern-behavior F1, runaway-and-load F1,
+    orchestrator-system-agent F3): after a crash every dead session was resumed in one pass whatever dispatch_agents
+    said, so 46 crashed agents would come back at once. A retry goes through the gate: one slot resumes one, the
+    oldest, and the other two wait with their count and their time as they were."""
+    import subprocess
+    import time
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import recovery
+    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    monkeypatch.setattr(module, 'RETRY_SECONDS', 0)
+    real, runners = subprocess.Popen, []
+
+    def runner(command, **given):  # a live process for each runner the gate starts, so the gate counts it
+        runners.append(real(['sleep', '60'], start_new_session=True))
+        runners[-1].args = command
+        return runners[-1]
+    monkeypatch.setattr(module.subprocess, 'Popen', runner)
+    tickets = [dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Change {n}').id for n in range(3)]
+    with Store('proj', module='dispatch').tables() as tx:
+        for n, work_id in enumerate(tickets):
+            tx.insert('agent_sessions', {'session_id': f's{n}', 'work_id': work_id, 'agent': 'claude', 'state': 'ended',
+                                         'how': recovery.DEAD, 'started': '2026-10-17T00:00:00Z', 'seq': n + 1,
+                                         'origin': module.origin()})
+            tx.insert('session_lines', {'session_id': f's{n}', 'name': 'state', 'work_id': work_id, 'kind': 'state',
+                                        'seq': 1, 'text': json.dumps({'capabilities': {'load': True},
+                                                                      'cwd': str(dispatch.folder)})})
+            tx.insert('session_attempts', {'work_id': work_id, 'session_id': f's{n}', 'retries': 0,
+                                           'next_at': time.time() - 1, 'how': recovery.DEAD, 'seq': n + 1})
+    for n, work_id in enumerate(tickets):
+        dispatch.store.take_work(work_id, by=f'claude s{n}')
+    try:
+        found = module.retry(context('dispatch', dispatch.folder, project='proj'), Store('proj'))
+        assert [one['work_id'] for one in found['retried']] == tickets[:1], 'the oldest end, alone'
+        assert found['retry_waiting'] == tickets[1:]
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            assert [tx.get('session_attempts', {'work_id': one})['retries'] for one in tickets] == [1, 0, 0]
+        assert len(runners) == 1 and 'resume=s0' in runners[0].args
+    finally:
+        for one in runners:
+            one.kill()
+            one.wait()
+
+
+@pytest.mark.req('MAP-049')
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='safe live group cleanup requires Linux pidfds')
 def test_automatic_recovery_runs_before_autostart_selection_even_with_autostart_off(dispatch, run):
     run('set', '--dispatch-recovery=automatic', cwd=dispatch.folder)

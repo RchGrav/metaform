@@ -51,14 +51,16 @@
           <div class="agent-sessions" aria-label="Agent conversations" hidden></div>
           <button id="broadcastBtn" type="button" role="menuitem" aria-controls="broadcast" title="Tell every agent working on this project something at once, as your own message">Broadcast…</button>
           <div class="label">Settings</div>
-          <div class="menu-field agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting"><label for="agentCount">Agents at once</label><input id="agentCount" type="number" min="1" max="17" step="1"></div>
+          <div class="menu-field agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting"><label for="agentCount">Agents at once</label><input id="agentCount" type="number" min="1" step="1"></div>
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
-          <p class="menu-hint">Chats, issues and intakes start with the default unless you choose another. Autostart starts each ticket with the agent its card prefers.</p>
+          <p class="menu-hint">Chats, issues, intakes and the tickets Autostart starts use the default unless you choose another, on the card or where you start it.</p>
           <div class="menu-field agent-prompts" title="How agents' permission prompts are answered. Saved as the dispatch_prompts setting; every agent reads it at its next prompt, so a change reaches agents already running"><label for="promptsPick">Agent prompts</label><select id="promptsPick" disabled></select><p class="said" id="promptsSaid" role="status"></p></div>
           <button id="shareBtn" type="button" role="menuitem">Share a screen with agents…</button>
           <button id="agentViewBtn" type="button" role="menuitem" aria-controls="agentview" title="Exactly what an agent connecting to this project receives: the connect message, the glossary with its tools, and the selected node's brief, each with its size">What an agent sees…</button>
           <button id="allSettingsBtn" type="button" role="menuitem" aria-controls="settings" title="Every setting of this project's folder and its modules, and which modules are on, as metaform config shows them">All settings…</button>
           <div class="sep" role="separator"></div>
+          <button id="stopAllBtn" class="danger" type="button" role="menuitem" title="Stop every agent of this project and turn Autostart off, so nothing starts in their place. Each can be resumed afterwards">Stop all agents</button>
+          <button id="stopHomeBtn" class="danger" type="button" role="menuitem" title="Stop every agent of every project on this machine, and turn Autostart off in each">Stop all agents on this machine</button>
           <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
         </div>
       </div>
@@ -361,6 +363,7 @@
     <div class="field"><span>Agent</span><div class="pickhost"></div></div>
     <div class="field permissions"><span>Permissions <small>· this launch only</small></span><div class="controls"></div><p class="hint"></p><p class="risk warnline" hidden></p></div>
     <button class="start-all btn primary" type="button" hidden>Start all</button>
+    <p class="slots hint" hidden></p>
     <div class="tickets"></div>
   </div>
 </div>

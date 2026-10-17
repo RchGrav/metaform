@@ -26,7 +26,7 @@ import {conditionLabel, partAt, taskWords} from '/page/app/board/refs.js';
 import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
-import {readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 
@@ -105,13 +105,18 @@ export function startWindow(title, tickets, all = false) {
   const startAll = $('#dispatch .start-all');
   let shown = tickets;  // the tickets the window offers now, for the agent chosen
   startAll.hidden = !all;
+  $('#dispatch .slots').hidden = !all;
   startAll.disabled = !tickets.length;
   startAll.onclick = () => startAllTickets(shown, pick, startAll);
   pick.hold(false);
+  let counted = false;  // Start all waits for the slots read as the window opens, so its label is what it starts
   const draw = () => {
     const agent = pick.value();
     shown = all ? startable(tickets, agent) : tickets;
-    startAll.disabled = !shown.length || !agent;
+    const said = startAllLabel(shown.filter(ticket => allowsAgent(ticket, agent)).length);
+    startAll.textContent = counted ? said.label : 'Start all';
+    $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
+    startAll.disabled = !shown.length || !agent || !counted || !said.count;
     fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
       conditionLabel(ticket), startButton(ticket, agent, pick),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
@@ -122,7 +127,7 @@ export function startWindow(title, tickets, all = false) {
   START.permissionsFor = null;  // drawn afresh, at the project's settings
   draw();
   $('#dispatch').hidden = false;
-  readHarnesses().then(() => { if (!$('#dispatch').hidden && START.draw === draw) draw(); });
+  readHarnesses().then(() => { counted = true; if (!$('#dispatch').hidden && START.draw === draw) draw(); });
 }
 /* The window's permissions, for the launches it starts only: how the agent's permission prompts are answered,
  * dispatch_prompts, and its harness's own mode, as it offered them at its last session here, `dispatch options`.
@@ -184,26 +189,43 @@ function startable(candidates, agent) {
     return true;
   });
 }
+/* How many of the tickets offered Start all starts now: the agent slots free as dispatch's gate counts them, the
+ * project's and the machine's, read when the window opens; a count that cannot be read starts none, never all. UX
+ * review round 1, 2026-10-17 (forensic cause 3, dispatch-concurrency F5): the person learned how many started only
+ * from the toast afterwards, and an unread count offered every ticket. */
+export function startAllLabel(offered) {
+  const free = HARNESS.free, slots = HARNESS.slots;
+  if (free === null || free === undefined) return {count: 0, label: 'Start all', said: 'Could not read the agent '
+    + 'slots, so Start all starts none; start a ticket on its own, or open this window again.'};
+  const count = Math.min(free, offered);
+  const machine = slots && slots.machine_free < Math.max(0, slots.limit - slots.used)
+    ? `; this machine runs ${slots.machine_used} of the ${slots.machine_limit} it allows` : '';
+  return {count, label: `Start ${count} of ${offered}`, said: `${free} agent slot${free === 1 ? '' : 's'} free of `
+    + `${slots ? slots.limit : '?'}${machine}. ${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
+}
 /* Start all: the agent chosen started on each ticket offered that is not started yet, one after another, up to the
- * agent slots free now; the rest wait in To do, and autostart starts them as slots free. A start that fails can be
- * retried on its own ticket. */
+ * agent slots free now, as its label says before the click; the rest wait in To do, and autostart starts them as
+ * slots free. Stop starting ends the run between two starts. A start that fails can be retried on its own ticket. */
 async function startAllTickets(tickets, pick, startAll) {
-  if (D.starting) return;
+  if (D.starting) { START.cancel = true; return; }  // the button reads Stop starting while it runs
   D.starting = true;
+  START.cancel = false;
   const agent = pick.value();
   const buttons = [...$('#dispatch .tickets').querySelectorAll('button.start')];
   const offered = tickets.filter((ticket, i) => !buttons[i].disabled);
-  startAll.disabled = true;
   pick.hold(true);
   for (const button of buttons) button.disabled = true;
   drawBoard();
-  const {free} = await readHarnesses();
-  const pending = free === null ? offered : offered.slice(0, free);
+  const {count} = startAllLabel(offered.length);  // what the label said, from the read made when it opened
+  const pending = offered.slice(0, count);
   const waiting = offered.length - pending.length;
   for (const ticket of offered.slice(pending.length)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
-  let started = 0;
+  const label = startAll.textContent;
+  startAll.textContent = 'Stop starting';
+  let started = 0, left = 0;
   for (const ticket of pending) {
     const button = buttons[tickets.indexOf(ticket)];
+    if (START.cancel) { left++; button.disabled = false; continue; }
     try {
       if (await startAgent(ticket.id, agent, launchOwn())) { started++; button.textContent = 'Starting'; }
       else { button.disabled = false; button.textContent = 'Retry'; }
@@ -211,10 +233,13 @@ async function startAllTickets(tickets, pick, startAll) {
   }
   pick.hold(false);
   D.starting = false;
+  startAll.textContent = label;
   startAll.disabled = !buttons.some(button => !button.disabled);
   if (started === pending.length) $('#dispatch').hidden = true;
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
-    + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : '')
+    + (left ? ` You stopped the run; ${left} were not started.` : '')
+    + (started + left < pending.length ? ` ${pending.length - started - left} could not start; retry their tickets.`
+      : '')
     + (waiting ? ` ${waiting} wait in To do for a free agent slot; with Autostart agents checked they start as agents`
       + ' finish.' : ''));
   await renderBoard();
@@ -234,7 +259,7 @@ function startButton(ticket, agent, pick) {
       : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
-const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null};
+const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false};
 $('#dispatch .close').onclick = () => { $('#dispatch').hidden = true; START.permissionsFor = null; };
 overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .btn'),
   close: () => { $('#dispatch').hidden = true; START.draw = null; START.permissionsFor = null; }});

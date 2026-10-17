@@ -212,6 +212,9 @@ def test_report_writes_one_zip_here_with_the_error_and_versions_and_masks_every_
                                    'started': '2026-10-15T00:00:00Z', 'seq': seq})
     run('set', '--voice-endpoint-url', 'https://bob:hunter2PLANTEDpw@voice.example.com/v1', cwd=project)
     (home / 'run').mkdir(parents=True, exist_ok=True)
+    kept = home / 'run' / 'dispatch' / 'logs'  # where runners write since UX review round 1, 2026-10-17
+    kept.mkdir(parents=True)
+    (kept / 'proj-work-ghi.log').write_text('dispatch failed: PLANTED-KEPT-RUNNER-ERROR\n')
     (home / 'run' / 'web.log').write_text(
         '2026-10-14T01:00:05+00:00 Error answering:\nTraceback (most recent call last):\n  File "s.py", line 2\n'
         'ValueError: PLANTED-WEB-ERROR\nAuthorization: Bearer ghp_PLANTEDTOKEN0123456789abcdefABCD\n')
@@ -226,6 +229,7 @@ def test_report_writes_one_zip_here_with_the_error_and_versions_and_masks_every_
     assert 'PLANTED-WEB-ERROR' in texts['errors.txt'] and 'PLANTED-RUNNER-ERROR' in texts['errors.txt']
     assert 'logs/dispatch/metaform-dispatch-abc.log' in texts and 'settings.txt' in texts
     assert 'logs/dispatch/metaform-dispatch-intake-intake-def.log' in texts
+    assert 'PLANTED-KEPT-RUNNER-ERROR' in texts['logs/run/dispatch/logs/proj-work-ghi.log']
     assert 'https://****pw@voice.example.com/v1' in texts['settings.txt']
     every = ''.join(texts.values())
     assert 'ANOTHER-HOMES-RUNNER' not in every  # a runner log of no session of this home's
