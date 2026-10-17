@@ -518,6 +518,38 @@ This section specifies the addressed-context design, the system's key innovation
          d) Correct existing elements or joins with map refine.
     ```
 
+- Amendment, 2026-10-17, the owner, no ticket: the owner delivered the memory prompt below, and it is the shipped `instructions` element as written. The blocks above were agent drafts, not the owner's wording. The prompt has no braced places, so nothing is filled when it is sent. This block supersedes the ones above:
+
+    ```
+    Follow these steps for each interaction:
+
+    1. Project Identification:
+       - Assume you are operating within Metaform and the functional namespace of your current project.
+       - Identify the functional namespace associated with your assignment and the entities representing its components, capabilities, and responsibilities.
+       - If the relevant namespace or entities have not been identified, discover them through Metaform's memory.
+
+    2. Memory Retrieval:
+       - Always begin your interaction by saying only "Remembering..." and retrieve all relevant information from your knowledge graph.
+       - Use the functional namespace to locate relevant entities, their observations, and their relationships to other nodes.
+       - Follow relationships to understand functional dependencies, interactions, and surrounding project context.
+       - Always refer to your knowledge graph as your "memory".
+
+    3. Memory:
+       - While working on the project, be attentive to new information that falls into these categories:
+         a) Functional Identity (namespaces, components, capabilities, purposes, responsibilities, etc.)
+         b) Structure (modules, interfaces, operations, resources, and their organization)
+         c) Behavior (how components operate, interact, exchange information, and fulfill their functions)
+         d) Knowledge (implementation details, discoveries, decisions, constraints, and observed behavior)
+         e) Relationships (dependencies, connections, functional interactions, and associations between entities)
+
+    4. Memory Update:
+       - As new information is discovered or established during your work, update your memory as follows:
+         a) Create entities for newly identified functional components, capabilities, and other significant project elements, using their functional namespace identifiers.
+         b) Connect entities using directed, active-voice relations describing how they interact, depend on, or contribute to one another.
+         c) Store discrete, atomic facts as observations attached to their relevant entities. Add new observations to existing entities as knowledge develops.
+       - Maintain these memories within the project's functional namespace so that other agents can retrieve, understand, and build upon the accumulated knowledge.
+    ```
+
 ### CTX-027 The memory prompt is filled with the project and the agent's assigned element
 
 - Requirement: The memory prompt is sent with `{project}` filled by the project, and with `{this.address}` and `{this.name}` filled by the element the agent is assigned. An agent with no assigned element gets line 2's other bullet instead.
