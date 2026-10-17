@@ -828,7 +828,7 @@ def test_an_older_runner_without_status_whose_pid_is_that_runner_reads_running_a
     [found] = module.sessions(Store('proj', module='dispatch'))
     assert found['state'] == 'running'
     ctx = SimpleNamespace(folder=dispatch.folder, project='proj')
-    with pytest.raises(Stop, match=dispatch.id):
+    with pytest.raises(Stop, match='Write notes.txt'):
         module.startable(ctx, dispatch.store, dispatch.store.ticket(later).work, 'claude')
     assert dispatch.session().extra['state'] == 'running'
 

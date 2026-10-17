@@ -8744,7 +8744,9 @@ def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes
 @pytest.mark.req('VIEW-037')
 def test_the_start_window_says_the_free_slots_and_a_card_says_why_its_agent_ended(run, web, mapped, browser):
     """UX review round 1, web-gui-controls F10 and F11: with no slot free the Start window offered nine enabled Start
-    buttons, and a card read `Ended · dispatch starting <32 hex>` with its cause only in the session row."""
+    buttons, and a card read `Ended · dispatch starting <32 hex>` with its cause only in the session row. Round 2,
+    held-and-signals F2 and F5: the page never received `after_work`, so a waiting ticket never said Waiting on and
+    Start all offered it first; a failed start's card said Did not start and Starting… at once."""
     import re
 
     from metaform.data import Node, Store
@@ -8759,6 +8761,9 @@ def test_the_start_window_says_the_free_slots_and_a_card_says_why_its_agent_ende
     store.take_work(busy, by=f'claude s-{busy}')
     live_session(busy)
     store.add_work(node, 'unbuilt', task='Waiting for a slot')
+    after = store.add_work(node, 'unbuilt', task='Waits on Running').id
+    with Store('proj', module='map').tables() as tx:  # as `map work op=edit after_work=` keeps it
+        tx.insert('after', {'work_id': after, 'works': [busy]})
     failed = store.add_work(node, 'unbuilt', task='Its launch failed').id
     token = 'dispatch starting ' + 'a' * 32
     store.take_work(failed, by=token)
@@ -8773,11 +8778,14 @@ def test_the_start_window_says_the_free_slots_and_a_card_says_why_its_agent_ende
     card = page.locator(f'#board .card[data-id="{failed}"]')
     card.locator('.ended .why').wait_for()
     shown = card.text_content()
-    assert 'Connection closed' in shown and 'Starting…' in shown, shown
+    assert 'Connection closed' in shown and 'Did not start' in shown and 'Starting…' not in shown, shown
     assert not re.search('[0-9a-f]{32}', shown), 'no reservation token on the card'
     assert card.locator('.ended button.back').is_visible()
+    waits = page.locator(f'#board .card[data-id="{after}"] .waiting-on').text_content()
+    assert re.fullmatch(r'Waiting on code\.alarm\.audible#\d+', waits), waits
     page.evaluate('async () => { await document.querySelector("#board .start-all").onclick(); }')
     page.wait_for_selector('#dispatch:not([hidden])')
+    assert page.locator(f'#dispatch .ticket[data-id="{after}"]').count() == 0, 'Start all leaves a waiting ticket out'
     page.wait_for_function('() => document.querySelector("#dispatch .slots").textContent.startsWith("0 of 1")')
     assert page.locator('#dispatch .start-all').is_disabled()
     assert all(button.is_disabled() for button in page.locator('#dispatch .ticket .start').all())

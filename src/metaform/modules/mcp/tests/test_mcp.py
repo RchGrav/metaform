@@ -898,6 +898,51 @@ def test_a_dispatched_system_agents_switch_runs_once_on_the_persons_allow_in_its
         made.close()
 
 
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('MCP-006')
+def test_a_dispatched_system_agent_releases_a_held_ticket_only_on_the_persons_allow_in_its_chat(
+        run, home, mapped, tmp_path):
+    """UX review round 2, held-and-signals F4: releasing a held ticket is the person's act. The dispatched system
+    agent's move of one to To do waits on a consent card naming the ticket; Allow releases it, Decline leaves the
+    other held. Every agent the runner could start is the fake agent."""
+    import threading
+
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
+    made = Dispatch(run, home, mapped, tmp_path)
+    store = Store('proj')
+    first, second = (store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task=f'Proposal {n}',
+                                    title=f'Proposal {n}', held=True).id for n in (1, 2))
+    try:
+        made.start('hold', 'system=true')
+        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
+                                          if row.get('state') == 'running' and row.get('runner')), None))
+        cards: list[dict] = []
+
+        def person():  # on the page: Allow the first card, Decline the second
+            for choice in ('accept', 'decline'):
+                card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
+                                                if one['kind'] == 'elicitation' and one['data'].get('consent')
+                                                and one['data']['state'] == 'waiting'), None), limit=60)
+                run('dispatch', 'permit', made.id, card['request'], '--', choice, cwd=mapped, isolated=True)
+                cards.append(card)
+        answering = threading.Thread(target=person)
+        answering.start()
+
+        async def check(client):
+            return (await called(client, 'map_work', {'op': 'move', 'id': first, 'column': 'todo'}),
+                    await called(client, 'map_work', {'op': 'move', 'id': second, 'column': 'todo'}))
+        allowed, declined = consenting(home, mapped, check, answers=(), env={
+            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner})
+        answering.join(timeout=60)
+        assert allowed.is_error is False, text(allowed)
+        assert declined.is_error is True, text(declined)
+        assert 'Proposal 1' in json.dumps(cards[0]) and 'Proposal 2' in json.dumps(cards[1])
+        assert store.ticket(first).work.held is False and store.ticket(second).work.held is True
+    finally:
+        made.stop()
+        made.close()
+
+
 @pytest.mark.req('MCP-006')
 def test_switching_the_active_base_asks_for_confirm(run, home, mapped):
     """map activate, add-base and collapse change the active map for every agent and the page of a project, and any

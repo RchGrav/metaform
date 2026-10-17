@@ -182,6 +182,12 @@ class Verb:
     picker", so the refusal can send the person there. `cautioned`, given the call's context, says the caution with what the call
     would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
+
+    `person_decides`, given the call's context, says the caution when this one call is the person's decision by what
+    it asks, though the verb is not, such as `map work` releasing a held ticket or `dispatch start` starting one: None
+    when it is not. Such a call runs only with the person's consent, through the same channels as a `person_says`
+    verb, and needs no `--confirm` at their own terminal; any other is refused with the caution and the command the
+    person runs. It reads only the record the call names; a call it cannot read is left to say what is wrong itself.
     """
     name: str
     run: VerbFunction
@@ -206,6 +212,7 @@ class Verb:
     person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
     page: str | None = None
+    person_decides: Callable[[Context], str | None] | None = None
 
     def __post_init__(self) -> None:
         if self.person_says and not self.caution:
@@ -816,6 +823,18 @@ def caution_of(verb: Verb, ctx: Context) -> str:
         if said:
             return said
     return verb.caution
+
+
+def decided(verb: Verb, ctx: Context) -> str | None:
+    """The caution of a call that is the person's decision by what it asks, `Verb.person_decides`; None when it is not,
+    and when the call cannot be read, such as a ticket that is not there, so the call itself says what is wrong."""
+    if verb.person_decides is None or verb.person_says:
+        return None
+    from .data import StoreError
+    try:
+        return verb.person_decides(ctx)
+    except (Stop, StoreError):
+        return None
 
 
 def agent_caller() -> str | None:

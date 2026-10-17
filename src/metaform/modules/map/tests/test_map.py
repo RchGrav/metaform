@@ -1167,8 +1167,9 @@ def glyph_of(record):
 @pytest.mark.req('VIEW-040')
 def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tickets_not_taken_or_done(run, mapped):
     """Tickets with the same glyph are one agent's, done one at a time, and a button distributes work over N agents
-    by assigning N glyphs evenly. To do first, then Backlog, each in its board order; a ticket taken or done keeps its glyph,
-    and an exclude record is not a ticket."""
+    by assigning N glyphs evenly, over the tickets that start by themselves, in To do's board order; a ticket taken or
+    done keeps its glyph, and an exclude record is not a ticket. A held Backlog ticket and one waiting on an open ticket
+    are dealt none: a glyph agent took every held ticket after its own (UX review round 2, held-and-signals F3)."""
     from metaform.modules.map import AGENT_GLYPHS
     store = Store('proj')
     kitchen, alarm = Node('element', 'code.timer.kitchen'), Node('element', 'code.alarm.audible')
@@ -1183,22 +1184,25 @@ def test_distributing_over_n_agents_gives_the_first_n_glyphs_in_turn_to_the_tick
     j(run, 'work', 'op=edit', f'id={done.id}', 'glyph=snail', cwd=mapped)  # outside the first three dealt
     store.finish_work(done.id, 'fixed')
     outside = store.add_work(kitchen, 'unbuilt', note='vendored')  # a stage, no task: never dealt, never started
+    after = store.add_work(kitchen, 'unbuilt', task='after the first')
+    j(run, 'work', 'op=edit', f'id={after.id}', f'after_work=["{todo[0].id}"]', cwd=mapped)
     given = j(run, 'work', 'op=distribute', 'agents=3', cwd=mapped)['results']
-    order = [todo[4], todo[0], todo[1], todo[2], todo[3], backlog[1], backlog[0]]
+    order = [todo[4], todo[0], todo[1], todo[2], todo[3]]
     assert [record['id'] for record in given] == [record.id for record in order]
     first = AGENT_GLYPHS[:3]
     assert 'owl' not in first and 'snail' not in first
-    assert [glyph_of(record) for record in given] == [first[0], first[1], first[2], first[0], first[1], first[2],
-                                                      first[0]]
+    assert [glyph_of(record) for record in given] == [first[0], first[1], first[2], first[0], first[1]]
     read = {record['id']: record for given_open in ('true', 'false')
             for record in j(run, 'work', 'limit=0', f'open={given_open}', cwd=mapped)['results']}
     assert [glyph_of(read[record.id]) for record in order] == [glyph_of(record) for record in given]
-    assert [glyph_of(read[one.id]) for one in (taken, done, outside)] == ['owl', 'snail', None]
-    again = j(run, 'work', 'op=distribute', 'agents=1', cwd=mapped)['results']  # one agent: every open ticket in one lane
-    assert {glyph_of(record) for record in again} == {AGENT_GLYPHS[0]} and len(again) == 7
+    assert [glyph_of(read[one.id]) for one in (taken, done, outside, *backlog, after)] == [
+        'owl', 'snail', None, None, None, None]
+    again = j(run, 'work', 'op=distribute', 'agents=1', cwd=mapped)['results']  # one agent: every ready ticket, one lane
+    assert {glyph_of(record) for record in again} == {AGENT_GLYPHS[0]} and len(again) == 5
     read = {record['id']: record for given_open in ('true', 'false')
             for record in j(run, 'work', 'limit=0', f'open={given_open}', cwd=mapped)['results']}
-    assert [glyph_of(read[one.id]) for one in (taken, done, outside)] == ['owl', 'snail', None]
+    assert [glyph_of(read[one.id]) for one in (taken, done, outside, *backlog, after)] == [
+        'owl', 'snail', None, None, None, None]
 
 
 @pytest.mark.req('VIEW-040')

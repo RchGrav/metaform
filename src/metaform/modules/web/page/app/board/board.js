@@ -153,7 +153,7 @@ function cardTop(ticket) {
   waitsOn(ticket).length ? h('span', {class: 'statechip submitted waiting-on',
     title: 'No agent starts it by itself until these are done'},
   `Waiting on ${waitsOn(ticket).map(handleOf).join(', ')}`) : null,
-  takenWords(ticket),
+  takenWords(ticket, Boolean(endedStatus(ticket))),
   ageOf(ticket));
 }
 /* The open tickets a ticket waits on, `after_work`: no agent starter starts it until they are done, VIEW-042. */
@@ -171,14 +171,8 @@ export const startsByItself = ticket => waiting(ticket) && !ticket.held && !tick
  * the one act that puts it back: its session's own end, as the chat's thread says it, UX review round 1
  * (web-gui-controls F11). */
 function cardEnded(ticket) {
-  if (ticket.done || !ticket.taken) return null;
-  // the session that holds it now: the one its taking names, or, for a start's reservation, one begun since it
-  const session = D.sessions.filter(one => one.work_id === ticket.id).at(-1);
-  const by = String(ticket.taken_by || '');
-  if (!session || !(by.endsWith(` ${session.session_id}`)
-    || (by.startsWith('dispatch starting ') && String(session.started || '') >= String(ticket.taken)))) return null;
-  const status = ticketStatus(ticket);
-  if (!status || ['running', 'input_required', 'completed'].includes(status.state)) return null;
+  const status = endedStatus(ticket);
+  if (!status) return null;
   const back = async event => {
     event.stopPropagation();
     event.currentTarget.disabled = true;
@@ -187,6 +181,18 @@ function cardEnded(ticket) {
   return h('div', {class: 'ended'}, h('span', {class: 'why'}, status.why || status.words),
     h('button', {class: 'btn sm back', type: 'button', title: 'Put the ticket back in To do, its steps and log kept',
       onclick: back}, 'Back to To do'));
+}
+/* The state of a taken ticket whose session has ended, or null: the session that holds it now, the one its taking
+ * names or, for a start's reservation, one begun since it, read once for the card's top line and its ended row, so
+ * the two never say different things. */
+function endedStatus(ticket) {
+  if (ticket.done || !ticket.taken) return null;
+  const session = D.sessions.filter(one => one.work_id === ticket.id).at(-1);
+  const by = String(ticket.taken_by || '');
+  if (!session || !(by.endsWith(` ${session.session_id}`)
+    || (by.startsWith('dispatch starting ') && String(session.started || '') >= String(ticket.taken)))) return null;
+  const status = ticketStatus(ticket);
+  return !status || ['running', 'input_required', 'completed'].includes(status.state) ? null : status;
 }
 /* How many of its planned steps have been filed, as a bar. */
 function cardProgress(ticket) {
@@ -307,7 +313,8 @@ $('#board .start-all').onclick = async () => {
   const tickets = B.tickets.filter(startsByItself).sort((one, two) => (one.position ?? 1e9) - (two.position ?? 1e9));
   startWindow('Start all agents', tickets, true);
 };
-// Distribute, VIEW-040: the open tickets not taken get the first N agents' glyphs in turn, To do first, then Backlog.
+// Distribute, VIEW-040: the tickets that start by themselves get the first N agents' glyphs in turn, in board order;
+// a held Backlog ticket gets none, since it waits for the person to release it.
 // The glyphs the tickets had before are kept, so Undo gives each back its own.
 async function distribute() {
   const agents = Number($('#board .distribute input').value);

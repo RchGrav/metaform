@@ -1448,8 +1448,9 @@ def eligible_of(ctx: Context, record: WorkRecord) -> list[str]:
 def require_eligible(ctx: Context, record: WorkRecord, agent: str) -> None:
     agents = eligible_of(ctx, record)
     if agents and agent not in agents:
-        raise Stop(f'{agent} is not eligible for work {record.id}; eligible agents: {", ".join(agents)}.',
-                   f'metaform map work id={record.id}')
+        store = ctx.require_store()
+        raise Stop(f'{agent} is not eligible for {called(store, [record.id])[record.id]}; eligible agents: '
+                   f'{", ".join(agents)}.', f'metaform map work id={handle(store, record.id)}')
 
 
 def agent_for(ctx: Context, record: WorkRecord | None, agent: str | None = None) -> str:
@@ -1459,26 +1460,57 @@ def agent_for(ctx: Context, record: WorkRecord | None, agent: str | None = None)
     return agent_named(chosen if not agents or chosen in agents else agents[0])
 
 
+def called(store: Store, work_ids: Sequence[str]) -> dict[str, str]:
+    """Each ticket as the person reads it, `<address>#<n> "<title>"`, MCP-037, read in one pass; a ticket with no number
+    by its id's first characters. A refusal names tickets so, never by their 32-hex ids, which the person cannot tell
+    apart (UX review round 2, held-and-signals F6)."""
+    found: dict[str, tuple[str, str | None, str | None]] = {}
+    try:
+        found = store.numbers_of('work', [one for one in work_ids if not ticketless(one)])
+    except StoreError:
+        pass
+    named: dict[str, str] = {}
+    for work_id in work_ids:
+        if ticketless(work_id):
+            named[work_id] = 'the intake' if intake_id(work_id) else 'a conversation'
+            continue
+        item, title, _ = found.get(work_id) or (None, None, None)
+        named[work_id] = (f'{item} "{title}"' if title else str(item)) if item else f'ticket {work_id[:8]}'
+    return named
+
+
+def handle(store: Store, work_id: str) -> str:
+    """A ticket's own `<address>#<n>`, as `map work id=` takes it, for a next step; its id when it has no number."""
+    try:
+        found = store.numbers_of('work', [work_id]).get(work_id)
+    except StoreError:
+        found = None
+    return found[0] if found else work_id
+
+
 def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> None:
     """Refuse a ticket done, taken or already holding a session, and an occupied glyph, VIEW-039 and VIEW-040:
-    tickets with one glyph are one agent's, done one at a time."""
+    tickets with one glyph are one agent's, done one at a time. Each refusal names the tickets by their handle and
+    title."""
     require_eligible(ctx, record, agent)
+    this = called(store, [record.id])[record.id]
     if record.done:
-        raise Stop(f'Work {record.id} was done at {record.done}.', 'metaform map work open=true')
+        raise Stop(f'{this} was done at {record.done}.', 'metaform map work open=true')
     if record.taken:
-        raise Stop(f'Work {record.id} is already taken by {record.taken_by or "an agent"}.',
+        raise Stop(f'{this} is already taken by {record.taken_by or "an agent"}.',
                    'metaform map work open=true')
     if not (record.task or '').strip():
-        raise Stop(f'Work {record.id} has no task: nothing for an agent to do until one is written.',
-                   f'metaform map work op=edit id={record.id} task="<what it needs>"')
+        raise Stop(f'{this} has no task: nothing for an agent to do until one is written.',
+                   f'metaform map work op=edit id={handle(store, record.id)} task="<what it needs>"')
     blocking = waiting_on(after_of(store, record.id), {other.id for other in store.work(open=True, limit=0).results})
     if blocking:  # the plan's order, `after_work`: UX review round 1, orchestrator F6
-        raise Stop(f'Work {record.id} waits on {", ".join(blocking)}, not done yet; it starts once '
+        names = called(store, blocking)
+        raise Stop(f'{this} waits on {", ".join(names[one] for one in blocking)}, not done yet; it starts once '
                    f'{"that is" if len(blocking) == 1 else "they are"} done.',
-                   f'metaform map work id={blocking[0]}')
+                   f'metaform map work id={handle(store, blocking[0])}')
     lock = claimed(store, record.address or record.receiver_address, record.id)
     if lock is not None:  # work claims are the scheduling lock, LAYER-029: no ticket inside another's claim starts
-        raise Stop(f'Work {record.id} is on a part of the map claimed by "{lock["name"]}" until that work has landed.',
+        raise Stop(f'{this} is on a part of the map claimed by "{lock["name"]}" until that work has landed.',
                    'metaform dispatch claims')
     glyph = glyph_of(ctx, record)
     if glyph is not None:
@@ -1486,33 +1518,59 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
                          if held.taken and (held.taken_by or '').startswith('dispatch starting ') and
                          held.id != record.id and glyph_of(ctx, held) == glyph), None)
         if occupied is not None:
-            raise Stop(f'Agent {glyph} is at work on work {occupied.id}; the tickets with its glyph are done '
-                       'one at a time.', f'metaform map work id={occupied.id}')
+            raise Stop(f'Agent {glyph} is at work on {called(store, [occupied.id])[occupied.id]}; the tickets with its '
+                       'glyph are done one at a time.', f'metaform map work id={handle(store, occupied.id)}')
     for session in sessions(store, record.id if glyph is None else None):
         if session.get('state') != 'running':
             continue
         if session['work_id'] == record.id:
-            raise Stop(f'Work {record.id} already has an agent session.',
+            raise Stop(f'{this} already has an agent session.',
                        f'metaform dispatch sessions id={record.id}')
         other = held_ticket(store, session['work_id']) if glyph is not None else None
         if other is not None and glyph_of(ctx, other) == glyph:
-            raise Stop(f'Agent {glyph} is at work on work {session["work_id"]}; the tickets with its glyph are done one '
-                       f'at a time.', f'metaform map work id={session["work_id"]}')
+            raise Stop(f'Agent {glyph} is at work on {called(store, [other.id])[other.id]}; the tickets with its glyph '
+                       'are done one at a time.', f'metaform map work id={handle(store, other.id)}')
+
+
+def starts_held(ctx: Context) -> str | None:
+    """The caution of a start of a ticket held for the person, `Verb.person_decides`: held in Backlog, or held from
+    agents with hold. Starting one releases it, so it is the person's decision on every surface: their card's Start,
+    or their own terminal; an agent's start of it waits on their answer (UX review round 2, held-and-signals F4: an
+    intake agent started a held ticket in one call). A conversation, a merge's preparation, a resume, a retry or a
+    launch `start` reserved already starts nothing held."""
+    nouns = ctx.nouns
+    if any(nouns.get(word) for word in ('reservation', 'system', 'talk', 'sentinel', 'intake', 'prep', 'resume',
+                                        'retry')):
+        return None
+    work_id = str(nouns.get('id') or '')
+    if not work_id or ticketless(work_id):
+        return None
+    store = ctx.require_store()
+    record = ticket(store, work_id)
+    if record.done or record.taken:
+        return None
+    hold = not record.held and bool(ticket_settings(ctx).get(record.id, {}).get('hold'))
+    if not (record.held or hold):
+        return None
+    return (f'Starting an agent on {called(store, [record.id])[record.id]} releases it: it is '
+            f'{"held in Backlog" if record.held else "held from agents"} for the person.')
 
 
 def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = None,
                 exclude: tuple[str, ...] = ()) -> WorkRecord | None:
-    """The glyph's next ticket, VIEW-040: the first not done and not taken in board order, To do before Backlog, each by
-    its place, a ticket with none after, as Distribute deals them; an exclude record is no ticket. A glyph given to a
-    held ticket is the person assigning it to that agent, so its agent takes it after To do; a ticket waiting on one
-    still open is never taken next (UX review round 1, orchestrator F6)."""
+    """The glyph's next ticket, VIEW-040: the first not done and not taken in To do's board order, by its place, a
+    ticket with none after, as Distribute deals them; an exclude record is no ticket. A held ticket is never taken
+    next, whatever its glyph: the person releases it (UX review round 2, held-and-signals F3: a glyph agent finished
+    its ticket and then worked every held one, agents' follow-ups and merge release logs among them); nor is one
+    waiting on a ticket still open (UX review round 1, orchestrator F6)."""
     kept = ticket_settings(ctx)
     opened = store.work(open=True, limit=0).results
     open_ids = {record.id for record in opened}
     waiting = [record for record in opened
-               if not record.taken and record.id not in exclude and not waiting_on(kept.get(record.id), open_ids)
+               if not record.taken and not record.held and record.id not in exclude
+               and not waiting_on(kept.get(record.id), open_ids)
                and not kept.get(record.id, {}).get('hold') and (record.task or '').strip()]  # no task: nothing to do
-    waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
+    waiting.sort(key=lambda record: (record.position is None, record.position or 0))
     chosen = agent or ctx.nouns.get('agent') or str(ctx.setting('dispatch_agent'))
     for record in waiting:
         if kept.get(record.id, {}).get('glyph') != glyph:
@@ -3172,7 +3230,7 @@ def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int |
     lock, `start_runner` and `admit_self`, so a halt written under it is seen by every start after it."""
     stopped = halted(store.project_id, asked, pinned(store).get(BASE_VARIABLE))
     if stopped is not None:
-        raise Refused(halt_refusal(stopped, work_id), 'metaform dispatch sessions')
+        raise Refused(halt_refusal(stopped, called(store, [work_id])[work_id]), 'metaform dispatch sessions')
     if auto and agent is not None:
         failing = failing_agent(ctx, store.project_id, agent)
         if failing is not None:
@@ -3186,9 +3244,10 @@ def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int |
                       f'dispatch_machine_agents allows ({held["machine_limit"]}). {what_follows(ctx, kind)}',
                       'metaform dispatch sessions')
     if kind == 'worker' and held['free'] <= 0:
-        holders = ', '.join(one[:8] for one in held['holding'][:5]) or 'agents the person summoned'
+        names = called(store, [*held['holding'][:5], work_id])
+        holders = ', '.join(names[one] for one in held['holding'][:5]) or 'agents the person summoned'
         raise Refused(f'Every agent slot is in use: dispatch_agents allows {_agents(held["limit"])} at once, held by '
-                      f'{holders}. Work {work_id}: {what_follows(ctx, kind)}', 'metaform dispatch sessions')
+                      f'{holders}. {names[work_id]}: {what_follows(ctx, kind)}', 'metaform dispatch sessions')
     if kind != 'worker' and held['room'] <= 0:
         raise Refused(f'Every agent slot is in use: dispatch_agents allows {_agents(held["limit"])} besides the one '
                       f'you can always summon. {what_follows(ctx, kind)}', 'metaform dispatch sessions')
@@ -3320,7 +3379,7 @@ def admit_self(ctx: Context, store: Store, work_id: str, kind: str) -> None:
             stopped = halted(store.project_id, int(own.get('asked') or own.get('started', 0) * 1e9),
                              own.get('base') if isinstance(own.get('base'), str) else None)
             if stopped is not None:
-                raise Refused(halt_refusal(stopped, work_id), 'metaform dispatch sessions')
+                raise Refused(halt_refusal(stopped, called(store, [work_id])[work_id]), 'metaform dispatch sessions')
             return
         admit(ctx, store, work_id, kind, besides=os.getpid())
         _recorded(os.getpid(), {'pid': os.getpid(), 'born': identity(os.getpid()) or '', 'project': store.project_id,
@@ -3476,11 +3535,12 @@ def halted(project_id: str, asked: int | None, base: str | None = None) -> dict[
     return None
 
 
-def halt_refusal(entry: dict[str, Any], work_id: str) -> str:
+def halt_refusal(entry: dict[str, Any], named: str) -> str:
+    """Why a halt refuses a start, naming what it would have started, `named`, as the person reads it (`called`)."""
     what = HALTS.get(str(entry.get('by')), 'A stop')
     if entry.get('held'):
-        return f'{what} is under way, so nothing starts on it now; work {work_id} is not started.'
-    return (f'{what} came after this start was asked for, so work {work_id} is not started; start it again if you '
+        return f'{what} is under way, so nothing starts on it now; {named} is not started.'
+    return (f'{what} came after this start was asked for, so {named} is not started; start it again if you '
             'still want it.')
 
 
@@ -5766,7 +5826,7 @@ MODULE = Module(
              examples=(('metaform dispatch start 198452e1... claude', 'Starts Claude Code on the ticket.'),
                        ('metaform dispatch start 198452e1... claude prompts=approve-reads mode=acceptEdits',
                         'Starts it allowing reads and its own edits without asking, for this launch only.')),
-             open_world=True),
+             open_world=True, person_decides=starts_held, page="the ticket's Start agent on the board"),
         Verb('reset', reset, 'Put agent bookkeeping back in order after a crash, returning tickets no live agent holds '
                              'to the queue. Dead sessions are recorded as ended; live agents are left alone.',
              examples=(('metaform dispatch reset', 'Release every ticket a dead agent still holds.'),)),
@@ -5930,7 +5990,8 @@ MODULE = Module(
                          required=False),
                     Noun('chosen', 'Jev\'s choice of model and effort, as JSON by ACP category, applied under the '
                                    'person\'s own.', required=False)),
-             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',), open_world=True),
+             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',), open_world=True,
+             person_decides=starts_held, page="the ticket's Start agent on the board"),
         Verb('message', message, 'Send a person\'s message to the agent working a ticket.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, for one of several sessions on the ticket; the latest when '

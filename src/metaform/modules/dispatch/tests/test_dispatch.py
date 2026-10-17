@@ -6,6 +6,7 @@ import ast
 import asyncio
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -923,7 +924,10 @@ def test_start_refuses_a_ticket_when_every_agent_slot_is_in_use(dispatch, run):
     assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['free'] == 0
     refused = run('dispatch', 'start', other, 'claude', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
-    assert 'held by ' + dispatch.id[:8] in refused.stdout + refused.stderr, 'it names what holds the slot'
+    said = refused.stdout + refused.stderr
+    # it names what holds the slot and the ticket refused as the person reads them (round 2, held-and-signals F6)
+    assert 'held by code.engine#1 "Write notes.txt"' in said and 'code.engine#2 "Another change":' in said, said
+    assert not re.search('[0-9a-f]{32}', said.split('\nNext:')[0]), said
     assert not dispatch.store.ticket(other).work.taken
     dispatch.stop()
 
@@ -1461,31 +1465,33 @@ def glyphed(dispatch, run, *tickets):
 @pytest.mark.cli_process
 def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dispatch, run):
     """VIEW-040: tickets with the same glyph are one agent's, done one at a time. The agent started on
-    a ticket with a glyph takes that glyph's tickets one after another in board order, To do before Backlog, each by
-    its place, the next taken when the one before is done; a ticket of another glyph, one with none, and one taken
-    by someone else are not its own."""
+    a ticket with a glyph takes that glyph's tickets one after another in To do's board order, by its place, the next
+    taken when the one before is done; a ticket of another glyph, one with none, and one taken by someone else are not
+    its own, and a held Backlog ticket of its glyph waits for the person to release it (UX review round 2,
+    held-and-signals F3: the glyph agent worked every held ticket after its own)."""
     run('map', 'work', 'op=edit', f'id={dispatch.id}', 'glyph=kite', cwd=dispatch.folder)
     other, held, later, top, loose, busy = glyphed(
         dispatch, run, ('Another agent', 'moth', False), ('Held', 'kite', True), ('Later', 'kite', False),
         ('Top', 'kite', False), ('No glyph', None, False), ('Busy', 'kite', False))
     dispatch.store.move_work(top, 'todo', 0)
-    dispatch.store.move_work(held, 'backlog', 0)  # placed first in Backlog, and still after every To do ticket
+    dispatch.store.move_work(held, 'backlog', 0)  # placed first in Backlog: held, so never the agent's next
     dispatch.store.take_work(busy, by='someone')
     [unplaced] = glyphed(dispatch, run, ('Unplaced', 'kite', False))  # in To do with no place: after those placed
     assert dispatch.store.ticket(unplaced).work.position is None and dispatch.store.ticket(held).work.position == 0
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 5) == 0, dispatch.process.stderr.read().decode()
-    worked = [dispatch.id, top, later, unplaced, held]
+    worked = [dispatch.id, top, later, unplaced]
     assert dispatch.logged('work') == worked
     order = [('start' if entry.get('message', {}).get('method') == 'initialize' else 'done')
              for entry in dispatch.entries() if 'done' in entry or entry.get('message', {}).get('method') == 'initialize']
-    assert order == ['start', 'done'] * 5, 'one agent at a time: each starts after the ticket before it is done'
+    assert order == ['start', 'done'] * 4, 'one agent at a time: each starts after the ticket before it is done'
     sessions = [item.extra for item in dispatch.items('session')]
     assert [session['work_id'] for session in sessions] == worked
     assert {(session['state'], session['how']) for session in sessions} == {('ended', 'the ticket is done')}
     assert all(dispatch.store.ticket(work_id).work.done for work_id in worked)
-    for work_id in (other, loose):
+    for work_id in (other, loose, held):
         assert dispatch.store.ticket(work_id).work.taken is None
+    assert dispatch.store.ticket(held).work.held
     assert dispatch.store.ticket(busy).work.taken_by == 'someone'
 
 
@@ -1514,7 +1520,9 @@ def test_a_ticket_whose_glyph_has_an_agent_at_work_is_not_started_and_another_gl
     for verb in ('start', 'run'):
         refused = run('dispatch', verb, later, 'claude', cwd=dispatch.folder, env=dispatch.env('done'), ok=False)
         said = refused.stdout + refused.stderr
-        assert refused.returncode != 0 and 'kite' in said and dispatch.id in said, said
+        # the ticket worked is named as the person reads it, never by its id (round 2, held-and-signals F6)
+        assert refused.returncode != 0 and 'kite' in said and '"Write notes.txt"' in said, said
+        assert not re.search('[0-9a-f]{32}', said), said
     assert dispatch.store.ticket(later).work.taken is None
     own = run('dispatch', 'run', other, 'claude', '--json', cwd=dispatch.folder, env=dispatch.env('done'))
     assert json.loads(own.stdout)['work_id'] == other

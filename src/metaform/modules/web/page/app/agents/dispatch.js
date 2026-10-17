@@ -222,31 +222,36 @@ async function startAllTickets(tickets, pick, startAll) {
   for (const button of buttons) button.disabled = true;
   drawBoard();
   const {count} = startAllLabel(offered.length);  // what the label said, from the read made when it opened
-  const pending = offered.slice(0, count);
-  const waiting = offered.length - pending.length;
-  for (const ticket of offered.slice(pending.length)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
+  for (const ticket of offered.slice(count)) buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
   const label = startAll.textContent;
   startAll.textContent = 'Stop starting';
-  let started = 0, left = 0;
-  for (const ticket of pending) {
+  // A ticket refused spends no slot: the next offered takes its turn, so one ticket that cannot start does not leave
+  // the slot idle and the rest unstarted (UX review round 2, held-and-signals F2).
+  let started = 0, left = 0, failed = 0, tried = 0;
+  for (const ticket of offered) {
+    if (started >= count) break;
+    tried++;
     const button = buttons[tickets.indexOf(ticket)];
     if (START.cancel) { left++; button.disabled = false; continue; }
     try {
       if (await startAgent(ticket.id, agent, {...launchOwn(), batch: START.batch})) {
         started++; button.textContent = 'Starting';
       }
-      else { button.disabled = false; button.textContent = 'Retry'; }
-    } catch (error) { toast(error.message); button.disabled = false; button.textContent = 'Retry'; }
+      else { failed++; button.disabled = false; button.textContent = 'Retry'; }
+    } catch (error) { toast(error.message); failed++; button.disabled = false; button.textContent = 'Retry'; }
   }
+  for (const ticket of offered.slice(tried)) {  // not reached: they wait for a slot, as their label says
+    buttons[tickets.indexOf(ticket)].textContent = 'Waiting';
+  }
+  const waiting = offered.length - tried;
   pick.hold(false);
   D.starting = false;
   startAll.textContent = label;
   startAll.disabled = !buttons.some(button => !button.disabled);
-  if (started === pending.length) $('#dispatch').hidden = true;
+  if (!failed && !left) $('#dispatch').hidden = true;
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
-    + (started + left < pending.length ? ` ${pending.length - started - left} could not start; retry their tickets.`
-      : '')
+    + (failed ? ` ${failed} could not start; retry their tickets.` : '')
     + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
       ? 'with Autostart agents checked they start as agents finish.'
       : 'they wait until you start them or check Autostart agents.') : ''));
