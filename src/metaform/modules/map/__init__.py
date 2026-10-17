@@ -56,6 +56,7 @@ from metaform.module import (
     persons_word,
     persons_word_acted,
     project_for,
+    provided,
     titled,
     work_reads,
 )
@@ -634,6 +635,13 @@ def cypher(ctx: Context) -> Any:
 
 def search(ctx: Context) -> Any:
     return _store(ctx).search(ctx.nouns['text'], ctx.nouns.get('layer'), **_paging(ctx))
+
+
+def find(ctx: Context) -> Any:
+    """What the map holds about some words, elements, joins and items, each by its Address, best first: the
+    search an agent makes before it knows where to read, done in the store so it reads only the hits."""
+    limit = ctx.nouns.get('limit')
+    return {'results': _store(ctx).find(ctx.nouns['text'], limit=int(limit) if limit else 20)}
 
 
 def select(ctx: Context) -> Any:
@@ -1402,8 +1410,10 @@ def work(ctx: Context) -> Any:
             found = found._replace(results=tuple(record for record in found.results
                                                  if not kept.get(record.id, {}).get('hold')))
         listed = plain(_glyphed(store, found))
-        listed['results'] = [{name: value for name, value in row.items() if name not in UNLISTED}
-                             for row in listed['results']]
+        # Each says whether it is open or done, so a list asked for done and open records alike can be read and
+        # filtered by it, where `done` is a time.
+        listed['results'] = [{**{name: value for name, value in row.items() if name not in UNLISTED},
+                              'status': 'done' if row.get('done') else 'open'} for row in listed['results']]
         if not listed['results'] and node is None and (kept := store.kept_map_said()):
             notices.append(Notice('map', kept))  # no ticket because the active map is empty, not because none is open
         return _with_notices(listed, notices)
@@ -1484,8 +1494,11 @@ def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: l
              'id': record.id, 'by': str(record.taken_by or ''), 'column': record.column,
              'done': str(record.steps_done), 'steps': str(record.steps or record.steps_done)}
     line = ' '.join(_prompt(f'work_{op}', **fills).split())
+    # Who else is at work at the part, from the module that runs agents, when the agent starts or plans its work.
+    told = [said for _, made in provided(ctx.folder, 'work.overlap') if (said := made(ctx, record.id))] \
+        if op in ('take', 'plan') else []
     return '\n'.join([line, *(_prompt('work_notice', where=one.where, message=one.message)
-                              for one in (*notices, *record.notices))])
+                              for one in (*notices, *record.notices)), *told])
 
 
 def _glyph(value: Any, notices: list[Notice]) -> str | None:
@@ -1920,7 +1933,8 @@ WORK_NOUNS = (
                        'ticket. missing is intended functionality that is absent, a finding. A stage, unbuilt, under-construction or built, says where the part is on its way to '
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
                        'do its job. A task on a part that exists and works carries none. The intake and the person '
-                       'set it; an agent at work leaves it alone. condition=none on edit clears it.',
+                       'set it, since they judge the state of the part; an agent at work says what it found in its '
+                       'note instead. condition=none on edit clears it.',
           schema={'type': 'string', 'enum': [*CONDITIONS, 'none']}),
     _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
                   'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
@@ -2138,6 +2152,15 @@ MODULE = Module(
         Verb('search', search, 'Find the layer items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read',
              reads_layers=True),
+        Verb('find', find, 'Find where the map holds something, from words for it: the elements, joins and layer items '
+                           'that hold them, each by its Address, best first.',
+             nouns=(Noun('text', 'The words to find; a hit holds at least half of them.'),
+                    _noun('limit', 'How many hits, 20 by default.', 'int')),
+             details='Elements are matched by address, name, short name and note; joins by purpose and EF, at their '
+                     'receiver; layer items by value, at the node they are attached to. Each word matches a whole word '
+                     'or the start of one. Only what the layers in view show is found.',
+             examples=(('metaform map find cents', 'Where the map holds anything about cents.'),),
+             effect='read', reads_layers=True),
         Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take '
                            'and finish them. To work a ticket handed to you: read it with id=; op=plan with the steps '
                            'you plan; op=step as each finishes, saying what you did and any choice you made with its '
@@ -2149,21 +2172,21 @@ MODULE = Module(
                      'condition is the state of that part, never the kind of ticket: most tasks carry none. A '
                      'stage, unbuilt, under-construction or built, says where the part is on its way to existing; '
                      'built marks nothing. broken is a built part that does not do its job. The intake and the '
-                     'person set it; an agent at work leaves it alone. Its note says what and where, its task what '
-                     'it needs. '
-                     'exclude records material outside the intake scope or code conflicting with a superseding '
-                     'specification. The note links the affected material and the specification or scope reason '
-                     'for review. Unrelated folders are excluded from functional capture; a proposed gitignore '
-                     'change is recorded for review. Documents, specifications, notes and working files are '
-                     'preserved. Marking a record does not remove files or change gitignore. Unneeded legacy '
-                     'migration code is marked for review. A store at an earlier layout is updated by Metaform '
-                     'when it opens it. It is '
-                     'open until op=done records its resolution, which is kept beside it. The person writes one, and '
-                     'so do the agents that serve them, the system agent, a talk, the sentinel and the intake; a '
-                     'ticket an agent writes is held in Backlog until the person releases it or starts it, and '
-                     'releasing a held ticket, or lifting the person\'s hold, is the person\'s decision. A role in '
-                     'roles_without_authority, a worker or a merge preparation by default, writes none and says what '
-                     'it found in its own ticket\'s note.',
+                     'person set it, since they judge the state of the part; an agent at work says what it found '
+                     'in its own ticket\'s note instead. Its note says what and where, its task what it needs. It '
+                     'is open until op=done records its resolution, which is kept beside it.',
+             person_details='exclude records material outside the intake scope or code conflicting with a '
+                            'superseding specification. The note links the affected material and the specification or '
+                            'scope reason for review. Unrelated folders are excluded from functional capture; a '
+                            'proposed gitignore change is recorded for review. Documents, specifications, notes and '
+                            'working files are preserved. Marking a record does not remove files or change gitignore. '
+                            'Unneeded legacy migration code is marked for review. A store at an earlier layout is '
+                            'updated by Metaform when it opens it. The person writes one, and so do the agents that '
+                            'serve them, the system agent, a talk, the sentinel and the intake; a ticket an agent '
+                            'writes is held in Backlog until the person releases it or starts it, and releasing a held '
+                            'ticket, or lifting the person\'s hold, is the person\'s decision. A role in '
+                            'roles_without_authority, a worker or a merge preparation by default, writes none and says '
+                            'what it found in its own ticket\'s note.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
                          'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),

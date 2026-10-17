@@ -1439,7 +1439,8 @@ def test_ticket_read_counts_the_note_at_its_node_and_names_its_linked_nodes(run,
     assert 'Check the circuit' not in json.dumps(read) and 'The tone driver' not in json.dumps(read)
     assert read['linked'] == ['code.alarm.audible']
     if not on_join:
-        assert '1 note' in read['at']['around'] and 'metaform memory note node=<address>' in read['at']['around']
+        assert '1 note' in read['at']['around'] and '<address>' not in read['at']['around']
+        assert 'metaform memory note node=code.timer.kitchen' in read['at']['around']  # each address with a note
 
 
 @pytest.mark.req('BASE-035')
@@ -1940,7 +1941,7 @@ def test_orientation_recovery_reaches_working_next_steps_over_mcp(run, home, kit
         assert not recovered.is_error
         uncited = await called(client, 'map_citing', {'key': 'path', 'value': './src/uncited.py'})
         assert not uncited.is_error
-        assert json.loads(text(uncited)[-1])['results'] == []
+        assert text(uncited)[-1] == 'results:\n(none)'  # a list with nothing in it says so, MCP-039
 
     session(home, kitchen, check)
 
@@ -1996,7 +1997,8 @@ def test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_chang
     fresh = where('agent-c')['around']
     assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +1 memory · 1 new', fresh)
     assert re.search(r'└ code\.alarm\.audible +1 memory · 1 new', fresh)
-    assert 'Read them: metaform memory read_graph node=<address>' in fresh
+    assert ('Read them: metaform memory read_graph node=code.timer.kitchen · metaform memory read_graph '
+            'node=code.alarm.audible') in fresh and '<address>' not in fresh  # each address with new ones, filled
 
 
 @pytest.mark.req('MCP-039')

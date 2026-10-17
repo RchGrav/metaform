@@ -137,6 +137,7 @@ def test_signals_verb_is_available_to_a_real_mcp_client(dispatch, home):
     context('dispatch', dispatch.folder, project='proj').publish('dispatch.rework-limit',
             {'work_id': dispatch.id, 'attempts': 3, 'limit': 3})
     async def check(client, init):
+        await client.call_tool('metaform_catalog', {'category': 'steer'})  # tools are listed by purpose, MCP-003
         offered = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert 'dispatch_signals' in offered
         response = await client.call_tool('dispatch_signals', {'id': dispatch.id})

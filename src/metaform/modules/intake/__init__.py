@@ -34,7 +34,19 @@ from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, author
-from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, project_for, save_report
+from metaform.module import (
+    Context,
+    Module,
+    Noun,
+    Provides,
+    Resource,
+    Status,
+    Stop,
+    ToolbarItem,
+    Verb,
+    project_for,
+    save_report,
+)
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
 
@@ -491,8 +503,9 @@ def start(ctx: Context) -> Any:
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'What you record now is written onto it: a changed field is refined, a new element or purpose '
                         'record is added to it, keeping every version, and conditions, notes and refs are kept with '
-                        'it. A single change needs no pass: metaform map refine adds or corrects one element or '
-                        'purpose record under the same rules.'})
+                        'it. A single change needs no pass: '
+                        f'{"map_refine" if ctx.surface == "mcp" else "metaform map refine"} adds or corrects one '
+                        'element or purpose record under the same rules.'})
         return {'layer': mapped.layer.name, 'project': store.project_id, 'base': mapped.metaform, 'notices': notices}
     opened = False
     if found is None:
@@ -1301,6 +1314,16 @@ def status(ctx: Context) -> Status:
     return Status(lines=('Intake: none yet',), instruction=prompt_files.required(here, 'no_intake'))
 
 
+
+def first_run(ctx: Context) -> str | None:
+    """Intake's first-run text, `no_intake`, while the project has no intake and none is being recorded, with the
+    register step while the folder is no registered project, as `status` gives it at connect; None otherwise, and to an
+    agent a runner started. Offered as `intake.first_run`, so the MCP server serves it whole as metaform://firstrun."""
+    got = status(ctx)
+    if not got.at_connect or not got.instruction:
+        return None
+    return None if got.instruction == prompt_files.required(resources.files(__name__), 'unfinished') else got.instruction
+
 E, P = ELEMENT_WORDS.get, PURPOSE_WORDS.get
 def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
     """The condition and the note an element or a purpose record is recorded with, each in that command's own words."""
@@ -1343,7 +1366,7 @@ MODULE = Module(
                              'refines and extends the map in use. Changed fields are refined, new elements and purpose '
                              'records are added to it, conditions, notes and refs are written onto it, and intake '
                              'finish closes the pass. One change to the map needs no pass: metaform map refine. '
-                             'Returns its name; the existing web GUI follows it live.',
+                             'Returns its name.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
                     Noun('name', 'Only when the person asks for a new map beside the one in use: its name, 1 to 64 '
                                  'letters, digits, ., _ and -; on a mapped project it is their decision. A new '
@@ -1352,7 +1375,8 @@ MODULE = Module(
                          required=False),
                     Noun('model', 'The model that performs the intake.', required=False),
                     Noun('role', 'The role of the agent that performs it.', required=False)),
-             person_decides=new_map_decision),
+             person_decides=new_map_decision,
+             person_details='A web GUI that runs follows the intake live.'),
         Verb('element', element, 'Record one element of the intake at its address; recording it again replaces the '
                                  'fields given.',
              nouns=(Noun(ADDRESS, E(ADDRESS, '')),
@@ -1400,6 +1424,7 @@ MODULE = Module(
              page="the intake's Discard"),
     ),
     status=status,
+    provides=(Provides('intake.first_run', first_run),),
     resources=(
         Resource('metaform://intake/procedure', 'Intake procedure',
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',

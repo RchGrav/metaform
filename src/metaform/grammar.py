@@ -203,6 +203,8 @@ def _noun_value(noun: Noun, value: Any, where: str, notices: list[tuple[str, str
     if noun.schema is not None or noun.kind == 'json':
         return value
     if noun.many:
+        if noun.kind == 'str' and isinstance(value, str):  # one string is the list of its one value, as on the command
+            value = [value]  # line, so map_cypher takes its query whole as it is written
         members = cast(list[Any], value) if isinstance(value, list) else None
         if members is None or (noun.kind != 'str' and not all(_typed(noun.kind, member) for member in members)):
             raise Stop(f'{noun.name} is a list of {KIND_WORDS[noun.kind]} values.', f'{where} --help')

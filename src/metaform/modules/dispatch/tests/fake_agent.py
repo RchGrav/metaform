@@ -45,7 +45,8 @@ elicitation/complete before it asks, each logging what its request was answered 
 page to be opened while it makes its session, scoped to session/new's request, answers session/new half a second
 later, and logs what the question was answered with. FAKE_ACP_USED=<a,b,...> sends a usage update with each context size in use and no cost in its first turn, as
 the adapters do after each model call. FAKE_ACP_COST=<a,b,...> sends a usage update with each cumulative cost in USD in its first turn;
-FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_CLOSE=1 advertises session/close
+FAKE_ACP_NOTICE=1 sends a session notice when the client advertises them; FAKE_ACP_COMPACT=<status,...> sends
+ACP's compaction_update with each status in turn as the first turn ends, when the client advertises session compaction; FAKE_ACP_CLOSE=1 advertises session/close
 and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and answers it with fake-fork-<n>;
 FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals, ACP's fs/* and terminal/*: it writes and
 reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
@@ -456,6 +457,9 @@ def replacing_turn(prompt_id, number):
     gate = Path(os.environ['FAKE_ACP_TURN_GATES']) / str(number)
     while not gate.exists() and not CANCELLED.wait(0.05):
         pass
+    if number == 1 and COMPACTION[0]:  # the agent compacts its context as its first turn ends, ACP's RFD
+        for status in [one for one in os.environ.get('FAKE_ACP_COMPACT', '').split(',') if one]:
+            update({'sessionUpdate': 'compaction_update', 'status': status})
     with PROMPT_LOCK:
         if ACTIVE_PROMPT[0] == prompt_id:
             reason = 'cancelled' if CANCELLED.is_set() else 'end_turn'
@@ -478,6 +482,8 @@ def main():
             continue
         if method == 'initialize':
             NOTICES[0] = message['params'].get('clientCapabilities', {}).get('session', {}).get('notices') is not None
+            COMPACTION[0] = message['params'].get('clientCapabilities', {}).get('session', {}).get('compaction') \
+                is not None
             closing = os.environ.get('FAKE_ACP_CLOSE') == '1'
             sessions = {**({'close': {}, 'delete': {}} if closing else {}),
                         **({'fork': {}} if os.environ.get('FAKE_ACP_FORK') == '1' else {})}
@@ -651,6 +657,7 @@ def turn_of(work, *args):
 ACTIVE_TURN = [False]
 STEERED = threading.Event()  # a steer reached the turn, FAKE_ACP_INTAKE waits for it
 NOTICES = [False]  # the client advertised ACP's session notices
+COMPACTION = [False]  # the client advertised ACP's session compaction
 # ACP's terminal login, offered to an editor that can run one: the editor runs this agent again with these arguments
 # and this environment, in a terminal; started so, it logs what it was given and exits 0 without speaking ACP.
 TERMINAL_LOGIN = {'id': 'fake-terminal', 'name': 'Log in in a terminal', 'type': 'terminal', 'args': ['--login', 'now'],

@@ -264,8 +264,9 @@ def verb_page(module: Module, verb: Verb) -> str:
         lines += ['Switches'] + rows(found) + ['']
     if verb.caution:
         lines += ['Caution', '  ' + verb.caution, '']
-    if verb.details:
-        lines += ['Details', '  ' + verb.details, '']
+    said = ' '.join(part for part in (verb.details, verb.person_details) if part)
+    if said:
+        lines += ['Details', '  ' + said, '']
     if verb.examples:
         lines += ['Examples']
         for example, meaning in verb.examples:

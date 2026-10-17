@@ -107,6 +107,10 @@ SURFACES: tuple[Surface, ...] = ('cli', 'mcp')
 # there, as a new version, a history or a backup; `remove` deletes or replaces what cannot be had back from the store.
 Effect = Literal['read', 'write', 'remove']
 EFFECTS: tuple[Effect, ...] = ('read', 'write', 'remove')
+# The purposes an agent finds tools by over MCP, MCP-003: each a category of the mcp module's catalog, which says what
+# each is for in its prompts.xml and which tools each holds. A verb's `category` is one of them.
+CATEGORY_NAMES = ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'intake', 'steer', 'show', 'workflow',
+                  'setup', 'report')
 
 # The module contract's callables, BASE-035. Each may be a plain function or a coroutine function, BASE-009.
 VerbFunction = Callable[['Context'], Any]  # returns the verb's result, BASE-036
@@ -184,6 +188,16 @@ class Verb:
     would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
 
+    `category` names the purpose an agent finds the verb's tool under over MCP, one of `CATEGORY_NAMES`, such as
+    `orient` or `remember`, each said in the mcp module's catalog: an agent opens the category its task
+    needs and is listed only its tools, MCP-003. None takes the category the mcp module gives the tool, or else the
+    one it gives the module; a name no category holds stops the module loading.
+
+    `person_details` is what the details say only to the person and the agents that act for them: the person, in the
+    command line's help after `details`, and over MCP the person's own sessions, the system agent and a sentinel, with
+    the tool's guide. An agent at work on a ticket, an intake or a conversation does not act for the person that way,
+    so it is not handed what is said to them.
+
     `person_decides`, given the call's context, says the caution when this one call is the person's decision by what
     it asks, though the verb is not, such as `map work` releasing a held ticket or `dispatch start` starting one: None
     when it is not. Such a call runs only with the person's consent, through the same channels as a `person_says`
@@ -213,9 +227,13 @@ class Verb:
     person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
     page: str | None = None
+    category: str | None = None
+    person_details: str = ''
     person_decides: Callable[[Context], str | None] | None = None
 
     def __post_init__(self) -> None:
+        if self.category is not None and self.category not in CATEGORY_NAMES:
+            raise ValueError(f'Verb {self.name}: category must be one of {", ".join(CATEGORY_NAMES)}.')
         if self.person_says and not self.caution:
             raise ValueError(f'Verb {self.name}: a verb the person decides declares the caution it is asked with.')
         if self.effect not in EFFECTS:
@@ -742,11 +760,11 @@ def instructions(folder: Path, project: str | None = None, *, surface: str = 'cl
     return composed.compose(folder, project, surface=surface)
 
 
-def startup_instructions(folder: Path, project: str | None = None) -> str:
-    """What the MCP server sends when an agent connects: the order to read metaform://metaform and the project's own
-    glossary, then the notices the folder's state calls for, such as running the intake, MCP-007."""
+def startup_notices(folder: Path, project: str | None = None) -> list[str]:
+    """The notices the folder's state calls for at connect, each from the module that owns that state, such as running
+    the intake, for the MCP server's connect message, MCP-007 and MCP-029."""
     from . import instructions as composed
-    return composed.startup(folder, project)
+    return composed.startup_notices(folder, project)
 
 
 def module_instructions(folder: Path, identifier: str, project: str | None = None) -> str | None:
@@ -792,6 +810,45 @@ def served_session(client: str | None = None) -> str | None:
     process, such as an HTTP server that many clients reach."""
     from . import shown
     return shown.session(client) if shown.is_serving() else None
+
+
+def shown_before(session: str | None, key: str) -> Any:
+    """What an agent session was last shown under `key`, or None, recording nothing, MCP-039: for what a server keeps
+    of a session, such as the tool category it has open."""
+    from . import shown
+    return shown.peek(session, key)
+
+
+def record_shown(session: str | None, key: str, value: Any) -> Any:
+    """What an agent session was last shown under `key`, or None the first time, recording `value` as shown now, as
+    Context.seen does for a session no Context names, MCP-039."""
+    from . import shown
+    return shown.swap(session, key, value)
+
+
+# Where a session's runner leaves the line its agent is told after a compaction, CTX-045, for the agent's next Metaform
+# tool call to give first when that call comes before its next turn; emptied by whichever gives it, so it is said once.
+COMPACTED_KEY = 'pending:compacted'
+
+
+def agent_opening(folder: Path, role: str | None, withheld: str = '') -> str:
+    """What opens every agent's connect message and its first turn after each compaction: a directive line and one
+    link per line to each instruction block that applies to an agent of `role` in `folder` now, as the MCP server
+    serves them, `agent.opening`. `withheld` is what the agent's runner withholds from its server. '' with no module
+    offering it."""
+    from . import loader
+    for module in loader.enabled():
+        for one in module.provides:
+            if one.kind == 'agent.opening':
+                return one.value(folder, role, withheld)
+    return ''
+
+
+def forget_shown(session: str | None) -> int:
+    """Forget what an agent session was shown, but what its AI tool itself holds, such as the tools it lists, so each
+    piece is given again at its next use: the agent's context was compacted, CTX-045. The number forgotten."""
+    from . import shown
+    return shown.forget(session)
 
 
 def provisioning_notice() -> str | None:

@@ -12,8 +12,9 @@
 <orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say: metaform instructions memory.</orient>
 <!-- The line under the counts an agent is told at its node, MCP-039: what a new memory is, and the call that reads the
      memories at one address. Shown once per agent session under the counts in map where, the ticket read and the
-     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is written
-     as it is, for the agent to fill. Empty leaves the line out and the counts stand alone. -->
+     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is filled
+     with the address that holds new memories, or each of them, the call given once per address; else with each
+     address that holds any, so no placeholder is sent. Empty leaves the line out and the counts stand alone. -->
 <counts>New = recorded by the last session here. Read them: metaform memory read_graph node=&lt;address&gt;</counts>
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
@@ -40,7 +41,9 @@
      filled here: it names the subject a prompt or workflow is linked to. An agent with no assigned element gets the whole line-2 bullet swapped for
      instructions_unassigned below.
      Who receives it and when, CTX-028: an agent dispatch starts on a ticket gets it once, in its first turn, ahead of
-     the work sentence, filled with its ticket's node. metaform_instructions with module memory,
+     the work sentence, filled with its ticket's node. Every agent is linked to metaform://memory at connect and after
+     each compaction while the module is on, which serves it filled with the project and no assigned element.
+     metaform_instructions with module memory,
      metaform://instructions/memory and metaform help agents memory still return this element as written, its places
      unfilled: the chassis reads module instructions without the prompt store, a follow-up for code.store.memory#3.
      To change it, save an edit through the prompt store (metaform prompt memory:instructions); the edit is what

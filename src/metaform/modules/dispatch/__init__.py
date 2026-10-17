@@ -77,6 +77,7 @@ from metaform.module import (
     on_persons_word,
     project_for,
     provided,
+    record_shown,
     request_scope,
     surface,
     work_reads,
@@ -832,7 +833,11 @@ def work_line(work_id: str, folder: Path, node: str) -> str:
     the node it is recorded at, so no agent is told to use a tool it does not have. The rule on writing files is not
     here: the runner sends it with each session's first prompt, whatever the prompt, code.dispatcher.agent#47."""
     memory = any(module.id == 'memory' for module in surface(folder))
-    return prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
+    if not memory or not node:
+        return prompt('work', work_id=work_id, record='')
+    named = node.replace(' and ', ' ') if node.startswith('receiver=') else f'node={node}'
+    return prompt('work', work_id=work_id, record=prompt('work_record', node=node,
+                                                         call=f'memory_create_entities {named}'))
 
 
 # The mascot's body: the web module's verbs that move it and let it see, each the MCP tool web_<verb>.
@@ -4167,7 +4172,12 @@ def talk(ctx: Context) -> dict[str, Any]:
     """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, or an ended
     agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
     what it is about. One summoned agent is always the person's; more use the agent slots left free, and past them
-    a chat is refused until a slot frees."""
+    a chat is refused until a slot frees. An agent whose role the person holds back starts no agent, may_steer, and
+    talks to an agent at work only by a note, which never starts one."""
+    if (held := held_role(ctx)) is not None:
+        raise Stop(f'A {held} agent starts and talks to no agent: a conversation is for the person and the agents that '
+                   'serve them, and it can start an agent. A note reaches an agent at work without starting one.',
+                   'metaform dispatch note to=<the ticket of the agent you want to reach> text="<what you want to say>"')
     store = ctx.require_store()
     given = {key: str(ctx.nouns[key]) for key in ('id', 'node', 'session') if ctx.nouns.get(key)}
     if len(given) != 1:
@@ -5253,10 +5263,46 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
                       f'metaform://{item}', 'title': f'Ticket {item}'})
     if links:
         lines.append('Links: ' + '  '.join(one['uri'] for one in links))
+    if on == 'mcp' and (peered := peers_line(ctx, store, work_id, session)):
+        lines.append(peered)
     node = str(read.get('address') or ' and '.join(
         f'{name}={value}' for name, value in (('receiver', read.get('receiver_address')),
                                               ('provider', read.get('provider_address'))) if value))
     return f"{work_line(work_id, ctx.folder, node)}\n\n" + '\n'.join(lines) + '\n', links
+
+
+def peers_line(ctx: Context, store: Store, work_id: str, session: str | None) -> str:
+    """The hand-off's line on the other agents at work, `peers_at_work`, once a session: only while another agent is
+    at work on an open ticket, since the agent can then collide with it and needs the tools that reach it; empty when
+    it works alone, was told already, or who is at work cannot be read."""
+    from .peering import working
+    try:
+        others = [entry for entry in working(ctx, store) if entry['work_id'] != work_id]
+    except Exception:  # noqa: BLE001  who is at work is a pointer; the hand-off is given without it
+        return ''
+    if not others or record_shown(session or ctx.session, 'announce:peers', len(others)) is not None:
+        return ''
+    return prompt('peers_at_work', n=str(len(others)))
+
+
+def overlap(ctx: Context, work_id: str) -> str:
+    """The line a ticket's take or plan answers with over MCP, `peers_overlap`, once a session for its part: the other
+    agents at work at that part, inside it or around it, since the moment an agent starts or plans its work is the
+    moment it can collide with theirs, and the hand-off's line came before they may have started. Empty when none is,
+    when it was said for that part already, or when who is at work cannot be read."""
+    from .peering import addresses, working
+    store = ctx.require_store()
+    try:
+        mine = addresses(store.ticket(work_id).work)
+        others = [entry for entry in working(ctx, store) if entry['work_id'] != work_id and any(
+            one == theirs or one.startswith(theirs + '.') or theirs.startswith(one + '.')
+            for one in mine for theirs in addresses(entry['_record']))]
+    except Exception:  # noqa: BLE001  who is at work is a pointer; the write is answered without it
+        return ''
+    at = ' and '.join(mine)
+    if not others or record_shown(ctx.session, f'announce:overlap:{at}', len(others)) is not None:
+        return ''
+    return prompt('peers_overlap', at=at, who=', '.join(f'{entry["agent"]} on {entry["item"]}' for entry in others))
 
 
 def handoff(ctx: Context) -> str:
@@ -6539,7 +6585,7 @@ MODULE = Module(
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the
     # record in its chat of what it did on it, `metaform.module.persons_word`
     provides=(Provides('base.holds', base_holds), Provides('dispatch.deaths', watch_deaths),
-              Provides('person.consent', ask_consent),
+              Provides('person.consent', ask_consent), Provides('work.overlap', overlap),
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted)),
     start=started,
     stop=None,

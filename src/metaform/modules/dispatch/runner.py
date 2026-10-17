@@ -85,13 +85,18 @@ from acp.schema import (
 from metaform import home, jev, prompt_files
 from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
 from metaform.module import (
+    COMPACTED_KEY,
     WITHHELD,
     Context,
     Stop,
+    agent_opening,
     child_environment,
     code_print,
     context,
+    forget_shown,
     mcp_server,
+    record_shown,
+    shown_before,
     surface,
 )
 
@@ -1387,6 +1392,9 @@ class Session:
         # The rule on writing files, work_link, has gone to the agent with a prompt of this process: the lock holds for
         # the session only from then, so no refusal reaches an agent never told of it, code.dispatcher.agent#47.
         self.ruled = False
+        # ACP's compaction signal said the agent's context was compacted, so its next turn opens with `compacted`, the
+        # line that says what it works on and that what Metaform gave it once comes again, CTX-045 and CTX-046.
+        self.recompacted = False
         self.permissions: dict[str, dict[str, Any]] = {}  # each permission request asked, by its request id
         self.patches: dict[str, tuple[Any, dict[str, Any]]] = {}  # a running call's diffs, worked out once each
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
@@ -2047,6 +2055,11 @@ class Session:
         if kind == 'notice' and not self.replaying:  # ACP's session notices, which this SDK's schema does not know
             self.spawn(self.notice({key: update.get(key) for key in ('severity', 'title', 'description')}))
             return
+        if kind == 'compaction_update':  # ACP's session compaction, which this SDK's schema does not know either
+            if update.get('status') == 'completed' and not self.replaying and not child:
+                self.recompacted = True  # here, as the wire is read, so a turn sent after it always carries the line
+                self.spawn(self.compacted())
+            return  # in_progress, failed, cancelled and any other status change nothing: the context is as it was
         if kind not in ('subagent_spawned', 'subagent_state_update') or not child:
             return
         held = self.children.setdefault(child, {'session_id': child, 'name': None, 'task': None, 'state': 'running',
@@ -2056,6 +2069,35 @@ class Session:
         else:
             held['state'] = str(update.get('state') or 'ended')
         self.spawn(self.child_line(child))
+
+    async def compacted(self) -> None:
+        """The agent's context was compacted, ACP's `compaction_update` completed, CTX-045: what Metaform gave this
+        session once, each tool's guide and each node's summary, is forgotten, so each comes again at its next use;
+        what its AI tool itself holds, the tools it lists, stays. Nothing is pushed now: the `compacted` line is left
+        for the session, so its next Metaform tool call gives it first when that comes before the next turn, as it does
+        when the compaction falls inside a long turn; else the next turn opens with it, and the rest waits for the call
+        that needs it. `session.compacted` says it on the bus, for a module that keeps more per session, and the thread
+        keeps a line of it."""
+        gone = await asyncio.to_thread(forget_shown, self.runner)
+        if self.recompacted:  # not said yet by a turn sent since
+            await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, self.compaction_line())
+        await self.ctx.publish_async('session.compacted', {
+            'project': self.store.project_id, 'work_id': self.work_id, 'session': self.runner,
+            'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp'})
+        async with self.lock:
+            await self.flush()
+            await self.note(None, 'notice', f'{self.name} compacted its context; Metaform gives again what it '
+                                            f'gave once ({gone} pieces) at their next use.')
+
+    def compaction_line(self) -> str:
+        """What a turn after a compaction opens with: first the directive and the links to the agent's instruction
+        blocks, `agent_opening`, as its connect message opened, since the compaction removed what it read;
+        then what the agent works on, and that what Metaform gave it once comes again at its next use."""
+        who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
+            if self.at and self.role in ('worker', 'prep') else ''
+        opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
+        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who))
+                             if part)
 
     async def notice(self, said: dict[str, Any]) -> None:
         """One of ACP's session notices, the agent's own word on its state, such as an MCP server it could not start:
@@ -4010,6 +4052,9 @@ class Session:
         params = asked.model_dump(mode='json', by_alias=True, exclude_none=True)
         params['clientCapabilities']['subagents'] = {}  # claude-agent-acp and codex-acp: native subagent sessions
         params['clientCapabilities'].setdefault('session', {})['notices'] = {}  # ACP's session notices, v1
+        # ACP's session compaction, in Preview since 2026-09-23: an agent sends compaction_update only to a client that
+        # declares it, and its completed status is how this runner knows the agent lost what Metaform gave it once.
+        params['clientCapabilities']['session']['compaction'] = {}
         connection = self.raw()
         if connection is None:
             self.left_out = 'subagent sessions and session notices, which this SDK version cannot send'
@@ -4285,6 +4330,13 @@ class Session:
                                 text = f'{renewed}\n\n{text}'
                                 self.carried()  # the versions this turn carries, told with it
                                 await self.save_state()
+                        if self.recompacted:  # the first turn after a compaction says what the agent works on,
+                            self.recompacted = False  # unless a tool call in between gave it already
+                            line = self.compaction_line()
+                            # '' once a tool call gave it; not yet left for one, or left and not given: said here
+                            if line and await asyncio.to_thread(shown_before, self.runner, COMPACTED_KEY) != '':
+                                await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, '')
+                                text = f'{line}\n\n{text}'  # said once, by whichever comes first
                         await self.peer_marked(marks, 'delivered')
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040

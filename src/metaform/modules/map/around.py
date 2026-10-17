@@ -164,7 +164,9 @@ class Around:
             lines.append(f'{label.ljust(width)}  {number.rjust(digits)} {rest}' +
                          ''.join(f' · {part}' for part in parts[1:]))
         everyone = (self.address, *self.above, *self.below)
-        legends = [count.legend for count in self.counts.values()
+        legends = [legend(count.legend, [one for one in everyone if count.at.get(one, (0, 0, 0))[1]] or
+                          [one for one in everyone if count.at.get(one, (0, 0, 0))[0]])
+                   for count in self.counts.values()
                    if count.legend and any(count.at.get(one, (0, 0, 0))[0] for one in everyone)]
         reads = ' · '.join(f'{name}: {read}' for _, name, read in self.own)
         closing = _prompt('around_read', reads=reads) if reads else ''
@@ -190,6 +192,18 @@ class Around:
                 if line:
                     said.append(line)
         return said
+
+
+def legend(said: str, held: list[str]) -> str:
+    """A count's legend with its <address> filled in, so the call reads as it is made and no placeholder is sent:
+    `held` is the addresses that hold what it counts, those with new records first chosen by the caller. With several,
+    the call, from the last `: ` before the placeholder, is given once per address, joined by ` · `."""
+    at = said.find('<address>')
+    if at < 0 or not held:
+        return said
+    start = said.rfind(': ', 0, at)
+    start = 0 if start < 0 else start + 2
+    return said[:start] + ' · '.join(said[start:].replace('<address>', one) for one in held)
 
 
 def told(ctx: Context, found: Where, fits: Callable[[dict[str, Any]], bool] | None = None) -> dict[str, Any]:

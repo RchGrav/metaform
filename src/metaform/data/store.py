@@ -622,6 +622,11 @@ class Store:
         with self._read() as tx:
             return reads.search(tx, self._resolver(tx, selection), text, layer, raw, limit, after)
 
+    def find(self, text: str, *, selection: Sequence[str] | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        """What the map holds about some words: elements, joins and items, each by its Address, best first."""
+        with self._read() as tx:
+            return reads.find(tx, self._resolver(tx, selection), text, limit)
+
     def roots(self, *, selection: Sequence[str] | None = None, raw: bool = False, limit: int = LIMIT,
               after: str | None = None) -> Roots:
         """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025."""

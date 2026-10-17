@@ -806,8 +806,9 @@ debug = boolean('debug', False, help='Ask agents doing Metaform work for feedbac
 connect_instructions = choice('connect_instructions', ['compact', 'full'], 'compact',
                               help='What agents get as instructions: compact lists each module in one line, full '
                                    'gives every module\'s whole instructions.',
-                              details='Claude Code shows the first 2,048 characters of a server\'s instructions and '
-                                      'drops the rest, so compact keeps them whole there, and each module\'s full '
+                              details='Claude Code keeps the first 4,096 characters of a server\'s instructions and '
+                                      'drops the rest, and Metaform keeps its own to 2,048, so compact keeps them '
+                                      'whole there, and each module\'s full '
                                       'instructions come from metaform_instructions with module set, at '
                                       'metaform://instructions/<module>, or with metaform help agents <module>. full serves them all at once, for hosts that show more.',
                               label='Instructions at connect')

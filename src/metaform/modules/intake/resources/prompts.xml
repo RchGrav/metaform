@@ -19,7 +19,8 @@ When assigned an intake, follow the procedure at resource metaform://intake/proc
 prompt command; the forms it records are at resource metaform://intake/schema.</instructions>
 <!-- The first-run onboarding: ask the person once whether to analyse the project, then start the intake.
      Follows intake's line in the command-line guide and intake's instructions while the folder has no intake and
-     none is being recorded, whether or not the folder is registered. It stops by itself once an intake starts.
+     none is being recorded, whether or not the folder is registered. Served whole as metaform://firstrun, which the
+     connect message of the person's own sessions links while that holds. It stops by itself once an intake starts.
      Must not be deleted: the code requires it. Empty sends nothing. -->
 <no_intake>FIRST RUN. Metaform has not analysed this project yet. Handle this first,
 even if the person asked for something else; tell them you'll get to their

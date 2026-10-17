@@ -748,7 +748,8 @@ def test_completed_ticket_and_runner_death_have_one_status_on_every_surface(disp
     run('enable', 'mcp')
 
     async def read(client, _):
-        return json.loads(text(await called(client, 'dispatch_sessions', {'thread': False}))[-1])['sessions']
+        return json.loads(text(await called(client, 'dispatch_sessions', {'thread': False, 'view': 'full'}))[-1])[
+            'sessions']
 
     def shown():
         cli = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['sessions']
