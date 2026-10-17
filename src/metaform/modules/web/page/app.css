@@ -135,6 +135,56 @@
   --node:#364854; --node-sub:#324450; --node-sel:#2a7075; --node-broken:#864540; --group:#2d3e49; --node-line:#87959d; --edge:#87959d;
   --mark:#21666b; --string:#00fd78; --add:#87d999; --add-bg:#3e6145; --del:#ffacab; --del-bg:#7e4445; --shadow:#050f15;
 }
+/* Glass and Tinted Glass, after Solid Glass by deeplethe, https://github.com/deeplethe/solid-glass, MIT License (its
+ * notice is in NOTICE.md). Glass is its panes in daylight: smoked white glass on a cool grey page, the one light theme,
+ * so every role takes the lightness at which it holds its contrast on that page, its hue kept, the teal of --signal
+ * included. Tinted Glass is the material as designed: neutral grey panes on an even, unlit page. Besides the colors each
+ * block holds the material, used only by the rules under "The glass material" at the end of this file: the line of
+ * light along a pane's top edge (--glass-rim, --glass-inner), the hairline round it (--glass-edge, --glass-pop-edge),
+ * the shadow gathered under it (--glass-shade, --glass-contact, --glass-lift), each pane's fill by its thickness
+ * (--glass-thin, --glass-card, --glass-pop: thicker is more opaque), clear glass for small things and for the one state
+ * (--glass-control, --glass-state), a field's face, and the elevations drawn in it. */
+:root[data-theme="glass"]{
+  color-scheme:light;
+  --ground:#e4e6eb; --panel:#f8f9fb; --panel-2:#eaebed; --control:#80838b; --line:#dddfe2; --line-2:#c6c8cc;
+  --text:#0d0d0d; --muted:#52555b; --faint:#64676d;
+  --signal:#007269; --de:#161616; --dim-keep:0.75; --tree:#57626f; --link-opacity:0.9;
+  --intake:#1065bf; --memory:#7d47c4; --danger:#af4701;
+  --k1:#875b06; --k2:#077820; --k3:#c6156a; --k4:#006e8c; --k5:#6c6502; --k6:#5956c0;
+  --missing:#795f06; --broken:#c5292f; --exclude:#4d6d05; --question:#aa3c8a;
+  --node:#f9fafb; --node-sub:#edeeef; --node-sel:#d1e4e4; --node-broken:#f1d9da; --group:#edeff2; --node-line:#596273; --edge:#596273;
+  --mark:#c1dbdb; --string:#017634; --add:#1d7238; --add-bg:#d9e6e0; --del:#a04a4d; --del-bg:#ece0e3; --shadow:#1f2d4c;
+  /* the colors set for every theme at the top, which on a light page are the ink: what an agent's work uses, a
+   * request's dot in the 2D flow, a record's card, the pointer's ray */
+  --in-use:var(--de); --spark:var(--de); --record:var(--k1); --pointer:var(--k1);
+  --glass-rim:oklch(1 0 0 / 90%); --glass-inner:oklch(1 0 0 / 35%); --glass-edge:oklch(0.38 0.03 265 / 10%);
+  --glass-pop-edge:oklch(0.38 0.03 265 / 22%); --glass-pop-under:oklch(0.38 0.03 265 / 16%);
+  --glass-shade:oklch(0.3 0.06 265 / 28%); --glass-contact:oklch(0.25 0.03 265 / 6%); --glass-lift:oklch(0.25 0.03 265 / 14%);
+  --glass-thin:oklch(0.975 0.004 265 / 44%); --glass-card:oklch(0.958 0.006 265 / 96%); --glass-pop:oklch(0.985 0.003 265 / 98%); --glass-blur:blur(26px);
+  --glass-control:oklch(1 0 0 / 55%); --glass-control-rim:oklch(1 0 0 / 80%);
+  --glass-state:oklch(0.3 0.02 265 / 9%); --glass-state-rim:oklch(1 0 0 / 85%); --glass-state-edge:oklch(0.3 0.02 265 / 13%);
+  --glass-field:oklch(1 0 0 / 60%); --glass-field-rim:oklch(1 0 0);
+  --glass-ink-rim:oklch(1 0 0 / 30%); --glass-ink-under:oklch(0 0 0 / 45%);
+}
+:root[data-theme="tinted-glass"]{
+  color-scheme:dark;
+  --ground:#0d0d0d; --panel:#1a1a1a; --panel-2:#2c2c2c; --control:#757575; --line:#333333; --line-2:#484848;
+  --text:#fafafa; --muted:#a4a4a4; --faint:#939393;
+  --signal:#00fdea; --de:#ffffff; --dim-keep:0.65; --tree:#9a9a9a; --link-opacity:0.8;
+  --intake:#53a0ff; --memory:#b17eff; --danger:#fe6a00;
+  --k1:#fead00; --k2:#00fd49; --k3:#ff5c9b; --k4:#00cafe; --k5:#fbec00; --k6:#8d90ff;
+  --missing:#feca00; --broken:#ff635f; --exclude:#beff3d; --question:#ff8ad8;
+  --node:#202020; --node-sub:#2a2a2a; --node-sel:#1c5450; --node-broken:#612421; --group:#151515; --node-line:#949494; --edge:#949494;
+  --mark:#144b47; --string:#00fd78; --add:#87d999; --add-bg:#1c3e24; --del:#ffacab; --del-bg:#572124; --shadow:#000000;
+  --glass-rim:oklch(1 0 0 / 16%); --glass-inner:oklch(1 0 0 / 4%); --glass-edge:oklch(1 0 0 / 6%);
+  --glass-pop-edge:oklch(1 0 0 / 6%); --glass-pop-under:oklch(0 0 0 / 0%);
+  --glass-shade:oklch(0 0 0 / 60%); --glass-contact:oklch(0 0 0 / 10%); --glass-lift:oklch(0 0 0 / 22%);
+  --glass-thin:oklch(1 0 0 / 4.5%); --glass-card:oklch(0.231 0 0 / 94%); --glass-pop:oklch(0.22 0 0 / 96%); --glass-blur:blur(26px);
+  --glass-control:oklch(1 0 0 / 7%); --glass-control-rim:oklch(1 0 0 / 11%);
+  --glass-state:oklch(1 0 0 / 7%); --glass-state-rim:oklch(1 0 0 / 11%); --glass-state-edge:oklch(1 0 0 / 6%);
+  --glass-field:oklch(1 0 0 / 6%); --glass-field-rim:oklch(1 0 0 / 15%);
+  --glass-ink-rim:oklch(1 0 0 / 60%); --glass-ink-under:oklch(0 0 0 / 22%);
+}
 /* Elevation: what floats over the page casts a shadow by how far it stands above it, from the theme's shadow color. */
 :root{--lift-1:0 2px 8px color-mix(in srgb,var(--shadow) 40%,transparent);
   --lift-2:0 10px 30px color-mix(in srgb,var(--shadow) 50%,transparent),0 1px 3px color-mix(in srgb,var(--shadow) 30%,transparent);
@@ -2453,3 +2503,85 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 .unfolded .cut{white-space:normal;overflow:visible;overflow-wrap:anywhere}
 /* A tool call's title, cut in a row that opens on a click, shows whole while the call is open. */
 .toolhead[aria-expanded="true"] .title{white-space:normal;overflow-wrap:anywhere}
+/* The glass material, VIEW-023, for Glass and Tinted Glass alone (`[data-theme$="glass"]`), after Solid Glass by
+ * deeplethe, https://github.com/deeplethe/solid-glass, MIT License (NOTICE.md). Its four rules: the finish is at the
+ * edge, a line of light along a pane's top, a hairline round it and a shadow gathered under it, and never a gradient
+ * across its face; heavy, not airy, the panes neutral and taking no color from what is behind; depth is thickness, a
+ * layout pane thinnest, a window or a card thicker and a menu, a popover or a dialog thickest, and thicker is more
+ * opaque; one state, so what is under the pointer, chosen or held open wears the same small pane of clear glass.
+ * Thickness follows elevation: a pane the page lifts, --lift-2 or --lift-3, a menu, a popover, a window, a dialog, is
+ * the thickest, a card lying in a pane is thinner, and the layout panes on the ground are the thinnest. A pane over the
+ * map is blurred, which Solid Glass does, as its panes are: the blur cost no frame time, measured on 2026-10-17 with
+ * the 2D map flowing behind open panes (artifacts/critic/theme-solid-glass.md). Its fill alone, without the blur, is
+ * opaque enough that every text color holds 4.5 to 1 and --control 3 to 1 over black or white behind it, so the blur
+ * only softens what shows through. Every other theme is left as it was. */
+/* The elevations drawn in glass: a hairline outside the edge and the shadow gathered under it, a pane further off
+ * the page casting it further. */
+:root[data-theme$="glass"]{
+  --lift-1:0 0 0 1px var(--glass-edge),0 1px 2px var(--glass-contact),0 12px 32px -14px var(--glass-shade);
+  --lift-2:0 0 0 1px var(--glass-pop-edge),0 24px 60px -18px var(--glass-shade),0 6px 16px -6px var(--glass-lift);
+  --lift-3:0 0 0 1px var(--glass-pop-edge),0 32px 80px -20px var(--glass-shade),0 8px 22px -8px var(--glass-lift)}
+/* Thinnest: the panes the page is laid out in, on the ground. */
+:root[data-theme$="glass"] :is(header,aside,.toolbar-row,.wstabs,.wsarea:not([data-area="main"])){background:var(--glass-thin)}
+/* Thickest: what the page lifts over the rest, a menu, a list, a popover, a window, a dialog, a toast. The line of
+ * light inside its top edge, a shade along its foot where the thick pane turns away, and its elevation. It gives up the
+ * border it was given, which between its lines and its hairline showed as a second ring; a colored edge that says
+ * something, a toast's or a notice's, stays. */
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,.mascot-bubble,
+  .mascot-card,.wsghost,.voice-ask,.voice-note,.voice-wake,.hovercard,.tip3d,#helpdesk .latest,
+  .window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
+  background:var(--glass-pop);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
+  box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-2)}
+:root[data-theme$="glass"] :is(.window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
+  box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-3)}
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble,.wsghost,.voice-ask,.voice-note,
+  .voice-wake,.hovercard,.tip3d,.window,#board,#helpdesk,.emptystage .card,.nextcard,.sessionpop,.dockmenu){border-color:transparent}
+/* A pane docked into the workspace lies in it as a layout pane does. */
+:root[data-theme$="glass"] :is(.wsbody > .window.docked,.wsbody > #helpdesk){background:transparent;box-shadow:none}
+/* Inside a pane its bars are the pane, not a second fill laid over it. */
+:root[data-theme$="glass"] :is(#helpdesk .calls,#helpdesk .sessionbar,#helpdesk .planbox,#helpdesk .log){background:transparent}
+/* A card on the board is the thinner pane lying in the board's. */
+:root[data-theme$="glass"] #board .column{background:var(--glass-state);border-color:var(--glass-state-edge)}
+:root[data-theme$="glass"] #board .card{background:var(--glass-card);border-color:transparent;
+  box-shadow:inset 0 1px 0 var(--glass-rim),0 0 0 1px var(--glass-edge),0 1px 2px var(--glass-contact)}
+:root[data-theme$="glass"] #board .card:hover{box-shadow:inset 0 1px 0 var(--glass-rim),var(--lift-1)}
+/* Small things of clear glass: a button, a key, a chip, what the other side said. The button keeps its edge in
+ * --control, which holds 3 to 1, and gains the line of light inside it. */
+:root[data-theme$="glass"] :is(.btn:not(.quiet):not(.primary):not(.danger),kbd,.chip,.badge,.pill,.nodechip,button.chat){
+  background:var(--glass-control);box-shadow:inset 0 1px 0 var(--glass-control-rim),0 1px 2px var(--glass-contact)}
+:root[data-theme$="glass"] .btn:disabled{background:transparent;box-shadow:none}
+:root[data-theme$="glass"] #helpdesk .bubble.theirs{background:var(--glass-control);border-color:transparent;
+  box-shadow:inset 0 1px 0 var(--glass-control-rim),inset 0 0 0 1px var(--glass-edge),0 1px 2px var(--glass-contact)}
+/* What asks to be pressed is the most solid glass there is, a pane of the ink, here the accent: lit along its top,
+ * shaded along its foot. */
+:root[data-theme$="glass"] :is(.btn.primary,.btn.danger.solid,#helpdesk .bubble.mine,#helpdesk .compose button,#dockTab):not(:disabled){
+  box-shadow:inset 0 1px 0 var(--glass-ink-rim),inset 0 -1px 0 var(--glass-ink-under),0 1px 2px var(--glass-contact)}
+/* A field is a pane of clear glass to type on: its face, and the line of light inside its top edge; its edge stays
+ * --control. Being typed into, it keeps the page's focus ring. */
+:root[data-theme$="glass"] :where(input:not([type]),input[type=text],input[type=search],input[type=number],input[type=url],
+  input[type=email],textarea,select):not(.CodeMirror *):not(:focus-visible){background-color:var(--glass-field);
+  box-shadow:inset 0 1px 0 var(--glass-field-rim)}
+:root[data-theme$="glass"] #helpdesk .compose{background:var(--glass-field);box-shadow:inset 0 1px 0 var(--glass-field-rim)}
+:root[data-theme$="glass"] #helpdesk .compose:focus-within{box-shadow:inset 0 1px 0 var(--glass-field-rim),0 0 0 3px color-mix(in srgb,var(--signal) 14%,transparent)}
+:root[data-theme$="glass"] :is(.segmented,.switch input:not(:checked)){background:var(--glass-state)}
+/* The one state: under the pointer, chosen or held open, a row, a menu item or a button wears the same small pane of
+ * clear glass, a faint tint, a line of light along its top and a hairline round it, and nothing more. */
+:root[data-theme$="glass"] :is(
+  .menu > button:hover:not(:disabled),.menu > button:focus-visible,.menu .menu-item:hover,
+  .listbox [role="option"]:hover,.listbox [role="option"][aria-selected="true"],.listbox [role="option"].active,
+  .slash [role="option"][aria-selected="true"],#search [role="option"][aria-selected="true"],
+  .btn:hover:not(:disabled):not([aria-disabled="true"]):not(.primary):not(.danger),.btn[aria-expanded="true"]:not(.primary),
+  .btn[aria-pressed="true"]:not(.primary),.segmented button[aria-checked="true"],.wsslot[aria-pressed="true"],
+  .layerrow:hover,.modrow:hover,#task .rows [data-address]:hover,#task .rows [data-address].chosen,
+  .agents .agent:hover,#board .kindtoggle[aria-pressed="true"]){
+  background:var(--glass-state);
+  box-shadow:inset 0 1px 0 var(--glass-state-rim),0 0 0 1px var(--glass-state-edge)}
+/* A button keeps its edge: there it is the border that is the hairline. */
+:root[data-theme$="glass"] :is(.btn:hover:not(:disabled):not([aria-disabled="true"]):not(.primary):not(.danger):not(.quiet),
+  .btn[aria-expanded="true"]:not(.primary):not(.quiet),.btn[aria-pressed="true"]:not(.primary):not(.quiet)){
+  box-shadow:inset 0 1px 0 var(--glass-state-rim)}
+:root[data-theme$="glass"] .wsslot[aria-pressed="true"]{box-shadow:inset 0 1px 0 var(--glass-state-rim),inset 0 -2px 0 var(--signal)}
+/* A reader whose system asks for less transparency gets the panes without the blur; their fills hold without it. */
+@media (prefers-reduced-transparency: reduce){
+  :root[data-theme$="glass"]{--glass-blur:none}
+}

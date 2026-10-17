@@ -4135,6 +4135,13 @@ def themes():
     return found
 
 
+def scheme(name):
+    """A theme's color-scheme, light or dark, as its block of app.css says."""
+    import re
+    return re.search(r':root\[data-theme="' + re.escape(name) + r'"\]\{[^{}]*?color-scheme:(\w+)',
+                     page_file('app.css')).group(1)
+
+
 def rgb(color):
     return tuple(int(color[index:index + 2], 16) / 255 for index in (1, 3, 5))
 
@@ -4166,12 +4173,17 @@ def test_the_picker_offers_each_theme_of_the_styles_none_of_them_glares_and_each
                                                                  page_file('index.html'), re.DOTALL).group(0))
     assert sorted(offered) == sorted(found) and len(offered) == len(set(offered)) > 1
     assert all(colors.keys() == found['space'].keys() for colors in found.values())
-    # A page is looked at for hours: no theme's background is bright enough to glare, and the themes still differ in
-    # how dark they are, from near black to a dim paper.
-    grounds = {name: contrast(rgb(colors['--ground']), (1, 1, 1)) for name, colors in found.items()}
+    # A page is looked at for hours: no dark theme's background is bright enough to glare, and the dark themes still
+    # differ in how dark they are, from near black to a dim paper. Glass is the one light theme, asked for on
+    # 2026-10-17, and Tinted Glass its dark pair.
+    light = sorted(name for name in found if scheme(name) == 'light')
+    assert light == ['glass'] and scheme('tinted-glass') == 'dark'
+    grounds = {name: contrast(rgb(colors['--ground']), (1, 1, 1)) for name, colors in found.items() if name not in light}
     assert all(ratio >= 9 for ratio in grounds.values()), grounds
     assert max(grounds.values()) > 19 and min(grounds.values()) < 15, grounds
-    assert {'paper', 'mist'} <= set(found)
+    assert {'paper', 'mist', 'glass', 'tinted-glass'} <= set(found)
+    from metaform.modules.web import THEMES
+    assert sorted(THEMES) == sorted(found)
     assert len({colors['--ground'] for colors in found.values()}) == len(found)
 
 
@@ -4200,6 +4212,11 @@ def test_in_every_theme_each_color_of_the_graph_stands_clear_of_its_background()
         for text, box in LABELS_2D:
             if contrast(rgb(colors[text]), rgb(colors[box])) < 4.5:
                 low.append((name, text, f'on {box}'))
+        # the page's text on its panels, --faint included, and the edge of every control, WCAG 1.4.11
+        for panel in ('--panel', '--panel-2'):
+            for text, least in (('--text', 4.5), ('--muted', 4.5), ('--faint', 4.5), ('--control', 3)):
+                if contrast(rgb(colors[text]), rgb(colors[panel])) < least:
+                    low.append((name, text, f'on {panel}'))
     assert low == []
 
 
