@@ -5,7 +5,7 @@ import '/page/app/intake/intake.js';  // the part before runs first, so the part
 import {$, h, fill} from '/page/app/core/dom.js';
 import {S, read} from '/page/app/core/reads.js';
 import {DOCK} from '/page/app/dock/embody.js';
-import {D, agentAt, glyphOf, glyphFor, ticketOf} from '/page/app/agents/dispatch.js';
+import {D, agentAt, glyphOf, glyphFor, ticketOf, onOtherBase} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, permissionCard} from '/page/app/session/tools.js';
 import {openIntakeChat} from '/page/app/intake/intake.js';
@@ -64,6 +64,12 @@ function placeAsking() {
   if (held.left >= wide + 2 * gap) BOX.style.right = `${innerWidth - held.left + gap}px`;
 }
 /* Its head: the agent's glyph and name, its ticket, the place in the stack with the way through it, and close. */
+/* A request of an agent at work on a base the page does not show is still the person's to answer, and says where
+ * (UX review round 2, 2026-10-17, combined F4). */
+function elsewhere(one) {
+  const name = onOtherBase(one);
+  return name ? ` · on ${name}` : '';
+}
 function bar(one, at, waiting) {
   const ticket = isIntake(one.work_id) ? null : ticketOf(one.work_id);
   const step = by => () => {
@@ -75,7 +81,7 @@ function bar(one, at, waiting) {
     h('img', {class: 'glyph', src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}),
     h('div', {class: 'title'}, h('b', {}, agentName(one.agent)),
       h('small', {title: ticket?.title || ''}, ` on ${workPart(one.work_id)}${ticket?.map?.item
-        ? ` · ${ticket.map.item}` : ''}`)),
+        ? ` · ${ticket.map.item}` : ''}${elsewhere(one)}`)),
     many ? h('button', {type: 'button', class: 'btn icon sm prev', title: 'The request before',
       'aria-label': 'The request before', onclick: step(-1)},
     h('i', {class: 'i i-chev', 'aria-hidden': 'true'})) : null,

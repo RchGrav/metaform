@@ -342,7 +342,7 @@
  },
  "cloud": null,
  "dispatch": {
-  "version": 17,
+  "version": 18,
   "compatible_from": 5,
   "tables": {
    "agent_sessions": {
@@ -1372,6 +1372,89 @@
        ],
        [
         "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "signals": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "name"
+    ],
+    "columns": {
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
         0,
         "BINARY"
        ]

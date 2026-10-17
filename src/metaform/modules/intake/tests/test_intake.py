@@ -490,6 +490,34 @@ def test_a_project_mapped_in_another_base_is_never_told_first_run(run, project, 
 
 
 @pytest.mark.req('MCP-009')
+@pytest.mark.req('STORE-041')
+def test_an_empty_active_base_points_to_the_map_last_made_active_never_a_trial_beside_it(run, project, tmp_path):
+    """UX review round 2, 2026-10-17 (project-scope F3 and F4): with main the person's map and a trial intake v2
+    finished beside it and never made active, intake status sent the person to v2, and an agent's empty map reads in
+    a new empty base said nothing of the map at all. Both name main, the map the person last made active, and the
+    base list says which bases hold a map."""
+    submit(run, project, FIXTURE, tmp_path)
+    changed = copy.deepcopy(FIXTURE)
+    changed['elements'][2]['namespace_address'] = 'code.alarm.visual'
+    changed['elements'][1]['joins'][0]['provider'] = 'code.alarm.visual'
+    submit(run, project, changed, tmp_path, extra=('name=v2',))  # finished beside main, never made active
+    run('map', 'add-base', 'fresh', '--confirm', cwd=project)
+    said = run('intake', 'status', cwd=project).stdout
+    assert said.rstrip().endswith('metaform map activate main --confirm'), said
+    roots = json.loads(run('map', 'roots', '--json', cwd=project).stdout)
+    told = ("The active map, fresh, is empty; this project's map is kept in main (v2 holds a map too). Making it "
+            "active again is the person's choice: metaform map activate main --confirm")
+    assert [notice['message'] for notice in roots['notices']] == [told], roots
+    missing = run('map', 'where', 'code.alarm.audible', cwd=project, ok=False)
+    assert 'kept in main' in missing.stdout + missing.stderr
+    listed = json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']
+    assert {one['name']: one['mapped'] for one in listed} == {'main': True, 'v2': True, 'fresh': False}
+    run('activate', 'base', 'main', cwd=project)
+    assert json.loads(run('map', 'roots', '--json', cwd=project).stdout).get('notices') in (None, []), \
+        'a mapped base pays nothing and says nothing'
+
+
+@pytest.mark.req('MCP-009')
 @pytest.mark.req('MCP-031')
 def test_an_intake_started_and_not_finished_is_named_in_the_instructions(run, project):
     """The no-intake notice is needed to onboard; when an intake is started and aborted, the next agent is told that an

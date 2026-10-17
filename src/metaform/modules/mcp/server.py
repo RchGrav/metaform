@@ -23,6 +23,7 @@ import functools
 import hashlib
 import inspect
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -37,6 +38,7 @@ import anyio
 
 from metaform import events, home, prompt_files, settings
 from metaform.data import (
+    BASE_VARIABLE,
     NewerStore,
     Store,
     StoreError,
@@ -629,7 +631,8 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
                 ['metaform', 'restore', 'project', project, *([backup] if backup else [])]), 'Restore')
         restored = home.restore_project(project, backup)
         return False, [result_json({'project': project, 'said': restored.said, 'backup': restored.backup.name,
-                                    'held_before': restored.held_before, 'back': restored.back})]
+                                    'held_before': restored.held_before, 'back': restored.back,
+                                    **({'stopped': list(restored.stopped)} if restored.stopped else {})})]
     if name == 'clear_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         again = f'ask the person to clear {project} again'
@@ -1178,6 +1181,12 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
         return True, [(f'Error: {type(error).__name__}: {error}\nNext: call {OWN}_feedback and say what you '
                        'called')], None
+    if os.environ.get('METAFORM_ROLE') == 'system':  # the one agent that follows the active map, `map_moved`
+        moved: str | None = None
+        with anyio.CancelScope(shield=True):  # its verb's effect landed: a cancel now never loses the result
+            moved = await anyio.to_thread.run_sync(map_moved, ctx.project)
+        if moved:
+            lines.append(f'Notice: map: {moved}')
     if lines and isinstance(result, str):  # one block, so no host's way of joining blocks runs the lines into the text
         return False, ['\n'.join(lines) + '\n' + result], None
     blocks = ['\n'.join(lines)] if lines else []
@@ -1185,6 +1194,32 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
         blocks.append(result if isinstance(result, str) else result_json(result))
     data = None if result is None or isinstance(result, str) else plain(result)
     return False, blocks, cast(dict[str, Any], data) if isinstance(data, dict) else None
+
+
+# The active metaform each project's map tools last read here, for the person's own agent, which follows it, `map_moved`.
+_READ_ON: dict[str, str] = {}
+
+
+def map_moved(project: str | None) -> str | None:
+    """For the person's own agent, the one that follows the active metaform, what its next call is told when the map
+    it reads changed since its last call: which map it reads now and that the other is kept. Said once per change, in
+    the result of the call that first reads it; nothing for any other agent, which stays on its own metaform, nor for
+    a first call (decision of 2026-10-17, pending Rich's confirmation; the wording is his to give)."""
+    if not project or os.environ.get('METAFORM_ROLE') != 'system' or os.environ.get(BASE_VARIABLE):
+        return None
+    try:
+        now = home.active_base(project)
+    except (OSError, StoreError, Stop):
+        return None
+    if now is None:
+        return None
+    before = _READ_ON.get(project)
+    _READ_ON[project] = now.id
+    if before is None or before == now.id:
+        return None
+    left = home.base_by_id(project, before)
+    kept = f'; {left.name} is kept as it was' if left is not None else ''
+    return f'The person made {now.name} the active map: your map tools read {now.name} from here{kept}.'
 
 
 async def _threaded(run: Any, ctx: Any) -> Any:

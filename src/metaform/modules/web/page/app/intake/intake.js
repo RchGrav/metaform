@@ -275,12 +275,20 @@ export function drawEmpty() {
   FIRST.drawn?.(Boolean(empty), settled);
   $('#emptyStage').hidden = !empty;
   if (!empty) return;
-  // a base shown empty beside others that hold maps says they are kept and offers them first, ahead of a new intake
+  // A base shown empty beside others that hold maps says they are kept and offers first, ahead of a new intake, the
+  // one the person last made active: the base list says which hold a map, `mapped`, and when each was last active,
+  // so it never offers another empty base (UX review round 2, 2026-10-17, project-scope F3).
   const others = S.bases.filter(item => item.id !== S.base);
-  fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : others.length
-    ? `This base of ${S.project} is empty. Its other bases are kept: ${others.map(item => item.name).join(', ')}.`
+  const maps = others.filter(item => item.mapped), empties = others.filter(item => !item.mapped);
+  const names = list => list.map(item => item.name).join(', ');
+  fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : maps.length
+    ? `This base of ${S.project} is empty. ${maps.length === 1 ? 'Its map is' : 'Its maps are'} kept in `
+      + `${names(maps)}${empties.length ? `; ${names(empties)} ${empties.length === 1 ? 'is' : 'are'} empty too` : ''}.`
+    : others.length ? `This base of ${S.project} is empty, and so ${others.length === 1 ? 'is its other base'
+      : 'are its other bases'}, ${names(others)}.`
     : `${S.project}'s map is empty.`);
-  const back = others.find(item => item.active) || others[others.length - 1];
+  const back = maps.reduce((best, item) => !best || (item.activated || '') > (best.activated || '')
+    || (item.activated || '') === (best.activated || '') && item.created > best.created ? item : best, null);
   fill($('#emptyStage .other'), back ? h('button', {class: 'btn', type: 'button', onclick: () => showBase(back.id)},
     `Show ${back.name}`) : null);
 }

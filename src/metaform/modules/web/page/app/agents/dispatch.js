@@ -27,7 +27,7 @@ import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/boa
 import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
-import {isIntake, workPart} from '/page/app/session/tools.js';
+import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
@@ -322,7 +322,8 @@ export async function renderAgents(only = null) {
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent)].join('\n'),
+    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent),
+      onOtherBase(one)].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
@@ -335,7 +336,7 @@ export async function renderAgents(only = null) {
 const SETUP = {closed: null};
 function setupNotice() {
   const waiting = D.signals.filter(one => one.signal === 'setup-not-working' && one.active !== false);
-  const talking = D.sessions.some(one => one.state === 'running' && D.states[one.session_id]?.about === 'system');
+  const talking = D.sessions.some(one => one.state === 'running' && isSystemSession(one, D.states));
   const raised = waiting.map(one => one.signal_key).sort().join(' ');
   if (!waiting.length || talking || raised === SETUP.closed) {
     if (bannered('setup')) unbanner('setup');
@@ -406,8 +407,16 @@ async function readDispatch() {
 }
 /* One agent at work in the key: whether the part of the map it uses shows in white, its glyph, its name and what it
  * works on, opening its thread, and Chat. */
+/* The name of the base an agent's session is pinned to when it is not the base shown, else empty: an agent at work on
+ * a base the page does not show is still listed and stoppable here, and says where it works (UX review round 2,
+ * 2026-10-17, project-scope F5). */
+export function onOtherBase(one) {
+  if (!one.base || one.base === S.base) return '';
+  for (let at = 0; at < S.bases.length; at++) if (S.bases[at].id === one.base) return S.bases[at].name;
+  return 'another base';
+}
 function agentRow(one) {
-  const name = agentName(one.agent);
+  const name = agentName(one.agent), elsewhere = onOtherBase(one);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
     h('input', {type: 'checkbox', class: 'inuse', checked: !INUSE.off.has(one.work_id),
@@ -416,7 +425,7 @@ function agentRow(one) {
     h('button', {class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
       title: `${name} on work ${one.work_id}: working`, onclick: () => agentAt(one.work_id, one.session_id)},
     h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, name),
-    h('small', {}, `on ${workPart(one.work_id)} · working`)),
+    h('small', {}, `on ${workPart(one.work_id)} · working${elsewhere ? ` · on ${elsewhere}` : ''}`)),
     chatButton({id: one.work_id}, `${name} on ${workPart(one.work_id)}`));
 }
 // what an agent works on, cut short, is its button's tooltip, `expandCut`: the button's click is its own

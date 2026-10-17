@@ -40,8 +40,10 @@ change ownership or recover work. With `jev` on and its triage decision chosen, 
 them to Jev to be sorted, which spends the person's credit, so `signals` is declared effect `write` and `open_world`,
 never read-only, H17.
 
-Signals are JSON records of kind `signal` in the existing dispatch `lines` table, beside the map whose tickets and
-sessions they are raised on. This keeps storage compatible with live runners. The conversations themselves, each
+Signals are JSON records of kind `signal` in the project's `signals` table since tables version 18, each naming the
+metaform it was raised on, `base`, so a permission request of an agent pinned to a metaform no longer active still
+reaches the person after a switch; one of a metaform the project no longer holds is not read. Signals a runner on
+older code still writes into a metaform's `lines` are carried into it by `carry_conversations`. The conversations themselves, each
 session and its thread, are the project's since tables version 17: `agent_sessions`, `session_lines` and
 `session_attempts` in `modules/dispatch.sqlite3`, which no clear, restore, new base or switch of bases removes;
 `carry_conversations` moves what a metaform's store still holds of them there, idempotently, on each read of the

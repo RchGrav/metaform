@@ -140,6 +140,30 @@ def started(run, cwd=None):
     return json.loads(run('web', '--json', cwd=cwd).stdout)
 
 
+def intake_agent(run, folder, log, dispatch_runners, *nouns):
+    """An intake agent Metaform starts, the fake agent held, and the environment its MCP server records with: its role,
+    its work, its runner's session and the base it is pinned to. A page follows only an intake its agent records,
+    BASE-039, so a test records through this, never through a bare command line (UX review round 2, 2026-10-17,
+    project-scope F6: the follow tests drove the command line, which is never recording, and went red unseen)."""
+    from metaform import home as metaform_home
+    from metaform.data import Store
+    from metaform.modules.dispatch.tests.test_dispatch import eventually
+    run('enable', 'dispatch')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
+    fake = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}
+    launched = json.loads(run('dispatch', 'intake', 'agent=claude', *nouns, '--json', cwd=folder, env=fake).stdout)
+    dispatch_runners.append((launched, folder, log))
+    project = metaform_home.folder_project(folder)
+
+    def running():
+        with Store(project, module='dispatch').tables(write=False) as tx:
+            return next((dict(row) for row in tx.rows('agent_sessions', limit=0).results
+                         if row['work_id'] == launched['work_id'] and row['state'] == 'running'), None)
+    row = eventually(running)
+    return {'METAFORM_ROLE': 'intake', 'METAFORM_WORK': str(row['work_id']), 'METAFORM_SESSION': str(row['runner']),
+            'METAFORM_BASE': str(row['base'] or ''), **fake}
+
+
 @pytest.mark.req('VIEW-001')
 def test_web_ships_on_and_with_it_off_the_rest_of_metaform_works(run, module_row, tmp_path):
     folder = tmp_path / 'proj'
@@ -3360,7 +3384,8 @@ def test_an_intake_left_unfinished_is_never_shown_as_recorded_and_offers_resume_
 @pytest.mark.req('VIEW-005')
 @pytest.mark.req('BASE-039')
 def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_earlier_metaform(run, home, web,
-                                                                                               browser, tmp_path):
+                                                                                               browser, tmp_path,
+                                                                                               dispatch_runners):
     """Following a new intake, the map was redrawn and the panel kept the earlier metaform's element. A finished
     intake's project opens a new intake base when new shape is recorded, so the first part recorded opens it."""
     started(run)
@@ -3378,8 +3403,9 @@ def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_ea
                            '&& window.metaform.drawn().nodes === 1', timeout=30000)
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
                            timeout=15000)
-    run('intake', 'start', 'name=alarm', cwd=folder)  # a named intake: the new intake base opens
-    run('intake', 'element', 'code.alarm.audible', 'role=SE', cwd=folder)
+    agent = intake_agent(run, folder, tmp_path / 'fake.jsonl', dispatch_runners, 'map=new', 'name=alarm')
+    run('intake', 'start', 'name=alarm', cwd=folder, env=agent)  # a named intake: the new intake base opens
+    run('intake', 'element', 'code.alarm.audible', 'role=SE', cwd=folder, env=agent)
     page.wait_for_function('() => window.metaform.live() !== null', timeout=15000)
     # UX review round 1, 2026-10-17 (agent-identity-handoff F8): an intake in a base of its own no longer swaps the
     # whole page to it; the base list offers it, and the page follows it once the person shows it
@@ -4112,13 +4138,14 @@ def watching_toasts(page):
 @pytest.mark.req('VIEW-019')
 @pytest.mark.req('VIEW-018')
 def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_and_finished_when_it_finishes(
-        run, home, web, browser, tmp_path):
+        run, home, web, browser, tmp_path, dispatch_runners):
     started(run)
     folder = tmp_path / 'live'
     folder.mkdir()
     run('add', 'project', 'live', str(folder))
-    run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
+    agent = intake_agent(run, folder, tmp_path / 'fake.jsonl', dispatch_runners)
+    run('intake', 'start', cwd=folder, env=agent)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder, env=agent)
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     problems = []
     page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
@@ -4135,11 +4162,13 @@ def test_a_page_following_an_intake_says_it_stopped_when_the_project_is_cleared_
     said = page.evaluate('window.toasts')
     assert 'The intake stopped: live was cleared.' in said  # the layer is named intake, LAYER-025
     assert not [text for text in said if 'finished' in text]
-    run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder)
+    # the clear stopped the first; the same log, so the fake agent names its next session anew
+    agent = intake_agent(run, folder, tmp_path / 'fake.jsonl', dispatch_runners)
+    run('intake', 'start', cwd=folder, env=agent)
+    run('intake', 'element', 'stakeholder.cook.home', 'role=CQU', cwd=folder, env=agent)
     page.wait_for_function('() => window.metaform.live() !== null && window.metaform.drawn().nodes === 1', timeout=15000)
     page.evaluate('window.toasts = []')
-    run('intake', 'finish', cwd=folder)
+    run('intake', 'finish', cwd=folder, env=agent)
     page.wait_for_function('() => window.metaform.live() === null && window.metaform.loaded()', timeout=15000)
     said = page.evaluate('window.toasts')
     assert 'The intake finished.' in said
@@ -8261,10 +8290,12 @@ def test_the_side_column_and_its_split_are_dragged_to_size_kept_and_reset(run, w
 
 
 @pytest.mark.req('VIEW-019')
+@pytest.mark.req('VIEW-018')
 def test_an_intake_started_in_another_project_takes_the_page_there_and_it_follows_the_intake(
-        run, web, mapped, browser, tmp_path):
+        run, web, mapped, browser, tmp_path, dispatch_runners):
     """An intake was followed only in the project the page had open: one started in another project went unseen.
-    The page goes to the project where an intake starts and follows it, once for that intake."""
+    The page goes to the project where an intake agent starts, at its launch, not its first record, which may be
+    minutes later (UX review round 2, 2026-10-17, new-project-intake F3), and follows it, once for that intake."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
@@ -8272,16 +8303,23 @@ def test_an_intake_started_in_another_project_takes_the_page_there_and_it_follow
     folder = tmp_path / 'other'  # registered after the page opened, as a first run registers the folder
     folder.mkdir()
     run('add', 'project', 'other', str(folder))
-    run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
-    page.wait_for_function('() => location.hash === "#p=other" && window.metaform.live() !== null', timeout=20000)
+    page.wait_for_function('() => [...document.querySelectorAll("#proj option")].some(o => o.value === "other")',
+                           timeout=5000)  # the chooser lists it at once, VIEW-002
+    assert page.evaluate('location.hash') == '#p=proj', 'a registration alone moves no page'
+    agent = intake_agent(run, folder, tmp_path / 'fake.jsonl', dispatch_runners)
+    page.wait_for_function('() => location.hash === "#p=other"', timeout=5000)  # before anything is recorded
+    page.wait_for_selector('#intakeBar:not([hidden])', timeout=10000)
+    run('intake', 'start', cwd=folder, env=agent)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder, env=agent)
+    page.wait_for_function('() => window.metaform.live() !== null', timeout=20000)
     page.wait_for_function('() => window.metaform.drawn() && window.metaform.drawn().nodes === 1', timeout=15000)
     assert page.locator('#proj').input_value() == 'other'  # the project list has it, chosen
     assert problems == []
 
 
 @pytest.mark.req('VIEW-019')
-def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_reload(run, home, web, browser, tmp_path):
+def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_reload(
+        run, home, web, browser, tmp_path, dispatch_runners):
     """On a first run the page was opened before the folder was registered, said no project is registered, and had to be
     reloaded again and again until the intake showed. It now hears the intake start and goes to it."""
     started(run)
@@ -8293,11 +8331,162 @@ def test_a_page_opened_with_no_project_follows_the_first_run_intake_without_a_re
     folder = tmp_path / 'fresh'
     folder.mkdir()
     run('add', 'project', 'fresh', str(folder))
-    run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder)
-    page.wait_for_function('() => location.hash === "#p=fresh" && window.metaform.live() !== null', timeout=20000)
+    agent = intake_agent(run, folder, tmp_path / 'fake.jsonl', dispatch_runners)
+    page.wait_for_function('() => location.hash === "#p=fresh"', timeout=10000)
+    run('intake', 'start', cwd=folder, env=agent)
+    run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=folder, env=agent)
+    page.wait_for_function('() => window.metaform.live() !== null', timeout=20000)
     page.wait_for_function('() => window.metaform.drawn() && window.metaform.drawn().nodes === 1', timeout=15000)
     assert problems == []
+
+
+@pytest.mark.req('VIEW-045')
+def test_my_agent_never_opens_the_intake_nor_calls_it_your_system_agent(run, web, mapped, browser, tmp_path,
+                                                                      dispatch_runners):
+    """UX review round 2, 2026-10-17 (combined F3): with only an intake agent running, My agent opened a chat titled
+    "Your system agent" over the intake's thread, so a message meant for the person's own agent went to the intake.
+    The intake is told apart by what it is: My agent opens no thread of it, and the Agents menu calls it the intake."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    intake_agent(run, mapped, tmp_path / 'fake.jsonl', dispatch_runners)
+    page.wait_for_selector('#intakeBar:not([hidden])', timeout=15000)
+    page.evaluate("() => import('/page/app/dock/threads.js').then(part => part.showMine())")
+    page.wait_for_timeout(500)
+    head = page.inner_text('#helpdesk')
+    assert 'The intake of' not in head and 'intake' not in page.evaluate(
+        "() => import('/page/app/dock/embody.js').then(part => String(part.DOCK.target || ''))"), head
+    menu = page.evaluate("() => import('/page/app/dock/threads.js').then(part => "
+                         "import('/page/app/agents/dispatch.js').then(dispatch => dispatch.D.sessions.map("
+                         "one => part.sessionTask(one))))")
+    assert 'Conversation with your system agent' not in menu and 'The intake' in menu, menu
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+def test_a_burst_of_changes_in_another_project_that_concern_no_intake_makes_the_page_read_nothing(
+        run, web, mapped, browser, tmp_path):
+    """CLAUDE.md section 2, rule 5, for the page's handlers of other projects' changes (UX review round 2, 2026-10-17,
+    new-project-intake F1): its tickets, its bases and its registration decide nothing from a read; only the chooser
+    is read again for a registration, once."""
+    from metaform.data import Store
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    folder = tmp_path / 'quiet'
+    folder.mkdir()
+    asked = []
+    page.on('request', lambda request: asked.append(request.url) if '/api/' in request.url else None)
+    run('add', 'project', 'quiet', str(folder))
+    page.wait_for_function('() => [...document.querySelectorAll("#proj option")].some(o => o.value === "quiet")',
+                           timeout=5000)
+    store = Store('quiet')
+    store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
+    store.add_element('parts', 'code.timer.kitchen')
+    for number in range(10):  # its tickets, each its own command and its own event
+        run('map', 'work', 'op=add', 'node=element:code.timer.kitchen', f'title=Ticket {number}', 'task=Do it',
+            cwd=folder)
+    run('map', 'add-base', 'other', '--confirm', cwd=folder)
+    page.wait_for_timeout(1500)
+    assert [url for url in asked if 'project=quiet' in url or '/api/intake-recording' in url] == [], asked
+    assert len([url for url in asked if '/api/projects' in url]) == 1, asked
+    assert page.evaluate('location.hash') == '#p=proj' and problems == []
+
+
+# An agent's harness talking to Metaform's MCP server over stdio, as the person's own AI tool does: it starts the
+# intake and holds it, recording nothing, until its standard input closes. The first call to a tool in a session may
+# answer with how to use it, so intake_start is called twice.
+HOLDING_INTAKE = """import asyncio, os, sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+async def main():
+    params = StdioServerParameters(command=sys.executable, args=['-m', 'metaform', 'mcp', 'serve'], cwd=sys.argv[1],
+                                   env=dict(os.environ))
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            for _ in range(2):
+                await session.call_tool('intake_start', {})
+            print('started', flush=True)
+            await asyncio.get_running_loop().run_in_executor(None, sys.stdin.readline)
+asyncio.run(main())
+"""
+
+
+@pytest.mark.req('VIEW-018')
+def test_an_intake_an_agent_starts_over_mcp_in_another_project_takes_the_page_there_before_its_first_record(
+        run, web, mapped, browser, tmp_path):
+    """UX review round 2, 2026-10-17 (new-project-intake F1): an agent's intake_start in a new project sends the
+    project's bases changing, then its recorder, in one burst; the page was busy reading for the first and threw the
+    second away, so it went there only at the agent's first record, minutes later with a real agent. It filters first
+    and keeps what comes while it reads, so it goes there with nothing recorded."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    folder = tmp_path / 'gamma'
+    folder.mkdir()
+    run('add', 'project', 'gamma', str(folder))
+    agent = subprocess.Popen([sys.executable, '-c', HOLDING_INTAKE, str(folder)], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, text=True)
+    try:
+        assert agent.stdout is not None and agent.stdout.readline().strip() == 'started'
+        page.wait_for_function('() => location.hash === "#p=gamma"', timeout=5000)
+    finally:
+        assert agent.stdin is not None
+        agent.stdin.close()
+        agent.wait(30)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-002')
+@pytest.mark.req('CLI-041')
+def test_metaform_start_in_a_new_folder_takes_an_open_page_there_at_once(run, web, mapped, browser, tmp_path):
+    """UX review round 2, 2026-10-17 (new-project-intake F2): metaform start in a new folder registered it and said
+    "the page shows the project meanwhile", while the open page went on showing another project with the new one not
+    even listed, and a reload kept the address it showed. Registration and the project opened are announced as such,
+    before any intake agent is launched, and every open page goes there."""
+    run('enable', 'dispatch')
+    for agent in ('claude', 'codex', 'gemini'):  # nothing this test does may start a real agent
+        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    folder = tmp_path / 'beta'
+    folder.mkdir()
+    (folder / 'notes.txt').write_text('A small project.\n', encoding='utf-8')
+    shown = run('start', cwd=folder, env={'PATH': os.path.dirname(sys.executable)}).stdout  # no AI tool on PATH
+    assert 'Project: beta, registered' in shown and 'Intake: not started' in shown, shown
+    page.wait_for_function('() => location.hash === "#p=beta"', timeout=5000)
+    assert page.locator('#proj').input_value() == 'beta'
+    page.wait_for_selector('#emptyStage:not([hidden])', timeout=15000)  # its empty map, with Start the intake
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-002')
+def test_a_folder_is_mapped_from_the_page_and_the_intake_window_opens_on_it(run, web, mapped, browser, tmp_path):
+    """UX review round 2, 2026-10-17 (new-project-intake, PROPOSED-VIEW-D): the page had no way to begin a new
+    project. Map a folder…, under Administration, registers a folder, named as metaform start names it, goes to it and
+    opens the intake window; one that does not exist is refused in place."""
+    from metaform import home as metaform_home
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    folder = tmp_path / 'Kitchen Timer'
+    folder.mkdir()
+    page.click('#adminBtn')
+    page.click('#mapFolderBtn')
+    page.wait_for_selector('#clearbox:not([hidden]) input.folderpath')
+    page.fill('#clearbox input.folderpath', str(tmp_path / 'missing'))
+    page.click('#clearbox button:has-text("Map it")')
+    page.wait_for_selector('#clearbox p.next:not([hidden])')
+    assert 'No folder at' in page.inner_text('#clearbox p.next')
+    page.fill('#clearbox input.folderpath', str(folder))
+    page.click('#clearbox button:has-text("Map it")')
+    page.wait_for_function('() => location.hash === "#p=kitchen-timer"', timeout=10000)
+    page.wait_for_selector('#intake:not([hidden])', timeout=10000)
+    assert metaform_home.folder_project(folder) == 'kitchen-timer'
+    assert [one.project_id for one in metaform_home.projects()].count('kitchen-timer') == 1
+    assert [one for one in problems if 'status of 400' not in one] == [], 'the missing folder\'s refusal alone'
 
 
 def newcomer(browser):

@@ -1,6 +1,7 @@
-"""Dispatch signals in existing transcript storage, without upgrading beneath active runners: a signal is a line of
-`lines`, beside the map whose tickets and sessions it is raised on, and a thread's own lines are in the project's
-`session_lines`, which no clear removes, PROJ-026."""
+"""Dispatch signals: a signal is a line of the project's `signals`, whatever map is shown, saying the metaform it was
+raised on, and a thread's own lines are in the project's `session_lines`, which no clear removes, PROJ-026. A signal
+of a metaform the project no longer holds, cleared or removed, is not read; a restore that brings it back brings its
+signals back with it."""
 from __future__ import annotations
 
 import hashlib
@@ -9,11 +10,13 @@ import time
 from collections.abc import Sequence
 from typing import Any, cast
 
-from metaform.data import Store
+from metaform.data import Store, StoreError
 from metaform.module import Context
 
+TABLE = 'signals'  # the project's table of signals, since dispatch's version 18
 # the kind of change each of dispatch's tables carries on `map.changed`, `concerning`
-KINDS = {'dispatch.lines': 'line', 'dispatch.permissions': 'permission', 'dispatch.sessions': 'session',
+KINDS = {'dispatch.lines': 'line', 'dispatch.signals': 'signal', 'dispatch.permissions': 'permission',
+         'dispatch.sessions': 'session',
          'dispatch.spending': 'spend', 'dispatch.settings': 'session', 'dispatch.merges': 'merge',
          'dispatch.session_lines': 'line', 'dispatch.agent_sessions': 'session'}
 # The tables a session's thread is in: its own lines, the project's since version 16, and the signals beside the map.
@@ -109,26 +112,28 @@ def record(store: Store, signal: str, *, work_id: str = '', session_id: str = ''
     own = own_store(store)
     source = session_id or f'work:{work_id}'
     name = f'signal:{signal}:{key}'
-    if not active and own.bound_base() is None:  # no metaform holds a signal to clear, and none is made for it
+    bound = own.bound_base()
+    if not active and bound is None:  # no metaform holds a signal to clear, and none is made for it
         return None
     with own.tables() as tx:
-        previous = tx.rows('lines', {'session_id': source, 'name': name}, limit=1).results
+        previous = tx.rows(TABLE, {'session_id': source, 'name': name}, limit=1).results
         if previous and json.loads(previous[0]['text'])['active'] == active:
             return None
         if not previous and not active:
             return None
         value = {'signal': signal, 'module': 'dispatch', 'project': store.project_id,
                  'work_id': work_id, 'session_id': session_id or None, 'active': active,
-                 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **details}
+                 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                 'base': bound.id if bound is not None else None, **details}
         text = json.dumps(value, ensure_ascii=False)
         tx.concern(work_id=work_id or None, session_id=session_id or None, kind='signal')
         if previous:
-            tx.update('lines', {'session_id': source, 'name': name}, {'text': text})
+            tx.update(TABLE, {'session_id': source, 'name': name}, {'text': text})
         else:
-            rows = tx.rows('lines', {'session_id': source}, limit=0).results
+            rows = tx.rows(TABLE, {'session_id': source}, limit=0).results
             seq = max((row['seq'] for row in rows), default=0) + 1
-            tx.insert('lines', {'session_id': source, 'name': name, 'work_id': work_id,
-                                'kind': 'signal', 'text': text, 'seq': seq})
+            tx.insert(TABLE, {'session_id': source, 'name': name, 'work_id': work_id,
+                              'kind': 'signal', 'text': text, 'seq': seq})
     return value
 
 
@@ -148,18 +153,34 @@ def announce(ctx: Context, value: dict[str, Any]) -> None:
 
 
 def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
-    """The signals of one ticket or of every ticket, read through the lines' (kind, work_id) index alone."""
+    """The signals of one ticket or of every ticket, read through the (kind, work_id) index alone, with what runners
+    on older code raised beside a map carried in first, which costs nothing while their stores are unchanged."""
+    from . import carry_conversations
+    try:
+        carry_conversations(own_store(store))
+    except StoreError:  # a metaform that cannot be read now keeps what it holds of them until one can carry it
+        pass
     with own_store(store).tables(write=False) as tx:
         return read_rows(tx, work_id, active)
 
 
 def read_rows(tx: Any, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
     """`rows`, read in the caller's transaction on dispatch's tables."""
-    rows = tx.rows('lines', {'kind': 'signal', **({'work_id': work_id} if work_id else {})}, by=('kind',),
+    rows = tx.rows(TABLE, {'kind': 'signal', **({'work_id': work_id} if work_id else {})}, by=('kind',),
                    limit=0).results
     found = [json.loads(row['text']) for row in rows]
-    return sorted((row for row in found if row['active'] == active),
+    held = _held_bases(found)
+    return sorted((row for row in found if row['active'] == active and (not row.get('base') or row['base'] in held)),
                   key=lambda row: (row['at'], row['session_id'] or '', row['signal']))
+
+
+def _held_bases(found: Sequence[dict[str, Any]]) -> set[str]:
+    """The ids of the metaforms the projects of these signals hold now, read once per project named."""
+    from metaform import home
+    held: set[str] = set()
+    for project in {str(row.get('project') or '') for row in found if row.get('base')}:
+        held.update(base.id for base in home.bases(project))
+    return held
 
 
 def read(ctx: Context) -> dict[str, Any]:
