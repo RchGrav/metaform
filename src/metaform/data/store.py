@@ -649,6 +649,37 @@ class Store:
     def bases(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Base]:
         return sliced(home.bases(self.project_id), limit, after)
 
+    def base_mapped(self, base: home.Base) -> bool:
+        """Whether one of the project's metaforms holds a finished intake; one that cannot be read does not."""
+        try:
+            return Store(self.project_id, base=base.id).has_intake()
+        except StoreError:
+            return False
+
+    def kept_map(self) -> home.Base | None:
+        """The metaform other than the active one that holds a finished map and that the person made active last: the
+        map an empty active metaform points back to, on the page, in `intake status` and in an empty map read, so all
+        name the same one (UX review round 2, 2026-10-17, project-scope F3 and F4). None when no other holds one."""
+        active = self.active_base()
+        others = [base for base in home.bases(self.project_id) if active is None or base.id != active.id]
+        return home.last_active(self.project_id, [base for base in others if self.base_mapped(base)])
+
+    def kept_map_said(self) -> str | None:
+        """That the active metaform holds no map while another keeps the project's, naming the one `kept_map` names
+        and how it is made active again, which is the person's to do; None when the active one is mapped or no other
+        is. Read only when a read of the map came back empty, so a mapped metaform pays nothing for it."""
+        if self.has_intake():
+            return None
+        kept = self.kept_map()
+        if kept is None:
+            return None
+        active = self.active_base()
+        others = [name for name in self.intake_bases() if name != kept.name]
+        also = f' ({", ".join(others)} {"holds" if len(others) == 1 else "hold"} a map too)' if others else ''
+        return (f'The active map, {active.name if active is not None else "(none yet)"}, is empty; this project\'s '
+                f'map is kept in {kept.name}{also}. Making it active again is the person\'s choice: metaform map '
+                f'activate {kept.name} --confirm')
+
     def intake_building(self) -> Page[Recording]:
         """Every intake building for this project, in whichever of its metaforms, BASE-039: a page of none or one,
         and of every one when more than one was opened, so none is hidden. Each says whether an agent records it now,

@@ -214,7 +214,7 @@ def stop_group(pid: int, expected: str) -> None:
 
 def recover(ctx: Context) -> dict[str, Any]:
     """Apply the configured recovery policy on demand or before Autostart selection, without rewriting reads."""
-    from . import foreign, held_ticket, sessions, ticket
+    from . import base_store, foreign, held_ticket, sessions, ticket
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
@@ -231,10 +231,12 @@ def recover(ctx: Context) -> dict[str, Any]:
     if policy != 'automatic':
         return result
     store = ctx.require_store()
-    own = own_store(store)
-    for row in sessions(own, verify=False):
+    for row in sessions(own_store(store), verify=False):
         if row['state'] != 'running':
             continue
+        # its ticket is in the metaform its runner was pinned to, whichever is active now (UX review round 2,
+        # 2026-10-17, project-scope F7)
+        own = base_store(own_store(store), row)
         work_id = str(row['work_id'])
         # an intake agent or a conversation on no map holds no ticket, and one a cleared map took has none to return
         record = held_ticket(own, work_id)

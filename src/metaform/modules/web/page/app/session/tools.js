@@ -23,6 +23,14 @@ export function clip(text, most) {
   return said.length > most ? said.slice(0, most - 1).trimEnd() + '…' : said;
 }
 export const isIntake = workId => String(workId || '').startsWith('intake-');
+/* Whether a session is the person's own system agent, by what its runner says it is, `role`, and for a session from
+ * before roles were kept, by what it is about: never an intake agent or a sentinel, which are about the system too, so
+ * My agent never opens the intake and the intake is never called "your system agent" (UX review round 2, 2026-10-17,
+ * combined F3). `state` is the session's state line, `workId` its work id. */
+export const isSystemState = (state, workId) => Boolean(state)
+  && (state.role ? state.role === 'system' : state.about === 'system') && !isIntake(workId);
+/* The same for a session row, read through the states the agents key holds. */
+export const isSystemSession = (session, states) => isSystemState(states?.[session.session_id], session.work_id);
 /* What a session works on, in words: the intake, or its ticket's part. An intake's work id is never a ticket. */
 export const workPart = workId => isIntake(workId) ? 'the intake' : ticketPart(ticketOf(workId));
 /* A mode that lets the agent act without asking: named so by the agents that offer one, as bypassPermissions, yolo or

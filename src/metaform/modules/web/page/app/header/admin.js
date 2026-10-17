@@ -12,7 +12,7 @@ import {M} from '/page/app/map2d/build.js';
 import {wrote} from '/page/app/board/history.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {intakeRunning, openIntake} from '/page/app/intake/intake.js';
-import {loadProject, toProject} from '/page/app/loading/load.js';
+import {loadProject, toProject, fillProjects, goToProject} from '/page/app/loading/load.js';
 
 /* ---------- clearing the project: what goes and what stays, asked on the page, VIEW-019 ----------
  * The warning is the command's own caution and the clear is the command's own operation, PROJ-025; every open page,
@@ -60,8 +60,14 @@ function saveFile(contents, name, type) {
 }
 /* A backup restored: the project's own backup of what it held is made first, so the restore is undone by restoring
  * that one. */
-async function restoreFrom(project, backup) {
-  const {response, body} = await postJson('/api/restore', {project, backup});
+async function restoreFrom(project, backup, confirm = false) {
+  const {response, body} = await postJson('/api/restore', {project, backup, ...(confirm ? {confirm: true} : {})});
+  // a restore clears first, which stops the agents at work: the server names them and the person decides, PROJ-030
+  if (response.status === 409 && body.caution) {
+    if (!await confirmAct({title: `Restore ${project} from ${backup}?`, text: body.caution, verb: 'Restore',
+      cancel: 'Keep it as it is'})) return false;
+    return restoreFrom(project, backup, true);
+  }
   if (!response.ok) { toast(body.error || 'The backup was not restored.'); return false; }
   fill($('#clearbox'), h('div', {class: 'sheet'}, h('p', {class: 'restored'}, body.said),
     body.held_before ? h('p', {class: 'next'}, `What the project held was backed up as ${body.held_before}.`) : null,
@@ -204,6 +210,7 @@ async function askRemove() {
     host: $('#clearbox')})) removeProject(found.project);
 }
 $('#removeBtn').onclick = askRemove;
+$('#mapFolderBtn').onclick = () => openMapFolder();
 async function removeProject(project) {
   const {response, body} = await postJson('/api/remove-project', {project, confirm: true});
   showClear(false);
@@ -212,8 +219,44 @@ async function removeProject(project) {
   S.projects = ((await getJson('/api/projects')).projects || []);
   if (!S.projects.length) return location.reload();
   toProject(S.projects[0].id);
-  fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
+  fillProjects();
   await loadProject();
+}
+/* Map a folder…, from Administration or a page with no project: a folder of the person's registered as a project of its own, named by the
+ * folder as metaform start names it, then shown, with the intake window open on it when it has no map yet (UX review
+ * round 2, 2026-10-17, new-project-intake PROPOSED-VIEW-D). An act the person chooses, never a screen over the
+ * workbench; nothing is written into the folder itself. */
+export function openMapFolder() {
+  showAdmin(false);
+  const field = h('input', {type: 'text', class: 'folderpath', placeholder: '/path/to/your/project',
+    'aria-label': 'Folder to map', autocomplete: 'off', spellcheck: 'false'});
+  const failed = h('p', {class: 'next', role: 'alert', hidden: true});
+  const go = h('button', {class: 'btn primary', type: 'button'}, 'Map it');
+  async function send() {
+    const path = field.value.trim();
+    if (!path) return field.focus();
+    go.disabled = true;
+    const {response, body} = await postJson('/api/add-project', {path});
+    go.disabled = false;
+    if (!response.ok) {
+      failed.textContent = (body.error || 'The folder was not registered.') + (body.next ? ` Next: ${body.next}.` : '');
+      failed.hidden = false;
+      return;
+    }
+    showClear(false);
+    await goToProject(body.project, body.created ? `${body.project} is registered for ${body.path}.`
+      : `${body.path} is ${body.project}, registered already.`);
+    if (!S.elements.size && !intakeRunning()) openIntake();
+  }
+  go.onclick = send;
+  field.onkeydown = event => { if (event.key === 'Enter') send(); };
+  fill($('#clearbox'), h('div', {class: 'sheet'}, h('h3', {}, 'Map a folder'),
+    h('p', {}, 'The folder becomes a project of its own, named after it, and the intake window opens on it. '
+      + 'Nothing is written into the folder.'),
+    h('label', {class: 'gate'}, 'Folder to map:', field), failed,
+    h('div', {class: 'acts'}, closeButton('Cancel'), go)));
+  showClear(true);
+  setTimeout(() => field.focus(), 0);
 }
 /* After a clear the project has no metaform until the next intake, or anything else written to it, makes one. */
 export const noMetaform = () => !S.bases.length;

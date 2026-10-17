@@ -163,7 +163,16 @@ PAGING = (Noun('limit', 'How many results, 0 for all.', kind='int', required=Fal
 
 def roots(ctx: Context) -> Any:
     """The map's entry: the CQU and the DE with their joins, and every root element, STORE-025."""
-    return _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    found = _store(ctx).roots(**_reading(ctx), **_paging(ctx))
+    return _kept_elsewhere(_store(ctx), found) if not found.entry and not found.elements else found
+
+
+def _kept_elsewhere(store: Store, result: Any) -> Any:
+    """An empty read of an empty active map, with a notice naming the base that keeps the project's map: an agent
+    connecting there is otherwise left to think the project unmapped (UX review round 2, 2026-10-17, project-scope
+    F4). Asked only of an empty read, so a mapped base pays nothing."""
+    said = store.kept_map_said()
+    return _with_notices(result, [Notice('map', said)]) if said else result
 
 
 def _with_modules(ctx: Context, found: Any, node: Node) -> Any:
@@ -366,6 +375,8 @@ def _missing(store: Store, address: str) -> Stop:
     addresses = [one.element.address for one in store.graph(raw=True, limit=0).elements]
     nearest = list(dict.fromkeys((*difflib.get_close_matches(address, addresses, n=5, cutoff=0.6), *children)))[:5]
     message = f'No element {address} in context here.'
+    if not addresses and (kept := store.kept_map_said()):  # an empty active map beside the project's own
+        return Stop(f'{message} {kept}.', 'tell the person; the switch is theirs')
     if nearest:
         return Stop(f'{message} Nearest: {", ".join(nearest)}.', f'metaform map where {nearest[0]}')
     return Stop(message, f'metaform map children address={shlex.quote(prefix)}')
@@ -479,7 +490,8 @@ def identity(ctx: Context) -> Any:
 
 
 def children(ctx: Context) -> Any:
-    return _store(ctx).children(ctx.nouns['address'], **_paging(ctx))
+    found = _store(ctx).children(ctx.nouns['address'], **_paging(ctx))
+    return _kept_elsewhere(_store(ctx), found) if not found.results and not ctx.nouns['address'] else found
 
 
 def layers(ctx: Context) -> Any:
@@ -541,7 +553,15 @@ def history(ctx: Context) -> Any:
 
 
 def bases(ctx: Context) -> Any:
-    return _other_project(ctx).bases(**_paging(ctx))
+    """The project's bases, each with whether it holds a finished map and when it was last made active, so a surface
+    showing an empty one can point to the map the person last worked on (UX review round 2, 2026-10-17, project-scope
+    F3)."""
+    store = _other_project(ctx)
+    found = store.bases(**_paging(ctx))
+    when = home.activations(store.project_id)
+    return found._replace(results=tuple(
+        home.BaseRead(**{field.name: getattr(base, field.name) for field in dataclasses.fields(base)},
+                      mapped=store.base_mapped(base), activated=when.get(base.id)) for base in found.results))
 
 
 def _switched(store: Store, switch: Callable[[], home.Base]) -> home.Base:
@@ -1293,6 +1313,8 @@ def work(ctx: Context) -> Any:
         listed = plain(_glyphed(store, found))
         listed['results'] = [{name: value for name, value in row.items() if name not in UNLISTED}
                              for row in listed['results']]
+        if not listed['results'] and node is None and (kept := store.kept_map_said()):
+            notices.append(Notice('map', kept))  # no ticket because the active map is empty, not because none is open
         return _with_notices(listed, notices)
     if op == 'add':
         node = _named(store, nouns, notices)

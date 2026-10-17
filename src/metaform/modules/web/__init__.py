@@ -349,6 +349,13 @@ def opened(project: str | None) -> None:
         pass  # the page then opens on the project it remembers, or the first; nothing else depends on it
 
 
+def takes_the_page(ctx: Context) -> bool:
+    """Whether a start of the page from this call may take the open pages to its project: the person's own, from
+    their terminal or their AI tool in the folder, or an intake agent's, which onboarding has start the page. An agent
+    Metaform dispatched to other work in another project never moves the person's page."""
+    return ctx.surface != 'mcp' or os.environ.get('METAFORM_ROLE') in (None, '', 'none', 'intake')
+
+
 def debug_file() -> Path:
     """The developer level the last `metaform web start` asked for, `--web-debug`, so a one-run choice reaches the
     server already running as well as one it starts."""
@@ -539,9 +546,19 @@ def announced(ctx: Context, started: dict[str, Any]) -> dict[str, Any]:
     return started
 
 
+OPENED_TABLE = 'web.opened'  # what `map.changed` names when a project is opened from its folder, `starting`
+
+
 def starting(ctx: Context) -> dict[str, Any]:
     bind, port = str(ctx.setting('web_bind')), int(ctx.setting('web_port'))
     opened(ctx.project)
+    if ctx.project and takes_the_page(ctx):
+        # Every open page goes to the project the person opened from its folder, at once, not on a reload, which the
+        # address it shows outranks, VIEW-002 (UX review round 2, 2026-10-17, new-project-intake F2). The relay takes
+        # the event to the page server whichever process runs this.
+        with contextlib.suppress(Exception):
+            ctx.publish('map.changed', {'project': ctx.project, 'base_id': None, 'tables': [OPENED_TABLE],
+                                        'kinds': ['opened']})
     try:
         home.mkdir_private(run_dir())
         write_run(debug_file(), str(ctx.setting('web_debug') or 'off'))

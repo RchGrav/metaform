@@ -961,6 +961,33 @@ def test_switching_the_active_base_asks_for_confirm(run, home, mapped):
     assert 'clear_project' not in session(home, mapped, narrowed)
 
 
+@pytest.mark.req('VIEW-045')
+def test_the_persons_own_agent_is_told_once_when_the_map_it_reads_changes(run, home, mapped, monkeypatch):
+    """UX review round 2, 2026-10-17 (project-scope F1): the person's own agent follows the active base, and was never
+    told when it changed. Its next call after a switch says which map it reads now, once; a pinned agent, or any
+    other role, is told nothing (decision pending Rich's confirmation, wording his to give)."""
+    from metaform import home as metaform_home
+    from metaform.modules.mcp.server import _READ_ON, map_moved
+    monkeypatch.setitem(_READ_ON, 'proj', '')
+    _READ_ON.pop('proj')
+    monkeypatch.delenv('METAFORM_BASE', raising=False)
+
+    def moved(role: str) -> str | None:  # the agent's MCP server, as its runner's environment names it
+        monkeypatch.setenv('METAFORM_ROLE', role)
+        try:
+            return map_moved('proj')
+        finally:
+            monkeypatch.delenv('METAFORM_ROLE')
+    assert moved('system') is None, 'a first call is told nothing'
+    run('map', 'add-base', 'fresh', '--confirm', cwd=mapped)
+    assert metaform_home.active_base('proj').name == 'fresh'
+    assert moved('system') == ('The person made fresh the active map: your map tools read fresh from here; main '
+                               'is kept as it was.')
+    assert moved('system') is None, 'once per change'
+    run('activate', 'base', 'main', cwd=mapped)
+    assert moved('worker') is None, 'a worker stays on its own base and is told nothing here'
+
+
 @pytest.mark.req('PROJ-025')
 @pytest.mark.req('MCP-006')
 def test_clear_project_returns_what_it_could_not_remove_with_what_to_do_and_no_error(run, home, mapped, unremovable):

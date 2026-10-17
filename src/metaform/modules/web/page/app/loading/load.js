@@ -14,7 +14,7 @@ import {withProviders, joinOf, READY} from '/page/app/graph/data.js';
 import {ROAM, figures} from '/page/app/figures/agents.js';
 import {leaveFollow} from '/page/app/figures/eyes.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
-import {G} from '/page/app/map3d/graph3d.js';
+import {G, start3D} from '/page/app/map3d/graph3d.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
 import {V3, MODE, fit3d} from '/page/app/camera/flight.js';
 import {renderLegend} from '/page/app/views/lens.js';
@@ -233,8 +233,19 @@ async function activateBase() {
   $('#activateBase').disabled = true;
   const made = await wrote('/api/activate-base', {name: chosen.name, confirm: true});
   // the agents at work on the base it left stay on it, and the server says which, STORE-041
-  if (made) toast(`${chosen.name} is the active base.` + (made.agents ? ` ${made.agents}` : ''));
+  if (made) toast(activated(chosen.name, made));
   else baseButtons();
+}
+/* What a switch says on the page, from the server's own account of it, `staying` and `following`, in the page's words:
+ * each agent at work on the base left by its ticket, and Stop where it is, never a command line (UX review round 2,
+ * 2026-10-17, project-scope F5). */
+function activated(name, made) {
+  const stays = made.staying || [], follows = made.following || [];
+  const one = stays.length === 1;
+  return `${name} is the active base.`
+    + (stays.length ? ` ${stays.join('; ')} ${one ? 'stays' : 'stay'} on ${made.left}, where `
+      + `${one ? 'its' : 'their'} work is; Stop ${one ? 'ends it' : 'ends one'} under Agents.` : '')
+    + (follows.length ? ` ${follows.join('; ')} ${follows.length === 1 ? 'reads' : 'read'} ${name} from now on.` : '');
 }
 $('#activateBase').onclick = activateBase;
 /* Removing a base cannot be undone from the page, so it is asked first, saying what goes and what is kept. */
@@ -299,6 +310,25 @@ function leaveAgents() {
   forgetHarnesses();  // the agents another project's folder sets are its own, VIEW-039
   for (const one of [PICKERS.start, PICKERS.task, PICKERS.element]) one?.set(null);  // and so is a choice made there
   leaveApps();  // and the MCP Apps views shown for it, torn down, in the thread and in panels
+}
+/* The project chooser, VIEW-002: every registered project, the one shown chosen. A folder becomes one from
+ * Administration's Map a folder… (UX review round 2, 2026-10-17, new-project-intake, PROPOSED-VIEW-D). */
+export function fillProjects() {
+  fill($('#proj'), ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
+}
+/* Another project gone to without the person choosing it in the chooser: one registered and opened from its folder,
+ * or an intake that started there, VIEW-002 and VIEW-018. The list is read again, since it may be new; false when it
+ * is not registered, and nothing changes. */
+export async function goToProject(id, said = '') {
+  S.projects = (await getJson('/api/projects')).projects || [];
+  if (!S.projects.some(item => item.id === id)) { fillProjects(); return false; }
+  if (!G) start3D();  // a page opened with no project has not drawn a 3D map yet
+  toProject(id);
+  fillProjects();
+  await loadProject();
+  listen();
+  if (said) toast(said);
+  return true;
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
 $('#mf').onchange = () => { S.base = $('#mf').value; baseButtons(); loadMetaform(); };

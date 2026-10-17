@@ -19,7 +19,7 @@ import {wrote} from '/page/app/board/history.js';
 import {narrowPage} from '/page/app/dock/place.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
-import {isIntake, countOf} from '/page/app/session/tools.js';
+import {isIntake, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
@@ -132,8 +132,7 @@ function myGlyph() {
 /* My agent: the person's system agent's conversation, its running session however it was started; with none running,
  * its last thread here, or the dock as it is with no agent there, ready to Call. No other agent is stopped. */
 export function showMine() {
-  const session = D.sessions.filter(one => one.state === 'running' && D.states?.[one.session_id]?.about === 'system')
-    .at(-1);
+  const session = D.sessions.filter(one => one.state === 'running' && isSystemSession(one, D.states)).at(-1);
   const chat = session ? DOCK.chats.find(one => one.session === session.session_id) : DOCK.chats.findLast(isMine);
   if (chat) return showChat(chat);
   if (session) {
@@ -163,7 +162,7 @@ export function drawAgentList() {
   box.hidden = !LIST.shown;
   if (!LIST.shown) return;
   const running = D.sessions.filter(one => one.state === 'running');
-  const system = one => D.states?.[one.session_id]?.about === 'system';
+  const system = one => isSystemSession(one, D.states);
   const others = running.filter(one => !system(one)), listed = new Set(others.map(one => one.session_id));
   const working = new Set(others.map(one => one.work_id));
   // a thread waiting for its ticket's session is that session's row
@@ -251,7 +250,8 @@ function endWord(session) {
 }
 export function sessionTask(session, state = D.states?.[session.session_id]) {
   const ticket = ticketOf(session.work_id);
-  const conversation = state?.about === 'system' ? 'Conversation with your system agent'
+  const conversation = isSystemState(state, session.work_id) ? 'Conversation with your system agent'
+    : isIntake(session.work_id) ? 'The intake'
     : state?.about ? `Conversation about ${state.about.replace(/^[^:]+:/, '')}`
     : ticket?.held ? 'Conversation' : null;
   return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;
@@ -282,7 +282,7 @@ function sessionRow(session, forget = false) {
   const open = () => {
     $('#agentbox').hidden = true;
     openHelpdesk(session.work_id, `${name} on ${task}`, '', session.session_id,
-      D.states?.[session.session_id]?.about === 'system' ? 'system' : null, {focus: true});
+      isSystemSession(session, D.states) ? 'system' : isIntake(session.work_id) ? 'intake' : null, {focus: true});
   };
   const resume = async event => {
     const button = event.currentTarget;

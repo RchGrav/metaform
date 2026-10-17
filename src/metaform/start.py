@@ -83,6 +83,10 @@ def start(args: list[str], folder: Path, say: Say) -> None:
         say(f'Read: {summary(found)}')
         ask(found, project, say)
     address = web(folder, project)
+    # The registration and the project opened reach every open page now, before the intake agent is launched, which
+    # may take a minute: the page goes to this project at once (UX review round 2, 2026-10-17, new-project-intake F2).
+    from . import changes
+    changes.announce(folder, 'cli')
     shown: list[bool] = []
 
     def show() -> None:
@@ -100,20 +104,11 @@ def start(args: list[str], folder: Path, say: Say) -> None:
 def register(folder: Path, say: Say) -> str:
     """The folder's project, registered under the folder's own name when it has none; a name another folder holds
     takes the next free number, so nothing is asked."""
-    held = home.folder_project(folder)
-    if held is not None:
-        say(f'Project: {held}, already registered.')
-        return held
-    named = home.project_id_for(folder)
-    chosen, number = named, 2
-    while home.project(chosen) is not None:
-        suffix = f'-{number}'
-        chosen, number = named[:64 - len(suffix)] + suffix, number + 1
     try:
-        home.add_project(chosen, folder)
+        chosen, made = home.register_folder(folder)  # one rule names a project wherever it is registered
     except StoreError as error:
         raise Stop(str(error), error.next_step) from None
-    say(f'Project: {chosen}, registered for {folder}.')
+    say(f'Project: {chosen}, registered for {folder}.' if made else f'Project: {chosen}, already registered.')
     return chosen
 
 

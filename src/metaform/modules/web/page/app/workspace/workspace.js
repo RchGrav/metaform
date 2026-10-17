@@ -44,7 +44,8 @@ import {isIntake, workPart} from '/page/app/session/tools.js';
 import {INTAKE, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
 import {BUILD} from '/page/app/build/build.js';
 import {listen, agentsIdle, heardCount} from '/page/app/live/ops.js';
-import {loadProject} from '/page/app/loading/load.js';
+import {loadProject, fillProjects} from '/page/app/loading/load.js';
+import {openMapFolder} from '/page/app/header/admin.js';
 
 /* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug
  * ---------- Off, the default, logs nothing and keeps no trace. info logs each read and write of the page and keeps
@@ -312,8 +313,11 @@ export async function main() {
   }
   S.projects = listed.projects || [];
   if (!S.projects.length) {
-    fill($('#p-object'),
-      h('p', {class: 'empty'}, 'No project is registered. Register one with: metaform add project <id> <path>'));
+    fillProjects();  // its Map a folder… registers one from here
+    fill($('#p-object'), h('div', {class: 'emptypanel'},
+      h('p', {class: 'empty'}, 'No project is registered. Map a folder of yours, or run metaform start in it.'),
+      h('div', {class: 'acts'}, h('button', {class: 'btn primary', type: 'button', onclick: () => openMapFolder()},
+        'Map a folder…'))));
     listen();  // still hears what modules publish: an intake started in a project registered later takes the page there
     revealed();
     return;
@@ -327,8 +331,7 @@ export async function main() {
     || S.projects[0].id;
   try { localStorage.setItem('metaform.project', S.project); } catch (error) { /* storage can be blocked */ }
   window.history.replaceState(null, '', '#p=' + encodeURIComponent(S.project));
-  fill($('#proj'),
-    ...S.projects.map(item => h('option', {value: item.id, selected: item.id === S.project}, item.id)));
+  fillProjects();
   start3D();
   // a project that cannot be read is said by the error surface; the page around it is shown and still listens
   try { await loadProject(); } catch (error) { pageFailed(error); }
