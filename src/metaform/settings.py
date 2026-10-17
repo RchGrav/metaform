@@ -190,10 +190,24 @@ def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command
     if held:
         switches = ' '.join(f'{SCHEMA[key].switch} <value>' for key in held)
         said, step = asking(folder)
+        only = [key for key in held if not SCHEMA[key].on_persons_word]
+        worded = [key for key in held if SCHEMA[key].on_persons_word]
+        told = [f'{", ".join(only)} {"is" if len(only) == 1 else "are"} set only by the person, never by an agent.'
+                if only else '',
+                f'{", ".join(worded)} {"is" if len(worded) == 1 else "are"} set by the person, or by their own system '
+                f'agent {WORD_TURN}; this call is made in no such turn.' if worded else '']
         raise PersonsDecision(
-            f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, never by an agent. {said}',
+            f'{" ".join(one for one in told if one)} {said}',
             f'{step}use the settings screen on the page, or paste into {TERMINAL}: '
             f'{command or "metaform set " + switches}')
+
+
+# What lets the person's own system agent act on the person's word, said in each refusal of such an action
+# (`metaform.module.on_persons_word`), so the agent, and the person, know what would allow it.
+WORD_TURN = 'only in a turn the person\'s own message in its chat started (sent on the page, or at their terminal)'
+WORD_COVERS = (f'Their own system agent acts on it {WORD_TURN}, and, in any later turn, on a ticket of the work it '
+               'started, released or ordered on that message, with the tickets that work waits on or that wait on it, '
+               'until that work is done or the person stops it.')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,

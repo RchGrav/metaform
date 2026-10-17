@@ -2063,7 +2063,8 @@ def test_a_person_only_setting_given_for_one_call_over_mcp_is_refused_before_the
         offered = (await listed(client))['dispatch_autostart'].input_schema
         return refused.is_error, text(refused)[0], offered['properties']
     error, said, offered = session(home, mapped, call)
-    assert error and said.startswith('Error: dispatch_agents, dispatch_autostart are set only by the person')
+    assert error and said.startswith('Error: dispatch_agents is set only by the person, never by an agent. '
+                                     'dispatch_autostart is set by the person, or by their own system agent only in')
     assert not {'dispatch_autostart', 'dispatch_agents', 'dispatch_recovery'} & set(offered)
 
 

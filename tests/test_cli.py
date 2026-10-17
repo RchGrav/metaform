@@ -192,7 +192,8 @@ def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(ru
     call = ('dispatch', 'autostart', '--dispatch-autostart', '--dispatch-agents', '12')  # within the cap of 17
     refused = run(*call, cwd=project, env={'METAFORM_ROLE': 'system'}, ok=False)
     assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert 'dispatch_agents, dispatch_autostart are set only by the person' in refused.stderr
+    assert 'dispatch_agents is set only by the person, never by an agent.' in refused.stderr
+    assert 'dispatch_autostart is set by the person, or by their own system agent only in a turn' in refused.stderr
     assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person, person-consent F2
     assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': ''}).stdout
 

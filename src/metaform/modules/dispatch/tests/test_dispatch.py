@@ -2816,7 +2816,8 @@ def test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_an
         eventually(lambda: len(prompts()) == 2)
         run('set', '--dispatch-autostart', cwd=dispatch.folder, env=agent)  # before any runner it starts could end
         assert autostart() is True
-        run('set', '--no-dispatch-autostart', cwd=dispatch.folder, env=agent)
+        reset = run('unset', '--dispatch-autostart', cwd=dispatch.folder, env=agent)  # as `set`, and as over MCP
+        assert 'reset dispatch_autostart to the default' in reset.stdout, reset.stdout
         assert autostart() is False
         started = json.loads(run('dispatch', 'start', other, 'claude', '--json', cwd=dispatch.folder,
                                  env={**agent, **others}).stdout)
@@ -2842,16 +2843,83 @@ def test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_an
         eventually(lambda: len(prompts()) == 3)
         eventually(lambda: running(later))
         for words in (('dispatch', 'start', other, 'claude'), ('map', 'work', 'op=edit', f'id={held[1]}', 'held=false'),
-                      ('dispatch', 'stop', later), ('set', '--dispatch-autostart')):
+                      ('dispatch', 'stop', later), ('set', '--dispatch-autostart'), ('unset', '--dispatch-autostart')):
             refused = run(*words, cwd=dispatch.folder, env={**agent, **others}, ok=False)
             assert refused.returncode == 2, (words, refused.stdout, refused.stderr)
-            assert "carries no word of theirs" in refused.stderr or 'set only by the person' in refused.stderr, \
+            assert 'in no work their word started' in refused.stderr or 'made in no such turn' in refused.stderr, \
                 refused.stderr
         assert dispatch.store.ticket(held[1]).work.held and running(later) and not running(other)
         assert autostart() is False and len(on_word()) == 5  # and nothing was recorded on a word it never had
     finally:
         run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
         for work in (other, later):
+            run('dispatch', 'stop', work, cwd=dispatch.folder, ok=False)
+        dispatch.stop()
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('VIEW-045')
+def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_stop_it(dispatch, run, tmp_path):
+    """The person's word covers the work it started, not just its turn: their message starts a plan of A, then B
+    waiting on A; A is done, and the agent's own timer wakes a later turn in which it starts B with no ask, recorded in
+    its chat with that message. A ticket outside the plan is refused in that turn, and once the person stops B, the
+    word starts nothing more of that work. Every agent here is the fake agent."""
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    (gates / '1').touch()
+    dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+    runner = eventually(lambda: next((row['runner'] for row in read(run, dispatch)['sessions']
+                                      if row.get('state') == 'running' and row.get('runner')), None))
+
+    def prompts():
+        return [one for one in dispatch.received('session/prompt') if one['params']['sessionId'] == 'fake-session-1']
+
+    eventually(lambda: len(prompts()) == 1 and read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
+    agent = {'METAFORM_ROLE': 'system', 'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': runner,
+             'FAKE_ACP_LOG': str(dispatch.log), 'FAKE_ACP_MODE': 'plain'}
+    first = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Wave A').id
+    second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Wave B').id
+    outside = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Not in the plan').id
+    run('map', 'work', 'op=edit', f'id={second}', f'after_work=["{first}"]', cwd=dispatch.folder)  # the plan
+
+    def running(work):
+        return any(row.get('state') == 'running' for row in read(run, dispatch, work)['sessions'])
+
+    def on_word():
+        return [line['text'] for line in read(run, dispatch)['lines']
+                if line['kind'] == 'notice' and line['text'].startswith('On your word')]
+
+    try:
+        run('dispatch', 'message', dispatch.id, '--', 'Run the plan: A, then B', cwd=dispatch.folder)
+        eventually(lambda: len(prompts()) == 2)
+        started = json.loads(run('dispatch', 'start', first, 'claude', '--json', cwd=dispatch.folder,
+                                 env=agent).stdout)
+        assert started['on_word']['text'] == 'Run the plan: A, then B', started
+        eventually(lambda: running(first))
+        run('map', 'work', 'op=done', 'why=Wave A landed.', f'id={first}', 'resolution=landed', cwd=dispatch.folder)
+
+        # the agent's own timer wakes a later turn, which no message of the person's started
+        run('dispatch', 'timer', 'seconds=1', '--', 'A is done; go on with the plan', cwd=dispatch.folder, env=agent)
+        (gates / '2').touch()
+        eventually(lambda: len(prompts()) == 3)
+        wave = json.loads(run('dispatch', 'start', second, 'claude', '--json', cwd=dispatch.folder, env=agent).stdout)
+        assert wave['on_word']['text'] == 'Run the plan: A, then B', wave  # the word it was started on, no ask
+        eventually(lambda: running(second))
+        refused = run('dispatch', 'start', outside, 'claude', cwd=dispatch.folder, env=agent, ok=False)
+        assert refused.returncode == 2 and f'ticket {outside} is in no work their word started' in refused.stderr, \
+            refused.stderr
+        assert not running(outside)
+        notes = eventually(lambda: found if len(found := on_word()) == 2 else None)
+        assert all('"Run the plan: A, then B"' in note for note in notes), notes
+        assert f'started Claude Code on ticket {second}' in notes[1], notes
+
+        run('dispatch', 'stop', second, cwd=dispatch.folder)  # the person stops it: the cover ends
+        again = run('dispatch', 'start', second, 'claude', cwd=dispatch.folder, env=agent, ok=False)
+        assert again.returncode == 2 and f'ticket {second} is in no work their word started' in again.stderr, \
+            again.stderr
+        assert not running(second) and len(on_word()) == 2
+    finally:
+        for work in (first, second, outside):
             run('dispatch', 'stop', work, cwd=dispatch.folder, ok=False)
         dispatch.stop()
 

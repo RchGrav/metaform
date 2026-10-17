@@ -1421,11 +1421,12 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
-                   nouns: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
+                   nouns: dict[str, Any]) -> tuple[dict[str, Any], str, list[str]] | None:
     """The person's word for a ticket write that is the person's orchestration, with what it does, or None when the
     write is none or needs no word: releasing a held ticket (held=false or hold=false on a ticket held so, or a move of
     a Backlog ticket to To do), or setting an order between tickets (after_work, or a move to a place in To do or
-    Backlog). A dispatched agent makes one only in a turn of the person's system agent their own message started,
+    Backlog). A dispatched agent makes one only in a turn of the person's system agent their own message started, or
+    in a later turn when the ticket and every ticket it is set to wait on are in work that word started,
     `on_persons_word`; the page, the person's terminal and an AI tool outside dispatch as before."""
     if ctx.surface not in ('mcp', 'cli'):
         return None
@@ -1435,6 +1436,7 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     record = store.ticket(work_id).work
     kept = _settings(store, [work_id]).get(work_id, {})
     did: list[str] = []
+    tickets = [work_id]
     if op == 'edit':
         if nouns.get('held') is False and record.held:
             did.append('released it from Backlog')
@@ -1444,6 +1446,8 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
             waits = nouns['after_work']
             did.append(f'set it to wait on {", ".join(str(one) for one in cast(list[Any], waits))}'
                        if isinstance(waits, list) and waits else 'set it to wait on no other ticket')
+            if isinstance(waits, list):  # ordered on the word: what it waits on is part of the same work
+                tickets += [str(one) for one in cast(list[Any], waits) if str(one) not in tickets]
     else:
         if record.held and nouns.get('column') == 'todo':
             did.append('released it from Backlog to To do')
@@ -1452,17 +1456,17 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     if not did:
         return None
     said = f'{" and ".join(did)} on ticket {work_id}'
-    word = on_persons_word(ctx, f'Releasing or ordering tickets ({said})')
-    return None if word is None else (word, said)
+    word = on_persons_word(ctx, f'Releasing or ordering tickets ({said})', tickets)
+    return None if word is None else (word, said, tickets)
 
 
-def _on_word(ctx: Context, word: tuple[dict[str, Any], str] | None, result: Any) -> Any:
+def _on_word(ctx: Context, word: tuple[dict[str, Any], str, list[str]] | None, result: Any) -> Any:
     """A ticket write the person's word let their system agent make, recorded in its chat with that word, and said in
     the result; any other write's result as it is."""
     if word is None:
         return result
-    given, said = word
-    persons_word_acted(ctx.folder, given, said, ctx.project)
+    given, said, tickets = word
+    persons_word_acted(ctx.folder, given, said, ctx.project, tickets)
     line = f'On the person\'s word, "{given.get("text")}": {said}.'
     if isinstance(result, str):
         return f'{result}\n{line}'
