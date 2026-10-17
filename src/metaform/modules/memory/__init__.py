@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -419,6 +420,44 @@ def _observe(tx: TableTx, graph: Graph, entity: str, contents: list[str], writte
     return added
 
 
+# One observation is one fact, so it can be read, cited, marked stale and corrected alone (step 5c of the memory
+# prompt). The check is mechanical, never a judgement of what the fact says: text in backticks or double quotes is
+# left as written, and outside it a line break, a semicolon or a second sentence marks a second fact. A sentence ends
+# at . ! or ? followed by a space and a capital or a digit, after a word that is not a common abbreviation.
+_QUOTED = re.compile(r'`[^`]*`|"[^"]*"|“[^”]*”')
+_SENTENCE_END = re.compile(r'(\S*)[.!?]\s+[A-Z0-9]')
+_ABBREVIATIONS = frozenset({'e.g', 'i.e', 'cf', 'vs', 'etc', 'approx', 'no', 'mr', 'mrs', 'ms', 'dr', 'st', 'fig'})
+OBSERVATION_RULE = ('One fact per observation, in one sentence: a single fact can be read, cited, marked stale and '
+                    'corrected alone.')
+
+
+def _facts(content: str) -> int:
+    """How many facts an observation holds, counted by its form: 1 plus each line break, semicolon and sentence end
+    outside quoted text."""
+    text = _QUOTED.sub('x', content.strip())
+    count = 1 + text.count('\n') + text.count(';')
+    for found in _SENTENCE_END.finditer(text):
+        word = found.group(1).lower().rstrip('.')
+        if word in _ABBREVIATIONS or (len(word) == 1 and word.isalpha()):  # e.g. X, or an initial: J. Smith
+            continue
+        count += 1
+    return count
+
+
+def _one_fact_each(ctx: Context, observations: list[tuple[str, list[str]]]) -> None:
+    """Refuse a write whose observations hold more than one fact each, naming every one, before anything is written,
+    so the agent splits them and sends the call again. The page is the person's and is not checked."""
+    if ctx.surface == 'web':
+        return
+    compound = [f'{name!r}: {content[:80]!r}' + ('...' if len(content) > 80 else '')
+                for name, contents in observations for content in contents if _facts(content) > 1]
+    if compound:
+        raise Stop(f'{len(compound)} observation(s) hold more than one fact: {"; ".join(compound)}. '
+                   f'{OBSERVATION_RULE}',
+                   'split each into one observation per fact (no semicolons, line breaks or second sentences) and '
+                   'send the same call again')
+
+
 def _forget(tx: TableTx, graph: Graph, name: str) -> None:
     """Delete an entity with its observations, its citations, every relation touching it and every join of it."""
     tx.delete('citations', {'entity': name})
@@ -654,6 +693,7 @@ def create_entities(ctx: Context) -> Any:
         for one, name, _, observations in entities:
             if name not in graph.entities and name not in fresh:
                 fresh[name] = _titles(ctx, given, one, name, observations)
+        _one_fact_each(ctx, [(name, observations) for _, name, _, observations in entities])
         seen: set[str] = set()
         locked = _locked(graph, [name for _, name, _, _ in entities])
         for _, name, kind, observations in entities:
@@ -756,6 +796,7 @@ def add_observations(ctx: Context) -> Any:
         for name, _, _ in observations:
             if name not in graph.entities:
                 raise _not_found(name)
+        _one_fact_each(ctx, [(name, contents) for name, contents, _ in observations])
         locked = _locked(graph, [name for name, _, _ in observations])
         for name, contents, cited in observations:
             if name in locked:
@@ -1384,7 +1425,7 @@ ENTITY = {'type': 'object', 'properties': {
     'name': {'type': 'string', 'description': 'The name of the entity'},
     'entityType': {'type': 'string', 'description': 'The type of the entity'},
     'observations': {'type': 'array', 'items': {'type': 'string'},
-                     'description': 'An array of observation contents associated with the entity'},
+                     'description': f'The observations, one fact each. {OBSERVATION_RULE}'},
     'title': {'type': 'string', 'description': 'A new entity: one line saying what this memory is. Left out, it is '
                                                'the first observation when that is one short line.'},
     'why': {'type': 'string', 'description': 'A new entity, required: one line saying why this is worth keeping.'},
@@ -1397,7 +1438,8 @@ RELATION = {'type': 'object', 'properties': {
     'required': ['from', 'to', 'relationType']}
 OBSERVATIONS = {'type': 'array', 'items': {'type': 'object', 'properties': {
     'entityName': {'type': 'string', 'description': 'The name of the entity to add the observations to'},
-    'contents': {'type': 'array', 'items': {'type': 'string'}, 'description': 'An array of observation contents to add'},
+    'contents': {'type': 'array', 'items': {'type': 'string'},
+                 'description': f'The observations to add, one fact each. {OBSERVATION_RULE}'},
     'cite': CITE},
     'required': ['entityName', 'contents']}}
 DELETIONS = {'type': 'array', 'items': {'type': 'object', 'properties': {
@@ -1437,10 +1479,10 @@ MODULE = Module(
             'node also holds one note of at most 2048 characters.',
     verbs=(
         Verb('create_entities', create_entities, 'Record what happened in the work at a node of the map: new memory '
-                                                 'entities with their observations. What is true of the project goes '
-                                                 'to the knowledge layers. Without node, they go in the memory graph '
-                                                 'joined to no node.',
-             nouns=_at(Noun('entities', 'The entities to create.', kind='json',
+                                                 'entities, each observation one fact in one sentence. What is true of '
+                                                 'the project goes to the knowledge layers. Without node, they go in '
+                                                 'the memory graph joined to no node.',
+             nouns=_at(Noun('entities', 'The entities to create; each observation is one fact.', kind='json',
                             schema={'type': 'array', 'items': ENTITY})),
              examples=((EXAMPLE, 'Create an entity in the memories of the route manager.'),)),
         Verb('create_relations', create_relations,
@@ -1448,9 +1490,11 @@ MODULE = Module(
              'active voice.',
              nouns=_at(Noun('relations', 'The relations to create.', kind='json',
                             schema={'type': 'array', 'items': RELATION}))),
-        Verb('add_observations', add_observations, 'Add observations to memory entities that already exist, at a node '
-                                                   'or in the whole memory graph.',
-             nouns=_at(Noun('observations', 'The observations to add, by entity.', kind='json', schema=OBSERVATIONS))),
+        Verb('add_observations', add_observations, 'Add observations, each one fact in one sentence, to memory '
+                                                   'entities that already exist, at a node or in the whole memory '
+                                                   'graph.',
+             nouns=_at(Noun('observations', 'The observations to add, by entity; each is one fact.', kind='json',
+                            schema=OBSERVATIONS))),
         Verb('delete_entities', delete_entities,
              'Delete memory entities and their relations, at a node or in the whole memory graph.',
              nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove',

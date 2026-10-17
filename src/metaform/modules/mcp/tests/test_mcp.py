@@ -2216,7 +2216,7 @@ def test_every_address_resolves_to_its_brief_and_each_numbered_item_with_the_jul
         {'name': 'tone', 'entityType': 'finding', 'observations': ['The tone is too quiet.'],
          'why': 'The cook misses it.'},
         {'name': 'piezo', 'entityType': 'part', 'title': 'The piezo drives the tone',
-         'observations': ['Rated 3 V.\nFed 5 V.'], 'why': 'It explains the quiet tone.'}]), 'node=code.alarm.audible',
+         'observations': ['Rated 3 V.', 'Fed 5 V.'], 'why': 'It explains the quiet tone.'}]), 'node=code.alarm.audible',
         cwd=mapped)
     run('memory', 'create_relations', json.dumps([{'from': 'tone', 'to': 'piezo', 'relationType': 'comes from'}]),
         cwd=mapped)
