@@ -227,6 +227,9 @@ def list_(args: list[str], folder: Path) -> None:
             summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
             text = item.problem or summary or ''
             out(f'{item.id:<{width}}  {state:<5}  {item.place:<6}  {text}'.rstrip())
+            # a prompt written wrong in its file never turns the module off; it is named here until corrected
+            for said in prompt_files.problems(item.path) if item.module is not None else []:
+                out(f'{"":<{width}}  {"":<5}  {"":<6}  prompt: {said}')
         return
     if args[:1] == ['bases'] and len(args) in (1, 2):
         project_id = _project_arg(folder, args[1] if len(args) == 2 else None)
@@ -900,14 +903,18 @@ def prompt_(args: list[str], folder: Path) -> None:
             raise caller.persons_decision(
                 f'Saving an edit of {name} changes what every agent sent it is told, from its next turn.',
                 shlex.join(['metaform', 'prompt', 'save', *args[1:]]), 'the Prompt tab')
-        saved = prompts.save_prompt(name, sys.stdin.read() if text == '-' else text,
-                                    format=named.get('format', ['text'])[0],
-                                    parent=int(parent) if parent is not None else None)
-        out(results.as_json(saved) if json_output else results.as_text(saved))
+        try:  # through the one gate every surface saves through: plain text in, sent as written
+            saved, said = prompt_files.save_edit(name, sys.stdin.read() if text == '-' else text,
+                                                 format=named.get('format', ['text'])[0],
+                                                 parent=int(parent) if parent is not None else None)
+        except ValueError as error:
+            raise Stop(f'{error}.', f'metaform prompt {name}') from None
+        shown = results.noted(saved, [(name, one) for one in said])
+        out(results.as_json(shown) if json_output else results.as_text(shown))
         return
     if len(args) not in (1, 2) or (len(args) == 2 and not args[1].isdecimal()):
         raise Stop('prompt takes a prompt name and an optional version number.', 'metaform prompts')
-    sys.stdout.write(prompts.prompt_version(args[0], int(args[1]) if len(args) == 2 else None).text)
+    sys.stdout.write(prompt_files.readable(prompts.prompt_version(args[0], int(args[1]) if len(args) == 2 else None)))
 
 
 def extract(args: list[str], folder: Path) -> None:

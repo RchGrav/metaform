@@ -89,6 +89,7 @@ from metaform.module import (
     surface,
     tool_arguments,
 )
+from metaform.results import noted as with_notices
 from metaform.settings import refuse_held_control
 
 from . import consent
@@ -285,7 +286,8 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                     {'type': 'object', 'required': ['name', 'text'], 'additionalProperties': False,
                      'properties': {
                          'name': _text('The prompt, by name; a new name creates a prompt.'),
-                         'text': _text('The prompt text to save exactly as given.'),
+                         'text': _text('The prompt as plain text, as the agent reads it: & and < are written as '
+                                       'they are; a fill place of a prompt a module ships is written <name/>.'),
                          'format': {'type': 'string', 'enum': list(prompts.FORMATS),
                                     'description': 'The format for a new prompt; defaults to text. An existing '
                                                    'prompt keeps its format.'},
@@ -617,13 +619,20 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     if name == 'prompts':
         return False, [result_json(list(prompts.prompts()))]
     if name == 'prompt':
-        return False, [result_json(prompts.prompt_version(given['name'], given.get('number')))]
+        found = prompts.prompt_version(given['name'], given.get('number'))
+        # as the person and the agent read and edit it: the characters sent, fill places written <name />
+        return False, [result_json(dataclasses.replace(found, text=prompt_files.readable(found)))]
     if name == 'save_prompt':
         if prompts.sent_to_agents(str(given['name'])) and not consented:  # what its roles are told, CLI-011
             raise persons_decision(saving_caution(str(given['name'])), shlex.join(
                 ['metaform', 'prompt', 'save', str(given['name']), str(given['text']),
                  *(f'{key}={given[key]}' for key in ('format', 'parent') if key in given)]), 'the Prompt tab')
-        return False, [result_json(prompts.save_prompt(**given))]
+        try:  # the one gate every surface saves through: plain text in, sent as written
+            saved, said = prompt_files.save_edit(str(given['name']), str(given['text']),
+                                                 format=str(given.get('format', 'text')), parent=given.get('parent'))
+        except ValueError as error:
+            raise Stop(f'{error}.', f"metaform prompt {given['name']}") from None
+        return False, [result_json(with_notices(saved, [(str(given["name"]), one) for one in said]))]
     if name == 'restore_project':
         project = project_for(folder, given.pop('project', None)) or _no_project()
         backup = cast(str | None, given.get('backup'))

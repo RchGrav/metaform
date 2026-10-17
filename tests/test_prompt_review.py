@@ -33,17 +33,32 @@ def test_moved_skills_and_shared_libraries_remain_source_editable(home, tmp_path
 
 def test_a_saved_edit_writes_a_packet_naming_where_the_text_lives_and_what_replaces_it(home, tmp_path):
     found = next(entry for entry in prompt_review.catalog() if entry.key == 'chassis:work_reminder')
-    # A copy of its file, so the shipped one is never written; a bare < cannot be written into it exactly.
+    # A copy of its file, so the shipped one is never written, and read-only, so the edit cannot be written into it.
     copy = tmp_path / 'prompts.xml'
     copy.write_text(found.source.read_text(encoding='utf-8'), encoding='utf-8')
+    copy.chmod(0o444)
     entry = dataclasses.replace(found, source=copy)
     folder = tmp_path / 'edits'
     packet = prompt_review.save_edit(entry, 'A new reminder < now.', folder)
     text = packet.read_text(encoding='utf-8')
     assert copy.read_text(encoding='utf-8') == found.source.read_text(encoding='utf-8')
-    for held in (str(entry.source), '<work_reminder>', entry.text, 'A new reminder < now.'):
+    # the old and new text as the file holds them, so an agent applying the packet writes a file that reads
+    for held in (str(entry.source), '<work_reminder>', found.stored, 'A new reminder &lt; now.'):
         assert held in text
     assert packet.name in (folder / 'README.md').read_text(encoding='utf-8')
+
+
+def test_an_edit_written_as_plain_text_is_encoded_into_its_prompts_file(home, tmp_path):
+    """UX review round 2, prompt-authoring F3: the review shows the prompt as the agent reads it, and a bare < or &
+    the person writes is written into the file in the form it reads, its fill places kept."""
+    source = tmp_path / 'prompts.xml'
+    source.write_text('<prompts>\n<!-- A greeting. -->\n<greet>Hello <name/> &amp; all.</greet>\n</prompts>\n',
+                      encoding='utf-8')
+    [entry] = prompt_review._entries('demo', source, tmp_path)
+    assert entry.text == 'Hello <name /> & all.'
+    assert prompt_review.save_edit(entry, 'Hi <name/> & a < b.', tmp_path / 'edits') == source
+    assert source.read_text(encoding='utf-8') == \
+        '<prompts>\n<!-- A greeting. -->\n<greet>Hi <name /> &amp; a &lt; b.</greet>\n</prompts>\n'
 
 
 def test_a_saved_edit_is_written_between_its_tags_in_a_writable_prompts_file(home, tmp_path):

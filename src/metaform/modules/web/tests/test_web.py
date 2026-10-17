@@ -3703,6 +3703,39 @@ def test_prompts_are_read_and_an_edit_is_saved_as_a_new_version_only_from_the_gu
 
 
 @pytest.mark.req('VIEW-013')
+@pytest.mark.req('STORE-044')
+def test_every_prompt_an_agent_is_sent_opens_by_role_and_saves_as_plain_text_before_it_was_ever_sent(run, web,
+                                                                                                    mapped):
+    """UX review round 2, prompt-authoring F2, F3 and F7: the Prompt tab lists each role's prompts on a fresh home,
+    the system agent's among them; one never sent opens as its shipped text, version 0, written as plain text; a save
+    from it goes through the gate, so what is saved is what is sent, and says what it keeps as written."""
+    from metaform import prompt_files
+    from metaform.data import prompts
+    run('enable', 'dispatch')
+    started(run)
+    catalog = api(web, '/api/prompt-catalog?project=proj')[1]
+    system = next(one for one in catalog['roles'] if one['role'] == 'system')
+    assert system['prompts'][0] == 'dispatch:system' and catalog['stored'] == []
+    read = api(web, '/api/prompt-versions?name=dispatch:system')[1]
+    [shipped] = read['versions']
+    assert (shipped['number'], read['written'], read['problem']) == (0, 'plain', None)
+    assert '1. Language & Vocabulary' in shipped['plain'] and '<mascot />' in shipped['plain']
+    own = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
+    body = json.dumps({'name': 'dispatch:system', 'text': 'Plans & tickets, as <address>: <task>. <mascot/>',
+                       'parent': 0})
+    status, saved = api(web, '/api/save-prompt', method='POST', body=body, headers=own)
+    assert status == 200 and saved['plain'] == 'Plans & tickets, as <address>: <task>. <mascot />'
+    assert saved['said'] == []
+    from importlib import resources
+    assert prompt_files.served(resources.files('metaform.modules.dispatch'), 'system', project='proj',
+                               mascot='M') == 'Plans & tickets, as <address>: <task>. M'
+    assert [one.origin for one in prompts.prompt_versions('dispatch:system')] == ['edited', 'shipped']
+    refused = json.dumps({'name': 'intake:intake.axiom', 'text': 'x', 'parent': 0})
+    status, said = api(web, '/api/save-prompt', method='POST', body=refused, headers=own)
+    assert status == 400 and 'never be sent' in said['error']
+
+
+@pytest.mark.req('VIEW-013')
 @pytest.mark.req('VIEW-012')
 def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_next_version(run, web, mapped,
                                                                                             browser):
@@ -3739,6 +3772,32 @@ def test_a_layers_prompt_version_opens_in_the_editor_and_an_edit_saves_as_the_ne
     saved = prompts.prompt_version('practices')
     assert (saved.number, saved.text, saved.parent_id) == (4, '<practices>\n  <four/>\n</practices>\n', third.version_id)
     assert prompts.use_of('proj', notes.base_id, notes.id).number == 3
+    assert problems == [] and remote == []
+
+
+@pytest.mark.req('VIEW-013')
+def test_the_system_agents_prompt_opens_on_a_fresh_home_and_saves_as_plain_text_from_the_page(run, web, mapped,
+                                                                                              browser):
+    """UX review round 2, prompt-authoring F7: before any system agent has run, the Prompt tab opens on the system
+    agent's prompt, shown as the agent reads it, and the person's edit, a bare & and < included, is saved and sent."""
+    from importlib import resources
+
+    from metaform import prompt_files
+    run('enable', 'dispatch')
+    started(run)
+    page, problems, remote = opened(browser, web)
+    page.click('#t-prompt')
+    page.wait_for_function('() => window.metaform.editor() && '
+                           'window.metaform.editor().getValue().includes("Engineering Orchestrator")')
+    assert page.evaluate('document.querySelector("#promptSel").value') == 'dispatch:system'
+    assert page.evaluate('document.querySelector("#promptSel option:checked").parentElement.label') == 'system agent'
+    assert '1. Language & Vocabulary' in page.evaluate('window.metaform.editor().getValue()')
+    assert 'shipped text' in page.text_content('#promptNote')
+    page.evaluate('window.metaform.editor().setValue("Plans & tickets for a < b. <mascot/>")')
+    page.click('#saveBtn')
+    page.wait_for_function('() => document.querySelector("#verSel").value === "2"')
+    assert prompt_files.served(resources.files('metaform.modules.dispatch'), 'system', project='proj',
+                               mascot='M') == 'Plans & tickets for a < b. M'
     assert problems == [] and remote == []
 
 

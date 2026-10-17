@@ -1372,17 +1372,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {'kept': held is not None})
 
     def save_prompt(self, given: dict[str, Any]) -> None:
-        """Save an edited prompt as its next version, edited from `parent`; no version ever changes, VIEW-013."""
+        """Save an edited prompt as its next version, edited from `parent`, 0 for a prompt the store does not hold yet,
+        whose shipped text it was edited from; no version ever changes, VIEW-013. The text is plain, as the agent
+        reads it, and goes through the gate every surface saves through, so what is saved is what is sent; a text
+        that cannot be is refused with why, and nothing is saved."""
         name, text, parent = given.get('name'), given.get('text'), given.get('parent')
         if not isinstance(name, str) or not isinstance(text, str) or not isinstance(parent, int) \
-                or isinstance(parent, bool):
+                or isinstance(parent, bool) or parent < 0:
             return self.send(400, {'error': 'Saving a prompt takes its name, the text, and the version number it '
                                             'was edited from.'})
         try:
-            saved = prompts.add_prompt_version(name, text, parent)
+            saved, said = prompt_files.save_edit(name, text, parent=parent or None)
         except StoreError as error:
             return self.refuse(error, 400)
-        self.send(200, plain(saved))
+        except ValueError as error:
+            return self.send(400, {'error': f'{error}.'})
+        self.send(200, {**cast(dict[str, Any], plain(saved)), 'plain': prompt_files.readable(saved),
+                        'said': said + [notice.message for notice in saved.notices]})
 
     def apply_layers(self, given: dict[str, Any]) -> None:
         project = home.project(str(given.get('project', '')))
@@ -2823,10 +2829,45 @@ def preloads(page: bytes) -> bytes:
 
 
 def _versions(given: dict[str, str]) -> dict[str, Any]:
-    """Every version of a prompt, newest first, each with the layers it made."""
-    return {'versions': [{**cast(dict[str, Any], plain(version)),
+    """Every version of a prompt, newest first, each with the layers it made and `plain`, its text as the person reads
+    and edits it. A prompt a module ships that the store does not hold yet is its shipped text as version 0, so any
+    prompt an agent is sent can be opened and edited before it was first sent, VIEW-013. `problem` says why its
+    element does not read from its file, when it does not."""
+    name = given.get('name', '')
+    owner, colon, element = name.partition(':')
+    problem = prompt_files.problem_of(owner, element) if colon and '.' not in element else None
+    written = 'plain' if prompt_files.written_plain(name) else 'stored'  # how the editor shows and saves it
+    try:
+        versions = prompts.prompt_versions(name)
+    except StoreError:
+        shipped = prompt_files.shipped(owner, element) if colon and owner != 'skill' else None
+        if shipped is None:
+            raise
+        return {'versions': [{'number': 0, 'name': name, 'format': 'xml' if '.' not in element else 'text',
+                              'origin': 'shipped', 'created': 'not sent yet', 'text': shipped,
+                              'plain': prompt_files.plain(shipped) if written == 'plain' else shipped,
+                              'layers': []}], 'problem': problem, 'written': written}
+    return {'versions': [{**cast(dict[str, Any], plain(version)), 'plain': prompt_files.readable(version),
                           'layers': plain(prompts.layers_by_prompt_version(version.version_id))}
-                         for version in prompts.prompt_versions(given.get('name', ''))]}
+                         for version in versions], 'problem': problem, 'written': written}
+
+
+def _catalog(given: dict[str, str]) -> dict[str, Any]:
+    """Every prompt the page can open, VIEW-013: those the agents of each role are sent, by role, as the agents
+    module names them for the project the page shows, whether or not they were ever sent; then every other prompt the
+    store holds. With the agents module off, or no project, only the stored ones."""
+    roles: list[dict[str, Any]] = []
+    if given.get('project'):
+        try:
+            found = cast(dict[str, Any], module_verb({'project': given['project']}, 'agents', 'roles', {}))
+            roles = [{'role': one['role'], 'purpose': one['purpose'], 'prompts': one['prompts'],
+                      'behind': one.get('behind', []), 'broken': one.get('broken', [])}
+                     for one in cast(list[dict[str, Any]], found.get('roles') or [])]
+        except (Stop, StoreError):
+            roles = []
+    named = {name for one in roles for name in one['prompts']}
+    stored = [one for one in prompts.prompts() if one.name not in named]
+    return {'roles': roles, 'stored': [{'name': one.name, 'newest': one.newest} for one in stored]}
 
 
 PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
@@ -2834,6 +2875,7 @@ PROMPT_READS: dict[str, Callable[[dict[str, str]], Any]] = {
     'prompt': lambda given: prompts.prompt_version(given.get('name', ''), int(given['number'])
                                                    if given.get('number', '').isdigit() else None),
     'prompt-versions': _versions,
+    'prompt-catalog': _catalog,
 }
 
 

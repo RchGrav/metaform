@@ -10,10 +10,17 @@ name `<owner>:<element>`, the owner a module's id or `chassis`: the text a
 module ships becomes a version when it changes, and an edit saved in the store
 is what is sent in its place. Each prompt served is added to the list `collect`
 started in that context, so a runner knows which versions each turn carried.
+
+A prompt is written as plain text, the way the agent reads it: every surface that edits one takes and shows it so,
+with its fill places written `<name/>`, and `save_edit`, the one gate for every edit, encodes it for the file's form
+before it is stored. A prompts.xml that does not read whole, as a bare `<` written by hand leaves it, still serves
+every prompt it holds that reads, a broken one from the prompt store's last shipped version, and `problems` names the
+file, the line and the prompt; a bare `&` is read as the character it is.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 from contextvars import ContextVar
@@ -21,7 +28,11 @@ from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape
+
+if TYPE_CHECKING:
+    from .data.prompts import PromptVersion
 
 FILE = 'prompts.xml'
 TRIAL = 'METAFORM_PROMPTS'  # a prompts.xml whose non-empty prompts are read before a package's own: prompts on trial, tests
@@ -38,6 +49,192 @@ class Sent:
     version_id: str | None
 
 
+@dataclass(frozen=True)
+class Parsed:
+    """A prompts.xml as read: its root, holding every element that reads; the elements that do not, by name, each with
+    why, naming the file and the line; and why the elements after an unclosed one were not read at all, if so."""
+    root: ET.Element
+    broken: dict[str, str]
+    lost: str | None
+
+
+# A & that starts no character or entity reference is the character itself, as a person writing prose means it.
+_BARE_AMPERSAND = re.compile(r'&(?!(?:[A-Za-z_][\w.-]*|#[0-9]+|#x[0-9A-Fa-f]+);)')
+_TOP = re.compile(r'<!--.*?-->|<([A-Za-z_][\w.-]*)(?:\s[^<>]*?)?(/?)>', re.DOTALL)
+_PLAIN_REASONS = {
+    'not well-formed (invalid token)': 'a < that starts no fill place must be written &lt; in the file',
+    'mismatched tag': 'a <word> starts a tag that is never closed: write < as &lt; in the file, or a fill place as '
+                      '<name/>',
+    'unclosed token': 'a < starts a tag that is never closed: write < as &lt; in the file',
+    'undefined entity': 'an &name; that is no entity: write & as &amp; in the file',
+}
+_READ: dict[str, tuple[tuple[int, int], Parsed]] = {}  # each file read, by path, while its size and time hold
+_TOLD: set[str] = set()  # the problems this process has written to stderr
+
+
+def _reason(error: ET.ParseError) -> str:
+    said = str(error).rsplit(': line ', 1)[0]
+    return _PLAIN_REASONS.get(said, said)
+
+
+def _offset(text: str, start: int, row: int, column: int) -> int:
+    """The place in `text` of the parser's line and column, counted in the part of it that begins at `start`."""
+    at = start
+    for _ in range(row - 1):
+        at = text.find('\n', at) + 1
+    return at + column
+
+
+def _unclosed(text: str, start: int, end: int) -> tuple[int, str] | None:
+    """The first `<word>` between start and end that no `</word>` after it closes, with where it is: the < a person
+    meant as text, which the parser reports only where the prompt's own closing tag no longer matches."""
+    for found in _TOP.finditer(text, start, end):
+        if found.group(1) is not None and not found.group(2) and f'</{found.group(1)}>' not in text[found.end():end]:
+            return found.start(), found.group(0)
+    return None
+
+
+def _parse(where: str, raw: str) -> Parsed:
+    """A prompts file's text, read element by element when it does not read whole, so one prompt written wrong leaves
+    every other one served; each element that does not read is named with the file, its line and column, and why."""
+    written = _BARE_AMPERSAND.sub('&amp;', raw)
+    try:
+        return Parsed(ET.fromstring(written), {}, None)
+    except ET.ParseError as error:
+        whole = error
+    root = ET.Element('prompts')
+    broken: dict[str, str] = {}
+    lost: str | None = None
+    opened = written.find('<prompts')
+    at = written.find('>', opened) + 1 if opened >= 0 else 0
+    while (found := _TOP.search(written, at)) is not None:
+        tag = found.group(1)
+        if tag is None:  # a comment between prompts
+            at = found.end()
+            continue
+        line = written.count('\n', 0, found.start()) + 1
+        if found.group(2):
+            end = found.end()
+        else:
+            close = written.find(f'</{tag}>', found.end())
+            if close < 0:
+                lost = (f'{where}: line {line}, in <{tag}>: <{tag}> is never closed with </{tag}>, so it and the '
+                        "prompts after it are served from the prompt store's last shipped versions")
+                broken[tag] = lost
+                break
+            end = close + len(tag) + 3
+        try:
+            root.append(ET.fromstring(written[found.start():end]))
+        except ET.ParseError as error:
+            reason = _reason(error)
+            opened_at = _unclosed(written, found.end(), end - len(tag) - 3)
+            if opened_at is not None:  # the tag left open, not the closing tag the parser stopped at
+                start, token = opened_at
+                reason = f'{token} starts a tag that is never closed: write < as &lt; in the file, or a fill place ' \
+                         'as <name/>'
+            else:
+                row, column = getattr(error, 'position', (1, 0))
+                start = _offset(written, found.start(), row, column)
+            row_at = written.count('\n', 0, start) + 1
+            column_at = start - (written.rfind('\n', 0, start) + 1) + 1
+            broken[tag] = (f'{where}: line {row_at}, column {column_at}, in <{tag}>: {reason}; its last shipped '
+                           'version is served until it is corrected')
+        at = end
+    if not broken and lost is None:
+        row, column = getattr(whole, 'position', (1, 0))
+        lost = f'{where}: line {row}, column {column + 1}: {_reason(whole)}'
+    return Parsed(root, broken, lost)
+
+
+def _parsed(path: Traversable) -> Parsed | None:
+    """A prompts file as read, or None when there is none; read again only when the file has changed."""
+    if not path.is_file():
+        return None
+    if isinstance(path, Path):
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        key, mark = str(path), (stat.st_mtime_ns, stat.st_size)
+        held = _READ.get(key)
+        if held is not None and held[0] == mark:
+            return held[1]
+        parsed = _parse(key, path.read_text(encoding='utf-8'))
+        _READ[key] = (mark, parsed)
+        return parsed
+    return _parse(str(path), path.read_text(encoding='utf-8'))
+
+
+def problems(folder: Traversable) -> list[str]:
+    """What keeps prompts of this package folder's prompts.xml from reading, each naming the file, the line and the
+    prompt; none when it reads whole."""
+    parsed = _parsed(folder / 'resources' / FILE)
+    if parsed is None:
+        return []
+    said = list(parsed.broken.values())
+    return said + [parsed.lost] if parsed.lost and parsed.lost not in said else said
+
+
+def module_problems(identifier: str) -> list[str]:
+    """`problems` of the loaded module `identifier`, `chassis` or `skills`."""
+    folder = _folder(identifier)
+    return [] if folder is None else problems(folder)
+
+
+def problem_of(identifier: str, name: str) -> str | None:
+    """Why the prompt `name` of `identifier` does not read from its file, or None when it does."""
+    folder = _folder(identifier)
+    parsed = None if folder is None else _parsed(folder / 'resources' / FILE)
+    if parsed is None:
+        return None
+    return parsed.broken.get(name) or (parsed.lost if parsed.lost and parsed.root.find(name) is None else None)
+
+
+_EDITS: list[tuple[tuple[str, tuple[int, int] | None, tuple[int, int] | None], dict[str, str]]] = []  # the store's edits, while it holds
+
+
+def _mark(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _edits() -> dict[str, str]:
+    """The prompt store's edits by name, read again only when its file or its write-ahead log has changed, so a prompt
+    read from a file costs a stat while nobody saves an edit; none while there is no store."""
+    from .data import prompts
+    path = prompts.store_path()
+    mark = (str(path), _mark(path), _mark(path.with_name(path.name + '-wal')))
+    if mark[1] is None:
+        return {}
+    if _EDITS and _EDITS[0][0] == mark:
+        return _EDITS[0][1]
+    try:
+        found = prompts.edits()
+    except Exception:  # noqa: BLE001  a store this code cannot read sends the files' text
+        found = {}
+    _EDITS[:] = [(mark, found)]
+    return found
+
+
+def _last_shipped(key: str, name: str) -> ET.Element | None:
+    """The prompt store's last shipped version of a prompt whose element does not read, as an element."""
+    from .data import prompts
+    try:
+        versions = prompts.prompt_versions(key)
+    except Exception:  # noqa: BLE001  no store, or no version of it: nothing to serve in its place
+        return None
+    last = next((one.text for one in versions if one.origin == 'shipped'), None)
+    if last is None:
+        return None
+    try:
+        return ET.fromstring(f'<{name}>{last}</{name}>')
+    except ET.ParseError:
+        return None
+
+
 _SENT: ContextVar[list[Sent] | None] = ContextVar('metaform_prompts_sent', default=None)
 # the list the process last started, for a prompt served in a context `collect` never reached: a callback another
 # thread scheduled on the loop, such as a runner's handler of a change made elsewhere
@@ -46,18 +243,23 @@ _LAST: list[list[Sent]] = []
 
 def text(folder: Traversable, name: str, **fills: str) -> str | None:
     """The prompt `name` in the `resources/prompts.xml` of this package folder, or None when there is none; a prompt
-    on trial under the same name, in the file `METAFORM_PROMPTS` names, is read first."""
+    on trial under the same name, in the file `METAFORM_PROMPTS` names, is read first, and an edit saved in the prompt
+    store under `<owner>:<name>` is sent in place of the file's text, so an edit of any prompt reaches its agents."""
     trial = os.environ.get(TRIAL)
     found = None
     if trial and os.path.isfile(trial):
-        found = ET.fromstring(Path(trial).read_text(encoding='utf-8')).find(name)
+        tried = _parsed(Path(trial))
+        found = None if tried is None else tried.root.find(name)
         if found is not None and not (found.text or '').strip() and not len(found):
             found = None
-    path = folder / 'resources' / FILE
     if found is None:
-        if not path.is_file():
-            return None
-        found = ET.fromstring(path.read_text(encoding='utf-8')).find(name)
+        found = _element(folder, name)
+        edit = None if found is None else _edits().get(f'{owner(folder)}:{name}')
+        if edit is not None:  # an edit saved in the store is sent in place of the file's text, STORE-044
+            try:
+                return rendered(edit, **fills)
+            except ValueError:
+                pass  # saved before edits were checked; `agents role` names it, and the file's text is sent
     if found is None:
         return None
     return ((found.text or '') + ''.join(fills.get(child.tag, '') + (child.tail or '') for child in found)).strip()
@@ -67,7 +269,9 @@ def required(folder: Traversable, name: str, **fills: str) -> str:
     """The prompt `name` of a package whose prompt file ships with it, so a missing prompt is a defect."""
     got = text(folder, name, **fills)
     if got is None:
-        raise LookupError(f'{folder / "resources" / FILE} has no prompt {name}.')
+        parsed = _parsed(folder / 'resources' / FILE)
+        why = None if parsed is None else parsed.broken.get(name) or parsed.lost
+        raise LookupError(why or f'{folder / "resources" / FILE} has no prompt {name}.')
     return got
 
 
@@ -90,8 +294,29 @@ def owner(folder: Traversable) -> str:
 
 
 def _element(folder: Traversable, name: str) -> ET.Element | None:
-    path = folder / 'resources' / FILE
-    return ET.fromstring(path.read_text(encoding='utf-8')).find(name) if path.is_file() else None
+    """The element `name` of this package folder's prompts.xml; for one that does not read, the prompt store's last
+    shipped version of it, so a prompt written wrong in the file is still sent as it last read."""
+    parsed = _parsed(folder / 'resources' / FILE)
+    if parsed is None:
+        return None
+    found = parsed.root.find(name)
+    if found is None and (name in parsed.broken or parsed.lost):
+        why = parsed.broken.get(name) or parsed.lost
+        if why is not None and why not in _TOLD:
+            _TOLD.add(why)
+            sys.stderr.write(f'{why}.\n')
+        found = _last_shipped(f'{owner(folder)}:{name}', name)
+    return found
+
+
+def _folder(identifier: str) -> Traversable | None:
+    if identifier == 'chassis':
+        return resources.files('metaform')
+    if identifier == 'skills':
+        return resources.files('metaform') / 'skills'
+    from . import loader
+    found = loader.get(identifier)
+    return None if found is None else found.path
 
 
 def body(found: ET.Element) -> str:
@@ -109,20 +334,158 @@ def rendered(text: str, /, **fills: str) -> str:
     return ((found.text or '') + ''.join(fills.get(child.tag, '') + (child.tail or '') for child in found)).strip()
 
 
+_PLACE = re.compile(r'<([A-Za-z_][\w.-]*)\s*/>')
+_TAG_LIKE = re.compile(r'</?([A-Za-z_][\w.-]*)\s*/?>')
+
+
+def places(stored: str) -> list[str]:
+    """The fill places of a version's text, each once, in the order written; none when it does not read."""
+    try:
+        found = ET.fromstring(f'<prompt>{stored}</prompt>')
+    except ET.ParseError:
+        return []
+    return list(dict.fromkeys(child.tag for child in found))
+
+
+def _structured(stored: str) -> bool:
+    try:
+        found = ET.fromstring(f'<prompt>{stored}</prompt>')
+    except ET.ParseError:
+        return False
+    return any(len(child) or child.text or child.attrib for child in found)
+
+
+def plain(stored: str) -> str:
+    """A version's text as the person reads and writes it: the characters the agent is sent, each fill place written
+    `<name />`. A text that does not read, as a version saved before edits were checked may not, and a structured one
+    whose elements hold text, are given as stored."""
+    try:
+        found = ET.fromstring(f'<prompt>{stored}</prompt>')
+    except ET.ParseError:
+        return stored
+    if _structured(stored):
+        return stored
+    return (found.text or '') + ''.join(f'<{child.tag} />' + (child.tail or '') for child in found)
+
+
+def encode(text: str, declared: list[str] | set[str]) -> str:
+    """Plain text in the form a version holds: every &, < and > is the character itself, except `<name/>` or
+    `<name />` for a fill place the prompt declares, which stays its fill place. The inverse of `plain`."""
+    kept = set(declared)
+    out: list[str] = []
+    at = 0
+    for found in _PLACE.finditer(text):
+        if found.group(1) in kept:
+            out.append(escape(text[at:found.start()]))
+            out.append(f'<{found.group(1)} />')
+            at = found.end()
+    out.append(escape(text[at:]))
+    return ''.join(out)
+
+
+def checked(name: str, text: str, shipped_text: str) -> tuple[str, list[str]]:
+    """An edit of the prompt `name`, written as plain text, in the form its version holds, with what the person should
+    know of it: a fill place the module ships that the edit leaves out, and a word written like a fill place that is
+    none, sent as written. It always reads, so what is saved is what is sent. A prompt whose elements hold text of
+    their own, such as a schema's fields, is structured XML rather than prose: its edit is kept as written, and
+    ValueError says why when it does not read, so it is never saved to go unsent."""
+    if _structured(shipped_text):
+        try:
+            rendered(text.strip())
+        except ValueError as error:
+            raise ValueError(f'{name} is structured XML, written as its file holds it, and the edit is {error}; write '
+                             '& as &amp; and < as &lt; in its text') from None
+        return text.strip(), []
+    declared = places(shipped_text)
+    stored = encode(text.strip(), declared)
+    rendered(stored)  # encoded, it always reads; a ValueError here is a defect of encode
+    used = set(places(stored))
+    notices: list[str] = []
+    lost = [one for one in declared if one not in used]
+    if lost:
+        notices.append(f"The edit leaves out the fill place(s) {', '.join(f'<{one}/>' for one in lost)}, which the "
+                       'module fills; what it fills there is no longer sent.')
+    literal: list[str] = []
+    for found in _TAG_LIKE.finditer(text):  # a word written like a fill place: `<word/>`, or one of its names
+        token, word = found.group(0), found.group(1)
+        if word in declared and _PLACE.fullmatch(token):
+            continue
+        if (word in declared or token.endswith('/>')) and token not in literal:
+            literal.append(token)
+    if literal:
+        some = ', '.join(f'<{one}/>' for one in declared)
+        notices.append(f"{', '.join(literal)} {'is' if len(literal) == 1 else 'are'} sent as written, for no fill "
+                       f'place of {name} is written so' + (f'; its fill places are {some}.' if some else
+                                                          '; it has none.'))
+    return stored, notices
+
+
+# Served as shipped and never kept in the prompt store or edited: the Canonical Intake, STORE-044 (03-storage.md),
+# and the line that tells an intake agent where its schema is, served with it as part of it, BASE-039. An edit of one
+# would never be sent, so `save_edit` refuses it.
+FIXED = {'intake:intake.axiom': 'the Canonical Intake, served as shipped and never kept in the prompt store or edited, '
+                                'STORE-044',
+         'intake:schema_pointer': 'served with the Canonical Intake as part of it, as shipped and never kept in the '
+                                  'prompt store, BASE-039 and STORE-044'}
+
+
+def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 'text',
+              shipped_text: str | None = None) -> tuple[PromptVersion, list[str]]:
+    """Save an edit of the prompt `name` as its next version, the one gate every surface saves through: for a prompt a
+    module ships in its prompts.xml, `<owner>:<element>`, the plain text is encoded for that form, so it is always
+    sent as written, and the shipped text is registered first, so the edit has it as its parent, STORE-044. Any
+    other prompt is stored as given. Returns the version, with the store's own notices, and the gate's notices for
+    the person, as sentences.
+    `shipped_text` is the element's text as a version holds it, for a prompt whose module is not loaded here."""
+    from .data import prompts
+    if name in FIXED:
+        raise ValueError(f'{name} is {FIXED[name]}, so an edit of it would never be sent')
+    source = shipped_text if shipped_text is not None else _source(name)
+    if source is None:
+        return prompts.save_prompt(name, text, format=format, parent=parent), []
+    stored, notices = checked(name, text, source)
+    prompts.shipped(name, 'xml', source)  # the shipped text is the version the edit is made from
+    return prompts.save_prompt(name, stored, format='xml', parent=parent), notices
+
+
+def newest_id(name: str) -> str:
+    """The id of the newest version the prompt store holds of `name`; StoreError when it holds none."""
+    from .data import prompts
+    return prompts.prompt_version(name).version_id
+
+
+def _source(name: str) -> str | None:
+    """The text a module ships for `<owner>:<element>` as a version holds it, the form `save_edit` encodes an edit
+    for; None for any other name, or one whose module is not loaded here."""
+    owner_, colon, element = name.partition(':')
+    if not (colon and element) or owner_ == 'skill' or '.' in element:
+        return None
+    try:
+        return shipped(owner_, element)
+    except (OSError, LookupError):
+        return None
+
+
+def written_plain(name: str) -> bool:
+    """Whether the prompt `name` is read and written as plain text, `plain` and `encode`: one a module ships in its
+    prompts.xml as prose with fill places; any other is read and saved as stored."""
+    source = _source(name)
+    return source is not None and not _structured(source)
+
+
+def readable(version: PromptVersion) -> str:
+    """A stored version's text as the person reads and edits it: `plain` for a prompt written as plain text, so that
+    saving it back through `save_edit` gives the same version; any other as stored."""
+    return plain(version.text) if version.format == 'xml' and written_plain(version.name) else version.text
+
+
 def shipped(identifier: str, name: str) -> str | None:
     """The text the loaded module `identifier`, `chassis` or `skills` (the skill registry's) ships for its prompt
     `name` as a version holds it: an element of its prompts.xml, or a file under its resources/ for a name with a dot,
     such as intake.axiom. None when the module is not loaded or ships no such prompt."""
-    if identifier == 'chassis':
-        folder: Traversable = resources.files('metaform')
-    elif identifier == 'skills':
-        folder = resources.files('metaform') / 'skills'
-    else:
-        from . import loader
-        found = loader.get(identifier)
-        if found is None:
-            return None
-        folder = found.path
+    folder = _folder(identifier)
+    if folder is None:
+        return None
     if '.' in name:
         file = folder / 'resources' / name
         return file.read_text(encoding='utf-8') if file.is_file() else None
@@ -164,7 +527,8 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
     key = f'{owner(folder)}:{name}'
     trial = os.environ.get(TRIAL)
     if trial and os.path.isfile(trial):
-        tried = ET.fromstring(Path(trial).read_text(encoding='utf-8')).find(name)
+        held = _parsed(Path(trial))
+        tried = None if held is None else held.root.find(name)
         if tried is not None and ((tried.text or '').strip() or len(tried)):
             _noted(Sent(key, None, 'trial', None))
             return required(folder, name, **fills)
@@ -203,10 +567,10 @@ def commands(folder: Traversable) -> list[tuple[str, dict[str, str], str, str, b
     """The slash commands this package folder declares, MCP-032: each child of `<commands>` in its prompts.xml, by
     name, with its attributes, the verb it runs among them, its text before and after an empty `<result/>`, and
     whether it holds one."""
-    path = folder / 'resources' / FILE
-    if not path.is_file():
+    parsed = _parsed(folder / 'resources' / FILE)
+    if parsed is None:
         return []
-    found = ET.fromstring(path.read_text(encoding='utf-8')).find('commands')
+    found = parsed.root.find('commands')
     held: list[tuple[str, dict[str, str], str, str, bool]] = []
     if found is None:
         return held
@@ -224,9 +588,10 @@ def rules(folder: Traversable) -> list[tuple[str, str]]:
     to a case it does not name: a rule with no sentence or no why raises ValueError naming it, and the loader refuses
     the module, as it refuses any other faulty declaration."""
     path = folder / 'resources' / FILE
-    if not path.is_file():
+    parsed = _parsed(path)
+    if parsed is None:
         return []
-    found = ET.fromstring(path.read_text(encoding='utf-8')).find('rules')
+    found = parsed.root.find('rules')
     held: list[tuple[str, str]] = []
     if found is None:
         return held

@@ -291,6 +291,21 @@ def _note_behind(edit: sqlite3.Row, text: str) -> None:
             db.execute('DELETE FROM prompt_shipped WHERE version_id=?', (edit['version_id'],))
 
 
+def edits() -> dict[str, str]:
+    """Every prompt whose newest version is an edit, by name, with that version's text: what is sent in place of the
+    shipped text, read in one pass, STORE-044."""
+    with _db() as db:
+        rows = db.execute("SELECT p.name, v.text FROM prompts p JOIN prompt_versions v ON v.prompt_id = p.prompt_id "
+                          "WHERE v.origin='edited' AND v.number = (SELECT MAX(number) FROM prompt_versions n "
+                          'WHERE n.prompt_id = p.prompt_id)').fetchall()
+    return {str(row['name']): str(row['text']) for row in rows}
+
+
+def store_path() -> Path:
+    """The home's prompt store file."""
+    return home.home() / 'prompts.sqlite3'
+
+
 def behind(prompt: str) -> Behind | None:
     """The shipped text the served edit of a prompt is behind, when its newest version is an edit and its module now
     ships a text the edit was not made over; None otherwise, and for a prompt the store does not hold."""

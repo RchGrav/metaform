@@ -180,3 +180,68 @@ def test_a_served_prompt_comes_from_the_prompt_store_and_an_edit_there_is_sent_i
     assert prompts.prompt_version('mine:greet').number == 3
     with pytest.raises(LookupError):
         prompt_files.served(folder, 'nothing')
+
+
+def test_a_prompt_written_wrong_in_its_file_is_named_with_its_line_and_the_others_still_serve(home, tmp_path):
+    """UX review round 2, prompt-authoring F1: a bare & is the character it is; a bare < in one prompt names the file,
+    the line and the prompt, and leaves every other prompt, the rules with them, read, so the module still loads, and
+    the broken prompt is sent as its last shipped version."""
+    from metaform import prompt_files
+    folder = tmp_path / 'mine'
+    (folder / 'resources').mkdir(parents=True)
+    path = folder / 'resources' / 'prompts.xml'
+    path.write_text('<prompts>\n<rules><rule why="So it is kept.">Keep it.</rule></rules>\n'
+                    '<greet>Hello <who/>.</greet>\n<other>Plans & tickets.</other>\n</prompts>\n', encoding='utf-8')
+    assert prompt_files.problems(folder) == []
+    assert prompt_files.text(folder, 'other') == 'Plans & tickets.'
+    assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada.'  # its shipped text is now in the store
+    path.write_text('<prompts>\n<rules><rule why="So it is kept.">Keep it.</rule></rules>\n'
+                    '<greet>Write <address>: <task>, <who/>.</greet>\n<other>Plans & tickets.</other>\n</prompts>\n',
+                    encoding='utf-8')
+    [said] = prompt_files.problems(folder)
+    assert said.startswith(f'{path}: line 3, column 14, in <greet>: <address> starts a tag that is never closed')
+    assert prompt_files.rules(folder) == [('Keep it.', 'So it is kept.')]  # what the loader reads: no refusal
+    assert prompt_files.text(folder, 'other') == 'Plans & tickets.'
+    assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada.'
+    path.write_text('<prompts>\n<fresh>New <x/>.</fresh>\n<broken>a < b</broken>\n</prompts>\n', encoding='utf-8')
+    with pytest.raises(LookupError, match='line 3, column .*, in <broken>'):  # nothing earlier to serve in its place
+        prompt_files.required(folder, 'broken')
+
+
+def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_path):
+    """UX review round 2, prompt-authoring F2 and F3: the gate every surface saves through encodes the person's text,
+    so &, < and > are sent as written, a declared fill place stays one, and what is saved is what is sent; reads give
+    it back as written. The Canonical Intake is refused, for an edit of it would never be sent."""
+    from metaform import prompt_files
+    from metaform.data import prompts
+    folder = tmp_path / 'mine'
+    (folder / 'resources').mkdir(parents=True)
+    (folder / 'resources' / 'prompts.xml').write_text(
+        '<prompts><greet>Hello <who/> &amp; welcome.</greet></prompts>', encoding='utf-8')
+    shipped = 'Hello <who /> &amp; welcome.'  # as a version holds the file's element
+    assert prompt_files.plain(shipped) == 'Hello <who /> & welcome.'
+    version, said = prompt_files.save_edit('mine:greet', 'Write <address>: <task> & cite <ref/>, <who/>.',
+                                           shipped_text=shipped)
+    assert version.text == 'Write &lt;address&gt;: &lt;task&gt; &amp; cite &lt;ref/&gt;, <who />.'
+    assert said == [('<ref/> is sent as written, for no fill place of mine:greet is written so; its fill places are '
+                     '<who/>.')]
+    assert prompt_files.served(folder, 'greet', who='Ada') == 'Write <address>: <task> & cite <ref/>, Ada.'
+    assert prompt_files.plain(prompts.prompt_version('mine:greet').text) == \
+        'Write <address>: <task> & cite <ref/>, <who />.'
+    assert prompts.prompt_version('mine:greet', 1).origin == 'shipped'  # the edit's parent is the shipped text
+    with pytest.raises(ValueError, match='Canonical Intake'):
+        prompt_files.save_edit('intake:intake.axiom', 'x')
+
+
+def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
+    """prompt-authoring F2: `metaform prompt save` of a prompt a module ships stores what is sent and reads it back
+    as written; a save that would not be sent is never stored."""
+    from metaform import prompt_files
+    from metaform.data import prompts
+    run('prompt', 'save', 'chassis:work_reminder', 'Hand work on & name its node <here/>.')
+    assert prompt_files.chassis('work_reminder') == 'Hand work on & name its node <here/>.'  # what is sent
+    stored = prompts.prompt_version('chassis:work_reminder')
+    assert stored.format == 'xml' and stored.text == 'Hand work on &amp; name its node &lt;here/&gt;.'
+    assert run('prompt', 'chassis:work_reminder').stdout == 'Hand work on & name its node <here/>.'
+    refused = run('prompt', 'save', 'intake:intake.axiom', 'x', ok=False)
+    assert refused.returncode == 2 and 'never be sent' in refused.stderr

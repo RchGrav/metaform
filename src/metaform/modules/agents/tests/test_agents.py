@@ -92,10 +92,14 @@ def test_an_override_is_sent_in_place_of_the_shipped_text_and_drop_goes_back(run
     assert prompt_files.served(DISPATCH, 'work', work_id='T1', record='') == shipped
 
 
-def test_override_refuses_an_edit_that_is_not_well_formed_and_an_agent_held_back(run, project_folder):
-    refused = run('agents', 'override', 'name=dispatch:work', 'text=Work <work_id> now.', '--confirm',
-                  cwd=project_folder, ok=False)
-    assert refused.returncode != 0 and 'not well-formed' in refused.stderr
+def test_override_takes_plain_text_and_refuses_an_agent_held_back(run, project_folder):
+    """UX review round 2, prompt-authoring F3: the person writes the prompt as the agent reads it; a < or an & is the
+    character itself, and a word written like a fill place that is none is sent as written, and said so."""
+    saved = run('agents', 'override', 'name=dispatch:work', 'text=Work <work_id> now & then.', '--confirm',
+                cwd=project_folder)
+    assert '<work_id> is sent as written' in saved.stdout and 'leaves out the fill place(s) <work_id/>' in saved.stdout
+    from metaform import prompt_files
+    assert prompt_files.served(DISPATCH, 'work', work_id='T1', record='') == 'Work <work_id> now & then.'
     held = run('agents', 'override', 'name=dispatch:work', 'text=Work.', '--confirm', cwd=project_folder,
                env={'METAFORM_ROLE': 'worker'}, ok=False)
     # the person's decision, whoever the agent is (UX review round 2, person-consent F3)
@@ -185,3 +189,34 @@ def test_the_canonical_intake_is_shown_as_shipped_and_never_overridden(run, proj
     refused = run('agents', 'override', 'name=intake:intake.axiom', 'text=x', '--confirm', cwd=project_folder,
                   ok=False)
     assert refused.returncode != 0 and 'never kept in the prompt store or edited' in refused.stderr
+
+
+def test_an_override_says_truly_when_each_role_takes_it(run, project_folder):
+    """UX review round 2, prompt-authoring F4: the system agent takes an edit of its prompt from its next turn, a
+    conversation running now included; a prompt sent only as a conversation begins reaches the next conversation."""
+    system = read(run, 'override', 'name=dispatch:system', 'text=Plain orchestrator. <mascot/>', '--confirm',
+                  folder=project_folder)
+    assert system['sent'] == 'to the system role from its next turn'
+    talk = read(run, 'override', 'name=dispatch:talk', 'text=Talk about <about/>. <read/> <eyes/>', '--confirm',
+                folder=project_folder)
+    assert talk['sent'] == 'to the talk role from its next new conversation'
+    role = read(run, 'role', 'name=system', folder=project_folder)
+    assert prompt_of(role, 'dispatch:system')['text'] == 'Plain orchestrator. <mascot />'  # as written, to edit
+    assert prompt_of(role, 'dispatch:system_changed')['resolves'] is True
+
+
+def test_a_prompt_written_wrong_in_its_file_is_named_on_its_role_and_still_sent(project_folder, renamed):
+    """prompt-authoring F1: a bare < in the system prompt's element names the file, the line and the prompt on the
+    role, and the prompt is still sent as it last read; the other prompts of the file are untouched."""
+    from metaform import prompt_files
+    from metaform.module import context
+    before = prompt_files.served(renamed, 'system', project='proj', mascot='')
+    path = renamed / 'resources' / 'prompts.xml'
+    path.write_text(path.read_text(encoding='utf-8').replace('<system>', '<system>Write <address> here. ', 1),
+                    encoding='utf-8')
+    system = prompt_of(agents().role(context('agents', project_folder, project='proj', nouns={'name': 'system'})),
+                       'dispatch:system')
+    assert system['file_problem'].startswith(f'{path}: line ')
+    assert 'in <system>: <address> starts a tag that is never closed' in system['file_problem']
+    assert prompt_files.served(renamed, 'system', project='proj', mascot='') == before
+    assert prompt_files.served(renamed, 'retry', work_id='T1').startswith('Your session stopped')
