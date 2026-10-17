@@ -47,7 +47,7 @@ def _text(value: Any) -> bool:
 # Each key, its default and what it takes. The toolbar, the layout and the workspaces are the JSON text workspace.py
 # checks against its shapes; web_workspace is the name of the one in use.
 KEYS: dict[str, tuple[Any, Callable[[Any], bool]]] = {
-    'web_signs': ('outward', _choice('outward', 'facing')),
+    'web_signs': ('facing', _choice('outward', 'facing')),
     'web_lens': ('natural', _choice('natural', 'wide', 'fisheye')),
     'web_flow_mode': ('selected', _choice('off', 'hover', 'selected', 'all', 'live')),
     'web_map_depth': ('all', _depth),

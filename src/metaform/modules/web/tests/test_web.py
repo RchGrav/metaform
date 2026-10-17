@@ -11274,20 +11274,19 @@ def test_a_stored_view_survives_its_move_out_of_the_settings_and_each_account_ke
 
 
 @pytest.mark.req('VIEW-038')
-def test_the_maps_names_stand_outward_by_default_and_no_carry_moves_a_kept_choice(home):
-    """2026-10-17: outward is the signs' default again, and the web module's start moves nobody's kept choice; the
-    one-time move of 2026-10-15 from outward to facing is gone."""
+def test_the_maps_names_face_the_eye_by_default_and_no_carry_moves_a_kept_choice(home):
+    """2026-10-17: facing is the signs' default, and the web module's start moves nobody's kept choice."""
     from metaform import home as homes
     from metaform import settings
     from metaform.modules.web import view
-    assert view.value('web_signs') == 'outward'
-    view.keep('', 'web_signs', 'outward')
-    view.keep('bob', 'web_signs', 'facing')
+    assert view.value('web_signs') == 'facing'
+    view.keep('', 'web_signs', 'facing')
+    view.keep('bob', 'web_signs', 'outward')
     with homes.chassis(write=True) as db:  # the test home's own start marked its carries; undo the marks
         db.execute("DELETE FROM meta WHERE key LIKE 'carried:web-%'")
     settings._carried.clear()
     assert view.carry() == []
-    assert view.value('web_signs') == 'outward' and view.values('bob')['web_signs'] == 'facing'
+    assert view.value('web_signs') == 'facing' and view.values('bob')['web_signs'] == 'outward'
 
 
 @pytest.mark.req('VIEW-011')

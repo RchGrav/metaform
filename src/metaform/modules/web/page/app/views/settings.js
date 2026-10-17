@@ -22,7 +22,7 @@ import {setTheme} from '/page/app/map3d/draw3d.js';
  * every project and every reload opens the same way (settings cleanup, 2026-10-15). The web module's settings the page
  * follows, web_embody, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
  * drawn from its workspace is web_panes, which the workspace reads itself. */
-export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'outward', mascot: null};
+export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'facing', mascot: null};
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 export const INFOSET = {buttons: new Map()};
 // declared before the view settings are read, which shows them: the flow modes and the node zoom switch
@@ -30,8 +30,8 @@ export const FLOWSET = {name: null};
 export const NODEZOOM = {button: null};
 export const LENS = {name: 'natural', button: null, frame: 0};
 const LENS_NEXT = {natural: 'wide', wide: 'fisheye', fisheye: 'natural'};
-/* The signs, web_signs: outward, the default, each of the map's names a sign standing in the scene out from the map's
- * middle, turned to a figure's eye in that figure's own view; or facing, each name turned to the eye that sees it. The
+/* The signs, web_signs: facing, the default, each name turned to the eye that sees it; or outward, each of the map's
+ * names a sign standing in the scene out from the map's middle, turned to a figure's eye in that figure's own view. The
  * View menu switches them. */
 export const SIGNS = {button: null, words: {outward: 'Outward', facing: 'Facing'}};
 /* The 3D map's field of view in degrees, top to bottom, `resize`: it opens at the lens's widest, and a shorter pane
@@ -60,7 +60,7 @@ function followView(rows, view) {
   const value = (key, otherwise) => view[key] ?? otherwise;
   VIEW.agents = value('web_agents_window', 'auto');
   PEEK.direction = value('web_map_direction', 'auto');
-  VIEW.signs = String(value('web_signs', 'outward'));
+  VIEW.signs = String(value('web_signs', 'facing'));
   followMascot(rows);
   const details = setting('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
   if (details !== Boolean(VIEW.chatDetails)) { VIEW.chatDetails = details; drawHelpdesk(); }

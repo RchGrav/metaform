@@ -259,7 +259,7 @@ function chooseSigns(name) {
 }
 export function showSigns() {
   SIGNS.pick?.show(VIEW.signs === 'outward' ? 'outward' : 'facing');
-  if ($('#signsat')) $('#signsat').value = VIEW.signs || 'outward';
+  if ($('#signsat')) $('#signsat').value = VIEW.signs || 'facing';
 }
 showSigns();
 // No Alt shortcuts: Alt with a digit is taken by the system on some machines; L switches the layout.

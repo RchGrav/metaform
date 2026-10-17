@@ -71,7 +71,10 @@ export const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 
   out: 12,  // how far a label stands out from its ball's surface, away from the map's middle, in the map's units
   // the size of a label's letters in the map, in its units, about an element's height; painted sharper at each
   // `sharper` step of the size it is seen at, up to `largest`; and the farthest label's opacity, the nearest solid
-  letters: 10, largest: 4, sharper: 0.5, farthest: 0.34};
+  letters: 14, largest: 4, sharper: 0.5, farthest: 0.34,
+  // the rate names grow and shrink on the screen against the map's own: 0.75 of it, so near names do not swell and
+  // far ones do not vanish as fast as the map does; `at`, the map units per pixel at which a name is `letters` tall
+  rate: 0.75, at: 1};
 // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
 export const tags = new Map();
 export const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map(), fading: false};
@@ -292,12 +295,12 @@ function placeLabel(node, frame, nearest, deepest) {
   const look = lookOf(tag.classes, frame.palette), how = frame.how;
   const depth = frame.depthOf(node), unit = frame.perPixel(Math.max(depth, 1e-3));
   const radius = Math.cbrt(nodeSize(node)) * 3;
-  // Its letters are a set size in the map, in a set ratio to the balls, so the eye's own perspective alone makes it
-  // larger near and smaller far as it does the nodes, with no least or most on the screen; `seen` is the size it is
+  // Its letters grow near and shrink far with the map, at LABEL.rate of the rate the map does, with no least or most
+  // on the screen; `seen` is the size it is
   // seen at, the pixels on the screen for one of its canvas. From the front of the map in view to its back it fades,
   // `back`.
   const back = deepest > nearest ? Math.min(1, Math.max(0, (depth - nearest) / (deepest - nearest))) : 0;
-  const seen = LABEL.letters / LABEL.size / unit, size = LABEL.letters / LABEL.size;
+  const size = LABEL.letters / LABEL.size * Math.pow(unit / LABEL.at, 1 - LABEL.rate), seen = size / unit;
   const shape = wrapped(tag.text, look, tag.id === SMALL_NAME.id && small3d());
   tag.lookNow = look;
   tag.shape = shape;
