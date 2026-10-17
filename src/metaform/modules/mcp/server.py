@@ -58,7 +58,6 @@ from metaform.module import (
     PersonsDecision,
     Stop,
     Verb,
-    agent_opening,
     call,
     caution_of,
     chassis_version,
@@ -94,6 +93,9 @@ from metaform.module import (
     startup_notices,
     surface,
     tool_arguments,
+)
+from metaform.module import (
+    withheld as withhold,
 )
 from metaform.settings import refuse_held_control
 
@@ -609,32 +611,25 @@ def provisioning(session: str | None) -> str | None:
     return f'Notice: {said}'
 
 
-def connect_instructions(folder: Path, client: str | None = None, session: str | None = None, *,
-                         keyed: bool = True) -> str:
-    """The connect message, MCP-007 and MCP-029: only what every agent of the role needs before its first call, each
-    piece for the reason it states, the rest left to the moment it is needed.
+def connect_instructions(folder: Path) -> str:
+    """The connect message, MCP-007 and MCP-029, for every role and on every wire: `opening`, the directive line and
+    the links to the instruction blocks that apply to the agent this server serves, now. Each block is a resource read
+    whole, so the message stays far within what any host keeps and no block is cut."""
+    return opening(folder, catalog.role())
 
-    Every agent, in every role and on every wire, is first given the rules it works by, `connect_rules`, exactly as
-    written and once. Then the person's own sessions get `connect_use` and the system agent its role's line, each
-    followed by one line per
-    tool category it may open with what the category is for, so it has one map of the tools, by purpose, or, when the
-    whole would pass the characters the host keeps, the categories named in one line, `connect_categories`; a dispatched
-    agent of another role gets its role's line, which says which categories it is given and why, since a category it
-    does not open names work its role does not do. Then the line on the catalog, with the category open at connect or
-    the tool listed beside it; to every agent the order to read the glossary, metaform://metaform, whole, before
-    beginning work, `instructions_end`; the rules and that order come again first in the agent's first turn after each
-    compaction, `agent_opening`. Then, to a connection
-    whose calls name no session (`keyed` False: the July 2026 wire over HTTP, which has no session header), how to name
-    one, `connect_unkeyed`; else the compaction line to a session no runner follows, which alone can say its context
-    was compacted. Then the folder's project to the person's own sessions, the notices the folder's state calls for,
-    and the provisioning notice to the person's own sessions when it fits within the characters the host keeps, else it
-    comes with the session's first tool result; to the person's own sessions and the system agent last, the skill
-    index for the connecting AI tool, `client`, within the room left, BASE-059. metaform://tools is not sent: the
-    catalog finds a tool by purpose."""
+
+def role_text(folder: Path, client: str | None = None, session: str | None = None, keyed: bool = True) -> str:
+    """metaform://role/<role>: what the role of the agent this server serves is for and the tool categories it gets,
+    then what else it needs before its first call. The person's own sessions get `connect_use` and the system agent its
+    role's line, each followed by one line per tool category it may open with what the category is for; a dispatched
+    agent of another role gets its role's line, which names the categories it is given. Then the line on the catalog,
+    with the category open at connect or the tool listed beside it; to a connection whose calls name no session (`keyed`
+    False: the July 2026 wire over HTTP) how to name one, `connect_unkeyed`, else to a session no runner follows,
+    `session` None or a process's own, the compaction line. Then the folder's project to the person's own sessions,
+    the notices the folder's state calls for but intake's first-run text, which is metaform://firstrun, and to the
+    person's own sessions and the system agent the skill index for the connecting AI tool, `client`, BASE-059."""
     named = catalog.role()
     project = project_for(folder)
-    states = startup_notices(folder, project)
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
     lines: list[str] = []
     if named is None or named == 'system':
         head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
@@ -650,10 +645,6 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
     if keyed and (said := (prompt_files.module('mcp', 'connect_catalog_listed') if listed else
                            prompt_files.module('mcp', 'connect_catalog', open=f' {held}' if held else ''))):
         lines.append(said)
-    own = (prompt_files.module('mcp', 'instructions_terms', project=project) or ''
-           if project is not None and project != 'metaform' else '')
-    if said := prompt_files.module('mcp', 'instructions_end', terms=own):
-        lines.append(said)
     if not keyed:
         said = prompt_files.module('mcp', 'connect_unkeyed', handle=HANDLE)
     elif session is None or session.startswith('process:'):  # no runner hears this session's compaction
@@ -664,28 +655,11 @@ def connect_instructions(folder: Path, client: str | None = None, session: str |
         lines.append(said)
     if named is None and project is not None and (said := prompt_files.module('mcp', 'connect_here', project=project)):
         lines.append(said)
-    text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
-    if lines and (named is None or named == 'system') and len(text) > HOST_KEEPS:  # past the budget: the names alone
-        names = prompt_files.module('mcp', 'connect_categories', categories=', '.join(openable(folder))) or ''
-        lines[0] = '\n'.join(part for part in (lines[0].split('\n', 1)[0], names) if part)
-        text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
-        # Still past it, as with intake's first-run notice: the catalog's line, which its tool's description says too,
-        # then the head over the names, so the rules, the glossary's order and the notices arrive whole.
-        for drop in (prompt_files.module('mcp', 'connect_catalog_listed'), lines[0].split('\n', 1)[0]):
-            if len(text) <= HOST_KEEPS or not drop or names == drop:
-                continue
-            lines = [line for line in lines if line != drop] if drop in lines else \
-                [lines[0].split('\n', 1)[1] if line is lines[0] and '\n' in line else line for line in lines]
-            text = '\n\n'.join([*([rules] if rules else []), *lines, *states])
-    if named is None:
-        notice = provisioning(session)
-        if notice is not None and session is not None and len(text) + 2 + len(notice) <= HOST_KEEPS:
-            text = f'{text}\n\n{notice}'
-            TOLD.add(session)
-    # the skills are the person's workflows, BASE-059, within the room left
-    if (named is None or named == 'system') and (index := skill_index(folder, client, HOST_KEEPS - len(text) - 2)):
-        text = f'{text}\n\n{index}'
-    return text + '\n'
+    first_run = first_run_text(folder) if named is None else None
+    lines += [one for one in startup_notices(folder, project) if one != first_run]
+    if listed and (index := skill_index(folder, client)):  # the skills are the person's workflows, BASE-059
+        lines.append(index)
+    return '\n\n'.join(lines)
 
 
 def category_lines(folder: Path) -> list[str]:
@@ -1409,8 +1383,8 @@ def catalog_line(one: Listed) -> str:
 
 
 def compaction_state(folder: Path, session: str | None, follows: bool = True) -> str:
-    """What a session is told once its agent's context was compacted: first the rules every agent works by and the
-    order to read the glossary, `agent_opening`, since compaction removed them from its context; then that the record
+    """What a session is told once its agent's context was compacted: first the directive and the links to its
+    instruction blocks, `opening`, since compaction removed what it read; then that the record
     of what it was given is forgotten, so each piece comes again at its next use, and, when its listing follows it, the
     category it has open, which its AI tool still lists."""
     gone = forget_shown(session)
@@ -1422,7 +1396,7 @@ def compaction_state(folder: Path, session: str | None, follows: bool = True) ->
     opened = open_category(folder, session) if follows else None
     held = prompt_files.module('mcp', 'compaction_open', category=opened) if opened else ''
     said = prompt_files.module('mcp', 'compaction_state', n=str(gone), open=f' {held}' if held else '') or ''
-    return '\n\n'.join(part for part in (agent_opening(project_for(folder)), said) if part)
+    return '\n\n'.join(part for part in (opening(folder, catalog.role()), said) if part)
 
 
 def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | None:
@@ -1833,11 +1807,133 @@ def project_glossary_text(folder: Path, client: str | None = None) -> str:
     return '\n\n'.join(part for part in (standard, note) if part) + '\n'
 
 
+# The instruction blocks, MCP-007: every agent's connect message is mcp's `connect_directive` and one link per line
+# to each block below that applies to the agent now, in this order, generated here and never typed into a prompt. Each
+# block is a resource served whole and exactly as its prompt holds it, so the message stays a few lines and each block
+# arrives uncut. The same directive and links open the agent's first turn after every compaction, `opening`, since
+# compaction removes what the agent read. A new block is one entry here: its link, when it applies, and its text.
+RULES_URI = 'metaform://rules'
+MEMORY_URI = 'metaform://memory'
+FIRSTRUN_URI = 'metaform://firstrun'
+ROLE_URI = 'metaform://role/'
+PERSON = 'person'  # the role named in metaform://role/<role> for the person's own sessions, which no runner names
+
+
+@dataclasses.dataclass(frozen=True)
+class Agent:
+    """Who an instruction block's link is decided for: the folder its server serves, its role, None for the person's
+    own sessions, and the ids of the modules on its surface, less what its runner withholds."""
+    folder: Path
+    role: str | None
+    modules: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class Reading:
+    """A read of an instruction block: the folder, the connecting AI tool, the session the compaction line is for
+    (None, or a process's own, where no runner follows it), and whether the connection names a session at all."""
+    folder: Path
+    client: str | None
+    session: str | None
+    keyed: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class Block:
+    """One instruction block: `link`, its URI when it applies to the agent now, else None; `read`, its text for a read
+    of the URI, else None when the URI is not this block's."""
+    name: str
+    link: Callable[[Agent], str | None]
+    read: Callable[[Reading, str], str | None]
+
+
+def first_run_text(folder: Path) -> str | None:
+    """Intake's first-run text while the project has no intake and none is being recorded, `intake.first_run`; None
+    otherwise or with the intake module off."""
+    for module_id, given in provided(folder, 'intake.first_run'):
+        try:
+            said = given(context(module_id, folder, surface='mcp'))
+        except (Stop, StoreError):
+            said = None
+        if said:
+            return said
+    return None
+
+
+def memory_text(folder: Path) -> str | None:
+    """The memory module's instructions prompt, through the prompt store as `memory.prompt` serves it, filled with the
+    folder's project; no element is assigned at connect, so its unassigned bullet stands. Before a project {project}
+    stays as written. None with the memory module off."""
+    project = project_for(folder)
+    for _, given in provided(folder, 'memory.prompt'):
+        return given(project if project is not None else '{project}')
+    return None
+
+
+def _role_read(reading: Reading, uri: str) -> str | None:
+    if uri != ROLE_URI + (catalog.role() or PERSON):
+        return None
+    return role_text(reading.folder, reading.client, reading.session, reading.keyed)
+
+
+def _project_read(reading: Reading, uri: str) -> str | None:
+    return project_glossary_text(reading.folder, reading.client) if uri == project_uri(reading.folder) else None
+
+
+BLOCKS: tuple[Block, ...] = (
+    Block('rules', lambda _: RULES_URI,
+          lambda _, uri: prompt_files.module('mcp', 'connect_rules') or '' if uri == RULES_URI else None),
+    Block('metaform', lambda _: GLOSSARY_URI, lambda reading, uri: glossary(reading.folder) if uri == GLOSSARY_URI
+          else None),
+    Block('memory', lambda agent: MEMORY_URI if 'memory' in agent.modules else None,
+          lambda reading, uri: memory_text(reading.folder) if uri == MEMORY_URI else None),
+    Block('firstrun', lambda agent: FIRSTRUN_URI if agent.role is None and first_run_text(agent.folder) else None,
+          lambda reading, uri: first_run_text(reading.folder) if uri == FIRSTRUN_URI else None),
+    Block('role', lambda agent: ROLE_URI + (agent.role or PERSON), _role_read),
+    Block('project', lambda agent: project_uri(agent.folder), _project_read),
+)
+
+
+def links(folder: Path, role: str | None = None, withheld: str = '') -> list[str]:
+    """The links of the instruction blocks that apply to an agent of `role` in `folder` now, in BLOCKS' order.
+    `withheld` is what its runner withholds from its server, for a caller, such as the runner, whose own surface does
+    not withhold it."""
+    named = role if role and role != 'none' else None
+    agent = Agent(folder, named, tuple(module.id for module in withhold(surface(folder), withheld)))
+    return [uri for block in BLOCKS if (uri := block.link(agent))]
+
+
+def opening(folder: Path, role: str | None = None, withheld: str = '') -> str:
+    """What opens every agent's session and its first turn after each compaction: mcp's `connect_directive`, then one
+    line per link, `links`."""
+    directive = prompt_files.module('mcp', 'connect_directive') or ''
+    return '\n'.join(line for line in (directive, *links(folder, role, withheld)) if line)
+
+
+def block_text(folder: Path, uri: str, client: str | None = None, session: str | None = None,
+               keyed: bool = True) -> str | None:
+    """The text of the instruction block at `uri`, exactly as its prompt holds it; None when no block is there."""
+    reading = Reading(folder, client, session, keyed)
+    for block in BLOCKS:
+        said = block.read(reading, uri)
+        if said is not None:
+            return said
+    return None
+
+
 def resource_list(folder: Path) -> list[dict[str, Any]]:
     """The fixed resources: Metaform's glossary, the project's own, the tools in one line each, the instructions, then
     each surfaced module's declared resources."""
     own = project_uri(folder)
-    listed = [{'uri': GLOSSARY_URI, 'name': 'Metaform glossary',
+    applies = links(folder, catalog.role())
+    blocks = {RULES_URI: ('Rules', 'Read first: the rules every agent works by.'),
+              MEMORY_URI: ('Memory', 'How to keep memory in this project.'),
+              FIRSTRUN_URI: ('First run', 'What to do first: this project has no intake yet.'),
+              **{uri: ('Role', ('What your role is for, the tool categories it gets, and what else you need before '
+                                'your first call.')) for uri in applies if uri.startswith(ROLE_URI)}}
+    listed = [*({'uri': uri, 'name': name, 'description': description, 'mime_type': 'text/plain'}
+                for uri, (name, description) in blocks.items() if uri in applies),
+              {'uri': GLOSSARY_URI, 'name': 'Metaform glossary',
                'description': 'Read first: the terms every agent works by in Metaform, the mcp module\'s glossary '
                               'prompt as written.',
                'mime_type': 'text/plain'},
@@ -1882,11 +1978,14 @@ def module_templates(folder: Path) -> list[tuple[str, str, str, str]]:
             for module in surface(folder) for held in module.resources if held.fields]
 
 
-async def read_resource_text(folder: Path, uri: str, *, client: str | None = None) -> tuple[str, str] | None:
-    """A resource's text and media type, or None when this folder serves no such resource. metaform://metaform is
-    read first, so it is Metaform's own glossary whatever the folder's project or modules are called."""
-    if uri == GLOSSARY_URI:
-        return await anyio.to_thread.run_sync(glossary, folder), 'text/plain'
+async def read_resource_text(folder: Path, uri: str, *, client: str | None = None, session: str | None = None,
+                             keyed: bool = True) -> tuple[str, str] | None:
+    """A resource's text and media type, or None when this folder serves no such resource. The instruction blocks are
+    read first, so metaform://metaform is Metaform's own glossary whatever the folder's project or modules are called.
+    `session` and `keyed` say what metaform://role/<role> tells this connection, as `role_text` says."""
+    said = await anyio.to_thread.run_sync(functools.partial(block_text, folder, uri, client, session, keyed))
+    if said is not None:
+        return said, 'text/plain'
     for module in await anyio.to_thread.run_sync(surface, folder):
         for held in module.resources:
             fields = held.matched(uri)
@@ -1905,8 +2004,6 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
         return await anyio.to_thread.run_sync(tools_text, folder), 'text/plain'
     if uri == INSTRUCTIONS_URI:
         return await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp')), 'text/plain'
-    if uri == await anyio.to_thread.run_sync(project_uri, folder):
-        return await anyio.to_thread.run_sync(project_glossary_text, folder, client), 'text/plain'
     matched = next(((name, held.groupdict()) for name, pattern in TEMPLATE_PATTERNS.items()
                     if (held := pattern.match(uri))), None)
     if matched is None:
@@ -2761,7 +2858,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         # A resource that does not exist: -32602 on the July 2026 wire, which moved it there, -32002 before it.
         missing_code = -32602 if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS else -32002
         try:
-            found = await read_resource_text(folder, uri, client=client_of(ctx))
+            client = client_of(ctx)
+            found = await read_resource_text(folder, uri, client=client, session=None if http else served_session(client),
+                                             keyed=not http or session_of(ctx) is not None)
         except Missing as missing:
             raise MCPError(missing_code, f'Error: {missing}\nNext: {missing.next_step}') from None
         except (Stop, StoreError) as stop:
@@ -2893,14 +2992,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             except NewerStore as error:
                 return refused(ctx, error)
             if ctx.method in ('initialize', 'server/discover') and isinstance(result, dict):
-                # Over stdio the AI tool that connects is the one that started this process; over HTTP it is not.
-                client = client_of(ctx)
-                # Over HTTP an initialize opens a connection with a session header; a July discover has none, so its
-                # calls name a session only by the handle metaform_catalog gives, unless a gateway names it.
-                headers = ctx.request.headers if ctx.request is not None else None
-                keyed = not http or ctx.method == 'initialize' or gateway_session(headers) is not None
-                composed = await anyio.to_thread.run_sync(functools.partial(
-                    connect_instructions, folder, client, None if http else served_session(client), keyed=keyed))
+                # The same few lines on every wire: what each block says to this connection is in the block.
+                composed = await anyio.to_thread.run_sync(connect_instructions, folder)
                 result = {**cast(dict[str, Any], result), 'instructions': composed}
             return result
     server.middleware.append(live)

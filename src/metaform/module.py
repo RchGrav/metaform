@@ -830,16 +830,17 @@ def record_shown(session: str | None, key: str, value: Any) -> Any:
 COMPACTED_KEY = 'pending:compacted'
 
 
-def agent_opening(project: str | None) -> str:
-    """What opens every agent's connect message and its first turn after each compaction, as the person wrote them:
-    the rules every agent works by, the mcp module's `connect_rules`, then the order to read Metaform's glossary whole
-    and the project's own, `instructions_end`. `project` is the folder's project, None before one. '' when both are
-    empty."""
-    from . import prompt_files
-    own = (prompt_files.module('mcp', 'instructions_terms', project=project) or ''
-           if project is not None and project != 'metaform' else '')
-    return '\n\n'.join(part for part in (prompt_files.module('mcp', 'connect_rules'),
-                                         prompt_files.module('mcp', 'instructions_end', terms=own)) if part)
+def agent_opening(folder: Path, role: str | None, withheld: str = '') -> str:
+    """What opens every agent's connect message and its first turn after each compaction: a directive line and one
+    link per line to each instruction block that applies to an agent of `role` in `folder` now, as the MCP server
+    serves them, `agent.opening`. `withheld` is what the agent's runner withholds from its server. '' with no module
+    offering it."""
+    from . import loader
+    for module in loader.enabled():
+        for one in module.provides:
+            if one.kind == 'agent.opening':
+                return one.value(folder, role, withheld)
+    return ''
 
 
 def forget_shown(session: str | None) -> int:

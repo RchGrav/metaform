@@ -88,10 +88,11 @@ def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mappe
         assert skill == run('workflow', 'skill', name, cwd=mapped).stdout.strip()
 
 
-# A tool's guidance, given once per session with the first result, MCP-039: tested on its own, so the other tests read
-# the result without it.
+# A tool's guidance, given once per session with the first result, MCP-039, and the provisioning notice the first
+# result carries while the AI tool these tests run under is unrecorded, MCP-028: tested on their own, so the other
+# tests read the result without them.
 GUIDED = re.compile(r"^(How to use \S+|The \S+ module's rules), given once in this session|^Results are trimmed to the "
-                    r"fields most next steps need")
+                    r"fields most next steps need|^Notice: Read metaform help provision")
 
 
 def text(result):
@@ -1615,15 +1616,10 @@ def help_agents(run, folder):
 
 
 def over_mcp(folder):
-    """The connect message the MCP server sends the person's own session over stdio, MCP-029: why to use Metaform's
-    tools with a line per category, the catalog's line, the order to read the glossaries, the compaction line, the
-    project, what the folder's state calls for; and, in a fresh session of a stdio server, the provisioning notice when
-    the AI tool these tests run under is one the home has not recorded, MCP-028, since the server these tests start
-    runs under it too; then the skill index in the room left."""
-    import uuid
-
+    """The connect message the MCP server sends the person's own session, MCP-007: the directive line and a link per
+    line to each instruction block that applies to it now."""
     from metaform.modules.mcp.server import connect_instructions
-    return connect_instructions(folder, None, f'process:test-{uuid.uuid4().hex}')  # its own process: no runner follows
+    return connect_instructions(folder)
 
 
 @pytest.mark.req('CLI-037')
@@ -1786,8 +1782,11 @@ def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_modu
     work = tools['map_work']
     assert 'op=plan' not in work.description and len(work.description) <= 200
     assert all(len(one.get('description', '').encode()) <= 80 for one in work.input_schema['properties'].values())
-    assert first.content[0].text.startswith('How to use map_work, given once in this session:')
-    assert 'op=plan' in first.content[0].text and text(first)[-1] == text(second)[-1]
+    # the provisioning notice comes first with the first result while the AI tool running these tests is unrecorded
+    guide = first.content[0].text.split('\n\n', 1)[-1] if first.content[0].text.startswith('Notice: ') else \
+        first.content[0].text
+    assert guide.startswith('How to use map_work, given once in this session:')
+    assert 'op=plan' in guide and text(first)[-1] == text(second)[-1]
     assert not any(GUIDED.match(block.text) for block in second.content)
     rule = prompt_files.module_rules('memory')[0][0]
     assert sum(rule in block.text for one in memory for block in one.content) == 1  # the module's rules, once
@@ -2084,7 +2083,8 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
             refused = str(error)
         return init.capabilities.resources.list_changed, fixed, templates, texts, refused
     changed, fixed, templates, texts, refused = session(home, mapped, check)
-    assert changed and set(fixed) == {'metaform://metaform', 'metaform://proj',
+    assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://role/person',
+                                      'metaform://metaform', 'metaform://proj',
                                       'metaform://tools',
                                       'metaform://runtime/compaction-state',
                                       'metaform://instructions', 'metaform://intake/procedure',
@@ -2211,8 +2211,9 @@ def test_connect_points_to_the_glossary_and_the_glossary_resource_serves_it_whol
         read = await client.read_resource('metaform://metaform')
         return init.instructions, listed, read.contents[0].text
     started, listed, served = session(home, mapped, check)
-    assert 'metaform://metaform, then metaform://proj' in started and len(startup_instructions(mapped)) <= 2048
-    assert listed[:2] == ['metaform://metaform', 'metaform://proj']
+    assert started.splitlines()[1:3] == ['metaform://rules', 'metaform://metaform'] and 'metaform://proj' in started
+    assert len(startup_instructions(mapped)) <= 2048
+    assert listed[0] == 'metaform://rules' and listed[listed.index('metaform://metaform') + 1] == 'metaform://proj'
     assert served == glossary.strip() + '\n' and len(served) > 2048  # whole and alone, past the connect text's cut
 
 
@@ -2233,39 +2234,63 @@ SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packe
 
 
 @pytest.mark.req('MCP-029')
-def test_the_connect_message_says_why_and_a_line_per_category_and_fits_what_the_host_keeps(run, home, mapped,
-                                                                                          tmp_path):
-    """The person's own session is told why it does the project's work through Metaform's tools, then one line per tool
-    category it may open with what the category is for, then the catalog's line and the order to read the glossaries,
-    then the folder's notices; never the module lines, which named modules and commands beside the categories. With
-    every shipped module on it stays within the 2,048 characters Metaform keeps it to, with an intake and before one,
-    and a category whose tools are all off the folder's surface is not named."""
+def test_the_connect_message_is_the_directive_and_its_links_and_the_role_block_says_why_with_a_line_per_category(
+        run, home, mapped):
+    """The person's own session connects to the directive line and one link per line, rules, glossary, memory, its
+    role and the project's terms, far within what any host keeps. Its role block says why it does the project's work
+    through Metaform's tools, then one line per tool category it may open with what the category is for, the catalog's
+    line, the compaction line and the project; never the module lines. A module off the folder's surface takes its
+    link and its categories with it."""
     from metaform import prompt_files
     from metaform.module import CATEGORY_NAMES
-    from metaform.modules.mcp.server import connect_instructions
+    from metaform.modules.mcp.server import connect_instructions, role_text
     for module in SHIPPED:
         run('enable', module)
-    sent = connect_instructions(mapped, None, 'process:test-connect')
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
-    assert rules.startswith('@CONSTRAINT:') and sent.startswith(rules + '\n\n') and sent.count(rules) == 1
-    lines = sent[len(rules) + 2:].splitlines()
+    sent = connect_instructions(mapped)
+    assert sent.splitlines() == [prompt_files.module('mcp', 'connect_directive'), 'metaform://rules',
+                                 'metaform://metaform', 'metaform://memory', 'metaform://role/person', 'metaform://proj']
+    assert len(sent) <= 512, len(sent)
+    role = role_text(mapped, None, 'process:test-connect')
+    lines = role.splitlines()
     assert lines[0] == prompt_files.module('mcp', 'connect_use')
     named = [line.split(':')[0][2:] for line in lines[1:] if line.startswith('– ')]
     assert named == [one for one in CATEGORY_NAMES if one in named] and {'orient', 'ticket', 'steer'} <= set(named)
-    end = prompt_files.module('mcp', 'instructions_end', terms=prompt_files.module('mcp', 'instructions_terms',
-                                                                                     project='proj'))
-    assert sent.index(end) > sent.index('metaform_catalog') and 'metaform://metaform' in end
-    assert 'You must use Metaform' not in sent and '– fork:' not in sent and 'web start' not in sent
-    assert len(sent) <= 2048, len(sent)
+    assert 'metaform_catalog' in role and 'compacted=true' in role and 'This folder is the project proj.' in role
+    assert 'You must use Metaform' not in role and '– fork:' not in role and 'web start' not in role
+    run('set', '--modules', 'map', cwd=mapped)  # what the folder's surface leaves out says nothing
+    assert 'metaform://memory' not in connect_instructions(mapped)
+    narrowed = role_text(mapped, None, 'process:test-narrow')
+    assert '– orient:' in narrowed and '– steer:' not in narrowed and '– remember:' not in narrowed
+
+
+@pytest.mark.req('MCP-007')
+def test_firstrun_is_linked_only_to_the_person_s_own_session_while_the_project_has_no_intake(run, home, mapped,
+                                                                                             tmp_path, monkeypatch):
+    """metaform://firstrun, intake's no_intake as written, is linked while the project has no intake, with the register
+    step while the folder is not registered; never once there is an intake, and never to a dispatched agent."""
+    from importlib import resources
+
+    from metaform import prompt_files
+    from metaform.modules.mcp.server import block_text, connect_instructions, role_text
+    here = resources.files('metaform.modules.intake')
     bare = tmp_path / 'bare'
     bare.mkdir()
     run('add', 'project', 'bare', str(bare))
-    before = connect_instructions(bare, None, 'process:test-bare')  # no intake: intake's notice follows the order
-    end = end.replace('metaform://proj', 'metaform://bare')
-    assert before.index(end) < len(before) - len(end) - 2 and len(before) <= 2048
-    run('set', '--modules', 'map', cwd=mapped)  # what the folder's surface leaves out says nothing
-    narrowed = connect_instructions(mapped, None, 'process:test-narrow')
-    assert '– orient:' in narrowed and '– steer:' not in narrowed and '– remember:' not in narrowed
+    assert connect_instructions(bare).splitlines()[1:] == ['metaform://rules', 'metaform://metaform',
+                                                           'metaform://memory', 'metaform://firstrun',
+                                                           'metaform://role/person', 'metaform://bare']
+    first = prompt_files.required(here, 'no_intake')
+    assert block_text(bare, 'metaform://firstrun') == first
+    assert first not in role_text(bare, None, 'process:test-firstrun')  # served once, as its own block
+    assert 'metaform://firstrun' not in connect_instructions(mapped)
+    assert block_text(mapped, 'metaform://firstrun') is None
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    step = '   ' + prompt_files.required(here, 'register_step') + '\n'
+    assert 'metaform://firstrun' in connect_instructions(outside)
+    assert block_text(outside, 'metaform://firstrun') == prompt_files.required(here, 'no_intake', register=step)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    assert 'metaform://firstrun' not in connect_instructions(bare)
 
 
 @pytest.mark.req('MCP-037')
@@ -3657,16 +3682,15 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
         refused = await called(client, 'metaform_set', {'tmux': True})
         through = await called(client, 'metaform_catalog', {'tool': 'metaform_set', 'arguments': {'tmux': True}})
         found = await called(client, 'metaform_catalog', {'search': 'note another agent'})
-        return init.instructions, first, categories, opened, second, orient, again, refused, through, found
+        role_said = (await client.read_resource('metaform://role/worker')).contents[0].text
+        return init.instructions, role_said, first, categories, opened, second, orient, again, refused, through, found
     env = {'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'tight-worker', 'METAFORM_WORK': 'w-1'}
-    said, first, categories, opened, second, orient, again, refused, through, found = session(home, mapped, check,
-                                                                                             heard, env=env)
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
-    assert said.startswith(rules + '\n\nYou work one ticket at its node, so you are given the tool categories that '
-                                   'work needs: ') and said.count(rules) == 1
-    assert 'metaform_catalog' in said and 'The ticket category is open now' in said
-    assert 'Before beginning work, read metaform://metaform, then metaform://proj' in said
-    assert 'You must use Metaform' not in said and 'compacted=true' not in said
+    said, role_said, first, categories, opened, second, orient, again, refused, through, found = session(
+        home, mapped, check, heard, env=env)
+    assert said.splitlines()[0] == prompt_files.module('mcp', 'connect_directive') and 'metaform://role/worker' in said
+    assert role_said.startswith('You work one ticket at its node, so you are given the tool categories that work needs: ')
+    assert 'metaform_catalog' in role_said and 'The ticket category is open now' in role_said
+    assert 'You must use Metaform' not in role_said and 'compacted=true' not in role_said
     assert 'metaform_catalog' in first and 'map_work' in first and 'memory_read_graph' not in first
     assert not {'metaform_set', 'dispatch_start', 'map_activate'} & set(first)
     listing = blocks(categories)[-1]
@@ -3727,20 +3751,60 @@ def test_a_worker_is_given_only_what_its_own_ticket_needs(run, home, mapped):
 
 @pytest.mark.req('MCP-007')
 @pytest.mark.parametrize('role', ['none', 'worker', 'talk', 'sentinel', 'prep', 'intake', 'system'])
-def test_every_role_s_connect_opens_with_the_rules_once_and_points_to_the_whole_glossary(run, home, mapped,
-                                                                                         monkeypatch, role):
-    """Every agent, in every role, on stdio and on the July 2026 wire over HTTP: its connect message opens with the
-    rules block exactly as written, once, and tells it to read metaform://metaform, never a part of the glossary."""
+def test_every_role_connects_to_the_directive_and_the_links_that_apply_and_each_reads_back_its_block_whole(
+        run, home, mapped, monkeypatch, role):
+    """Every agent, in every role, on stdio and on the July 2026 wire over HTTP: its connect message is the directive
+    line and one link per line to the instruction blocks that apply to it, far within what any host keeps, and each
+    link reads back its block exactly as its prompt holds it: the rules, the glossary, the memory prompt, its role's
+    block as that connection is told it, and the project's terms."""
+    import httpx
+
     from metaform import prompt_files
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
-    assert rules.startswith('@CONSTRAINT:\n  → think before coding') and 'goal-driven execution' in rules
+    from metaform.modules.mcp.server import glossary, memory_text, project_glossary_text, role_text
+    run('enable', 'memory', cwd=mapped)
+    named = None if role == 'none' else role
+    links = ['metaform://rules', 'metaform://metaform', 'metaform://memory', f'metaform://role/{named or "person"}',
+             'metaform://proj']
+    directive = prompt_files.module('mcp', 'connect_directive') or ''
+    assert directive and 'metaform://' not in directive
     monkeypatch.setenv('METAFORM_ROLE', role)
-    for keyed in (True, False):
-        sent = startup_instructions(mapped, None, f'process:rules-{role}', keyed=keyed)
-        assert sent.startswith(rules + '\n\n') and sent.count(rules) == 1, (role, keyed)
-        assert 'Before beginning work, read metaform://metaform, then metaform://proj' in sent, (role, keyed)
-        assert 'metaform://metaform/' not in sent and len(sent) <= 2048, (role, keyed)
-        assert keyed or 'opens one category at a time' not in sent
+
+    def blocks_for(client, session, keyed):
+        return {'metaform://rules': prompt_files.module('mcp', 'connect_rules'), 'metaform://metaform': glossary(mapped),
+                'metaform://memory': memory_text(mapped),
+                f'metaform://role/{named or "person"}': role_text(mapped, client, session, keyed),
+                'metaform://proj': project_glossary_text(mapped, client)}
+
+    async def over_stdio(client, init):
+        return init.instructions, {uri: (await client.read_resource(uri)).contents[0].text for uri in links}
+    connect, read = session(home, mapped, over_stdio, env={'METAFORM_ROLE': role, 'METAFORM_SESSION': f'links-{role}'})
+    assert connect.splitlines() == [directive, *links] and len(connect) <= 512, connect
+    assert read == blocks_for('mcp', f'links-{role}', True)
+
+    served = Served(mapped)
+
+    async def over_july():
+        async with httpx.AsyncClient(timeout=30) as client:
+            async def request(method, params):
+                params = {**params, '_meta': {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+                                              'io.modelcontextprotocol/clientCapabilities': {}}}
+                response = await client.post(served.url, headers={
+                    'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28',
+                    'MCP-Method': method, **({'MCP-Name': params['uri']} if 'uri' in params else {})},
+                    json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
+                assert response.is_success, response.text
+                if response.headers['content-type'].startswith('text/event-stream'):
+                    return json.loads(next(line[6:] for line in response.text.splitlines()
+                                           if line.startswith('data: ')))['result']
+                return response.json()['result']
+            said = (await request('server/discover', {}))['instructions']
+            return said, {uri: (await request('resources/read', {'uri': uri}))['contents'][0]['text'] for uri in links}
+    try:
+        connect, read = asyncio.run(over_july())
+    finally:
+        served.stop()
+    assert connect.splitlines() == [directive, *links] and len(connect) <= 512, connect
+    assert read == blocks_for(None, None, False)
 
 
 def test_nothing_points_to_a_part_of_the_glossary():
@@ -3803,7 +3867,7 @@ def test_a_talk_starts_with_its_node_s_read_and_reaches_no_tool_outside_its_cate
     async def check(client, init):
         tools = await first_listed(client)
         refused = await called(client, 'map_knowledge', {'op': 'create', 'layer': 'x'})
-        return init.instructions, tools, refused
+        return (await client.read_resource(f'metaform://role/{role}')).contents[0].text, tools, refused
     for role in ('talk', 'sentinel', 'prep'):
         said, tools, refused = session(home, mapped, check, env={'METAFORM_ROLE': role,
                                                                  'METAFORM_SESSION': f'first-{role}'})
@@ -3861,21 +3925,21 @@ def test_each_guide_comes_once_until_the_agent_says_its_context_was_compacted(ru
     from metaform.module import agent_opening
 
     async def check(client, init):
+        role_said = (await client.read_resource('metaform://role/person')).contents[0].text
         answers = [blocks(await called(client, 'map_where', {'address': address}))
                    for address in ('code.timer.kitchen', 'code.alarm.audible')]
         glossary = [(await client.read_resource('metaform://metaform')).contents[0].text for _ in range(2)]
         forgot = blocks(await called(client, 'metaform_catalog', {'compacted': True}))
         again = blocks(await called(client, 'map_where', {'address': 'code.timer.kitchen'}))
         state = (await client.read_resource('metaform://runtime/compaction-state')).contents[0].text
-        return init.instructions, answers, glossary, forgot, again, state
-    said, answers, glossary, forgot, again, state = session(home, mapped, check)
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
-    opening = agent_opening('proj')
-    assert opening.startswith(rules + '\n\nBefore beginning work, read metaform://metaform, then metaform://proj')
-    assert said.startswith(rules + '\n\n' + (prompt_files.module('mcp', 'connect_use') or '') + '\n')
-    assert said.count(rules) == 1 and 'metaform_catalog' in said
-    assert 'compacted=true' in said and 'This folder is the project proj.' in said
-    assert 'Before beginning work, read metaform://metaform, then metaform://proj' in said and len(said) <= 2048
+        return init.instructions, role_said, answers, glossary, forgot, again, state
+    said, role_said, answers, glossary, forgot, again, state = session(home, mapped, check)
+    opening = agent_opening(mapped, None)
+    assert opening.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
+    assert said == opening and len(said) <= 512
+    assert role_said.startswith((prompt_files.module('mcp', 'connect_use') or '') + '\n')
+    assert 'metaform_catalog' in role_said and 'compacted=true' in role_said
+    assert 'This folder is the project proj.' in role_said
     first, second = ('\n'.join(one) for one in answers)
     assert 'How to use map_where' in first and 'The words this map is written in' not in first
     assert 'How to use map_where' not in second
@@ -3889,7 +3953,7 @@ def test_each_guide_comes_once_until_the_agent_says_its_context_was_compacted(ru
 @pytest.mark.req('MCP-002')
 @pytest.mark.req('MCP-039')
 def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_listing_is_claimed(run, home, mapped):
-    """The 2026-07-28 wire over HTTP has no session header. Its connect says how to name a session, never the
+    """The 2026-07-28 wire over HTTP has no session header. Its role block says how to name a session, never the
     compaction line; every tool the role is given is listed, and stays listed whatever category is opened, which
     only says its tools; metaform_catalog gives a session handle, and with it passed each guide comes once."""
     import httpx
@@ -3904,7 +3968,8 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
                                               'io.modelcontextprotocol/clientCapabilities': {}}}
                 response = await client.post(served.url, headers={
                     'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28',
-                    'MCP-Method': method, **({'MCP-Name': params['name']} if 'name' in params else {})},
+                    'MCP-Method': method,
+                    **({'MCP-Name': params.get('name') or params['uri']} if {'name', 'uri'} & set(params) else {})},
                     json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
                 assert response.is_success, response.text
                 if response.headers['content-type'].startswith('text/event-stream'):
@@ -3916,6 +3981,7 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
                 return [block['text'] for block in (await request('tools/call', {'name': name, 'arguments': arguments}))
                         ['content']]
             connect = (await request('server/discover', {}))['instructions']
+            connect += '\n' + (await request('resources/read', {'uri': 'metaform://role/person'}))['contents'][0]['text']
             before = [tool['name'] for tool in (await request('tools/list', {}))['tools']]
             first = await call('metaform_catalog', {})
             handle = first[0].split('Your session handle is ', 1)[1].split(':', 1)[0]
@@ -3931,8 +3997,7 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
         served.stop()
     assert 'session handle' in connect and 'compacted=true' not in connect
     assert 'opens one category at a time' not in connect and 'carry only' not in connect  # its listing never narrows
-    rules = prompt_files.module('mcp', 'connect_rules') or ''
-    assert connect.startswith(rules + '\n\n') and connect.count(rules) == 1 and 'read metaform://metaform' in connect
+    assert connect.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\nmetaform://metaform\n')
     assert 'map_where' in before and 'map_where' in after and 'memory_read_graph' in after
     assert 'pass session_handle=' in first[0] and 'compacted=true' in first[0]
     assert opened[0].startswith("The orient category's tools, each listed to you already")

@@ -34,7 +34,19 @@ from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord
-from metaform.module import Context, Module, Noun, Resource, Status, Stop, ToolbarItem, Verb, project_for, save_report
+from metaform.module import (
+    Context,
+    Module,
+    Noun,
+    Provides,
+    Resource,
+    Status,
+    Stop,
+    ToolbarItem,
+    Verb,
+    project_for,
+    save_report,
+)
 
 from .schema import ELEMENTS, IFD, NAME_LENGTH, REFS, ROLE
 
@@ -1260,6 +1272,16 @@ def status(ctx: Context) -> Status:
     return Status(lines=('Intake: none yet',), instruction=prompt_files.required(here, 'no_intake'))
 
 
+
+def first_run(ctx: Context) -> str | None:
+    """Intake's first-run text, `no_intake`, while the project has no intake and none is being recorded, with the
+    register step while the folder is no registered project, as `status` gives it at connect; None otherwise, and to an
+    agent a runner started. Offered as `intake.first_run`, so the MCP server serves it whole as metaform://firstrun."""
+    got = status(ctx)
+    if not got.at_connect or not got.instruction:
+        return None
+    return None if got.instruction == prompt_files.required(resources.files(__name__), 'unfinished') else got.instruction
+
 E, P = ELEMENT_WORDS.get, PURPOSE_WORDS.get
 def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
     """The condition and the note an element or a purpose record is recorded with, each in that command's own words."""
@@ -1358,6 +1380,7 @@ MODULE = Module(
              page="the intake's Discard"),
     ),
     status=status,
+    provides=(Provides('intake.first_run', first_run),),
     resources=(
         Resource('metaform://intake/procedure', 'Intake procedure',
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',

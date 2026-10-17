@@ -624,13 +624,14 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
     """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
     forgotten, all but the category its AI tool still lists, and the compacted line naming the ticket and its node is
-    left for the agent's next tool call, else the next turn opens with it, said once, after the rules and the order to
-    read the glossary, which come first; in_progress and failed change nothing, and nothing is sent on the signal
+    left for the agent's next tool call, else the next turn opens with it, said once, after the directive and the links
+    to the agent's instruction blocks, which come first; in_progress and failed change nothing, and nothing is sent on the signal
     itself."""
-    from metaform import shown
+    from metaform import prompt_files, shown
     from metaform.module import COMPACTED_KEY, agent_opening
-    opening = agent_opening('proj') + '\n\nYour context was compacted'
-    assert opening.startswith('@CONSTRAINT:') and 'read metaform://metaform' in opening
+    opening = agent_opening(dispatch.folder, 'worker') + '\n\nYour context was compacted'
+    assert opening.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
+    assert '\nmetaform://role/worker\n' in opening
     gates = tmp_path / 'turns'
     gates.mkdir()
     dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), FAKE_ACP_COMPACT=statuses)

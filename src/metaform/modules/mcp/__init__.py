@@ -221,6 +221,13 @@ def exchange_open(folder: Path) -> bool:
     return project is not None and bool(a2a_records.exchanges(project, open_only=True))
 
 
+def agent_opening(folder: Path, role: str | None, withheld: str = '') -> str:
+    """The directive and links that open an agent's session and its first turn after a compaction, `server.opening`,
+    offered as `agent.opening` so a runner reaches it through the chassis; imported here only when asked."""
+    from .server import opening
+    return opening(folder, role, withheld)
+
+
 MODULE = Module(
     id='mcp',
     summary="Serve Metaform's tools to AI tools over MCP.",
@@ -277,5 +284,5 @@ MODULE = Module(
     tables=TABLES,
     start=carry_peers,
     subscriptions=(Subscription('map.changed', changed),),
-    provides=(Provides('mcp.http', HttpService()),),
+    provides=(Provides('mcp.http', HttpService()), Provides('agent.opening', agent_opening)),
 )

@@ -74,53 +74,36 @@ SHIPPED = ('dispatch', 'fork', 'hello', 'intake', 'map', 'mcp', 'memory', 'packe
 
 
 @pytest.mark.req('MCP-029')
-def test_connect_message_and_index_fit_what_the_host_keeps(folder, run):
-    """The startup text and the fallback index together stay within the 2,048 characters Claude Code keeps, with
-    every shipped module on and the first-run notice; the names alone when the descriptions do not fit."""
-    sent = server.connect_instructions(folder, 'unknown-host')
-    skills = server.listing(folder, 'unknown-host')['metaform_skills']
-    assert len(sent) <= 2048 and 'FIRST RUN' in sent
-    assert 'write-workflow' in sent or 'write-workflow' in skills.description + skills.guide()  # else with the tool
+def test_the_skill_index_is_in_the_role_block_whole_and_the_connect_message_stays_a_few_links(folder, run):
+    """The connect message is the directive and its links, with every shipped module on, registered or not and before
+    an intake; the fallback skill index comes whole in the person's role block, never cut to fit."""
     for module in SHIPPED:
         run('enable', module)
     for registered in (False, True):
         if registered:
             run('add', 'project', 'skills', str(folder))
-        sent = server.connect_instructions(folder, 'unknown-host')
-        assert len(sent) <= 2048 and 'FIRST RUN' in sent, len(sent)
-        assert sent.startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')  # the rules open it
-        skills = server.listing(folder, 'unknown-host')['metaform_skills']
-        listed = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
-        assert 'write-workflow' in sent or 'write-workflow' in listed
+        sent = server.connect_instructions(folder)
+        assert len(sent) <= 512 and 'metaform://firstrun' in sent and 'Skills:' not in sent, sent
+        assert sent.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
+        role = server.role_text(folder, 'unknown-host')
+        assert server.skill_index(folder, 'unknown-host') in role and 'write-workflow' in role
 
 
 @pytest.mark.req('MCP-028')
-def test_a_stdio_connect_from_an_unrecorded_harness_carries_the_provisioning_notice(folder, run, monkeypatch):
-    """The AI tool that started a stdio server is told once to provision it: in the connect message when it fits what
-    the host keeps, else with the session's first tool result. An HTTP connect, whose client did not start the
-    server, and a recorded harness are not told."""
+def test_a_stdio_session_from_an_unrecorded_harness_is_told_to_provision_with_its_first_tool_result(folder, run,
+                                                                                                    monkeypatch):
+    """The AI tool that started a stdio server is told once to provision it, with the session's first tool result;
+    the connect message holds only the directive and its links. A recorded harness is not told."""
     from pathlib import Path
 
     from metaform import harness
     monkeypatch.setattr(server, 'TOLD', set())
     monkeypatch.setattr(harness, 'running', lambda: Path(os.path.abspath(os.sep)) / 'opt' / 'harness' / 'bin' / 'tool')
     notice = f'Notice: {harness.NOTICE}'
-    assert notice not in server.connect_instructions(folder, 'unknown-host')  # HTTP: no session of the harness
-    sent = server.connect_instructions(folder, 'unknown-host', 'one')
-    assert len(sent) <= 2048 and sent.startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')
-    if notice in sent:
-        assert server.provisioning('one') is None  # told once
-    else:  # beside the rules and the first-run notice it does not fit: the first tool result carries it
-        assert server.provisioning('one') == notice
-    for module in SHIPPED:  # no room left at connect: the first tool result carries it instead
-        run('enable', module)
-    server.TOLD.add('measured')  # the message without the notice is all the host keeps here
-    monkeypatch.setattr(server, 'HOST_KEEPS', len(server.connect_instructions(folder, 'unknown-host', 'measured')))
-    sent = server.connect_instructions(folder, 'unknown-host', 'two')
-    assert notice not in sent and len(sent) <= 2048
-    assert server.provisioning('two') == notice
+    assert notice not in server.connect_instructions(folder)
+    assert server.provisioning('one') == notice
     harness.done(harness.running())
-    assert server.provisioning('three') is None
+    assert server.provisioning('two') is None
 
 
 def test_client_identity_accepts_initialize_params_and_modern_request_metadata():
@@ -146,9 +129,9 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
             init = await client.initialize()
             skills = server.listing(folder, 'unknown-skill-host')['metaform_skills']
             described = skills.description + skills.guide()  # the names come with the tool's first use, MCP-039
-            # within the room the rules and the first-run notice leave, else with the tool, BASE-059
-            assert 'write-workflow' in init.instructions or 'write-workflow' in described
-            assert 'sentinel' not in init.instructions
+            role = (await client.read_resource('metaform://role/person')).contents[0].text
+            assert 'metaform://role/person' in init.instructions and 'write-workflow' in role  # whole, BASE-059
+            assert 'write-workflow' in described and 'sentinel' not in role
             loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'logic.skill.sentinel'})
             assert not loaded.is_error, loaded
             assert loaded.structured_content['name'] == 'sentinel'
@@ -159,7 +142,7 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
     try:
         result = client.request('server/discover', {}, deadline=time.monotonic() + 15)
         assert 'sentinel' not in result['instructions']
-        assert result['instructions'].startswith(prompt_files.module('mcp', 'connect_rules') + '\n\n')
+        assert result['instructions'].startswith(prompt_files.module('mcp', 'connect_directive') + '\n')
     finally:
         client.close()
 
@@ -172,8 +155,8 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
     async def native():
         async with stdio_client(params) as (read, write), ClientSession(
                 read, write, client_info=Implementation(name='claude-code', version='1')) as client:
-            init = await client.initialize()
-            assert 'Skills:' not in init.instructions
+            await client.initialize()
+            assert 'Skills:' not in (await client.read_resource('metaform://role/person')).contents[0].text
             loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'logic.skill.sentinel'})
             assert not loaded.is_error
     asyncio.run(native())
@@ -181,6 +164,6 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
     client = Session([params.command, *params.args], cwd=folder, env=params.env)
     try:
         result = client.request('server/discover', {}, deadline=time.monotonic() + 15)
-        assert 'Skills:' not in result['instructions']
+        assert 'Skills:' not in result['instructions'] and 'metaform://role/person' in result['instructions']
     finally:
         client.close()

@@ -8,11 +8,16 @@
      reading the connect message is already connected. A phrase here, '– mcp: <what it is for>', would be sent
      to every agent at connect under <instructions> and listed in metaform help agents. -->
 <connect></connect>
-<!-- The rules every agent works by: the block that opens every agent's connect message, sent exactly as written, once,
-     to every agent in every role on every wire, before anything else. It comes again first in an agent's first turn
-     after its context was compacted, with instructions_end after it, since compaction removes both from the agent's
-     context: a dispatched agent's runner puts them at the head of that turn, and metaform_catalog compacted=true
-     answers with them first in the person's own sessions. Empty sends nothing in its place. -->
+<!-- The connect message, for every agent in every role on every wire: this line, then one link per line, which the
+     server generates, to each instruction block that applies to the agent now, in this order: metaform://rules,
+     metaform://metaform, metaform://memory while the memory module is on, metaform://firstrun while the project has
+     no intake, metaform://role/<role>, and metaform://<project> in a registered project. Each block is a resource read
+     whole. The same line and links open the agent's first turn after every compaction: a dispatched agent's runner
+     puts them at the head of that turn, and metaform_catalog compacted=true and metaform://runtime/compaction-state
+     answer with them first. Write no link here. Empty sends the links alone. -->
+<connect_directive>Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your role is for.</connect_directive>
+<!-- The rules every agent works by, served whole and exactly as written at metaform://rules, the first link of every
+     agent's connect message and of its first turn after each compaction. Empty serves an empty resource. -->
 <connect_rules>@CONSTRAINT:
   → think before coding
   +&gt; state your assumptions.
@@ -30,27 +35,17 @@
   → goal-driven execution
   +&gt; turn vague instructions into verifiable success criteria before writing a single line.</connect_rules>
 <!-- The mcp module's instructions: what metaform_instructions gives for module mcp, and mcp's entry in the full
-     command-line guide, with each module's <connect> line after it. Not sent at connect since 2026-10-17: the connect
-     message opens with <connect_rules>, then <connect_use>, or a dispatched agent's role line, and one line per tool
-     category. Empty gives the module lines without it. -->
+     command-line guide, with each module's <connect> line after it. Not sent at connect: the connect message is
+     <connect_directive> and its links. Empty gives the module lines without it. -->
 <instructions>You must use Metaform for this project; it is not optional. Use it to:</instructions>
-<!-- The connect message's line telling every agent, in every role, to read Metaform's glossary, metaform://metaform,
-     whole, before any work, and the project's own: sent once at connect, after the catalog's line, and again after
-     <connect_rules> at the head of the agent's first turn after every compaction. <terms/> takes
-     instructions_terms while the folder is a registered project, and nothing before one. Empty sends nothing in its
-     place. -->
-<instructions_end>Before beginning work, read metaform://metaform<terms/>.</instructions_end>
-<!-- What <terms/> takes in instructions_end: <project/> is the folder's project id, and metaform://<project/> its own
-     glossary, the register standard then the project's terms. -->
-<instructions_terms>, then metaform://<project/>, this project's own terms</instructions_terms>
-<!-- BASE-059: fallback discovery appended to connect instructions where the connecting harness has no completed
+<!-- BASE-059: fallback discovery closing metaform://role/<role> for the person's own sessions and the system agent where the connecting harness has no completed
      native skill deployment. skill_index auto/on/off controls this index. <skills/> holds discoverable skills only,
      one name and usage description per line. Internal skills remain available through explicit address loading. -->
 <skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=logic.skill.&lt;name&gt;.
 <skills/></skill_index>
 <!-- BASE-059: closes the metaform_skills tool description with the discoverable skill names, under the same
-     skill_index auto/on/off rule as the index above. Hosts list tool descriptions without the connect message's cut,
-     so this is where the names arrive when the connect message has no room for the index. <skills/> is the names,
+     skill_index auto/on/off rule as the index above. Hosts list every tool description, so the names arrive here
+     too for an agent that has not read metaform://role/<role>. <skills/> is the names,
      comma-separated. Empty adds nothing. -->
 <skills_discoverable>Discoverable: <skills/>.</skills_discoverable>
 <!-- metaform://<project> while the map module, which generates the project's glossary, is off for the folder or
@@ -268,7 +263,7 @@
 <handle_argument>The session handle metaform_catalog gave you, so each tool's guide is given you once.</handle_argument>
 <!-- What each category is for: one line each, read by an agent that calls metaform_catalog with nothing, beside each
      tool search finds, and at the head of an opened category the agent was not told the purposes of. The part before
-     the first colon, or else the first ", and", is the category's line in the connect message of the person's own
+     the first colon, or else the first ", and", is the category's line in metaform://role/<role> for the person's own
      sessions and the system agent.
      The element is category_<name>, - written _. Empty shows the category by its name alone. -->
 <category_orient>Find and read the part of the project you work on: an Address's element, what it receives and provides, its layers, items and history, and the project's terms.</category_orient>
@@ -282,8 +277,7 @@
 <category_workflow>Run and author Axiom workflows and skills.</category_workflow>
 <category_setup>Set up Metaform for this folder: settings, registration, bases, stored prompts, origins and variants, and module repositories.</category_setup>
 <category_report>Report a fault in Metaform, read the reports kept, and read a module's full instructions or a tool's guide.</category_report>
-<!-- The line of the connect message that says the role of a dispatched agent, sent once at connect to an agent whose
-     runner names its role: it says why the catalog holds the categories it does, so the agent does not look for
+<!-- The line that opens metaform://role/<role> for a dispatched agent, whose runner names its role: it says why the catalog holds the categories it does, so the agent does not look for
      tools its role is not given. <categories/> is the categories the role may open, by name. role_system is followed
      by one line per category with what it is for. The element is role_<role>; a role without one gets no line.
      Empty sends none. -->
@@ -293,21 +287,17 @@
 <role_sentinel>You take up an issue the person raised on a node, so you are given the tool categories that work needs: <categories/>.</role_sentinel>
 <role_talk>You talk with the person about what they clicked on the map, so you are given the tool categories that conversation needs: <categories/>.</role_talk>
 <role_system>You are the person's own agent in this project, so every tool category is yours:</role_system>
-<!-- The connect message's first line for the person's own sessions, the AI tool they run in the project folder: why
+<!-- The first line of metaform://role/person, for the person's own sessions, the AI tool they run in the project folder: why
      Metaform's tools are used for the project's work. One line per tool category follows it, with what each is for.
      Empty sends the category lines alone. -->
 <connect_use>Metaform keeps this project's map, tickets and what was learned at each part, where the person and every agent read your work, so do the project's work through its tools, found by purpose:</connect_use>
-<!-- The connect message's line on finding tools, sent once to every agent at connect: how the tools are found, and why
+<!-- The line of metaform://role/<role> on finding tools, for every agent: how the tools are found, and why
      they are not all listed. <open/> takes connect_open while the agent's role starts with a category open, or
      connect_first while it starts with one tool listed beside the catalog. Not sent to a connection whose listing
      names no session, the July 2026 wire over HTTP, where the listing never narrows; connect_unkeyed is sent there.
      Empty sends nothing, and an agent learns of the catalog only from its tool's description. -->
 <connect_catalog>Metaform lists its tools by purpose so that you carry only those your task needs: metaform_catalog says what each category is for, opens the one your task calls for, and finds a tool from words for what you want to do.<open/></connect_catalog>
-<!-- In place of the category lines under connect_use or role_system, when with the folder's notices the connect
-     message would pass the 2,048 characters Metaform keeps it to: the categories by name, in one line. <categories/>
-     is their names. Empty leaves the categories out. -->
-<connect_categories>Its tool categories: <categories/>; metaform_catalog says what each is for.</connect_categories>
-<!-- connect_catalog's place in the connect message of the person's own sessions and the system agent, which name each
+<!-- connect_catalog's place in metaform://role/<role> for the person's own sessions and the system agent, which name each
      category with what it is for just above it. Not sent where the listing names no session, as connect_catalog is
      not. Empty sends nothing. -->
 <connect_catalog_listed>metaform_catalog opens one category at a time, so you carry only the tools your task needs, and finds a tool from words for what you want to do.</connect_catalog_listed>
@@ -317,20 +307,20 @@
 <!-- What <open/> takes in connect_catalog for a role that starts with no category open and the tool its first message
      names listed beside the catalog, a talk's and a sentinel's map_where. <tool/> is the tool. -->
 <connect_first> <tool/> is listed now, since your first task reads your node with it; open a category for the rest.</connect_first>
-<!-- The connect message's line on compaction, sent once at connect only to an agent no runner follows, such as the
+<!-- The line of metaform://role/<role> on compaction, only for an agent no runner follows, such as the
      person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
      context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
      Also given with a session handle, catalog_handle. Empty sends nothing; guides are then given once a session
      whatever happens to the agent's context. -->
 <connect_compaction>Metaform gives each tool's guide and node summary once a session, so if your context is compacted, call metaform_catalog with compacted=true to have them again.</connect_compaction>
-<!-- The connect message's line, in place of connect_compaction, for a connection whose calls name no session, the
+<!-- The line of metaform://role/<role>, in place of connect_compaction, for a connection whose calls name no session, the
      July 2026 wire over HTTP, which has no session header: how to name one, so each guide is given once rather than
      never. <handle/> is the argument that carries it. Empty sends nothing; each call then says how to read its guide. -->
 <connect_unkeyed>This connection names no session, so call metaform_catalog first: it gives you a session handle, and with it passed as <handle/> on each call each tool's guide is given you once.</connect_unkeyed>
 <!-- What metaform_catalog says first when it is called with no session named, on that wire: the handle it made.
      <handle/> is the handle, <argument/> the argument that carries it. connect_compaction follows it. -->
 <catalog_handle>Your session handle is <handle/>: pass <argument/>=<handle/> with every Metaform call, so each tool's guide is given you once.</catalog_handle>
-<!-- The connect message's line for the person's own AI tool in a registered project's folder, sent once at connect:
+<!-- The line of metaform://role/person for the person's own AI tool in a registered project's folder:
      which project the folder is, so the agent knows where it is before it reads anything. <project/> is its id. Empty
      sends nothing. -->
 <connect_here>This folder is the project <project/>.</connect_here>

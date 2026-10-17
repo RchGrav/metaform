@@ -2064,12 +2064,13 @@ class Session:
                                             f'gave once ({gone} pieces) at their next use.')
 
     def compaction_line(self) -> str:
-        """What a turn after a compaction opens with: first the rules every agent works by and the order to read the
-        glossary, `agent_opening`, as its connect message opened, since the compaction removed them from its context;
+        """What a turn after a compaction opens with: first the directive and the links to the agent's instruction
+        blocks, `agent_opening`, as its connect message opened, since the compaction removed what it read;
         then what the agent works on, and that what Metaform gave it once comes again at its next use."""
         who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
             if self.at and self.role in ('worker', 'prep') else ''
-        return '\n\n'.join(part for part in (agent_opening(self.store.project_id), prompt('compacted', who=who))
+        opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
+        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who))
                              if part)
 
     async def notice(self, said: dict[str, Any]) -> None:

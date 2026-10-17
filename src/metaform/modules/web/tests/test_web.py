@@ -11374,7 +11374,7 @@ def test_the_page_reads_a_nodes_brief_and_items_exactly_as_an_agent_reads_them(r
 @pytest.mark.req('MCP-037')
 def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_own_mcp_server(run, web, mapped,
                                                                                                 monkeypatch):
-    from metaform import loader, prompt_files, settings
+    from metaform import loader, settings
     from metaform.modules.mcp import server as mcp
     loaded = {'chassis', *(module.id for module in loader.enabled())}
     for key in [key for key, setting in settings.SCHEMA.items() if setting.owner not in loaded]:
@@ -11382,7 +11382,8 @@ def test_the_page_shows_what_an_agent_connecting_here_receives_from_the_folders_
     started(run)
     status, body = api(web, '/api/agent-view?project=proj&address=code.timer.kitchen')
     assert status == 200, body
-    assert body['connect']['text'].startswith(prompt_files.module('mcp', 'connect_use'))  # the person's own session
+    assert body['connect']['text'] == mcp.connect_instructions(mapped)  # the person's own session's directive and links
+    assert 'metaform://role/person' in body['connect']['text']
     assert body['connect']['chars'] == len(body['connect']['text']) and body['host_limit'] == 2048
     assert body['glossary']['text'] == mcp.glossary(mapped)
     assert body['glossary']['index']['text'] == mcp.tools_text(mapped)

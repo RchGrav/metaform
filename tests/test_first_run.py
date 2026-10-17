@@ -44,8 +44,9 @@ def test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recor
 
     async def first_run(client, init):
         said = init.instructions
-        assert onboarding(registered=False) in said and len(said) <= 2048, len(said)
-        assert said.index('FIRST RUN.') < 2048 - 200  # after the order, inside what every host keeps of the message
+        assert 'metaform://firstrun' in said.splitlines() and len(said) <= 512, said  # a link, read whole
+        first = (await client.read_resource('metaform://firstrun')).contents[0].text
+        assert onboarding(registered=False) in first
         # every command and resource the onboarding names exists on the surface
         tools = {tool.name for tool in (await client.list_tools()).tools}
         assert {'metaform_register', 'web_start'} <= tools

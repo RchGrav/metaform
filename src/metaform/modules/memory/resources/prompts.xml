@@ -41,7 +41,9 @@
      filled here: it names the subject a prompt or workflow is linked to. An agent with no assigned element gets the whole line-2 bullet swapped for
      instructions_unassigned below.
      Who receives it and when, CTX-028: an agent dispatch starts on a ticket gets it once, in its first turn, ahead of
-     the work sentence, filled with its ticket's node. metaform_instructions with module memory,
+     the work sentence, filled with its ticket's node. Every agent is linked to metaform://memory at connect and after
+     each compaction while the module is on, which serves it filled with the project and no assigned element.
+     metaform_instructions with module memory,
      metaform://instructions/memory and metaform help agents memory still return this element as written, its places
      unfilled: the chassis reads module instructions without the prompt store, a follow-up for code.store.memory#3.
      To change it, save an edit through the prompt store (metaform prompt memory:instructions); the edit is what
