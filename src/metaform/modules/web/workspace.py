@@ -387,7 +387,6 @@ def view(who: str = views.OWNER) -> dict[str, Any]:
             'idle_flow': bool(settings.value('web_idle_flow', where)),
             'bubble_seconds': int(settings.value('web_bubble_seconds', where) or 5),
             'live_flow': bool(settings.value('web_live_flow', where)),
-            'mascot': settings.value('web_mascot', where),
             'mascot_mischief': settings.value('web_mascot_mischief', where),
             'agent_glyphs': list(settings.value('web_agent_glyphs', where) or []),
             'map_direction': str(views.value('web_map_direction', who) or 'auto'), 'debug': debug_level()}

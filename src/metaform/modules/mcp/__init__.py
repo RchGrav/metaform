@@ -137,10 +137,14 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
     """A change made in this process, BASE-032: the A2A server here, when one runs, reads the tasks it follows in that
     project again; changes from other processes reach it through `events.listen`, BASE-053. An answer given to a
     question an A2A peer asked goes back from the server's follower, which that wake reads it on, or from a listing,
-    MCP-041; never from here, so a change to the map never waits on a peer."""
+    MCP-041; never from here, so a change to the map never waits on a peer. A trace view's next read reads the store
+    when the change concerns its ticket."""
     served = sys.modules.get(f'{__name__}.a2a')
     if served is not None:
         served.heard(payload)
+    shown = sys.modules.get(f'{__name__}.views')  # the trace views' held reads, views.Traces
+    if shown is not None:
+        shown.heard(payload)
 
 
 def serve(ctx: Context) -> None:

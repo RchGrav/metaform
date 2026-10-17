@@ -15,6 +15,7 @@ import {G} from '/page/app/map3d/graph3d.js';
 import {V3, fit3d} from '/page/app/camera/flight.js';
 import {renderLegend} from '/page/app/views/lens.js';
 import {saveView} from '/page/app/views/settings.js';
+import {underHiddenRoot} from '/page/app/header/layers.js';
 
 /* The keys walk the join tree, Down goes deeper, to the providers of the node's joins and then to
  * the nodes inside it; Up goes back to the parent; Left and Right move between the nodes connected to the parent.
@@ -140,32 +141,63 @@ export function zoomKey() {
   note2d(`3D zoom: ${['1/4', '1/2', '3/4'][level - 1]}`);
 }
 
-/* 4, web_map_depth, VIEW-051: how many levels of the map show, 1, 2, 3, 4 or all, counted along the joins from
- * `roots()`, the CQUs and every other top at level 1, what serves them at 2, and so on. A part's level is its shortest
+/* 4, web_map_depth, VIEW-051: how many levels of the map show, counted along the joins from the tops, `levels`, what
+ * the viewer sees with nothing above it at level 1, what serves them at 2, and so on. A part's level is its shortest
  * way down from a top, so a part serving two receivers shows when either does. A part deeper than the depth stays
  * inside the receiver it is reached through, which counts every part held beneath it. A click on a node holding parts
  * breaks out its next level in place, `DEPTH.open`, and a click again folds it with what was opened under it; a change
- * of depth clears them. Both maps draw the same parts, `depthView`; the inside view, VIEW-016, is not depth's. */
+ * of depth clears them. Both maps draw the same parts, `depthView`; the inside view, VIEW-016, is not depth's.
+ * The depths are the map's own, Rich, 2026-10-16: the least shows joins, never a lone element or elements joined to
+ * nothing, `least`, and the most is one level short of the map's deepest, past which the depth is all of it. */
 export const DEPTH = {level: 'all', open: new Set()};
-export const DEPTHS = ['1', '2', '3', '4', 'all'];
+/* The levels of the parts the viewer sees: `level` and `via`, the receiver each part is first reached through;
+ * `below`, what each receiver drawn receives from; `least`, the first depth that draws a join, Infinity for a map with
+ * none; `deepest`, the deepest level. An element under an edge of the project the viewer hid, upstream or downstream,
+ * is never drawn, so it is no level, and what it alone receives from is a top: counted on the whole map, with
+ * downstream hidden the CQUs were level 1 and depth 1 drew nothing (2026-10-16). */
+function levels() {
+  const seen = key => S.elements.has(key) && !underHiddenRoot(S.elements.get(key).element.address);
+  const below = new Map(), provided = new Set();
+  for (const join of S.joins) {
+    if (!seen(join.receiver)) continue;
+    const row = below.get(join.receiver) || below.set(join.receiver, new Set()).get(join.receiver);
+    for (const id of join.providers) if (seen(id) && id !== join.receiver) { row.add(id); provided.add(id); }
+  }
+  const level = new Map(), via = new Map(), queue = [];
+  const down = starts => {  // the starts at level 1 together, then breadth first, so a level is the shortest way down
+    for (const top of starts) if (!level.has(top)) { level.set(top, 1); queue.push(top); }
+    while (queue.length) {
+      const key = queue.shift();
+      for (const next of below.get(key) || []) {
+        if (!level.has(next)) { level.set(next, level.get(key) + 1); via.set(next, key); queue.push(next); }
+      }
+    }
+  };
+  // the tops, in the order `roots` gives them and then what only a hidden element received; then, one at a time as
+  // `roots` takes them, any loop no top reaches
+  down([...roots(), ...S.elements.keys()].filter(key => seen(key) && !provided.has(key)));
+  for (const key of [...roots(), ...S.elements.keys()]) if (seen(key) && !level.has(key)) down([key]);
+  let least = Infinity, deepest = 0;
+  for (const at of level.values()) deepest = Math.max(deepest, at);
+  for (const [receiver, row] of below) {  // a join is drawn once its receiver and a provider are
+    for (const id of row) least = Math.min(least, Math.max(level.get(receiver), level.get(id)));
+  }
+  return {level, via, below, least, deepest};
+}
+/* The depth drawn: the one chosen held to the map's own, `least` at the fewest, and all at the map's deepest or past
+ * it, where every level shows; 'all' too for a map with no join. */
+function depthOf(chosen, {least, deepest}) {
+  if (chosen === 'all' || !Number.isFinite(least) || least >= deepest) return 'all';
+  const most = Math.max(least, Number(chosen) || least);
+  return most >= deepest ? 'all' : String(most);
+}
 /* What the depth shows now: `shown`, the elements drawn, or null when every level is; `held`, how many parts each
  * node drawn holds beneath it; `via`, the receiver each part is first reached through. */
 export function depthView() {
   if (DEPTH.level === 'all' || !S.elements.size) return {shown: null, held: new Map(), via: new Map()};
-  const most = Number(DEPTH.level), below = new Map();
-  for (const join of S.joins) {
-    if (!S.elements.has(join.receiver)) continue;
-    const row = below.get(join.receiver) || below.set(join.receiver, new Set()).get(join.receiver);
-    for (const id of join.providers) if (S.elements.has(id) && id !== join.receiver) row.add(id);
-  }
-  const level = new Map(), via = new Map(), queue = [];
-  for (const top of roots()) if (!level.has(top)) { level.set(top, 1); queue.push(top); }
-  while (queue.length) {  // breadth first, so a level is the shortest way down
-    const key = queue.shift();
-    for (const next of below.get(key) || []) {
-      if (!level.has(next)) { level.set(next, level.get(key) + 1); via.set(next, key); queue.push(next); }
-    }
-  }
+  const found = levels(), {level, via, below} = found, depth = depthOf(DEPTH.level, found);
+  if (depth === 'all') return {shown: null, held: new Map(), via: new Map()};
+  const most = Number(depth);
   const shown = new Set([...level].filter(([, at]) => at <= most).map(([key]) => key));
   const opened = [...shown].filter(key => DEPTH.open.has(key));
   while (opened.length) {  // a node broken out shows its next level, and so on for what it shows that is open too
@@ -195,17 +227,22 @@ export function holderOf(key, view = depthView()) {
   while (at && !view.shown.has(at)) at = view.via.get(at);
   return at || key;
 }
-/* 4: the next depth, said at the 2D map's corner and kept in web_map_depth. */
+/* 4: the next depth, said at the 2D map's corner and kept in web_map_depth: from all to the least, a level more each
+ * press, and all again after the one short of the map's deepest. A map with no join has all alone. */
 export function stepDepth() {
-  const next = DEPTHS[(DEPTHS.indexOf(DEPTH.level) + 1) % DEPTHS.length];
+  const found = levels(), now = DEPTH.level === 'all' ? 'all' : depthOf(DEPTH.level, found);
+  const next = now === 'all' ? depthOf(String(found.least), found) : depthOf(String(Number(now) + 1), found);
   setDepth(next);
   saveView('web_map_depth', next);
 }
 export function setDepth(level, said = true) {
-  if (!DEPTHS.includes(level)) level = 'all';
+  if (level !== 'all' && !/^[1-9][0-9]*$/.test(level)) level = 'all';
   DEPTH.level = level;
   DEPTH.open.clear();
-  if (said) note2d(level === 'all' ? 'Depth: all levels' : `Depth: ${level} level${level === '1' ? '' : 's'}`);
+  if (said) {
+    const drawn = S.elements.size ? depthOf(level, levels()) : level;
+    note2d(drawn === 'all' ? 'Depth: all levels' : `Depth: ${drawn} level${drawn === '1' ? '' : 's'}`);
+  }
   if (S.elements.size) redrawDepth();
 }
 /* A click on an element: one broken out folds, with whatever was opened beneath it; one holding parts breaks out its
@@ -216,7 +253,7 @@ export function toggleDepth(key) {
     DEPTH.open.delete(key);
     for (let view = depthView(), before = -1; before !== DEPTH.open.size; view = depthView()) {
       before = DEPTH.open.size;
-      for (const one of [...DEPTH.open]) if (!view.shown.has(one)) DEPTH.open.delete(one);
+      for (const one of [...DEPTH.open]) if (!view.shown?.has(one)) DEPTH.open.delete(one);
     }
   } else if (depthView().held.has(key)) DEPTH.open.add(key);
   else return false;

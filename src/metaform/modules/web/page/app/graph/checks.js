@@ -62,7 +62,7 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
     target: link.target?.id ?? link.target, color: linkColor(link)})) : [],
   layouts: () => V3.layouts, drawnWork: id => (node3d(id)?.work || []).length,
   loaded: () => S.shown && !S.loading && !S.opening, editor: () => P.editor, live: () => LIVE.layer,
-  changes: () => LIVE.done,
+  changes: () => LIVE.done, liveIdle: () => !LIVE.busy,
   inside: () => IN.length && M.drawn === IN.at(-1) ? [...M.nodes.keys()] : [], vertical: () => M.vertical,
   at2d: id => M.nodes.has(id) ? {x: M.nodes.get(id).x, y: M.nodes.get(id).y} : null,
   drawn2d,

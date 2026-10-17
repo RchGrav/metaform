@@ -18,15 +18,17 @@ import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
-  agentsChanged, linesOnly, listen, NOTED, ticketsNamed} from '/page/app/live/ops.js';
+  agentsChanged, linesOnly, listen, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
 import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
  * again. Events that come while the page reads are drawn once, when it is done. */
+// left: the intake left unfinished, with no agent recording it; bases: a change in the batch may have changed the
+// project's metaforms; intake: one may have begun or ended an intake's recording
 export const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, named: null, done: 0,
-  drawn: -Infinity, brief: false, left: null};  // left: the intake left unfinished, with no agent recording it
+  drawn: -Infinity, brief: false, left: null, bases: false, intake: false};
 export const following = () => LIVE.layer !== null && S.base === LIVE.base;
 export async function loadLive() {
   const page = await read('layer-graph', {layer: LIVE.layer});
@@ -143,6 +145,11 @@ const PANE_TABLES = [['messages', table => table === 'messages' || table === 'ma
   ['runs', table => table.startsWith('workflow')]];
 /* Whether a change named tables, every one of them passing the test. */
 const allTables = (named, test) => Array.isArray(named) && named.length && named.every(table => test(String(table)));
+/* Whether a change to this metaform's ops says nothing past what is drawn: the sequence it reached is one the page
+ * has drawn already, as when it arrives while a read is under way that applies its ops. */
+const opTable = table => table === 'ops' || table === 'objects' || table.startsWith('op:');
+const drawnAlready = payload => payload.base_id === S.base && typeof payload.seq === 'number'
+  && typeof S.seq === 'number' && payload.seq <= S.seq && allTables(payload.tables, opTable);
 export async function changed(event) {
   if (event.topic !== 'map.changed') return;
   if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
@@ -161,8 +168,9 @@ export async function changed(event) {
   if (allTables(named, table => table === 'intake.recorder')) return recordingNow().catch(error => toast(error.message));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
   if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
-    document.dispatchEvent(new CustomEvent('metaform:settings'));
+    document.dispatchEvent(new CustomEvent('metaform:settings', {detail: named}));  // the tables it names
   }
+  if (drawnAlready(event.payload)) return;
   if (briefTouched(named)) LIVE.brief = true;
   if (allTables(named, table => table.startsWith('jev.'))) {
     if (!LIVE.busy) { if (!$('#p-brief').hidden) renderBrief(); LIVE.brief = false; }
@@ -173,7 +181,7 @@ export async function changed(event) {
   if (agents) {
     const payload = event.payload;
     const works = Array.isArray(payload.work_ids) ? payload.work_ids : null;
-    agentsChanged(!linesOnly(payload), sessionsConcerned(payload), works);
+    agentsChanged(mergesConcerned(payload), sessionsConcerned(payload), works);
   }
   // an agent's own tables, its thread, sessions and settings, change no map
   if (named === 'dispatch' || allTables(named, table => table.startsWith('dispatch.'))) return;
@@ -182,9 +190,14 @@ export async function changed(event) {
   if (allTables(named, table => /(^|\.)settings$/.test(table))) return;
   const tickets = ticketsOnly(event.payload);
   if (tickets && event.payload.base_id && event.payload.base_id !== S.base) return;  // another metaform's
+  ticketsHeard(event.payload);  // the tickets and the messages it says it concerns, read once for the batch
   if (!tickets) {
     LIVE.whole = true;
     LIVE.named = LIVE.named && opsOnly(LIVE.named) ? [...LIVE.named, ...(named || [])] : named || null;
+    // a change of the project's metaforms names no metaform, changes.note; one that names its tables names the
+    // intake's recorder when an agent begins or ends recording an intake, data/recorder.py
+    if (!event.payload.base_id) LIVE.bases = true;
+    if (!Array.isArray(named) || named.includes('intake.recorder')) LIVE.intake = true;
   }
   if (LIVE.busy) { LIVE.again = true; return; }
   LIVE.busy = true;
@@ -197,28 +210,41 @@ export async function changed(event) {
   }
 }
 /* One read for the changes heard: the tickets alone, the intake being recorded, the project's metaforms when they
- * changed, the ops since the drawn sequence, or else the layers and the map again. */
+ * changed, the ops since the drawn sequence, or else the layers and the map again. Each is read only when a change in
+ * the batch says it may have changed it. */
 async function readAgain() {
   await settled();
   LIVE.again = false;
   if (!LIVE.whole && S.whole && !LIVE.layer) { await ticketsChanged(); return; }
   LIVE.whole = false;
   const named = LIVE.named; LIVE.named = null;
+  const bases = LIVE.bases, intake = LIVE.intake;
+  LIVE.bases = false; LIVE.intake = false;
   LIVE.drawn = performance.now();  // a whole reload: the next waits SPACING, a ticket change does not
-  const found = await building();
-  if (found || LIVE.layer) { await follow(found); return; }
-  const metaforms = (await read('bases', {limit: 0})).results;
-  const same = metaforms.length === S.bases.length && metaforms.every(item =>
-    S.bases.some(known => known.id === item.id && known.active === item.active));
+  // what is building, when a change may have begun or ended an intake's recording, while one is followed, or while
+  // this project's intake agent runs, which may make its layer before it records into it
+  const asked = intake || LIVE.layer !== null || intakeRunning();
+  if (asked) {
+    const found = await building();
+    if (found || LIVE.layer) { await follow(found); return; }
+  }
   // the project's metaforms changed: show the active one, as on opening; else the ops since the drawn sequence,
   // applied, or the layers and the map read again
-  let applied = false;
-  if (!same) await loadProject();
-  else if (opsOnly(named) && (applied = await appliedOps())) {
-    // what is said of a layer alone changed: nothing drawn, and the tickets only if the change named theirs
-    if (applied !== NOTED || ticketsNamed(named)) await ticketsChanged();
+  const metaforms = bases ? (await read('bases', {limit: 0})).results : S.bases;
+  const same = metaforms.length === S.bases.length && metaforms.every(item =>
+    S.bases.some(known => known.id === item.id && known.active === item.active));
+  if (same && opsOnly(named) && await appliedOps()) {
+    await ticketsChanged();  // the tickets and messages the batch's changes said they concern, if any
     return;
   }
+  // a whole read, which takes the tickets and messages too; what is building is read beside it when not read above,
+  // since a layer begun, finished or discarded, as an intake from the command line makes, falls back to it
+  ticketsRead();
+  if (!asked) {
+    const found = await building();
+    if (found) { await follow(found); return; }
+  }
+  if (!same) await loadProject();
   else {
     S.layers = (await read('layers', {limit: 0})).results;
     renderChips();

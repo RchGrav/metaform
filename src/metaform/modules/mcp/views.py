@@ -11,7 +11,8 @@ Four views, each a `ui://` resource of type `text/html;profile=mcp-app`:
 - `ui://metaform/node`, shown by `map_item` and `map_node`: the node, what relies on it and what it relies on, with
   its numbered items (#n, title, why), each opened in place.
 - `ui://metaform/trace`, shown by `dispatch_sessions` and `dispatch_start`: a ticket's agent sessions and their
-  threads, read again while the view is on screen, so the person watches the agent work.
+  threads, asked for again while the view is on screen and read again only after a change to the ticket, `Traces`,
+  so the person watches the agent work.
 - `ui://metaform/glossary`, shown by `metaform_instructions` and `map_glossary`: the call's own answer, then the terms
   of metaform://metaform as written, then the tools and the rules metaform://tools gives, searchable.
 
@@ -20,7 +21,12 @@ All speak to their host through the official MCP Apps SDK, `@modelcontextprotoco
 (`visibility: ["app"]`), so the model's tool list stays as it is. The picture is shared both ways: when the person
 selects a node, the view tells the agent in one line which Address they are looking at (`ui/update-model-context`);
 when the agent names an Address in a call, an open view turns to it (`metaform_view`'s `focus` read), and a host that
-calls a view's own tools (the draft's App-Provided Tools) can turn it directly. Only an AI tool that declares the
+calls a view's own tools (the draft's App-Provided Tools) can turn it directly. A host gives a view no push from the
+server (ext-apps 2.0.3's App hears tool-input, tool-result, tool-cancelled and host-context changes, nothing more), so
+a view on screen asks again on its clock, bridge.js `poll`; what the server does for each ask is decided by the events
+it heard: `focus` is this process's own state, and `trace` reads the store only when a change to the ticket came after
+the view's last read, `Traces`. A read held open until a change would end the clock, but a host that carries a view's
+calls one at a time, as the check host in the tests does, would then hold every other read of the view behind it. Only an AI tool that declares the
 extension is offered any of this, unless the person sets `mcp_apps_offer` to always; every other tool's result is the
 full text it always was.
 
@@ -34,10 +40,18 @@ import hashlib
 import json
 import re
 import sys
+import threading
+import uuid
+import weakref
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, cast
+
+import anyio
+import anyio.lowlevel
+
+from metaform import events
 
 EXTENSION = 'io.modelcontextprotocol/ui'
 MIME = 'text/html;profile=mcp-app'
@@ -213,3 +227,97 @@ def html(uri: str, config: dict[str, Any]) -> str:
             .replace(CONFIG, CONFIG.replace('{}', filled), 1)
             .replace(SDK, script('ext-apps.js'), 1)
             .replace(BRIDGE, script('bridge.js'), 1))
+
+
+# ---------------------------------------------------------------------------------------------------- trace marks
+
+# What a trace is read from, `trace_view`: the ticket, its steps and questions, and dispatch's sessions and threads.
+TRACE_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work', 'dispatch'})
+
+
+def traced(payload: dict[str, Any], project: str, work_id: str) -> bool:
+    """Whether a `map.changed` can change what the trace view of a ticket shows, decided from the change alone: the
+    project's, and it names the ticket; or it names no tickets or sessions and wrote what a trace is read from, or did
+    not say what it wrote. With no ticket the view lists every session without its thread, so a change only to the
+    agents' thread lines changes nothing there."""
+    if payload.get('project') not in (None, '', project):
+        return False
+    tables: Any = payload.get('tables')
+    if not work_id and tables in ('dispatch', ['dispatch']) and payload.get('dispatch_tables') == ['dispatch.lines'] \
+            and not payload.get('signal'):
+        return False
+    named: Any = payload.get('work_ids')
+    sessions: Any = payload.get('session_ids')
+    if work_id and isinstance(named, list) and work_id in named:
+        return True
+    if work_id and (isinstance(named, list) or isinstance(sessions, list)):
+        return False
+    written = [tables] if isinstance(tables, str) else tables
+    if not isinstance(written, list) or not written:
+        return True
+    return any(str(table) in TRACE_TABLES or str(table).startswith('dispatch.')
+               for table in cast(list[Any], written))
+
+
+class Traces:
+    """The tickets open trace views follow, each with a count of the changes heard for it: a view's read gives the
+    count it read at as its `mark`, and its next read reads the store only once the count has moved, so a change
+    between two reads is never missed and an unchanged ticket is never read. Changes come from other processes through `events.listen`, BASE-053, and from this one
+    through the mcp module's subscription, `heard`; each is matched to the tickets from what it says alone, on the
+    thread that heard it."""
+
+    def __init__(self) -> None:
+        self.run = uuid.uuid4().hex[:8]  # this process's, so a mark another process gave is never taken for its own
+        self.counts: dict[tuple[str, str], int] = {}
+        self.keys: frozenset[tuple[str, str]] = frozenset()  # the tickets followed, for the hearing thread
+        self.listener: Any = None
+        self.token: Any = None
+        self.thread: int | None = None
+        HUBS.add(self)
+
+    def track(self, project: str, work_id: str) -> str:
+        """Follow the ticket's changes from now, in the server's loop; returns its mark, taken before it is read."""
+        self.token, self.thread = anyio.lowlevel.current_token(), threading.get_ident()
+        if (project, work_id) not in self.counts:
+            self.counts[(project, work_id)] = 0
+            self.keys = frozenset(self.counts)
+        if self.listener is None:
+            self.listener = events.listen('mcp', self.heard)
+        return self.mark(project, work_id)
+
+    def mark(self, project: str, work_id: str) -> str:
+        return f'{self.run}:{self.counts.get((project, work_id), 0)}'
+
+    def heard(self, payload: dict[str, Any]) -> None:
+        """A change, on any thread: the tickets it concerns count it. One that concerns none costs the server's loop
+        nothing."""
+        loop = self.token
+        if loop is None or not any(traced(payload, project, work_id) for project, work_id in self.keys):
+            return
+        if threading.get_ident() == self.thread:
+            self._wake(payload)
+            return
+        try:
+            anyio.from_thread.run_sync(self._wake, payload, token=loop)
+        except Exception:  # noqa: BLE001, S110  a loop that has stopped has no read left to answer
+            pass
+
+    def _wake(self, payload: dict[str, Any]) -> None:
+        for key in list(self.counts):
+            if traced(payload, *key):
+                self.counts[key] += 1
+
+    def stop(self) -> None:
+        if self.listener is not None:
+            self.listener.close()
+            self.listener = None
+        self.token = None
+
+
+HUBS: weakref.WeakSet[Traces] = weakref.WeakSet()
+
+
+def heard(payload: dict[str, Any]) -> None:
+    """A `map.changed` published in this process: the mcp module's subscription hands it to every server here."""
+    for hub in list(HUBS):
+        hub.heard(payload)

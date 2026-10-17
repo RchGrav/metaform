@@ -130,7 +130,7 @@ function knownAsSystem(chat, state) {
  * title; the line under it then says only what it is doing. */
 function chatHead(session, activity, busy, connecting) {
   const told = session ? sessionStatus(session) : null;
-  const special = told && ['login', 'dead'].includes(told.reason);
+  const special = told && ['login', 'dead', 'restarting'].includes(told.reason);
   const status = $('#helpdesk .status');
   status.textContent = special ? told.words : session ? activity.label : connecting ? 'Connecting' : '';
   status.title = special ? told.why : session ? activity.note || activity.label
@@ -204,7 +204,7 @@ function markUnread() { DOCK.unread = true; drawDockTab(); }
 /* The chat puts itself away 15 seconds after its agent is gone or its session has ended:
  * it eases away and leaves no gap, and its threads are kept, so opening it again shows the conversation. The count
  * waits while the person types in it, has the focus in it or the pointer over it; a line arriving or the agent back,
- * a resume, stops it. The close × in its head, Escape inside it and C put it away at any time. In a workspace pane it stays open until explicitly closed. */
+ * a resume, stops it. The close × in its head and C put it away at any time; Escape never does, escapeChat. In a workspace pane it stays open until explicitly closed. */
 const CHAT_AWAY = {timer: 0, for: null, had: false, held: false, wait: 15000};
 function chatAway(session, changed = false) {
   const open = $('#dock').className.startsWith('open') && !chatDocked();
@@ -243,7 +243,7 @@ for (const type of ['focusout', 'mouseleave', 'input']) $('#helpdesk').addEventL
  * only a transform, a translation and a scale about the tab's middle, and its opacity, so its own size and place,
  * as moved and sized, are exactly what they were. Away leaves on the leaving curve, back arrives on the arriving one,
  * each about 260 to 340 ms by the way it travels; one interrupted turns back from where it is. The tab answers with
- * a small pulse as the chat lands in it. Under reduced motion only the opacity changes. The close ×, Escape, C and the
+ * a small pulse as the chat lands in it. Under reduced motion only the opacity changes. The close ×, C and the
  * put-away after an agent leaves all go this way, as a chat docked at a side does. */
 export function launcherRect() {
   const dock = $('#dock');

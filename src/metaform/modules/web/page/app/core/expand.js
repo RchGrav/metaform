@@ -9,6 +9,7 @@
  * the same container, it returns the same marking. */
 const CONTROL = 'button, a[href], summary, select, input, textarea, label';
 const MADE = new WeakMap();
+const SETTLE = 150;  // ms with no new width before a resized container is marked again
 export function expandCut(container, {row, text, key = one => one.dataset.key, kept = new Set()}) {
   if (MADE.has(container)) return MADE.get(container);
   const rowsIn = node => [...(node.matches(row) ? [node] : []), ...node.querySelectorAll(row)];
@@ -49,7 +50,17 @@ export function expandCut(container, {row, text, key = one => one.dataset.key, k
   // first, before the rows' own keys and clicks
   container.addEventListener('click', toggle, true);
   container.addEventListener('keydown', toggle, true);
-  new ResizeObserver(() => mark()).observe(container);
+  // a new size marks every row once it has stopped changing: marking measures every row, and a long chat thread laid
+  // out again at each step of a window being dragged held the page for the whole drag (2026-10-15). Only a new width
+  // can cut or uncut a text; a container put away, at width 0, is marked when it is shown again.
+  const size = {width: -1, timer: 0};
+  new ResizeObserver(entries => {
+    const width = entries[entries.length - 1].contentRect.width;
+    if (width === size.width) return;
+    size.width = width;
+    clearTimeout(size.timer);
+    if (width > 0) size.timer = setTimeout(() => mark(), SETTLE);
+  }).observe(container);
   // a redraw marks only the rows it touched, so a thread that streams measures the row that grew, not the thread
   new MutationObserver(records => {
     const rows = new Set();

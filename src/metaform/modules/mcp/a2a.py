@@ -43,7 +43,7 @@ import urllib.parse
 import uuid
 import weakref
 import zlib
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -149,7 +149,7 @@ EXTENSION = 'https://metaform.ing/a2a/address-context/v1'
 META_KEYS = ('title', 'kind', 'address')  # what a message may give under the extension; the person decides the rest
 JSONRPC_PATH = '/a2a'  # the JSON-RPC binding: POST here
 REST_PATH = '/a2a/rest'  # the HTTP+JSON binding: /message:send, /tasks/{id} and the rest under it, and /{tenant}/...
-SLOW = 20.0  # seconds between reads of a followed task when no change is announced, for what announces nothing
+SLOW = 20.0  # seconds a follower's reads go without following module changes, Changes.due
 SCHEME = 'bearer'
 SCOPES = ('tickets:read', 'tickets:write')  # what the one token grants, until OAuth scopes them, P007
 CANDIDATES = 5  # the Addresses offered to a message that named none
@@ -247,15 +247,17 @@ class Loopback:
 # ---------------------------------------------------------------------------------------------------- changes
 
 class Changes:
-    """Wakes the tasks this server follows when a project changes: `map.changed` heard from another process of the
-    home through `events.listen`, BASE-053, and from this process through the mcp module's subscription, `heard`. Each
-    project keeps a count of changes, so a change between a read and the next wait is never missed."""
+    """Wakes the tasks this server follows when a change concerns them: `map.changed` heard from another process of
+    the home through `events.listen`, BASE-053, and from this process through the mcp module's subscription, `heard`.
+    Each follower waits as a `Waiter` on its project and the ticket its task reads; a change is matched to the waiters
+    from what it says alone, `concerns`, on the thread that heard it, so a change that concerns none of them costs the
+    loop nothing and no read. A waiter woken while it reads is woken again at its next wait, so no change is missed."""
 
     def __init__(self) -> None:
         self.token: Any = None
         self.thread: int | None = None
-        self.counts: dict[str, int] = {}
-        self.waiting: dict[str, anyio.Event] = {}
+        self.waiters: set[Waiter] = set()
+        self.watched: frozenset[tuple[str, str | None]] = frozenset()  # the waiters' keys, for the hearing thread
         self.listener: Any = None
         self.refreshed = 0.0
         HUBS.add(self)
@@ -275,40 +277,45 @@ class Changes:
             self.listener = None
         self.token = None
 
-    def count(self, project: str) -> int:
-        return self.counts.get(project, 0)
+    @contextlib.contextmanager
+    def waiting(self, project: str, work_id: str | None) -> Generator[Waiter]:
+        """A waiter on the project's changes that concern the ticket, held while a follower follows its task. It
+        starts woken: what changed since its task was last read is read once."""
+        self.bind()
+        waiter = Waiter(self, project, work_id)
+        self.waiters.add(waiter)
+        self._keys()
+        try:
+            yield waiter
+        finally:
+            self.waiters.discard(waiter)
+            self._keys()
+
+    def _keys(self) -> None:
+        self.watched = frozenset((waiter.project, waiter.work_id) for waiter in self.waiters)
+
+    def concerned(self, payload: dict[str, Any]) -> bool:
+        """Whether a change concerns any waiter, from the change alone, on the thread that heard it."""
+        return any(concerns(payload, project, work_id) for project, work_id in self.watched)
 
     def heard(self, payload: dict[str, Any]) -> None:
-        """A change, on any thread: the followers of its project, or of every project when it names none, wake. A
-        change only to an agent's thread lines, which a running agent announces several times a second, wakes
-        nobody: no task's state is read from them."""
+        """A change, on any thread: the waiters it concerns wake. One that concerns none, an agent's thread lines or
+        another ticket's change among them, wakes nothing."""
         loop = self.token
-        if loop is None or _lines_only(payload):
+        if loop is None or _lines_only(payload) or not self.concerned(payload):
             return
-        project = str(payload.get('project') or '')
         if threading.get_ident() == self.thread:
-            self._wake(project)
+            self._wake(payload)
             return
         try:
-            anyio.from_thread.run_sync(self._wake, project, token=loop)
+            anyio.from_thread.run_sync(self._wake, payload, token=loop)
         except Exception:  # noqa: BLE001, S110  a loop that has stopped has nobody left to wake
             pass
 
-    def _wake(self, project: str) -> None:
-        for key in [project] if project else list({*self.counts, *self.waiting}):
-            self.counts[key] = self.counts.get(key, 0) + 1
-            waiting = self.waiting.pop(key, None)
-            if waiting is not None:
-                waiting.set()
-
-    async def wait(self, project: str, since: int, seconds: float = SLOW) -> None:
-        """Until the project changes after `since`, or `seconds` pass."""
-        self.bind()
-        if self.count(project) != since:
-            return
-        waiting = self.waiting.setdefault(project, anyio.Event())
-        with anyio.move_on_after(seconds):
-            await waiting.wait()
+    def _wake(self, payload: dict[str, Any]) -> None:
+        for waiter in list(self.waiters):
+            if concerns(payload, waiter.project, waiter.work_id):
+                waiter.wake()
 
     def due(self) -> bool:
         """Whether a follower's read should follow module changes: at most once a slow interval, as requests do
@@ -320,7 +327,63 @@ class Changes:
         return True
 
 
+@dataclass(eq=False)
+class Waiter:
+    """One follower's wait on the changes that concern its ticket, `Changes.waiting`. `work_id` is the ticket its task
+    reads, None while the task is a question that opened none, `follows`."""
+    hub: Changes
+    project: str
+    work_id: str | None
+    woken: bool = True
+    event: anyio.Event | None = None
+
+    def wake(self) -> None:
+        self.woken = True
+        if self.event is not None:
+            self.event.set()
+
+    async def wait(self) -> None:
+        """Until a change that concerns the ticket, or at once when one came since the last wait."""
+        if not self.woken:
+            self.event = anyio.Event()
+            try:
+                await self.event.wait()
+            finally:
+                self.event = None
+        self.woken = False
+
+    def follows(self, work_id: str | None) -> None:
+        """The ticket the task reads now: a question's task reads the ticket its answer opened."""
+        if work_id != self.work_id:
+            self.work_id = work_id
+            self.hub._keys()  # pyright: ignore[reportPrivateUsage]
+
+
 HUBS: weakref.WeakSet[Changes] = weakref.WeakSet()
+# What a ticket's task is read from, A2A's `read`: its ticket, steps and questions, dispatch's sessions and signals,
+# the A2A records, and the settings that say whether a ticket starts by itself.
+TASK_TABLES = frozenset({'work', 'work_steps', 'work_links', 'messages', 'map.question_work', 'dispatch'})
+TASK_PREFIXES = ('dispatch.', 'mcp.a2a_')
+
+
+def concerns(payload: dict[str, Any], project: str, work_id: str | None) -> bool:
+    """Whether a `map.changed` can change the task of a ticket, decided from the change alone, BASE-053: it is the
+    project's, and it names the ticket; or it names no tickets or sessions and wrote what a task is read from, or did
+    not say what it wrote. One that names only other tickets or sessions does not, as a dispatch runner decides."""
+    if payload.get('project') not in (None, '', project):
+        return False
+    named: Any = payload.get('work_ids')
+    sessions: Any = payload.get('session_ids')
+    if work_id is not None and isinstance(named, list) and work_id in named:
+        return True
+    if isinstance(named, list) or isinstance(sessions, list):
+        return False
+    tables: Any = payload.get('tables')
+    written = [tables] if isinstance(tables, str) else tables
+    if not isinstance(written, list) or not written:
+        return True
+    return any(str(table) in TASK_TABLES or str(table).startswith(TASK_PREFIXES) or str(table).endswith('.settings')
+               for table in cast(list[Any], written))
 
 
 def _lines_only(payload: dict[str, Any]) -> bool:
@@ -393,6 +456,7 @@ class Read:
     said: str
     artifacts: tuple[str, ...] = ()
     when: str = ''
+    work_id: str | None = None  # the ticket it is read from; None for a question that opened none
 
     @property
     def ended(self) -> bool:
@@ -511,7 +575,7 @@ def ticket_task(project: str, folder: Path, work: WorkRecord, history_length: in
                 status=_status(own, context_id, state, 'person' if why else None, text, when),
                 history=_limited(history, history_length), artifacts=artifacts,
                 metadata={EXTENSION: {key: value for key, value in detail.items() if value is not None}})
-    return Read(task, state, text, tuple(one.artifact_id for one in artifacts), when)
+    return Read(task, state, text, tuple(one.artifact_id for one in artifacts), when, work.id)
 
 
 def ask_task(project: str, asked: records.Ask, history_length: int | None = None) -> Read:
@@ -717,18 +781,19 @@ async def follow(changes_: Changes, project: str, folder: Path, first: Read, *,
     follows through to the end. A task that can no longer be read, its ticket removed or the module keeping it off,
     is told as failed, so the client can tell it from a dropped connection."""
     last = first
-    while not last.ended and (through_input or last.task.status.state != TaskState.TASK_STATE_INPUT_REQUIRED):
-        since = changes_.count(project)
-        await changes_.wait(project, since)
-        now = await _off(read, project, folder, first.task.id, 0, refresh=changes_.due())
-        if now is None:
-            task = first.task
-            yield TaskStatusUpdateEvent(task_id=task.id, context_id=task.context_id, status=_status(
-                task.id, task.context_id, 'failed', None, prompt('a2a_gone'), None))
-            return
-        for event in changes(last, now):
-            yield event
-        last = now
+    with changes_.waiting(project, first.work_id) as waiter:
+        while not last.ended and (through_input or last.task.status.state != TaskState.TASK_STATE_INPUT_REQUIRED):
+            await waiter.wait()
+            now = await _off(read, project, folder, first.task.id, 0, refresh=changes_.due())
+            if now is None:
+                task = first.task
+                yield TaskStatusUpdateEvent(task_id=task.id, context_id=task.context_id, status=_status(
+                    task.id, task.context_id, 'failed', None, prompt('a2a_gone'), None))
+                return
+            waiter.follows(now.work_id)
+            for event in changes(last, now):
+                yield event
+            last = now
 
 
 @dataclass
@@ -1098,13 +1163,13 @@ class Tickets(RequestHandler):
         if wait and found.state == 'submitted' and not await _off(_starts, folder):
             wait = 0
         length = params.configuration.history_length if params.configuration.HasField('history_length') else None
-        with anyio.move_on_after(wait):
+        with anyio.move_on_after(wait), self.changes.waiting(project, found.work_id) as waiter:
             while wait and not found.ended and not found.interrupted:
-                since = self.changes.count(project)
-                await self.changes.wait(project, since)
+                await waiter.wait()
                 now = await _off(read, project, folder, found.task.id, length, refresh=self.changes.due())
                 if now is None:
                     break
+                waiter.follows(now.work_id)
                 found = now
         return found.task
 

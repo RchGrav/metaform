@@ -248,20 +248,6 @@ def test_workflow_ships_and_runs_in_direct_wheel_without_other_feature_modules(r
     assert json.loads(started.stdout)['arguments']['target']['address'] == ADDRESS
 
 
-@pytest.mark.req('MCP-035')
-@pytest.mark.req('BASE-057')
-def test_an_incomplete_prompt_is_stored_with_its_notice(run, store, project_folder):
-    small_map(store)
-    assert 'notices' not in read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures')
-    recorded = read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', 'Use X.')
-    assert recorded['content'] == 'Use X.'
-    assert {'where': 'review', 'message': 'Incomplete prompt: It is one line.'} in recorded['notices']
-    submitted = read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality')
-    assert submitted['logic'][0]['content'] == 'Use X.'
-    assert {'where': 'review', 'message': 'Incomplete prompt: @VERIFY is missing.'} in submitted['notices']
-    assert 'notices' not in read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)
-
-
 @pytest.mark.req('CLI-009')
 def test_a_call_or_export_that_does_not_bind_is_the_callers_error_with_its_next_step(run, store, project_folder):
     import asyncio

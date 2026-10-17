@@ -24,12 +24,13 @@ import {isIntake, countOf} from '/page/app/session/tools.js';
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
  * for the ticket's running session and then stays with that one. `source` says where it comes from, `focus` that the
- * person chose it, so its agent and its part are shown on the maps. */
+ * person chose it, so its agent and its part are shown on the maps; `fresh` that it is a new conversation, /new, so the
+ * thread it follows on the same ticket is never taken for it. */
 export function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting for the next available agent.',
-  session = null, source = null, {focus = false} = {}) {
+  session = null, source = null, {focus = false, fresh = false} = {}) {
   const same = DOCK.chats.filter(one => one.target === workId);
   const live = one => !one.session || D.sessions.some(row => row.session_id === one.session && row.state === 'running');
-  let chat = session ? DOCK.chats.find(one => one.session === session) || same.find(one => !one.session)
+  let chat = fresh ? null : session ? DOCK.chats.find(one => one.session === session) || same.find(one => !one.session)
     : same.filter(live).at(-1);
   const kind = source || chat?.source || sourceOf(workId);
   if (chat) Object.assign(chat, {label, waiting, source: kind, ...(session ? {session} : {})});
@@ -491,6 +492,10 @@ export function sessionStatus(session, signals = D.signals || []) {
     }
     return {state: 'running', reason: 'idle', words: 'Ready',
       why: `${agent}'s turn has ended; it reads your next message.`};
+  }
+  if (how === 'restarted on updated code') {
+    return {state: 'running', reason: 'restarting', words: 'Restarting on updated code',
+      why: 'The store moved to a newer layout than its runner; a runner on the current code is taking the session over.'};
   }
   if (/runner is no longer|no longer listening|another session|runner of another/.test(how)) {
     return {state: 'failed', reason: 'dead', words: 'Runner gone',

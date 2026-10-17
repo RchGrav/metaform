@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import {createAgent, orientAgent, motionOf, strokeOf, reserveGlyph, GLYPHS} from '/page/agents3d.js';
 import {$, css, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
-import {ROAM, nodeById, primaryOf, ballOf, BODIES, bodyKey, isSystemTalk} from '/page/app/figures/agents.js';
+import {ROAM, nodeById, primaryOf, ballOf, ownBody, isSystemTalk} from '/page/app/figures/agents.js';
 import {AHEAD, TOWARD, easeBoth, nudgeNode, markTrail, SPOT, steer, driveGoal, driveFace}
   from '/page/app/figures/walk.js';
 import {CUT, mascotForCut} from '/page/app/figures/cut.js';
@@ -14,6 +14,7 @@ import {EYE, sampleMascot} from '/page/app/figures/eyes.js';
 import {G, FRAMES, DRAG_FRICTION, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT} from '/page/app/map3d/labels.js';
 import {PHYS} from '/page/app/views/bar.js';
+import {VIEW} from '/page/app/views/settings.js';
 import {wake2d} from '/page/app/map2d/flow2d.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {D} from '/page/app/agents/dispatch.js';
@@ -30,21 +31,18 @@ export const MASCOT = {glyph: null, mesh: null, motion: null, pos: new THREE.Vec
   heading: new THREE.Vector3(0, 0, 1), stride: 0, clock: 0, state: 'idle', greeted: null, wander: null, nextWander: 20,
   nudged: 0, dodge: null, pointer: {x: -1e4, y: -1e4, at: 0, speed: 0}, sleeping: false, most: 64};
 const ASIDE = new THREE.Vector3(), UPWARD = new THREE.Vector3(), FACEAT = new THREE.Vector3();
-/* web_mascot is the person's preferred character, the one the body picker suggests first; it draws nothing. The
- * mascot is the person's system agent once it has a body: no figure is on the map until the system agent offers to
- * take one and the person accepts, or the person gives it one. It is drawn while that conversation runs, and a
- * resumed conversation, the same session again, comes back in the same body; a new one is offered a body afresh. A
- * body the system agent took itself, web_embody, is its own figure and not the mascot. */
+/* web_mascot is the person's mascot, one record the server holds: the body of their system agent in every
+ * conversation, on every page, and the character the system agent's prompt names. It is drawn while a conversation
+ * with the system agent runs; none draws none until the person gives their system agent a body in the chat, which
+ * sets web_mascot, `keepMascot`. A body the system agent took itself, web_embody, is its own figure for that
+ * conversation and not the mascot, which is not drawn while it walks. */
 export function preferredGlyph() {
-  const chosen = WS.view().mascot;
-  return GLYPHS.includes(chosen) ? chosen : null;
+  return GLYPHS.includes(VIEW.mascot) ? VIEW.mascot : null;
 }
 export function mascotGlyph() {
-  const ticket = (S.tickets || []).find(isSystemTalk);
-  const held = ticket ? BODIES.chosen[bodyKey(ticket.id)] : null;
-  if (!held || held.by === 'agent' || !GLYPHS.includes(held.glyph)) return null;
-  const live = D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
-  return live && (!held.session || held.session === live.session_id) ? held.glyph : null;
+  const glyph = preferredGlyph(), ticket = glyph ? (S.tickets || []).find(isSystemTalk) : null;
+  if (!ticket || ownBody(ticket)) return null;
+  return D.sessions.some(one => one.work_id === ticket.id && one.state === 'running') ? glyph : null;
 }
 /* The mascot as it is drawn: its body while its conversation runs, then, once that ends, the same body walking home
  * for a few seconds before it goes; with reduced motion it goes at once. */
@@ -272,11 +270,12 @@ export function mascot3d(data, size, passed) {
   const m = MASCOT.motion, mesh = MASCOT.mesh, now = performance.now();
   m.temper = {calm: 0.1, playful: 0.6, chaotic: 0.95}[mischief()] ?? 0.6;  // its own temper, web_mascot_mischief
   MASCOT.clock += passed;
-  // as large as an agent with the whole map in view, and never more than MASCOT.most pixels tall close up
+  // as large as an agent with the whole map in view, and never more than MASCOT.most pixels tall close up while
+  // agent size is limited (key 6, ROAM.held)
   const camera = G.camera(), far = Math.max(1, camera.position.distanceTo(MASCOT.pos));
   const perPixel = 2 * far * Math.tan((camera.fov || 50) * Math.PI / 360)
     / Math.max(1, G.renderer().domElement.clientHeight);
-  mesh.scale.setScalar(Math.min(size * 0.95, MASCOT.most * perPixel / 1.6));
+  mesh.scale.setScalar(ROAM.held ? Math.min(size * 0.95, MASCOT.most * perPixel / 1.6) : size * 0.95);
   const driven = !leaving && mascotDriven();
   MASCOT.sleeping = !leaving && !driven && now - FRAMES.active > FRAMES.idle + 2500 && !MASCOT.call && !CUT.job
     && !MASCOT.job;

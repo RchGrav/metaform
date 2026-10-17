@@ -9,7 +9,8 @@ status. Two kinds of work are served as tasks, each only to a client that declar
   task outlives the process: a client that polls after the server stopped is told the task failed, `STOPPED`.
   `tasks/cancel` is a request, as the extension makes it: the task is cancelled once its verb has stopped, which an
   `async` verb does at its next `await`, and completed with its result when the verb finished first, as a verb run in
-  a thread always does, so a task never reads cancelled while its effect still lands.
+  a thread always does, so a task never reads cancelled while its effect still lands. A cancel asked of another
+  process reaches the owner as the `map.changed` its write announces, heard while the owner runs a task, `Running`.
 - A workflow run, the work of a verb declared `task='run'`, which returns the id of a run the server itself advances
   to its end: the run is the task, by its run id, which the workflow module makes with a random UUID as the extension
   asks of a task id. Its record is read for `tasks/get`; `tasks/update` and `tasks/cancel` go through the workflow
@@ -33,6 +34,7 @@ from typing import Any, cast
 
 import anyio
 
+from metaform import events
 from metaform.data import Store, StoreError, plain, status
 from metaform.module import Stop, project_for, surface
 
@@ -55,9 +57,63 @@ def declared(capabilities: Any) -> bool:
 @dataclass
 class Running:
     """The tool calls this server process runs as tasks: who it is, as each task's owner, and the scope that stops
-    each call, by task id."""
-    owner: str = field(default_factory=lambda: uuid.uuid4().hex)
+    each call, by task id. While it runs any, it hears the changes of other processes, `listener`, so a cancel asked
+    there stops the call at once; with none running it hears nothing."""
+    owner: str = field(default_factory=records.owner)
     scopes: dict[str, anyio.CancelScope] = field(default_factory=dict[str, anyio.CancelScope])
+    project: str | None = None  # the project whose store keeps the tasks, while any runs
+    listener: Any = None
+    token: Any = None  # the server's loop, where a scope is cancelled from the listener's thread
+
+
+def concerns(payload: dict[str, Any], project: str) -> bool:
+    """Whether a `map.changed` can say a task of `project` changed, decided from the change alone: its project, the
+    tables it wrote when it names them, and its kinds when it names them. One that names neither may have changed
+    anything."""
+    if payload.get('project') not in (None, '', project):
+        return False
+    kinds: Any = payload.get('kinds')
+    if isinstance(kinds, list) and records.KIND not in kinds:
+        return False
+    tables: Any = payload.get('tables')
+    if isinstance(tables, str):
+        return False  # a module's own payload, such as dispatch's, never a task's
+    return not isinstance(tables, list) or records.TABLE_NAME in tables
+
+
+def heard(running: Running, payload: dict[str, Any]) -> None:
+    """A change from another process, on the listener's thread: when it can be a task's, the tasks this process runs
+    are read, one row each, and each one cancelled or ended since has its work stopped in the server's loop."""
+    project, token = running.project, running.token
+    if project is None or token is None or not running.scopes or not concerns(payload, project):
+        return
+    for task_id in records.ended(project, list(running.scopes)):
+        scope = running.scopes.get(task_id)
+        if scope is not None:
+            try:
+                anyio.from_thread.run_sync(scope.cancel, token=token)
+            except Exception:  # noqa: BLE001, S110  a loop that has stopped has no work left to stop
+                pass
+
+
+async def _listen(running: Running, project: str) -> None:
+    """Hear other processes while a task runs, the listener opened in the loop as the resource watcher opens its own;
+    then read the tasks once, for a cancel asked before the listener was there."""
+    if running.listener is not None:
+        return
+    running.project, running.token = project, anyio.lowlevel.current_token()
+    running.listener = events.listen('mcp', lambda payload: heard(running, payload))
+    await anyio.to_thread.run_sync(heard, running, {'project': project})
+
+
+async def _unlisten(running: Running) -> None:
+    """Stop hearing other processes once no task runs; closed in a worker thread, since a close waits for the
+    listener's thread, which may be handing a cancel to this loop."""
+    if running.scopes or running.listener is None:
+        return
+    listener, running.listener = running.listener, None
+    with anyio.CancelScope(shield=True):
+        await anyio.to_thread.run_sync(listener.close)
 
 
 def create(running: Running, project: str, tool: str, message: str) -> dict[str, Any]:
@@ -74,6 +130,7 @@ async def run(running: Running, project: str, task_id: str, work: Callable[[], A
     scope = running.scopes.setdefault(task_id, anyio.CancelScope())
     result: dict[str, Any] | None = None
     try:
+        await _listen(running, project)
         with scope:
             result = await work()
         if result is None:  # tasks/cancel stopped the work before it finished
@@ -93,21 +150,7 @@ async def run(running: Running, project: str, task_id: str, work: Callable[[], A
             project, task_id, 'failed', error={'code': -32603, 'message': said}, message=said))
     finally:
         running.scopes.pop(task_id, None)
-
-
-async def beat(running: Running, folder: Path) -> None:
-    """While the server runs: mark the tasks it runs alive every `BEAT_S` seconds, and stop any that another process
-    has ended since, such as by tasks/cancel."""
-    while True:
-        await anyio.sleep(records.BEAT_S)
-        project = await anyio.to_thread.run_sync(owning, folder) if running.scopes else None
-        if project is None:
-            continue
-        ended = await anyio.to_thread.run_sync(records.beat, project, running.owner, list(running.scopes))
-        for task_id in ended:
-            scope = running.scopes.get(task_id)
-            if scope is not None:
-                scope.cancel()
+        await _unlisten(running)
 
 
 def _key(run_id: str, row: dict[str, Any]) -> str:
@@ -230,7 +273,7 @@ async def update(project: str | None, found: Store | None, task_id: str, respons
 
 async def cancel(running: Running, project: str | None, found: Store | None, task_id: str, verb: Verb) -> bool:
     """Cancel a task: for a tool call the cancel is recorded and its work stopped, here at once or by the process
-    running it at its next mark, and `run` ends the task as the work ends; a workflow run is cancelled through the
+    running it when it hears the change, and `run` ends the task as the work ends; a workflow run is cancelled through the
     workflow module's `cancel` verb. A task that has ended stays as it ended. False when there is none."""
     if project is not None and await anyio.to_thread.run_sync(records.get, project, task_id) is not None:
         asked = await anyio.to_thread.run_sync(records.request_cancel, project, task_id, CANCELLING)

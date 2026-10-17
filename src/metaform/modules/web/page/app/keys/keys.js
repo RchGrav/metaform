@@ -2,11 +2,13 @@
 import '/page/app/keys/walk.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
-import {G, touched, pauseLayout, relayout} from '/page/app/map3d/graph3d.js';
+import {G, touched, pauseLayout, relayout, wake3d} from '/page/app/map3d/graph3d.js';
 import {PLAIN, setTheme} from '/page/app/map3d/draw3d.js';
 import {fit3d, swapMaps} from '/page/app/camera/flight.js';
 import {small3d} from '/page/app/camera/fly3d.js';
-import {peek} from '/page/app/views/settings.js';
+import {peek, LENS, LENSES, LENS_WORDS} from '/page/app/views/settings.js';
+import {chooseLens} from '/page/app/views/lens.js';
+import {ROAM} from '/page/app/figures/agents.js';
 import {stepFlow, PHYS, PHYSICS, choosePhysics} from '/page/app/views/bar.js';
 import {M} from '/page/app/map2d/build.js';
 import {entryOf} from '/page/app/map2d/fit.js';
@@ -52,12 +54,15 @@ const KEYS = [
   {group: 'Zoom', keys: ['0'], what: 'Full fit, both maps', match: ['0', 'Home'], run: () => resetZoom()},
   {group: 'Zoom', keys: ['F'], what: 'Fit once (3D)', match: ['f', 'F'],
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
+  {group: 'Zoom', keys: ['5'], what: 'Speech bubble size: smallest, then larger in four steps',
+    match: ['5'], run: () => note2d(`Bubble size: ${stepBubbleSize() + 1} of ${BUBBLE_SIZES.length}`)},
+  {group: 'Zoom', keys: ['6'], what: 'Limit agent size',
+    match: ['6'], run: holdAgentSize},
+  {group: 'Zoom', keys: ['7'], what: 'Lens: natural, wide, fisheye', match: ['7'], run: stepLens},
   {group: 'Looks', keys: ['2'], what: 'Flow: off, hover, selection, all, live, then each with edges hidden',
     match: ['2'], run: () => stepFlow()},
   {group: 'Looks', keys: ['3'], what: 'Layout: Organic or Flat', match: ['3'], run: stepLayout},
-  {group: 'Looks', keys: ['4'], what: 'Depth: 1, 2, 3, 4 or all levels', match: ['4'], run: () => stepDepth()},
-  {group: 'Looks', keys: ['5'], what: 'Speech bubble size: smallest, then larger in four steps',
-    match: ['5'], run: () => note2d(`Bubble size: ${stepBubbleSize() + 1} of ${BUBBLE_SIZES.length}`)},
+  {group: 'Looks', keys: ['4'], what: "Depth: the map's own levels, from the first with joins, or all", match: ['4'], run: () => stepDepth()},
   {group: 'Looks', keys: ['P'], what: 'Pause or resume the 3D layout', match: ['p', 'P'], run: () => pauseLayout()},
   {group: 'Looks', keys: ['R'], what: 'Re-run the 3D layout from new places', match: ['r', 'R'],
     run: () => relayout()},
@@ -69,9 +74,25 @@ const KEYS = [
   {group: 'Chat', keys: ['Enter'], what: 'Send'},
   {group: 'Chat', keys: ['Shift', 'Enter'], what: 'New line'},
   {group: 'Chat', keys: [MAC ? '⌘' : 'Ctrl', '.'], what: 'Interrupt the agent'},
+  {group: 'Chat', keys: ['Esc'], what: 'Interrupt the agent, else clear the box (Ctrl+Z takes it back)'},
+  {group: 'Chat', keys: ['↑', '↓'], what: 'In an empty box: your earlier messages in this thread'},
   {group: 'Chat', keys: ['Space'], what: 'Hold to talk to the agent; release sends'},
   {group: 'Chat', keys: [MAC ? '⌥' : 'Ctrl', 'Space'], what: 'Talk'},
 ];
+/* 6: the agents' figures and the person's mascot held to their most pixels on the screen however near the camera
+ * is, or let grow as near things do; kept in this browser. */
+function holdAgentSize() {
+  ROAM.held = !ROAM.held;
+  try { localStorage.setItem('metaform.agentSizeHeld', ROAM.held ? '1' : '0'); } catch { /* storage can be blocked */ }
+  wake3d();
+  note2d(ROAM.held ? 'Agent size: limited' : 'Agent size: not limited');
+}
+/* 7: the next lens, natural, wide and fisheye, kept in web_lens as the bar and the View menu keep it. */
+function stepLens() {
+  const names = Object.keys(LENSES), next = names[(names.indexOf(LENS.name) + 1) % names.length];
+  chooseLens(next);
+  note2d(`Lens: ${LENS_WORDS[next]}`);
+}
 function stepLayout() {
   const name = PHYS.name === 'flat' ? 'organic' : 'flat';
   choosePhysics(name);

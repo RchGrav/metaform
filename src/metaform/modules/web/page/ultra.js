@@ -172,7 +172,7 @@ export function frame(now, data) {
   governor(now);
   const camera = U.G.camera(), scene = U.G.scene();
   // the world's size of one pixel at a distance of one, for what is held to a size on the screen
-  const tall = U.G.renderer().domElement.clientHeight || 1;
+  const tall = U.ctx.stage.height || 1;  // the area's size as last observed, `STAGE`: no layout read a frame
   U.view.camera = camera;
   U.view.perPixel = camera.isPerspectiveCamera ? 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / tall : 0;
   if (scene.background !== U.sky.ground) scene.background = U.sky.ground;
@@ -774,7 +774,7 @@ function held(sprite, node, size) {
   let world = size.world;
   if (view.perPixel && view.camera) {
     const far = view.camera.position.distanceTo(_at.set(node.x || 0, node.y || 0, node.z || 0));
-    const pixel = far * view.perPixel, tall = U.G.renderer().domElement.clientHeight || 1;
+    const pixel = far * view.perPixel, tall = U.ctx.stage.height || 1;
     world = Math.min(Math.max(world, size.least * pixel), size.most * tall * pixel);
   }
   sprite.scale.setScalar(world / scale);

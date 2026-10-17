@@ -141,11 +141,16 @@ def announce(ctx: Context, value: dict[str, Any]) -> None:
 
 
 def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
-    own = own_store(store)
-    with own.tables(write=False) as tx:
-        rows = tx.rows('lines', {'work_id': work_id}, by=('work_id', 'seq'), limit=0).results if work_id else tx.rows(
-            'lines', limit=0).results
-    found = [json.loads(row['text']) for row in rows if row['kind'] == 'signal']
+    """The signals of one ticket or of every ticket, read through the lines' (kind, work_id) index alone."""
+    with own_store(store).tables(write=False) as tx:
+        return read_rows(tx, work_id, active)
+
+
+def read_rows(tx: Any, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
+    """`rows`, read in the caller's transaction on dispatch's tables."""
+    rows = tx.rows('lines', {'kind': 'signal', **({'work_id': work_id} if work_id else {})}, by=('kind',),
+                   limit=0).results
+    found = [json.loads(row['text']) for row in rows]
     return sorted((row for row in found if row['active'] == active),
                   key=lambda row: (row['at'], row['session_id'] or '', row['signal']))
 

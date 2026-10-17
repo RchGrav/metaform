@@ -36,6 +36,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections import deque
@@ -80,11 +81,21 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from metaform import axiom, home, jev, prompt_files
-from metaform.data import Node, Store, StoreError, WorkRecord
-from metaform.module import WITHHELD, Context, Stop, child_environment, context, mcp_server, surface
+from metaform import home, jev, prompt_files
+from metaform.data import NewerStore, Node, Store, StoreError, WorkRecord
+from metaform.module import (
+    WITHHELD,
+    Context,
+    Stop,
+    child_environment,
+    code_print,
+    context,
+    mcp_server,
+    surface,
+)
 
 from . import (
+    HANDED,
     PERSON_ENDS,
     PROMPTS,
     READS,
@@ -98,6 +109,7 @@ from . import (
     eyes_line,
     glyph_of,
     group_options,
+    handed_path,
     handoff_parts,
     holder,
     intake_id,
@@ -142,6 +154,13 @@ WRITES = ('edit', 'delete', 'move')  # the tool kinds of ACP that change files, 
 # sandbox, Codex keeps the person's mode, the runner's terminal is unconfined and no sandbox request is refused. True
 # brings back code.dispatcher.agent#3d's and #43's lock together, with the rule line that tells agents of it.
 LINK_LOCK = False
+# The sandbox half of the lock, kept apart from it after the 2026-10-15 crash, when every dispatched agent's commands
+# ran sandboxed at once: True sends Claude Code its command sandbox (held_settings), runs the runner's own terminal
+# under bubblewrap or sandbox-exec (confined_command) and refuses requests to widen the sandbox (unsandboxed). With
+# it False the lock still refuses edits of unlinked and ignore-listed files through the edit tools, the ask rules and
+# fs/write_text_file, and a command run in a shell is not confined. Turned on only by the person, after one agent has
+# been run with it.
+SHELL_SANDBOX = False
 # The mode in which an agent asks before every change of a file and runs its commands in a sandbox that cannot write,
 # by the name in its agentInfo: codex-acp writes files, and runs commands that write the workspace, without asking in
 # every other mode, so it is kept in read-only whatever mode the person chose, code.dispatcher.agent#43, CTX-061.
@@ -153,35 +172,115 @@ MODE_APPROVES = {'workspace-write': WRITES, 'agent': (*WRITES, 'mcp'),
                  'agent-full-access': (*WRITES, 'execute', 'fetch', 'other', 'mcp')}
 
 
-def held_settings(root: str) -> dict[str, Any]:
+# The folders tools write as they run, left writable to commands wherever the walk of denied_writes meets them: git's
+# index, the project's environment, bytecode and the caches of the test runner, the linter and the type checker,
+# code.dispatcher.agent#47. They hold no file of the map's.
+TOOL_FOLDERS = frozenset({'.git', '.venv', '__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache',
+                          'node_modules'})
+GIT_HELD = ('hooks', 'config')  # what of .git a command may not write: a hook it wrote would run unconfined later
+# The most characters of paths the command sandbox denies one by one. claude-agent-sdk passes the settings to Claude
+# Code as one command-line argument, which Linux caps at 128 KiB; past this, folders are denied whole, the largest
+# lists first, which only ever denies more.
+DENIED_CHARS = 96 * 1024
+
+
+def denied_writes(root: str, folder: str, index: dict[str, list[dict[str, str]]], patterns: Sequence[str]) -> list[str]:
+    """The paths of the project a command may not write, absolute, code.dispatcher.agent#47: what `locked` refuses,
+    and no more. Each path .metaform/ignore.txt holds; each existing file no ref names exactly; each folder holding no
+    such file, whole, so nothing can be made in it. A folder that holds a linked file is walked instead, and the
+    folders of TOOL_FOLDERS stay writable. Claude Code's sandbox lets a denied folder win over any path allowed inside
+    it, so the list names what is denied and never the project folder itself. Not covered: a new file made in a
+    folder that holds a linked file, under a name no list could know. The session's own worktree is walked with the
+    names it gives its files; symbolic links are left out, a write through one landing on the path it names."""
+    base, own = Path(root).resolve(), Path(folder).resolve()
+    hides = ignored(patterns) if patterns else None
+    holding = {'/'.join(parts[:end]) for parts in (key.split('/') for key in index) for end in range(1, len(parts))}
+    kept: dict[str, list[str]] = {}  # each walked folder's own denied paths, to deny it whole if the list is too long
+
+    def walk(directory: Path) -> list[str]:
+        denied: list[str] = []
+        try:
+            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError:
+            return denied
+        for entry in entries:
+            if entry.is_symlink():
+                continue
+            named = relative(entry.path, [str(own), str(base)])
+            if named is None:
+                continue
+            inside = entry.is_dir()
+            if hides is not None and (hides(named) or inside and hides(f'{named}/\0')):
+                denied.append(entry.path)
+            elif not inside:
+                if folded(named) not in index:
+                    denied.append(entry.path)
+            elif entry.name in TOOL_FOLDERS:
+                if entry.name == '.git':
+                    denied += [path for name in GIT_HELD if os.path.exists(path := os.path.join(entry.path, name))]
+            elif folded(named) in holding or own == Path(entry.path) or Path(entry.path) in own.parents:
+                kept[entry.path] = walk(Path(entry.path))
+                denied += kept[entry.path]
+            else:
+                denied.append(entry.path)
+        return denied
+    denied = walk(base)
+    whole: list[str] = []
+    for path, inner in sorted(kept.items(), key=lambda one: -len(one[1])):
+        if sum(map(len, denied)) <= DENIED_CHARS:
+            break
+        if own == Path(path) or Path(path) in own.parents or not inner \
+                or any(path.startswith(one + os.sep) for one in whole):
+            continue  # the session's own folder stays open to its tools; one inside a folder denied whole is gone
+        whole.append(path)
+        denied = [one for one in denied if not one.startswith(path + os.sep)] + [path]
+    return denied
+
+
+def writable_roots() -> list[str]:
+    """Where an agent's commands may write outside what denied_writes denies: the person's home, which holds the
+    project as a rule and the tools' caches (~/.cache/uv), and the temporary folders, code.dispatcher.agent#47. Never
+    the file system's root: Claude Code 2.1.293, the build claude-agent-acp 0.89.1 bundles, then makes a mount point
+    for its managed settings, /etc/claude-code, which it cannot, and every command fails. A project outside these
+    stays writable as the session's folder, which Claude Code's sandbox allows by default."""
+    found = (str(Path.home()), tempfile.gettempdir(), '/tmp', '/var/tmp')
+    return list(dict.fromkeys(str(Path(one).resolve()) for one in found if os.path.isdir(one)))
+
+
+def held_settings(denied: Sequence[str] | None) -> dict[str, Any]:
     """The `_meta` every session/new, load and resume sends: claude-agent-acp hands `claudeCode.options.settings` to
     Claude Code as its settings. An explicit ask rule reaches the permission request, session/request_permission, in
     every permission mode, bypassPermissions and acceptEdits included, so each edit of its own tools, which write to
     disk themselves, is decided by the runner first, code.dispatcher.agent#3d. Its sandbox runs every command with the
-    project folder read-only and no way out, so a shell write to a file of the project is prevented whatever the
-    file, code.dispatcher.agent#43, CTX-062; a session cannot start where the sandbox cannot. Paths outside the
-    project stay writable, CTX-060. With LINK_LOCK off neither the ask rules nor the sandbox is sent, so an edit is
+    paths of `denied`, denied_writes', read-only and no way out, so a shell write to an unlinked or ignore-listed file
+    is prevented, code.dispatcher.agent#43 and #47, CTX-062, while the tools' folders and the files linked when the
+    session starts stay writable; a session cannot start where the sandbox cannot. Paths outside the project stay
+    writable, CTX-060. With LINK_LOCK off, `denied` None, neither the ask rules nor the sandbox is sent, so an edit is
     asked about only as the person's mode and dispatch_prompts would ask, Rich 2026-10-15. Other agents ignore the
     key."""
-    if not LINK_LOCK:
+    if denied is None:
         return {}
-    folder = str(Path(root).resolve())
+    if not SHELL_SANDBOX:
+        return {'claudeCode': {'options': {'settings': {
+            'permissions': {'ask': ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']}}}}}
     sandbox = {'sandbox': {'enabled': True, 'failIfUnavailable': True, 'allowUnsandboxedCommands': False,
-                           'filesystem': {'allowWrite': [Path(folder).anchor], 'denyWrite': [folder]}}}
+                           'filesystem': {'allowWrite': writable_roots(), 'denyWrite': list(denied)}}}
     return {'claudeCode': {'options': {'settings': {
         'permissions': {'ask': ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']}, **sandbox}}}}
 
 
-def confined_command(root: str, command: str, args: Sequence[str]) -> list[str] | None:
-    """A command of the runner's own terminal, ACP's terminal/create, run with the project folder read-only, as the
-    agents' own commands are, code.dispatcher.agent#43: bubblewrap on Linux, sandbox-exec on macOS; None where
-    neither is found, and the terminal is refused."""
-    folder = str(Path(root).resolve())
+def confined_command(denied: Sequence[str], command: str, args: Sequence[str]) -> list[str] | None:
+    """A command of the runner's own terminal, ACP's terminal/create, run with the paths of `denied`, denied_writes',
+    read-only, as the agents' own commands are, code.dispatcher.agent#43 and #47: bubblewrap on Linux, sandbox-exec on
+    macOS; None where neither is found, and the terminal is refused."""
     if sys.platform.startswith('linux') and (found := shutil.which('bwrap')):
-        return [found, '--dev-bind', '/', '/', '--ro-bind', folder, folder, '--', command, *args]
+        return [found, '--dev-bind', '/', '/', *(part for path in denied for part in ('--ro-bind', path, path)), '--',
+                command, *args]
     if sys.platform == 'darwin' and (found := shutil.which('sandbox-exec')):
-        quoted = folder.replace('\\', '\\\\').replace('"', '\\"')
-        return [found, '-p', f'(version 1)(allow default)(deny file-write* (subpath "{quoted}"))', command, *args]
+        rules = ''.join(f'({"subpath" if os.path.isdir(path) else "literal"} "{quoted}")' for path in denied
+                        if (quoted := path.replace('\\', '\\\\').replace('"', '\\"')))
+        return [found, '-p', f'(version 1)(allow default){f"(deny file-write* {rules})" if rules else ""}', command,
+                *args]
     return None
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.lines` event per this many seconds; the rows are written at once
@@ -189,6 +288,11 @@ TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its r
 RELEASE_LIMIT = 90.0  # the one wait for a new process to release: its start, and two writes that may each wait on a lock
 RELEASE = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import release; '
            "given = json.loads(sys.argv[1]); release(Store(given.pop('project'), module='dispatch'), **given)")
+# The hand-over of a session to a runner on the code on disk, run by that code, `Session.hand_over`; it prints the start.
+HAND_OVER = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import hand_over; '
+             "given = json.loads(sys.argv[1]); "
+             "print(json.dumps(hand_over(Store(given.pop('project'), module='dispatch'), **given)))")
+LOADED = code_print()  # the package's code as this process loaded it, told apart from the code on disk, STORE-029
 # The updates that change what the session is rather than add to its thread: kept in its one `state` line.
 STATE_UPDATES = ('available_commands_update', 'current_mode_update', 'config_option_update', 'session_info_update',
                  'usage_update')
@@ -800,7 +904,7 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         ended = await Session(ctx, store, record, agent, command, folder, resume=resume).run()
         resume = None  # the glyph's next ticket, if any, is a new session
         worked.append(record.id)
-        if ended.get('ended') == TERMINATED:  # a terminated runner reads nothing more, so a store it cannot reach is no error
+        if ended.get('ended') in (TERMINATED, HANDED):  # it reads nothing more: a store it cannot reach is no error
             return ended if len(worked) == 1 else {**ended, 'worked': worked}
         record = await asyncio.to_thread(ticket, store, record.id)
         if folder is not None and record.done:  # its work committed, tested and checked to merge, VIEW-044
@@ -836,7 +940,7 @@ async def moved_on(store: Store, ended: dict[str, Any]) -> dict[str, Any]:
     whether or not a page is open. Autostart recovers what dead runners left first, BASE-052, and starts nothing when
     Autostart agents is unchecked. A terminated runner starts nothing; a failed check is said in this runner's log and
     leaves the result as it was."""
-    if ended.get('ended') != TERMINATED:
+    if ended.get('ended') not in (TERMINATED, HANDED):  # a runner that handed its session over reads nothing more
         from . import autostart
         project = await asyncio.to_thread(store.project)
         ctx = context('dispatch', Path(project.path), project=store.project_id)
@@ -1152,6 +1256,9 @@ class Session:
         self.asking: str | None = None  # the mode this agent is kept in so it asks before every write, ASKING_MODES
         self.chosen_mode: str | None = None  # the mode the person chose for it, which decides what is approved unasked
         self.sources: dict[str, list[dict[str, str]]] | None = None  # the sources layer's paths, read when needed
+        # The rule on writing files, work_link, has gone to the agent with a prompt of this process: the lock holds for
+        # the session only from then, so no refusal reaches an agent never told of it, code.dispatcher.agent#47.
+        self.ruled = False
         self.permissions: dict[str, dict[str, Any]] = {}  # each permission request asked, by its request id
         self.patches: dict[str, tuple[Any, dict[str, Any]]] = {}  # a running call's diffs, worked out once each
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
@@ -1200,6 +1307,12 @@ class Session:
         self.record_asked = False  # the turn asking the agent to record at its node was decided, BASE-052
         self.finishing = False  # a done ticket's end is being decided; a second notice of it waits on none
         self.retrying = bool(ctx.nouns.get('retry'))  # resumed by the supervisor: it goes on with its ticket, P012
+        # The store moved to a layout past this runner's code while newer code is on disk, STORE-029: the session is
+        # handed to a runner on that code, `outdated`, with what this one was sent and could not record, and whether a
+        # turn was cut short by it.
+        self.handing = False
+        self.handed_on: list[dict[str, Any]] = []
+        self.cut = False
         self.budget: dict[str, Any] | None = None  # the token budget this session reached, M01
         self.silence: asyncio.TimerHandle | None = None  # the turn's silence clock, P040
         self.silent = False  # the silent signal is raised and waits for the agent's next word
@@ -1326,9 +1439,28 @@ class Session:
 
     def fail(self, error: BaseException) -> None:
         """A failed callback must wake the owner, including callbacks whose errors the ACP SDK catches."""
+        if self.outdated(error):
+            return
         if not self.ending and isinstance(error, Exception):
             self.failure = self.failure or error
             self.ended.set()
+
+    def outdated(self, error: BaseException) -> bool:
+        """Whether a refusal is the store at a layout past this runner's code while the code on disk has changed,
+        STORE-029: at the first such refusal, a write or a read, the session ends here and goes on in a runner on the
+        code on disk, `hand_over`, with the prompts still waiting to be sent. A store from a release newer than the
+        code on disk too is not: its refusal fails the session as any other."""
+        if self.handing:
+            return True
+        if not isinstance(error, NewerStore) or self.ending or self.probe or not self.recorded \
+                or self.session_id is None or code_print() == LOADED:
+            return False
+        self.handing, self.cut, self.how = True, self.turns > 0, HANDED
+        self.handed_on.extend({'text': text, 'by': None} for text in self.pending)  # their lines are written
+        sys.stderr.write(f'Session {self.session_id} on work {self.work_id} is handed to a runner on the code on '
+                         f'disk: {error}\n')
+        self.ended.set()
+        return True
 
     # ------------------------------------------------------------------ the map
 
@@ -1357,9 +1489,12 @@ class Session:
             else:
                 await self.changed(tables='dispatch', dispatch_tables=[f'dispatch.{name}'])
         except Exception as error:
-            if not fatal:
+            if not fatal and not isinstance(error, NewerStore):
                 sys.stderr.write(f'A line of session {self.session_id} on work {self.work_id} was not written: '
                                  f'{error}\n')
+                return None
+            if not fatal:  # a store this code cannot write keeps no line of it: the session goes on elsewhere or ends
+                self.fail(error)
                 return None
             self.fail(error)
             raise
@@ -1449,15 +1584,6 @@ class Session:
             tx.insert('sessions', row)
             add_line(tx, row['session_id'], self.work_id, None, 'failed', text)
         await self.table(write, name='sessions', fatal=False)
-
-    async def checked(self, text: str) -> str:
-        """A prompt this module sends, checked before it is sent, BASE-057: a flagged one is still sent, with a notice
-        in the session's thread and the incomplete-prompt signal."""
-        found = axiom.notices('prompt', text)
-        if found:
-            await self.note(None, 'notice', ' '.join(one['message'] for one in found))
-            await self.raise_signal(axiom.SIGNAL, notices=found)
-        return text
 
     async def flush(self) -> None:
         """The message or thought text gathered so far, as one note: the note it has grown in while it was written."""
@@ -2078,6 +2204,14 @@ class Session:
             self.sources = await asyncio.to_thread(sources_index, self.store, self.root)
         return self.sources
 
+    async def denied(self) -> list[str] | None:
+        """The paths of the project the agent's commands may not write, denied_writes', read now; None with LINK_LOCK
+        off or for a probe, whose commands are not confined."""
+        if self.probe or not LINK_LOCK:
+            return None
+        patterns = await asyncio.to_thread(home.ignore_patterns, self.root)
+        return await asyncio.to_thread(denied_writes, self.root, self.folder, await self.places(), patterns)
+
     async def tool_detail(self, call: dict[str, Any]) -> dict[str, Any] | None:
         """What a tool call acts on, structured: each file it edits as a diff, each place it reads or writes, each
         terminal it runs, every file placed on the map; None for a call that names none."""
@@ -2238,8 +2372,8 @@ class Session:
         names exactly is locked until the agent links it to its element, with the call that does it. A path outside the
         project is not the map's. Reads never come here: reading is how the agent finds where a file belongs. With
         LINK_LOCK off, no file is locked, the ignore list's included, until the rules and prompts are in place, Rich
-        2026-10-15."""
-        if not named or self.probe or not LINK_LOCK:
+        2026-10-15; nor before the rule has gone to the agent, `ruled`, code.dispatcher.agent#47."""
+        if not named or self.probe or not LINK_LOCK or not self.ruled:
             return None
         patterns = await asyncio.to_thread(home.ignore_patterns, self.root)
         if patterns and ignored(patterns)(named):
@@ -2274,8 +2408,8 @@ class Session:
         kept in its asking mode, a command run outside its sandbox altogether, which could write any file: a request
         whose own input names a command. Network access, an MCP tool's approval and paths outside the project are left
         to the answer as usual."""
-        if not LINK_LOCK:  # off with the lock, code#1e
-            return None
+        if not LINK_LOCK or not SHELL_SANDBOX or not self.ruled:  # off with the lock or its sandbox, and until the rule
+            return None  # is sent, #47
         raw = call.get('rawInput')
         given = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
         grant = given.get('additionalPermissions') or given.get('permissions')
@@ -2360,8 +2494,9 @@ class Session:
         folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
         given = windowless({**child_environment(), **{one.name: one.value for one in env or []}})
         # Run with the project read-only, as the agents' own commands are, code.dispatcher.agent#43, CTX-062.
-        run = [command, *(args or [])] if self.probe or not LINK_LOCK else \
-            confined_command(self.root, command, args or [])
+        denied = await self.denied()  # read for each command, so a file linked since the session began is writable
+        run = [command, *(args or [])] if denied is None or not SHELL_SANDBOX \
+            else confined_command(denied, command, args or [])
         if run is None:
             raise await self.refuse('run', command, prompt('terminal_unconfined')
                                     or 'no sandbox can keep the project read-only to it here')
@@ -3192,7 +3327,7 @@ class Session:
                 made = await asyncio.wait_for(self.reopen(servers), START_LIMIT)
             else:
                 made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers,
-                                                                    **held_settings(self.root)),
+                                                                    **held_settings(await self.denied())),
                                               START_LIMIT)
                 async with self.lock:  # what the agent asked while the session was made moves to it
                     await self.waits_moved(str(made.session_id))
@@ -3267,6 +3402,7 @@ class Session:
         if self.ending:
             return
         if self.resume:  # a resumed session waits for the person's next message, or goes on when the supervisor retries
+            await self.taken_over()
             if self.retrying and self.node is not None and not self.budget:
                 self.turn(prompt('retry', work_id=self.work_id))
             await self.troubles()
@@ -3290,13 +3426,37 @@ class Session:
                           dev=dev_branch(self.store.project().path) or 'the dev branch')
         else:  # the hand-off with its counts, told to the agent's own session so it is not told them again, MCP-039
             text = None
-        # Every Axiom prompt this module sends as a first turn is checked, BASE-057. The hand-off is the node brief
-        # and one sentence, data rather than procedure, so it is not.
-        text = await self.checked(text) if text is not None else await asyncio.to_thread(self.handed)
+        if text is None:
+            text = await asyncio.to_thread(self.handed)
         if not self.ending:
             self.opening = self.system
             self.turn(text)
             await self.troubles()
+
+    async def taken_over(self) -> None:
+        """A session a runner on older code handed over, `hand_over`: one line in its thread says it was restarted on
+        updated code, then what that runner was sent and could not record goes on, each message's line written here
+        and its text sent as the agent's next turn, in the order it came."""
+        path = handed_path(str(self.session_id))
+        try:
+            given: Any = json.loads(await asyncio.to_thread(path.read_text, encoding='utf-8'))
+        except (OSError, ValueError):
+            return
+        with contextlib.suppress(OSError):
+            path.unlink()
+        kept: Any = cast(dict[str, Any], given).get('carried') if isinstance(given, dict) else None
+        carried = cast(list[dict[str, Any]], kept) if isinstance(kept, list) else []
+        async with self.lock:
+            await self.note(None, 'notice', 'Restarted on updated code: the store moved to a newer layout than this '
+                                            "session's runner was started with, so a runner on the current code took "
+                                            'the session over.')
+        for one in carried:
+            text, by = str(one.get('text') or ''), str(one.get('by') or '')
+            if one.get('by') is not None:
+                async with self.lock:
+                    await self.note(None, 'message' if by else 'person', f'From the {by} agent: {text}' if by else text)
+            if text:
+                self.turn(text)
 
     async def troubles(self) -> None:
         """The person's system agent takes each feature the person set up that a module says is not working, the
@@ -3414,12 +3574,12 @@ class Session:
         if caps.get('resume'):
             self.acp['resumed'] = 'resume'
             return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers,
-                                                   **held_settings(self.root))
+                                                   **held_settings(await self.denied()))
         if caps.get('load'):
             self.acp['resumed'] = 'load'
             self.replaying = True
             return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers,
-                                                 **held_settings(self.root))
+                                                 **held_settings(await self.denied()))
         raise RuntimeError(f'{self.name} offers neither session/resume nor session/load, so session {session_id} '
                            'cannot be resumed')
 
@@ -3589,6 +3749,9 @@ class Session:
         self.spawn(self.ctx.publish_async('prompt.sent', payload))
 
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None) -> None:
+        if self.handing:  # the runner taking the session over sends it
+            self.handed_on.append({'text': text, 'by': None})
+            return
         if self.ending:
             return
         self.carried()
@@ -3629,6 +3792,13 @@ class Session:
                         reason = 'cancelled'
                     else:
                         current.sent = True
+                        # The rule on writing files rides the first prompt this process sends the session, whatever
+                        # it is, a ticket's hand-off, a resumed session's next message, the system agent's or the
+                        # intake's opening, and is never a turn of its own; the lock holds from then, #47, CTX-043.
+                        if LINK_LOCK and not self.ruled and not self.probe:
+                            rule = prompt('work_link')
+                            text = f'{text}\n\n{rule}' if rule else text
+                            self.ruled = True
                         await self.peer_marked(marks, 'delivered')
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
@@ -3899,7 +4069,7 @@ class Session:
             op = asked.get('op')
             if op == 'status':
                 alive = self.process is not None and self.process.returncode is None and not self.exited.is_set()
-                live = alive and not self.ending and self.failure is None
+                live = alive and not self.ending and self.failure is None and not self.handing
                 activity = ('waiting' if self.waiting else 'working' if self.turns else 'idle') if live else 'idle'
                 how, source = await self.answering() if live else (None, None)
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
@@ -3924,11 +4094,16 @@ class Session:
                 image = self.picture(str(asked.get('image') or '')) if not by else None
                 # one message of a broadcast, `dispatch broadcast`: its line is kept under the broadcast's id
                 sent = str(asked.get('broadcast') or '')
-                async with self.lock:  # the sender's words in the thread, where the agent's reply follows
-                    await self.flush()
-                    # an agent's message is never shown as the person's, BASE-052
-                    await self.note(f'broadcast:{sent}' if sent else None, 'message' if by else 'person',
-                                    f'From the {by} agent: {text}' if by else text)
+                if not self.handing:
+                    async with self.lock:  # the sender's words in the thread, where the agent's reply follows
+                        await self.flush()
+                        # an agent's message is never shown as the person's, BASE-052
+                        await self.note(f'broadcast:{sent}' if sent else None, 'message' if by else 'person',
+                                        f'From the {by} agent: {text}' if by else text)
+                if self.handing:  # its line could not be written: the runner taking the session over writes and sends it
+                    self.handed_on.append({'text': text, 'by': by})
+                    await self.reply(writer, {**said, 'sent': True, 'steered': False, 'handed': True})
+                    return
                 # Into the turn in flight when the agent offers steering and nothing waits before it, P016; otherwise
                 # it waits its turn, in order.
                 current = self.active_turn
@@ -4088,6 +4263,8 @@ class Session:
         """Give back the ticket and record the session ended, never silently failing: when this runner's code cannot
         reach the store, as when a newer Metaform upgraded it under the runner, STORE-029, a new process does it with
         the code on disk; when that fails too, the runner's log says what is left and how to put the ticket back."""
+        if self.handing and await self.hand_over():
+            return
         owner = self.by if self.recorded else self.ctx.nouns.get('reservation') or self.by
         given: dict[str, Any] = {'work_id': self.work_id, 'by': owner, 'took': self.took,
                                  'session_id': self.session_id if self.recorded else None, 'how': how,
@@ -4111,6 +4288,34 @@ class Session:
                 return
         with contextlib.suppress(Exception):  # the release stands whether or not an open page hears of it
             await self.changed()
+
+
+    async def hand_over(self) -> bool:
+        """Start a runner on the code on disk that resumes this very session, never the latest one, once this one's
+        agent has ended: the code on disk does it, as it does a release, STORE-029. A worker goes on as its ticket's
+        worker, against the same run, told to go on where it left off when a turn was cut short; a conversation goes
+        on as one. False when it could not, and the session is released as any other."""
+        extra = [*(['system=true'] if self.system else []),
+                 *([f"talk={self.ctx.nouns['talk']}"] if self.ctx.nouns.get('talk') else []),
+                 *([f'run={self.run_id}', *(['retry=true'] if self.cut else [])] if self.node is not None
+                   and not self.system and not self.prep else [])]
+        given = {'project': self.store.project_id, 'work_id': self.work_id, 'agent': self.agent,
+                 'session_id': self.session_id, 'runner': self.runner, 'pid': os.getpid(), 'extra': extra,
+                 'carried': self.handed_on}
+        command = [sys.executable, '-c', HAND_OVER, json.dumps(given)]
+        started = ''
+        try:
+            done = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, encoding='utf-8',
+                                           stdin=subprocess.DEVNULL, timeout=RELEASE_LIMIT)
+            failed, started = done.stderr.strip() if done.returncode else None, done.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired) as error:
+            failed = str(error)
+        if failed is not None:
+            sys.stderr.write(f'Could not hand session {self.session_id} on work {self.work_id} to the code on disk: '
+                             f'{failed}\n')
+            return False
+        sys.stderr.write(f'Session {self.session_id} on work {self.work_id} handed over: {started}\n')
+        return True
 
 
 async def closed(probe: Session) -> None:

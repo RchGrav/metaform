@@ -627,6 +627,7 @@ It also defines the first working test, which exercises all three end to end.
 - Acceptance: Recommended: the structural check flags a one-line prompt and a prompt with no acceptance or no `@VERIFY`, and passes dispatch's handoff prompt.
 - Relates to: BASE-052, BASE-057, LAYER-024, MCP-029, MCP-031.
 - Status: proposed 2026-10-04 by the workflow agent from the session of 2026-10-04. The connect-time dispositions above were approved through the answered review on 2026-10-05. The remainder of this record is still proposed.
+- Amendment, 2026-10-16, the owner's orchestrating session, no ticket: no code checks a prompt's structure any more; the structural check this record's What this means, How it shows, Build and Acceptance name is deleted, BASE-057's amendment of the same date. Whether a prompt says what to do, how, how it works and when is judged by its reader, never by matching Axiom headers as text.
 
 ### MCP-036 Installation reaches agents opened directly in their harness
 

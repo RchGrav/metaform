@@ -1,1 +1,0 @@
-{"action": "create", "reason": "The agent found a web server from another session (pid 1917971, port 21704) running in the same tree, and noted that pytest ends such servers. No skill tells a session to check for peer servers before running tests in the shared checkout.", "evidence": "references/evidence-ea6aa94f.md"}

@@ -24,7 +24,7 @@ import {renderAgents} from '/page/app/agents/dispatch.js';
 import {renderWork} from '/page/app/panel/object.js';
 import {buildEvent} from '/page/app/build/build.js';
 import {LIVE, following, recordingNow, changed} from '/page/app/live/stream.js';
-import {progressOf} from '/page/app/loading/load.js';
+import {progressOf, progressFrom} from '/page/app/loading/load.js';
 import {debugAt, dlog, traced, loadWorkspace} from '/page/app/workspace/workspace.js';
 import {banner} from '/page/app/core/banner.js';
 
@@ -69,19 +69,16 @@ function heldOf(ids) {
       name_length: element.name_length, name: element.name, role: element.role};
   });
 }
-/* What `appliedOps` gives back when the ops changed only what is said of a layer: nothing drawn, so the maps are not
- * drawn again for it. */
-export const NOTED = 'noted';
 export async function appliedOps() {
   if (following() || !S.whole || typeof S.seq !== 'number') return false;
   const ops = await read('ops', {after: S.seq, limit: 0});
-  if (!Array.isArray(ops) || !ops.length) return true;  // nothing of the map changed: the tickets are read beside
+  if (!Array.isArray(ops) || !ops.length) return true;  // nothing of the map changed, so nothing is drawn
   if (ops.every(noted)) {  // what is said of a layer changed, not what is drawn: its record and its chip, no map read
     if (!ops.every(noteLayer)) return false;
     S.seq = ops[ops.length - 1].seq;
     renderChips();
     if ($('#p-prov').hidden === false) import('/page/app/panel/agentview.js').then(part => part.renderProv());
-    return NOTED;
+    return true;
   }
   for (const op of ops) {
     if (noted(op) && noteLayer(op)) continue;
@@ -213,9 +210,6 @@ export function briefTouched(named) {
   return named.some(table => BRIEF_TABLES.has(table) || /^(memory|jev)\./.test(table)
     || !TICKET_TABLES.has(table) && !/^(dispatch|web|workflow)\./.test(table));
 }
-// whether a change named a ticket's or an agent's table, or named none, so the tickets may have changed
-export const ticketsNamed = named => !Array.isArray(named)
-  || named.some(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
 export const ticketsOnly = payload => Array.isArray(payload.tables) && payload.tables.length > 0
   && payload.tables.every(table => TICKET_TABLES.has(table) || String(table).startsWith('dispatch.'));
 /* A change the page can apply from the ops alone, STORE-046: the log, the objects registry, the kinds of op, and the
@@ -223,20 +217,63 @@ export const ticketsOnly = payload => Array.isArray(payload.tables) && payload.t
 export const opsOnly = named => Array.isArray(named) && named.length > 0 && named.every(table => table === 'ops'
   || table === 'objects' || String(table).startsWith('op:') || TICKET_TABLES.has(table)
   || String(table).startsWith('dispatch.'));
-/* A change to tickets or messages alone: work and the open messages are read once each, and the nodes' lights, the
- * figures, the board and the selected node's panel are drawn from them, VIEW-035 and VIEW-037. */
+/* What the changes heard since the last ticket read said of tickets and messages, gathered over the batch from each
+ * change's own words, map.changed's work_ids and kinds: the tickets they named, whether one named none and so may
+ * have changed any (`every`), and whether one may have changed a message. */
+export const TICKETS = {named: new Set(), every: false, messages: false};
+const MESSAGE_KINDS = ['message', 'question'];
+const messageTable = table => table === 'messages' || table === 'map.question_work';
+export function ticketsHeard(payload) {
+  const ids = payload.work_ids;
+  if (!Array.isArray(ids)) TICKETS.every = true;
+  else for (let at = 0; at < ids.length; at++) TICKETS.named.add(ids[at]);
+  const kinds = payload.kinds, tables = payload.tables;
+  if (Array.isArray(kinds)) { if (holdsAny(kinds, MESSAGE_KINDS)) TICKETS.messages = true; }
+  else if (!Array.isArray(tables) || tables.some(messageTable)) TICKETS.messages = true;
+}
+/* A whole read of the map took the tickets and the messages: what was gathered is spent. */
+export function ticketsRead() { TICKETS.named.clear(); TICKETS.every = false; TICKETS.messages = false; }
+/* The tickets a change named, read alone and put in S.tickets in place of what was held, a ticket gone taken out;
+ * those that differ from what was held, as they were and as they are, so only their nodes are drawn again. */
+async function namedTickets(ids) {
+  const project = S.project, metaform = S.base, changed = [];
+  let found = [];
+  try { found = (await read('work', {ids: ids.join(','), limit: 0})).results || []; }
+  catch (error) { readFailed(error); return changed; }
+  if (S.project !== project || S.base !== metaform) return changed;
+  for (const id of ids) {
+    const now = found.find(one => one.id === id) || null, at = S.tickets.findIndex(one => one.id === id);
+    const before = at < 0 ? null : S.tickets[at];
+    if (JSON.stringify(now) === JSON.stringify(before)) continue;
+    if (before) changed.push(before);
+    if (now) changed.push(now);
+    if (now && at >= 0) S.tickets[at] = now;
+    else if (now) S.tickets.push(now);  // a new ticket, last in row order as a whole read gives it
+    else S.tickets.splice(at, 1);
+  }
+  return changed;
+}
+/* A change to tickets or messages alone: the tickets the changes named, or all of them when one named none, and the
+ * open messages when a change may have changed one, each read once, and the nodes' lights, the figures, the board and
+ * the selected node's panel drawn from them, VIEW-035 and VIEW-037. Tickets read as they were held draw nothing. */
 export async function ticketsChanged() {
   const project = S.project, metaform = S.base;
-  const [progress] = await Promise.all([progressOf(), renderMessages()]);
+  const every = TICKETS.every || !S.tickets, ids = every ? [] : [...TICKETS.named], messages = TICKETS.messages;
+  ticketsRead();
+  if (!every && !ids.length && !messages) return;
+  // the whole read gives the progress; the tickets named, those that differ from what was held
+  const [got] = await Promise.all([every ? progressOf() : ids.length ? namedTickets(ids) : [],
+    messages ? renderMessages() : null]);
   if (S.project !== project || S.base !== metaform) return;
-  S.progress = progress;
+  if (!every && !got.length && !messages) return;
+  S.progress = every ? got : progressFrom(S.tickets);
   openWork();
   draw3D();
   renderLegend();
   figures(S.tickets || []);
   boardFromTickets();
   drawAgentList();  // the full-size dock's rows say each ticket's steps
-  workInPanel();
+  if (every || messages || got.some(atSelected)) workInPanel();
   await build2D();
 }
 export function boardFromTickets() {
@@ -254,6 +291,16 @@ function openWork() {
   for (const message of Q.open) add(`${message.node_kind}:${message.node_id}`, message.kind);
   for (const entry of S.elements.values()) entry.element.open_work = open.get(`element:${entry.element.id}`) || [];
   for (const join of S.joins) join.open_work = open.get(`join:${join.id}`) || [];
+}
+/* Whether a ticket is in the selected node's Work box: on it, or, for an element, on a join it receives or holds,
+ * as the box's read with joins gives it. */
+function atSelected(ticket) {
+  const id = S.selected;
+  if (!id) return false;
+  if (id.startsWith('p:')) return ticket.node_kind === 'join' && 'p:' + ticket.node_id === id;
+  if (ticket.node_kind === 'element') return ticket.node_id === id;
+  const join = joinOf('p:' + ticket.node_id);
+  return !!join && (join.receiver === id || join.elements.some(one => one.element_id === id));
 }
 /* The selected node's open work pills and its Work box drawn again, the rest of its panel kept as it is. */
 function workInPanel() {
@@ -275,7 +322,7 @@ function workInPanel() {
  * only for a change to a session, a signal, a permission or a question (`sessions`); the open chat only for a change
  * to its own ticket, or one that does not say whose (`works`, map.changed's work_ids). An agent streams about five
  * lines a second, and reading every session for each one kept the page, and the server, always reading. Only a change
- * beyond the threads, `whole`, reads the merges and the advice again. */
+ * that concerns merges, `whole` (`mergesConcerned`), reads the merges again, as does the stream opening again. */
 const BATCH = 500;
 const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyone: false, works: new Set(), chat: false,
   at: -Infinity};
@@ -292,6 +339,17 @@ export function holdsAny(kinds, wanted) {
 /* Whether a change concerns the agents' sessions, from its kinds when it names them; one that does not, as a runner
  * older than map.changed's kinds says, may concern anything. */
 export const sessionsConcerned = payload => !Array.isArray(payload.kinds) || holdsAny(payload.kinds, SESSION_KINDS);
+/* Whether a change may have put a merge up for review or taken one down, as the server's merge_change decides it: it
+ * names the merges table, its kinds name a merge, or it says neither its kinds nor its tables. A runner's session,
+ * permission, spending and progress writes say they are not about merges. */
+const MERGE_KINDS = ['merge'], MERGES = ['dispatch.merges'];
+export function mergesConcerned(payload) {
+  const kinds = Array.isArray(payload.kinds) ? payload.kinds : null;
+  const tables = payload.tables === 'dispatch' ? payload.dispatch_tables : payload.tables;
+  const named = Array.isArray(tables) && tables.length > 0 ? tables : null;
+  if (kinds !== null && holdsAny(kinds, MERGE_KINDS) || named !== null && holdsAny(named, MERGES)) return true;
+  return kinds === null && named === null;
+}
 export async function agentsChanged(whole = false, sessions = true, works = null) {
   if (whole) AGENTS.whole = true;
   if (sessions) {  // the tickets the changes named, gathered over the batch; one that names none reads every one
@@ -335,7 +393,8 @@ export function listen() {
     if (S.project) recordingNow().catch(error => toast(error.message));
     // what modules say needs the person, such as a phone number Twilio sends where nothing answers, core/errors.js
     if (S.project && !FRAMED) read('notices').then(found => moduleNotices(found.notices)).catch(readFailed);
-    agentsChanged();
+    // the merges too on a reopen, since one may have been put up while the stream was down; the load read them first
+    agentsChanged(opens > 0);
     // the browser's own reconnect, as after the server was restarted, VIEW-002: what changed while the stream was
     // down was announced to no page, so the layers and the map are read again, keeping the view and the selection
     if (opens++ && S.project) changed({topic: 'map.changed', payload: {project: S.project}});

@@ -13,8 +13,10 @@ peer's task does comes back to that Address, over the official `a2a-sdk` client.
   the Address, numbered there, and a question the peer asks, its input-required status, as an open question at the
   Address on the exchange's ticket, MAP-050. Each is written once however many followers hear it, `records.moved`.
   The answer given there goes back on the peer's task, once, `answered`.
-- `metaform mcp serve --http` follows every open exchange of every project while it runs, `attach`: by the peer's
-  stream where its card offers one, else by reading the task again, and again after each restart. Without a server,
+- `metaform mcp serve --http` follows every open exchange of every project while it runs, `attach`: those open at its
+  start, then each one a change to a project's exchanges brings, read for that project alone; by the peer's stream
+  where its card offers one, else by reading the peer's task again every `SLOW` seconds, the one clock here, since
+  such a peer pushes nothing to this server; and again after each restart. Without a server,
   `mcp a2a_exchanges` reads the open ones again when it lists them. Receiving the peer's push notifications needs a
   webhook this server serves, and is not built.
 
@@ -79,7 +81,7 @@ STATES: dict[int, str] = {
     TaskState.TASK_STATE_COMPLETED: 'completed', TaskState.TASK_STATE_FAILED: 'failed',
     TaskState.TASK_STATE_REJECTED: 'failed', TaskState.TASK_STATE_CANCELED: 'cancelled'}
 ENDED = ('completed', 'failed', 'cancelled')
-ASKED = 10 * SLOW  # seconds between reads of a task whose question waits on an answer here
+ASKED = 10 * SLOW  # seconds between reads of a peer's task whose question waits on an answer here
 TRANSPORT: httpx.AsyncBaseTransport | None = None  # what the calls go through; tests put a peer's app in-process here
 
 
@@ -375,24 +377,49 @@ def cancel(ctx: Context) -> Any:
 
 # ---------------------------------------------------------------------------------------------------- following
 
+EXCHANGES = 'mcp.a2a_exchanges'  # the exchanges' table, as a change names it
+
+
+def exchanged(payload: dict[str, Any]) -> bool:
+    """Whether a `map.changed` can have made or moved an exchange, from the change alone: it wrote the exchanges'
+    table, or did not say what it wrote. A module's own payload, such as dispatch's, never does."""
+    tables: Any = payload.get('tables')
+    if isinstance(tables, str):
+        return False
+    return not isinstance(tables, list) or EXCHANGES in tables
+
+
 class Wakes(Changes):
-    """The A2A server's change listener, also woken by a change to any project, so a new exchange is followed as soon
-    as it is sent, from this process or another of the home, BASE-053."""
+    """The A2A server's change listener, also woken by a change to a project's exchanges, so a new exchange is followed
+    as soon as it is sent, from this process or another of the home, BASE-053: `pending` names the projects whose
+    exchanges changed since they were last read, '' for every project."""
 
     def __init__(self) -> None:
         super().__init__()
+        self.pending: set[str] = set()
         self.any: anyio.Event | None = None
 
-    def _wake(self, project: str) -> None:
-        super()._wake(project)
-        if self.any is not None:
-            self.any.set()
+    def concerned(self, payload: dict[str, Any]) -> bool:
+        return exchanged(payload) or super().concerned(payload)
 
-    async def anything(self, seconds: float = SLOW) -> None:
+    def _wake(self, payload: dict[str, Any]) -> None:
+        super()._wake(payload)
+        if exchanged(payload):
+            self.pending.add(str(payload.get('project') or ''))
+            if self.any is not None:
+                self.any.set()
+
+    async def anything(self) -> set[str]:
+        """The projects whose exchanges changed, once one has; a burst heard meanwhile is one answer."""
         self.bind()
-        self.any = anyio.Event()
-        with anyio.move_on_after(seconds):
-            await self.any.wait()
+        if not self.pending:
+            self.any = anyio.Event()
+            try:
+                await self.any.wait()
+            finally:
+                self.any = None
+        found, self.pending = self.pending, set()
+        return found
 
 
 @dataclass
@@ -406,59 +433,67 @@ class Followers:
         self.following: set[tuple[str, str]] = set()
 
     async def run(self) -> None:
+        """Every open exchange once at the start; then those of each project a change to its exchanges names."""
+        projects: set[str] = {''}
         while True:
             try:
-                for project, found in await _off(_open_exchanges):
+                for project, found in await _off(_open_exchanges, projects):
                     key = (project, found.exchange_id)
                     if key not in self.following and self.group is not None:
                         self.following.add(key)
                         self.group.start_soon(self.follow, project, found)
-            except Exception:  # the next round reads them again
+            except Exception:  # read again when the exchanges next change
                 log.exception('A2A exchanges were not read')
-            await self.wakes.anything()
+            projects = await self.wakes.anything()
 
     async def follow(self, project: str, found: records.Exchange) -> None:
-        """One exchange to its end: the peer's stream where its card offers one, else its task read again, every slow
-        interval; a stream that closes on input-required is opened again only once the task moves on. While its
-        question waits on an answer here, the task cannot move: the follower waits on this side's changes, sends the
-        answer once it is given, and reads the task only every `ASKED` seconds, MCP-041."""
+        """One exchange to its end: the peer's stream where its card offers one, else its task read again every `SLOW`
+        seconds, the peer pushing nothing here; a stream that closes on input-required is opened again only once the
+        task moves on. While its question waits on an answer here, the task cannot move: the follower waits for a
+        change to the exchange's ticket, where the answer is given, sends the answer once it is, and reads the peer's
+        task only every `ASKED` seconds, MCP-041."""
         try:
             to = await _off(peer, self.folder, found.peer)
             now: records.Exchange | None = found
             read: float | None = None  # when the peer's task was last read
-            while now is not None and now.state not in ENDED and now.peer_task_id:
-                since = self.wakes.count(project)
-                if now.state == 'input_required' and now.asked:
-                    now = await _off(answered, project, found.exchange_id, self.folder)
-                    if now is None or now.state in ENDED or not now.peer_task_id:
-                        break
-                    if now.asked and read is not None and time.monotonic() - read < ASKED:
-                        await self.wakes.wait(project, since)
-                        continue
-                task_id = now.peer_task_id
-                async with _http(to, now.sender, timeout=None) as http:
-                    client, offered = await connect(project, to, http, streaming=True)
-                    if offered.capabilities.streaming and now.state != 'input_required':
-                        with contextlib.suppress(A2AError, httpx.HTTPError, NotImplementedError):
-                            async for event in client.subscribe(SubscribeToTaskRequest(id=task_id)):
-                                now = await _off(heard_event, project, found.exchange_id, event)
-                    task = await client.get_task(GetTaskRequest(id=task_id))
-                    now = await _off(heard_task, project, found.exchange_id, task)
-                    read = time.monotonic()
-                if now is not None and now.state not in ENDED:
-                    await self.wakes.wait(project, self.wakes.count(project))
+            with self.wakes.waiting(project, found.work_id) as waiter:
+                while now is not None and now.state not in ENDED and now.peer_task_id:
+                    if now.state == 'input_required' and now.asked:
+                        now = await _off(answered, project, found.exchange_id, self.folder)
+                        if now is None or now.state in ENDED or not now.peer_task_id:
+                            break
+                        if now.asked and read is not None and time.monotonic() - read < ASKED:
+                            with anyio.move_on_after(ASKED - (time.monotonic() - read)):  # the peer's task, read again
+                                await waiter.wait()
+                            continue
+                    task_id = now.peer_task_id
+                    async with _http(to, now.sender, timeout=None) as http:
+                        client, offered = await connect(project, to, http, streaming=True)
+                        if offered.capabilities.streaming and now.state != 'input_required':
+                            with contextlib.suppress(A2AError, httpx.HTTPError, NotImplementedError):
+                                async for event in client.subscribe(SubscribeToTaskRequest(id=task_id)):
+                                    now = await _off(heard_event, project, found.exchange_id, event)
+                        task = await client.get_task(GetTaskRequest(id=task_id))
+                        now = await _off(heard_task, project, found.exchange_id, task)
+                        read = time.monotonic()
+                    if now is not None and now.state not in ENDED and not (now.state == 'input_required' and now.asked):
+                        await anyio.sleep(SLOW)  # the peer pushes nothing here: its task is read again, or its stream
+                        # opened again after it closed with the task still open
         except Stop as stop:  # the person took the peer off the list: the exchange waits until it is back
             log.warning('A2A exchange %s is not followed: %s', found.exchange_id, stop)
         except Exception:  # read again on the next round
             log.exception('A2A exchange %s stopped being followed', found.exchange_id)
-            await anyio.sleep(SLOW)
+            await anyio.sleep(SLOW)  # backoff after a failure
         finally:
             self.following.discard((project, found.exchange_id))
 
 
-def _open_exchanges() -> list[tuple[str, records.Exchange]]:
+def _open_exchanges(projects: set[str]) -> list[tuple[str, records.Exchange]]:
+    """The open exchanges of the projects named, of every registered project when '' is among them."""
     found: list[tuple[str, records.Exchange]] = []
     for project in home.projects():
+        if '' not in projects and project.project_id not in projects:
+            continue
         try:
             found += [(project.project_id, one) for one in records.exchanges(project.project_id, open_only=True)]
         except (Stop, StoreError):

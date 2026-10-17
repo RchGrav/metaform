@@ -24,7 +24,6 @@ and run tables and the node-read contribution.
 knowledge layers, elements, items, provenance, module tables and bound reads.
 Its `runs` table, through `metaform.data`, persists call continuations and
 atomically combines branch returns. `metaform.prompt_files` serves the module's authored XML resources.
-`metaform.axiom` checks each stored subroutine, MCP-035 and BASE-057.
 
 ## Prompts
 

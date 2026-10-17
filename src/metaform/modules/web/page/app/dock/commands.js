@@ -21,16 +21,21 @@ const DOCK_COMMANDS = [{name: 'help', description: "What the chat's commands do"
   {name: 'system', description: 'Start a chat with your system agent'},
   {name: 'fork', hint: '[text]',
     description: 'A side conversation with the agent on view that knows all it knows, under Subagents'},
-  {name: 'apps', description: 'The views the enabled modules offer, each opened in a panel'}];
+  {name: 'apps', description: 'The views the enabled modules offer, each opened in a panel'},
+  {name: 'new', description: 'End this conversation and start a new one with the same agent, resuming nothing'},
+  {name: 'clear', description: 'The same as /new: a new conversation, the old one kept as a closed thread'}];
+/* The chat's own commands even where the agent on view offers one of the same name, so they do the same with every
+ * agent. */
+const DOCK_WINS = new Set(['new', 'clear']);
 export const dockOffered = () => {
-  const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent);
+  const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent).filter(one => !DOCK_WINS.has(one.name));
   const own = DOCK_COMMANDS.filter(one => !agents.some(agent => agent.name === one.name));
   return [...agents, ...own.map(one => ({...one, from: 'This chat'}))];
 };
 export async function dockCommand(text) {
   const [command, ...rest] = text.slice(1).trim().split(/\s+/);
   // a command the agent on view offers is the agent's: it goes to the agent as the message it is
-  if (DOCK.target && commandsOf(DOCK.state, DOCK.agent).some(one => one.name === command)) {
+  if (DOCK.target && !DOCK_WINS.has(command) && commandsOf(DOCK.state, DOCK.agent).some(one => one.name === command)) {
     if (await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text})) drawHelpdesk();
     return;
   }
@@ -41,13 +46,36 @@ export async function dockCommand(text) {
 const CHAT_COMMANDS = {
   help: () => dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls '
     + 'your system agent · /fork [text] starts a side conversation with the agent on view · /apps lists the views the '
-    + "modules offer · the agent's own commands are offered as you type /."),
+    + 'modules offer · /new or /clear ends the conversation on view and starts a new one with the same agent, '
+    + "resuming nothing · the agent's own commands are offered as you type /."),
   list: listAgents,
   chat: (text, command, rest) => chatWith(rest[0]),
   system: () => callSystem(),
   fork: (text, command) => forkSession(text.slice(1).trim().slice(command.length).trim()),
   apps: () => showGallery(),
+  new: () => newConversation(),
+  clear: () => newConversation(),
 };
+/* /new and /clear: the conversation on view ends and a new one starts in the same role with nothing resumed; the
+ * Resume box is left as it is. On My agent it is always Call with `fresh`, which ends the system agent that runs,
+ * whatever this page knows of it, and starts a new one. On another thread it is dispatch new; the ended thread stays
+ * here, closed, and the new one opens beside it. */
+async function newConversation() {
+  const chat = DOCK.chat;
+  if (DOCK.calling || DOCK.talking) return dockNote('The agent is still being reached; type /new once it answers.');
+  if (!DOCK.target || !chat || chat.source === 'system' || chat.target === DOCK.mine && chat.source !== 'conversation') {
+    return callSystem({fresh: true});
+  }
+  if (!DOCK.session) return dockNote('The agent is still being reached; type /new once it answers.');
+  if (!DOCK.live) return dockNote(`The conversation with ${DOCK.label} has ended; there is none here to start again.`);
+  const done = await posted('/api/dispatch-new', {work_id: DOCK.target, session: DOCK.session});
+  const started = done.ok ? done.body : null;
+  if (!started) return startFailed(done.body?.error || 'The new conversation did not start.', done.body?.next);
+  if (DOCK.chat !== chat) return null;  // the person moved to another thread meanwhile; the new one waits in its list
+  openHelpdesk(started.work_id, chat.label, STANDBY, started.session_id || null, chat.source, {fresh: true});
+  reaching(started);
+  return started;
+}
 async function listAgents() {
   let found = [];
   try { found = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; }
@@ -76,9 +104,9 @@ async function forkSession(first) {
     : `${done.body?.error || 'The fork was not made.'}${done.body?.next ? ` Next: ${done.body.next}` : ''}`);
 }
 /* Call: the person's system agent starts with the agent and settings chosen in the line at the top, resuming the
- * last conversation while Resume is checked, which the server's system chat does. A start that fails says why in
- * the chat, and what was written for it goes back into the box. */
-export async function callSystem() {
+ * last conversation while Resume is checked, which the server's system chat does, and never with `fresh`, /new. A
+ * start that fails says why in the chat, and what was written for it goes back into the box. */
+export async function callSystem({fresh = false} = {}) {
   syncResume();
   dockState($('#dock').className.startsWith('open') ? $('#dock').className : 'open');
   Object.assign(DOCK, {since: Date.now(), waiting: STANDBY});
@@ -86,13 +114,13 @@ export async function callSystem() {
   const call = DOCK.calling = {};
   drawHelpdesk();  // the chat says it is reaching the agent, where its first words will come
   const agent = summonAgent();
-  const done = await posted('/api/system-chat', agent ? {agent} : {});
-  const started = done.ok ? done.body : null;
+  const done = await posted('/api/system-chat', {...(agent ? {agent} : {}), ...(fresh ? {fresh: true} : {})});
+  const started = done.ok && done.body?.state !== 'held' ? done.body : null;  // held: alive, and it does not answer
   if (DOCK.calling !== call) return null;
   DOCK.calling = null;
   $('#helpdesk .call').disabled = false;
   if (!started) {
-    startFailed(done.body?.error || 'The agent did not start.', done.body?.next);
+    startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next);
     return null;
   }
   const closed = $('#helpdesk').hidden || dockGoingAway();
@@ -111,9 +139,9 @@ export async function talkAbout(given, label) {
   DOCK.talking = true;  // a message written meanwhile waits for this start, and starts no other
   let done;
   try { done = await posted('/api/talk', {...given, ...(agent ? {agent} : {})}); } finally { DOCK.talking = false; }
-  const started = done.ok ? done.body : null;
+  const started = done.ok && done.body?.state !== 'held' ? done.body : null;  // held: alive, and it does not answer
   if (!started) {
-    startFailed(done.body?.error || 'The agent did not start.', done.body?.next);
+    startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next);
     return null;
   }
   if (started.conversation) DOCK.mine = started.work_id;

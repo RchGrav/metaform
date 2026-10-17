@@ -537,9 +537,12 @@ def main():
             declared = [one for one in message['params'].get('mcpServers', []) if one.get('type') == 'acp']
             if MCP_ACP and declared:
                 threading.Thread(target=over_acp, args=(declared[0]['serverId'],), daemon=True).start()
-            if RICH:
+            if RICH or os.environ.get('FAKE_ACP_CLEAR') == '1':  # FAKE_ACP_CLEAR=1: a /clear of its own
                 update({'sessionUpdate': 'available_commands_update', 'availableCommands': [
-                    {'name': 'review', 'description': 'Review the changes', 'input': {'hint': 'what to review'}}]})
+                    *([{'name': 'review', 'description': 'Review the changes', 'input': {'hint': 'what to review'}}]
+                      if RICH else []),
+                    *([{'name': 'clear', 'description': "The agent's own clear"}]
+                      if os.environ.get('FAKE_ACP_CLEAR') == '1' else [])]})
         elif method == 'session/load' and os.environ.get('FAKE_ACP_LOAD') == '1':
             SESSION = message['params']['sessionId']
             update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Replayed history'}})

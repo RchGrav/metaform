@@ -1378,8 +1378,9 @@ def glossary_view(folder: Path) -> dict[str, Any]:
 def trace_view(folder: Path, work_id: str, seen: str = '') -> dict[str, Any]:
     """What the trace view draws, MCP-037: the ticket, as map_work reads it, and its agent sessions with their threads,
     as dispatch_sessions reads them; with no ticket, every session without its thread, to pick one from. `digest`
-    names what was read, so a view that already holds it is answered with `unchanged` alone: the view reads again
-    every few seconds while it is on screen, and a line the agent is still writing changes in place."""
+    names what was read, so a view that already holds it is answered with `unchanged` alone: the view reads again on
+    each change to the ticket while it is on screen, views.Traces, and a line the agent is still writing changes in
+    place."""
     nouns: dict[str, Any] = {'id': work_id} if work_id else {'thread': False}
     found = plain(run_verb(folder, 'dispatch', 'sessions', nouns))
     ticket: Any = None
@@ -1612,6 +1613,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     # a Metaform Node the viewer is the signed-in account its authorization server named, so two people using the
     # same AI tool never turn each other's views; elsewhere it is the client's name, oauth.viewer.
     focus: dict[str, dict[str, Any]] = {}
+    traces = views.Traces()  # what the trace views follow, so a read of an unchanged ticket reads nothing
 
     def viewer(ctx: Any) -> str:
         from .oauth import viewer as signed_in
@@ -1709,7 +1711,9 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             await bus.publish(notices[kind][0]())
         bus_shown[kind] = now
 
-    async def announce(ctx: Any) -> None:
+    async def announce(ctx: Any, fired: list[dict[str, Any]] | None = None) -> None:
+        """After a call: the lists' changes to the listen streams and the caller's connection, then the watched nodes
+        the call's changes, `fired`, can concern."""
         now = await anyio.to_thread.run_sync(current)
         own = connection(ctx)
         for kind in ('tools', 'prompts', 'resources'):
@@ -1718,7 +1722,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                 if own[kind] is not None and own[kind] != now[kind]:
                     await notices[kind][1](ctx.session)
                 own[kind] = now[kind]
-        await watch.check()
+        if any(map(watch.concerns, fired or ())):
+            await watch.check()
 
     async def listed_now(ctx: Any, kind: str) -> None:
         """A list was just given: the listen streams hear a change first, and the caller's own connection has seen
@@ -1807,16 +1812,17 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             project = await anyio.to_thread.run_sync(tasked.owning, folder)
             if project is not None:  # a folder that is no project's keeps no task, so its call is answered as ever
                 return await start_task(project, name, given, client, approved, session, identity)
+        fired: list[dict[str, Any]] = []
         try:
             error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
                                                      session=session, identity=identity)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
-            await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
+            fired = await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
         if listed is not None:  # what the list cut, before the result of its first use in the session, wrong calls too
             guide = await anyio.to_thread.run_sync(guided, listed, client, session)
             blocks = [guide, *blocks] if guide else blocks
-        await announce(ctx)
+        await announce(ctx, fired)
         if not error:
             discussed(ctx, name, given)
         if tasked_as == 'run' and not error and isinstance((structured or {}).get('run'), str):
@@ -1864,13 +1870,24 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             return outcome(True, [f'Error: read is text and params an object.\nNext: {schema_step(views.TOOL)}'],
                            None)
         said = prompt_files.module('mcp', 'view_read', read=read) or f'Read {read} for the view.'
+        params = cast(dict[str, Any], given)
         if read == 'focus':  # the Address the agent last named, kept in this process; nothing is read for it
             return outcome(False, [said], {'address': None, 'tool': None, 'seq': 0, **focus.get(seen_by, {})})
+        mark = None
+        if read == 'trace':  # read again only when a change to the ticket came after the view's mark
+            project = await anyio.to_thread.run_sync(tasked.owning, folder)
+            given_mark = str(params.pop('mark', '') or '')
+            if project is not None:
+                mark = traces.track(project, str(params.get('id') or ''))
+                if given_mark == mark and params.get('digest'):
+                    return outcome(False, [said], {'digest': params.get('digest'), 'unchanged': True, 'mark': mark})
         try:
-            found = await anyio.to_thread.run_sync(view_read, folder, read, cast(dict[str, Any], given))
+            found = await anyio.to_thread.run_sync(view_read, folder, read, params)
         except (Stop, StoreError) as stop:
             return outcome(*_error(stop, folder), None)
         data = plain(found)
+        if mark is not None and isinstance(data, dict):
+            data = {**cast(dict[str, Any], data), 'mark': mark}
         if not isinstance(data, dict):
             return outcome(False, [result_json(data)], None)
         # Under MCP Apps a result's structured content is the view's data and never the model's, so the data goes
@@ -1888,8 +1905,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         if slash is None:
             raise MCPError(-32602, f'No slash command {params.name} on this surface.\nNext: list the prompts')
         said = await anyio.to_thread.run_sync(slash_text, folder, slash, dict(params.arguments or {}))
-        await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
-        await announce(ctx)
+        await announce(ctx, await anyio.to_thread.run_sync(events.announce, folder, 'mcp'))
         return types.GetPromptResult(description=slash.summary or None, messages=[
             types.PromptMessage(role='user', content=types.TextContent(type='text', text=said))])
 
@@ -2009,13 +2025,15 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         each such task is marked failed, so none waits for ever."""
         async with anyio.create_task_group() as group:
             held['group'] = group
-            group.start_soon(tasked.beat, running, folder)
+            watch.group = group
             try:
                 yield {}
             finally:
                 held.pop('group', None)
+                watch.group = None
                 group.cancel_scope.cancel()
                 watch.stop()
+                traces.stop()
 
     hint = CacheHint(ttl_ms=CACHE_TTL_MS, scope='private')
     server = Server('metaform', version=chassis_version(), lifespan=lifespan, on_list_tools=list_tools,
@@ -2154,7 +2172,7 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
             from .a2a_out import attach as follow_exchanges
             print(attach(app, folder, port, exposed), file=sys.stderr, flush=True)
             follow_exchanges(app, folder)  # what agents here sent to peers, followed to its end, MCP-043
-        uvicorn.Server(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
+        serving(uvicorn.Config(app, host=bind, port=port, log_level='warning')).run()
         return
     from mcp.server.lowlevel import NotificationOptions
     from mcp.server.stdio import stdio_server
@@ -2179,10 +2197,10 @@ def serve(folder: Path, *, http: bool = False, port: int = 0, bind: str | None =
 class Watch:
     """The nodes clients are listening on, MCP-004: each brief URI, `metaform://<address>`, named in an open
     subscriptions/listen stream or a resources/subscribe, with the last number taken at its address when it was
-    watched or read. After every call this server answers, and on every `map.changed` another process of the home
-    publishes, each watched node is checked; one with a higher number now is announced with
-    `notifications/resources/updated` for its URI, a notice the client reads the brief again for, never the items
-    themselves."""
+    watched or read. After a call this server answers, and on a `map.changed` another process of the home publishes,
+    the watched nodes are checked when the change can concern them, `concerns`: one with a higher number now is
+    announced with `notifications/resources/updated` for its URI, a notice the client reads the brief again for, never
+    the items themselves. Changes heard while a check runs make one more check after it, `checks`."""
 
     def __init__(self, folder: Path, bus: Any, updated: Any) -> None:
         self.folder, self.bus, self.updated = folder, bus, updated
@@ -2191,6 +2209,10 @@ class Watch:
         self.sessions: dict[str, list[Any]] = {}  # the 2025-handshake sessions subscribed to each URI
         self.listener: Any = None
         self.token: Any = None
+        self.project: str | None = None  # the folder's project, read once a node is watched
+        self.group: Any = None  # the server's task group, which a check heard from another process runs in
+        self.checking = False
+        self.again = False  # a change heard while a check ran: one more check after it
 
     def _number(self, uri: str) -> int | None:
         found = ADDRESS.match(uri)
@@ -2210,6 +2232,7 @@ class Watch:
             elif session not in self.sessions.setdefault(uri, []):
                 self.sessions[uri].append(session)
         if self.latest and self.listener is None:
+            self.project = await anyio.to_thread.run_sync(project_for, self.folder)
             self.token = anyio.lowlevel.current_token()
             self.listener = events.listen('mcp', self._heard)
 
@@ -2233,6 +2256,22 @@ class Watch:
             if number is not None:
                 self.latest[uri] = number
 
+    def concerns(self, payload: dict[str, Any]) -> bool:
+        """Whether a change can have numbered an item at a watched node, decided from the change alone: a node is
+        watched, the change is the folder's project's, and it wrote a table that can hold an item. A module's own
+        payload, such as dispatch's (`tables` its module's name), and a change only to dispatch's tables or the mcp
+        module's own, the agents' threads, signals and sessions, the tool tasks and the A2A records, numbers
+        nothing. A change that names no tables may have changed anything."""
+        if not self.latest or payload.get('project') not in (None, '', self.project):
+            return False
+        tables: Any = payload.get('tables')
+        if isinstance(tables, str):
+            return False
+        if isinstance(tables, list) and tables:
+            return not all(str(table) == 'dispatch' or str(table).startswith(QUIET)
+                           for table in cast(list[Any], tables))
+        return True
+
     async def check(self) -> None:
         for uri, last in list(self.latest.items()):
             number = await anyio.to_thread.run_sync(self._number, uri)
@@ -2247,10 +2286,31 @@ class Watch:
                 except Exception:  # noqa: BLE001  a session gone since it subscribed hears nothing more
                     self.sessions[uri].remove(session)
 
-    def _heard(self, payload: dict[str, Any]) -> None:
-        """A `map.changed` from another process, heard on the listener's thread: the check runs in the server's loop."""
+    async def checks(self) -> None:
+        """Check, and once more for whatever was heard meanwhile, so a burst of changes costs at most two checks."""
+        self.checking = True
         try:
-            anyio.from_thread.run(self.check, token=self.token)
+            self.again = True
+            while self.again:
+                self.again = False
+                await self.check()
+        finally:
+            self.checking = False
+
+    def _wanted(self) -> None:
+        """In the server's loop: a check, or one more after the one running."""
+        if self.checking:
+            self.again = True
+        elif self.group is not None:
+            self.group.start_soon(self.checks)
+
+    def _heard(self, payload: dict[str, Any]) -> None:
+        """A `map.changed` from another process, heard on the listener's thread: one that can concern a watched node
+        asks the server's loop for a check, without waiting for it."""
+        if not self.concerns(payload):
+            return
+        try:
+            anyio.from_thread.run_sync(self._wanted, token=self.token)
         except Exception:  # noqa: BLE001, S110  a server that stopped has nothing left to tell
             pass
 
@@ -2258,6 +2318,49 @@ class Watch:
         if self.listener is not None:
             self.listener.close()
             self.listener = None
+
+
+# What numbers nothing at a node: dispatch's own tables, the agents' threads, signals and sessions, and the mcp
+# module's own, its tool tasks and A2A records, Watch.concerns.
+QUIET = ('dispatch.', 'mcp.')
+
+
+def serving(config: Any) -> Any:
+    """uvicorn's server waiting on its exit rather than looking for it ten times a second, QUAL-015: uvicorn's own main
+    loop wakes every 0.1 s to read `should_exit`; this one sleeps until the flag is set, by uvicorn's signal handler or
+    anything else, as the node module's server does."""
+    import asyncio
+    import contextlib
+
+    import uvicorn
+
+    class Serving(uvicorn.Server):
+        def __init__(self, config: uvicorn.Config) -> None:
+            self.loop: asyncio.AbstractEventLoop | None = None
+            self.exiting = asyncio.Event()
+            self.exit = False
+            super().__init__(config)
+
+        @property
+        def should_exit(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+            return self.exit
+
+        @should_exit.setter
+        def should_exit(self, value: bool) -> None:
+            self.exit = value
+            if value and self.loop is not None:
+                with contextlib.suppress(RuntimeError):  # its loop has closed: it is not serving
+                    self.loop.call_soon_threadsafe(self.exiting.set)
+
+        async def startup(self, sockets: list[Any] | None = None) -> None:
+            self.loop = asyncio.get_running_loop()
+            await super().startup(sockets=sockets)
+
+        async def main_loop(self) -> None:
+            await self.on_tick(0)  # the default headers, as uvicorn's own first tick sets them
+            if not self.should_exit:
+                await self.exiting.wait()
+    return Serving(config)
 
 
 def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: Any) -> None:
@@ -2306,8 +2409,11 @@ def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: A
 
     async def cancel(ctx: Any, params: Any) -> Any:
         project, found = await anyio.to_thread.run_sync(required, ctx)
-        if not await tasked.cancel(running, project, found, params.task_id, verb):
-            raise missing()
+        try:
+            if not await tasked.cancel(running, project, found, params.task_id, verb):
+                raise missing()
+        finally:  # the cancel's change, so the process running the task hears it, BASE-053
+            await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
         return {'resultType': 'complete'}
 
     server.add_request_handler('tasks/get', TaskParams, get)

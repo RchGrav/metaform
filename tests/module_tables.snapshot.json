@@ -342,7 +342,7 @@
  },
  "cloud": null,
  "dispatch": {
-  "version": 15,
+  "version": 16,
   "compatible_from": 5,
   "tables": {
    "attempts": {
@@ -635,6 +635,37 @@
      ]
     },
     "indexes": [
+     [
+      false,
+      [
+       [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
      [
       false,
       [
@@ -3130,7 +3161,7 @@
   }
  },
  "memory": {
-  "version": 7,
+  "version": 8,
   "compatible_from": 7,
   "tables": {
    "carried": {
@@ -3169,6 +3200,18 @@
      "at": [
       "text",
       "TEXT",
+      false,
+      null
+     ],
+     "checked_mtime": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "checked_size": [
+      "int",
+      "INTEGER",
       false,
       null
      ],
@@ -3211,6 +3254,12 @@
      "size": [
       "int",
       "INTEGER",
+      false,
+      null
+     ],
+     "stale": [
+      "text",
+      "TEXT",
       false,
       null
      ],

@@ -1,6 +1,6 @@
 ---
 name: metaform-web-map-navigation
-description: Use when the seahorse or mascot must move, come, dance, wave, turn, ride a tour or talk on the Metaform web map or 3D view.
+description: Use when the seahorse or mascot must move, come, dance, wave, turn, ride a tour or talk on the Metaform web map or 3D view, or when its character or body is set, kept or lost.
 category: development
 ---
 
@@ -24,3 +24,8 @@ Before any `web_move` or `web_turn`, read `web_embody`'s answer. `figure: true` 
 - `web_come` with `to: view` can land far from the person's camera when they are zoomed out. It landed about 890 units in front of the camera, and the person said they were "way back". Before bringing the mascot in, read `web_viewing` (`view_3d.at` and `gaze`), then bring it close with `web_move` to a point near the camera, and confirm with `web_look`.
 - `web_come` with `follow` keeps the mascot trailing the view. Send `seconds: 0` to end it before moving the mascot by hand.
 - If an act fails because the web server restarted, retry that act once.
+- The mascot's character is one record, the `web_mascot` setting, since 2026-10-16 (code.interface.graphical#9e). The page draws the system agent as it in every conversation and on every page, and the system agent's prompt names it. Giving the system agent a body in the chat writes `web_mascot`; `metaform set --web-mascot=<character>` changes it on every open page. While it is set, the chat never offers the system agent a body. The one exception is a body the system agent takes itself with `web_embody` in a different character: that is its own figure for that conversation, and the mascot is not drawn meanwhile. Bodies of other chat agents are still kept per conversation in localStorage `metaform.bodies`.
+- When the person says the page shows the character they picked and the stored `web_mascot` row names another, their pick is the answer: do not ask which one. Set the row to the glyph they chose with `uv run metaform set --web-mascot <glyph>`, read the row back to confirm it, and say it is a stopgap for this person. The fix stays the open `code.interface.graphical` ticket on the mascot record.
+- Only the person's mascot pushes, drags, drops or carries elements. An embodied agent's figure is refused those acts by design (`96f6761`: "pushing and carrying elements are the person's mascot's"). Report the refusal; do not treat it as a routing bug, and do not move the mascot to do it.
+- Do not drive the person's mascot (`web_go`, `web_move`, `web_come`) or speak in its bubble (`web_say`) to report status on a turn that did not ask for it. Answer in chat instead.
+- Reading a figure's acts is not the same as testing them: a browser test covering move, turn, look and see does not show point, emote, the push refusal, or two agents acting at once.

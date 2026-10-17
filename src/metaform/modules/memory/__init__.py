@@ -38,9 +38,23 @@ from typing import Any, cast
 
 from metaform import prompt_files
 from metaform.data import Column, Index, Item, Node, Store, StoreError, Table, Tables, TableTx, prompts, reference
-from metaform.module import Context, Count, Module, Noun, Pane, Provides, Stop, ToolbarItem, Verb, first_line, titled
+from metaform.module import (
+    Context,
+    Count,
+    Module,
+    Noun,
+    Pane,
+    Provides,
+    Stop,
+    Subscription,
+    ToolbarItem,
+    Verb,
+    first_line,
+    titled,
+)
 
 from .citations import Checker, root_of, stamp
+from .watch import WATCH_OS, watch, web_started
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -68,7 +82,10 @@ NOTE_LIMIT = 2048
 # Version 7 adds an entity's `locked_by` and `locked_at`, empty while it is unlocked, CTX-023: a locked memory is read
 # by every agent and changed by none. Older code would write past a lock it does not know, so it no longer opens the
 # tables: compatible_from rises to 7, STORE-029. Every memory already held is unlocked.
-TABLES_VERSION = 7
+# Version 8 adds a citation's `stale`, `checked_size` and `checked_mtime`: whether it holds, worked out by the citation
+# watcher each time its file changes, and the file's size and time it was worked out against, so a read looks it up.
+# All may be empty, a citation is then as it was cited, so version 7 still reads and writes the tables.
+TABLES_VERSION = 8
 
 
 def _upgrade(tx: TableTx, found: int) -> None:
@@ -121,7 +138,8 @@ TABLES = Tables(version=TABLES_VERSION, compatible_from=7, upgrade=_upgrade, tab
     Table('citations', place='project', key=('entity', 'cite'),
           columns=(Column('entity', required=True), Column('cite', required=True), Column('path', required=True),
                    Column('start', 'int'), Column('end', 'int'), Column('symbol'), Column('digest'),
-                   Column('size', 'int'), Column('mtime', 'int'), Column('at')),
+                   Column('size', 'int'), Column('mtime', 'int'), Column('at'), Column('stale'),
+                   Column('checked_size', 'int'), Column('checked_mtime', 'int')),
           indexes=(Index(('entity',)),)),
 ))
 
@@ -276,7 +294,7 @@ class Graph:
         one holds or the read checks none."""
         if self.checker is None:
             return []
-        found = [(one['cite'], self.checker.stale(one)) for one in self.citations.get(name, [])]
+        found = [(one['cite'], self.checker.held(one)) for one in self.citations.get(name, [])]
         return [f'{cite}: {why}' for cite, why in found if why]
 
     def cite(self, tx: TableTx, name: str, rows: list[Row], written: Row | None = None) -> None:
@@ -1096,28 +1114,25 @@ def _earlier() -> None:
 
 def memory_prompt(project: str, address: str | None = None) -> str:
     """The owner's memory prompt, CTX-026, as the prompt store serves it as memory:instructions, so an edit the person
-    saved is what is sent, filled as CTX-027 says: {project} with the project's id, and {this.address} and {this.name}
-    with the element the agent is assigned, its reading when it has no name. With no assigned element, or one the map
-    no longer holds, the bullet that names them is swapped whole for the instructions_unassigned element. Offered to
-    other modules as `memory.prompt`, so dispatch sends it in a worker's first turn, CTX-028."""
+    saved is what is sent, filled as CTX-027 says: {project} with the project's id and {element} with the address of
+    the element the agent is assigned. {this} is left alone: it names the subject a prompt or workflow is linked to,
+    and an assignment links nothing. With no assigned element, or one the map no longer holds, the bullet that names
+    {element} is swapped whole for the instructions_unassigned element. Offered to other modules as `memory.prompt`,
+    so dispatch sends it in a worker's first turn, CTX-028."""
     _earlier()
-    text = prompt_files.served(PACKAGE, 'instructions')
-    name = None
+    text = prompt_files.served(PACKAGE, 'instructions').replace('{project}', project)
     if address:
         store = Store(project, module='memory')
-        found = store.element(address, raw=True) if store.active_base() is not None else None
-        name = (found.name or found.reading or address) if found is not None else None
-    if name is None:
-        unassigned = prompt_files.served(PACKAGE, 'instructions_unassigned')
-        kept: list[str] = []
-        for line in text.split('\n'):
-            if '{this.' not in line:
-                kept.append(line)
-            elif unassigned:  # the whole bullet, never words in it
-                kept.append(line[:len(line) - len(line.lstrip(' -'))] + unassigned)
-        text = '\n'.join(kept)
-    return text.replace('{project}', project).replace('{this.address}', address or '').replace('{this.name}',
-                                                                                              name or '')
+        if store.active_base() is not None and store.element(address, raw=True) is not None:
+            return text.replace('{element}', address)
+    unassigned = prompt_files.served(PACKAGE, 'instructions_unassigned')
+    kept: list[str] = []
+    for line in text.split('\n'):
+        if '{element}' not in line:
+            kept.append(line)
+        elif unassigned:  # the whole bullet, never words in it
+            kept.append(line[:len(line) - len(line.lstrip(' -'))] + unassigned)
+    return '\n'.join(kept)
 
 
 # ------------------------------------------------------------------------------------------------ the node read
@@ -1177,7 +1192,7 @@ def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | 
                 continue
             names = {row['entity'] for row in joins}
             # A memory whose cited evidence no longer holds is counted as stale, never passed on as sound.
-            flagged = sum(1 for name in names if any(checker.stale(row) for row in tx.rows(
+            flagged = sum(1 for name in names if any(checker.held(row) for row in tx.rows(
                 'citations', {'entity': name}, limit=0).results))
             if flagged:
                 stale[address] = (flagged, 0, 0)
@@ -1397,7 +1412,14 @@ MODULE = Module(
         Verb('unlock', unlock, 'Unlock a memory, so agents may change and delete it again.',
              nouns=(Noun('name', 'The memory entity\'s name.'),), surfaces=('cli',),
              examples=(('metaform memory unlock "route ejection"', 'Let agents change it again.'),)),
+        Verb('watch', watch, 'Work out whether each memory\'s citations hold each time a cited file changes, until '
+                             'stopped, so a read looks it up.',
+             details='web start starts it, detached, for each project whose memories cite files. Its process is kept '
+                     'in the Metaform home, run/memory/<project>.json, with its lock and log beside. While none runs, '
+                     'a read works out the citations whose files changed itself.',
+             surfaces=('cli',), supported_os=WATCH_OS),
     ),
+    subscriptions=(Subscription('web.started', web_started),),
     node_read=node_read,
     node_count=node_count,
     provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt)),

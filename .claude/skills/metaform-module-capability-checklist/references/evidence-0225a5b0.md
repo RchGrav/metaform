@@ -1,1 +1,0 @@
-And the message can be when starting now available channels for communication. Use channels for commands. / And what when you take channels by yourself without helping just shows all the channels and agents

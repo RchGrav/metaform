@@ -878,7 +878,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (7, 7)
+    assert (recorded['version'], recorded['compatible_from']) == (8, 7)
 
 
 def item(run, reference, cwd, ok=True):
@@ -960,7 +960,7 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (7, 7)
+    assert (recorded['version'], recorded['compatible_from']) == (8, 7)
 
 
 @pytest.mark.req('MCP-039')
@@ -985,12 +985,82 @@ def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_li
     assert refused.returncode != 0 and 'names no file' in refused.stderr + refused.stdout
 
 
+def test_the_moved_lines_search_reads_a_large_file_once_whatever_the_citations(tmp_path):
+    """Three moved citations in a file of 10,000 lines are found where the text went, in one pass over the file's
+    lines; splitting the whole file again for each position looked at took seconds."""
+    import time
+
+    from metaform.modules.memory.citations import Checker, stamp
+    source = tmp_path / 'big.py'
+    lines = [f'value_{n} = {n}' for n in range(10000)]
+    source.write_text('\n'.join(lines) + '\n')
+    rows = [stamp(cite, tmp_path) for cite in ('big.py:10', 'big.py:2000-2002', 'big.py:9990')]
+    source.write_text('\n'.join(['# pushed down'] * 7 + lines) + '\n')
+    checker = Checker(None, _root=tmp_path)  # the root is given, so no call is read
+    began = time.perf_counter()
+    found = [checker.stale(row) for row in rows]
+    took = time.perf_counter() - began
+    assert found == ['line 10 changed; the cited text is now at line 17',
+                     'lines 2000-2002 changed; the cited text is now at line 2007',
+                     'line 9990 changed; the cited text is now at line 9997']
+    assert took < 0.5, f'{took:.2f} s for three moved citations'  # 4 s when each position split the file
+
+
+@pytest.mark.req('MCP-039')
+def test_a_read_gives_each_citations_stored_result_while_the_watcher_runs_and_works_it_out_without_one(run, mapped):
+    """While the project's watcher holds its lock a read gives the result stored with each citation and reads no file,
+    so a change the watcher has not worked out yet is not seen; its pass stores it, and the read then says so. With
+    no watcher the read works it out itself."""
+    from metaform import home
+    from metaform.modules.memory.citations import Checker, rework
+    from metaform.modules.memory.watch import lock_file, run_file
+    source = mapped / 'route.py'
+    source.write_text('def route():\n    return eject()\n')
+    m(run, 'create_entities', J([{**entity('ejection', 'behavior', 'Routes are ejected.'), 'cite': ['route.py:2']}]),
+      ROUTE, cwd=mapped)
+    source.write_text('def route():\n    return keep()\n')
+    home.mkdir_private(run_file('proj').parent)
+    with home.file_lock(lock_file('proj'), wait=False):
+        assert 'stale' not in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]  # stored: as it was cited
+        with Store('proj', module='memory').tables() as tx:
+            assert rework(tx, Checker(None, _root=mapped)) == 1  # the watcher's pass
+        assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
+    source.write_text('def route():\n    return eject()\n')  # as cited again, and no watcher runs
+    assert 'stale' not in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]
+
+
+def test_the_watcher_wakes_for_a_change_to_a_cited_file_and_never_for_a_change_elsewhere(tmp_path):
+    """The system's word wakes the watcher with the folder of a cited file written; a map.changed of another project,
+    or of tables other than the citations, does not concern it."""
+    import sys
+
+    from metaform.modules.memory.watch import concerns, folders
+    burst = [{'project': 'other', 'tables': ['memory.citations']}, {'project': 'proj', 'tables': ['work']},
+             {'project': 'proj', 'tables': ['memory.entities', 'memory.observations']}] * 100
+    assert not any(concerns(payload, 'proj') for payload in burst)
+    assert concerns({'project': 'proj', 'tables': ['memory.citations']}, 'proj')
+    assert concerns({'project': 'proj'}, 'proj')
+    if sys.platform == 'win32':
+        return  # the watcher runs where the system says a file changed: Linux, macOS and BSD
+    (tmp_path / 'sub').mkdir()
+    cited = tmp_path / 'sub' / 'cited.py'
+    cited.write_text('a\n')
+    watcher = folders(tmp_path)
+    try:
+        watcher.want({'sub/cited.py'})
+        cited.write_text('b\n')
+        assert watcher.wait() == {'sub'}
+    finally:
+        watcher.close()
+
+
 def owner_prompt():
-    """The owner's memory prompt as CTX-026 records it, its places unfilled."""
+    """The owner's memory prompt as CTX-026 records it, its places unfilled: the record's last block, which each
+    amendment that replaces the text carries."""
     spec = (Path(__file__).parents[5] / 'specifications' / '11-context.md').read_text(encoding='utf-8')
     record = spec[spec.index('### CTX-026'):]
-    block = record[record.index('    ```\n') + len('    ```\n'):]
-    block = block[:block.index('    ```\n')]
+    record = record[:record.index('\n### ', 1)]
+    block = record.split('    ```\n')[-2]
     return '\n'.join(line[4:] for line in block.rstrip('\n').split('\n'))
 
 
@@ -1004,20 +1074,21 @@ def test_the_memory_prompt_is_the_owners_word_for_word_and_filled_for_the_agents
     from metaform.data import prompts
     from metaform.modules.memory import PACKAGE, memory_prompt
     assert prompt_files.text(PACKAGE, 'instructions') == owner_prompt()
-    found = Store('proj').element('code.manager.route', raw=True)
     filled = memory_prompt('proj', 'code.manager.route')
     assert '   - You should assume that you are working on proj\n' in filled
-    assert (f'   - This is code.manager.route ({found.name or found.reading}) or any other address you work on for '
-            'this session.\n') in filled
+    assert '   - This is code.manager.route or any other address you work on for this session.\n' in filled
     assert '{' not in filled and filled.count('\n') == owner_prompt().count('\n')
     for unassigned in (memory_prompt('proj'), memory_prompt('proj', 'code.ghost')):
         assert '2. Element Identification:\n   - This is the address of the element you are working on at any given '\
-               'time.\n3. Memory Retrieval:' in unassigned and '{' not in unassigned
-    edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {this.address}.')
+               'time.\n\n3. Memory Retrieval:' in unassigned and '{' not in unassigned
+    edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {element}.')
     assert memory_prompt('proj', 'code.manager.route') == 'Work on proj at code.manager.route.'
+    later = prompts.save_prompt('memory:instructions', '{element}, linked to {this.address}.')
+    assert memory_prompt('proj', 'code.manager.route') == 'code.manager.route, linked to {this.address}.', \
+        '{this} names what a prompt is linked to; the memory prompt leaves it as written'
     versions = prompts.prompt_versions('memory:instructions')
-    assert [one.number for one in versions] == [edited.number, 2, 1]
-    assert versions[-1].text.startswith('@STATE_INIT:') and versions[1].text == owner_prompt()
+    assert [one.number for one in versions] == [later.number, edited.number, 2, 1]
+    assert versions[-1].text.startswith('@STATE_INIT:') and versions[2].text == owner_prompt()
 
 
 @pytest.mark.req('CTX-023')

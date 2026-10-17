@@ -1,1 +1,0 @@
-"Error: The agent that sent note 2d61f2aedbf83bca is no longer at work on an open ticket, so the reply would reach no one. Next: call dispatch_peers"

@@ -1,8 +1,6 @@
 """BASE-057 reports trouble from events without giving detection code recovery authority."""
 import asyncio
 import json
-import subprocess
-import sys
 
 import pytest
 
@@ -208,20 +206,6 @@ def test_release_clears_permission_signal_after_a_crashed_runner(dispatch, run):
             session_id='crashed', key='permission', message_id='permission')
     release(own, dispatch.id, 'claude crashed', True, 'crashed', 'crash cleanup')
     assert not [row for row in signals(dispatch, run) if row['signal'] == 'permission-waiting']
-
-
-def test_a_talk_first_turn_is_checked_like_the_handoff(dispatch, run):
-    from metaform import axiom
-    dispatch.process = subprocess.Popen(
-        [sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'claude', 'system=true',
-         f'talk=ticket:{dispatch.id}'], cwd=dispatch.folder, env=dispatch.env('plain'),
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    [sent] = eventually(lambda: dispatch.received('session/prompt'))
-    # the talk prompt carries its @CONDITION now, P041, so its first turn is checked and goes unflagged
-    assert axiom.notices('prompt', sent['params']['prompt'][0]['text']) == []
-    eventually(lambda: [row for row in dispatch.items('note') if row.extra['update'] == 'turn'] or None)
-    assert not [row for row in dispatch.items('note') if row.extra['update'] == 'notice']
-    assert not [row for row in signals(dispatch, run) if row['signal'] == axiom.SIGNAL]
 
 
 def test_a_turn_that_stops_with_the_ticket_open_raises_stopped_open(dispatch, run):

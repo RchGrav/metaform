@@ -62,7 +62,7 @@
 (function () {
   const view = window.MetaformView;
   const $ = id => document.getElementById(id);
-  const state = {id: '', digest: '', chosen: '', data: null, stop: null};
+  const state = {id: '', digest: '', mark: '', chosen: '', data: null, stop: null};
   const say = text => { $('notice').textContent = text; $('notice').hidden = !text; };
   const el = (tag, cls, text) => {
     const made = document.createElement(tag);
@@ -154,15 +154,19 @@
     $('live').hidden = !running;
   }
 
-  /* Read the trace again while the view is on screen; an unchanged answer redraws nothing. */
+  /* Read the trace again while the view is on screen; the server reads the store only when the ticket changed after
+   * the mark the last read gave, and an unchanged answer redraws nothing. */
   async function once() {
-    const found = await view.call(view.config.tool, {read: 'trace', params: {id: state.id, digest: state.digest}});
+    const params = {id: state.id, digest: state.digest, mark: state.mark};
+    const found = await view.call(view.config.tool, {read: 'trace', params});
+    state.mark = found.mark || '';
     if (found.unchanged) return;
     state.digest = found.digest;
     draw(found);
   }
   function follow() {
     state.stop?.();
+    state.mark = '';
     state.stop = view.poll(() => once().catch(error => say(error.message)), 2000);
   }
 

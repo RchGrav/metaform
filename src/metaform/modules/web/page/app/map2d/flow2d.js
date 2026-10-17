@@ -43,7 +43,8 @@ export function pointed(edge) {
  * when its part of the cycle begins or ends; with reduced motion nothing moves and nothing is shown. The browser paints
  * a changed path again over its whole box: a path the length of its edge, as a dashed copy of the edge was, made it
  * paint every moving edge's whole length each frame, where a path of the line alone paints the line. */
-const FLOW2D = {id: 0, edges: [], opacity: -1, group: null, fade: -1, at: -1};
+const FLOW2D = {id: 0, edges: [], opacity: -1, group: null, fade: -1, at: -1, seen: true, watched: null,
+  watcher: null};
 const ASK = 3.8;  // the request's size across, its stroke in the page's CSS, `.ask`: a reply's line is in these
 /* A shape of the flow and what it last showed, kept here and not on the element, so a frame compares its own fields
  * and writes the element only when they change: whether it is shown, and a path's `d`. */
@@ -217,6 +218,22 @@ function place(one, distance) {
   POINT.x = xs[i] + (xs[i + 1] - xs[i]) * u;
   POINT.y = ys[i] + (ys[i + 1] - ys[i]) * u;
 }
+/* Whether the 2D map is in view, kept by an observer of its drawing as it shows and hides, so a frame never asks the
+ * page for a layout: `checkVisibility` in each frame forced one after the last frame's writes (round 7's F5,
+ * 2026-10-16). It starts seen, and the flow wakes when the map comes back into view, since a frame that finds it
+ * hidden asks for no next one. */
+function watch2d(svg) {
+  FLOW2D.watcher ??= new IntersectionObserver(entries => {
+    const entry = entries[entries.length - 1];
+    if (entry.target !== FLOW2D.watched) return;
+    const was = FLOW2D.seen;
+    FLOW2D.seen = entry.isIntersecting;
+    if (FLOW2D.seen && !was) wake2d();
+  });
+  if (FLOW2D.watched) FLOW2D.watcher.unobserve(FLOW2D.watched);
+  FLOW2D.watched = svg; FLOW2D.seen = true;
+  FLOW2D.watcher.observe(svg);
+}
 /* A frame of the flow: every read first, whether the map is drawn and which edges are still in it, then the writes.
  * It allocates nothing but the text of what it writes. */
 function frame2d(now) {
@@ -224,7 +241,8 @@ function frame2d(now) {
   const edges = FLOW2D.edges;
   let shown = 0;
   for (let i = 0; i < edges.length; i++) if (edges[i].path.isConnected) shown++;
-  if (!shown || !M.svg?.checkVisibility()) return;
+  if (M.svg && M.svg !== FLOW2D.watched) watch2d(M.svg);
+  if (!shown || !M.svg || !FLOW2D.seen) return;
   // it rests as the 3D map's flow rests, once nothing was done for web_flow_seconds, until the next act
   const resting = reduced() || (FRAMES.rest !== null && performance.now() - FRAMES.active > FRAMES.idle);
   flowTick(now);

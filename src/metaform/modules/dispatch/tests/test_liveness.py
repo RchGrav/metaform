@@ -357,6 +357,32 @@ def test_automatic_recovery_keeps_tickets_when_safe_cleanup_cannot_be_proved(dis
 
 
 @pytest.mark.req('MAP-049')
+def test_a_session_whose_runner_and_agent_died_with_the_machine_is_settled_for_the_supervisor(dispatch):
+    """A crash kills the runner and its agent before either writes an end: the stored row still says running, so the
+    supervisor, which reads it, never resumed the ticket, and it held its slot. `settle` writes the truth, under the
+    default manual recovery, and leaves a live session and the ticket's ownership as they are."""
+    from metaform.module import context
+    from metaform.modules.dispatch import recovery
+    from metaform.modules.dispatch.tests.test_dispatch import gone
+
+    dispatch.start('hold')
+    eventually(lambda: dispatch.logged('pid'))
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert recovery.settle(ctx) == []  # alive: untouched
+    held, before = dispatch.session().extra, dispatch.ticket()
+    dispatch.process.kill()
+    dispatch.process.wait()
+    os.kill(dispatch.logged('pid')[0], signal.SIGKILL)
+    assert gone(dispatch.logged('pid'))
+    assert dispatch.session().extra['state'] == 'running'  # what the crash leaves in the store
+    assert recovery.settle(ctx) == [held['session_id']]
+    row = dispatch.session().extra
+    assert (row['state'], row['how']) == ('ended', recovery.DEAD)
+    assert dispatch.ticket().taken_by == before.taken_by  # still its own, for the supervisor to resume in place
+    assert recovery.settle(ctx) == []
+
+
+@pytest.mark.req('MAP-049')
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='safe live group cleanup requires Linux pidfds')
 def test_automatic_recovery_runs_before_autostart_selection_even_with_autostart_off(dispatch, run):
     run('set', '--dispatch-recovery=automatic', cwd=dispatch.folder)

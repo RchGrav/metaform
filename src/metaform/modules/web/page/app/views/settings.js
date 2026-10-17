@@ -22,7 +22,7 @@ import {setTheme} from '/page/app/map3d/draw3d.js';
  * every project and every reload opens the same way (settings cleanup, 2026-10-15). The web module's settings the page
  * follows, web_embody, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
  * drawn from its workspace is web_panes, which the workspace reads itself. */
-export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'facing'};
+export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'facing', mascot: null};
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
 export const INFOSET = {buttons: new Map()};
 // declared before the view settings are read, which shows them: the flow modes and the node zoom switch
@@ -56,7 +56,7 @@ function followView(rows, view) {
   VIEW.agents = value('web_agents_window', 'auto');
   PEEK.direction = value('web_map_direction', 'auto');
   VIEW.signs = String(value('web_signs', 'facing'));
-  VIEW.embody = String(setting('web_embody', 'offer'));
+  followMascot(rows);
   const details = setting('web_chat_details', false) === true;  // the agent's work in the chat, `workShown`
   if (details !== Boolean(VIEW.chatDetails)) { VIEW.chatDetails = details; drawHelpdesk(); }
   showSigns();
@@ -81,6 +81,45 @@ function followView(rows, view) {
   showInfo();
   agentsWindow();
   peekParts();
+}
+/* The person's mascot, web_mascot, and whether the chat offers bodies, web_embody, as the server holds them. A change
+ * of the mascot is told to the figures, `metaform:mascot`, and the chat's avatar is drawn again. */
+function followMascot(rows) {
+  const setting = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
+  VIEW.embody = String(setting('web_embody', 'offer'));
+  const mascot = String(setting('web_mascot', 'none'));
+  if (mascot === VIEW.mascot) return;
+  VIEW.mascot = mascot;
+  document.dispatchEvent(new CustomEvent('metaform:mascot'));
+  drawHelpdesk();
+}
+/* Either changed on another page, the Settings screen, the command line or by an agent: read again only when the web
+ * module's settings changed, and once for a burst. */
+const HEARD = {reading: false, again: false};
+function mascotHeard(event) {
+  if (!S.project || !Array.isArray(event.detail) || !event.detail.includes('web.settings')) return;
+  if (HEARD.reading) { HEARD.again = true; return; }
+  HEARD.reading = true;
+  const project = S.project;
+  read('settings').then(found => { if (S.project === project) followMascot(found.settings || []); })
+    .catch(() => { /* the next change reads again */ })
+    .finally(() => {
+      HEARD.reading = false;
+      if (HEARD.again) { HEARD.again = false; mascotHeard(event); }
+    });
+}
+document.addEventListener('metaform:settings', mascotHeard);
+/* The person gives their system agent a body: that character is their mascot, web_mascot, saved for every page and
+ * every conversation after it, and named in the system agent's prompt. Refused, the mascot is what it was. */
+export function keepMascot(glyph) {
+  const was = VIEW.mascot;
+  if (glyph === was) return;
+  followMascot([{key: 'web_embody', value: VIEW.embody}, {key: 'web_mascot', value: glyph}]);
+  posted('/api/settings', {key: 'web_mascot', value: glyph}).then(done => {
+    if (done.ok) return;
+    toast(done.body.error || 'Your mascot was not kept.');
+    followMascot([{key: 'web_embody', value: VIEW.embody}, {key: 'web_mascot', value: was || 'none'}]);
+  });
 }
 /* A view choice kept in the person's view, /api/view; the saves of one key go one after another, so quick presses of
  * a key that steps it are kept in the order they were made. */

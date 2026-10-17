@@ -47,10 +47,15 @@ def test_close_and_escape_preserve_a_working_system_session_and_stop_can_resume_
         assert sessions()[0]['state'] == 'running'
         page.click('#dockTab')
         page.fill('#helpdesk .say', 'Unsent draft')
+        # Escape in a running turn interrupts it, as in Claude Code, and never puts the chat away or stops the agent
         page.keyboard.press('Escape')
+        eventually(lambda: any('dispatch-interrupt' in url for url in writes))
+        assert page.locator('#helpdesk').is_visible()
+        assert page.locator('#helpdesk .say').input_value() == 'Unsent draft'
+        page.click('#helpdesk .close')
         page.wait_for_selector('#helpdesk', state='hidden')
         assert sessions()[0]['state'] == 'running'
-        assert not any('dispatch-stop' in url or 'dispatch-interrupt' in url for url in writes)
+        assert not any('dispatch-stop' in url for url in writes)
         page.click('#agentsMenuBtn')
         page.click(f'#agentbox .agent-session[data-session="{session}"] .open-chat')
         assert page.locator('#helpdesk .say').input_value() == 'Unsent draft'

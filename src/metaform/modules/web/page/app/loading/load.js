@@ -69,11 +69,16 @@ function itemEntry(item, layer) {
 /* The steps filed and planned of each node's open tickets, the most advanced first, VIEW-035: an element's by its
  * id, a join's on its purpose vertex. */
 export async function progressOf() {
-  const found = new Map(), project = S.project, metaform = S.base;
+  const project = S.project, metaform = S.base;
   let tickets = [];
-  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { readFailed(error); return found; }
-  if (S.project !== project || S.base !== metaform) return found;  // a late answer for a project the person left
+  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { readFailed(error); return new Map(); }
+  if (S.project !== project || S.base !== metaform) return new Map();  // a late answer for a project the person left
   S.tickets = tickets;
+  return progressFrom(tickets);
+}
+/* The same from the tickets held, as when only the tickets a change named were read and merged in, live/ops.js. */
+export function progressFrom(tickets) {
+  const found = new Map();
   for (const ticket of tickets) {
     if (!ticket.taken || ticket.done) continue;
     const keys = ticket.node_kind === 'join' ? ['p:' + ticket.node_id] : [ticket.node_id];

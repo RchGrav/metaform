@@ -599,7 +599,8 @@ def serve(ctx: Context) -> dict[str, Any]:
                 done = notifier.heard(signal)
                 if done:
                     write_log(f'{" and ".join(done)} for {signal.get("signal")}')
-            if not had_intake[0] and 'intake-finished' in notifier.calls | notifier.texts and _has_intake(project):
+            if not had_intake[0] and 'intake-finished' in notifier.calls | notifier.texts and \
+                    _intake_finished(payload, project):
                 had_intake[0] = True
                 notifier.heard({'signal': 'intake-finished', 'active': True})
             if notifier.waiting:
@@ -685,6 +686,14 @@ def _task(project: str | None, work_id: str) -> str | None:
         return Store(project).ticket(work_id).work.task or None
     except Exception:  # noqa: BLE001  a ticket gone or unreadable is told without its task
         return None
+
+
+def _intake_finished(payload: dict[str, Any], project: str | None) -> bool:
+    """Whether a change of the project leaves it with a finished intake. Only a change that wrote a layer, which an
+    intake's finish does, or one whose tables are not known, such as another metaform made active, can; the store is
+    read for those alone, so the thread lines, tickets and memories of an intake at work read nothing."""
+    tables = payload.get('tables')
+    return (not tables or 'op:layer' in tables) and _has_intake(project)
 
 
 def _has_intake(project: str | None) -> bool:

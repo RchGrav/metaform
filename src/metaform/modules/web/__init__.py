@@ -94,13 +94,15 @@ settings.choice('web_theme', list(THEMES), 'space', scope='global',
 # (a turn ended or a ticket closed, never while it works), after EMBODY_TURNS turns or EMBODY_MINUTES minutes in
 # page/app/dock/embody.js, whichever comes first. Asked too soon, the offer interrupts a conversation that has not shown it is worth keeping;
 # about eight turns or twenty minutes is a conversation the person is staying with. always gives each conversation the
-# person's last choice, or the mascot to the system agent; never makes no offer. The figure itself is the flow's,
+# first character free; never makes no offer. The system agent's body is the person's mascot, web_mascot: while it is
+# set the system agent has it in every conversation and is never offered one. The figure itself is the flow's,
 # `window.metaform.embody`.
 settings.choice('web_embody', ['offer', 'always', 'never'], 'offer', scope='global',
                 help='Whether the chat offers to give its agent a body on the map: offer, always or never.',
-                details='offer asks once per conversation, at a pause, after eight turns or twenty minutes; always gives every conversation your last choice, or the mascot '
-                        'to your system agent; never makes no offer. The avatar in the chat\'s head, its menu or B '
-                        'give or change a body at any time.',
+                details='offer asks once per conversation, at a pause, after eight turns or twenty minutes; always '
+                        'gives every conversation the first character free; never makes no offer. Your system agent '
+                        'is never offered one while you have a mascot: it is your mascot in every conversation. The '
+                        'avatar in the chat\'s head, its menu or B give or change a body at any time.',
                 label='Agents take a figure', heading='Mascot and agents')
 # What a chat's thread shows of the agent's work. Off, it shows what the agent says to the person, its messages and the
 # lines it says on the map, so an agent that comes out in the chat speaks without its tool calls and thinking between
@@ -150,12 +152,16 @@ settings.boolean('web_live_flow', True, scope='global',
 # characters there are.
 CHARACTERS = sorted(path.stem for path in (Path(__file__).parent / 'page' / 'agent-glyphs').glob('*.svg'))
 # The person's mascot: one of the characters stands for the person on the map, goes to what they select, greets the
-# agent they chat with, calls their attention to what needs them, and sleeps while they are away. It is never given
-# to an agent. none draws no mascot.
+# agent they chat with, calls their attention to what needs them, and sleeps while they are away. It is the body of
+# their system agent in every conversation and on every page, and dispatch's mascot_line names it in the system
+# agent's prompt; giving the system agent a body in the chat sets it. It is never given to another agent. none draws
+# no mascot.
 settings.choice('web_mascot', ['none', *CHARACTERS], 'none', scope='global',
                 help='The character that stands for you on the map, or none.',
-                details='It goes to what you select and waits beside it, greets the agent you chat with, brings you '
-                        'a note when something needs you, and sleeps while you are away. It never takes a click.',
+                details='It is your system agent\'s body on the map in every conversation, and your system agent '
+                        'speaks as it. It goes to what you select and waits beside it, greets the agent you chat '
+                        'with, brings you a note when something needs you, and sleeps while you are away. It never '
+                        'takes a click. Giving your system agent a body in the chat sets it.',
                 label='Your mascot', heading='Mascot and agents')
 settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful', scope='global',
                 help='How much the mascot does of its own accord: calm, playful or chaotic.',

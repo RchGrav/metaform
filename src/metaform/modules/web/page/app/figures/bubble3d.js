@@ -16,7 +16,7 @@ import {eyeOf} from '/page/agents3d.js';
 import {reduced} from '/page/app/core/dom.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {D} from '/page/app/agents/dispatch.js';
-import {G, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, STAGE, wake3d} from '/page/app/map3d/graph3d.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
 const LOOK = {
@@ -304,7 +304,7 @@ export function bubbles3d() {
   const camera = G.camera(), now = performance.now(), under = figureUnder(), frame = ++FRAME.n;
   // a world unit per screen pixel, at a distance of one: the bubbles are the same size on the screen at any distance
   const perPixel = BUBBLE_SIZES[SIZE.at] * 2 * Math.tan(camera.fov * Math.PI / 360)
-    / (G.renderer().domElement.clientHeight || 1);
+    / (STAGE.height || 1);
   const shows = 1000 * (Number(WS.view()?.bubble_seconds) || 5);
   SHOWN.length = 0;
   for (const [id, figure] of ROAM.figures) {

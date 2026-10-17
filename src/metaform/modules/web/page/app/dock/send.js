@@ -139,6 +139,7 @@ async function sendMessage(event) {
   if (DOCK.attaching) await DOCK.attaching;  // files still being saved go with the message
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;
+  if (text) remember(text);
   if (text.startsWith('/')) { box.value = ''; return dockCommand(text); }
   const attached = DOCK.files.length
     ? '\n\nAttached files, saved in the project:\n' + DOCK.files.map(file => `- ${file}`).join('\n') : '';
@@ -174,13 +175,40 @@ async function sendMessage(event) {
   } else { box.value = text; growSay(); }
 }
 $('#helpdesk .compose').onsubmit = sendMessage;
+/* What the person sent in each thread from this page, as typed, newest last, as a Claude Code prompt history: Up in
+ * an empty box brings back the last, again goes further back, Down comes forward and past the newest empties the box.
+ * Once a recalled message is edited, Up and Down move the caret again. */
+const SENT = new Map(), RECALL = {target: null, at: -1};
+function remember(text) {
+  const list = SENT.get(DOCK.target) || [];
+  if (list.at(-1) !== text) list.push(text);
+  SENT.set(DOCK.target, list);
+  RECALL.at = -1;
+}
+function recall(by) {
+  const box = $('#helpdesk .say'), list = SENT.get(DOCK.target) || [];
+  const walking = RECALL.at >= 0 && RECALL.target === DOCK.target && box.value === list[RECALL.at];
+  if (!walking && (box.value || by > 0 || !list.length)) return false;
+  const next = (walking ? RECALL.at : list.length) + by;
+  if (next < 0) return true;  // at the oldest: it stays
+  RECALL.target = DOCK.target;
+  RECALL.at = next < list.length ? next : -1;
+  box.value = next < list.length ? list[next] : '';
+  box.setSelectionRange(box.value.length, box.value.length);
+  growSay();
+  return true;
+}
 /* Enter sends, Shift+Enter starts a new line; an IME's Enter confirms the word it composes and never sends:
  * isComposing, or Safari's 229 as composition ends. Page Up and Page Down read the conversation without leaving the
- * box. */
+ * box; Up and Down walk what was sent, `recall`. */
 function sayKeys(event) {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
     $('#helpdesk .compose').requestSubmit();
+  }
+  if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.isComposing && !event.shiftKey
+    && !event.altKey && !event.ctrlKey && !event.metaKey && recall(event.key === 'ArrowUp' ? -1 : 1)) {
+    event.preventDefault();
   }
   if ((event.key === 'PageUp' || event.key === 'PageDown') && !event.altKey && !event.ctrlKey && !event.metaKey) {
     event.preventDefault();
@@ -219,8 +247,21 @@ function chatKeys(event) {
   else if (event.key === ',') { event.preventDefault(); openSessionPop(); }
 }
 $('#helpdesk').addEventListener('keydown', chatKeys);
-/* Escape on another agent's thread goes back to My agent; on My agent it puts the chat away. */
-function escapeChat() { if (onOther()) showMine(); else putChatAway(); }
+/* Escape as in Claude Code, and never putting the chat away, which the close × and C do: a running turn is
+ * interrupted; else text in the box is cleared, as an edit Ctrl+Z takes back; else another agent's thread goes back
+ * to My agent; else nothing. */
+function escapeChat() {
+  const stop = $('#helpdesk .interrupt'), box = $('#helpdesk .say');
+  if (!stop.hidden && !stop.disabled) { stop.click(); return; }
+  if (box.value) {
+    box.focus();
+    box.select();
+    if (!document.execCommand('delete')) box.value = '';
+    growSay();
+    return;
+  }
+  if (onOther()) showMine();
+}
 function openSessionPop() {
   const line = $('#helpdesk .sessionline');
   if (!line) return toast("The agent's settings show once one is chosen.");
@@ -348,7 +389,7 @@ $('#dockTab').onkeydown = event => {
   dockState('open');
 };
 $('#helpdesk .close').onclick = () => putChatAway();  // eased away; its threads are kept
-$('#helpdesk .close').title = 'Close chat without stopping the agent (Escape)';
-// On the overlay stack as the dock: Escape puts it away only from inside it, and it stays usable over the board.
+$('#helpdesk .close').title = 'Close chat without stopping the agent (C)';
+// On the overlay stack as the dock: Escape inside it is the chat's own, escapeChat, and it stays usable over the board.
 overlay($('#helpdesk'), {kind: 'dock', close: escapeChat, focus: '.say'});
 $('#helpdesk .big').onclick = () => dockState($('#dock').className === 'open big' ? 'open' : 'open big');

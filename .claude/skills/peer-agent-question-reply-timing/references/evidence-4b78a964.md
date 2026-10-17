@@ -1,1 +1,0 @@
-Error: No note sent: you and code#1e have sent each other 6 notes in the last hour, and the most is 6, so agents never answer each other in a loop. The next can go at 2026-10-15T23:32:43Z. Until then, put it in your own ticket's note for the person.

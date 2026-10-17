@@ -5954,22 +5954,25 @@ def simulated_dispatch_control(monkeypatch):
         process.wait()
 
 
-def live_session(work_id, agent='claude', state='running', project='proj'):
+def live_session(work_id, agent='claude', state='running', project='proj', session=None):
     """A dispatch session row for a ticket, as the runner writes it, so the page counts its agent as working: a figure
-    on the map and an entry in the agents key are drawn only for a live session, VIEW-035 and VIEW-039."""
+    on the map and an entry in the agents key are drawn only for a live session, VIEW-035 and VIEW-039. `session`
+    names another session on the same ticket, a new conversation."""
     import metaform.modules.dispatch  # noqa: F401  declares its tables
     from metaform.data import Store
+    session = session or f's-{work_id}'
     with Store(project, module='dispatch').tables() as tx:
-        held = tx.get('sessions', {'session_id': f's-{work_id}'})
+        held = tx.get('sessions', {'session_id': session})
         if held is None:
             # a reader takes a session's pid for its runner only when the command line runs that ticket's runner
             runner = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)', 'dispatch', 'run', work_id])
             RUNNERS.append(runner)
-            tx.insert('sessions', {'session_id': f's-{work_id}', 'work_id': work_id, 'agent': agent, 'state': state,
-                                   'pid': runner.pid, 'port': dispatch_control_port(), 'token': f's-{work_id}',
-                                   'started': '2026-10-03T00:00:00Z', 'seq': len(work_id) + int(work_id[:6], 16) % 1000})
+            tx.insert('sessions', {'session_id': session, 'work_id': work_id, 'agent': agent, 'state': state,
+                                   'pid': runner.pid, 'port': dispatch_control_port(), 'token': session,
+                                   'started': '2026-10-03T00:00:00Z',
+                                   'seq': len(work_id) + int(work_id[:6], 16) % 1000 + (session != f's-{work_id}')})
         else:
-            tx.update('sessions', {'session_id': f's-{work_id}'}, {'state': state})
+            tx.update('sessions', {'session_id': session}, {'state': state})
 
 
 @pytest.mark.req('BASE-052')
@@ -6454,6 +6457,47 @@ def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_i
     assert max(abs(one - two) for one, two in zip(seen['from']['gaze'], looked['from']['gaze'])) < 0.1, seen  # held
     assert all('visible' not in one and one['distance'] <= seen['range'] for one in seen['in_view']), seen
     assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_body_the_person_gives_the_system_agent_is_their_mascot_in_every_conversation_and_on_every_page(
+        run, web, mapped, browser):
+    """The body the person gives the system agent in the chat is their mascot, web_mascot, one record the server
+    holds: a new conversation is drawn in it without an offer, another browser draws it too, and the system agent's
+    prompt names it. Before, the body was kept in one browser for one conversation, and the prompt named web_mascot."""
+    import metaform.modules.web  # noqa: F401  declares web_mascot
+    from metaform import settings
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch import mascot_line
+    from metaform.modules.dispatch.tests.test_dispatch import eventually
+    store = Store('proj')
+    run('enable', 'dispatch')
+    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
+                            held=True)
+    live_session(system.id)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert page.evaluate('window.metaform.mascot().glyph') is None and mascot_line(mapped) == ''
+    given = page.evaluate(f'window.metaform.embody("{system.id}", "seahorse")')
+    assert given['mascot'] is True, given
+    eventually(lambda: settings.value('web_mascot', mapped) == 'seahorse')
+    assert 'seahorse' in mascot_line(mapped)
+    kept = page.evaluate('[localStorage.getItem("metaform.bodies") || "", localStorage.getItem("metaform.embodied")]')
+    assert 'seahorse' not in kept[0] and kept[1] is None, kept
+    # the conversation ends and a new one begins: the system agent is the seahorse again, its body chosen, no offer
+    live_session(system.id, state='ended')
+    live_session(system.id, session='s-again')
+    mine = f'window.metaform.bodies().find(one => one.work === "{system.id}")'
+    page.wait_for_function(f'() => {mine}?.character === "seahorse" && {mine}.by === "person"', timeout=15000)
+    assert page.evaluate('window.metaform.mascot().glyph') == 'seahorse'
+    other, troubles, _ = opened(browser, web)  # another browser profile: its own storage, the same mascot
+    other.wait_for_function('() => window.metaform.mascot().glyph === "seahorse"', timeout=15000)
+    # changed elsewhere, on the command line, both pages draw the new mascot
+    run('set', '--web-mascot=owl')
+    for one in (page, other):
+        one.wait_for_function('() => window.metaform.mascot().glyph === "owl"', timeout=15000)
+    assert problems == [] and troubles == []
 
 
 @pytest.mark.req('VIEW-035')
@@ -7538,6 +7582,52 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     run('enable', 'hello')
     with page.expect_request(lambda sent: '/api/graph' in sent.url, timeout=15000):  # a write to the map redraws it
         run('hello', 'greet', 'world', cwd=mapped)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-044')
+def test_a_burst_of_changes_reads_only_what_each_change_names(run, web, mapped, browser):
+    """CLAUDE.md Architecture section 2: a page's handler decides from the event alone, then reads only the record it
+    names. Session writes never read the merges, a change already drawn reads nothing, and a ticket's step reads that
+    ticket alone, never every ticket and the open messages."""
+    from metaform import relay
+    from metaform.data import Node, Store
+    store = Store('proj')
+    run('enable', 'dispatch')
+    worked = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a quieter tone')
+    store.take_work(worked.id, steps=2, by='claude')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.agentsIdle()', timeout=15000)
+    base = store.active_base().id
+    reads = []
+    page.on('request', lambda sent: reads.append(sent.url))
+    asked = lambda mark: [url.split('/api/')[1] for url in reads[mark:] if '/api/' in url]
+    # a runner's session writes, 50 of them: the agents key for the one ticket, never the merges
+    mark, heard = len(reads), page.evaluate('window.metaform.heard()')
+    session = {'project': 'proj', 'base_id': base, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.sessions'],
+               'kinds': ['session'], 'work_ids': [worked.id]}
+    for _ in range(50):
+        relay.deliver('map.changed', session)
+    page.wait_for_function(f'() => window.metaform.heard() > {heard} && window.metaform.agentsIdle()', timeout=15000)
+    assert not [url for url in asked(mark) if url.startswith('merges')], asked(mark)
+    with page.expect_request(lambda sent: '/api/merges' in sent.url, timeout=15000):  # a merge put up reads them once
+        relay.deliver('map.changed', {**session, 'dispatch_tables': ['dispatch.merges'], 'kinds': ['merge']})
+    page.wait_for_function('() => window.metaform.agentsIdle()', timeout=15000)
+    assert len([url for url in asked(mark) if url.startswith('merges')]) == 1, asked(mark)
+    # 50 changes whose ops the page has drawn, then a ticket's step: that ticket alone is read, nothing else
+    mark, handled = len(reads), page.evaluate('window.metaform.changes()')
+    drawn = {'project': 'proj', 'base_id': base, 'tables': ['objects', 'ops'], 'seq': store.sequence(),
+             'kinds': ['map'], 'work_ids': []}
+    for _ in range(50):
+        relay.deliver('map.changed', drawn)
+    with page.expect_response(lambda answer: '/api/work?' in answer.url, timeout=15000) as answered:
+        run('map', 'work', 'op=step', f'id={worked.id}', 'said=Found the gain.', cwd=mapped)
+    assert [one['steps_done'] for one in answered.value.json()['results']] == [1]
+    page.wait_for_function(f'() => window.metaform.changes() > {handled} && window.metaform.liveIdle()',
+                           timeout=15000)
+    assert asked(mark) == [f'work?project=proj&base={base}&ids={worked.id}&limit=0'], asked(mark)
     assert problems == []
 
 
@@ -8927,6 +9017,75 @@ def test_a_message_sent_with_no_agent_starts_one_waits_in_the_thread_and_reaches
     assert problems == []
 
 
+@pytest.mark.req('VIEW-045')
+def test_new_and_clear_end_the_system_agents_conversation_and_start_one_resuming_nothing(
+        run, web, mapped, browser, monkeypatch, tmp_path):
+    """/new and /clear, the chat's own commands, code.interface.graphical#9b: the system agent's session on view ends
+    and a new one starts with nothing resumed though Resume is on and its agent could load the old one; Resume and Stay
+    connected are left as they were, and the ended thread stays listed. The agent's own /clear never takes the name."""
+    from metaform.data import Store
+    run('enable', 'dispatch')
+    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
+        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    log = tmp_path / 'acp.log'
+    monkeypatch.setenv('FAKE_ACP_LOG', str(log))
+    monkeypatch.setenv('FAKE_ACP_MODE', 'plain')  # each turn ends at once
+    monkeypatch.setenv('FAKE_ACP_LOAD', '1')  # it can load an earlier conversation, so a resume would show
+    monkeypatch.setenv('FAKE_ACP_CLEAR', '1')  # and it offers a /clear of its own
+    settings = lambda: {entry['key']: entry['value'] for entry in json.loads(run('config', '--json', cwd=mapped).stdout)
+                        if entry['key'] in ('dispatch_resume_chats', 'dispatch_stay_connected')}
+    kept = settings()
+    assert kept['dispatch_resume_chats'] is True
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#dockTab', force=True)
+    page.wait_for_selector('#helpdesk:not([hidden])')
+    page.fill('#helpdesk .say', '/help')
+    page.press('#helpdesk .say', 'Enter')
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").textContent.includes("/new or /clear")')
+    page.fill('#helpdesk .say', 'Remember the word heron')
+    page.press('#helpdesk .say', 'Enter')
+    method = lambda entry: entry.get('message', {}).get('method')
+    logged_by(log, lambda entry: method(entry) == 'session/prompt'
+              and entry['message']['params']['prompt'][0].get('text') == 'Remember the word heron')
+    page.wait_for_function('() => !document.querySelector("#helpdesk .log .bubble.pending")', timeout=30000)
+    dock = lambda: page.evaluate('window.metaform.dock()')
+    ended = []
+    for command in ('/new', '/clear'):
+        before = dock()['on']
+        page.wait_for_function('() => document.querySelector("#helpdesk .call").hidden')  # its session is live
+        page.fill('#helpdesk .say', command)
+        page.press('#helpdesk .say', 'Enter')
+        page.wait_for_function(f'() => {{ const on = window.metaform.dock().on; return on && on !== "{before}"; }}',
+                               timeout=30000)
+        ended.append(before)
+        now = dock()
+        assert [one['source'] for one in now['threads'] if one['session'] in ended] == ['system'] * len(ended), now
+        page.wait_for_function('() => document.querySelector("#helpdesk .call").hidden', timeout=30000)
+        page.fill('#helpdesk .say', f'What was the word? after {command[1:]}')
+        page.press('#helpdesk .say', 'Enter')
+        question = f'What was the word? after {command[1:]}'
+        asked = logged_by(log, lambda entry, question=question: method(entry) == 'session/prompt'
+                          and entry['message']['params']['prompt'][0].get('text') == question)
+        assert asked['message']['params']['sessionId'] == now['on'], (asked, now)
+        entries = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines() if line.strip()]
+        turns = [json.dumps(entry['message']['params']['prompt']) for entry in entries if method(entry) == 'session/prompt'
+                 and entry['message']['params']['sessionId'] == now['on']]
+        assert turns and not any('heron' in turn for turn in turns), turns  # no earlier conversation in its turns
+    entries = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines() if line.strip()]
+    assert not [entry for entry in entries if method(entry) in ('session/load', 'session/resume')]
+    assert not any(method(entry) == 'session/prompt' and '/clear' in json.dumps(entry['message']['params']['prompt'])
+                   for entry in entries), 'the agent was sent its own /clear'
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        rows = {row['session_id']: row for row in tx.rows('sessions', limit=0).results}
+    assert [(rows[one]['state'], rows[one]['how']) for one in ended] == [('ended', 'stopped by the person')] * 2, rows
+    assert rows[dock()['on']]['state'] == 'running'
+    assert settings() == kept  # the Resume box and Stay connected are left as they were
+    run('dispatch', 'stop', rows[dock()['on']]['work_id'], f'session={dock()["on"]}', cwd=mapped)
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-042')
 @pytest.mark.kind('fixture')
 def test_a_pasted_picture_and_dropped_files_attach_as_the_paperclip_does_and_reach_the_agent(
@@ -10154,10 +10313,10 @@ def test_a_dispatched_sessions_thread_opens_in_the_dock_with_its_messages_and_to
 
 @pytest.mark.req('VIEW-051')
 def test_4_sets_the_depth_and_a_click_breaks_out_a_nodes_next_level_in_place_on_both_maps(run, web, mapped, browser):
-    """4 steps the depth through 1, 2, 3, 4 and all, kept in web_map_depth; a part deeper than the depth stays inside
-    the node it serves, which counts what it holds, in both maps alike. A click on that node breaks out its next level
-    on the same map and a click again folds it; a part chosen while held is broken out; a new depth folds every node
-    opened; Enter still goes inside."""
+    """4 steps the depth through the map's own levels, from the least that draws a join to one short of its deepest,
+    and all, kept in web_map_depth (Rich, 2026-10-16); a part deeper than the depth stays inside the node it serves,
+    which counts what it holds, in both maps alike. A click on that node breaks out its next level on the same map and
+    a click again folds it; a part chosen while held is broken out; Enter still goes inside."""
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -10186,36 +10345,65 @@ def test_4_sets_the_depth_and_a_click_breaks_out_a_nodes_next_level_in_place_on_
             page.wait_for_timeout(100)
 
     shows([cook, kitchen, tick, alarm])  # all levels, the default
-    map_key(page, '4')
-    now = shows([cook], [kitchen, tick, alarm])
-    assert now['names'][cook].endswith(' +3')  # the cook holds the timer, the tick and the alarm beneath them
-    assert page.evaluate('document.querySelector("#note2d.on")?.textContent') == 'Depth: 1 level'
-    still2d(page)
-    box = box_of(page, 'exterior.cook')
-    page.mouse.click(box['x'] + 6, box['y'] + 6)  # breaks out its next level, in place, and selects it
+    map_key(page, '4')  # the least depth that draws a join: 2, as the cook alone at 1 would be a lone element
     now = shows([cook, kitchen, tick], [alarm])
-    assert page.evaluate('window.metaform.selected()') == cook and not page.evaluate('window.metaform.inside()')
-    assert now['names'][kitchen].endswith(' +1')
+    assert now['names'][kitchen].endswith(' +1')  # the timer holds the alarm beneath it
+    assert page.evaluate('document.querySelector("#note2d")?.textContent') == 'Depth: 2 levels'
+    kept('2')
     still2d(page)
-    box = box_of(page, 'exterior.cook')
-    page.mouse.click(box['x'] + 6, box['y'] + 6)  # folds them back
-    shows([cook], [kitchen, tick, alarm])
+    box = box_of(page, 'code.timer.kitchen')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # breaks out its next level, in place, and selects it
+    shows([cook, kitchen, tick, alarm])
+    assert page.evaluate('window.metaform.selected()') == kitchen and not page.evaluate('window.metaform.inside()')
+    still2d(page)
+    box = box_of(page, 'code.timer.kitchen')
+    page.mouse.click(box['x'] + 6, box['y'] + 6)  # folds it back
+    shows([cook, kitchen, tick], [alarm])
     assert not page.evaluate('window.metaform.inside()')
     page.evaluate(f'window.metaform.select("{alarm}")')  # chosen while held: its way down is broken out
     shows([cook, kitchen, alarm])
-    map_key(page, '4')  # a new depth folds what was opened
-    shows([cook, kitchen, tick], [alarm])
-    kept('2')
     page.evaluate(f'window.metaform.select("{kitchen}")')
     page.keyboard.press('Enter')  # Enter alone still goes inside
     page.wait_for_function('() => window.metaform.inside().length > 0')
     page.keyboard.press('Shift+Enter')
     page.wait_for_function('() => window.metaform.inside().length === 0')
-    for _ in range(3):
-        map_key(page, '4')
+    map_key(page, '4')  # one level short of the map's deepest, 3, is the most: then all, never a depth drawing all
     shows([cook, kitchen, tick, alarm])
+    assert page.evaluate('document.querySelector("#note2d")?.textContent') == 'Depth: all levels'
     kept('all')
     assert not problems
+
+
+@pytest.mark.req('VIEW-051')
+def test_depth_counts_its_levels_in_what_the_viewer_sees_with_an_edge_of_the_project_hidden(run, web, mapped, browser):
+    """The levels are counted among the parts drawn, and the least depth draws a join: with the edge holding the top
+    hidden, what the top receives from are the tops, so the least depth draws them with what serves them, never an
+    empty map (2026-10-16: downstream hidden left depth 1 with nothing, its CQUs being the only tops)."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    _, at = keys_of(web)
+    cook, kitchen, tick, alarm, display = (at[one] for one in (
+        'exterior.cook', 'code.timer.kitchen', 'code.loop.tick', 'code.alarm.audible', 'code.timer.kitchen.display'))
+    page.evaluate("localStorage.setItem('metaform.rootsOff', JSON.stringify(['exterior']))")
+    page.reload()
+    page.wait_for_function('() => window.metaform && window.metaform.loaded()')
+    map_key(page, '4')  # tick and display are tops now, the timer serves the display at 2, the alarm is at 3
+    deadline, want = time.monotonic() + 15, sorted([tick, display, kitchen])
+    while True:
+        now = page.evaluate("""async () => {
+            const {G} = await import('/page/app/map3d/graph3d.js');
+            const nodes = G.graphData().nodes;
+            return {els: nodes.filter(node => node.t === 'el').map(node => [node.id, node.name]),
+                    joins: nodes.filter(node => node.t === 'purpose').length};
+        }""")
+        if sorted(one for one, _ in now['els']) == want or time.monotonic() > deadline:
+            break
+        page.wait_for_timeout(100)
+    assert sorted(one for one, _ in now['els']) == want, now  # the cook hidden, nothing of it counted
+    assert now['joins'] >= 1 and dict(now['els'])[kitchen].endswith(' +1'), now  # a join drawn; the alarm held
+    assert page.evaluate('document.querySelector("#note2d")?.textContent') == 'Depth: 2 levels'
+    assert cook and alarm and not problems
 
 
 @pytest.mark.req('VIEW-005')

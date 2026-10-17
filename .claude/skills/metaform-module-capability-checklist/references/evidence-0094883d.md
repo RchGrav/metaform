@@ -1,3 +1,0 @@
-grep -n "link" src/metaform/modules/dispatch/CHANGELOG.md | head -5; grep -n "dispatch_link\|dispatch link" src/metaform/modules/dispatch/README.md docs/reference/metaform-mcp-server.md | head
-Output: docs/reference/metaform-mcp-server.md:116:| `dispatch_link` | Link a file to the element whose functionality it realizes: its path added to the element's refs in the sources layer, which unlocks writing it and places it on the map. | write |
-Agent: "While the tests run: the `link` verb gained two nouns, `ref` and `why`. I'm checking whether the dispatch module records verb changes in its CHANGELOG or README, as #3d did for the verb itself."

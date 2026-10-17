@@ -243,3 +243,60 @@ def recover(ctx: Context) -> dict[str, Any]:
             result['deferred'].append({'work_id': work_id, 'reason': str(error),
                                        'next': f'metaform map work op=move id={work_id} column=todo'})
     return result
+
+
+def gone(held: dict[str, Any]) -> bool:
+    """Whether a session's runner and its agent are verifiably no longer running, from the births recorded when its
+    ticket was taken: the runner's PID is absent or holds another process's birth, as after a crash or a restart of
+    the machine, and so is the agent's, or the agent's surviving group is stopped here, `stop_adapter`. False when any
+    of it cannot be established: a missing record or an uninspectable process is never taken for death."""
+    runner, born = held.get('runner_pid'), held.get('runner_identity')
+    if not isinstance(runner, int) or not isinstance(born, str) or not born:
+        return False
+    now = identity(runner)
+    if now is None or now == born:
+        return False
+    adapter, adapter_born = held.get('adapter_pid'), held.get('adapter_identity')
+    if not isinstance(adapter, int) or not isinstance(adapter_born, str) or not adapter_born:
+        return False
+    now = identity(adapter)
+    if now is None:
+        return False
+    if now == adapter_born:  # the runner died and left its agent running: stopped first, or the session waits
+        try:
+            stop_adapter(held)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return False
+    return True
+
+
+DEAD = 'the runner is no longer running'  # one of dispatch's DIED: an end the supervisor resumes, never the person's
+
+
+def settle(ctx: Context) -> list[str]:
+    """The store's sessions checked against the truth, before the supervisor looks, whatever dispatch_recovery says: a
+    session the store holds as running whose runner and agent are verifiably gone, `gone`, is written as ended, its
+    runner died, so the supervisor, `retry`, resumes it in place with its memory, up to dispatch_retries, and then
+    hands it to the person. The store's row was the only word the supervisor read, and a runner killed with the
+    machine, as by a crash of WSL, never wrote its end, so its ticket stayed taken by a session no one would resume
+    and held an agent slot for good (2026-10-15, not the first time). Returns the sessions settled."""
+    from . import foreign, sessions
+
+    own = own_store(ctx.require_store())
+    settled: list[str] = []
+    for row in sessions(own, verify=False):
+        if row['state'] != 'running' or row.get('origin') and foreign(row):
+            continue
+        raw: Any = row.get('recovery')
+        held = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+        if held.get('session_id') != row['session_id'] or held.get('runner_pid') != row.get('pid') or not gone(held):
+            continue
+        with own.atomic():  # written only if the row is as it was read: a runner that took it up meanwhile keeps it
+            with own.tables(write=False) as tx:
+                latest = tx.rows('sessions', {'session_id': row['session_id']}, limit=1).results
+            if not latest or dict(latest[0]) != row:
+                continue
+            with own.tables() as tx:
+                tx.update('sessions', {'session_id': row['session_id']}, {'state': 'ended', 'how': DEAD})
+        settled.append(str(row['session_id']))
+    return settled

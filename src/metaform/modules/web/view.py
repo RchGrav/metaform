@@ -31,6 +31,11 @@ def _choice(*names: str) -> Callable[[Any], bool]:
     return lambda value: value in names
 
 
+def _depth(value: Any) -> bool:
+    """A number of levels, as many as the map has, or all."""
+    return value == 'all' or isinstance(value, str) and value.isdigit() and 0 < int(value) < 1000
+
+
 def _boolean(value: Any) -> bool:
     return isinstance(value, bool)
 
@@ -45,7 +50,7 @@ KEYS: dict[str, tuple[Any, Callable[[Any], bool]]] = {
     'web_signs': ('facing', _choice('outward', 'facing')),
     'web_lens': ('natural', _choice('natural', 'wide', 'fisheye')),
     'web_flow_mode': ('selected', _choice('off', 'hover', 'selected', 'all', 'live')),
-    'web_map_depth': ('all', _choice('1', '2', '3', '4', 'all')),
+    'web_map_depth': ('all', _depth),
     'web_flow_edges': (True, _boolean),
     'web_map_direction': ('auto', _choice('auto', 'across', 'down')),
     'web_hover_info': ('name+summary', _choice('name+summary', 'name', 'summary', 'off')),

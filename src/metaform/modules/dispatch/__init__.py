@@ -17,6 +17,7 @@ The ACP SDK is imported only by `runner`, so only the runner process loads it.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import ctypes
 import hashlib
 import inspect
@@ -35,7 +36,8 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -59,6 +61,7 @@ from metaform.module import (
     mcp_server,
     project_for,
     provided,
+    request_scope,
     surface,
     work_reads,
 )
@@ -68,6 +71,8 @@ from .progress import blocked as rework_blocked
 from .progress import changed as progress_changed
 from .signals import collect, own_store, requeued, rework_limit
 from .signals import read as read_signals
+from .signals import read_rows as signal_rows
+from .signals import rows as read_signal_rows
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('agent-client-protocol>=0.12.1,<0.13',)
@@ -98,12 +103,15 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 # Version 14 keeps spend in the project's store, `spending`, so removing a metaform never takes its spend out of the
 # budgets. The chassis refuses to move a table between stores under one name, so the per-metaform `spend` stays
 # declared, for version 5's code, which still reads and writes the tables, and for carry_spend() to move its rows.
-SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True),
+# Version 16 only adds an index on lines by kind, then ticket: the agents key read every line of every thread to find
+# the signals, and each session's state line in a read of its own, code.dispatcher.agent#3b. No row is rewritten, so
+# version 5's code still reads and writes the tables.
+SPEND =(Column('session_id', required=True), Column('seq', 'int', required=True),
          Column('work_id', required=True), Column('run', required=True), Column('day', required=True),
          Column('tokens', 'int', required=True), Column('cost', 'real'), Column('currency'),
          Column('input', 'int'), Column('output', 'int'), Column('cache_read', 'int'),
          Column('cache_write', 'int'), Column('thought', 'int'), Column('metered', 'bool', default=True))
-TABLES = Tables(version=15, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 15 only add
+TABLES = Tables(version=16, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 16 only add
     Table('sessions', key=('session_id',),
           columns=(Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
                    Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
@@ -113,7 +121,7 @@ TABLES = Tables(version=15, compatible_from=5, tables=(  # 5: agents do not ask;
     Table('lines', key=('session_id', 'name'),
           columns=(Column('session_id', required=True), Column('name', required=True), Column('work_id', required=True),
                    Column('kind', required=True), Column('text', required=True), Column('seq', 'int', required=True)),
-          indexes=(Index(('session_id', 'seq')), Index(('work_id', 'seq')))),
+          indexes=(Index(('session_id', 'seq')), Index(('work_id', 'seq')), Index(('kind', 'work_id', 'seq')))),
     Table('merges', place='project', key=('work_id',),
           columns=(Column('work_id', required=True), Column('branch', required=True), Column('worktree', required=True),
                    Column('state', required=True), Column('reason'), Column('ready', 'real', required=True),
@@ -723,12 +731,10 @@ def memory_text(folder: Path, project: str | None, address: str | None) -> str:
 def work_line(work_id: str, folder: Path, node: str) -> str:
     """What a hand-off adds to the node brief: work the ticket with the map_work tool, whose description says how,
     and, while the memory module is on the folder's surface, the owner's sentence on recording what is learned, with
-    the node it is recorded at, so no agent is told to use a tool it does not have."""
+    the node it is recorded at, so no agent is told to use a tool it does not have. The rule on writing files is not
+    here: the runner sends it with each session's first prompt, whatever the prompt, code.dispatcher.agent#47."""
     memory = any(module.id == 'memory' for module in surface(folder))
-    line = prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
-    from .runner import LINK_LOCK
-    rule = prompt('work_link') if LINK_LOCK else ''  # the rule on writing files, code.dispatcher.agent#3d
-    return f'{line} {rule}' if rule else line
+    return prompt('work', work_id=work_id, record=prompt('work_record', node=node) if memory and node else '')
 
 
 # The mascot's body: the web module's verbs that move it and let it see, each the MCP tool web_<verb>.
@@ -888,8 +894,14 @@ def agent_named(name: str) -> str:
 
 
 def ticket(store: Store, work_id: str) -> WorkRecord:
+    """Read the work record alone, without rebuilding the context of its node and linked nodes."""
     try:
-        return store.ticket(work_id).work
+        # A runner callback is a fresh request: validate once, then share it across this one read.
+        with request_scope(fresh=True):
+            found = store.work(ids=[work_id], limit=1).results
+        if not found:
+            raise StoreError(f'No work record has the id {work_id}.', 'metaform map work open=true')
+        return found[0]
     except NewerStore:
         raise  # a runner tells a store its code is older than from any other refusal, STORE-029
     except StoreError as error:
@@ -1021,6 +1033,36 @@ def resume_spawn(store: Store, work_id: str, agent: str, extra: list[str], name:
     return started
 
 
+def holding(store: Store, work_id: str, rows: Sequence[dict[str, Any]]) -> tuple[dict[str, Any], int] | None:
+    """The latest of a ticket's sessions, as session_status reads them, that a live runner holds or was started to
+    resume whatever its status read says, with that runner's pid; None when none is. A row stamped by another home is
+    passed over. Only a row read as ended for its runner's reply, or one a start file names, can be held, so the
+    others cost no read."""
+    for row in reversed(rows):
+        session_id = str(row['session_id'])
+        if row['state'] == 'running' or row.get('origin') and foreign(row) or \
+                row.get('how') not in SILENT and not resuming_path(session_id).exists():
+            continue
+        pid = holder(store, work_id, session_id)
+        if pid is not None:
+            return row, pid
+    return None
+
+
+def silent(row: dict[str, Any], pid: Any) -> bool:
+    """Whether the live runner `pid` that holds a session is the one its row says took it, read as ended because it
+    does not answer: never resumed again, and ended only by the person's stop. One found by the file its start left is
+    starting."""
+    return pid == row.get('pid') and row.get('how') in SILENT
+
+
+def held_session(row: dict[str, Any], pid: int) -> dict[str, Any]:
+    """A session its live runner holds and does not answer, said with the runner's pid and the stop that ends it."""
+    return {'state': 'held', 'work_id': row['work_id'], 'agent': row['agent'], 'session_id': row['session_id'],
+            'pid': pid, 'reason': f'Its runner, process {pid}, is alive but does not answer.',
+            'next': f'metaform dispatch stop {row["work_id"]} session={row["session_id"]}'}
+
+
 HANDED = 'restarted on updated code'  # how a runner the store's layout outgrew ends; its session goes on in a new one
 
 
@@ -1062,16 +1104,32 @@ def sessions(store: Store, work_id: str | None = None, *, verify: bool = True,
             rows = [dict(row) for row in found]
     except StoreError:
         return []
-    if not verify:
-        return rows
-    # one read of the open tickets for every running row, rather than a ticket read for each
-    opened: set[str] = set()
-    if any(row['state'] == 'running' for row in rows):
+    return verified(store, rows, open_work) if verify else rows
+
+
+def verified(store: Store, rows: Sequence[dict[str, Any]],
+             open_work: Sequence[WorkRecord] | None = None) -> list[dict[str, Any]]:
+    """Stored session rows as session_status reads them, in order: a running row is checked with its runner."""
+    own = own_store(store)
+    asked = [row for row in rows if row['state'] == 'running']
+    if not asked:
+        return [session_status(own, row) for row in rows]
+    # One read of the open tickets for every running row, rather than a ticket read for each, made while each running
+    # row's runner is asked for its status, all at once rather than in turn: a read waits for the slowest of them, not
+    # their sum, code.dispatcher.agent#3b. Each ask runs in a copy of this context, sharing the caller's registry
+    # validation; a reply for a ticket found done is not used.
+    with ThreadPoolExecutor(max_workers=len(asked)) as pool:
+        replies = {id(row): pool.submit(contextvars.copy_context().run, session_status, own, row, done=False)
+                   for row in asked}
         opened = {record.id for record in (open_work if open_work is not None
-                                               else store.work(open=True, limit=0).results)}
-    # an intake agent's session holds no ticket, so no ticket's being done ends it
-    return [session_status(own, row, done=row['work_id'] not in opened and not intake_id(row['work_id']))
-            for row in rows]
+                                           else store.work(open=True, limit=0).results)}
+        found: list[dict[str, Any]] = []
+        for row in rows:
+            # an intake agent's session holds no ticket, so no ticket's being done ends it
+            done = row['work_id'] not in opened and not intake_id(row['work_id'])
+            found.append(replies[id(row)].result() if id(row) in replies and not (done and not summoned(row))
+                         else session_status(own, row, done=done))
+        return found
 
 
 def recorded_activity(store: Store, row: dict[str, Any]) -> str:
@@ -1136,7 +1194,9 @@ def session_status(store: Store, row: dict[str, Any], *, done: bool | None = Non
 WAITS = {'login-needed': 'login', 'permission-waiting': 'permission', 'question-waiting': 'question'}
 DIED = ('the runner is no longer running', 'the runner is no longer listening', 'its port answers for another session',
         'its pid runs the runner of another ticket')
-FOREIGN = 'another Metaform home started it'
+# how a row reads when its pid is a live runner that does not answer for its session, `silent`
+SILENT = ('the runner is no longer listening', 'its port answers for another session')
+FOREIGN ='another Metaform home started it'
 
 
 def session_work_status(row: dict[str, Any], raised: Sequence[dict[str, Any]] = ()) -> dict[str, str | None]:
@@ -1699,9 +1759,11 @@ def autostart(ctx: Context) -> dict[str, Any]:
     prefers. A ticket the person holds is left out; one whose agent stopped with it open stays taken until the person
     acts. A worker's session that ended without the person's stop is resumed by the supervisor, `retry`, up to
     dispatch_retries, then handed to the person; so is the person's system agent while they keep it connected,
-    `stay_connected`; nothing else restarts by itself."""
-    from .recovery import recover
+    `stay_connected`; nothing else restarts by itself. A session whose runner is verifiably gone, as after a crash, is
+    first written as ended, `settle`, so the supervisor sees it."""
+    from .recovery import recover, settle
     recovered = recover(ctx)
+    settle(ctx)  # after recover, which under automatic recovery returns such a ticket to the queue instead
     store = ctx.require_store()
     start_raised(ctx, store)  # the person raised these, so they start whether Autostart agents is checked or not
     connected = stay_connected(ctx, store)  # the person's own, whether Autostart agents is checked or not
@@ -1765,7 +1827,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
                      if not kept.get(record.id, {}).get('hold')]
         candidates = [record for record in open_work
                       if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)]
-        active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
+        rows = sessions(store, open_work=opened)
+        active = [row for row in rows if row['state'] == 'running']
         editing = {row['work_id'] for row in active if editor(row)}  # the person's editor sessions take no slot
         workers = [row for row in active if not summoned(row) and not editor(row)]
         candidates.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
@@ -1787,7 +1850,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
         # person's summoned chats hold are not workers; the first summoned is the +1, and the rest take slots, as
         # `extra`.
         chatting = {row['work_id'] for row in active if summoned(row)}
-        in_motion = {record.id for record in opened if record.taken and not record.done} - chatting - editing
+        in_motion = ({record.id for record in opened if record.taken and not record.done} - chatting - editing
+                     - left_waiting(store, opened, rows))
         extra = max(0, sum(1 for row in active if summoned(row)) - 1)  # summoned beyond the first hold worker slots
         capacity = max(0, int(ctx.setting('dispatch_agents')) - extra -
                        len(in_motion | {row['work_id'] for row in workers} | {record.id for record in taken}))
@@ -1857,6 +1921,28 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
 # How a session ends that the person ended, or that ended with its work: never retried, P012. A runner ended with
 # SIGTERM is counted as stopped, since nothing in Metaform sends it: the person or their system did.
 PERSON_ENDS = ('stopped by the person', 'cancelled by the person', 'the ticket is done', 'the runner was terminated')
+
+
+def left_waiting(store: Store, opened: Sequence[WorkRecord], rows: Sequence[dict[str, Any]]) -> set[str]:
+    """The open tickets still taken by a session that ended and that nothing starts again: the person ended it, or the
+    supervisor handed it to them, `retry`. A ticket holds an agent slot only while its agent is alive or something
+    will start it again; these wait for the person, so they hold none. One the supervisor will still resume keeps its
+    slot, as does one whose runner died, which `settle` writes as ended for the supervisor. Found 2026-10-15: four
+    tickets the person had stopped held four of five slots, so with no agent at work every resume was refused."""
+    latest = {(row['work_id'], row['session_id']): row for row in rows}
+    with own_store(store).tables(write=False) as tx:
+        handed = {(row['work_id'], row['session_id']) for row in tx.rows('attempts', limit=0).results if row['handed']}
+    waiting: set[str] = set()
+    for record in opened:
+        if not record.taken or record.done:
+            continue
+        session_id = (record.taken_by or '').partition(' ')[2]
+        row = latest.get((record.id, session_id))
+        if row is None or row['state'] != 'ended':
+            continue
+        if str(row.get('how') or '') in PERSON_ENDS or (record.id, session_id) in handed:
+            waiting.add(record.id)
+    return waiting
 
 
 def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None) -> dict[str, Any]:
@@ -1969,9 +2055,10 @@ def stay_connected(ctx: Context, store: Store) -> dict[str, Any]:
     now = time.time()
     last = mine[-1] if mine else None
     # a runner that outlived the server that started it, or one started to resume it that has not written its row yet,
-    # is running whatever a status read says: it is never resumed again or replaced
-    if any(row['state'] == 'running' for row in mine) or last is not None and not (last.get('origin') and foreign(last)) \
-            and holder(store, held.id, str(last['session_id'])) is not None:
+    # is running whatever a status read says: it is never resumed again or replaced. Every system session is checked,
+    # not only the last: an older conversation's live runner keeps a newer ended one from being resumed beside it.
+    # One that does not answer is left too; the person's Call says it is held, and their stop ends it.
+    if any(row['state'] == 'running' for row in mine) or holding(store, held.id, mine) is not None:
         if kept is not None and (kept['handed'] or now >= float(kept['next_at'])):
             with own.tables() as tx:  # it outlived its wait, or the person brought it back: the count starts again
                 tx.delete('attempts', {'work_id': held.id})
@@ -2138,8 +2225,10 @@ def _running_or_stop(store: Store, work_id: str, session_id: str | None = None) 
     if session_id:
         # One session of several on a ticket, as editor sessions share theirs, BASE-062: that one, checked live, so a
         # row a killed process left is never taken for it.
+        # One whose pid runs this ticket is reached even unanswering, as below, so the stop a held session names works.
         chosen = next((row for row in found if row['session_id'] == session_id), None)
-        if chosen is None or session_status(own_store(held), chosen, done=False)['state'] != 'running':
+        if chosen is None or session_status(own_store(held), chosen, done=False)['state'] != 'running' \
+                and runner_of(chosen.get('pid')) != work_id:
             raise Stop('The chat session is no longer the running session on this ticket.',
                        f'metaform dispatch sessions id={work_id}')
         return chosen
@@ -2159,8 +2248,18 @@ def _told(row: dict[str, Any], op: str, **given: Any) -> dict[str, Any]:
     try:
         return tell(row, op, **given)
     except OSError as error:
-        raise Stop(f'Session {row["session_id"]} of work {row["work_id"]} did not answer: {error}.',
-                   f'metaform dispatch sessions id={row["work_id"]}') from None
+        raise unanswered(row, error) from None
+
+
+def unanswered(row: dict[str, Any], error: OSError) -> Stop:
+    """A session that did not answer a request: one whose live runner still holds it, such as a runner under load, is
+    held, said with the runner's pid and the stop that ends it; the person cannot otherwise reach it."""
+    session_id, work_id, pid = row['session_id'], row['work_id'], row.get('pid')
+    if runner_of(pid) == work_id:
+        return Stop(f'Session {session_id} of work {work_id} is held by its runner, process {pid}, which is alive '
+                    f'but did not answer: {error}.', f'metaform dispatch stop {work_id} session={session_id}')
+    return Stop(f'Session {session_id} of work {work_id} did not answer: {error}.',
+                f'metaform dispatch sessions id={work_id}')
 
 
 def editor(row: dict[str, Any]) -> bool:
@@ -2308,22 +2407,36 @@ def converse(ctx: Context, store: Store, work_id: str, agent: str, extra: Sequen
 
 def system(ctx: Context) -> dict[str, Any]:
     """Start the person's system agent, the one agent they may summon besides the agents at work: it talks with them
-    about anything in the project, from the project's folder, and stays until stopped. A running one is reused. The
-    person's Call starts the supervisor's count of its ends again, `stay_connected`."""
+    about anything in the project, from the project's folder, and stays until stopped. A running one is reused, except
+    with `fresh`, /new on My agent: then the running one ends as the person's stop ends it, changing no setting, and a
+    new one starts resuming nothing, so /new always gives a new conversation. The person's Call starts the
+    supervisor's count of its ends again, `stay_connected`."""
     store = ctx.require_store()
     held = anchor(ctx, store)
     forget_ends(store, held.id)
     found = sessions(store, held.id)
+    fresh = bool(ctx.nouns.get('fresh'))
     # running as read, or held by a live runner whatever a status read says, such as one that outlived the server
-    # that started it: reused, never resumed a second time
-    live = next((row for row in found if row['state'] == 'running'), None) or next(
-        (row for row in reversed(found) if not (row.get('origin') and foreign(row))
-         and holder(store, held.id, str(row['session_id'])) is not None), None)
+    # that started it: reused, never resumed a second time. One that does not answer is held: said with its pid and
+    # the stop that ends it, since the person cannot talk to it
+    live = next((row for row in found if row['state'] == 'running'), None)
+    if live is None and (holds := holding(store, held.id, found)) is not None:
+        live, pid = holds
+        if silent(live, pid) and not fresh:
+            return held_session(live, pid)
+    agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))) if live is None or fresh else ''
+    if live is not None and fresh:
+        if found_command(ctx, agent) is None:  # checked before the running one ends, so a refused start leaves it
+            raise Stop(f'The start command of {agent} is not found on this system.',
+                       f'metaform set --dispatch-{agent} "<command>"')
+        ended = ended_by_person(store, live)
+        if ended.get('error'):
+            raise Stop(str(ended['error']), f'metaform dispatch sessions id={held.id}')
+        live = None
     if live is not None:
         return {'state': 'running', 'work_id': held.id, 'agent': live['agent'], 'session_id': live['session_id']}
-    agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent')))
     again = resumed_conversation(ctx, store, held.id, agent, 'system', person=True) \
-        if ctx.setting('dispatch_resume_chats') else None
+        if ctx.setting('dispatch_resume_chats') and not fresh else None
     return again or converse(ctx, store, held.id, agent, [])
 
 
@@ -2371,6 +2484,8 @@ def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, a
         session_id = str(row['session_id'])
         extra = [f'resume={session_id}', 'system=true', *([] if about == 'system' else [f'talk={about}'])]
         started = resume_spawn(store, work_id, agent, extra, 'resume')
+        if started.get('state') == 'running' and silent(row, started.get('pid')):
+            return held_session(row, int(started['pid']))
         return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'session_id': session_id, **started,
                 'conversation': True}
     return None
@@ -2433,7 +2548,8 @@ def summon_room(ctx: Context, store: Store) -> int:
     """How many more agents the person may summon now: one is always theirs, and beyond it the agent slots the agents
     at work leave free, up to `dispatch_agents`."""
     opened = store.work(open=True, limit=0).results
-    active = [row for row in sessions(store, open_work=opened) if row['state'] == 'running']
+    rows = sessions(store, open_work=opened)
+    active = [row for row in rows if row['state'] == 'running']
     called = [row for row in active if summoned(row)]
     editing = {row['work_id'] for row in active if editor(row)}  # the person's editor sessions take no slot
     chatting = {row['work_id'] for row in called} | editing
@@ -2441,7 +2557,8 @@ def summon_room(ctx: Context, store: Store) -> int:
     with Store(store.project_id, module='dispatch').tables(write=False) as tx:
         launching = [row for row in tx.rows('raised', by=('seq',), limit=0).results if row['started'] is not None
                      and row['work_id'] not in made and time.time() - row['started'] < STALE_START]
-    working = ({record.id for record in opened if record.taken and not record.done} - chatting) | {
+    waiting = left_waiting(store, opened, rows)
+    working = ({record.id for record in opened if record.taken and not record.done} - chatting - waiting) | {
         row['work_id'] for row in active if not summoned(row) and not editor(row)}
     free = max(0, int(ctx.setting('dispatch_agents')) - len(working))
     return max(0, 1 + free - len(called) - len(launching))
@@ -2462,7 +2579,8 @@ def slots_used(ctx: Context, store: Store) -> int:
     active = [row for row in rows if row['state'] == 'running']
     editing = {row['work_id'] for row in active if editor(row)}
     chatting = {row['work_id'] for row in active if summoned(row)}
-    in_motion = {record.id for record in opened if record.taken and not record.done} - chatting - editing
+    in_motion = ({record.id for record in opened if record.taken and not record.done} - chatting - editing
+                 - left_waiting(store, opened, rows))
     workers = {row['work_id'] for row in active if not summoned(row) and not editor(row)}
     extra = max(0, sum(1 for row in active if summoned(row)) - 1)
     return extra + len(in_motion | workers)
@@ -2800,9 +2918,10 @@ def link(ctx: Context) -> dict[str, Any]:
     layer naming its path, a record with an id that lasts, code.graph.knowledge#c, the refs the runner places files
     by, so the runner's lock on writing it is lifted at once and the file is placed exactly from then on. The ref is
     named `ref`, a proper noun for what the file is, or from its path, and records who linked it and why. A file
-    linked already at another place is a second ref here, with a name of its own; no ref moves. An Address no
-    element has yet is made first, in the active map's base; the sources layer is made when the project has none.
-    Linking it again where it is changes nothing."""
+    linked already at another place is a second ref here, with a name of its own; no ref moves. A ref is not an
+    element and linking never makes one: an Address no element has is refused, with the call that adds the element
+    to a knowledge layer first, never to the base, which is the intake's alone (CTX-001, code.dispatcher.agent#4d).
+    The sources layer is made when the project has none. Linking it again where it is changes nothing."""
     from metaform.data import Node, Outcome
     store = ctx.require_store()
     root = Path(store.project().path).resolve()
@@ -2823,30 +2942,24 @@ def link(ctx: Context) -> dict[str, Any]:
     if not named or named == '.' or named.startswith('../'):
         raise Stop(f'{given} names no file of the project.', 'metaform dispatch link file=<path> node=<Address>')
     element = store.element(address)
-    made = element is None
     if element is None:
-        layer = next((one for one in store.layers(limit=0).results if one.kind in ('base', 'intake')), None)
-        if layer is None:
-            raise Stop('The project has no map yet, so no element can be made for the file.', 'metaform intake start')
-        added = store.add_element(layer.name, address)
-        if isinstance(added, Outcome):
-            raise Stop(' '.join(notice.message for notice in added.notices) or
-                       f'No element was made at {address}.', f'metaform map where {address}')
-        element = added
+        raise Stop(f'No element is at {address}, so {named} cannot be linked there; linking never makes an element. '
+                   'Link the file to the element whose functionality it realizes, or add that element to a knowledge '
+                   'layer first.',
+                   f'metaform map knowledge op=add-element layer=<your layer> address={address} name=<its name>')
     work, session = os.environ.get('METAFORM_WORK'), os.environ.get('METAFORM_SESSION')
     by = ' '.join(part for part in (f'work {work}' if work else '', f'session {session}' if session else '') if part)
     written = store.link_ref('path', named, Node('element', element.id), name=ctx.nouns.get('ref') or None,
                              by=by or ctx.surface, why=ctx.nouns.get('why') or None)
     if isinstance(written, Outcome):  # a name taken or reserved: nothing written, said as a result, BASE-044, CTX-066
-        return {'file': named, 'node': address, 'ref': None, 'id': None, 'linked': False, 'made': made,
+        return {'file': named, 'node': address, 'ref': None, 'id': None, 'linked': False,
                 'said': ' '.join(notice.message for notice in written.notices) or f'{named} was not linked.'}
     if any(notice.where == 'linked' for notice in written.notices):
-        return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': False, 'made': made,
+        return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': False,
                 'said': f'{named} was already linked as {written.ref}.'}
     noted = [notice.message for notice in written.notices if notice.where == 'ref']
-    return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': True, 'made': made,
-            'said': ' '.join([(f'{named} is linked as {written.ref}{", its element made" if made else ""}; writes '
-                               'to it go through.'), *noted])}
+    return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': True,
+            'said': ' '.join([f'{named} is linked as {written.ref}; writes to it go through.', *noted])}
 
 
 def attach(ctx: Context) -> dict[str, Any]:
@@ -2927,18 +3040,94 @@ def interrupt(ctx: Context) -> dict[str, Any]:
 
 
 def stop(ctx: Context) -> dict[str, Any]:
-    """Stop the agent working a ticket: session/cancel, then its process group ends. The person stopping their system
-    agent turns dispatch_stay_connected off for the project, `disconnect`, and the result says so."""
+    """Stop the agent working a ticket: session/cancel, then its process group ends. A runner that holds the session
+    and does not answer, such as one under load, has its process group ended here and its session recorded as stopped,
+    so the next Call or resume starts it once. The person stopping their system agent turns dispatch_stay_connected
+    off for the project, `disconnect`, and the result says so."""
     may_steer(ctx)
     store = ctx.require_store()
     row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     off = disconnect(ctx, store, row)
-    result = _told(row, 'stop')
+    result = ended_by_person(store, row)
     if result.get('error'):  # a session that ends elsewhere, such as in the person's editor, BASE-062
         if off:  # it still runs, so it stays connected
             settings.put('dispatch_stay_connected', True, Path(store.project().path))
         raise Stop(str(result['error']), f'metaform dispatch sessions id={ctx.nouns["id"]}')
     return {**result, 'stay_connected': False} if off else result
+
+
+def ended_held(store: Store, row: dict[str, Any]) -> dict[str, Any]:
+    """End a runner that holds a session and does not answer, as its own stop would: its process group, then its row
+    and its ticket through `release`."""
+    pid, work_id, session_id = int(row['pid']), str(row['work_id']), str(row['session_id'])
+    end_group(pid)
+    held = (intake_store(store, work_id) or store) if intake_id(work_id) else store
+    by = f'{row["agent"]} {session_id}'
+    took = not intake_id(work_id) and ticket(store, work_id).taken_by == by
+    release(own_store(held), work_id, by, took, session_id, 'stopped by the person', row.get('runner'))
+    return {'work_id': work_id, 'session_id': session_id, 'stopped': True, 'pid': pid,
+            'how': 'stopped by the person'}
+
+
+def ended_by_person(store: Store, row: dict[str, Any]) -> dict[str, Any]:
+    """The person's stop of one running session: its runner ends it and answers once its row says it ended; a runner
+    that holds it and does not answer is ended here, `ended_held`. An `error` in the result is a session that ends
+    elsewhere, such as in the person's editor, BASE-062."""
+    try:
+        return tell(row, 'stop')
+    except OSError as error:
+        if runner_of(row.get('pid')) != row['work_id']:  # only a pid whose command line is this ticket's runner
+            raise unanswered(row, error) from None
+        return ended_held(store, row)
+
+
+def new(ctx: Context) -> dict[str, Any]:
+    """A new conversation with the agent on a ticket, /new and /clear in the chat dock, code.interface.graphical#9b: its
+    session ends as the person's stop ends it, and one starts in the same role with nothing resumed, whatever
+    dispatch_resume_chats says: the person's system agent, a chat they summoned about something, or the agent working
+    the ticket, which takes it again. The ended session stays readable as a closed thread. Unlike stop it changes no
+    setting, since the person goes on talking: dispatch_stay_connected stays as it is. Everything a start needs is
+    checked before the session ends, so a refused start leaves it running."""
+    may_steer(ctx)
+    store = ctx.require_store()
+    work_id = str(ctx.nouns['id'])
+    if intake_id(work_id):
+        raise Stop('An intake agent goes on with the intake being recorded; stop it and start the intake again.',
+                   f'metaform dispatch stop {work_id}')
+    row = _running_or_stop(store, work_id, ctx.nouns.get('session'))
+    if editor(row):
+        raise Stop('A session your editor runs starts again in your editor.', f'metaform dispatch sessions id={work_id}')
+    agent, session_id = str(row['agent']), str(row['session_id'])
+    about = (session_state(store, session_id) or {}).get('about')
+    worker = not summoned(row)
+    if not worker and not about:  # a merge preparation or a question's agent: a role with nothing to start again
+        raise Stop(f'Session {session_id} is not a conversation or a ticket\'s agent; stop it instead.',
+                   f'metaform dispatch stop {work_id} session={session_id}')
+    if worker:
+        if shutil.which(argv(start_command(ctx, agent))[0]) is None:
+            raise Stop(f'The start command of {agent} is not found on this system.',
+                       f'metaform set --dispatch-{agent} "<command>"')
+        mcp_server(Path(store.project().path))
+        budget_stop(ctx, store, work_id)
+    elif found_command(ctx, agent) is None:
+        raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
+    ended = ended_by_person(store, row)
+    if ended.get('error'):
+        raise Stop(str(ended['error']), f'metaform dispatch sessions id={work_id}')
+    if not worker:
+        if about == 'system':
+            forget_ends(store, work_id)  # the person acted on their system agent, as a Call does
+        return {**converse(ctx, store, work_id, agent, [] if about == 'system' else [f'talk={about}']),
+                'ended': session_id}
+    reservation = 'dispatch starting ' + secrets.token_hex(16)
+    with store.atomic():  # the ticket the ended session held is taken again at once, so no other start takes it between
+        if ticket(store, work_id).taken_by == f'{agent} {session_id}':
+            store.move_work(work_id, 'todo')
+        startable(ctx, store, ticket(store, work_id), agent)
+        store.take_work(work_id, by=reservation)
+    ctx.nouns['agent'] = agent
+    given: dict[str, str | None] = {'prompts': None, 'mode': None, **launch_options(store, work_id)}
+    return {**run_reserved(ctx, reservation, given), 'ended': session_id}
 
 
 # What `wait` waits for: a ticket done; its agent stopped with it open, idle at a turn's end or its session ended; or
@@ -2954,13 +3143,31 @@ def ended(record: WorkRecord) -> str:
     return 'done' if (record.outcome or 'completed') == 'completed' else str(record.outcome)
 
 
-def awaited(store: Store, until: str, work_id: str | None, since: str | None) -> list[dict[str, Any]]:
+def named_tickets(store: Store, work_ids: Collection[str]) -> list[WorkRecord]:
+    """The tickets among `work_ids` that exist, each read alone; an intake session's id, or a ticket since removed,
+    names none."""
+    found: list[WorkRecord] = []
+    for work_id in sorted(work_ids):
+        if intake_id(work_id):
+            continue
+        try:
+            found.append(store.ticket(work_id).work)
+        except NewerStore:
+            raise
+        except StoreError:
+            continue
+    return found
+
+
+def awaited(store: Store, until: str, work_id: str | None, since: str | None,
+            named: Collection[str] | None = None) -> list[dict[str, Any]]:
     """The tickets that meet `until`, each with the time it met it, oldest first. With a work id, that ticket as it
     is now, and a done one ends any wait since nothing comes after it; with none, every ticket of the project that met
-    it at or after `since`."""
+    it at or after `since`, or with `named`, only those tickets: the ones the changes a wait heard named, `awaits`."""
     from .signals import rows
     if until == 'done':
-        records = [ticket(store, work_id)] if work_id else store.work(open=False, limit=0).results
+        records = [ticket(store, work_id)] if work_id else named_tickets(store, named) if named is not None \
+            else store.work(open=False, limit=0).results
         return sorted(({'work_id': record.id, 'state': ended(record), 'at': record.done,
                         **ticket_work_status(record, (), ())} for record in records
                        if record.done and (work_id or record.done >= str(since))), key=lambda found: found['at'])
@@ -2970,11 +3177,16 @@ def awaited(store: Store, until: str, work_id: str | None, since: str | None) ->
             return [{'work_id': record.id, 'state': ended(record), 'at': record.done,
                      **ticket_work_status(record, (), ())}]
         open_ids = {record.id}
+    elif named is not None:
+        open_ids = {record.id for record in named_tickets(store, named) if not record.done}
     else:
         open_ids = {record.id for record in store.work(open=True, limit=0).results}
-    latest = {row['work_id']: row['session_id'] for row in sessions(store, work_id, verify=False)}
+    # one ticket's rows, those of the tickets named, or every ticket's; the sessions only for until=stopped
+    scope: list[str | None] = [work_id] if work_id else [*sorted(open_ids)] if named is not None else [None]
+    latest = {row['work_id']: row['session_id'] for one in scope for row in sessions(store, one, verify=False)} \
+        if until == 'stopped' else {}
     held: dict[str, list[dict[str, Any]]] = {}
-    for row in rows(store, work_id):
+    for row in (row for one in scope for row in rows(store, one)):
         if row.get('work_id') not in open_ids or (since and row['at'] < since):
             continue
         if until == 'stopped' and (row['signal'] not in STOPPED
@@ -2984,6 +3196,30 @@ def awaited(store: Store, until: str, work_id: str | None, since: str | None) ->
     return sorted(({'work_id': found, 'state': until, 'at': signals[-1]['at'], 'signals': signals,
                     **ticket_work_status(ticket(store, found), sessions(store, found), rows(store, found))}
                    for found, signals in held.items()), key=lambda found: found['at'])
+
+
+def awaits(payload: dict[str, Any], project_id: str, until: str, work_id: str | None) -> bool:
+    """Whether a `map.changed` from another process can change what a wait answers, decided from the change alone,
+    BASE-053: one of its project that names its ticket, or, waiting on every ticket, names some ticket, or does not
+    say which; and that wrote a ticket, for until=done or a wait on one ticket, which that ticket's done ends, or a
+    signal otherwise. What it wrote is read from its `kinds`, else its tables; a change that says neither may have
+    written anything. Thread lines, memories and map writes that close no ticket wake nothing."""
+    if payload.get('project') != project_id:
+        return False
+    named: Any = payload.get('work_ids')
+    if isinstance(named, list) and (work_id not in named if work_id else not named):
+        return False
+    tickets, signals = until == 'done' or work_id is not None, until != 'done'
+    kinds: Any = payload.get('kinds')
+    if isinstance(kinds, list):
+        return tickets and 'ticket' in kinds or signals and 'signal' in kinds
+    tables: Any = payload.get('tables')
+    if tables == 'dispatch':  # a runner's own tables, which hold no ticket; a signal it raises is said with them
+        return not isinstance(payload.get('dispatch_tables'), list) or signals and 'signal' in payload
+    if isinstance(tables, list):
+        return tickets and 'work' in tables or signals and any(str(table).startswith('dispatch.')
+                                                               for table in cast(list[Any], tables))
+    return True
 
 
 def waiting_call(until: str, work_id: str | None, since: str | None) -> str:
@@ -3017,23 +3253,28 @@ async def wait(ctx: Context) -> dict[str, Any]:
         await asyncio.to_thread(ticket, store, work_id)  # an unknown ticket is refused before anything waits
     loop = asyncio.get_running_loop()
     heard = asyncio.Event()
+    named: set[str] | None = set()  # the tickets the changes heard since the last read name; None when one did not say
+
+    def note(work_ids: list[str] | None) -> None:
+        nonlocal named
+        named = None if work_ids is None or named is None else named | set(work_ids)
+        heard.set()
 
     def told(payload: dict[str, Any]) -> None:
-        # the thread lines a runner streams change no ticket and no signal, so they wake nothing; a wait on one ticket
-        # wakes only for a change that names it, or does not say which tickets it concerns
-        named: Any = payload.get('work_ids')
-        if payload.get('project') != store.project_id or payload.get('tables') == 'dispatch' \
-                and payload.get('dispatch_tables') == ['dispatch.lines'] and 'signal' not in payload \
-                or work_id and isinstance(named, list) and work_id not in named:
-            return
-        loop.call_soon_threadsafe(heard.set)
+        # decided from the change alone, `awaits`, so one that is not this wait's reads nothing; a wait on every ticket
+        # reads again only the tickets the changes name, and those heard while a read runs merge into the next one
+        if awaits(payload, store.project_id, until, work_id):
+            given: Any = payload.get('work_ids')
+            loop.call_soon_threadsafe(note, [str(one) for one in cast(list[Any], given)] if isinstance(given, list)
+                                      else None)
     limit = float(ctx.setting('dispatch_wait_seconds'))
     deadline = loop.time() + limit
+    scope: set[str] | None = None  # the first read is of every ticket
     with ctx.listen(told):
         while True:
             heard.clear()  # before the read, so a change during it wakes the wait again
             read = time.strftime(STAMP, time.gmtime())
-            woke = await asyncio.to_thread(awaited, store, until, work_id, since)
+            woke = await asyncio.to_thread(awaited, store, until, work_id, since, scope)
             if woke:
                 closed = work_id is not None and woke[0]['state'] in ('done', 'cancelled', 'failed')
                 return {'state': woke[0]['state'], 'until': until, 'work_id': woke[0]['work_id'], 'woke': woke,
@@ -3042,6 +3283,7 @@ async def wait(ctx: Context) -> dict[str, Any]:
                 await asyncio.wait_for(heard.wait(), max(deadline - loop.time(), 0))
             except TimeoutError:
                 break
+            scope, named = named, set()
     return {'state': 'pending', 'until': until, 'work_id': work_id, 'woke': [], 'since': since, 'waited': limit,
             'next': waiting_call(until, work_id, since)}
 
@@ -3167,6 +3409,25 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 ENDED_STATE = ('about', 'intake')  # what the agents key keeps of an ended session's state: its conversation, intake
+# What the agents key kept of each ended session's state, by project and session id, with the stored row it was read
+# for, `ended_mark`; None for a session that kept no state. A session's state line holds about 50 KB, its commands
+# mostly, and reading and parsing every ended session's on every read was the most of this read's cost,
+# code.dispatcher.agent#3b. A row that runs again changes its runner, pid and port, so its state is read again.
+ENDED_STATES: dict[tuple[str, str], tuple[tuple[Any, ...], dict[str, Any] | None]] = {}
+
+
+def held_here(row: dict[str, Any]) -> bool:
+    """Whether a stored session row is recorded running by this home, so its runner may still be at work on it; one
+    another home started reads as ended here, session_status."""
+    return row['state'] == 'running' and not (row.get('origin') and foreign(row))
+
+
+def ended_mark(row: dict[str, Any]) -> tuple[Any, ...] | None:
+    """What identifies a stored session row as ended, which its runner writes once at its end: None for a row still
+    recorded running here, whose runner may yet change its state."""
+    if held_here(row):
+        return None
+    return row['state'], row.get('how'), row.get('runner'), row.get('pid'), row.get('port'), row['seq']
 
 
 def read_sessions(ctx: Context) -> dict[str, Any]:
@@ -3179,43 +3440,80 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     work_id = ctx.nouns.get('id') or None
     if work_id and intake_id(work_id):
         store = intake_store(store, str(work_id)) or store
-    found = sessions(store, work_id)
     lines: list[dict[str, Any]] = []
     states: dict[str, dict[str, Any]] = {}
+    stored: list[dict[str, Any]] = []
+    raised: list[dict[str, Any]] = []
     since = ctx.nouns.get('since')
+    agents_key = ctx.nouns.get('thread') is False and not work_id
+    marks: dict[str, tuple[Any, ...] | None] = {}
+    kept: dict[str, dict[str, Any] | None] = {}  # the agents key's ended sessions whose state it read before
+    # One transaction reads the session rows, the lines wanted of them and the signals, before any runner is asked for
+    # its status, code.dispatcher.agent#3b; what a row recorded running needs is read for it, and dropped below for
+    # one whose runner turns out to be gone.
     try:
         with store.tables(write=False) as tx:
-            for session in found:
+            stored = [dict(row) for row in (tx.rows('sessions', {'work_id': work_id}, by=('work_id', 'seq'), limit=0)
+                                            if work_id else tx.rows('sessions', by=('seq',), limit=0)).results]
+            if agents_key:
+                marks = {str(row['session_id']): ended_mark(row) for row in stored}
+            for session_id, mark in marks.items():
+                cached = ENDED_STATES.get((store.project_id, session_id))
+                if mark is not None and cached is not None and cached[0] == mark:
+                    kept[session_id] = cached[1]
+            wanted = {str(session['session_id']) for session in stored} - set(kept)
+            if wanted and (ctx.nouns.get('thread') is False or since is not None):
+                if agents_key and all(marks.get(session_id) is None for session_id in wanted):
+                    # only sessions recorded running here, a few at most: each one's state line by its key
+                    for session_id in sorted(wanted):
+                        lines += [dict(row) for row in tx.rows('lines', {'session_id': session_id, 'name': 'state'},
+                                                               limit=1).results]
+                else:
+                    # Every wanted session's state line in one read of the (kind, work_id) index, not one read each,
+                    # code.dispatcher.agent#3b.
+                    lines += [dict(row) for row in tx.rows('lines', {'kind': 'state',
+                                                                     **({'work_id': work_id} if work_id else {})},
+                                                           by=('kind',), limit=0).results
+                              if row['session_id'] in wanted and row['name'] == 'state']
+            for session in stored:
                 if ctx.nouns.get('thread') is not False and since is not None:
                     # Only the lines begun after `since`, one range of the (session_id, seq) index read from the
                     # cursor at that seq, for a caller that polls a thread; a line grown in place keeps the seq it
-                    # began with. Its state line is read too, so `states` stays whole.
+                    # began with. Its state line is read above, so `states` stays whole.
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
                                                            by=('session_id', 'seq'), limit=0,
                                                            after=json.dumps([int(since), ''])).results
-                              if int(row['seq']) > int(since)]
-                    lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
-                                                                     'name': 'state'}, limit=1).results]
+                              if int(row['seq']) > int(since) and row['name'] != 'state']
                 elif ctx.nouns.get('thread') is not False:
                     lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
                                                            by=('session_id', 'seq'), limit=0).results]
-                else:
-                    lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id'],
-                                                                     'name': 'state'}, limit=1).results]
-                    if session.get('state') == 'running':  # its subagents' lines, for their figures, VIEW-035
-                        lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
-                                                               after=json.dumps(['subagent:']),
-                                                               limit=SUBAGENTS_READ).results
-                                  if str(row['name']).startswith('subagent:')]
+                elif held_here(session):  # its subagents' lines, for their figures, VIEW-035
+                    lines += [dict(row) for row in tx.rows('lines', {'session_id': session['session_id']},
+                                                           after=json.dumps(['subagent:']),
+                                                           limit=SUBAGENTS_READ).results
+                              if str(row['name']).startswith('subagent:')]
+            raised = signal_rows(tx, work_id)
     except StoreError:
-        pass
+        raised = read_signal_rows(store, work_id)  # as before: a store that cannot be read says so here
+    found = verified(store, stored)
+    if ctx.nouns.get('thread') is False:  # the subagents only of sessions whose runner holds them
+        live = {session['session_id'] for session in found if session.get('state') == 'running'}
+        lines = [line for line in lines if line['kind'] != 'subagent' or line['session_id'] in live]
     lines, states = threaded(lines)
-    if ctx.nouns.get('thread') is False and not work_id:
+    if agents_key:
         # The agents key's read of every ticket, done on each change it hears: an ended session keeps only what names
         # it in the Agents menu, not its commands, capabilities and options, which made this read megabytes.
         running = {session['session_id'] for session in found if session.get('state') == 'running'}
         states = {key: state if key in running else {name: state[name] for name in ENDED_STATE if name in state}
                   for key, state in states.items()}
+        for session in found:
+            session_id = str(session['session_id'])
+            mark = marks.get(session_id)
+            if mark is not None and session_id not in kept and session_id not in running:
+                ENDED_STATES[(store.project_id, session_id)] = (mark, states.get(session_id))
+        copies = {key: dict(state) for key, state in kept.items() if state is not None}  # callers may change them
+        states = {key: copies[key] if key in copies else states[key]
+                  for key in (str(session['session_id']) for session in found) if key in copies or key in states}
     # A subagent the agent started, when it advertises them, is a child session of its own, P016: its line in the
     # parent's thread names it, and its own thread is kept under its session id, read here with it.
     children: list[dict[str, Any]] = []
@@ -3235,8 +3533,6 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         children.append({**child, 'parent': line['session_id'], 'lines': threaded(own_lines)[0]})
     if ctx.nouns.get('thread') is False:
         lines = []
-    from .signals import rows
-    raised = rows(store, work_id)
     return {'sessions': [{**{key: value for key, value in session.items() if key not in PRIVATE},
                           **session_work_status(session, [one for one in raised
                                                           if one.get('work_id') == session['work_id']])}
@@ -3491,6 +3787,8 @@ def resume(ctx: Context) -> dict[str, Any]:
         raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} besides the one you can always '
                    'summon. A session resumes when an agent finishes or one is stopped.', 'metaform dispatch sessions')
     started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume')
+    if started.get('state') == 'running' and silent(row, started.get('pid')):
+        return held_session(row, int(started['pid']))
     return {**said, 'state': 'starting', **started, 'conversation': not worker}
 
 
@@ -3542,6 +3840,23 @@ def intake(ctx: Context) -> dict[str, Any]:
     return {**said, **launched(store, work_id, started['pid'])} if ctx.nouns.get('wait') else said
 
 
+def launch_concerns(payload: dict[str, Any], project_id: str, work_id: str) -> bool:
+    """Whether a `map.changed` from another process can be the session row a launch waits for, decided from the change
+    alone, BASE-053: one of its project, an intake's metaform being of the same project, that names its ticket or does
+    not say which, and that wrote a session row or does not say what it wrote."""
+    named: Any = payload.get('work_ids')
+    if payload.get('project') != project_id or isinstance(named, list) and work_id not in named:
+        return False
+    kinds: Any = payload.get('kinds')
+    if isinstance(kinds, list):
+        return 'session' in kinds
+    tables: Any = payload.get('tables')
+    if tables == 'dispatch':
+        written: Any = payload.get('dispatch_tables')
+        return not isinstance(written, list) or 'dispatch.sessions' in written
+    return not isinstance(tables, list) or 'dispatch.sessions' in tables
+
+
 def launched(store: Store, work_id: str, pid: int) -> dict[str, Any]:
     """How a launch came out: running with its session once the agent made one, or failed with why, read from the
     session row its runner writes either way. The rows are read again only when the runner says it wrote one for this
@@ -3551,8 +3866,7 @@ def launched(store: Store, work_id: str, pid: int) -> dict[str, Any]:
     heard = threading.Event()
 
     def told(payload: dict[str, Any]) -> None:
-        named: Any = payload.get('work_ids')
-        if not isinstance(named, list) or work_id in named:
+        if launch_concerns(payload, store.project_id, work_id):
             heard.set()
     process = RUNNERS.pop(pid, None)
     if process is not None:
@@ -3832,7 +4146,9 @@ MODULE = Module(
         Verb('system', system, "Start the person's system agent, who talks with them about anything in the project, or "
                                'reuse the running one.',
              nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
-                         required=False),), open_world=True),
+                         required=False),
+                    Noun('fresh', 'true: start a new conversation, resuming none whatever dispatch_resume_chats says.',
+                         kind='bool', required=False)), open_world=True),
         Verb('agents', harnesses, 'List the agents dispatch can start, the default among them, how many more may '
                                   'be summoned and how many tickets may start now. Each comes with its name, its start '
                                   'command, and whether that command is found on this system.',
@@ -4076,6 +4392,11 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
                          required=False)), open_world=True, listed=session_live),
+        Verb('new', new, 'End the conversation of the agent on a ticket and start a new one in the same role, '
+                         'resuming nothing: the system agent, a summoned chat, or the ticket\'s agent.',
+             nouns=(Noun('id', 'The work id of the ticket.'),
+                    Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
+                         required=False)), surfaces=('cli',), open_world=True),
         Verb('sessions', read_sessions, 'List the agent sessions of a ticket, or of every ticket, each with its '
                                         'thread.',
              nouns=(Noun('id', 'The work id of the ticket; none for every ticket.', required=False),

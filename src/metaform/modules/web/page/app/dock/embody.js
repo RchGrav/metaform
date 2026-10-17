@@ -43,16 +43,17 @@ export const dockGoingAway = () => Boolean(DOCKMOTION.anim)
   && (DOCKMOTION.dir === 'away') === (DOCKMOTION.anim.playbackRate > 0);
 /* A body for the chat's agent on the map, web_embody: offered once per chat, inline at the top of its thread and never
  * as a window, at a pause after EMBODY_TURNS turns or EMBODY_MINUTES minutes, whichever comes first; always
- * gives it the person's last choice, or the mascot to the system agent; never gives none. The choice folds into the
- * chat's head as a small avatar of the character, which, like B, opens the choice again. The figure is the flow's:
+ * gives it the first character free; never gives none. The system agent's body is the person's mascot, web_mascot:
+ * while one is set it is drawn in every conversation and never offered; given here, it sets web_mascot. The choice
+ * folds into the chat's head as a small avatar of the character, which, like B, opens the choice again. The figure is
+ * the flow's:
  * `window.metaform.characters()` lists the characters and `window.metaform.embody(workId, glyph)` gives one; until
  * those exist nothing is offered and nothing breaks. */
 /* When the offer is due: about eight turns or twenty minutes is a conversation the person is staying with, and asked
  * sooner it interrupts one that has not shown it is worth keeping. Settings cleanup 2026-10-15 made these fixed (they
  * were web_embody_turns and web_embody_minutes); always and never in web_embody are the person's choices. */
 export const EMBODY_TURNS = 8, EMBODY_MINUTES = 20;
-export const EMBODY = {offered: new Set(), given: new Set(), since: new Map(), open: null, last: null, stops: []};
-try { EMBODY.last = localStorage.getItem('metaform.embodied') || null; } catch { /* storage can be blocked */ }
+export const EMBODY = {offered: new Set(), given: new Set(), since: new Map(), open: null, stops: []};
 export const embodyHooks = () => ['embody', 'characters', 'bodies']
   .every(name => typeof window.metaform?.[name] === 'function');
 const hooked = (name, ...given) => { try { return window.metaform[name](...given); } catch { return null; } };
@@ -80,19 +81,18 @@ function embodyAs(work, glyph, quiet = false) {
     if (!quiet) dockNote(done?.error || 'That body could not be given.');
     return false;
   }
-  EMBODY.last = glyph;
-  try { localStorage.setItem('metaform.embodied', glyph); } catch { /* storage can be blocked */ }
   EMBODY.given.add(work);
   if (EMBODY.open === work) { EMBODY.open = null; stopPreviews(); }
   if (quiet) drawHelpdesk();
-  else dockNote(done.mascot ? `Your system agent walks the map as the ${glyph} now, your mascot while you talk.`
+  else dockNote(done.mascot ? `Your system agent walks the map as the ${glyph} now, your mascot in every conversation.`
     : `It walks the map as the ${glyph} now.`);
   return true;
 }
 /* web_embody: offer asks once per conversation, in its thread, after EMBODY_TURNS turns or EMBODY_MINUTES minutes,
  * whichever comes first, and only at a pause, as a turn ends or a ticket closes, never while it works;
- * always gives each conversation the person's last choice, or the mascot to the system agent; never offers nothing.
- * The person asks at any time with the avatar in the head, the head's menu or B. */
+ * always gives each conversation the first character free; never offers nothing. The system agent with a mascot set,
+ * web_mascot, has its body already and is never offered one. The person asks at any time with the avatar in the head,
+ * the head's menu or B. */
 export function embodyOffer(work, session, lines, busy) {
   paintAvatar(work);
   if (!work || !session || !embodyHooks() || VIEW.embody === 'never' || !embodiable(DOCK.chat)) return;
@@ -105,12 +105,10 @@ export function embodyOffer(work, session, lines, busy) {
   if (chosen || EMBODY.offered.has(work)) return;
   if (offerDue(work, session, lines, busy)) { EMBODY.offered.add(work); EMBODY.open = work; }
 }
-/* web_embody always: the person's last choice, else their own character, else the first free one. */
+/* web_embody always: the first character free; for the system agent with no mascot set, that becomes the mascot. */
 function embodyAlways(work) {
   EMBODY.given.add(work);
-  const list = characterList(work), free = name => list.find(one => one.name === name && one.free);
-  const glyph = [EMBODY.last, list.find(one => one.preferred)?.name, list.find(one => one.free && !one.mascot)?.name]
-    .find(free);
+  const glyph = characterList(work).find(one => one.free && !one.mascot)?.name;
   if (glyph) embodyAs(work, glyph, true);
 }
 /* The offer is due after its turns or its minutes, at a pause: a turn ended, or its ticket closed. */

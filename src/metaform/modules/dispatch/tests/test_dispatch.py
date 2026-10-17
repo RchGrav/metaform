@@ -24,7 +24,7 @@ MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events',
-          'metaform.prompt_files', 'metaform.axiom', 'metaform.home', 'metaform.jev'}  # Jev, the decision service
+          'metaform.prompt_files', 'metaform.home', 'metaform.jev'}  # Jev, the decision service
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
@@ -35,6 +35,15 @@ def skip_while_unlocked():
     from metaform.modules.dispatch.runner import LINK_LOCK
     if not LINK_LOCK:
         pytest.skip('the lock on unlinked files is off until the rules and prompts for linking are in place, code#1e')
+
+
+def skip_while_unsandboxed():
+    """A test of the command sandbox is skipped while it is off, kept apart from the lock after the 2026-10-15
+    crash."""
+    from metaform.modules.dispatch.runner import SHELL_SANDBOX
+    skip_while_unlocked()
+    if not SHELL_SANDBOX:
+        pytest.skip('the command sandbox is off until the person turns it on after one agent has run with it')
 LIMIT = 60
 
 
@@ -420,6 +429,60 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     dispatch.stop()
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_a_ticket_change_reads_one_work_record_without_loading_its_context(dispatch, monkeypatch):
+    """A runner needs completion and steps, even when its ticket links a context it must not rebuild per event."""
+    from metaform.data import Store
+    from metaform.data import store as stores
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+
+    store = Store('proj', module='dispatch')
+    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), store,
+                             dispatch.ticket(), 'claude', ['true'])
+    store.plan_work(dispatch.id, 2)
+    store.step_work(dispatch.id, 'Measured the event cost.')
+    reads = []
+    invoke = stores.operations.invoke
+
+    def observed(tx, name, *given, **more):
+        from metaform import home
+
+        reads.append(name)
+        assert name != 'ticket', 'progress must not rebuild the ticket and linked-node contexts'
+        assert home.in_registry_scope(), 'one work read must share its registry validation'
+        return invoke(tx, name, *given, **more)
+
+    monkeypatch.setattr(stores.operations, 'invoke', observed)
+    asyncio.run(session.check())
+    assert reads == ['work'], reads
+    assert session.progress_steps == 1
+
+
+@pytest.mark.req('STORE-042')
+@pytest.mark.req('STORE-029')
+def test_dispatch_work_reads_keep_completion_missing_ids_and_newer_store_errors(dispatch, monkeypatch):
+    from metaform.data import NewerStore
+    from metaform.data import store as stores
+    from metaform.module import Stop
+    from metaform.modules.dispatch import ticket
+
+    before = dispatch.ticket()
+    assert ticket(dispatch.store, dispatch.id) == before
+    dispatch.store.finish_work(dispatch.id, 'Completed the measurement.')
+    assert ticket(dispatch.store, dispatch.id) == dispatch.ticket()
+    with pytest.raises(Stop, match='No work record has the id missing'):
+        ticket(dispatch.store, 'missing')
+
+    def refused(*given, **more):
+        raise NewerStore('The store is newer than this runner.', 'install it')
+
+    monkeypatch.setattr(stores.operations, 'invoke', refused)
+    with pytest.raises(NewerStore):
+        ticket(dispatch.store, dispatch.id)
 
 
 @pytest.mark.req('QUAL-015')
@@ -1212,6 +1275,53 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     assert set(ended.get(session, {})) <= {'about', 'intake'}, 'an ended session keeps only what names it'
 
 
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('STORE-005')
+def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended(dispatch, run, monkeypatch):
+    """code.dispatcher.agent#3b, 2026-10-16: the agents key read each session's state line in a query of its own and
+    every line of every thread to find the signals, 0.25 s of the server's time on the live home. Its lines are now
+    read in one query for the states and one for the signals, whatever the number of sessions, and a later read in
+    the same process reads no ended session's state again."""
+    from metaform.data import Store, tables
+    from metaform.modules.dispatch import signals
+    store = Store('proj', module='dispatch')
+    with store.tables() as tx:
+        for number in range(40):
+            session_id = f'ended-{number}'
+            tx.insert('sessions', {'session_id': session_id, 'work_id': dispatch.id, 'agent': 'claude',
+                                   'state': 'ended', 'how': 'the agent ended its turn', 'started': '2026-10-16T00:00:00Z',
+                                   'seq': number + 1})
+            state = {'commands': [{'name': f'command-{one}'} for one in range(50)], 'about': 'system' if number < 2
+                     else None, 'intake': None}
+            tx.insert('lines', {'session_id': session_id, 'name': 'state', 'work_id': dispatch.id, 'kind': 'state',
+                                'text': json.dumps(state), 'seq': 1})
+            tx.insert('lines', {'session_id': session_id, 'name': 'line:2', 'work_id': dispatch.id,
+                                'kind': 'agent_message_chunk', 'text': 'Done.', 'seq': 2})
+    signals.record(store, 'stopped-open', work_id=dispatch.id, session_id='ended-39')
+    executed = []
+    plain = tables.TableTx._execute
+
+    def counted(tx, sql, params):
+        executed.append(sql)
+        return plain(tx, sql, params)
+
+    monkeypatch.setattr(tables.TableTx, '_execute', counted)
+    from metaform import module as chassis
+    from metaform.modules.dispatch import read_sessions
+    ctx = chassis.context('dispatch', dispatch.folder, project='proj', nouns={'thread': False})
+    read = read_sessions(ctx)
+    lines = [sql for sql in executed if 'FROM "dispatch.lines"' in sql]
+    assert len(lines) == 2 and all(' WHERE ' in sql for sql in lines), lines
+    assert len(read['sessions']) == 40 and [one['signal'] for one in read['signals']] == ['stopped-open']
+    assert read['states'] == {f'ended-{number}': {'about': 'system' if number < 2 else None, 'intake': None}
+                              for number in range(40)}
+    executed.clear()
+    assert read_sessions(ctx)['states'] == read['states']
+    assert len([sql for sql in executed if 'FROM "dispatch.lines"' in sql]) == 1, executed  # the signals alone
+    shown = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
+    assert shown['states'] == read['states'] and shown['signals'] == read['signals']
+
+
 # ------------------------------------------------------------------ one agent per glyph, VIEW-040
 
 def glyphed(dispatch, run, *tickets):
@@ -1762,6 +1872,123 @@ def test_dispatch_wait_answers_pending_with_the_next_call_at_its_limit(dispatch,
     assert answer['state'] == 'pending' and answer['next'] == f'metaform dispatch wait until=stopped id={dispatch.id}'
 
 
+def heard_by(monkeypatch):
+    """The handlers a wait or a launch listens with, captured in place of the relay's listener, so the test hands
+    each one changes as they would arrive from another process."""
+    import contextlib
+
+    from metaform import events
+    handlers = []
+    monkeypatch.setattr(events, 'listen', lambda module, handler: handlers.append(handler) or contextlib.nullcontext())
+    return handlers
+
+
+# changes that close no ticket of proj and write no session row: memory writes that name no ticket or say nothing of
+# tickets, another ticket's thread lines, and another project's writes, its session rows and its tickets included
+UNCONCERNED = [
+    {'project': 'proj', 'base_id': None, 'tables': ['memory.entities', 'memory.observations'], 'work_ids': []},
+    {'project': 'proj', 'base_id': None, 'tables': ['memory.observations']},
+    {'project': 'proj', 'base_id': None, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'],
+     'work_ids': ['other'], 'session_ids': ['other-session'], 'kinds': ['line']},
+    {'project': 'elsewhere', 'base_id': None, 'tables': ['work'], 'work_ids': ['theirs'], 'kinds': ['ticket']},
+    {'project': 'elsewhere', 'base_id': None, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.sessions']},
+    {'project': 'elsewhere', 'base_id': None}]
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_a_wait_on_every_ticket_reads_nothing_for_changes_not_its_own_and_one_ticket_for_one(dispatch, monkeypatch):
+    """code.dispatcher.agent#4c: a burst of 120 changes that close no ticket of the project, heard by `dispatch wait`
+    with no id, reads nothing until its limit; a change naming one ticket reads that ticket, never the collection."""
+    import threading
+
+    from metaform.data import store as stores
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    handlers = heard_by(monkeypatch)
+    held_awaited, reads, passes = module.awaited, [], []
+    reading, first = threading.Event(), threading.Event()
+
+    def counted(store, until, work_id, since, *named):
+        passes.append(set(named[0]) if named and named[0] is not None else None)
+        reading.set()
+        first.wait(LIMIT)  # the first read runs while the changes arrive, so each is heard, not found by it
+        return held_awaited(store, until, work_id, since, *named)
+    monkeypatch.setattr(module, 'awaited', counted)
+    invoke = stores.operations.invoke  # each store read of tickets, the collection `work` or one `ticket`
+    monkeypatch.setattr(stores.operations, 'invoke', lambda tx, name, *given, **more:
+                        (name in ('work', 'ticket') and reads.append(name)) or invoke(tx, name, *given, **more))
+
+    async def waited(changes):
+        for event in (reading, first):
+            event.clear()
+        handlers.clear()
+        passes.clear()
+        reads.clear()
+        ctx = context('dispatch', dispatch.folder, project='proj', nouns={'until': 'done'},
+                      switches={'dispatch_wait_seconds': 1})
+        task = asyncio.ensure_future(module.wait(ctx))
+        assert await asyncio.to_thread(reading.wait, LIMIT)
+        [told] = handlers
+        for change in changes:
+            told(change)
+        first.set()
+        return await task
+    burst = UNCONCERNED * 20
+    answer = asyncio.run(waited(burst))
+    assert answer['state'] == 'pending' and passes == [None], f'{len(passes) - 1} reads again for {len(burst)} changes'
+    mine = {'project': 'proj', 'base_id': None, 'tables': ['work', 'work_steps'], 'work_ids': [dispatch.id],
+            'session_ids': [], 'kinds': ['ticket']}
+    answer = asyncio.run(waited([*burst, mine]))
+    assert answer['state'] == 'pending' and passes == [None, {dispatch.id}], passes
+    assert reads.count('work') == 1 and 'ticket' in reads, reads  # only the first read is of every ticket
+
+
+@pytest.mark.req('QUAL-015')
+@pytest.mark.req('BASE-053')
+def test_a_launch_waited_on_reads_its_session_rows_only_for_a_change_of_its_own(dispatch, monkeypatch):
+    """code.dispatcher.agent#4c: while `dispatch start wait=true` waits for its runner, a burst of 120 changes of
+    other projects, of other tickets, or that wrote no session row, reads no session row until the start limit; one
+    naming its ticket and dispatch.sessions reads them once."""
+    import threading
+
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+    handlers = heard_by(monkeypatch)
+    monkeypatch.setattr(runner, 'START_LIMIT', 1)  # the launch's deadline, which ends a wait nothing woke
+    monkeypatch.setattr(module, 'runner_of', lambda pid: dispatch.id)  # its runner is alive throughout
+    reads, reading, first = [], threading.Event(), threading.Event()
+
+    def rows(store, work_id, verify=True):
+        reads.append(work_id)
+        reading.set()
+        first.wait(LIMIT)  # the first read runs while the changes arrive
+        return [{'state': 'running', 'session_id': 'mine'}] if len(reads) > 1 else []
+    monkeypatch.setattr(module, 'sessions', rows)
+
+    def launch(changes):
+        for event in (reading, first):
+            event.clear()
+        handlers.clear()
+        reads.clear()
+        out = {}
+        thread = threading.Thread(target=lambda: out.update(module.launched(Store('proj'), dispatch.id, 0)))
+        thread.start()
+        assert reading.wait(LIMIT)
+        [told] = handlers
+        for change in changes:
+            told(change)
+        first.set()
+        thread.join(LIMIT)
+        return out
+    burst = UNCONCERNED * 20
+    assert launch(burst)['state'] == 'failed' and reads == [dispatch.id], f'{len(reads) - 1} reads for {len(burst)}'
+    mine = {'project': 'proj', 'base_id': None, 'tables': 'dispatch', 'dispatch_tables': ['dispatch.sessions'],
+            'work_ids': [dispatch.id], 'session_ids': ['mine'], 'kinds': ['session']}
+    assert launch([*burst, mine]) == {'state': 'running', 'session_id': 'mine'} and reads == [dispatch.id] * 2
+
+
 @pytest.mark.req('BASE-052')
 def test_session_identity_reaches_the_agent_and_its_mcp_server(dispatch):
     dispatch.start('hold')
@@ -1996,10 +2223,11 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     memory, _, text = sent['params']['prompt'][0]['text'].partition('\n\n')
     assert memory.startswith('Follow these steps for each interaction:'), 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
-    rule = f' {prompt("work_link")}' if LINK_LOCK else ''  # left out while the lock is off, code#1e
     assert first == (f'Work ticket {dispatch.id} with the map_work tool. Record what happened in the work at {NODE} as '
                      "memory, and what is now known to be true of the project in the map's knowledge layers, as the "
-                     f'memory prompt says.{rule}'), 'the rule on writing files is one line after it, #3d'
+                     'memory prompt says.')
+    assert text.endswith(f'\n\n{prompt("work_link")}') is LINK_LOCK, \
+        'the rule on writing files ends the first prompt, and is left out while the lock is off, #47 and code#1e'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
         'the reads are named as the MCP calls the agent makes'
@@ -2767,6 +2995,26 @@ def test_a_system_agent_that_cannot_resume_starts_a_new_conversation_and_the_per
 
 
 @pytest.mark.req('VIEW-045')
+def test_new_on_my_agent_ends_the_running_system_agent_and_starts_a_new_one(dispatch, monkeypatch):
+    """/new on My agent is Call with fresh: the running system agent ends as the person's stop ends it and a new one
+    starts resuming nothing, whatever the page knew of it; a Call without fresh reuses the running one."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = module.anchor(ctx, dispatch.store, NODE)
+    running = {'session_id': 's1', 'work_id': held.id, 'agent': 'claude', 'state': 'running'}
+    monkeypatch.setattr(module, 'sessions', lambda store, work_id: [] if ended else [running])
+    ended, started = [], []
+    monkeypatch.setattr(module, 'ended_by_person', lambda store, row: ended.append(row['session_id']) or {})
+    monkeypatch.setattr(module, 'converse', lambda ctx, store, work_id, agent, extra: started.append(extra)
+                        or {'state': 'starting', 'work_id': work_id})
+    assert module.system(ctx)['session_id'] == 's1' and ended == [] and started == []
+    fresh = context('dispatch', dispatch.folder, project='proj', nouns={'fresh': True})
+    assert module.system(fresh)['state'] == 'starting'
+    assert ended == ['s1'] and started == [[]]
+
+
+@pytest.mark.req('VIEW-045')
 def test_the_persons_stop_of_their_system_agent_turns_stay_connected_off_and_an_agents_does_not(
         dispatch, run, monkeypatch):
     """Dismiss in the chat dock is the person's stop: it turns dispatch_stay_connected off for the project, so the
@@ -2857,6 +3105,7 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
     pid 1, and a summon resumed its session a second time. A live runner holding the session, or started to resume
     it and not yet in its row, is found whoever its parent is: the summon after a restart reuses it, stay connected
     leaves it, and a second runner refuses before its agent starts."""
+    import contextlib
     import socket
 
     from metaform.data import Store
@@ -2886,14 +3135,38 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
                                                          'token': 'x'})
         module.resuming_path('s1').unlink()
         restarted = context('dispatch', dispatch.folder, project='proj')
+        # Critic round 7, F2: a runner that holds the session and does not answer is held, with its pid and the stop
+        # that ends it, never running, since the person cannot talk to it
         again = module.system(restarted)
-        assert (again['state'], again['session_id']) == ('running', 's1') and len(started) == 1, 'reused once running'
-        assert module.stay_connected(restarted, dispatch.store) == {} and len(started) == 1
+        assert (again['state'], again['session_id'], again['pid']) == ('held', 's1', alive) and len(started) == 1
+        assert again['next'] == f'metaform dispatch stop {held.id} session=s1', again
+        told = run('dispatch', 'message', held.id, 'session=s1', 'Hello', cwd=dispatch.folder, ok=False)
+        said = told.stdout + told.stderr
+        assert told.returncode != 0 and f'held by its runner, process {alive}' in said and 'dispatch stop' in said, said
+        # a newer system conversation that ended on its own is not resumed beside the older one's live runner
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.insert('sessions', {'session_id': 's2', 'work_id': held.id, 'agent': 'claude', 'state': 'ended',
+                                   'how': 'the agent ended with exit code 1', 'started': '2026-10-15T00:00:00Z',
+                                   'seq': 2, 'origin': module.origin()})
+            tx.insert('lines', {'session_id': 's2', 'name': 'state', 'work_id': held.id, 'kind': 'state', 'seq': 1,
+                                'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder),
+                                                    'about': 'system'})})
+        for _ in range(2):  # the second pass is due
+            assert module.stay_connected(restarted, dispatch.store) == {} and len(started) == 1, started
+            due(held.id)
+        assert module.system(restarted)['state'] == 'held', 'the older conversation is still held'
         refused = run('dispatch', 'run', held.id, 'claude', 'resume=s1', 'system=true', cwd=dispatch.folder, ok=False)
         said = refused.stdout + refused.stderr
         assert refused.returncode != 0 and f'held by its live runner, process {alive}' in said, said
+        # the person's stop ends the held runner's process group, and their next Call starts one runner
+        stopped = module.stop(context('dispatch', dispatch.folder, project='proj', nouns={'id': held.id, 'session': 's1'}))
+        assert stopped['stopped'] is True and stopped['pid'] == alive
+        eventually(lambda: module.runner_of(alive) is None, 5)
+        assert module.system(context('dispatch', dispatch.folder, project='proj'))['state'] == 'starting'
+        assert started[1:] == [['resume=s2', 'system=true']], 'one resume, of the latest conversation'
     finally:
-        os.kill(alive, signal.SIGTERM)
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(alive, signal.SIGTERM)
 
 
 @pytest.mark.req('VIEW-005')
@@ -3504,7 +3777,7 @@ def test_a_write_to_an_unlinked_file_is_refused_with_the_link_call_and_goes_thro
     assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'old\n'
     linked = json.loads(run('dispatch', 'link', 'file=src/fresh.py', f'node={NODE}', '--json',
                             cwd=dispatch.folder).stdout)
-    assert (linked['file'], linked['linked'], linked['made']) == ('src/fresh.py', True, False)
+    assert (linked['file'], linked['linked']) == ('src/fresh.py', True)
     gate.write_text('', encoding='utf-8')
     [again] = eventually(lambda: dispatch.logged('writes_again'))
     assert 'error' not in again[0], again[0]
@@ -3519,7 +3792,7 @@ def test_a_write_to_an_unlinked_file_is_refused_with_the_link_call_and_goes_thro
     dispatch.stop()
 
 
-def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_makes_an_address_that_has_no_element(dispatch, run):
+def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_never_makes_an_element(dispatch, run):
     from metaform.data import Node
     from metaform.modules.dispatch.runner import placed, sources_index
     run('dispatch', 'link', 'file=src/a.py', f'node={NODE}', cwd=dispatch.folder)
@@ -3527,9 +3800,10 @@ def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_makes_an_address
     again = json.loads(run('dispatch', 'link', 'file=src/b.py', f'node={NODE}', '--json', cwd=dispatch.folder).stdout)
     assert again['linked'] is False
     dispatch.store.layer('base', 'intake', 'The map.', kind='intake', mutable=False, hideable=False)
-    made = json.loads(run('dispatch', 'link', 'file=docs/new.md', 'node=document.guide.new', '--json',
-                          cwd=dispatch.folder).stdout)
-    assert made['made'] is True and dispatch.store.element('document.guide.new', raw=True) is not None
+    refused = run('dispatch', 'link', 'file=docs/new.md', 'node=document.guide.new', '--json', cwd=dispatch.folder,
+                  ok=False)
+    assert refused.returncode != 0 and 'linking never makes an element' in refused.stdout + refused.stderr
+    assert dispatch.store.element('document.guide.new', raw=True) is None
     node = dispatch.store.element(NODE)
     held = dispatch.store.refs(Node('element', node.id))  # each a record of its own, code.graph.knowledge#c
     assert [(ref.key, ref.value, ref.ref) for ref in held] == [('path', 'src/a.py', f'a@{NODE}'),
@@ -3537,7 +3811,7 @@ def test_dispatch_link_adds_the_ref_beside_the_elements_own_and_makes_an_address
     index = sources_index(dispatch.store, str(dispatch.folder))
     assert placed(index, 'src/a.py') == ([{'kind': 'element', 'id': node.id, 'address': NODE}], True)
     assert placed(index, 'src/a.py/inner')[1] is False, 'a folder fallback is not exact'
-    assert placed(index, 'docs/new.md')[1] is True
+    assert placed(index, 'docs/new.md')[1] is False, 'a link refused at a missing address places nothing'
 
 
 @pytest.mark.cli_process
@@ -3587,7 +3861,7 @@ def test_codex_is_kept_asking_and_cannot_write_an_unlinked_or_ignored_file_or_li
     command outside the sandbox, and write access for the project folder are each refused and the agent told why; an
     MCP tool's approval, which Codex also asks as execute, is not a command and goes through.
     Claude Code is sent a sandbox in which the project folder is read-only to every command."""
-    skip_while_unlocked()
+    skip_while_unsandboxed()
     (dispatch.folder / 'src').mkdir(exist_ok=True)
     (dispatch.folder / 'rich').mkdir(exist_ok=True)
     (dispatch.folder / '.metaform').mkdir(exist_ok=True)
@@ -3611,7 +3885,9 @@ def test_codex_is_kept_asking_and_cannot_write_an_unlinked_or_ignored_file_or_li
     eventually(told)
     assert not dispatch.questions(), 'the person is not asked'
     meta = dispatch.received('session/new')[0]['params']['_meta']['claudeCode']['options']['settings']['sandbox']
-    assert meta['filesystem']['denyWrite'] == [str(dispatch.folder.resolve())]
+    denied = meta['filesystem']['denyWrite']
+    assert str(dispatch.folder.resolve() / 'rich') in denied and str(dispatch.folder.resolve()) not in denied, \
+        'the sandbox denies what the lock denies, never the whole project, #47'
     assert (meta['enabled'], meta['allowUnsandboxedCommands']) == (True, False)
     dispatch.stop()
 
@@ -3643,7 +3919,64 @@ def test_a_command_in_the_runners_terminal_cannot_write_the_project(dispatch):
         return code
     code = asyncio.run(shell())
     assert target.read_text(encoding='utf-8') == 'old\n'
-    assert code != 0 if code is not None else runner.confined_command(str(dispatch.folder), 'x', []) is None
+    assert code != 0 if code is not None else runner.confined_command([], 'x', []) is None
+
+
+def test_commands_may_write_linked_files_and_tool_folders_and_nothing_else_of_the_project(tmp_path):
+    """code.dispatcher.agent#47: the command sandbox denies what the lock denies and no more: an unlinked file, a
+    folder holding no linked file, whole, and a path the ignore list holds, linked or not; a linked file and the
+    tools' own folders stay writable, and the project folder itself is never denied, since Claude Code lets a denied
+    folder win over anything allowed inside it."""
+    from metaform.modules.dispatch.runner import denied_writes
+    for name in ('src/kept.py', 'src/fresh.py', 'docs/a.md', 'rich/notes.md', '.venv/lib/x.py', '.git/index',
+                 '.git/hooks/pre-commit', 'src/__pycache__/kept.pyc', 'pyproject.toml'):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text('', encoding='utf-8')
+    place = [{'kind': 'element', 'id': 'e', 'address': NODE}]
+    denied = denied_writes(str(tmp_path), str(tmp_path), {'src/kept.py': place, 'rich/notes.md': place}, ['rich/'])
+    root = tmp_path.resolve()
+    assert sorted(denied) == sorted(str(root / name) for name in ('.git/hooks', 'docs', 'pyproject.toml', 'rich',
+                                                                  'src/fresh.py'))
+
+
+def test_the_lock_holds_for_a_session_only_once_its_rule_has_gone_to_it(dispatch, monkeypatch):
+    """code.dispatcher.agent#47: a session never told the rule on writing files is refused nothing; once the rule has
+    gone with a prompt, the same write is refused with the owner's sentence."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+    monkeypatch.setattr(runner, 'LINK_LOCK', True)
+    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                             dispatch.ticket(), 'claude', [])
+
+    async def asked() -> tuple[str | None, str | None]:
+        before = await session.locked('src/fresh.py')
+        session.ruled = True
+        return before, await session.locked('src/fresh.py')
+    before, after = asyncio.run(asked())
+    assert before is None and after is not None and 'please first link it' in after
+
+
+def test_a_resumed_session_is_told_the_rule_with_its_next_prompt(dispatch, run, dispatch_runners):
+    """code.dispatcher.agent#47, CTX-060: a session resumed in a new runner gets the rule on writing files at the end
+    of the next prompt it is sent, never as a turn of its own, so no refusal reaches it before the rule does."""
+    skip_while_unlocked()
+    from metaform.modules.dispatch import prompt
+    rule = prompt('work_link')
+    dispatch.start('hold', FAKE_ACP_LOAD='1')
+    [first] = eventually(lambda: dispatch.received('session/prompt'))
+    assert first['params']['prompt'][0]['text'].endswith(f'\n\n{rule}')
+    dispatch.stop()
+    assert dispatch.process.wait(30) == 0
+    started = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    eventually(lambda: dispatch.session().extra['state'] == 'running')
+    assert len(dispatch.received('session/prompt')) == 1, 'the rule is no turn of its own'
+    run('dispatch', 'message', dispatch.id, 'Carry on', cwd=dispatch.folder)
+    resumed = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
+    assert resumed['params']['prompt'][0]['text'] == f'Carry on\n\n{rule}'
+    run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder)
 
 
 @pytest.mark.req('BASE-052')
@@ -4016,3 +4349,85 @@ def test_jevs_drift_check_raises_the_drift_signal_naming_what_drifted(dispatch, 
     assert raised['drifted'] == ['off_task'] and judged[0] == (list(session.calls), 'Write notes.txt')
     asyncio.run(session.drift())
     assert not [one for one in rows(dispatch.store, dispatch.id) if one['signal'] == 'drift']
+
+
+@pytest.mark.req('STORE-029')
+def test_a_runner_the_store_outgrew_hands_its_session_and_what_it_was_sent_to_the_code_on_disk(dispatch, monkeypatch):
+    """code.dispatcher.agent#48: a store at a layout past the runner's code refuses a line; with the code on disk
+    changed, the runner hands the session over at that refusal instead of going on writing nothing, keeping what it is
+    sent after; with the code on disk the same, the refusal fails the session. The code on disk ends the old row as
+    handed over, keeps the ticket taken, and resumes that very session, besides the old runner still running."""
+    from metaform.data import NewerStore, Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+
+    def refused(tx):
+        raise NewerStore('the store has schema version 23; this Metaform supports version 22.', 'install it')
+
+    def session():
+        made = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                              dispatch.ticket(), 'claude', ['unused'])
+        made.session_id, made.recorded = 's1', True
+        return made
+    monkeypatch.setattr(runner, 'LOADED', 'the code this process loaded')
+    held = session()
+    held.pending.append('a prompt waiting its turn')
+    assert asyncio.run(held.table(refused, fatal=False)) is None
+    assert held.handing and held.how == module.HANDED and held.ended.is_set() and held.failure is None
+    held.turn('sent after the refusal')
+    assert [one['text'] for one in held.handed_on] == ['a prompt waiting its turn', 'sent after the refusal']
+    monkeypatch.setattr(runner, 'LOADED', runner.code_print())
+    same = session()
+    asyncio.run(same.table(refused, fatal=False))
+    assert not same.handing and isinstance(same.failure, NewerStore), 'no newer code to hand to: it fails'
+
+    dispatch.store.take_work(dispatch.id, None, 'claude s1')
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+                               'pid': os.getpid(), 'runner': 'r1', 'started': '2026-10-15T22:05:00Z', 'seq': 1,
+                               'origin': module.origin()})
+    module.resuming_path('s1').parent.mkdir(parents=True, exist_ok=True)
+    module.resuming_path('s1').write_text(str(os.getpid()), encoding='utf-8')  # the old runner was itself a resume
+    spawned = []
+    monkeypatch.setattr(module, 'runner_of', lambda pid: dispatch.id)
+    monkeypatch.setattr(module, 'command_line', lambda pid: ['dispatch', 'run', dispatch.id, 'resume=s1'])
+    monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: spawned.append(extra) or {'pid': 7})
+    carried = [{'text': 'hello', 'by': None}]
+    assert module.hand_over(dispatch.store, dispatch.id, 'claude', 's1', 'r2', os.getpid(), [], carried) == \
+        {'state': 'gone'} and not spawned, 'a late hand-over, the row another runner\'s, starts nothing'
+    assert module.hand_over(dispatch.store, dispatch.id, 'claude', 's1', 'r1', os.getpid(), ['system=true'],
+                            carried)['pid'] == 7
+    assert spawned == [['resume=s1', 'system=true']]
+    [row] = [one.extra for one in dispatch.items('session')]
+    assert (row['state'], row['how']) == ('ended', module.HANDED)
+    assert dispatch.ticket().taken_by == 'claude s1', 'the ticket stays the session\'s'
+    assert json.loads(module.handed_path('s1').read_text(encoding='utf-8')) == {'carried': carried}
+
+
+@pytest.mark.req('STORE-029')
+def test_the_runner_taking_a_session_over_says_so_once_and_sends_what_the_old_runner_was_sent(dispatch):
+    """code.dispatcher.agent#48: the resumed runner writes one restart line, then each carried message's line and
+    turn in order; a prompt whose line was written goes as a turn only, and the hand-over file is used once."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+    path = module.handed_path('s1')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({'carried': [{'text': 'queued before', 'by': None}, {'text': 'hello', 'by': ''},
+                                            {'text': 'from a peer', 'by': 'worker'}]}), encoding='utf-8')
+    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                             dispatch.ticket(), 'claude', ['unused'])
+    session.session_id = 's1'
+    noted, turns = [], []
+
+    async def note(key, kind, text):
+        noted.append((kind, text))
+    session.note = note
+    session.turn = lambda text, *rest: turns.append(text)
+    asyncio.run(session.taken_over())
+    asyncio.run(session.taken_over())
+    assert [kind for kind, _ in noted] == ['notice', 'person', 'message']
+    assert noted[0][1].startswith('Restarted on updated code') and noted[2][1] == 'From the worker agent: from a peer'
+    assert turns == ['queued before', 'hello', 'from a peer'] and not path.exists()

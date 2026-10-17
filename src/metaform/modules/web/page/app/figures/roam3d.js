@@ -11,7 +11,7 @@ import {placed, CORNERS, walk, AHEAD, TOWARD, easeBoth, STIFF, ACTS, actGap, moo
 import {MASCOT, mascotGlyph, mascot3d, mascotDriven} from '/page/app/figures/mascot.js';
 import {placeBubble, CUT, cut3d} from '/page/app/figures/cut.js';
 import {eyes3d, approachPoint} from '/page/app/figures/eyes.js';
-import {G} from '/page/app/map3d/graph3d.js';
+import {G, STAGE} from '/page/app/map3d/graph3d.js';
 import {AT, tags} from '/page/app/map3d/labels.js';
 
 /* Where a figure means to be on its node this frame, `WANT`, and what it looks at, if anything but the way it goes:
@@ -424,11 +424,13 @@ function leaving(figure, {id, home, size, lift, pose}) {
 function drawFigure(figure, size, grown, passed, {state, scale, tall, turn, bow, face}) {
   const mesh = figure.mesh, m = figure.motion;
   mesh.scale.set(size * scale * grown, size * scale * tall * grown, size * scale * grown);
-  // never more than ROAM.most pixels tall close up, so a figure the camera has flown near stays a figure
-  const far = Math.max(1, G.camera().position.distanceTo(mesh.position));
-  const most = ROAM.most * 2 * far * Math.tan((G.camera().fov || 50) * Math.PI / 360)
-    / Math.max(1, G.renderer().domElement.clientHeight) / 1.6;
-  if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
+  // never more than ROAM.most pixels tall close up, so a figure the camera has flown near stays a figure, while held
+  if (ROAM.held) {
+    const far = Math.max(1, G.camera().position.distanceTo(mesh.position));
+    const most = ROAM.most * 2 * far * Math.tan((G.camera().fov || 50) * Math.PI / 360)
+      / Math.max(1, STAGE.height) / 1.6;
+    if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
+  }
   if (face) AHEAD.subVectors(face, mesh.position); else AHEAD.copy(figure.heading);
   if (turn) AHEAD.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
   mesh.userData.gaze = state === 'attend' && figure.stage === 'circling' ? face : null;

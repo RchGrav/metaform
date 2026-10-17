@@ -135,3 +135,15 @@ def test_a_cancelled_tickets_work_is_kept_on_its_branch_until_abandoned(dispatch
     assert abandoned(store, repo, 30) == [], 'kept while younger than the setting'
     assert abandoned(store, repo, 0) == [branch]
     assert not git(repo, 'branch', '--list', branch)
+
+
+def test_the_shared_checkout_is_never_committed_or_removed_by_a_tickets_completion(dispatch, repo):
+    """2026-10-15: a resumed session handed the project's own checkout to the completion step, which committed every
+    agent's uncommitted work under one ticket; only a worktree, whose .git is a file, is committed or removed."""
+    from metaform.modules.dispatch.merge import checkpoint, finished
+    head = git(repo, 'rev-parse', 'HEAD')
+    (repo / 'README.md').write_text('someone else\'s work\n', encoding='utf-8')
+    assert checkpoint(repo, 'w1', 'work: not mine') is None
+    assert finished(None, dispatch.store, None, repo) is None  # type: ignore[arg-type]
+    assert git(repo, 'rev-parse', 'HEAD') == head and repo.is_dir()
+    assert git(repo, 'status', '--porcelain') == 'M README.md'

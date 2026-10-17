@@ -10,7 +10,7 @@ import {ballOf} from '/page/app/figures/agents.js';
 import {endOf} from '/page/app/map3d/waves.js';
 import {G, grounded} from '/page/app/map3d/graph3d.js';
 import {hovered, setHovered} from '/page/app/map3d/pick3d.js';
-import {tags, dropLabel} from '/page/app/map3d/labels.js';
+import {tags, dropLabel, relabel} from '/page/app/map3d/labels.js';
 import {phaseOf} from '/page/app/flow/fx3d.js';
 import {V3} from '/page/app/camera/flight.js';
 import {PHYS, applyPhysics} from '/page/app/views/bar.js';
@@ -108,6 +108,7 @@ function inPlace(data) {
   };
   for (const node of data.nodes) copy(nodes.get(node.id), node);
   for (const [into, from] of pairs) copy(into, from);
+  relabel();  // a name or a record changed in the same nodes
   G.refresh();
   return true;
 }

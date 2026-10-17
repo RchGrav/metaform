@@ -6,7 +6,9 @@ Only a process that serves one agent's conversation holds it: the MCP server a h
 dispatched agent's, which ends with that agent. A command line ends with its command, and a server over HTTP serves
 any number of agents, so neither says an agent is there. The system lets go of the lock when the process ends, a
 crash too; a process that ends normally then announces `map.changed` for the base naming only `intake.recorder`, so
-open pages read at once what is building, and see that the intake is no longer being recorded, VIEW-018.
+open pages read at once what is building, and see that the intake is no longer being recorded, VIEW-018. Taking the
+hold, or moving it to another layer, names `intake.recorder` in the command's own change too, so a page reads what is
+building only when a change says an intake's recording began or ended, never on every write to the map.
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from .. import changes, home, shown, sqlite
 
 LOCK = 'intake.recorder'  # held while the agent's process lives
 HELD = 'intake.recorder.json'  # what it holds: {"base": <base id>, "layer": <layer id>}
-ENDED = 'intake.recorder'  # the one table a `map.changed` names when the agent recording an intake has gone
+ENDED = 'intake.recorder'  # the table a `map.changed` names when an agent begins recording an intake, or has gone
 
 # this process's hold on each project: the lock, and the base and layer it records into
 _HOLDS: dict[str, tuple[ExitStack, str, str]] = {}
@@ -60,6 +62,7 @@ def hold(project_id: str, base_id: str, layer_id: str) -> None:
             stack = held[0]
         home.write_private(folder / HELD, json.dumps({'base': base_id, 'layer': layer_id}))
         _HOLDS[project_id] = (stack, base_id, layer_id)
+    changes.note(project_id, base_id, {ENDED}, about={'kinds': {'intake'}})  # announced with the command's writes
 
 
 def held(project_id: str) -> str | None:

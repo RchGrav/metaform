@@ -1,1 +1,0 @@
-Ticket resolution: "Deleted, uncommitted: src/metaform/modules/source_placement/ (all), map/code.py, code_index.py, code_preparation.py ... tests/module_tables.snapshot.json, uv.lock (tree-sitter dropped)." uv lock output: "-    { name = \"tree-sitter\" }," and "-name = \"tree-sitter\"".

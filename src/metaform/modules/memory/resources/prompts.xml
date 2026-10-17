@@ -36,8 +36,8 @@
 <!-- The owner's memory prompt, CTX-026, word for word: how every agent reads what happened in the work before it
      begins, and records what happens as memory and what is true of the project as knowledge. Its address is
      prompt.memory:instructions. Its braced places are filled when it is sent, CTX-027: {project} with the project's
-     id, {this.address} and {this.name} with the element the agent is assigned (a join's receiver; an element with no
-     name gives its reading). An agent with no assigned element gets the whole line-2 bullet swapped for
+     id, {element} with the address of the element the agent is assigned (a join's receiver). {this} is not
+     filled here: it names the subject a prompt or workflow is linked to. An agent with no assigned element gets the whole line-2 bullet swapped for
      instructions_unassigned below.
      Who receives it and when, CTX-028: an agent dispatch starts on a ticket gets it once, in its first turn, ahead of
      the work sentence, filled with its ticket's node. metaform_instructions with module memory,
@@ -47,28 +47,72 @@
      agents receive. The Axiom text it replaced is that prompt's earlier version. Empty sends nothing; off when the
      memory module is disabled or the folder's modules setting leaves it out. -->
 <instructions>Follow these steps for each interaction:
+
 1. Project Identification:
    - You should assume that you are working on {project}
+
 2. Element Identification:
-   - This is {this.address} ({this.name}) or any other address you work on for this session.
+   - This is {element} or any other address you work on for this session.
+
 3. Memory Retrieval:
-   - Always begin your work by saying only "Remembering..." and retrieve all relevant information from your knowledge graph: everything at the element's address and everything it inherits from the addresses below it toward the trunk, then search_nodes and open_nodes for what that leads to
-   - Always refer to your knowledge graph as your "memory"
-4. Memory and Knowledge
-   - While working on the project, be attentive to any new information, and tell which it is:
-     a) Memory: what happened in the work: what was done, tried, decided, found broken or fixed, and the lessons it taught
-     b) Knowledge: what is now known to be true of the project: what an element is and the files that realize it, how it behaves and fails, the constraints and choices that hold for it, the purpose it serves, the elements it receives from and provides to, and its genre, style, medium and encoding, which the base map leaves out
+   - Always begin your work by saying only "Remembering..." and retrieve all relevant information from your knowledge graph.
+   - Always refer to your knowledge graph as your "memory".
+   - The memory and knowledge applicable to the element you work on, including inherited information, are supplied automatically as you work at that address.
+   - Use search_nodes and open_nodes when you need to explore the entities and relations connected to that memory.
+
+4. Memory and Knowledge:
+   - While working on the project, be attentive to any new information, and distinguish:
+     a) Memory: what happened in the work — what was done, tried, decided, found broken or fixed, and the lessons learned.
+     b) Knowledge: what is now known of the project — what elements are, how they behave, their constraints, purposes and relationships, and their genre, style, medium and encoding.
+
 5. Memory Update:
    - If any memory was gathered during the work, update your memory as follows:
-     a) Create entities with create_entities for significant events, decisions, defects and lessons: each with a unique name, an entityType and its observations, at the address it concerns
-     b) Connect them to the current entities using create_relations: from, to, and a relationType in active voice
-     c) Store facts about them as observations with add_observations, one fact per observation
+     a) Create entities with create_entities for significant events, decisions, defects and lessons; each has a unique name, an entityType, and observations.
+     b) Connect entities to existing entities using create_relations with from, to, and relationType in active voice, including relations to memories associated with other addresses.
+     c) Store each fact as an atomic observation. Use add_observations to extend an existing entity; create_entities does not add observations to an existing name in the reference memory server.
+     d) Link memories to the knowledge layers they concern, so a layer and its related memories can be shown or hidden together.
+     e) Memories are editable by any agent unless locked; the memory graph supports updating and deleting entities, observations, and relations.
+     f) Record a memory where it belongs: about an element generally, at the element; about why a receiver needs what its provider gives, at that join, giving its receiver and provider.
+     g) Cite the evidence a memory rests on with cites: path:line, path:start-end or path:symbol. A memory whose evidence changes is flagged stale.
+
 6. Knowledge Update:
    - If any knowledge was gathered during the work, add it to the map's knowledge layers as follows:
-     a) Any address that does not exist yet can be created: add the element or join the work shows the map lacks with map knowledge add-element and add-join; naming a new element makes a new layer for it
-     b) Record what is known at the address where you found it to hold, with map knowledge add-property or add-item, including its genre, style, medium and encoding
-     c) Correct any element or join that is wrong with map refine</instructions>
-<!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {this.address} ..."
+     a) A missing knowledge-layer address is created only as these namespace rules, the intake's, allow; never invent an address outside them. Use map knowledge add-element and add-join for elements and joins discovered during work; naming a new knowledge node establishes its layer. Where these rules bar a genre, style, medium, encoding or language from an address, they bar it from the intake's base map only: in a knowledge layer such a node, like code.engine.game.platformer or code.python, is a legitimate namespace item.
+        This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per entity.
+        Root types: code, document, media, data, upstream, downstream.
+        Rules:
+        1. For each dotted part, the address in the namespace must be reversible and read as its name: the segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name, and children must take their parent's name as their last name when reversed and read as a noun.
+        2. All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities. (Artifacts ⊂ Entities ⊂ Elements)
+        3. Namespace entries must describe the type of functional approach as a proper noun.
+        4. Namespace must narrow from trunk to leaf; to be placed into the namespace, an entry must be a part or type of its parent scope—it must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.
+        5. There must be one or more entities each with a distinct unique objective purpose and encounter function for the defining element.
+        6. Multi-word names: when the new leaf is a variant functionality of its parent type, such as physics engine and game engine, express the namespace with periods between the segments: code.engine.game, code.engine.physics. Every prefix is a complete type that yields its own inference and passes its practices to its children, so words that form a valid prefix of their own must remain separate segments. Words may be joined with underscores in one segment only when none of them forms a valid prefix, as in code.queue.dead_letter and data.bill_of_materials, where the name must also read correctly once reversed.
+        7. Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.
+        8. The namespace address names the type. The purpose record refines that type with what this AUE does, so the address stays general and the purpose record stays specific.
+        9. Industry-Standard Lexicon, Grounded Nomenclature, and Non-Coinage: All elements, segment identifiers, compound tokens, and resulting reversed noun phrases must use the established, standard terminology recognized by practitioners who work directly with that class of artifact. Abstract pattern labels, bespoke synonyms, internal shorthand, colloquial phrases, and marketing terms are strictly prohibited. Where an authoritative or formally standardized term does not exist, the segment must use the plain, common noun for what the thing functionally is or does in ordinary practice. Never coin, invent, or adapt a term under any circumstances.
+        10. Continuous Auditing and Strict Remediation: During any Refinement or Corrections operation, all existing elements and namespace paths must be actively audited against these rules. No pre-existing entry is exempt. You must proactively file and execute Corrections to repair any identified violations—such as non-standard terminology, coined words, or improper segmentation—bringing the entire namespace path into absolute compliance.
+        11. Canonical Name Field Priority: There is a field called `name`. This field must always hold the canonical name exactly as it is used in the project specifications. If there is no project specification for it, then use the industry term.
+        Examples, reading:
+        - code.loop.main: "main loop program code"
+        - code.bus.data.event: "event data bus code"
+        Examples, namespace validity:
+        - code.game: invalid, game is not a function
+        - code.game.engine: invalid, reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent.
+        - code.engine.game: valid, A 'game engine' is a functional type because it provides the runtime a game runs on (the main loop, rendering, input, and simulation) independent of any particular game's genre or content, and it is widely known by that exact name
+        - code.engine.game.fps: valid, a distinct functionality; proof: first-person camera viewpoint with a targeting reticle
+        - code.engine.game.platformer: invalid, invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality; proof: spatial navigation and overcoming environmental obstacles; note: load-bearing invalid example
+        - media.image: valid, images are a base valid functional type under the media root.
+        - media.asset.image: valid, Images are assets when they are named as a functional element type in a AUE.
+        - media.photo: valid, Photos have defining elements, and sometimes supportive elements, a couple (DE) at the eiffel tower (SE), a car (DE) in the street, a car (DE) racing at the racetrack (SE), a photo of the grand canyon (DE) in the distance a man and a mule (SE)
+        - media.photo.scenery: valid, This is function of an encounter. A representation of a scene as the DE, a scenery photo has a subject that isnt the DE, all scenes have a subject but the scene is the focus
+        - media.photo.jpg: invalid, this is encoding
+        - code.cpp: invalid, this is language
+        - document.word.story.conflict: invalid, 'word' is naming an encoding and does not name a functional approach at the proper namespace level
+        - document.story.conflict: valid, represents story conflict as a document element
+     b) Record what is known where it was found with map knowledge add-property or add-item, including genre, style, medium and encoding, which are omitted during base intake.
+     c) A property layer is linked to a base-map address. Its content and linked memories apply transitively to descendants and are visible toward the trunk. Linking the same property on another branch moves its one link toward the nearest shared ancestor; it does not create copies on the branches.
+     d) Correct existing elements or joins with map refine.</instructions>
+<!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {element} ..."
      bullet when the agent has no assigned element: one connected over MCP outside dispatch, the system agent, or a
      ticket with no node. Held as its own element so both forms stay word for word and the code swaps whole bullets,
      never words. Empty leaves line 2 with no bullet. -->

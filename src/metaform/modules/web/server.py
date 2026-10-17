@@ -208,7 +208,7 @@ WRITE_ROUTES = frozenset({
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
-    '/api/dispatch-interrupt',
+    '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel'})
 ADMIN_ROUTES = frozenset({
@@ -1193,6 +1193,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-fork': self.dispatch_fork, '/api/dispatch-broadcast': self.dispatch_broadcast,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
+                  '/api/dispatch-new': self.dispatch_new,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart,
@@ -1523,11 +1524,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def system_chat(self, given: dict[str, Any]) -> None:
         """Call in the chat dock: the person's system agent starts, with the agent chosen or the default one, or the
-        running one is reused."""
-        agent = given.get('agent')
+        running one is reused; `fresh`, /new on My agent with none running, resumes no earlier conversation."""
+        agent, fresh = given.get('agent'), given.get('fresh')
         if agent is not None and (not isinstance(agent, str) or not agent):
             return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
-        self.dispatched(given, 'system', [f'agent={agent}'] if agent else [])
+        if fresh is not None and not isinstance(fresh, bool):
+            return self.send(400, {'error': 'fresh is true or false.'})
+        self.dispatched(given, 'system', [*([f'agent={agent}'] if agent else []), *(['fresh=true'] if fresh else [])])
 
     def lookup(self, project_id: str, ref: str) -> None:
         """What a reference in text the person reads stands for, VIEW-042: a spec record, a ticket or a message by its
@@ -1966,6 +1969,16 @@ class Handler(BaseHTTPRequestHandler):
         if session is not None and (not isinstance(session, str) or not session):
             return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
         self.dispatched(given, 'stop', [work_id, *([f'session={session}'] if session else [])])
+
+    def dispatch_new(self, given: dict[str, Any]) -> None:
+        """/new and /clear in the chat dock: the conversation of the agent on a ticket ends and a new one starts in the
+        same role, nothing resumed, with the dispatch module's new."""
+        work_id, session = given.get('work_id'), given.get('session')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A new conversation names the work id of its ticket.'})
+        if session is not None and (not isinstance(session, str) or not session):
+            return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
+        self.dispatched(given, 'new', [work_id, *([f'session={session}'] if session else [])])
 
     def dispatch_cancel(self, given: dict[str, Any]) -> None:
         """Cancel a ticket with the dispatch module's cancel: its agent is stopped as the person's own stop, so
@@ -2751,15 +2764,21 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
         return page
     try:
         store = Store(project.project_id, base=given.get('base') or None, module='map')
+        named = [one for one in given.get('ids', '').split(',') if one]
         with store.tables(write=False) as tx:
+            def rows(table: str, key: str, where: dict[str, str]) -> list[Any]:
+                # the tickets a change named read their own rows by key, never every ticket's, VIEW-018
+                if not named:
+                    return list(tx.rows(table, where or None, limit=0).results)
+                return [row for one in named for row in tx.rows(table, {**where, key: one}, limit=0).results]
             held: dict[str, dict[str, Any]] = {
-                str(row['work_id']): {'glyph': row['glyph']} for row in tx.rows('glyphs', limit=0).results}
-            for row in tx.rows('ticket_settings', limit=0).results:
+                str(row['work_id']): {'glyph': row['glyph']} for row in rows('glyphs', 'work_id', {})}
+            for row in rows('ticket_settings', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
-            for row in tx.rows('eligible', limit=0).results:
+            for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
             # its item at its address, `<address>#<n>`, and its title, MCP-037, as the full-size dock's agent list says
-            for row in tx.rows('numbered', {'kind': 'work'}, limit=0).results:
+            for row in rows('numbered', 'item_id', {'kind': 'work'}):
                 held.setdefault(str(row['item_id']), {}).update(
                     item=reference(row['address'], row['number']), title=row['title'])
     except (Stop, StoreError):

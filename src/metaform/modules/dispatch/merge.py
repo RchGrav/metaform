@@ -103,8 +103,10 @@ def worktree_for(project: str | Path, work_id: str) -> Path | None:
 def checkpoint(folder: str | Path, work_id: str, said: str) -> str | None:
     """Everything the agent has changed in its worktree committed, with the ticket's trailer, P009: the runner's own
     commit at each step and at the session's end, so nothing is lost on a crash. The commit, or None when nothing
-    changed or the folder is not a worktree of the project's."""
-    if not (Path(folder) / '.git').exists():
+    changed or the folder is not a worktree of the project's. A worktree's .git is a file; the project's own
+    checkout, whose .git is a folder, is never committed here: 2026-10-15, a resumed session handed the shared checkout
+    here and every agent's uncommitted work was committed under one ticket."""
+    if not (Path(folder) / '.git').is_file():
         return None
     git(folder, 'add', '-A')
     if git(folder, 'diff', '--cached', '--quiet').returncode == 0:
@@ -179,6 +181,8 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     offered: its work is committed on its branch and its worktree removed, P192, the branch kept until
     dispatch_abandoned_branch_days have passed, P017. Returns the merge row, or None when there is nothing to merge."""
     project = Path(store.project().path)
+    if not (Path(folder) / '.git').is_file() or Path(folder).resolve() == project.resolve():
+        return None  # not a worktree: the shared checkout is neither committed nor removed, as checkpoint
     checkpoint(folder, record.id, f'{record.condition or "work"}: {(record.task or record.note or "")[:60]}\n\n'
                                   f'Work {record.id}: {record.resolution or ""}')
     branch = branch_of(record.id)

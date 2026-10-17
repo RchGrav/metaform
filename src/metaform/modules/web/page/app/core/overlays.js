@@ -12,7 +12,7 @@ import {$, h} from '/page/app/core/dom.js';
  * meant for a window never moves the map behind it.
  * The kinds: `menu` and `popover` float under their button and close on a click outside; `window` floats over the
  * map and stays while the person looks around it, VIEW-030; `dialog` is modal, with a backdrop, and the rest of the
- * page cannot be used until it closes; `dock` is the chat, which Escape closes only from inside it. */
+ * page cannot be used until it closes; `dock` is the chat, whose Escape, from inside it only, is its own and never closes it. */
 export const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),'
   + 'select:not([disabled]),textarea:not([disabled]),[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
 export const OVERLAY = {stack: [], known: new Map(), base: 1000, closing: new Map(), trail: []};

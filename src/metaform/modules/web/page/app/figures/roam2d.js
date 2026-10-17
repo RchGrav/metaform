@@ -208,6 +208,8 @@ function gait2d(figure, moving) {
     if (figure.wasPhase < 0.75 && stroke.phase >= 0.75) figure.landed = figure.clock;
     figure.wasPhase = stroke.phase;
     const crouch = stroke.phase >= 0.75 ? Math.sin((stroke.phase - 0.75) / 0.25 * Math.PI) : 0;
+    // a clock started again below the last landing has no landing yet: never a negative age, which made it Infinity
+    if (figure.landed != null && figure.landed > figure.clock) figure.landed = null;
     const land = Math.exp(-(figure.clock - (figure.landed ?? -9)) * 14);
     const squash = crouch * 0.2 - (stroke.phase < 0.375 ? stroke.air * 0.12 : 0) + land * 0.12;
     return {lift: stroke.air * m.lift * 1.2, squash, sway: 0};
@@ -223,6 +225,15 @@ function gait2d(figure, moving) {
   if (m.go === 'flap') return {lift: moving ? stroke.thrust * 0.05 : 0, squash: 0, sway: 0};
   return {lift: 0, squash: 0, sway: 0};
 }
+/* The 2D area's width on the page, kept by an observer of #viewport as it changes, so a frame never asks the page for a
+ * layout after the 2D flow wrote its styles, which forced a second layout every frame (round 7's F5, 2026-10-15). */
+const VIEWPORT = {width: 0, watched: false};
+function watchViewport() {
+  VIEWPORT.watched = true;
+  const host = $('#viewport'), measure = () => { VIEWPORT.width = host.getBoundingClientRect().width; };
+  measure();
+  new ResizeObserver(measure).observe(host);
+}
 function roam2d() {
   ROAM2D.frame = 0;
   const now = performance.now() / 1000, passed = Math.min(0.1, Math.max(0, now - (ROAM2D.last || now)));
@@ -230,8 +241,8 @@ function roam2d() {
   const base = M.base, layer = base && layer2d(base);
   // A figure keeps its share of a box's height, and never less than ROAM2D.least pixels on the screen, so it is seen
   // with the whole of a large map in view.
-  const view = $('#viewport').getBoundingClientRect();
-  const perPixel = M.cam && view.width && M.svg === base?.svg ? M.cam.w / view.width : 0;
+  if (!VIEWPORT.watched) watchViewport();
+  const perPixel = M.cam && VIEWPORT.width && M.svg === base?.svg ? M.cam.w / VIEWPORT.width : 0;
   let moving = false;
   for (const [id, figure] of ROAM2D.figures) if (stepFigure2d(id, figure, base, layer, perPixel, passed)) moving = true;
   const awake = mascot2d(base, layer, perPixel, passed);

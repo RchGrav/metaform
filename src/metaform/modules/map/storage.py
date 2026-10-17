@@ -551,10 +551,11 @@ def work(
     after: str | None = None,
     joins: bool = False,
     kind: str | None = None,
+    ids: Sequence[str] | None = None,
 ) -> Page[WorkRecord]:
     """The work records, in row order, by node, condition or whether open, STORE-042; not a context read, since a
     work record has no layer. With joins, an element's own records and those on the joins it receives or
-    provides."""
+    provides. With ids, those tickets alone, as a page reads the ones a change named, VIEW-018."""
     target = work_target(tx, node, []) if node is not None else None
     around = joins and target is not None and target[0] == "element"
 
@@ -577,6 +578,9 @@ def work(
             params.append("" if kind == "none" else kind)
         if open is not None:
             where.append("done IS NULL" if open else "done IS NOT NULL")
+        if ids is not None:
+            where.append(f"work_id IN ({', '.join('?' for _ in ids) or 'NULL'})")
+            params.extend(ids)
         return tx.execute(
             f"SELECT row AS key, * FROM work WHERE {' AND '.join(where)} ORDER BY row LIMIT ?", (*params, count)
         ).fetchall()

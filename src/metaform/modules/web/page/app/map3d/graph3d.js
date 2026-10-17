@@ -95,6 +95,10 @@ export const FRAMES = {id: 0, held: false, until: 0, active: 0, last: 0, drawn: 
   moved: false, busy: false, flowing: false, grace: 700, idle: 30000, rest: null};
 // `idle` and `rest` are the web module's settings, web_flow_seconds and web_idle_flow, read with the workspace: rest
 // null, the default, keeps the map running; 0 lets it stop `idle` after the last act or change.
+/* The 3D area's size on the page, kept by an observer of #stage as it changes, `create3D`, so a frame reads it here
+ * and never asks the page for a layout: each read of a size after the 2D flow wrote its styles forced a second layout
+ * every frame (round 7's F5, 2026-10-15). */
+export const STAGE = {width: 0, height: 0};
 const DAMPING = 0.12;
 // the share of a turn of the camera a hand gave that it loses each 60th of a second: it coasts
 // (DAMPING, above); and the share of its speed a node loses each tick while one is dragged, 0.4 otherwise
@@ -315,7 +319,7 @@ function create3D() {
       return posted('/api/settings', {key: 'web_theme', value: value === 'ultra' ? 'space' : PLAIN.last});
     },
     shapes: () => VIEW_SETTINGS.shapes,
-    linked: linked3d});
+    linked: linked3d, stage: STAGE});
   // The page's own work for each frame runs first in the render chain: after the layout's tick and the controls, before
   // anything is drawn, so the camera's flight, the labels, the dots and the tooltip are all of the same frame.
   G.postProcessingComposer().insertPass({isPass: true, enabled: true, needsSwap: false, clear: false,
@@ -325,6 +329,12 @@ function create3D() {
   applyPhysics(PHYS.name, false);  // the forces of the physics chosen, `PHYSICS`
   steer3d(G.controls());
   listen3d($('#stage'));
+  const stage = $('#stage'), measure = () => {
+    const box = stage.getBoundingClientRect();
+    STAGE.width = box.width; STAGE.height = box.height;
+  };
+  measure();
+  new ResizeObserver(measure).observe(stage);
   resize();
   wake3d();
 }

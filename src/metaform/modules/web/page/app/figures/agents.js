@@ -16,6 +16,7 @@ import {flowLive, flowTickets} from '/page/app/flow/flow.js';
 import {wake2d} from '/page/app/map2d/flow2d.js';
 import {D, ticketOf, glyphFor} from '/page/app/agents/dispatch.js';
 import {holderOf} from '/page/app/keys/walk.js';
+import {keepMascot} from '/page/app/views/settings.js';
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
 // built draws nothing
@@ -43,8 +44,10 @@ export const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, si
   accel: 70, corner: 0.6, settle: 1.1, grow: 10, drawn: 0, sized: 0,
   // the work whose thread the person chose in the chat dock: its figure is drawn this much larger, moving as if busy
   focus: null, focused: 1.4,
-  // the most pixels a figure stands on the screen, however near the camera is
+  // the most pixels a figure stands on the screen, however near the camera is, while `held`; key 6 lets figures grow
+  // as near things do and holds them again, kept in this browser, `holdAgentSize`
   most: 110,
+  held: (() => { try { return localStorage.getItem('metaform.agentSizeHeld') === '1'; } catch { return false; } })(),
   // told the node when a figure starts or ends its time at work there, the work camera's `workChanged`
   onWork: null};
 export const nodeById = (data, id) => data.nodes.find(node => node.id === id);
@@ -189,26 +192,40 @@ function startFigure(ticket, data, home, target) {
  * with web_embody, it walks out from the map's primary node in that character, with its motion and its temper: the
  * system agent to what the person has selected, or beside the mascot, and an agent chatting about something to it.
  * It sees from its own eyes, `seer`, and speaks in its own bubble. The body the person gives the system agent is the
- * mascot; one the system agent takes itself, web_embody, is its own figure, which its acts move. A body is kept for
- * the conversation, by its ticket, so a resumed conversation comes back in the same body; the person's choice stands
- * over the agent's, and no two figures at work share a character. */
+ * mascot, web_mascot, held by the server for every conversation; one the system agent takes itself, web_embody, is
+ * its own figure for that conversation, which its acts move. Any other body is kept for the conversation, by its
+ * ticket, so a resumed conversation comes back in the same body; the person's choice stands over the agent's, and no
+ * two figures at work share a character. */
 const SYSTEM_TALK = 'Conversation with the system agent';  // the system agent's ticket, dispatch's SYSTEM_TASK
 function keptBodies() {
   try { return JSON.parse(localStorage.getItem('metaform.bodies') || '{}'); } catch { return {}; }
 }
 export const BODIES = {chosen: keptBodies()};
 export const bodyKey = work => `${S.project}|${work}`;
-// a body is the conversation's it was given in: that session, and the same session resumed; a new conversation has
-// none
-export function bodyOf(work) {
+function keepBodies() {
+  try { localStorage.setItem('metaform.bodies', JSON.stringify(BODIES.chosen)); } catch { /* kept for this page */ }
+}
+try { localStorage.removeItem('metaform.embodied'); } catch { /* the last body picked, kept before web_mascot was */ }
+// a body kept for a conversation is the one it was given in: that session, and the same session resumed; a new
+// conversation has none
+function heldBody(work) {
   const held = BODIES.chosen[bodyKey(work)];
   if (!held?.glyph) return null;
   const live = held.session ? D.sessions.filter(one => one.work_id === work && one.state === 'running').at(-1) : null;
-  return !live || live.session_id === held.session ? held.glyph : null;
+  return !live || live.session_id === held.session ? held : null;
 }
+// the body the system agent took itself in this conversation, web_embody, not the person's mascot
+export const ownBody = ticket => {
+  const held = heldBody(ticket.id);
+  return held?.by === 'agent' ? held.glyph : null;
+};
 export const isSystemTalk = ticket => Boolean(ticket?.held && ticket.task === SYSTEM_TALK);
-// a body the conversation's agent took itself, web_embody, not one the person gave it
-const tookOwn = ticket => BODIES.chosen[bodyKey(ticket.id)]?.by === 'agent';
+/* A conversation agent's body: the system agent's own, else the person's mascot; any other's, the one kept for it. */
+export function bodyOf(work) {
+  const ticket = ticketOf(work);
+  if (isSystemTalk(ticket)) return ownBody(ticket) || mascotGlyph();
+  return heldBody(work)?.glyph || null;
+}
 const talking = ticket => D.sessions.some(one => one.work_id === ticket.id && one.state === 'running');
 /* A conversation's ticket: one held for it, or a done one a session began on after it was done, since dispatch ends a
  * worker's session when its ticket is done and only a conversation about the ticket starts on it after. */
@@ -217,9 +234,9 @@ export const conversing = ticket => Boolean(ticket?.held || ticket?.done && D.se
 /* Whether a ticket's agent is drawn as a figure now. */
 export function drawnWorking(ticket, live = liveWork()) {
   if (!conversing(ticket)) return !ticket.done && live.has(ticket.id);
+  // the system agent is drawn as the mascot, web_mascot; a body it took itself is its own figure
+  if (isSystemTalk(ticket) && !ownBody(ticket)) return false;
   const body = bodyOf(ticket.id);
-  // the system agent is drawn as the mascot once the person gives it a body; one it took itself is its own figure
-  if (isSystemTalk(ticket) && !(body && tookOwn(ticket))) return false;
   if (body) return talking(ticket);
   return live.has(ticket.id) && !mascotGlyph();
 }
@@ -254,21 +271,27 @@ export function embody(work, glyph, by = 'person') {
   const ticket = ticketOf(work), key = bodyKey(work), held = BODIES.chosen[key];
   if (!GLYPHS.includes(glyph)) return {error: `${glyph} is not a character.`};
   if (!ticket) return {error: 'There is no such conversation on this page.'};
-  if (by === 'agent' && held?.by === 'person') {
+  const system = isSystemTalk(ticket);
+  if (by === 'agent' && !system && held?.by === 'person') {
     if (held.glyph !== glyph) return {error: `The person gave you the ${held.glyph}; it stays.`};
     by = 'person';  // the person's gift stays theirs
   }
+  if (by === 'agent' && system && glyph === preferredGlyph()) by = 'person';  // the person's mascot stays theirs
   // the body the person gives the system agent is the mascot; one an agent takes itself is its own figure; the
   // mascot's character is no other agent's while it is drawn
-  const mascot = isSystemTalk(ticket) && by === 'person';
+  const mascot = system && by === 'person';
   if (glyph === mascotGlyph() && !mascot) return {error: `The ${glyph} is the person's mascot.`};
   const other = [...ROAM.figures.values()]
     .find(figure => figure.id !== work && figure.glyph === glyph && figure.stage !== 'leaving');
   if (other) return {error: `The ${glyph} is at work already on this map.`};
-  // kept with the session it was given in, so the same conversation resumed comes back in it and a new one is asked
-  const live = D.sessions.filter(one => one.work_id === work && one.state === 'running').at(-1);
-  BODIES.chosen[key] = {glyph, by, session: live?.session_id || null};
-  try { localStorage.setItem('metaform.bodies', JSON.stringify(BODIES.chosen)); } catch { /* kept for this page */ }
+  if (mascot) {  // the person's mascot, web_mascot, for every conversation; a body the agent took itself goes
+    BODIES.chosen[key] = null;
+    keepMascot(glyph);
+  } else {  // kept with the session it was given in, so the same conversation resumed comes back in it
+    const live = D.sessions.filter(one => one.work_id === work && one.state === 'running').at(-1);
+    BODIES.chosen[key] = {glyph, by, session: live?.session_id || null};
+  }
+  keepBodies();
   releaseGlyph(work);
   const figure = ROAM.figures.get(work);
   if (figure) { if (mascot) figure.done = true; else reglyph(figure); }
@@ -280,15 +303,23 @@ export function embody(work, glyph, by = 'person') {
   if (typeof wake2d === 'function') wake2d();
   return {character: glyph, mascot, figure: !mascot};
 }
+// the person's mascot changed, on this page or another: an unembodied agent is drawn plain only while there is none,
+// and the maps draw the mascot as it is now
+document.addEventListener('metaform:mascot', () => {
+  figures(S.tickets || []);
+  wake3d(3000);
+  if (typeof wake2d === 'function') wake2d();
+});
 /* Each conversation agent and its body, for the chat dock's offer. */
 export function bodies() {
   return (S.tickets || []).filter(ticket => conversing(ticket) && talking(ticket)).map(bodyRow);
 }
 function bodyRow(ticket) {
-  const character = bodyOf(ticket.id), system = isSystemTalk(ticket), mascot = system && !tookOwn(ticket);
-  return {work: ticket.id, system, character, by: character ? BODIES.chosen[bodyKey(ticket.id)]?.by || null : null,
-    drawn: mascot ? Boolean(MASCOT.mesh) && Boolean(character) : ROAM.figures.has(ticket.id),
-    mascot: mascot && Boolean(character)};
+  const character = bodyOf(ticket.id), system = isSystemTalk(ticket);
+  const mascot = system && Boolean(character) && !ownBody(ticket);  // the person's mascot is the person's choice
+  return {work: ticket.id, system, character,
+    by: mascot ? 'person' : character ? heldBody(ticket.id)?.by || null : null,
+    drawn: mascot ? Boolean(MASCOT.mesh) : ROAM.figures.has(ticket.id), mascot};
 }
 /* The characters a body can be, for the picker: each with its name, its temper and a word for it, how it moves, whether
  * it is free now, and `preview(canvas)`, which draws it moving in its own way on a small canvas until the function it

@@ -2438,10 +2438,8 @@ def test_a_long_verb_and_a_workflow_run_are_tasks_for_a_client_that_declares_the
     finally:
         wire.process.kill()  # stopped with no chance to mark what it ran, as a crash or a lost machine stops it
         wire.close()
-    # The server that ran the stranded call has stopped: a new one finds the task, and, its owner's mark gone stale,
-    # reads it as failed rather than leaving the client to wait.
-    with Store('proj', module='mcp').tables() as tx:
-        tx.update('tool_tasks', {'task_id': stranded['taskId']}, {'beat': int(time.time()) - task_records.LOST_S - 1})
+    # The server that ran the stranded call has stopped: a new one finds the task, and, its owner's process gone,
+    # reads it as failed at once rather than leaving the client to wait.
     wire = july_wire(home, mapped)
     try:
         assert declaring(wire, 'tasks/get', {'taskId': made['taskId']}, tasks)['status'] == 'completed'
@@ -2449,6 +2447,176 @@ def test_a_long_verb_and_a_workflow_run_are_tasks_for_a_client_that_declares_the
         assert lost['status'] == 'failed' and lost['error']['message'] == task_records.STOPPED
     finally:
         wire.close()
+
+
+# Changes that concern no task, no followed ticket t1 and no exchange of the project 'proj': another project's, an
+# agent's thread lines and signals, another ticket's, its sessions'.
+UNRELATED = (
+    {'project': 'other', 'tables': ['work', 'mcp.tool_tasks'], 'work_ids': ['t1'], 'kinds': ['task']},
+    {'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'], 'work_ids': ['t2'],
+     'session_ids': ['s2'], 'kinds': ['line']},
+    {'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.signals'], 'work_ids': ['t2'],
+     'session_ids': ['s2'], 'kinds': ['signal']},
+    {'project': 'proj', 'tables': ['work', 'work_steps'], 'work_ids': ['t2'], 'session_ids': [], 'kinds': ['ticket']},
+    {'project': 'proj', 'tables': ['dispatch.sessions'], 'work_ids': ['t2'], 'session_ids': ['s2'], 'kinds': ['session']},
+)
+
+
+@pytest.mark.req('BASE-030')
+def test_a_task_hears_a_cancel_from_another_process_and_reads_nothing_for_changes_that_name_no_task(monkeypatch):
+    """The owner of a running task reads its own task rows only on a change naming the tool tasks, CLAUDE.md
+    Architecture section 2: a burst of changes that do not costs no read, and nothing wakes on a clock."""
+    import anyio
+    import anyio.lowlevel
+
+    from metaform.modules.mcp import task_records, tasks
+    reads: list[list[str]] = []
+    monkeypatch.setattr(task_records, 'ended', lambda project, running: reads.append(list(running)) or list(running))
+
+    async def main() -> bool:
+        scope = anyio.CancelScope()
+        running = tasks.Running(scopes={'t1': scope}, project='proj', token=anyio.lowlevel.current_token())
+
+        def burst() -> None:  # on another thread, as the listener hears them
+            for _ in range(20):
+                for payload in UNRELATED:
+                    tasks.heard(running, payload)
+        await anyio.to_thread.run_sync(burst)
+        assert reads == []
+        await anyio.to_thread.run_sync(tasks.heard, running, {'project': 'proj', 'tables': ['mcp.tool_tasks'],
+                                                              'work_ids': [], 'session_ids': [], 'kinds': ['task']})
+        return scope.cancel_called
+    assert anyio.run(main) is True
+    assert reads == [['t1']]
+
+
+@pytest.mark.req('MCP-004')
+def test_the_resource_watcher_reads_nothing_for_changes_that_number_nothing_at_its_nodes(mapped):
+    """A watched node is read again only for a change that can number an item there; a burst of changes of another
+    project, of an agent's threads and signals, or of the mcp module's records reads nothing."""
+    import anyio
+
+    from metaform.module import project_for
+    from metaform.modules.mcp import server
+    project = project_for(mapped)
+    reads: list[str] = []
+
+    class Bus:
+        async def publish(self, message):
+            pass
+
+    async def main() -> None:
+        watch = server.Watch(mapped, Bus(), lambda **given: given)
+        await watch.open(['metaform://code.alarm.audible', 'metaform://code.loop.tick'])
+        number, check, checked = watch._number, watch.check, anyio.Event()
+        watch._number = lambda uri: reads.append(uri) or number(uri)
+
+        async def counted() -> None:
+            await check()
+            checked.set()
+        watch.check = counted
+        async with anyio.create_task_group() as group:
+            watch.group = group
+
+            def burst() -> None:  # on another thread, as the listener hears them; a ticket's change can number one
+                for _ in range(20):
+                    for payload in UNRELATED[:3] + UNRELATED[4:]:
+                        watch._heard({**payload, 'project': project if payload['project'] == 'proj' else 'other'})
+                    watch._heard({'project': project, 'tables': ['mcp.tool_tasks', 'mcp.a2a_exchanges']})
+            await anyio.to_thread.run_sync(burst)
+            await anyio.wait_all_tasks_blocked()
+            assert reads == []
+            await anyio.to_thread.run_sync(watch._heard, {'project': project, 'tables': ['memory.entities']})
+            with anyio.fail_after(10):
+                await checked.wait()
+            watch.stop()
+    anyio.run(main)
+    assert sorted(reads) == ['metaform://code.alarm.audible', 'metaform://code.loop.tick']
+
+
+@pytest.mark.req('MCP-043')
+def test_a_followed_a2a_task_and_the_exchange_followers_read_only_for_changes_that_concern_them(monkeypatch, tmp_path):
+    """An A2A task followed for its client is read again only for a change naming its ticket, and the exchange
+    followers read open exchanges only for a change to the exchanges; a burst of other changes reads nothing, and
+    nothing is read on a clock."""
+    import threading
+
+    import anyio
+    from a2a.types import Task
+
+    from metaform.modules.mcp import a2a, a2a_out
+    monkeypatch.setattr(a2a, 'refresh_modules', lambda: None)
+    first = a2a.Read(Task(id='t1', context_id='code.alarm'), 'running', '')
+    first.work_id = 't1'
+    tasks_read: list[str] = []
+    exchanges_read: list[set[str] | None] = []
+    task_was_read, exchanges_were_read = threading.Semaphore(0), threading.Semaphore(0)
+
+    def read(project, folder, task_id, length=None):
+        tasks_read.append(task_id)
+        task_was_read.release()
+        return first
+
+    def open_exchanges(projects=None):
+        exchanges_read.append(projects)
+        exchanges_were_read.release()
+        return []
+    monkeypatch.setattr(a2a, 'read', read)
+    monkeypatch.setattr(a2a_out, '_open_exchanges', open_exchanges)
+
+    async def reads() -> None:  # one more of each, signalled by the reads themselves
+        for signal in (task_was_read, exchanges_were_read):
+            assert await anyio.to_thread.run_sync(signal.acquire, True, 10)
+
+    async def main() -> None:
+        changes, wakes = a2a.Changes(), a2a_out.Wakes()
+        changes.bind()
+        followers = a2a_out.Followers(tmp_path, wakes)
+
+        async def follow() -> None:
+            async for _ in a2a.follow(changes, 'proj', tmp_path, first):
+                pass
+        async with anyio.create_task_group() as group:
+            group.start_soon(follow)
+            group.start_soon(followers.run)
+            await reads()  # the reads at the start
+            await anyio.wait_all_tasks_blocked()
+            for _ in range(20):
+                for payload in UNRELATED:
+                    changes.heard(payload)
+                    wakes.heard(payload)
+            await anyio.wait_all_tasks_blocked()
+            assert (len(tasks_read), len(exchanges_read)) == (1, 1)
+            changes.heard({'project': 'proj', 'tables': ['work'], 'work_ids': ['t1'], 'kinds': ['ticket']})
+            wakes.heard({'project': 'proj', 'tables': ['mcp.a2a_exchanges']})
+            await reads()
+            await anyio.wait_all_tasks_blocked()
+            group.cancel_scope.cancel()
+    anyio.run(main)
+    assert tasks_read == ['t1', 't1'] and exchanges_read[1:] == [{'proj'}]
+
+
+@pytest.mark.req('MCP-037')
+def test_a_trace_views_mark_moves_only_for_a_change_to_its_ticket():
+    """A trace view's next read reads the store only after a change to its ticket: a burst of changes that do not
+    concern the ticket leaves its mark as it was, so the read is answered unchanged without reading; a change that
+    does moves it."""
+    import anyio
+
+    from metaform.modules.mcp import views
+
+    async def main() -> None:
+        traces = views.Traces()
+        mark = traces.track('proj', 't1')
+        for _ in range(20):
+            for payload in UNRELATED:
+                traces.heard(payload)
+        assert traces.mark('proj', 't1') == mark
+        traces.heard({'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'],
+                      'work_ids': ['t1'], 'session_ids': ['s1'], 'kinds': ['line']})
+        assert traces.mark('proj', 't1') != mark
+        traces.stop()
+    anyio.run(main)
 
 
 @pytest.mark.req('MCP-037')
@@ -2821,8 +2989,12 @@ APPS = {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;p
 
 
 def seed_thread(work_id, lines, first=1):
-    """A recorded agent thread for a ticket, written into dispatch's own tables as its runner writes them; no agent
-    is started."""
+    """A recorded agent thread for a ticket, written into dispatch's own tables as its runner writes them, and
+    announced as its runner announces them; no agent is started."""
+    import threading
+    from pathlib import Path
+
+    from metaform import events, home
     store = Store('proj', module='dispatch')
     with store.tables() as tx:
         if not tx.rows('sessions', {'session_id': 's-1'}, limit=1).results:
@@ -2831,6 +3003,12 @@ def seed_thread(work_id, lines, first=1):
         for seq, (kind, text) in enumerate(lines, start=first):
             tx.insert('lines', {'session_id': 's-1', 'name': f'line:{seq}', 'work_id': work_id, 'kind': kind,
                                 'text': text, 'seq': seq})
+    project = home.project('proj')
+    assert project is not None
+    # from a thread of its own: a browser check calls this inside Playwright's event loop
+    announcing = threading.Thread(target=events.announce, args=(Path(project.path), 'cli'))
+    announcing.start()
+    announcing.join()
 
 
 @pytest.mark.req('MCP-037')
@@ -2883,14 +3061,17 @@ def test_each_view_is_linked_from_its_tools_and_reviewed_by_its_meta_and_the_age
         assert {'name': 'map_where', 'summary': 'Read one address on the map: its element, what relies on it, and '
                                                 'what it relies on, each with its purpose.'} in glossary['tools']
 
-        def trace(digest=''):
+        def trace(digest='', mark=''):
             return declaring(wire, 'tools/call', {'name': 'metaform_view', 'arguments': {
-                'read': 'trace', 'params': {'id': work_id, 'digest': digest}}}, APPS)['structuredContent']
+                'read': 'trace', 'params': {'id': work_id, 'digest': digest, 'mark': mark}}}, APPS)['structuredContent']
         trace()
         held = trace()
         assert [line['text'] for line in held['lines']] == ['I will raise the tone.']
         assert held['ticket']['map']['title'] == 'Make the alarm louder'
-        assert trace(held['digest']) == {'digest': held['digest'], 'unchanged': True}
+        assert trace(held['digest']) == {'digest': held['digest'], 'unchanged': True, 'mark': held['mark']}
+        # nothing changed since its mark: answered unchanged before the store is read
+        assert trace(held['digest'], held['mark']) == {'digest': held['digest'], 'unchanged': True,
+                                                       'mark': held['mark']}
         seed_thread(work_id, [('tool_call', 'Edit src/alarm.py (completed)')], first=2)
         assert [line['text'] for line in trace(held['digest'])['lines']][-1] == 'Edit src/alarm.py (completed)'
     finally:

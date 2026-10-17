@@ -446,6 +446,76 @@ This section specifies the addressed-context design, the system's key innovation
   - The earlier Axiom text is still readable as the element's previous version.
 - Relates to: MCP-031, MCP-035, STORE-044, BASE-040, CTX-020, CTX-021, CTX-027, CTX-028, CTX-029, decision 23 (prompt addresses).
 - Status: confirmed, 2026-10-15, in conversation with the owner. The wording is the owner's. Storing it as memory's `instructions` element is recommended.
+- Amendment, 2026-10-16, the owner's orchestrating session, no ticket: the text above was a Claude draft, not the owner's approved wording; the owner's recovery of 2026-10-15 shows no final version was approved. The shipped `instructions` element is now the owner's recovered prompt (section A of that recovery), with what the owner added on 2026-10-16: 6a creates an address only as the intake's namespace rules allow, given word for word from `intake/resources/intake.xml`, with their bars on genre, style, medium, encoding and language holding for the base map only; 5f, a memory sits at the element or at the join it concerns; 5g, it cites its evidence. `{element}` is the assigned element's address, filled by the memory module; `{this}` keeps its designed meaning, the subject a prompt or workflow is linked to, and the memory prompt no longer fills it. This block supersedes the one above:
+
+    ```
+    Follow these steps for each interaction:
+
+    1. Project Identification:
+       - You should assume that you are working on {project}
+
+    2. Element Identification:
+       - This is {element} or any other address you work on for this session.
+
+    3. Memory Retrieval:
+       - Always begin your work by saying only "Remembering..." and retrieve all relevant information from your knowledge graph.
+       - Always refer to your knowledge graph as your "memory".
+       - The memory and knowledge applicable to the element you work on, including inherited information, are supplied automatically as you work at that address.
+       - Use search_nodes and open_nodes when you need to explore the entities and relations connected to that memory.
+
+    4. Memory and Knowledge:
+       - While working on the project, be attentive to any new information, and distinguish:
+         a) Memory: what happened in the work — what was done, tried, decided, found broken or fixed, and the lessons learned.
+         b) Knowledge: what is now known of the project — what elements are, how they behave, their constraints, purposes and relationships, and their genre, style, medium and encoding.
+
+    5. Memory Update:
+       - If any memory was gathered during the work, update your memory as follows:
+         a) Create entities with create_entities for significant events, decisions, defects and lessons; each has a unique name, an entityType, and observations.
+         b) Connect entities to existing entities using create_relations with from, to, and relationType in active voice, including relations to memories associated with other addresses.
+         c) Store each fact as an atomic observation. Use add_observations to extend an existing entity; create_entities does not add observations to an existing name in the reference memory server.
+         d) Link memories to the knowledge layers they concern, so a layer and its related memories can be shown or hidden together.
+         e) Memories are editable by any agent unless locked; the memory graph supports updating and deleting entities, observations, and relations.
+         f) Record a memory where it belongs: about an element generally, at the element; about why a receiver needs what its provider gives, at that join, giving its receiver and provider.
+         g) Cite the evidence a memory rests on with cites: path:line, path:start-end or path:symbol. A memory whose evidence changes is flagged stale.
+
+    6. Knowledge Update:
+       - If any knowledge was gathered during the work, add it to the map's knowledge layers as follows:
+         a) A missing knowledge-layer address is created only as these namespace rules, the intake's, allow; never invent an address outside them. Use map knowledge add-element and add-join for elements and joins discovered during work; naming a new knowledge node establishes its layer. Where these rules bar a genre, style, medium, encoding or language from an address, they bar it from the intake's base map only: in a knowledge layer such a node, like code.engine.game.platformer or code.python, is a legitimate namespace item.
+            This is a typological ontology, it is not a taxonomy. It does not have fillers like domain and class, and it does not prescribe a minimum or maximum segment count per entity.
+            Root types: code, document, media, data, upstream, downstream.
+            Rules:
+            1. For each dotted part, the address in the namespace must be reversible and read as its name: the segments in the namespace can be reversed by replacing periods with spaces to read properly as an inferenceable, well understood name, and children must take their parent's name as their last name when reversed and read as a noun.
+            2. All artifacts are entities, all entities are not artifacts, all entities are elements, all elements are not entities. (Artifacts ⊂ Entities ⊂ Elements)
+            3. Namespace entries must describe the type of functional approach as a proper noun.
+            4. Namespace must narrow from trunk to leaf; to be placed into the namespace, an entry must be a part or type of its parent scope—it must be the same thing as its parent type, or a function within its parent type, and never a non-functionality.
+            5. There must be one or more entities each with a distinct unique objective purpose and encounter function for the defining element.
+            6. Multi-word names: when the new leaf is a variant functionality of its parent type, such as physics engine and game engine, express the namespace with periods between the segments: code.engine.game, code.engine.physics. Every prefix is a complete type that yields its own inference and passes its practices to its children, so words that form a valid prefix of their own must remain separate segments. Words may be joined with underscores in one segment only when none of them forms a valid prefix, as in code.queue.dead_letter and data.bill_of_materials, where the name must also read correctly once reversed.
+            7. Specify the name_length value indicating the lookback segment count as its acceptable short name that is well understood.
+            8. The namespace address names the type. The purpose record refines that type with what this AUE does, so the address stays general and the purpose record stays specific.
+            9. Industry-Standard Lexicon, Grounded Nomenclature, and Non-Coinage: All elements, segment identifiers, compound tokens, and resulting reversed noun phrases must use the established, standard terminology recognized by practitioners who work directly with that class of artifact. Abstract pattern labels, bespoke synonyms, internal shorthand, colloquial phrases, and marketing terms are strictly prohibited. Where an authoritative or formally standardized term does not exist, the segment must use the plain, common noun for what the thing functionally is or does in ordinary practice. Never coin, invent, or adapt a term under any circumstances.
+            10. Continuous Auditing and Strict Remediation: During any Refinement or Corrections operation, all existing elements and namespace paths must be actively audited against these rules. No pre-existing entry is exempt. You must proactively file and execute Corrections to repair any identified violations—such as non-standard terminology, coined words, or improper segmentation—bringing the entire namespace path into absolute compliance.
+            11. Canonical Name Field Priority: There is a field called `name`. This field must always hold the canonical name exactly as it is used in the project specifications. If there is no project specification for it, then use the industry term.
+            Examples, reading:
+            - code.loop.main: "main loop program code"
+            - code.bus.data.event: "event data bus code"
+            Examples, namespace validity:
+            - code.game: invalid, game is not a function
+            - code.game.engine: invalid, reverses to 'engine game', a subject/genre variant (a game about engines) rather than a recognized functional type — the same non-functionality basis that invalidates platformer; also sits under the already-invalid code.game parent.
+            - code.engine.game: valid, A 'game engine' is a functional type because it provides the runtime a game runs on (the main loop, rendering, input, and simulation) independent of any particular game's genre or content, and it is widely known by that exact name
+            - code.engine.game.fps: valid, a distinct functionality; proof: first-person camera viewpoint with a targeting reticle
+            - code.engine.game.platformer: invalid, invalid as a functional subtype; it defines the fundamental challenge and objective of a game, not a technical functionality; proof: spatial navigation and overcoming environmental obstacles; note: load-bearing invalid example
+            - media.image: valid, images are a base valid functional type under the media root.
+            - media.asset.image: valid, Images are assets when they are named as a functional element type in a AUE.
+            - media.photo: valid, Photos have defining elements, and sometimes supportive elements, a couple (DE) at the eiffel tower (SE), a car (DE) in the street, a car (DE) racing at the racetrack (SE), a photo of the grand canyon (DE) in the distance a man and a mule (SE)
+            - media.photo.scenery: valid, This is function of an encounter. A representation of a scene as the DE, a scenery photo has a subject that isnt the DE, all scenes have a subject but the scene is the focus
+            - media.photo.jpg: invalid, this is encoding
+            - code.cpp: invalid, this is language
+            - document.word.story.conflict: invalid, 'word' is naming an encoding and does not name a functional approach at the proper namespace level
+            - document.story.conflict: valid, represents story conflict as a document element
+         b) Record what is known where it was found with map knowledge add-property or add-item, including genre, style, medium and encoding, which are omitted during base intake.
+         c) A property layer is linked to a base-map address. Its content and linked memories apply transitively to descendants and are visible toward the trunk. Linking the same property on another branch moves its one link toward the nearest shared ancestor; it does not create copies on the branches.
+         d) Correct existing elements or joins with map refine.
+    ```
 
 ### CTX-027 The memory prompt is filled with the project and the agent's assigned element
 
@@ -755,6 +825,12 @@ This section specifies the addressed-context design, the system's key innovation
   3. test_dispatch_link_adds_the_ref_beside_the_elements_own_and_makes_an_address_that_has_no_element (:3479) checks that a folder match is not exact. To add: with only a ref naming `src/`, a write to `src/fresh.py` is refused.
 - Relates to: MAP-020, MAP-021, LAYER-029 (its claim check runs after this lock), BASE-052; the pushed-delivery records for decisions 14 to 18 (CTX-040 to CTX-050; exact placement is what triggers a push).
 - Status: confirmed, 2026-10-15, in conversation with the owner; built for agents dispatch runs (see CTX-061 and CTX-062 for what is not covered). Leaving paths outside the project folder unlocked is recommended. The wording of `link_call` and `work_link` awaits the owner.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code.graph.knowledge#c, code#1e and #47:
+  - Build: built by code.dispatcher.agent#3d and switched off. With `LINK_LOCK` False (src/metaform/modules/dispatch/runner.py:155, code#1e) `Session.locked` (runner.py:2352) returns None before it reads anything, so `write_text_file` (:2447) and `edit_locked` (:2368) let every write through. With it on, the lock is as #3d built it: `placed()` (:440) over `sources_index` (:423), which since code.graph.knowledge#c reads the store's ref records, `Store.refs()`.
+  - The rule now reaches every session before its lock does (#47). The sentence "Every agent dispatch starts on a ticket gets the rule as one line of its first message" no longer holds as written: `work_line` (src/metaform/modules/dispatch/__init__.py:723) no longer carries it. `work_link` is appended to the end of the first prompt a runner sends any session after it starts, resumes or loads, on a ticket or not, the system agent's and the intake's included, never as a turn of its own (CTX-043). `Session.ruled` is set when that prompt goes out (runner.py:3784), and `locked` refuses nothing until it is (:2359).
+  - Prompts, rewritten 2026-10-15 at the owner's request so an agent knows how to unlock a file (src/metaform/modules/dispatch/resources/prompts.xml): `work_link` (:200) gives the whole call, `dispatch_link file= node= ref= why=`, where to find the node (its ticket's node or one under it, `map_where`), that the write goes through at once, and that commands cannot write files it has not linked. `write_unlinked` (:207), the owner's sentence, is unchanged. `link_call` (:212) now carries `ref=` and `why=` and tells the agent to make the same edit again. Their wording awaits the owner's approval (open question 9).
+  - Acceptance: with `LINK_LOCK` True on a copy of the tree, 2026-10-15, test_dispatch.py:3458, :3497, :3519, :3643 and :3661 pass; with it False, :3458 and :3643 skip. The added case (a ref naming only `src/` leaves `src/fresh.py` locked) is still to add.
+  - Status: built and off since code#1e; the requirement does not hold until `LINK_LOCK` is set True (open question 26).
 
 ### CTX-061 The lock holds in every permission mode, ahead of every automatic approval
 
@@ -780,6 +856,10 @@ This section specifies the addressed-context design, the system's key innovation
   3. To add: a Codex session in agent-full-access that edits an unlinked file is refused. This fails today.
 - Relates to: BASE-052, MAP-058, CTX-060, CTX-062, CTX-064.
 - Status: confirmed, 2026-10-15, in conversation with the owner. Built for Claude Code and for ACP fs writes; open for Codex outside read-only mode.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code#1e, code.dispatcher.agent#43 and #47:
+  - Build: built for Claude Code, ACP fs writes and Codex, all off under `LINK_LOCK` (runner.py:155). `request_permission` (runner.py:2796) checks `edit_locked` (:2368) and `unsandboxed` (:2387) before any approval. `held_settings` (:242) replaces `EDITS_ASK`: the four edit tools' ask rules and the command sandbox, sent on session/new, load and resume, and nothing while the switch is off. Codex is kept asking: `ASKING_MODES` (:159), `MODE_APPROVES` (:163), `hold_mode` (:1772). The method is in artifacts/specs-draft/2026-10-15-ctx-061-062-codex-and-shell-lock.md, awaiting the owner. "Today the lock does not hold for Codex" no longer holds.
+  - Acceptance: 1, test_dispatch.py:3544, and 3, test_codex_is_kept_asking_and_cannot_write_an_unlinked_or_ignored_file_or_lift_its_sandbox (:3558), pass with the switch on and skip with it off. 2: :3558 checks session/new's `_meta`; session/load and session/resume are still to add.
+  - Status: built and off since code#1e. Open: the live check of a real Claude Code session in bypassPermissions editing an unlinked file (open question 10), and the owner's approval of #43's method.
 
 ### CTX-062 Writes are prevented before they land, never caught after
 
@@ -800,6 +880,10 @@ This section specifies the addressed-context design, the system's key innovation
   2. The same holds for an ignore-listed path.
 - Relates to: CTX-060, CTX-061, CTX-064, BASE-052.
 - Status: confirmed as the requirement, 2026-10-15, in conversation with the owner. Open in build for shell writes, Codex and agents connected only over MCP.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code#1e, code.dispatcher.agent#43 and #47:
+  - Build: built for agents dispatch runs, off under `LINK_LOCK`. "Build: Open." no longer holds. Claude Code's command sandbox (`held_settings`, runner.py:242) denies writes only to what the lock denies: files of the project not linked when the session began, and ignore-listed paths. The tools' own folders stay writable (`TOOL_FOLDERS`, :170: .git, .venv, caches, test temp folders), so an agent can run the tests, the type check, ruff, uv and git (#47; before it, the whole project folder was denied, which locked agents out). A file linked during the session is changed with the edit tools. Codex is held in read-only (CTX-061); the runner's own terminal runs under bubblewrap or sandbox-exec (`confined_command`, :261); refused escalations get `command_unsandboxed` (prompts.xml:225, rewritten 2026-10-15 to name the link call) and `terminal_unconfined` (:230). No worktree was built.
+  - Acceptance: 1 is test_dispatch.py:3596; the ignore-listed case is in :3558; what commands may write is :3626. All pass with the switch on.
+  - Status: built and off since code#1e. Open: gemini-cli's own shell, agents connected only over MCP (open question 11, second half), and the owner's approval of the method.
 
 ### CTX-063 One call links a file to the element it realizes and lifts the lock at once
 
@@ -825,6 +909,11 @@ This section specifies the addressed-context design, the system's key innovation
   4. To add: a link that names a join records the ref on that join.
 - Relates to: MAP-016, MAP-021, MAP-044, LAYER-001, LAYER-003, STORE-012, CTX-011, CTX-060, CTX-065, CTX-066.
 - Status: confirmed and built, 2026-10-15, for the call itself. Where a new element is made, the ref record and linking to a join are open.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code.graph.knowledge#c and #17:
+  - Build: the `link` verb (src/metaform/modules/dispatch/__init__.py:2821, declared at :4104) writes a ref record by `Store.link_ref` (src/metaform/data/refs.py `link`), named by `ref=` or derived from the path, with `why=` and who linked it. It answers `file`, `node`, `ref`, `id`, `linked`, `made` and `said`. A name taken or reserved writes nothing and is answered with `linked` false, exit 0; linking again where the ref already is answers `linked` false. A file linked at another element is a second ref there, with a name of its own; no ref moves (code.graph.knowledge#17). Open item 2 is built. Open items 1 (the element is still made in the active map's base) and 3 (no `join=`) are unchanged. `map code-link` and its code layer no longer exist.
+  - The refusal and the rule now give this call with `ref=` and `why=` (CTX-060).
+  - Acceptance: 1, test_dispatch.py:3497, passes. 2, :3458, passes with `LINK_LOCK` on, so the link lifts the lock at once; it skips while the switch is off. 3 and 4 are still to add; 3 fails today.
+  - Status: built, with the ref record. Open: the element made in the base, linking to a join.
 
 ### CTX-064 Paths the project's ignore list holds are read-only to agents, always
 
@@ -851,6 +940,10 @@ This section specifies the addressed-context design, the system's key innovation
   3. To add, under the recommendation: a `!keep` line unlocks nothing.
 - Relates to: BASE-058 (amended, see Amendments to other records), CTX-060, CTX-061, CTX-062.
 - Status: confirmed and built, 2026-10-15, in conversation with the owner, for agents dispatch runs. Leaving `!` lines unread is recommended, and open (open question 24). The refusal's wording awaits the owner.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code#1e:
+  - Build: `ignored` (runner.py:453) over `home.ignore_patterns` (src/metaform/home.py:210), and `write_ignored` (prompts.xml:217), as #3d built them. `locked` returns None before it reads the list while `LINK_LOCK` is False, so ignore-listed paths are writable to agents today: "always" holds only while the switch is on.
+  - Acceptance: 1, the ignore half of test_dispatch.py:3458, passes with the switch on and skips with it off. 2 and 3 are still to add.
+  - Status: built and off since code#1e. Open questions 12, 24 and 26; the `write_ignored` wording awaits the owner.
 
 ### CTX-065 A ref is a stable record in the sources layer, on an element or on a join
 
@@ -877,6 +970,11 @@ This section specifies the addressed-context design, the system's key innovation
   5. The migration keeps every existing ref, on elements and on joins, with matching counts before and after.
 - Relates to: STORE-012 (amended), MAP-021 (amended), MAP-015, MAP-020, LAYER-003, CTX-063, CTX-066.
 - Status: confirmed, 2026-10-15, in conversation with the owner; open in build.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code.graph.knowledge#c (commit 858e3d9) and #17:
+  - Build: built. "Open: code.graph.knowledge#c" and "Today a ref is a row of `refs`" no longer hold. Each ref is an item of its own in the sources layer at one element or join, written only as versions of that item: its value is its ref_id, its refs its key and value then its details, its extra who linked it, when, the place named and why (src/metaform/data/refs.py). Writes: `Store.link_ref`, `place_refs`, `unlink_ref`; reads: `Store.ref`, `Store.refs`. `sources_index` (runner.py:423) reads `Store.refs()`. Store layout 22 runs `refs_to_records` (src/metaform/data/upgrade.py), each ref kept at the place its item was (#17). The `refs` table is layout 20's and is no longer created. The STORE-012, MAP-021 and LAYER-028 amendments are drafted in artifacts/specs-draft/store-012-ref-records-2026-10-15.md.
+  - Not built: memory citations and work records naming a ref by its id; they still cite by key and value.
+  - Acceptance: 1 to 3, tests/test_store_map.py, pass; 4, test_dispatch.py:3497, passes; 5 passes. The live upgrade at 22:05 UTC first moved refs toward the trunk and made 6 elements for them; #17 restored every ref to each place it held and removed those elements as versions (artifacts/refs-restore-2026-10-15/README.md).
+  - Status: built 2026-10-15. Open: citations and work records by ref id.
 
 ### CTX-066 A ref is named {ref_id}@{address}:{join}
 
@@ -905,6 +1003,10 @@ This section specifies the addressed-context design, the system's key innovation
   5. Giving `x` to a different thing writes nothing and returns a notice naming `x@code`, with `is_error` false.
 - Relates to: LAYER-028 (amended), MAP-012, MAP-020, MAP-056, BASE-044, BASE-063, CTX-008, CTX-065, CTX-081, CTX-082, CTX-085, CTX-086; CTX-009 (decision 4).
 - Status: confirmed, 2026-10-15, in conversation with the owner. What `:` names, and whether `main` is a ref_id, are open.
+- Amendment, 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request, reflecting code.graph.knowledge#c and #17:
+  - Build: built without the `:` part. "Open: code.graph.knowledge#c. Today refs have no name." no longer holds. `named` (refs.py) writes `{ref_id}@{address}`; a ref on a join is named at its receiver's Address, and its record's `join` gives the join. `read` takes an id, a ref_id or a name, reads past any `:` part, and answers a name whose Address is not where the ref is with where it is and a notice. A ref never moves: the same key and value at another node is a second ref. A ref_id held by another ref writes nothing and returns a notice naming `{ref_id}@{address}`, not an error. A derived ref_id skips taken and reserved names. Point to settle 1 is met by `read`, not `map/scoped.py`'s `resolve`; 2, the repo skill no longer bans `re`, `pe`, `ifd` and `de`; 3 is open.
+  - How it shows' "Recording the same ref at `code.dispatcher.runner` leaves one ref, linked at `code.dispatcher`" and Acceptance 1, 2 and 5 (the moving link) no longer hold, as the owner's correction in What this means says: recording `x` at `code.a` and again at `code.b` leaves two refs, `x@code.a` and another at `code.b`, and giving `x` to a different thing returns a notice naming `x@code.a` (drafted in artifacts/specs-draft/ctx-066-refs-stay-where-linked-2026-10-15.md). 3 waits on open question 25. 4 holds: no name has a `:` part.
+  - Status: built 2026-10-15 without the `:` part. Open: what `:` names (open question 25) and whether `main` is a ref_id (open question 13).
 
 ## Prompts and notes
 
@@ -1143,6 +1245,7 @@ Each record below is amended by the records of this section, as each record's Re
 - `prompt.memory:instructions` (memory prompts.xml:35-107): recommended, the Axiom text is replaced by the owner's memory prompt and kept as an earlier version in the prompt store (CTX-026, CTX-029).
 - `prompt.memory:orient` and `prompt.dispatch:record`, `work_record`, `on_ticket_done`, `on_stopped_open`, `on_failure`: the 2026-10-11 "store what you learn" sentence gives way to wording that follows memory prompt steps 5 and 6, the wording for the owner to approve (CTX-029; related MCP-029, BASE-052).
 - Not a spec record: the skill `.claude/skills/acp-client-integration/SKILL.md` (line 23) says to treat the synthetic "Compact conversation" tool call as the signal; the archived `.claude/skills/.archive/acp-client-capabilities-compaction` also says to re-push at the agent's current element on compaction. CTX-046 and CTX-045 withdraw both.
+- 2026-10-15, spec reconciliation, tickets document.specification#2 and code.dispatcher.agent#47, landed at the owner's request: CTX-060 to CTX-066 brought to what is built, reflecting code.graph.knowledge#c (858e3d9), code.graph.knowledge#17, code#1e, code.dispatcher.agent#43 and #47, with the lock prompts rewritten so an agent knows how to unlock a file. Each record keeps its earlier sentences; its amendment says which no longer hold.
 
 ## Open questions
 
@@ -1154,7 +1257,7 @@ Each record below is amended by the records of this section, as each record's Re
 6. Does an edited note, or a memory given a new observation, count as new for once-per-session delivery? The ticket keys a note by its Address and a memory by its entity, which would not send an edit again. (CTX-041)
 7. Should a push never start a turn by itself, and travel instead at the head of the next prompt something else sends? Ticket `code.dispatcher.agent#40` as written uses the turn path, which starts one. (CTX-043)
 8. Do MCP-039's records of tool guidance and counts clear with a compaction? Ticket `code.dispatcher.agent#41` clears only the push records. (CTX-045)
-9. The wording of the `link_call`, `work_link` and `write_ignored` prompts, drafts awaiting the owner. (CTX-060, CTX-064)
+9. The wording of the `link_call`, `work_link` and `write_ignored` prompts, drafts awaiting the owner. (CTX-060, CTX-064) Amendment, 2026-10-15: `work_link` and `link_call` rewritten at the owner's request to give the whole call with `ref=` and `why=`, and `command_unsandboxed` to name it; all three still await approval.
 10. Codex writes without asking outside read-only mode, and decision 19 requires the lock in every mode. By what method is Codex made to ask, for example read-only with its approvals answered through `dispatch_prompts`? A live check of a real Claude Code session in bypassPermissions editing an unlinked file has also not been run. (CTX-061)
 11. Shell writes and agents connected only over MCP: does a worktree whose merge refuses unlinked or ignore-listed files meet "never caught after", and may provisioned settings carry the lock for agents dispatch did not start? (CTX-062)
 12. Is the ignore-list matcher moved from dispatch into `home.py` beside `ignore_patterns`, a chassis change? (CTX-064)
@@ -1171,3 +1274,4 @@ Each record below is amended by the records of this section, as each record's Re
 23. An agent connected only over MCP has no ACP compaction signal, so after a compaction it would never be pushed again. How is such a session's record cleared without hooks or token heuristics (decision 17)? (CTX-045)
 24. Does a `!` line in ignore.txt exempt a path from read-only, as it does in gitignore's reading? Recommended, and built: it is not read. (CTX-064)
 25. What does `:` name, the same in a ref name and a prompt's address: a join's provider's Address (so `<receiver>:<provider>`, as the scope form names a join), or a name (as CTX-082's `prompt.<module>:<tag>` uses it), or a short name for the purpose? (CTX-066, CTX-081)
+26. When does `LINK_LOCK` go back on, and is it one switch for the link lock, the ignore list's read-only rule and the command sandbox together, as built, or does CTX-064's "always" keep the ignore list read-only while the link lock is off? Added 2026-10-15, document.specification#2. (CTX-060 to CTX-064; code#1e)

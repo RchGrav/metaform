@@ -15,13 +15,13 @@ import {has, colorOf, dim, dimmed, colored, DRIFT, isGlass} from '/page/app/map3
 import {R, endOf, wave3d} from '/page/app/map3d/waves.js';
 import {BLOOM} from '/page/app/map3d/bloom.js';
 import {GHOSTS, ghost3d, ghostSign, SIGNALS, paint3d} from '/page/app/map3d/ghosts.js';
-import {G, nodeSize, FRAMES, wake3d} from '/page/app/map3d/graph3d.js';
-import {picked} from '/page/app/map3d/pick3d.js';
+import {G, nodeSize, FRAMES, wake3d, STAGE} from '/page/app/map3d/graph3d.js';
+import {picked, hovered} from '/page/app/map3d/pick3d.js';
 import {placeTip} from '/page/app/map3d/readout.js';
 import {FLOW} from '/page/app/flow/flow.js';
 import {flow3d} from '/page/app/flow/fx3d.js';
 import {flight} from '/page/app/camera/flight.js';
-import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet} from '/page/app/camera/fly3d.js';
+import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet, meetEnds} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
 
@@ -75,7 +75,7 @@ export const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 
   letters: 10, largest: 4, sharper: 0.5, farthest: 0.34};
 // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
 export const tags = new Map();
-export const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map()};
+export const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map(), fading: false};
 export const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new THREE.Vector3();
 export const middle = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);  // the map's own up, which an outward sign keeps
@@ -136,6 +136,7 @@ function labelFor(node) {
     Promise.all(faces).then(() => {
       LABELS.measured.clear();
       for (const each of tags.values()) each.key = '';
+      SEEN.camera = null;  // placed again with the page's face
       wake3d();
     }, () => {});
   }
@@ -175,10 +176,15 @@ function lookOf(classes, palette) {
     ground: palette.ground, glow: reach ? [10, 6, 3] : []};  // a reached part's name glows; the rest have a shadow
 }
 /* Each frame: every label is put above its node at the node's depth and sized for the screen, and the labels that
- * fall on a nearer sphere or a nearer label are marked under. */
+ * fall on a nearer sphere or a nearer label are marked under. A frame where nothing they are placed from changed, the
+ * camera, the nodes' places, the area, the selection, the reach, the pointer's node, the meeting, the look and the
+ * presets, leaves them as the last one placed them: the scene is still drawn, only the same results are not worked out
+ * again (round 7's F5, 2026-10-15: 2.4 ms a frame with the camera still, for 397 nodes). */
 export function layered() {
-  const frame = labelFrame();
   if (LABELS.group) LABELS.group.visible = LABELS.on;
+  if (unchanged()) return metSign(MEET.on ? tags.get(MEET.back?.id) : null, false);
+  LABELS.fading = false;
+  const frame = labelFrame();
   UP.set(0, 1, 0).applyQuaternion(frame.camera.quaternion);
   RIGHT.set(1, 0, 0).applyQuaternion(frame.camera.quaternion);
   const {spheres, nearest, deepest} = measureSpheres(frame);
@@ -194,12 +200,53 @@ export function layered() {
   shown.sort((one, two) => one.far - two.far);
   const grid = screenGrid(frame.area, spheres);
   shown.forEach((label, index) => layerLabel(label, index, shown.length, grid, frame));
-  metSign(MEET.on ? tags.get(MEET.back?.id) : null);
+  SEEN.moving = LABELS.fading || GHOSTS.built.size > 0;  // a title fading or a ghost rising is placed every frame
+  metSign(MEET.on ? tags.get(MEET.back?.id) : null, true);
+}
+/* What the labels were last placed from, `unchanged`: the camera's matrices and each node's place in typed arrays,
+ * sized again only when the map's size changes, and the rest by value or identity. */
+const SEEN = {camera: null, nodes: null, width: 0, height: 0, ratio: 0, selected: null, neighbors: null, reach: null,
+  hovered: null, on: true, only: null, preset: '', facing: false, met: false, metId: null, small: false, smallId: null,
+  text: '', muted: '', signal: '', broken: '', ground: '', sans: '', moving: true,
+  view: new Float64Array(32), at: new Float64Array(0)};
+// the labels placed again at the next frame: what they show changed in nodes kept in place, `inPlace`
+export function relabel() { SEEN.camera = null; }
+function unchanged() {
+  const camera = G.camera(), nodes = G.graphData().nodes, ratio = G.renderer().getPixelRatio();
+  const metId = MEET.back ? MEET.back.id : null, small = small3d(), facing = signsFacing();
+  let same = !SEEN.moving && camera === SEEN.camera && nodes === SEEN.nodes && STAGE.width === SEEN.width
+    && STAGE.height === SEEN.height && ratio === SEEN.ratio && S.selected === SEEN.selected
+    && S.neighbors === SEEN.neighbors && R.nodes === SEEN.reach && hovered === SEEN.hovered && LABELS.on === SEEN.on
+    && LABELS.only === SEEN.only && PHYS.name === SEEN.preset && facing === SEEN.facing && MEET.on === SEEN.met
+    && metId === SEEN.metId && small === SEEN.small && SMALL_NAME.id === SEEN.smallId;
+  SEEN.camera = camera; SEEN.nodes = nodes; SEEN.width = STAGE.width; SEEN.height = STAGE.height; SEEN.ratio = ratio;
+  SEEN.selected = S.selected; SEEN.neighbors = S.neighbors; SEEN.reach = R.nodes; SEEN.hovered = hovered;
+  SEEN.on = LABELS.on; SEEN.only = LABELS.only; SEEN.preset = PHYS.name; SEEN.facing = facing; SEEN.met = MEET.on;
+  SEEN.metId = metId; SEEN.small = small; SEEN.smallId = SMALL_NAME.id;
+  // the look: a theme or a mode changes these, `css` reads them again only then
+  const text = css('--text'), muted = css('--muted'), signal = css('--signal'), broken = css('--broken');
+  const ground = css('--ground'), sans = css('--sans');
+  same = same && text === SEEN.text && muted === SEEN.muted && signal === SEEN.signal && broken === SEEN.broken
+    && ground === SEEN.ground && sans === SEEN.sans;
+  SEEN.text = text; SEEN.muted = muted; SEEN.signal = signal; SEEN.broken = broken; SEEN.ground = ground;
+  SEEN.sans = sans;
+  const view = SEEN.view, world = camera.matrixWorld.elements, lens = camera.projectionMatrix.elements;
+  for (let i = 0; i < 16; i++) {
+    if (view[i] !== world[i]) { view[i] = world[i]; same = false; }
+    if (view[16 + i] !== lens[i]) { view[16 + i] = lens[i]; same = false; }
+  }
+  if (SEEN.at.length !== nodes.length * 3) { SEEN.at = new Float64Array(nodes.length * 3); same = false; }
+  const at = SEEN.at;
+  for (let i = 0, k = 0; i < nodes.length; i++, k += 3) {
+    const node = nodes[i], x = node.x ?? Infinity, y = node.y ?? Infinity, z = node.z ?? Infinity;
+    if (at[k] !== x || at[k + 1] !== y || at[k + 2] !== z) { at[k] = x; at[k + 1] = y; at[k + 2] = z; same = false; }
+  }
+  return same;
 }
 /* What every label of this frame is measured by: the camera, the screen, the world units a pixel spans at a depth,
  * the palette, read once a frame and not once a label, the treatment of the names, and each node's joins. */
 function labelFrame() {
-  const now = performance.now(), camera = G.camera(), area = $('#stage').getBoundingClientRect();
+  const now = performance.now(), camera = G.camera(), area = STAGE;
   const height = area.height || 1, spread = camera.projectionMatrix.elements[5], ratio = G.renderer().getPixelRatio();
   const perPixel = depth => 2 * depth / (spread * height);
   const depthOf = node => -AT.set(node.x, node.y, node.z).applyMatrix4(camera.matrixWorldInverse).z;
@@ -243,7 +290,7 @@ function placeLabel(node, frame, nearest, deepest) {
   tag.text = titled ? joinTitle(node) : node.name || '';
   if (titled) {
     tag.fade = Math.max(0, Math.min(1, (tag.fade || 0) + (node.id === S.selected ? 1 : -1) * LABEL.titleStep));
-    if (tag.fade > 0 && tag.fade < 1) wake3d();
+    if (tag.fade > 0 && tag.fade < 1) { LABELS.fading = true; wake3d(); }
   }
   tag.hidden = node.x === undefined;
   tag.sprite.visible = !tag.hidden && (!LABELS.only || LABELS.only.has(node.id));
@@ -397,9 +444,17 @@ function layerLabel(label, index, count, grid, {how, palette, ratio}) {
 /* The met sign on the canvas, VIEW-005: while the camera meets a sign square on, the sign in the scene and its face
  * drawn flat on the screen look the same, so it is drawn on a layer over the map at the very rectangle its four
  * corners project to, frame by frame, and the sign in the scene is hidden. An edge passing through the sign's plane in
- * the map then never crosses its letters; when the meeting ends the sign in the scene is shown again where it was. */
-export const MET = {box: null, pen: null, corner: new THREE.Vector3()};
-function metSign(tag) {
+ * the map then never crosses its letters; when the meeting ends the sign in the scene is shown again where it was.
+ * That rectangle is the sign only while it is square to the eye and where it was met, so the meeting is over once the
+ * sign leaves either, as at a hand on the camera: the layout moving its node turns an outward sign round it and moves
+ * it on the screen while the camera stays (round 7's F3, 2026-10-15: the meeting stayed on at 89 degrees off square
+ * and the name was drawn up to twice its width, off the top of the view). `moved`: what it is placed from changed
+ * since the last frame; a frame where nothing did leaves the layer as it is. */
+export const MET = {box: null, pen: null, corner: new THREE.Vector3(), id: null, x: 0, y: 0, left: 0, top: 0,
+  right: 0, bottom: 0};
+const SQUARE = Math.cos(Math.PI / 180), STRAY = 2;  // within a degree of square on, within 2 pixels of where it was met
+const CORNERS = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
+function metSign(tag, moved) {
   if (!MET.box) {
     MET.box = h('canvas', {class: 'metsign', 'aria-hidden': 'true'});
     MET.box.hidden = true;
@@ -407,28 +462,46 @@ function metSign(tag) {
     MET.pen = MET.box.getContext('2d');
   }
   const box = MET.box, pen = MET.pen;
-  if (!tag || tag.hidden || !tag.texture.image.width) { if (!box.hidden) box.hidden = true; return; }
-  const area = $('#stage').getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
-  const wide = Math.round(area.width * ratio), tall = Math.round(area.height * ratio);
-  if (box.width !== wide || box.height !== tall) Object.assign(box, {width: wide, height: tall});
-  tag.sprite.updateMatrixWorld();
-  const {left, top, right, bottom} = cornersOnScreen(tag.sprite);
+  if (!tag || tag.hidden || !tag.texture.image.width) {
+    MET.id = null;
+    if (!box.hidden) box.hidden = true;
+    return;
+  }
+  if (!moved && MET.id === tag.id && !box.hidden) return;
+  const sprite = tag.sprite;
+  sprite.updateMatrixWorld();
+  cornersOnScreen(sprite);
+  const x = (MET.left + MET.right) / 2, y = (MET.top + MET.bottom) / 2;
+  if (MET.id !== tag.id) { MET.id = tag.id; MET.x = x; MET.y = y; }
+  FACE.setFromMatrixColumn(sprite.matrixWorld, 2).normalize();  // a sign's face is its plane's +z
+  TOWARD_EYE.setFromMatrixPosition(G.camera().matrixWorld).sub(MET.corner.setFromMatrixPosition(sprite.matrixWorld))
+    .normalize();
+  if (Math.abs(FACE.dot(TOWARD_EYE)) < SQUARE || Math.hypot(x - MET.x, y - MET.y) > STRAY) {
+    MET.id = null;
+    sprite.visible = !LABELS.only || LABELS.only.has(tag.id);  // shown in the scene again, as `placeLabel` puts it
+    meetEnds();
+    return;
+  }
+  const ratio = window.devicePixelRatio || 1;
+  const wide = Math.round(STAGE.width * ratio), tall = Math.round(STAGE.height * ratio);
+  if (box.width !== wide || box.height !== tall) { box.width = wide; box.height = tall; }
   pen.setTransform(ratio, 0, 0, ratio, 0, 0);
-  pen.clearRect(0, 0, area.width, area.height);
-  pen.globalAlpha = tag.sprite.material.opacity ?? 1;
-  pen.drawImage(tag.texture.image, left, top, right - left, bottom - top);
-  tag.sprite.visible = false;
+  pen.clearRect(0, 0, STAGE.width, STAGE.height);
+  pen.globalAlpha = sprite.material.opacity ?? 1;
+  pen.drawImage(tag.texture.image, MET.left, MET.top, MET.right - MET.left, MET.bottom - MET.top);
+  sprite.visible = false;
   box.hidden = false;
 }
-/* The rectangle on the screen a sign's four corners project to. */
+/* The rectangle on the screen a sign's four corners project to, kept in MET. */
 function cornersOnScreen(sprite) {
   let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-  for (const [x, y] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
-    const at = sprite.localToWorld(MET.corner.set(x, y, 0)), seen = G.graph2ScreenCoords(at.x, at.y, at.z);
+  for (let i = 0; i < 8; i += 2) {
+    const at = sprite.localToWorld(MET.corner.set(CORNERS[i], CORNERS[i + 1], 0));
+    const seen = G.graph2ScreenCoords(at.x, at.y, at.z);
     left = Math.min(left, seen.x); right = Math.max(right, seen.x);
     top = Math.min(top, seen.y); bottom = Math.max(bottom, seen.y);
   }
-  return {left, top, right, bottom};
+  MET.left = left; MET.top = top; MET.right = right; MET.bottom = bottom;
 }
 /* The page's work for each frame of the 3D map, run in the render chain before anything is drawn, `create3D`: the
  * camera's flight, the colors, the wave, the figures, the text, the lights, the labels, the dots and the tooltip. It

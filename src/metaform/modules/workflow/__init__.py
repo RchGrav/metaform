@@ -10,7 +10,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import axiom, home, prompt_files, settings
+from metaform import home, prompt_files, settings
 from metaform import skills as skill_registry
 from metaform.data import Store, StoreError, prompts
 from metaform.module import Context, Module, Noun, Stop, Verb, held_role, project_for
@@ -90,21 +90,10 @@ def workflows(ctx: Context) -> Any:
     return catalog.workflows(ctx.require_store())
 
 
-def _checked(ctx: Context, result: dict[str, Any], address: str, logic: list[dict[str, Any]]) -> dict[str, Any]:
-    """The workflow as stored, with the structural check of each of its subroutines, BASE-057: a flagged one keeps
-    its words, carries its notices and raises the incomplete-prompt signal."""
-    found = [notice for one in logic for notice in axiom.notices(one['name'], one['content'])]
-    if not found:
-        return result
-    ctx.publish('signal.raised', {'signal': axiom.SIGNAL, 'module': 'workflow', 'address': address, 'notices': found})
-    return {**result, 'notices': found}
-
-
 def submit(ctx: Context) -> Any:
     n = ctx.nouns
-    doc = catalog.submit_workflow(ctx.require_store(), n['address'], n['layer'], n.get('name'),
-                                  n.get('name_length', 2), n.get('selected', ()), n.get('provenance'))
-    return _checked(ctx, doc, n['address'], doc['logic'])
+    return catalog.submit_workflow(ctx.require_store(), n['address'], n['layer'], n.get('name'),
+                                   n.get('name_length', 2), n.get('selected', ()), n.get('provenance'))
 
 
 def add_logic(ctx: Context) -> Any:
@@ -112,8 +101,7 @@ def add_logic(ctx: Context) -> Any:
     with _correctable(f'metaform map where {n["address"]}'):
         result = catalog.submit_logic(ctx.require_store(), n['address'], n['layer'], n['name'], n['content'],
                                       n.get('provenance'))
-    return _checked(ctx, {'address': n['address'], 'layer': n['layer'], 'name': result.name,
-                          'content': result.content}, n['address'], [result.to_dict()])
+    return {'address': n['address'], 'layer': n['layer'], 'name': result.name, 'content': result.content}
 
 
 def history(ctx: Context) -> Any:
@@ -150,8 +138,7 @@ def import_(ctx: Context) -> Any:
         raise Stop(f'Cannot read {path} as a portable workflow: {getattr(error, "strerror", None) or error}.',
                    'metaform help workflow import') from error
     with _correctable('metaform help workflow import'):
-        doc = catalog.ingest_document(ctx.require_store(), given, ctx.nouns.get('layer'))
-    return _checked(ctx, doc, doc['workflow']['address'], doc['logic'])
+        return catalog.ingest_document(ctx.require_store(), given, ctx.nouns.get('layer'))
 
 
 def _values(data: Mapping[str, Any]) -> dict[str, Any]:
