@@ -16,11 +16,10 @@ import {giveWork} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
-/* The agent a ticket prefers by default: Claude for front-end and GUI work, Codex for back-end and system work, as
- * dispatch chooses it from its front-end words, read with the agents; the person can choose another on the card at
- * any time. */
-export const defaultAgent = address => (address || '').split('.').some(word => HARNESS.frontend.has(word)) ? 'claude'
-  : 'codex';
+/* The agent a ticket starts with when its card names none: the person's Default agent, as dispatch starts it, read
+ * with the agents; the person can choose another on the card at any time. UX review round 1, 2026-10-17: it was
+ * Claude for front-end words in the address and Codex for the rest, a default no control showed. */
+export const defaultAgent = () => HARNESS.default || 'claude';
 export const eligibleAgents = ticket => Array.isArray(ticket?.map?.eligible) ? ticket.map.eligible : [];
 export const allowsAgent = (ticket, agent) => !eligibleAgents(ticket).length || eligibleAgents(ticket).includes(agent);
 export function eligibilityPicker(agents, save) {
@@ -57,7 +56,7 @@ function ticketControls(ticket) {
     try { if (await wrote('/api/ticket', {work_id: ticket.id, ...fields})) await renderBoard(); }
     finally { control.disabled = false; }
   };
-  const chosen = kept.agent || defaultAgent(ticket.address || ticket.receiver_address);
+  const chosen = kept.agent || defaultAgent();
   const saveEligible = async agents => {
     if (!await wrote('/api/eligible', {work_id: ticket.id, agents})) return false;
     await renderBoard();
@@ -88,8 +87,14 @@ function recallButton(ticket) {
   const recall = async event => {
     event.target.disabled = true;
     const session = D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
-    if (await wrote('/api/dispatch-stop', {work_id: ticket.id, ...(session ? {session: session.session_id} : {})})) {
+    const stopped = await wrote('/api/dispatch-stop', {work_id: ticket.id,
+      ...(session ? {session: session.session_id} : {})});
+    if (stopped) {
       if (session) rememberStop(session.session_id, new Date().toISOString());
+      if (stopped.autostart === false) {  // dispatch's `paused`: the person's stop turned Autostart off
+        $('#autostartAgents').checked = false;
+        toast(stopped.notice);
+      }
       await renderAgents();
       await renderBoard();
     } else event.target.disabled = false;

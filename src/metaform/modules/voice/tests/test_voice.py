@@ -54,6 +54,7 @@ def caught(monkeypatch, body: bytes):
 
 def test_auto_runs_whisper_in_the_browser_where_the_extra_is_not_installed_and_says_how_to_install(run, voice, monkeypatch):
     monkeypatch.setattr(voice('engine'), 'installed', lambda: False)
+    monkeypatch.setattr(voice('engine'), 'probed', voice('engine').probe)  # the probe's own reading, in this process
     found = json.loads(run('voice', 'status', '--json').stdout)
     assert found['engine'] == 'browser' and 'not installed' in found['why']
     assert 'metaform[voice]' in found['server']['install'] and found['server']['capable'] is False
@@ -90,11 +91,31 @@ def test_a_gpu_whose_cublas_does_not_load_runs_on_the_cpu_and_status_says_why_wi
     monkeypatch.setattr(engine, '_cuda_libraries', lambda: None)
     monkeypatch.setattr(engine, 'CUBLAS', 'libcublas-not-here.so.12')
     monkeypatch.setattr(engine.os, 'cpu_count', lambda: 16)
+    monkeypatch.setattr(engine, 'probed', engine.probe)  # the probe's own reading, in this process
     found = json.loads(run('voice', 'status', '--json').stdout)
     assert found['engine'] == 'server' and found['server']['device'] == 'cpu' and found['server']['model'] == 'small'
     assert 'libcublas-not-here.so.12' in found['server']['reason']
     assert 'voice-gpu' in found['server']['install'] and found['server']['cuda_error']
     assert engine.device('cuda') == ('cpu', 'int8')
+
+
+def test_the_machine_probe_runs_in_a_process_of_its_own_so_a_status_read_loads_no_cuda_here(voice, monkeypatch):
+    """UX review round 1, 2026-10-17 (runaway-and-load F7): opening a page loaded CTranslate2, cuDNN and cuBLAS into
+    the web server for good. The probe runs in a short child; this process never runs it."""
+    engine = voice('engine')
+    asked = []
+
+    def child(command, **given):
+        asked.append(command)
+        return type('Done', (), {'returncode': 0, 'stdout': json.dumps({'installed': True, 'cuda': 1, 'gpu': 'GPU',
+                                                                            'capable': True, 'reason': 'a GPU'})})()
+
+    def here():
+        raise AssertionError('the probe ran in the asking process')
+    monkeypatch.setattr(engine, 'probe', here)
+    monkeypatch.setattr(engine.subprocess, 'run', child)
+    assert engine.machine()['cuda'] == 1 and engine.machine()['gpu'] == 'GPU'
+    assert len(asked) == 1 and asked[0][0] == sys.executable and 'e.probe()' in asked[0][-1], 'once, in a child'
 
 
 def test_a_partial_asked_while_another_runs_is_answered_busy_and_never_queued(voice, tmp_path):

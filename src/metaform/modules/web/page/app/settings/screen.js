@@ -88,6 +88,7 @@ async function openAgentMenu() {
   readPrompts();  // the saved setting, as it is now
   await readAutostart();
   $('#agentCount').value = AUTO.agents ?? 5;  // the saved setting, as it is now
+  if (AUTO.most) $('#agentCount').max = AUTO.most;  // the server's own maximum, so the page refuses what it refuses
 }
 toggler($('#agentsMenuBtn'), $('#agentbox'), openAgentMenu);
 /* The default as dispatch has it, and while one chosen is being made the default, that one. */
@@ -98,37 +99,95 @@ function defaultPicker() {
   const choose = async agent => { await makeDefault(agent); holder.asked = null; paintPickers(); };
   return agentPicker({label: 'Default agent', star: false, kept: true, exact: true, holder, onchange: choose});
 }
+/* How many agents a new count starts at once while Autostart is on: the tickets waiting, up to the slots the new
+ * count leaves free and the machine's room, as dispatch's gate counts them; null when the slots cannot be read. UX
+ * review round 1, 2026-10-17 (web-gui-controls F4): raising the count started every newly allowed agent in the same
+ * second, unsaid. */
+async function startsNow(count) {
+  if (!AUTO.value) return 0;
+  const slots = (await readHarnesses()).slots;
+  if (!slots) return null;
+  const waiting = (S.tickets || []).filter(ticket => !ticket.done && !ticket.taken && !ticket.held
+    && (ticket.task || '').trim()).length;
+  return Math.min(waiting, Math.max(0, count - slots.used), slots.machine_free);
+}
 async function saveAgentCount(event) {
-  const count = Number(event.target.value);
-  if (!Number.isInteger(count) || count < 1) { event.target.value = AUTO.agents ?? 5; return; }
-  event.target.disabled = true;
+  const control = event.target;  // kept before the first await
+  const count = Number(control.value), was = AUTO.agents ?? 5, most = AUTO.most || count;
+  if (!Number.isInteger(count) || count < 1 || count > most) {
+    if (count > most) toast(`Agents at once is at most ${most}.`);
+    control.value = was; return;
+  }
+  const more = count > was ? await startsNow(count) : 0;
+  if (more === null || more > 0) {
+    const said = more === null ? 'Autostart agents is on and the agent slots could not be read, so this may start '
+      + 'agents on waiting tickets at once.' : `Autostart agents is on, so this starts ${more} more agent`
+      + `${more === 1 ? '' : 's'} now, one for each waiting ticket the new slots allow.`;
+    if (!await confirmAct({title: `Allow ${count} agents at once?`, text: said, verb: 'Yes, allow them',
+      cancel: 'Keep it as it is'})) { control.value = was; return; }
+  }
+  control.disabled = true;
   try {
     const saved = await wrote('/api/dispatch-autostart', {agents: count});
-    if (!saved) event.target.value = AUTO.agents ?? 5;
+    if (!saved) control.value = was;
     else {
       Object.assign(AUTO, saved);
-      event.target.value = saved.agents;
+      control.value = saved.agents;
       toast(`Agents at once: ${saved.agents}.`);
     }
-  } finally { event.target.disabled = false; }
+  } finally { control.disabled = false; }
 }
 $('#agentCount').onchange = saveAgentCount;
+/* Stop all agents: every agent of the project, or of every project on this machine, ends as the person's stop ends
+ * it, and Autostart agents is turned off first, so nothing starts in their place. Asked first, with the count.
+ * UX review round 1, 2026-10-17 (dispatch-concurrency F5, web-gui-controls F5). */
+async function stopAll(event, every) {
+  const control = event.currentTarget;  // kept before the first await, which clears currentTarget
+  showAgentMenu(false);
+  const slots = (await readHarnesses()).slots;
+  const here = slots ? slots.workers + slots.summoned : null;
+  const count = every ? slots?.machine_used ?? null : here;
+  if (!await confirmAct({title: every ? 'Stop every agent on this machine?' : 'Stop every agent of this project?',
+    text: `${count === null ? 'Every agent' : `${count} agent${count === 1 ? '' : 's'}`} running `
+      + (every ? 'across every project' : 'on this project') + ' will be stopped.',
+    lost: ['Each agent stops where it is, as your Stop stops it',
+      `Autostart agents is turned off${every ? ' in each project' : ''}`,
+      'Your system agent stops too, and Stay connected is turned off'],
+    kept: ['Every ticket stays taken by its agent, with its steps and its thread', 'Each one can be resumed'],
+    verb: 'Stop them'})) return;
+  control.disabled = true;
+  try {
+    const done = await wrote('/api/dispatch-stop-all', every ? {home: true} : {});
+    if (done) {
+      toast(`${done.stopped.length} agent${done.stopped.length === 1 ? '' : 's'} stopped.`
+        + (done.failed.length ? ` ${done.failed.length} could not be stopped: ${done.failed[0].error}` : '')
+        + (done.notice ? ` ${done.notice}` : ''));
+      await readAutostart(); await renderBoard(); await renderAgents();
+    }
+  } finally { control.disabled = false; }
+}
+$('#stopAllBtn').onclick = event => stopAll(event, false);
+$('#stopHomeBtn').onclick = event => stopAll(event, true);
 /* Reset agents ends the sessions of agents that died; it cannot be undone, so it is asked first, saying what it does
  * and what it leaves. */
 async function resetAgents(event) {
   showAgentMenu(false);
   if (!await confirmAct({title: 'Reset agents?',
     text: 'Use it after a crash, when an agent stopped without letting go of its ticket.',
-    lost: ['The sessions of agents that are no longer running are closed',
+    lost: ['The sessions of agents that are no longer running are closed, and what their runners left running ends',
       'The tickets they still hold go back on the board'],
-    kept: ['Agents at work are left alone', 'Nothing is deleted: every ticket, its steps and its log stay'],
+    kept: ['Agents at work are left alone', 'A ticket whose agent you stopped stays yours',
+      'Nothing is deleted: every ticket, its steps and its log stay'],
     verb: 'Reset agents'})) return;
   event.target.disabled = true;
   try {
     const done = await wrote('/api/dispatch-reset', {});
     if (done) {
       toast(`Reset: ${done.released.length} ticket(s) back on the board, ${done.sessions_ended.length} dead session(s) `
-        + `closed; ${done.still_working.length} agent(s) still working.`);
+        + `closed; ${done.still_working.length} agent(s) still working.`
+        + ((done.kept_for_you || []).length ? ` ${done.kept_for_you.length} ticket(s) you stopped stay taken; drag `
+          + 'them to To do to start them again.' : '')
+        + ((done.deferred || []).length ? ` ${done.deferred.length} stay taken: ${done.deferred[0].reason}.` : ''));
       await renderBoard(); await renderAgents();
     }
   } finally { event.target.disabled = false; }

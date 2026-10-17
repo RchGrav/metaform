@@ -70,11 +70,11 @@ def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, m
     run('enable', 'dispatch')
     started(run)
     status, found = api(web, '/api/dispatch-autostart?project=proj')
-    assert status == 200 and found == {'value': False, 'agent': 'codex', 'agents': 5}
+    assert status == 200 and found == {'value': False, 'agent': 'claude', 'agents': 5, 'machine': 8, 'most': 17}
     status, found = api(web, '/api/dispatch-autostart', method='POST',
                         body=json.dumps({'project': 'proj', 'value': False, 'agent': 'claude', 'agents': 3}),
                         headers={'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'})
-    assert status == 200 and found == {'value': False, 'agent': 'claude', 'agents': 3}
+    assert status == 200 and found == {'value': False, 'agent': 'claude', 'agents': 3, 'machine': 8, 'most': 17}
     assert api(web, '/api/dispatch-autostart?project=proj') == (200, found)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -93,6 +93,46 @@ def test_dispatch_autostart_api_reads_and_saves_the_project_settings(run, web, m
     page.wait_for_function('() => window.metaform.loaded()')
     page.click('#agentsMenuBtn')
     page.wait_for_function('() => document.querySelector("#agentCount").value === "2"')  # it survives a refresh
+    assert problems == []
+
+
+def test_the_agents_menu_says_what_a_higher_count_starts_and_stops_every_agent_once_asked(run, web, mapped, browser):  # noqa: F811  imported fixtures keep their names for pytest discovery
+    """UX review round 1, 2026-10-17 (web-gui-controls F4 and F5, dispatch-concurrency F5): raising Agents at once with
+    Autostart on started every newly allowed agent in the same second, unsaid, and nothing stopped every agent at once.
+    The count's change asks first with how many it starts, keeping the old count on Keep; Stop all agents asks with the
+    count and posts the stop-all. Autostart reads as on to the page alone, so no agent starts here."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    node = Node('element', store.element('code.alarm.audible').id)
+    for n in range(4):
+        store.add_work(node, 'unbuilt', task=f'Waiting change {n}')
+    run('enable', 'dispatch')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    sent = []
+    shown = {'value': True, 'agent': 'claude', 'agents': 1, 'machine': 8, 'most': 17}
+    page.route('**/api/dispatch-autostart*', lambda route: route.fulfill(json=shown) if route.request.method == 'GET'
+               else (sent.append(route.request.post_data_json), route.fulfill(json=shown)))
+    page.route('**/api/dispatch-stop-all', lambda route: (sent.append('stop-all'), route.fulfill(
+        json={'stopped': [], 'failed': [], 'turned_off': ['proj:dispatch_autostart'], 'notice': 'Autostart is off.'})))
+    page.click('#agentsMenuBtn')
+    page.wait_for_function('() => document.querySelector("#agentCount").value === "1"')
+    assert page.get_attribute('#agentCount', 'max') == '17', 'the server\'s own maximum'
+    page.fill('#agentCount', '3')
+    page.locator('#agentCount').dispatch_event('change')
+    page.wait_for_selector('#confirm:not([hidden])')
+    assert 'this starts 3 more agents now' in page.inner_text('#confirm')
+    page.click('#confirm .keep')
+    page.wait_for_function('() => document.querySelector("#agentCount").value === "1"')
+    assert sent == [], 'kept as it was: nothing saved'
+    page.click('#agentsMenuBtn')
+    page.click('#stopAllBtn')
+    page.wait_for_selector('#confirm:not([hidden])')
+    assert 'Autostart agents is turned off' in page.inner_text('#confirm')
+    page.click('#confirm button.confirm')
+    page.wait_for_function('() => !document.querySelector("#stopAllBtn").disabled')
+    assert sent == ['stop-all']
     assert problems == []
 
 

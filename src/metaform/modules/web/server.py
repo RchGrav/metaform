@@ -209,7 +209,7 @@ WRITE_ROUTES = frozenset({
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
-    '/api/dispatch-new', '/api/dispatch-interrupt',
+    '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel'})
 ADMIN_ROUTES = frozenset({
@@ -1214,7 +1214,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
                   '/api/dispatch-fork': self.dispatch_fork, '/api/dispatch-broadcast': self.dispatch_broadcast,
-                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-interrupt': self.dispatch_interrupt,
+                  '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-stop-all': self.dispatch_stop_all,
+                  '/api/dispatch-interrupt': self.dispatch_interrupt,
                   '/api/dispatch-new': self.dispatch_new,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
@@ -1789,8 +1790,11 @@ class Handler(BaseHTTPRequestHandler):
         chassis.refresh_modules()
         if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
             return self.send(200, {'value': False, 'available': False})
-        self.send(200, {name: settings.value(key, folder) for name, key in
-                        (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'))})
+        # with the most Agents at once may be, the setting's own maximum, so the page checks what the server checks
+        self.send(200, {**{name: settings.value(key, folder) for name, key in
+                           (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'),
+                            ('machine', 'dispatch_machine_agents'))},
+                        'most': settings.SCHEMA['dispatch_agents'].max})
 
     def set_dispatch_autostart(self, given: dict[str, Any]) -> None:
         """Save automatic dispatch settings and start waiting work when enabled, VIEW-042."""
@@ -2004,6 +2008,14 @@ class Handler(BaseHTTPRequestHandler):
         if session is not None and (not isinstance(session, str) or not session):
             return self.send(400, {'error': 'The chat session id must be a nonempty string.'})
         self.dispatched(given, 'stop', [work_id, *([f'session={session}'] if session else [])])
+
+    def dispatch_stop_all(self, given: dict[str, Any]) -> None:
+        """Stop all agents in the Agents menu: `metaform dispatch stop-all`, every agent of the project, or with `home`
+        true of every project, and Autostart agents turned off first, UX review round 1, 2026-10-17."""
+        every = given.get('home')
+        if every is not None and not isinstance(every, bool):
+            return self.send(400, {'error': 'home is true or false.'})
+        self.dispatched(given, 'stop-all', ['home=true'] if every else [])
 
     def dispatch_new(self, given: dict[str, Any]) -> None:
         """/new and /clear in the chat dock: the conversation of the agent on a ticket ends and a new one starts in the

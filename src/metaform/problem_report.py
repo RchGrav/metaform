@@ -141,14 +141,20 @@ def agent_work() -> set[str]:
 
 def logs() -> dict[str, Path]:
     """The logs worth reading, by their name in the report: every log the home's run folder and its other folders
-    keep, such as the web server's `run/web.log`, and the newest dispatch runner logs in the system's temporary
-    folder of this home's own agents. That folder is shared by every Metaform home on the machine, and a runner's
-    log is named for its work id alone, `metaform-dispatch-[<kind>-]<work id>.log`, so only the ids this home's
-    sessions recorded are taken. The projects folder is a project's own and is left out."""
+    keep, such as the web server's `run/web.log`, and the newest dispatch runner logs: those the home keeps in
+    `run/dispatch/logs` since 2026-10-17 (UX review round 1), and those a runner on older code still writes to the
+    system's temporary folder. That folder is shared by every Metaform home on the machine, and such a runner's log is
+    named for its work id alone, `metaform-dispatch-[<kind>-]<work id>.log`, so only the ids this home's sessions
+    recorded are taken. The projects folder is a project's own and is left out."""
     root = home.home()
     found: dict[str, Path] = {}
+    kept = root / 'run' / 'dispatch' / 'logs'
     if (root / 'run').is_dir():
         for path in sorted((root / 'run').rglob('*.log')):
+            if kept not in path.parents:
+                found['logs/' + path.relative_to(root).as_posix()] = path
+    if kept.is_dir():
+        for path in sorted(kept.glob('*.log'), key=_modified, reverse=True)[:RUNNER_LOGS]:
             found['logs/' + path.relative_to(root).as_posix()] = path
     if root.is_dir():
         for folder in sorted(entry for entry in root.iterdir() if entry.is_dir() and entry.name not in ('run',

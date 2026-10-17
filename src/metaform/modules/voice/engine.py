@@ -74,12 +74,45 @@ def _cuda_loads() -> str | None:
     return None
 
 
+PROBE_LIMIT = 60  # seconds the probe's own process may take, CUDA's first load among them
+
+
 def machine() -> dict[str, Any]:
     """What this machine offers the server engine, found once per process: the extra, a CUDA device whose libraries
     load, the CPU cores, and whether it serves speech well enough to be chosen over the page's own engine, with the
-    reason in words. `cuda` counts the devices that can run; `cuda_error` says why a GPU found cannot."""
+    reason in words. `cuda` counts the devices that can run; `cuda_error` says why a GPU found cannot. It is found
+    in a short process of its own, `probed`, so the process that asks, the page's server among them, never loads
+    CTranslate2 or the CUDA libraries for a page that only opened: UX review round 1, 2026-10-17
+    (runaway-and-load F7), opening a page grew the server from 59 MB to 337 MB for good with cuDNN and cuBLAS loaded.
+    Only a transcription on CUDA loads them, in `_load`."""
     if _probe:
         return dict(_probe)
+    _probe.update(probed())
+    return dict(_probe)
+
+
+def probed() -> dict[str, Any]:
+    """`probe` run in a process of its own with this interpreter, its answer read as JSON; one that fails or takes
+    too long says so and offers no GPU."""
+    import json
+    program = 'import json, metaform.modules.voice.engine as e; print(json.dumps(e.probe()))'
+    try:
+        done = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True, timeout=PROBE_LIMIT,
+                              check=False)
+        found: Any = json.loads(done.stdout.strip().splitlines()[-1]) if done.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        found = None
+    if isinstance(found, dict):
+        return found  # pyright: ignore[reportUnknownVariableType]
+    cores = os.cpu_count() or 1
+    return {'installed': installed(), 'install': INSTALL, 'cores': cores, 'cuda': 0, 'gpu': None,
+            'cuda_error': 'the machine probe did not answer', 'capable': cores >= STRONG_CPU and installed(),
+            'reason': 'the machine probe did not answer, so no GPU is offered'}
+
+
+def probe() -> dict[str, Any]:
+    """What `machine` reports, found in this process: it loads CTranslate2, and on a GPU the CUDA libraries, for
+    good."""
     cores = os.cpu_count() or 1
     found: dict[str, Any] = {'installed': installed(), 'install': INSTALL, 'cores': cores, 'cuda': 0, 'gpu': None,
                              'cuda_error': None}
@@ -114,8 +147,7 @@ def machine() -> dict[str, Any]:
         found.update(capable=True, reason=f'{cores} CPU cores run Whisper here')
     else:
         found.update(capable=False, reason=f'{cores} CPU cores are too few to beat the browser')
-    _probe.update(found)
-    return dict(found)
+    return found
 
 
 def _gpu_name() -> str | None:
@@ -151,10 +183,12 @@ def _load(name: str, prefer: str) -> Any:
     folder = models.server_folder(model)
     if not models.present(folder, model):
         raise FileNotFoundError(name)
-    where, compute = device(prefer)  # on cuda, machine() has loaded the CUDA libraries already
+    where, compute = device(prefer)
     key = (name, where, compute)
     if _state['key'] != key or _state['model'] is None:
         unload()
+        if where == 'cuda':  # loaded here, at the first transcription on CUDA, never by a status read, `machine`
+            _cuda_loads()
         threads = min(16, max(1, (os.cpu_count() or 2) // 2)) if where == 'cpu' else 0
         _state['model'] = WhisperModel(str(folder), device=where, compute_type=compute, cpu_threads=threads)
         _state['key'] = key

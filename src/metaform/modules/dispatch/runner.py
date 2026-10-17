@@ -100,6 +100,7 @@ from . import (
     PROMPTS,
     READS,
     REPLY_LIMIT,
+    admit_self,
     agent_label,
     agent_named,
     argv,
@@ -117,6 +118,7 @@ from . import (
     intake_prompt,
     intake_store,
     launch_options,
+    leave_ledger,
     mascot_line,
     memory_read,
     memory_text,
@@ -132,7 +134,6 @@ from . import (
     runner_of,
     session_cost,
     session_state,
-    slots_used,
     start_command,
     start_environment,
     startable,
@@ -831,7 +832,19 @@ class Exits(asyncio.subprocess.SubprocessStreamProtocol):
 async def dispatch(ctx: Context) -> dict[str, Any]:
     """`metaform dispatch run <id> <agent>`: the session for one ticket, until it ends. When the ticket is done and has an
     agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
-    has none waiting or a session ends with its ticket not done."""
+    has none waiting or a session ends with its ticket not done. A runner that fails before its session takes the
+    ticket gives back the reservation it was started on, so a crashed start never holds a ticket (UX review round 1,
+    2026-10-17, dispatch-concurrency F2)."""
+    try:
+        return await sessions_run(ctx)
+    except Exception:
+        with contextlib.suppress(Exception):  # given back only while the reservation still holds the ticket
+            await asyncio.to_thread(given_back, ctx.require_store(), str(ctx.nouns['id']), ctx.nouns.get('reservation'))
+        raise
+
+
+async def sessions_run(ctx: Context) -> dict[str, Any]:
+    """`dispatch`, its session or sessions run."""
     store = ctx.require_store()
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
@@ -857,6 +870,15 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         if pid is not None:
             raise Stop(f'Session {resume} is held by its live runner, process {pid}, so it is not resumed again.',
                        f'metaform dispatch sessions id={work_id}')
+    # The one admission gate, from the runner's side: a runner the gate started is in its ledger already; one started
+    # any other way, by hand or by a process on older code, is counted here, before any agent runs, VIEW-039. Found
+    # 2026-10-16: an MCP server started before the slot check went on starting tickets past it.
+    summoning = any(ctx.nouns.get(word) for word in ('system', 'prep', 'question'))
+    try:
+        await asyncio.to_thread(admit_self, ctx, store, work_id, 'summoned' if summoning else 'worker')
+    except Stop:  # its reservation goes back where it waited, as the gate's own refusal says
+        await asyncio.to_thread(given_back, store, work_id, ctx.nouns.get('reservation'))
+        raise
     resumed = await asyncio.to_thread(worked_in, store, work_id, resume) if resume else None
     if intake_id(work_id):  # an intake agent, VIEW-045: no ticket; its session lives in the metaform it began in
         held_in = await asyncio.to_thread(intake_store, store, work_id) or store
@@ -886,21 +908,6 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
             ctx.nouns['reservation'] = reservation
             return record
 
-    def over_limit() -> bool:
-        """Whether this start's reservation finds the agent slots already full, and then gives its ticket back."""
-        with store.atomic():
-            record = ticket(store, work_id)
-            if not ctx.nouns.get('reservation') or record.taken_by != ctx.nouns['reservation'] or \
-                    slots_used(ctx, store) <= int(ctx.setting('dispatch_agents')):
-                return False
-            store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
-            return True
-
-    # A start the agent slots have no room for, from a process on older code, gives its ticket back before any agent
-    # runs, VIEW-039. Found 2026-10-16: an MCP server started before the slot check went on starting tickets past it.
-    if not resume and await asyncio.to_thread(over_limit):
-        raise Stop(f'Every agent slot is in use: {ctx.setting("dispatch_agents")} agents at once. Work {work_id} is '
-                   'back in To do.', 'metaform dispatch sessions')
     # A worker resumed in place holds its ticket already, taken by its own session, so nothing is reserved for it.
     record = await asyncio.to_thread(ticket, store, work_id) if resume else \
         await asyncio.to_thread(reserve, ticket(store, work_id))
@@ -950,7 +957,9 @@ async def moved_on(store: Store, ended: dict[str, Any]) -> dict[str, Any]:
     """This runner is done with its sessions: the queue moves on in this process, VIEW-042, so waiting tickets start
     whether or not a page is open. Autostart recovers what dead runners left first, BASE-052, and starts nothing when
     Autostart agents is unchecked. A terminated runner starts nothing; a failed check is said in this runner's log and
-    leaves the result as it was."""
+    leaves the result as it was. Its own slot in the gate's ledger is given back first: its agent has ended, so the
+    pass it runs, or a waiting retry it comes back for, does not count it."""
+    await asyncio.to_thread(leave_ledger)
     if ended.get('ended') not in (TERMINATED, HANDED):  # a runner that handed its session over reads nothing more
         from . import autostart
         project = await asyncio.to_thread(store.project)
@@ -986,6 +995,7 @@ def worked_in(store: Store, work_id: str, session_id: str) -> str | None:
     return str(cwd) if cwd else None
 
 
+TERMINALS_KEPT = 64  # the terminals a session's recovery record keeps, the latest, for the sweep after its runner dies
 # the thread lines that change what a session is, its state and its subagents, announced with kind session
 STATE_LINES = frozenset({'state', 'subagent'})
 # the map's tables a change to a ticket, its questions or its workflow runs writes, for a change that does not say
@@ -2520,6 +2530,7 @@ class Session:
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **group_options())
         except OSError as error:
             raise await self.refuse('run', command, str(error)) from None
+        await self.keep_terminal(process.pid)
         self.terminal_count += 1
         ident = f'term-{self.terminal_count}'
         limit = output_byte_limit if output_byte_limit is not None else 1024 * TERMINAL_KB
@@ -2530,6 +2541,31 @@ class Session:
         held.reader.add_done_callback(self.tasks.discard)
         await self.terminal_line(ident, held)
         return CreateTerminalResponse(terminal_id=ident)
+
+    async def keep_terminal(self, pid: int) -> None:
+        """A terminal's process group, with its leader's birth, kept in the session's private `recovery` beside the
+        agent's, so the groups a runner leaves when it dies are ended by settle, recovery and reset, BASE-052. A
+        terminal runs in a session of its own, so the runner's own end alone reached it. UX review round 1, 2026-10-17,
+        interrupt-failure-recovery F3. The row is written without an announcement: no reader shows it."""
+        if self.recovery is None or self.session_id is None:
+            return
+        from .recovery import identity
+        born = await asyncio.to_thread(identity, pid)
+        if not born:
+            return
+        # the latest TERMINALS_KEPT, so a long session's record stays small and its sweep quick
+        terminals = [*cast(list[dict[str, Any]], self.recovery.get('terminals') or []),
+                     {'pid': pid, 'identity': born}][-TERMINALS_KEPT:]
+        self.recovery = {**self.recovery, 'terminals': terminals}
+        recovery, session_id = self.recovery, self.session_id
+
+        def kept() -> None:
+            with self.store.tables() as tx:
+                tx.update('agent_sessions', {'session_id': session_id}, {'recovery': recovery})
+        try:
+            await asyncio.to_thread(kept)
+        except Exception as error:  # noqa: BLE001  the terminal runs whether or not its group is kept
+            sys.stderr.write(f'The terminal {pid} of session {session_id} was not kept for recovery: {error}\n')
 
     async def terminal_read(self, ident: str, held: Terminal) -> None:
         """A terminal's output read as it comes, its line in the thread kept at its latest every STREAM_EVERY, then

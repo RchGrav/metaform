@@ -1255,6 +1255,7 @@ UNSEEN_OPEN_WORLD = {
     'dispatch_timer': 'the local runner queues a new agent turn when the timer expires',
     'dispatch_interrupt': 'the local runner cancels the ACP agent turn',
     'dispatch_stop': 'the local runner cancels the agent and ends its process group',
+    'dispatch_stop-all': 'each running session\'s local runner cancels its agent and ends its process group',
     'dispatch_options': 'prime=true starts an ACP agent through a Session object',
     'dispatch_tune': 'the local runner applies model and effort to the live ACP agent',
     'dispatch_cancel': 'the local runner cancels and ends the ACP agent session',

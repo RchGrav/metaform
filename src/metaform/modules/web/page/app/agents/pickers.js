@@ -16,8 +16,9 @@ import {getJson} from '/page/app/panel/prompts.js';
  * now are the dispatch module's answer, `GET /api/dispatch-agents`; the page keeps no list of its own. Every place an
  * agent is started offers the same picker: an agent not found is shown with how to set it up, the default is marked,
  * and the star beside the picker makes the chosen agent the default in one click. */
-export const HARNESS = {project: null, enabled: null, default: null, room: null, free: null, agents: [], next: null,
-  error: null, reading: null, read: 0, pickers: new Set(), frontend: new Set()};  // frontend: dispatch's front-end address words
+// slots: the one admission gate's own count, `dispatch agents`: the project's limit and use, and the machine's
+export const HARNESS = {project: null, enabled: null, default: null, room: null, free: null, slots: null, agents: [],
+  next: null, error: null, reading: null, read: 0, pickers: new Set()};
 // the agent new chats, issues and intakes start with; none chosen is the default
 const SUMMON = {agent: null, chosen: false};
 export async function readHarnesses() {
@@ -34,8 +35,8 @@ async function readAgents(project) {
     const found = await getJson(`/api/dispatch-agents?project=${encodeURIComponent(project)}`);
     if (S.project === project) {
       Object.assign(HARNESS, {project, enabled: found.enabled !== false, default: found.default ?? null,
-        room: found.room ?? null, free: found.free ?? null, agents: found.agents || [], next: found.next || null,
-        error: null, read: Date.now(), frontend: new Set(found.frontend || [])});
+        room: found.room ?? null, free: found.free ?? null, slots: found.slots ?? null, agents: found.agents || [],
+        next: found.next || null, error: null, read: Date.now()});
       if (!$('#board').hidden) drawBoard();  // a card's own agent select lists them too
     }
   } catch (error) {
@@ -45,8 +46,8 @@ async function readAgents(project) {
   return HARNESS;
 }
 export function forgetHarnesses() {
-  Object.assign(HARNESS, {project: null, enabled: null, default: null, room: null, free: null, agents: [], next: null,
-    error: null, reading: null, read: 0});
+  Object.assign(HARNESS, {project: null, enabled: null, default: null, room: null, free: null, slots: null, agents: [],
+    next: null, error: null, reading: null, read: 0});
   Object.assign(SUMMON, {agent: null, chosen: false});
   paintPickers();
 }

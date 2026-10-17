@@ -128,9 +128,15 @@ $('#helpdesk .stay input').onchange = async event => {
 /* The person's stop of their system agent turns Stay connected off for the project, dispatch's `disconnect`: the box
  * follows, and the dock says so. `stopped` is the stop's answer. */
 export function stayedOff(stopped) {
-  if (stopped?.stay_connected !== false) return '';
-  $('#helpdesk .stay input').checked = false;
-  return ' Stay connected is off for this project until you check it again.';
+  return (stopped?.stay_connected === false ? (($('#helpdesk .stay input').checked = false),
+    ' Stay connected is off for this project until you check it again.') : '') + queuePaused(stopped);
+}
+/* The person's stop of an agent while Autostart is on turns Autostart off, dispatch's `paused`, so no waiting ticket
+ * starts in its place: the switch follows, and the toast says so. UX review round 1, 2026-10-17. */
+export function queuePaused(stopped) {
+  if (stopped?.autostart !== false) return '';
+  $('#autostartAgents').checked = false;
+  return ` ${stopped.notice || 'Autostart agents is now off for this project.'}`;
 }
 /* What the person writes goes to the agent on view, with the files attached; a /command is the chat's or the
  * agent's; with no agent there yet it waits in the thread, and one is reached. */

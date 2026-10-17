@@ -181,9 +181,11 @@ export async function stopIntake() {
     kept: ['Everything it recorded so far, in its layer', 'A new intake can take this one over and go on with it'],
     verb: 'Stop the intake', cancel: 'Keep it running'})) return;
   const session = INTAKE.session?.session_id;
-  if (await wrote('/api/dispatch-stop', {work_id: work, ...(session ? {session} : {})})) {
+  const stopped = await wrote('/api/dispatch-stop', {work_id: work, ...(session ? {session} : {})});
+  if (stopped) {
     if (session) rememberStop(session, new Date().toISOString());
-    toast('The intake agent was stopped.');
+    if (stopped.autostart === false) $('#autostartAgents').checked = false;  // dispatch's `paused`
+    toast(`The intake agent was stopped.${stopped.autostart === false ? ` ${stopped.notice}` : ''}`);
     keepIntake(null);
     INTAKE.started = null;
     await renderAgents();
