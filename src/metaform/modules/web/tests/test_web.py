@@ -9704,7 +9704,8 @@ def test_a_start_the_server_is_asked_for_is_refused_as_the_command_refuses_it(ru
         assert refused.returncode != 0 and busy in refused.stderr and 'session' in refused.stderr
     status, said = api(threaded, '/api/dispatch-start', method='POST', headers=own_write(threaded),
                        body=json.dumps({'project': 'proj', 'work_id': busy, 'agent': 'codex'}))
-    assert status == 400 and busy in said['error'] and 'session' in said['error']
+    # refusals name the ticket, never its 32-hex id (UX review round 2, held-and-signals F6)
+    assert status == 400 and '"Busy ticket"' in said['error'] and 'session' in said['error']
     run('set', '--dispatch-codex', 'metaform-nonexistent-acp-adapter', cwd=mapped)
     free = store.add_work(Node('element', 'exterior.cook'), 'unbuilt', task='Nothing runs this yet').id
     status, said = api(threaded, '/api/dispatch-start', method='POST', headers=own_write(threaded),
