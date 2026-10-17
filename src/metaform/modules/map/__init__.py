@@ -612,6 +612,13 @@ def search(ctx: Context) -> Any:
     return _store(ctx).search(ctx.nouns['text'], ctx.nouns.get('layer'), **_paging(ctx))
 
 
+def find(ctx: Context) -> Any:
+    """What the map holds about some words, elements, joins and items, each by its Address, best first: the
+    search an agent makes before it knows where to read, done in the store so it reads only the hits."""
+    limit = ctx.nouns.get('limit')
+    return {'results': _store(ctx).find(ctx.nouns['text'], limit=int(limit) if limit else 20)}
+
+
 def select(ctx: Context) -> Any:
     done = _store(ctx).select(ctx.nouns['address'], ctx.nouns['layer'])
     return _said(_store(ctx).effective_selection(ctx.nouns['address']).to_dict(), done)
@@ -1860,6 +1867,15 @@ MODULE = Module(
         Verb('search', search, 'Find the layer items whose value holds every word of the text.',
              nouns=(Noun('text', 'The words to find.'), _noun('layer', 'Only this layer.'), *PAGING), effect='read',
              reads_layers=True),
+        Verb('find', find, 'Find where the map holds something, from words for it: the elements, joins and layer items '
+                           'that hold them, each by its Address, best first.',
+             nouns=(Noun('text', 'The words to find; a hit holds at least half of them.'),
+                    _noun('limit', 'How many hits, 20 by default.', 'int')),
+             details='Elements are matched by address, name, short name and note; joins by purpose and EF, at their '
+                     'receiver; layer items by value, at the node they are attached to. Each word matches a whole word '
+                     'or the start of one. Only what the layers in view show is found.',
+             examples=(('metaform map find cents', 'Where the map holds anything about cents.'),),
+             effect='read', reads_layers=True),
         Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take '
                            'and finish them. To work a ticket handed to you: read it with id=; op=plan with the steps '
                            'you plan; op=step as each finishes, saying what you did and any choice you made with its '

@@ -93,6 +93,20 @@ settings.choice('mcp_search_fetch', ['remote', 'always', 'never'], 'remote', lab
                         'read: search finds layer items, memories and terms and returns metaform:// ids, fetch reads '
                         'one. Over stdio a local agent has the real tools (map_search, memory_search_nodes), so remote '
                         'leaves the two generic ones out there.')
+settings.choice('mcp_context', ['tight', 'whole'], 'tight', scope='global', person_only=True,
+                label='What agents are given over MCP',
+                help='tight lists tools by purpose, trims results to what the next decision needs and gives each piece '
+                     'at the moment it is needed; whole lists every tool, returns every field and sends the connect '
+                     'message of before 2026-10-17.',
+                details='An agent reads every word it is given and acts on it, so with tight it finds tools by purpose '
+                        'through metaform_catalog and is listed only those of the category its task needs, starting '
+                        'with the one its first task uses, a worker\'s ticket category; an AI tool that keeps the list '
+                        'it was first given runs any tool through metaform_catalog tool=<name>. A lookup result comes '
+                        'without empty fields, lists as tables, and view=full returns every field. Where the glossaries '
+                        'are defined is said with the first tool that reads the map in their terms rather than at '
+                        'connect. With whole, every tool the agent\'s role is given is listed at connect and results come '
+                        'whole as JSON. Either way a role is listed only the tools it is given, and each guide is given '
+                        'once a session until the agent\'s context is compacted.')
 settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
                 help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
                 details='Relay preserves the host connection and retries calls refused before dispatch. '

@@ -106,6 +106,10 @@ SURFACES: tuple[Surface, ...] = ('cli', 'mcp')
 # there, as a new version, a history or a backup; `remove` deletes or replaces what cannot be had back from the store.
 Effect = Literal['read', 'write', 'remove']
 EFFECTS: tuple[Effect, ...] = ('read', 'write', 'remove')
+# The purposes an agent finds tools by over MCP, MCP-003: each a category of the mcp module's catalog, which says what
+# each is for in its prompts.xml and which tools each holds. A verb's `category` is one of them.
+CATEGORY_NAMES = ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'intake', 'steer', 'show', 'workflow',
+                  'setup', 'report')
 
 # The module contract's callables, BASE-035. Each may be a plain function or a coroutine function, BASE-009.
 VerbFunction = Callable[['Context'], Any]  # returns the verb's result, BASE-036
@@ -182,6 +186,11 @@ class Verb:
     picker", so the refusal can send the person there. `cautioned`, given the call's context, says the caution with what the call
     would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
+
+    `category` names the purpose an agent finds the verb's tool under over MCP, one of `CATEGORY_NAMES`, such as
+    `orient` or `remember`, each said in the mcp module's catalog: an agent opens the category its task
+    needs and is listed only its tools, MCP-003. None takes the category the mcp module gives the tool, or else the
+    one it gives the module; a name no category holds stops the module loading.
     """
     name: str
     run: VerbFunction
@@ -206,8 +215,11 @@ class Verb:
     person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
     page: str | None = None
+    category: str | None = None
 
     def __post_init__(self) -> None:
+        if self.category is not None and self.category not in CATEGORY_NAMES:
+            raise ValueError(f'Verb {self.name}: category must be one of {", ".join(CATEGORY_NAMES)}.')
         if self.person_says and not self.caution:
             raise ValueError(f'Verb {self.name}: a verb the person decides declares the caution it is asked with.')
         if self.effect not in EFFECTS:
@@ -741,6 +753,13 @@ def startup_instructions(folder: Path, project: str | None = None) -> str:
     return composed.startup(folder, project)
 
 
+def startup_parts(folder: Path, project: str | None = None) -> tuple[str, list[str]]:
+    """The connect message's order, the mcp module's instructions and each module's `connect` line, and the notices
+    the folder's state calls for, for a server that composes the rest of it itself, MCP-029."""
+    from . import instructions as composed
+    return composed.startup_parts(folder, project)
+
+
 def module_instructions(folder: Path, identifier: str, project: str | None = None) -> str | None:
     """One surfaced module's full instructions, or None when it is not on this folder's surface, MCP-029."""
     from . import instructions as composed
@@ -784,6 +803,27 @@ def served_session(client: str | None = None) -> str | None:
     process, such as an HTTP server that many clients reach."""
     from . import shown
     return shown.session(client) if shown.is_serving() else None
+
+
+def shown_before(session: str | None, key: str) -> Any:
+    """What an agent session was last shown under `key`, or None, recording nothing, MCP-039: for what a server keeps
+    of a session, such as the tool category it has open."""
+    from . import shown
+    return shown.peek(session, key)
+
+
+def record_shown(session: str | None, key: str, value: Any) -> Any:
+    """What an agent session was last shown under `key`, or None the first time, recording `value` as shown now, as
+    Context.seen does for a session no Context names, MCP-039."""
+    from . import shown
+    return shown.swap(session, key, value)
+
+
+def forget_shown(session: str | None) -> int:
+    """Forget what an agent session was shown, but what its AI tool itself holds, such as the tools it lists, so each
+    piece is given again at its next use: the agent's context was compacted, CTX-045. The number forgotten."""
+    from . import shown
+    return shown.forget(session)
 
 
 def provisioning_notice() -> str | None:

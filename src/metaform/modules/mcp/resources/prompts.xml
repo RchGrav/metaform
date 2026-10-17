@@ -11,7 +11,8 @@
 <!-- The MCP server's instructions: the order that opens the connect message, sent as written to every agent when it
      connects over MCP. Each enabled module's <connect> line follows it, one per line, then <instructions_end>, then
      the notices the folder's state calls for, each from the module that owns that state, such as intake's first-run
-     notice. Keep the whole well under 2,048 characters: Claude Code keeps only the first 2,048. It is also what
+     notice. Keep the whole under 2,048 characters, Metaform's own budget: Claude Code keeps the first 4,096 since
+     v2.1.296, and every agent reads all of it. It is also what
      metaform_instructions gives for module mcp, and mcp's entry in the full command-line guide. Empty sends the module
      lines and the closing line without it; the notices still go. -->
 <instructions>You must use Metaform for this project; it is not optional. Use it to:</instructions>
@@ -25,8 +26,8 @@
 <instructions_terms>, then metaform://<project/>, this project's own terms</instructions_terms>
 <!-- The connect message's last line of the order: where each tool is said in one line, for an AI tool that lists
      Metaform's tools by name only and loads a tool's description when it is used; the modules' rules close that
-     resource. One sentence pointing where to read; nothing of the list is pushed. The connect message must fit the
-     2,048 characters Claude Code keeps with every module on and the first-run notice, so keep it short. Empty sends
+     resource. One sentence pointing where to read; nothing of the list is pushed. The connect message must fit
+     Metaform's own budget of 2,048 characters with every module on and the first-run notice, so keep it short. Empty sends
      nothing in its place. -->
 <instructions_tools>If your AI tool lists Metaform's tools by name only, metaform://tools says what each is for.</instructions_tools>
 <!-- BASE-059: fallback discovery appended to connect instructions where the connecting harness has no completed
@@ -35,7 +36,7 @@
 <skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=logic.skill.&lt;name&gt;.
 <skills/></skill_index>
 <!-- BASE-059: closes the metaform_skills tool description with the discoverable skill names, under the same
-     skill_index auto/on/off rule as the index above. Hosts list tool descriptions without the 2,048-character cut,
+     skill_index auto/on/off rule as the index above. Hosts list tool descriptions without the connect message's cut,
      so this is where the names arrive when the connect message has no room for the index. <skills/> is the names,
      comma-separated. Empty adds nothing. -->
 <skills_discoverable>Discoverable: <skills/>.</skills_discoverable>
@@ -250,4 +251,91 @@
      it, this message is left at the Address, so the person and the next agent there know the answer did not reach
      it. <peer/> takes the peer's name, <error/> what the peer said. Empty leaves no message. -->
 <a2a_answer_refused><peer/> did not take the answer to its question: <error/></a2a_answer_refused>
+<!-- THE TOOL CATALOG, MCP-003, while mcp_context is tight, the default. Every element below is a DRAFT of 2026-10-17
+     (artifacts/critic/mcp-context-build.md), awaiting the owner's approval of its wording. -->
+<!-- The description of metaform_catalog, the one tool every agent is listed at connect, read by every agent before
+     its first call. Empty lists the tool with no description, which no agent would know to call. -->
+<catalog_tool>Find the Metaform tool for what you want to do, by purpose. With nothing, it lists the categories your role may open, each with what it is for. With category, it opens that one: its tools are listed to you in place of the last category's, so you carry only the tools your task needs. With search, it finds tools in any category from words for what you want to do. With tool and arguments, it runs one.</catalog_tool>
+<!-- The help of metaform_catalog's arguments, read with its description. -->
+<catalog_category>The category to open; its tools are listed to you in place of the last one's.</catalog_category>
+<catalog_search>Words for what you want to do; the tools that fit, from every category, best first.</catalog_search>
+<catalog_run>A tool to run, by name, with arguments.</catalog_run>
+<catalog_arguments>The arguments of the tool named in tool.</catalog_arguments>
+<catalog_compacted>true once your context was compacted, so the guides you lost come again at their next use.</catalog_compacted>
+<!-- What each category is for: one line each, read by an agent that calls metaform_catalog with nothing, beside each
+     tool search finds, and at the head of an opened category. The element is category_<name>, - written _. Empty
+     shows the category by its name alone. -->
+<category_orient>Find and read the part of the project you work on: an Address's element, what it receives and provides, its layers, items and history, and the project's terms.</category_orient>
+<category_ticket>Work a ticket: read it, plan it, report each step, close it, link the files you change, and answer the questions left at nodes.</category_ticket>
+<category_remember>Read and record what happened in the work at a node, as memory on its receiving element.</category_remember>
+<category_coordinate>Reach the other agents: see who is at work where, send a note to an agent, a part of the map or a file, and send work to A2A peers.</category_coordinate>
+<category_change_map>Change the map: refine an element or join, add knowledge layers and terms, promote a join, show or hide layers, or open a verification pass that adds a part the map lacks.</category_change_map>
+<category_intake>Map the AUE into its elements and purpose records: the intake procedure, its schema, and the calls that record and finish it.</category_intake>
+<category_steer>Start, follow, message and stop agents, and read their sessions, signals, spend and roles.</category_steer>
+<category_show>Show the person the map on Metaform's web page, and act on it there with a body.</category_show>
+<category_workflow>Run and author Axiom workflows and skills.</category_workflow>
+<category_setup>Set up Metaform for this folder: settings, registration, bases, stored prompts, origins and variants, and module repositories.</category_setup>
+<category_report>Report a fault in Metaform, read the reports kept, and read a module's full instructions or a tool's guide.</category_report>
+<!-- The line of the connect message that says the role of a dispatched agent, sent once at connect, after the module
+     lines, to an agent whose runner names its role: it says why the catalog holds the categories it does, so the agent
+     does not look for tools its role is not given. <categories/> is the categories the role may open, by name. The
+     element is role_<role>; a role without one, and the person's own sessions, get no line. Empty sends none. -->
+<role_worker>You work one ticket at its node, so you are given the tool categories that work needs: <categories/>.</role_worker>
+<role_prep>You prepare one merge for the person's review, so you are given the tool categories that work needs: <categories/>.</role_prep>
+<role_intake>You map this project's AUE from its source, so you are given the tool categories that work needs: <categories/>.</role_intake>
+<role_sentinel>You take up an issue the person raised on a node, so you are given the tool categories that work needs: <categories/>.</role_sentinel>
+<role_talk>You talk with the person about what they clicked on the map, so you are given the tool categories that conversation needs: <categories/>.</role_talk>
+<role_system>You are the person's own agent in this project, so every tool category is yours.</role_system>
+<!-- The connect message's line on finding tools, sent once to every agent at connect, last before the state notices:
+     how the tools are found, and why they are not all listed. <open/> takes connect_open while the agent's role starts
+     with a category open. Empty sends nothing, and an agent learns of the catalog only from its tool's description. -->
+<connect_catalog>Metaform lists its tools by purpose so that you carry only those your task needs: metaform_catalog says what each category is for, opens the one your task calls for, and finds a tool from words for what you want to do.<open/></connect_catalog>
+<!-- What <open/> takes in connect_catalog: <category/> is the category open at connect, the one the role's first
+     message uses, such as a worker's ticket. -->
+<connect_open> The <category/> category is open now, since your first task uses its tools.</connect_open>
+<!-- The connect message's line on compaction, sent once at connect only to an agent no runner follows, such as the
+     person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
+     context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
+     Empty sends nothing; guides are then given once a session whatever happens to the agent's context. -->
+<connect_compaction>Metaform gives each tool's guide and each node's summary once in a session; if your context is compacted, call metaform_catalog with compacted=true, so they come again at their next use.</connect_compaction>
+<!-- The connect message's line for the person's own AI tool in a registered project's folder, sent once at connect:
+     which project the folder is, so the agent knows where it is before it reads anything. <project/> is its id. Empty
+     sends nothing. -->
+<connect_here>This folder is the project <project/>.</connect_here>
+<!-- The head of what metaform_catalog answers when it opens a category, read by the agent that opened it. <category/>
+     is the category, <closed/> catalog_closed when another was open before it. Each tool follows on its own line,
+     name(arguments): what it does. Empty leaves the head out. -->
+<catalog_opened><category/> is open<closed/>: its tools are listed to you now, each with the arguments it takes, those marked ? optional.</catalog_opened>
+<catalog_closed>, in place of <category/></catalog_closed>
+<!-- Said once in a session with the first category an agent opens: how to run a tool its AI tool does not list. -->
+<catalog_fallback>If your AI tool does not show these tools, run one with metaform_catalog tool=&lt;name&gt; arguments={...}: some AI tools refresh their tool list only when they reconnect.</catalog_fallback>
+<!-- What metaform_catalog answers a search no tool fits. -->
+<catalog_none>No tool fits those words. Call metaform_catalog with nothing for the categories and what each is for.</catalog_none>
+<!-- The refusal of a call to a tool the agent's role is not given, by name or through metaform_catalog. <tool/> is the
+     tool, <role/> the role, <categories/> the categories the tool is in. The next step follows it. -->
+<catalog_refused><tool/> is not among the tools a <role/> agent is given: it is in <categories/>, which your role does not open.</catalog_refused>
+<catalog_refused_next>call metaform_catalog with nothing for what your role opens; if your task needs this tool, call metaform_feedback and say why, since what each role is given is the person's to change</catalog_refused_next>
+<!-- Said once in a session, with the first result of a lookup tool given trimmed (view triage): how to get more. -->
+<triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full gives every field, fields=[...] keeps the ones you name, view=count counts the records by the fields you name, and must_contain or status_equals filter a list before it reaches you.</triage_note>
+<!-- Closes a list given trimmed at its first 25 records, when the call named no filter. <n/> is how many more. -->
+<list_cut><n/> more not shown, so you read only the records your decision needs: narrow the list with must_contain or status_equals.</list_cut>
+<!-- Said once in a session, with the first result of a tool that reads or records the map in its terms (the orient,
+     change-map, intake and remember categories): where the terms are defined, at the moment the agent first meets
+     them, in place of the connect message's order to read them before any work. <terms/> takes glossary_terms in a
+     registered project. Empty sends nothing; the glossaries stay at their URIs. -->
+<glossary_pointer>The words this map is written in, RE, PE, OP, EF, Address and the rest, are defined in metaform://metaform<terms/>; read them before you name or record anything, since every name and record on the map is read in those terms.</glossary_pointer>
+<glossary_terms>, and this project's own in metaform://<project/></glossary_terms>
+<!-- What metaform_catalog compacted=true answers, and metaform://runtime/compaction-state gives: the agent's context
+     was compacted, so what Metaform gave it once comes again. <n/> is how many pieces were forgotten; <open/> takes
+     compaction_open while a category is open. -->
+<compaction_state>Metaform forgot what it gave you once in this session, <n/> pieces, so each tool's guide and each node's summary come again at their next use.<open/></compaction_state>
+<compaction_open> The <category/> category is still open, so its tools stay listed to you.</compaction_open>
+<!-- In place of a tool's guide for a call whose connection names no session, such as an HTTP client on the July 2026
+     wire without a session header: nothing can record that it was given, so the guide is not repeated on every call.
+     <tool/> is the tool. Empty sends nothing. -->
+<guide_unkeyed>Metaform gives a tool's guide once a session, and this connection names none, so it is not given here: call metaform_instructions tool=<tool/> to read it.</guide_unkeyed>
+<!-- What a second read of a glossary in one session answers, metaform://metaform, metaform://<project> or
+     map_glossary, unchanged since the first: it is in the agent's context already. <uri/> is what was read, <again/>
+     the call that reads it whole anyway. -->
+<already_read><uri/> is unchanged since you read it in this session, so it is not given again; <again/> reads it whole.</already_read>
 </prompts>

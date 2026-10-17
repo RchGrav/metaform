@@ -619,6 +619,37 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 
 
 @pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('statuses', ['in_progress,completed', 'in_progress,failed'])
+def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
+    """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
+    forgotten, all but the category its AI tool still lists, and the next turn opens with the compacted line naming
+    the ticket and its node; in_progress and failed change nothing, and nothing is sent on the signal itself."""
+    from metaform import shown
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    dispatch.start('replace', FAKE_ACP_TURN_GATES=str(gates), FAKE_ACP_COMPACT=statuses)
+    init = eventually(lambda: dispatch.received('initialize'))[0]['params']['clientCapabilities']
+    assert init['session']['compaction'] == {}
+    eventually(lambda: dispatch.received('session/prompt'))
+    runner = next(one for one in dispatch.logged('runner') if one)
+    shown.swap(runner, 'guide:tool:map_work', 'given')
+    shown.swap(runner, 'catalog:open', 'remember')
+    (gates / '1').touch()
+    completed = statuses.endswith('completed')
+    if completed:
+        eventually(lambda: shown.peek(runner, 'guide:tool:map_work') is None)
+    assert len(dispatch.received('session/prompt')) == 1, 'the signal itself sends nothing'
+    run('dispatch', 'message', dispatch.id, 'go', 'on', cwd=dispatch.folder)
+    said = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
+    assert said.startswith('Your context was compacted') is completed
+    assert said.endswith('go on') and (f'ticket {dispatch.id} at ' in said) is completed
+    assert shown.peek(runner, 'catalog:open') == 'remember'
+    assert (shown.peek(runner, 'guide:tool:map_work') is None) is completed
+    (gates / '2').touch()
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
 def test_a_broadcast_reaches_each_running_agent_as_the_persons_message_and_is_kept_once(dispatch, run, tmp_path):
     from metaform.data import Store
     gates = tmp_path / 'turns'
@@ -3970,7 +4001,8 @@ def test_serve_as_a_proxy_of_a_conductors_chain_carries_metaforms_mcp_server_ove
         editor.send({'id': 77, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
             'serverId': server['serverId'], 'requestId': 'r-1', 'method': 'tools/list', 'params': {'_meta': meta}}}})
         tools = editor.answer(77)['result']['result']['tools']
-        assert any(tool['name'].startswith('map_') for tool in tools), 'answered by Metaform\'s own MCP server'
+        assert any(tool['name'].startswith('map_') or tool['name'] == 'metaform_catalog' for tool in tools), \
+            'answered by Metaform\'s own MCP server'  # its catalog alone, as an agent is listed it by default
         editor.send({'id': 78, 'method': '_proxy/successor', 'params': {'method': 'mcp/message', 'params': {
             'serverId': 'another', 'requestId': 'r-2', 'method': 'tools/list'}}})
         passed = editor.until(lambda one: one.get('method') == 'mcp/message')

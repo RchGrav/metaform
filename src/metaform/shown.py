@@ -57,6 +57,48 @@ def session(client: str | None = None) -> str | None:
     return None
 
 
+def peek(session: str | None, key: str) -> Any:
+    """What `session` was last shown under `key`, or None, recording nothing: for state the server keeps for a session,
+    such as the tool category it has open, read on every listing."""
+    if session is None:
+        return None
+    if session.startswith('process:'):
+        with _lock:
+            held = _kept.get((session, key))
+        return None if held is None else json.loads(held)
+    with home.chassis(write=True) as db:
+        db.execute(SHOWN)
+        row = db.execute('SELECT value FROM shown WHERE session=? AND key=?', (session, key)).fetchone()
+    return None if row is None else json.loads(row[0])
+
+
+# What a compaction leaves in place: what the AI tool itself holds rather than the agent's context, such as the tools it
+# lists after a category was opened, so it is not taken from the record when the agent's context is compacted.
+KEPT_THROUGH_COMPACTION = ('catalog:',)
+
+
+def forget(session: str | None, keep: tuple[str, ...] = KEPT_THROUGH_COMPACTION) -> int:
+    """Forget what `session` was shown, but the keys starting with one of `keep`, so each piece is given again at its
+    next use: the agent's context was compacted, and what it held is gone, CTX-045. The number of records forgotten."""
+    if session is None:
+        return 0
+
+    def kept(key: str) -> bool:
+        return any(key.startswith(prefix) for prefix in keep)
+    if session.startswith('process:'):
+        with _lock:
+            gone = [held for held in _kept if held[0] == session and not kept(held[1])]
+            for held in gone:
+                del _kept[held]
+        return len(gone)
+    with home.chassis(write=True) as db:
+        db.execute(SHOWN)
+        keys = [str(row[0]) for row in db.execute('SELECT key FROM shown WHERE session=?', (session,))]
+        gone = [key for key in keys if not kept(key)]
+        db.executemany('DELETE FROM shown WHERE session=? AND key=?', [(session, key) for key in gone])
+    return len(gone)
+
+
 def swap(session: str | None, key: str, value: Any) -> Any:
     """What `session` was last shown under `key`, or None the first time, recording `value` as shown now. With no
     session nothing is kept and the answer is always None, so everything is shown."""

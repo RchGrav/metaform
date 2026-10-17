@@ -76,6 +76,7 @@ from metaform.module import (
     mcp_server,
     project_for,
     provided,
+    record_shown,
     request_scope,
     surface,
     work_reads,
@@ -3975,7 +3976,12 @@ def talk(ctx: Context) -> dict[str, Any]:
     """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, or an ended
     agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
     what it is about. One summoned agent is always the person's; more use the agent slots left free, and past them
-    a chat is refused until a slot frees."""
+    a chat is refused until a slot frees. An agent whose role the person holds back starts no agent, may_steer, and
+    talks to an agent at work only by a note, which never starts one."""
+    if (held := held_role(ctx)) is not None:
+        raise Stop(f'A {held} agent starts and talks to no agent: a conversation is for the person and the agents that '
+                   'serve them, and it can start an agent. A note reaches an agent at work without starting one.',
+                   'metaform dispatch note to=<the ticket of the agent you want to reach> text="<what you want to say>"')
     store = ctx.require_store()
     given = {key: str(ctx.nouns[key]) for key in ('id', 'node', 'session') if ctx.nouns.get(key)}
     if len(given) != 1:
@@ -4866,10 +4872,26 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
                       f'metaform://{item}', 'title': f'Ticket {item}'})
     if links:
         lines.append('Links: ' + '  '.join(one['uri'] for one in links))
+    if on == 'mcp' and (peered := peers_line(ctx, store, work_id, session)):
+        lines.append(peered)
     node = str(read.get('address') or ' and '.join(
         f'{name}={value}' for name, value in (('receiver', read.get('receiver_address')),
                                               ('provider', read.get('provider_address'))) if value))
     return f"{work_line(work_id, ctx.folder, node)}\n\n" + '\n'.join(lines) + '\n', links
+
+
+def peers_line(ctx: Context, store: Store, work_id: str, session: str | None) -> str:
+    """The hand-off's line on the other agents at work, `peers_at_work`, once a session: only while another agent is
+    at work on an open ticket, since the agent can then collide with it and needs the tools that reach it; empty when
+    it works alone, was told already, or who is at work cannot be read."""
+    from .peering import working
+    try:
+        others = [entry for entry in working(ctx, store) if entry['work_id'] != work_id]
+    except Exception:  # noqa: BLE001  who is at work is a pointer; the hand-off is given without it
+        return ''
+    if not others or record_shown(session or ctx.session, 'announce:peers', len(others)) is not None:
+        return ''
+    return prompt('peers_at_work', n=str(len(others)))
 
 
 def handoff(ctx: Context) -> str:

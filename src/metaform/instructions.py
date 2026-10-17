@@ -92,17 +92,26 @@ def startup(folder: Path, project: str | None = None) -> str:
     `instructions_tools`, one sentence pointing at metaform://tools; and last what the folder's state calls for, each
     line from the module that owns that state, such as intake's first-run notice while the project has no intake."""
     chosen = project if project is not None else context.project_for(folder)
-    uses = [line for line in (prompt_files.module(module.id, 'connect') for module in surfaced(folder)) if line]
-    order = '\n'.join(part for part in (prompt_files.module('mcp', 'instructions'), *uses) if part)
-    states = [line for line in (_added(module, folder, chosen, full=False) for module in surfaced(folder)) if line]
-    if chosen is None and not states:
-        states.append(prompt_files.chassis('no_project'))
+    order, states = startup_parts(folder, chosen)
     own = (prompt_files.module('mcp', 'instructions_terms', project=chosen) or ''
            if chosen is not None and chosen != 'metaform' else '')
     end = '\n'.join(part for part in (prompt_files.module('mcp', 'instructions_end', terms=own),
                                        prompt_files.module('mcp', 'instructions_tools')) if part)
     parts = [part for part in (order, end, *states) if part]
     return '\n\n'.join(parts) + '\n' if parts else ''
+
+
+def startup_parts(folder: Path, project: str | None = None) -> tuple[str, list[str]]:
+    """The two parts of the connect message that every way of composing it shares, MCP-029: the order, the mcp
+    module's instructions prompt and each surfaced module's `connect` line, and the notices the folder's state calls
+    for, each from the module that owns that state, or the chassis's `no_project` when there is no project and none."""
+    chosen = project if project is not None else context.project_for(folder)
+    uses = [line for line in (prompt_files.module(module.id, 'connect') for module in surfaced(folder)) if line]
+    order = '\n'.join(part for part in (prompt_files.module('mcp', 'instructions'), *uses) if part)
+    states = [line for line in (_added(module, folder, chosen, full=False) for module in surfaced(folder)) if line]
+    if chosen is None and not states:
+        states.append(prompt_files.chassis('no_project'))
+    return order, states
 
 
 def compose(folder: Path, project: str | None = None, *, surface: str = 'cli') -> str:

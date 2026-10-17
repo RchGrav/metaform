@@ -410,6 +410,54 @@ def search(tx: Tx, res: Resolver, text: str, layer: str | None, raw: bool, limit
     return _page(keyed, build, limit, after)
 
 
+FIND_SPLIT = str.maketrans({'.': ' ', '_': ' ', '-': ' ', '/': ' '})
+
+
+def find(tx: Tx, res: Resolver, text: str, limit: int) -> list[dict[str, Any]]:
+    """What the map holds about some words, in context, best match first: elements by their address, name,
+    short name and note; joins by their purpose and EF, at their receiver; layer items by their value, at the node they
+    are attached to. Each hit is its Address, its kind and the line it matched, so an agent finds where to read without
+    reading the map whole. A hit holds at least half of the words, each as a whole word or a prefix; the most words
+    first, then elements, joins and items, then by address."""
+    words = [word.lower().strip(PUNCTUATION) for word in str(text).split()]
+    words = [word for word in words if word]
+    if not words:
+        return []
+    least = max(1, (len(words) + 1) // 2)
+
+    def hits(held: str) -> int:
+        tokens = [token.strip(PUNCTUATION) for token in held.lower().translate(FIND_SPLIT).split()]
+        return sum(1 for word in words if any(token == word or token.startswith(word) for token in tokens))
+    found: list[tuple[int, int, str, dict[str, Any]]] = []
+    for element_id, _row in tx.base.currents('element'):
+        made = views.element(tx, element_id, res)
+        if made is None:
+            continue
+        said = made.name or made.short_name
+        count = hits(f'{made.address} {said} {made.short_name} {made.note or ""}')
+        if count >= least:
+            found.append((-count, 0, made.address, {'address': made.address, 'kind': 'element', 'what': said}))
+    for _join_id, row in tx.base.currents('join'):
+        address = rows.address_of(tx, str(row['receiver']))
+        if address is None or not res.reaches(row.layer_id, address):
+            continue
+        purpose, ef = str(row['purpose'] or ''), str(row['ef'] or '')
+        count = hits(f'{purpose} {ef}')
+        if count >= least:
+            found.append((-count, 1, address, {'address': address, 'kind': 'join',
+                                                'what': purpose + (f' EF: {ef}' if ef else '')}))
+    for _item_id, row in tx.base.currents('item'):
+        origin = rows.node_address(tx, str(row['target_kind']), str(row['target_id']))
+        if origin is None or not res.reaches(row.layer_id, origin):
+            continue
+        value = str(row['value'])
+        count = hits(value)
+        if count >= least:
+            found.append((-count, 2, origin, {'address': origin, 'kind': 'item', 'what': value.strip('"')[:160]}))
+    found.sort(key=lambda one: one[:3])
+    return [hit for *_, hit in found[:limit]]
+
+
 def roots(tx: Tx, res: Resolver | None, limit: int, after: str | None) -> Roots:
     """The map's entry: the CQU and DE with the joins they receive, and every root element, one page, STORE-025.
 

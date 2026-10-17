@@ -231,6 +231,23 @@
      none. Must not be deleted: the code requires it. -->
 <retry>Your session stopped before ticket <work_id/> was done; go on with it where you left off.</retry>
 
+<!-- The line that opens the first turn after the agent's AI tool compacted its context, ACP's compaction_update with
+     status completed, CTX-045 and CTX-046: what it works on, and that what Metaform gave it once comes again. Sent by
+     the runner on that turn only, ahead of whatever the turn carries, to every agent dispatch runs whose AI tool sends
+     the signal. <who/> takes compacted_ticket for a worker or merge preparation, and nothing for another role.
+     A DRAFT of 2026-10-17, awaiting the owner's approval of its wording. Empty sends nothing; Metaform still gives each
+     guide again at its next use. -->
+<compacted>Your context was compacted, so Metaform gives you each tool's guide and each node's summary again the next time you use them. <who/></compacted>
+<!-- What <who/> takes in compacted: the ticket and the node, which the agent needs to go on. -->
+<compacted_ticket>You are working ticket <work_id/> at <node/>.</compacted_ticket>
+
+<!-- The line a ticket's hand-off ends with when other agents are at work in the project as it is handed over, so the
+     agent knows it can reach them before it changes what they are in: the moment it starts work is the moment it can
+     collide with them. <n/> is how many others are at work. Sent once a session, with the first message of a worker,
+     and with dispatch handoff; never when the agent works alone. A DRAFT of 2026-10-17, awaiting the owner's approval of
+     its wording. Empty sends nothing. -->
+<peers_at_work><n/> other agents are at work in this project: dispatch_peers shows who is where, and dispatch_note reaches one before you change a part or a file they are in, so your changes and theirs do not collide.</peers_at_work>
+
 <!-- The turn the person's system agent is given when a module says a feature the person set up is not working, the
      signal setup-not-working, such as the phone, whose check found Twilio cannot reach the bridge. It comes after any
      turn in flight, never inside one; when no system agent runs, the web page's small notice starts one and this is

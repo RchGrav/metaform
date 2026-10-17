@@ -1293,10 +1293,10 @@ MODULE = Module(
                          required=False),), effect='read'),
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
                                'element and purpose forms.', effect='read', needs_project=False),
-        Verb('start', start, "Start recording this project's intake, or resume the one being recorded. On a project "
-                             'whose intake is finished it opens a verification pass on that map: changed fields are '
-                             'refined, new elements and purpose records are added to it, conditions, notes and refs '
-                             'are written onto it, and intake finish closes the pass. With name it opens a separate '
+        Verb('start', start, "Start or resume this project's intake; on a mapped project it opens a verification pass "
+                             'that adds new elements and purpose records to the map. In that pass changed fields are '
+                             'refined, new elements and purpose records are added, conditions, notes and refs are '
+                             'written onto the map, and intake finish closes the pass. With name it opens a separate '
                              'intake in a new metaform instead, keeping the earlier one untouched. Returns its name; '
                              'the existing web GUI follows it live.',
              nouns=(Noun('result', 'The result id the intake procedure generates and gives at start, kept with the intake.', required=False),
