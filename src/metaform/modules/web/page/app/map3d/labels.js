@@ -142,8 +142,8 @@ function labelFor(node) {
   const texture = new THREE.CanvasTexture(document.createElement('canvas'));
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter, generateMipmaps: false});
-  // A sign in the scene, standing out from the map's middle, turned round when seen from behind so its name reads as
-  // written. `sprite` is the name it has always had in the page's reads.
+  // A sign in the scene, standing out from the map's middle, both sides drawn so from behind it reads backward.
+  // `sprite` is the name it has always had in the page's reads.
   LABELS.plane ??= new THREE.PlaneGeometry(1, 1);
   // It is tested against what is nearer, so a nearer node or edge hides it, but writes no depth of its own and is
   // drawn after the map, so it never cuts out an edge or a node behind it: written into the depth, each letter and
@@ -315,9 +315,9 @@ function placeLabel(node, frame, nearest, deepest) {
  * turns and goes behind the node as anything behind it does. Over the node, as a cluster's names sit over its knot;
  * to the side of a tree's flow, clear of the edges along it; or on the side away from the map's middle, so the outer
  * names stand outside the map, over the least of it.
- * web_signs: outward, each sign facing away from the map's middle, upright in the map, and turned round on its upright
- * axis when the eye is on the map's side of it, so its letters read as written and are never mirrored; or facing, each
- * sign turned to the eye and upright to it, read the same from any side and at any angle. */
+ * web_signs: outward, each sign facing away from the map's middle, upright in the map, a thing of the scene: seen from
+ * behind it reads backward, as a sign does (Rich, 2026-10-17); or facing, each sign turned to the eye and upright to
+ * it, read the same from any side and at any angle. */
 function placeSign(sprite, node, place, ball, wide, tall) {
   if (place === 'above') {
     sprite.position.set(node.x, node.y, node.z).addScaledVector(UP, ball + LABEL.out * 0.4 + tall / 2);
@@ -330,9 +330,7 @@ function placeSign(sprite, node, place, ball, wide, tall) {
   if (signsFacing()) return sprite.quaternion.copy(G.camera().quaternion);
   outward(node);
   sprite.up.copy(Math.abs(OUT.y) > 0.98 ? UP : Y_UP);
-  const eye = G.camera().position, at = sprite.position;
-  const behind = (eye.x - at.x) * OUT.x + (eye.y - at.y) * OUT.y + (eye.z - at.z) * OUT.z < 0;
-  sprite.lookAt(AT.copy(at).addScaledVector(OUT, behind ? -1 : 1));
+  sprite.lookAt(AT.copy(sprite.position).add(OUT));
 }
 /* The signs turned for one picture from an eye other than the person's, a figure's own, `lookFrom`: a facing sign
  * turned to that eye, an outward one turned round on its upright axis when that eye is behind it, so the picture reads
