@@ -26,6 +26,7 @@ export function draw3D(previous = null) {
   previous = previous || new Map(G.graphData().nodes.map(node => [node.id, node]));
   const data = MEM.key ? memoryData() : graphData();
   keepPlaces(data, previous);
+  holdKept(data);
   arrivals(data);
   const named = new Set(data.nodes.filter(node => node.t === 'el').map(node => node.id));
   for (const id of [...tags.keys()]) if (!named.has(id)) dropLabel(id);
@@ -57,9 +58,25 @@ function listAt(map, key) {
  * puts a node with no place, around the middle of the map, it was pulled across the whole map and the nodes it passed
  * were shaken. Nodes linked to nothing placed, and every node of a map with nothing placed yet or with much of it new,
  * are left to the layout, which warms itself for the share of nodes it has to place. */
+/* While a branch opens or closes, `GROW.beside`, keys/walk.js FOCUS, every new part starts beside its receiver
+ * whatever the share new, since the branch grows out of a map already laid out, and every part already drawn is held
+ * where it stands, `pinned`, so only the branch moves. The hold ends at the next draw of any other change, which lays
+ * the map out as before. */
+export const GROW = {beside: false, pinned: new Set()};
+function holdKept(data) {
+  for (const node of data.nodes) {
+    if (GROW.pinned.has(node.id) && !GROW.beside) Object.assign(node, {fx: undefined, fy: undefined, fz: undefined});
+    else if (GROW.beside && node.x !== undefined && node.fx === undefined) {
+      Object.assign(node, {fx: node.x, fy: node.y, fz: node.z});
+      GROW.pinned.add(node.id);
+    }
+  }
+  if (!GROW.beside) GROW.pinned.clear();
+}
 function arrivals(data) {
   const fresh = data.nodes.filter(node => node.x === undefined).length;
-  if (!fresh || fresh === data.nodes.length || fresh > Math.max(3, data.nodes.length * 0.15)) return;
+  if (!fresh || fresh === data.nodes.length
+    || (!GROW.beside && fresh > Math.max(3, data.nodes.length * 0.15))) return;
   const byId = new Map(data.nodes.map(node => [node.id, node])), linked = new Map();
   for (const link of data.links) {
     const one = endOf(link.source), two = endOf(link.target);
