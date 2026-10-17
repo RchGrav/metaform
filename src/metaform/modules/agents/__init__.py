@@ -73,6 +73,8 @@ ROLES = (
         Sends('dispatch:system_changed', 'ahead of the next turn after an edit of dispatch:system or dispatch:mascot '
                                          'is saved while its conversation runs, with the prompt as it now reads'),
         Sends('dispatch:setup_trouble', 'as its next turn, for each feature a module says is not working'),
+        Sends('dispatch:wave_ready', 'as its next turn, when tickets of the work the person\'s word covers are '
+                                     'free to start'),
     )),
     Role('sentinel', 'Takes up an issue the person raised on a node, following the sentinel skill.', True, (
         Sends('skills:served', 'first turn: the skill whole, its libraries first', True),

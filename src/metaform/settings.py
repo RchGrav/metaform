@@ -74,6 +74,10 @@ class Setting:
     # A setting that decides what agents may do or how they are started and overseen. MCP and a dispatched agent's
     # CLI refuse it unless the person has allowed agents to set control, so an agent cannot widen its own control.
     person_only: bool = False
+    # A person_only setting that is part of the ordinary, reversible work of orchestration, such as Autostart agents:
+    # the person's own system agent changes it without a consent card in a turn the person's own message in its chat
+    # started (`metaform.module.persons_word`), and in no other turn, nor any other agent.
+    on_persons_word: bool = False
     # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
     # name: two are refused, and a picker that checks one unchecks the others of its name.
     exclusive: str | None = None
@@ -169,6 +173,13 @@ def asking(folder: Path | None = None) -> tuple[str, str]:
             'ask the person in chat; to do it they ')
 
 
+def on_persons_word(keys: Iterable[str]) -> bool:
+    """Whether every person-only setting among `keys` is one the person's own system agent may change on the person's
+    word in its chat (`Setting.on_persons_word`), and at least one is named."""
+    held = [SCHEMA[key] for key in keys if key in SCHEMA and SCHEMA[key].person_only]
+    return bool(held) and all(setting.on_persons_word for setting in held)
+
+
 def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command: str | None = None) -> None:
     """Refuse person-only settings to a call without the person's consent, unless the person lets agents set control.
     The refusal tells the agent how to ask the person, `asking`, and the person how to set it: the page's settings
@@ -179,10 +190,25 @@ def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command
     if held:
         switches = ' '.join(f'{SCHEMA[key].switch} <value>' for key in held)
         said, step = asking(folder)
+        only = [key for key in held if not SCHEMA[key].on_persons_word]
+        worded = [key for key in held if SCHEMA[key].on_persons_word]
+        told = [f'{", ".join(only)} {"is" if len(only) == 1 else "are"} set only by the person, never by an agent.'
+                if only else '',
+                f'{", ".join(worded)} {"is" if len(worded) == 1 else "are"} set by the person, or by their own system '
+                f'agent {WORD_TURN}; this call is made in no such turn.' if worded else '']
         raise PersonsDecision(
-            f'{", ".join(held)} {"is" if len(held) == 1 else "are"} set only by the person, never by an agent. {said}',
+            f'{" ".join(one for one in told if one)} {said}',
             f'{step}use the settings screen on the page, or paste into {TERMINAL}: '
             f'{command or "metaform set " + switches}')
+
+
+# What lets the person's own system agent act on the person's word, said in each refusal of such an action
+# (`metaform.module.on_persons_word`), so the agent, and the person, know what would allow it.
+WORD_TURN = 'only in a turn the person\'s own message in its chat started (sent on the page, or at their terminal)'
+WORD_COVERS = (f'Their own system agent acts on it {WORD_TURN}, and, in any later turn, on a ticket of the work it '
+               'started, released, ordered or added to wait on others on that message, with the tickets that wait on '
+               'it and the open tickets it waits on, or added later to wait only on tickets of that work, until that '
+               'work is done or the person stops it.')
 
 
 # The module the current thread is loading. It is per thread, not a process global: while one thread loads a module,

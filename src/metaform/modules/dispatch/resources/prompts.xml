@@ -246,6 +246,15 @@ What the check found, for you alone:
 
 Your answer to this message goes to the person in your chat. Bring it up there as a colleague who noticed would: say what you saw they set up, that it may not be working, and ask whether they would like to work through it with you now. Keep error text, log lines and this report out of it. If they say no, leave it. If they say yes, look at it with them one step at a time with <look/>, offer the ways it could be reached that fit them, and let them choose. Change nothing that is theirs to set, a person-only setting or where their number sends its calls, unless they tell you to; when the change is theirs to make, give them the command.</setup_trouble>
 
+<!-- The turn the person's system agent is given when a ticket of the work the person's word covers is done and
+     tickets of that work that waited on it are now free to start: the work the person's message in its chat started,
+     released, ordered or added on, which the agent goes on with in later turns without asking again. It comes after
+     any turn in flight, never inside one, once for each ticket freed, and only from the change that marks a ticket
+     done. <done/> is the ticket or tickets done, <ready/> those now free, each as its id and address.
+     A draft, awaiting the owner's approval of its wording. Empty sends nothing, and the agent carries the work on only
+     when a timer or a message gives it a turn. Must not be deleted: the code requires it. -->
+<wave_ready>Ticket <done/> of the work the person asked you to see through is done, so these tickets of that work are now free to start: <ready/>. You can start them now on the person's word, without asking them again.</wave_ready>
+
 <!-- The person's project assistant: answers questions about the project and turns requests for work into tickets.
      Sent as the first message to the person's system agent, started from the web page's chat, with dispatch system
      or, while dispatch_stay_connected is on, by the agent starter; a conversation resumed in place is not sent it again.

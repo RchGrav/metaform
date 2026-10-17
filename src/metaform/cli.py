@@ -45,7 +45,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, caution_of, decided, on_this_system
+from .module import Verb, call, caution_of, decided, on_this_system, persons_word, persons_word_acted
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -494,6 +494,24 @@ def _setting_for(switch: str, verb: str) -> tuple[settings.Setting, bool]:
     return found
 
 
+def _held_or_word(keys: list[str], folder: Path, command: str) -> dict[str, Any] | None:
+    """For a call without the person's consent that names person-only settings: the person's word it runs on, when
+    every one of them is a setting their own system agent changes on their word (`Setting.on_persons_word`, Autostart
+    agents) and the call is made in a turn their own message started, as over MCP; otherwise refused as the person's
+    decision, saying what would allow it. None when it names no person-only setting."""
+    word = persons_word(folder, f'Setting {", ".join(keys)}') if settings.on_persons_word(keys) else None
+    if word is None:
+        settings.refuse_held_control(keys, folder, command)
+    return word
+
+
+def _acted_on_word(folder: Path, word: dict[str, Any], said: str) -> None:
+    """What a settings call did on the person's word: written in their system agent's chat with the message that
+    authorized it, and said in the output."""
+    persons_word_acted(folder, word, said)
+    out(f'On the person\'s word, "{word.get("text")}": {said}.')
+
+
 def _set_command(pairs: list[tuple[settings.Setting, Any]]) -> str:
     """The `metaform set` line the person pastes for the person-only settings among `pairs`, quoted for a shell."""
     words = ['metaform', 'set']
@@ -542,9 +560,11 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
+    word: dict[str, Any] | None = None
     if caller.unconsented():
-        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control.
-        settings.refuse_held_control((setting.key for setting, _ in pairs), folder, _set_command(pairs))
+        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control. Autostart
+        # agents, asked by the person in their system agent's chat, is set in the turn their message started.
+        word = _held_or_word([setting.key for setting, _ in pairs], folder, _set_command(pairs))
     for setting, raw in pairs:
         try:
             settings.checked(setting.key, raw, folder)
@@ -572,6 +592,10 @@ def set_(args: list[str], folder: Path) -> None:
         notices += [(setting.key, message) for message in noted]
     for key, message in notices:
         out(f'Notice: {key}: {message}')
+    if word is not None:  # what it did on the person's word, in their system agent's chat
+        said = 'set ' + ', '.join(f'{key} to {show(key, new)}' for key, _, new in updates) if updates else \
+            'left the settings as they were'
+        _acted_on_word(folder, word, said)
     if quiet:
         return
     where = f' for {folder}' if named else ''
@@ -635,15 +659,19 @@ def unset(args: list[str], folder: Path) -> None:
         # Only the settings stored at this folder, D36, of the modules loaded now, D53.
         keys = [key for key, setting in settings.SCHEMA.items()
                 if settings.scope_of(setting, folder) == settings.own_scope_of(setting, folder)]
-    if caller.unconsented():
-        settings.refuse_held_control(keys, folder, shlex.join(
-            ['metaform', 'unset', *(settings.SCHEMA[key].switch for key in keys if settings.SCHEMA[key].person_only)]))
+    held = shlex.join(['metaform', 'unset',
+                       *(settings.SCHEMA[key].switch for key in keys if settings.SCHEMA[key].person_only)])
+    word = _held_or_word(keys, folder, held) if caller.unconsented() else None
     for key in keys:  # every one is checked before any is reset
         try:
             settings.check_reset(key, folder)
         except settings.SettingError as error:
             raise Stop(str(error), error.next_step or 'metaform config --show') from None
     results_by_key = {key: settings.reset(key, folder, unglue=unglue) for key in keys}
+    if word is not None:  # what it did on the person's word, in their system agent's chat
+        done = [key for key, (result, _) in results_by_key.items() if result == 'reset']
+        _acted_on_word(folder, word, f'reset {", ".join(done)} to the default' if done
+                       else 'left the settings as they were')
     if quiet:
         return
     reset = [key for key, (result, _) in results_by_key.items() if result == 'reset']
@@ -1136,8 +1164,7 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
     given = [key for key in parsed.switches if key in verb.switches]
     # read only when the call needs to know: whether the person's consent is with it, from their terminal or the page
     acting = caller.unconsented() if given or verb.person_says else None
-    if acting:
-        settings.refuse_held_control(given, folder, shlex.join(['metaform', identifier, *rest]))
+    word = _held_or_word(given, folder, shlex.join(['metaform', identifier, *rest])) if acting else None
     messages = sys.stderr if parsed.json else sys.stdout
     project = parsed.switches.pop('project', None)
 
@@ -1160,6 +1187,9 @@ def run_module(identifier: str, rest: list[str], folder: Path) -> None:
         result = _run_async(verb.run, ctx, f'{identifier} {verb.name}')
     else:
         result = call(verb.run, ctx)
+    if word is not None:  # run on the person's word with a switch only they set otherwise, as over MCP
+        _acted_on_word(folder, word, f'ran {identifier} {verb.name} with ' + ', '.join(
+            f'{key} {show(key, parsed.switches[key])}' for key in given if key in parsed.switches))
     data = results.noted(result, parsed.notices) if parsed.notices else result
     if parsed.notices and not isinstance(data, dict):
         for where, message in parsed.notices:
