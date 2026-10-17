@@ -9,8 +9,10 @@ announce one.
 """
 from __future__ import annotations
 
+import contextvars
 import sqlite3
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +27,9 @@ _ABOUT: dict[tuple[str, str], dict[str, set[str]] | None] = {}
 _TAKEN: dict[tuple[str, str], dict[str, set[str]] | None] = {}  # what the last take took of it, for `concerns`
 ABOUT = ('work_ids', 'session_ids', 'kinds')
 _LOCK = threading.Lock()
+# the notes of one call kept apart from the process's, `announced` and `quietly`: each `note` made in its context
+_KEPT: contextvars.ContextVar[list[tuple[Any, ...]] | None] = contextvars.ContextVar('metaform_changes_kept',
+                                                                                     default=None)
 _WRITES = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
 
 
@@ -49,16 +54,26 @@ def note(project_id: str, base_id: str | None = None, tables: set[str] | None = 
     one it drew, STORE-046. One change whose tables are not known makes the base's unknown. `about` is what the write
     said it concerns, `Tx.concern`: the tickets, sessions and kinds of change, so a listener reads again only for a
     change of its own, BASE-053. One change that said nothing makes the base's unknown."""
+    kept = _KEPT.get()
+    if kept is not None:  # one call's own, which it announces itself, `announced`
+        kept.append((project_id, base_id, tables, seq, about))
+        return
     with _LOCK:
-        noted = _NOTED.setdefault(project_id, {})
-        key = base_id or ''
-        known = noted.get(key, set())
-        noted[key] = None if known is None or not tables else known | tables
-        if seq is not None:
-            _SEQS[(project_id, key)] = max(seq, _SEQS.get((project_id, key), 0))
-        held = _ABOUT.get((project_id, key), {})
-        _ABOUT[(project_id, key)] = None if held is None or not about else \
-            {name: held.get(name, set()) | about.get(name, set()) for name in ABOUT}
+        _add(_NOTED, _SEQS, _ABOUT, project_id, base_id, tables, seq, about)
+
+
+def _add(noted_in: dict[str, dict[str, set[str] | None]], seqs: dict[tuple[str, str], int],
+         abouts: dict[tuple[str, str], dict[str, set[str]] | None], project_id: str, base_id: str | None,
+         tables: set[str] | None, seq: int | None, about: dict[str, set[str]] | None) -> None:
+    noted = noted_in.setdefault(project_id, {})
+    key = base_id or ''
+    known = noted.get(key, set())
+    noted[key] = None if known is None or not tables else known | tables
+    if seq is not None:
+        seqs[(project_id, key)] = max(seq, seqs.get((project_id, key), 0))
+    held = abouts.get((project_id, key), {})
+    abouts[(project_id, key)] = None if held is None or not about else \
+        {name: held.get(name, set()) | about.get(name, set()) for name in ABOUT}
 
 
 def take() -> dict[str, dict[str, set[str] | None]]:
@@ -83,7 +98,44 @@ def concerns(project_id: str, base_id: str | None) -> dict[str, list[str]]:
     sorted list, or nothing when one write said nothing of what it concerns."""
     with _LOCK:
         held = _TAKEN.pop((project_id, base_id or ''), None)
-    return {} if held is None else {name: sorted(held[name]) for name in ABOUT}
+    return _listed(held)
+
+
+def announced(folder: Path, surface: Surface, function: Callable[..., Any], *args: Any,
+              **kwargs: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """Call a function that writes, then fire `map.changed` for what that call alone wrote, as `announce` does for a
+    command, BASE-053: what other calls of the process noted, before it or beside it in another thread, stays theirs.
+    A long-running process announces each of its writes this way, so one write's event never carries another's tables
+    or loses the tickets it said it concerns (UX recheck 2026-10-17). A call that fails leaves what it wrote for the
+    process's next `announce`. Returns the function's result and the payloads fired."""
+    kept: list[tuple[Any, ...]] = []
+    token = _KEPT.set(kept)
+    try:
+        result = function(*args, **kwargs)
+    except BaseException:
+        _KEPT.reset(token)
+        for one in kept:
+            note(*one)
+        raise
+    _KEPT.reset(token)
+    noted: dict[str, dict[str, set[str] | None]] = {}
+    seqs: dict[tuple[str, str], int] = {}
+    abouts: dict[tuple[str, str], dict[str, set[str]] | None] = {}
+    for one in kept:
+        _add(noted, seqs, abouts, *one)
+    return result, _fire(folder, surface, noted, lambda project, key: seqs.get((project, key)),
+                         lambda project, key: _listed(abouts.get((project, key))))
+
+
+def quietly(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Call a function that writes, whose change the caller announces itself on an event of its own: what the call
+    noted is dropped, so neither the process's next `announce` nor its command's end fires it again, with the tables
+    of every such write and nothing of what they concern (UX recheck 2026-10-17)."""
+    token = _KEPT.set([])
+    try:
+        return function(*args, **kwargs)
+    finally:
+        _KEPT.reset(token)
 
 
 def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
@@ -93,19 +145,29 @@ def announce(folder: Path, surface: Surface) -> list[dict[str, Any]]:
     the writes concern when every one of them said so, `concerns`; without them that is not known. A subscriber's
     failure never reaches the command, BASE-032. Returns the payloads fired, so a long-running process can follow its
     own changes, BASE-053."""
+    return _fire(folder, surface, take(), sequence, concerns)
+
+
+def _listed(held: dict[str, set[str]] | None) -> dict[str, list[str]]:
+    return {} if held is None else {name: sorted(held[name]) for name in ABOUT}
+
+
+def _fire(folder: Path, surface: Surface, found: dict[str, dict[str, set[str] | None]],
+          seq_of: Callable[[str, str], int | None],
+          about_of: Callable[[str, str], dict[str, list[str]]]) -> list[dict[str, Any]]:
     from . import events
     from .module import Context
     fired: list[dict[str, Any]] = []
-    for project, metaforms in sorted(take().items()):
+    for project, metaforms in sorted(found.items()):
         source = Context(module='chassis', folder=folder, project=project, surface=surface)
         for metaform, tables in sorted(metaforms.items()):
             payload: dict[str, Any] = {'project': project, 'base_id': metaform or None}
             if tables:
                 payload['tables'] = sorted(tables)
-            seq = sequence(project, metaform)
+            seq = seq_of(project, metaform)
             if seq is not None:
                 payload['seq'] = seq
-            payload.update(concerns(project, metaform))
+            payload.update(about_of(project, metaform))
             events.publish('map.changed', dict(payload), source)
             fired.append(payload)
     return fired

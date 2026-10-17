@@ -67,7 +67,9 @@ function ticketControls(ticket) {
       agentSelect(chosen, agent => change({agent}, box.querySelector('select.agent')))),
     eligibilityPicker(eligibleAgents(ticket), saveEligible),
     glyphPick(kept, change),
-    ticket.taken && !ticket.done ? recallButton(ticket) : null,
+    // only while an agent runs on it: an ended agent's ticket offers Back to To do on its card (UX recheck 2026-10-17)
+    ticket.taken && !ticket.done && D.sessions.some(one => one.work_id === ticket.id && one.state === 'running')
+      ? recallButton(ticket) : null,
     ticket.done ? null : holdButton(kept, change));
   return box;
 }
@@ -94,7 +96,7 @@ function recallButton(ticket) {
       if (stopped.autostart === false) {  // dispatch's `paused`: the person's stop turned Autostart off
         $('#autostartAgents').checked = false;
         toast(stopped.notice);
-      }
+      } else toast(`${agentName(session?.agent)} recalled. Its ticket stays on the board; Back to To do on its card gives it to another agent.`);
       await renderAgents();
       await renderBoard();
     } else event.target.disabled = false;

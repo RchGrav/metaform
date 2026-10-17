@@ -1407,15 +1407,16 @@ def test_a_session_ends_when_its_ticket_is_done_whatever_turn_closed_it(dispatch
 @pytest.mark.req('VIEW-018')
 def test_a_line_of_the_thread_announces_only_dispatchs_tables_and_a_write_to_the_map_announces_the_map(dispatch):
     """A line the runner writes to its thread changes no map, so its map.changed names the dispatch tables and an open
-    page reads only its agents again; a question the runner asks is a write to the map and is announced plainly."""
+    page reads only its agents again; a question the runner asks is a write to the map, announced with the tables it
+    wrote, never as a change that names nothing (UX recheck 2026-10-17)."""
     from metaform import relay
     heard = []
     with relay.listen('probe', heard.append):
         dispatch.start('ask')
         eventually(dispatch.questions)
         eventually(lambda: [one for one in heard if one.get('tables') == 'dispatch'])
-        eventually(lambda: [one for one in heard if 'tables' not in one])
-    assert {one.get('tables') for one in heard} <= {'dispatch', None}, heard
+        eventually(lambda: [one for one in heard if 'messages' in (one.get('tables') or [])])
+    assert all('tables' in one for one in heard), heard
     dispatch.stop()
 
 
@@ -5308,3 +5309,29 @@ def test_a_halt_refuses_every_start_asked_for_before_it_and_a_clear_every_start_
     assert fresh['state'] == 'starting', 'a start asked for after the halt starts'
     eventually(lambda: (dispatch.store.ticket(second).work.taken_by or '').startswith('claude fake-session'))
     run('dispatch', 'stop', second, '--json', cwd=dispatch.folder)
+
+
+@pytest.mark.req('BASE-053')
+@pytest.mark.req('VIEW-018')
+def test_a_runner_start_and_stop_announce_the_tables_and_tickets_they_wrote_and_never_a_bare_change(dispatch):
+    """UX recheck 2026-10-17, Finding 1: the runner's take and release named nothing, so an open page read the whole
+    map again and the 3D map moved every part drawn. The take names its tables, its ticket as a ticket and its new
+    session; the release its session; neither carries what the runner's other writes noted."""
+    from metaform import relay
+    heard = []
+    with relay.listen('probe', heard.append):
+        dispatch.start('hold')
+        eventually(lambda: dispatch.logged('grandchild'))
+        [taken] = eventually(lambda: [one for one in heard if {'work', 'dispatch.agent_sessions'}
+                                      <= set(one.get('tables') or [])])
+        started = len(heard)
+        dispatch.stop()
+        eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
+        [ended] = eventually(lambda: [one for one in heard[started:]
+                                      if 'dispatch.agent_sessions' in (one.get('tables') or [])])
+    assert [one for one in heard if 'tables' not in one] == [], heard
+    tickets = [one for one in heard if 'work' in (one.get('tables') or [])]  # its reservation and its take
+    assert all(one['work_ids'] == [dispatch.id] and 'ticket' in one['kinds'] for one in tickets), tickets
+    assert {'ticket', 'session'} <= set(taken['kinds']), taken
+    assert 'dispatch.agent_sessions' in taken['tables'] and taken['session_ids'] == ['fake-session-1'], taken
+    assert ended['work_ids'] == [dispatch.id] and 'session' in ended['kinds'], ended
