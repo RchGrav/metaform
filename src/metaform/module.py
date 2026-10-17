@@ -620,6 +620,7 @@ class Context:
     client: str | None = None  # the MCP client name, supplied by the transport rather than tool arguments
     session: str | None = None  # the agent session the call is made in, MCP-039; None for a person's command line
     identity: dict[str, str] = field(default_factory=dict[str, str])  # transport-supplied IDs, never tool arguments
+    consented: bool = False  # the person said yes to this one call, on its card or their AI tool's form
 
     def seen(self, key: str, value: Any) -> Any:
         """What this call's session was last shown under `key`, or None the first time, recording `value` as shown
@@ -985,6 +986,8 @@ def on_persons_word(ctx: Context, what: str, tickets: Sequence[str] = ()) -> dic
     from . import caller, settings
     if caller.dispatched() is None:
         return None  # the person's own AI tool, run outside dispatch
+    if ctx.consented:
+        return None  # the person's yes on this call's card is their word for it
     word, stopped = _word(ctx.folder, what, ctx.project, tickets)
     if word is not None:
         return word

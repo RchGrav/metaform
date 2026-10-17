@@ -82,6 +82,9 @@ from metaform.module import (
     surface,
     work_reads,
 )
+from metaform.module import (
+    persons_word as word_of,
+)
 
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
 from .progress import SOURCE as PROGRESS
@@ -1578,8 +1581,20 @@ def starts_held(ctx: Context) -> str | None:
     hold = not record.held and bool(ticket_settings(ctx).get(record.id, {}).get('hold'))
     if not (record.held or hold):
         return None
+    # the person's word in their system agent's turn is their decision, `start` records it; at the command line a
+    # dispatched agent with none is told why too, and over MCP its call waits on the person's card
+    what, why = f'Starting an agent on ticket {record.id}', ''
+    if ctx.surface == 'cli':
+        try:
+            word = on_persons_word(ctx, what, [record.id])
+        except PersonsDecision as refused:
+            word, why = None, f' {refused.message}'
+    else:
+        word = word_of(ctx.folder, what, ctx.project, [record.id])
+    if word is not None:
+        return None
     return (f'Starting an agent on {called(store, [record.id])[record.id]} releases it: it is '
-            f'{"held in Backlog" if record.held else "held from agents"} for the person.')
+            f'{"held in Backlog" if record.held else "held from agents"} for the person.{why}')
 
 
 def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = None,

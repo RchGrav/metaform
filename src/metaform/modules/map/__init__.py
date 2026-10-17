@@ -43,6 +43,7 @@ from metaform.module import (
     Noun,
     NounKind,
     Pane,
+    PersonsDecision,
     Provides,
     Status,
     Stop,
@@ -1691,8 +1692,24 @@ def releases(ctx: Context) -> str | None:
     if not (held or hold):
         return None
     named = ticket_name(store, work_id)
+    # the person's word in their system agent's turn is their decision, `_orchestrating` records it; at the command
+    # line a dispatched agent with none is told why too, and over MCP its call waits on the person's card
+    word, why = _word_or_why(ctx, f'Releasing {named}', [work_id])
+    if word is not None:
+        return None
     return (f'This releases {named}, {"held in Backlog" if held else "held from agents"} for the person: once released '
-            'an agent starts on it by itself.')
+            f'an agent starts on it by itself.{why}')
+
+
+def _word_or_why(ctx: Context, what: str, tickets: list[str]) -> tuple[dict[str, Any] | None, str]:
+    """The person's word for this call, with, at the command line, why a dispatched agent has none (`on_persons_word`'s
+    refusal), as ' <why>'; over MCP the word alone, since a call with none waits on the person's card."""
+    if ctx.surface != 'cli':
+        return persons_word(ctx.folder, what, ctx.project, tickets), ''
+    try:
+        return on_persons_word(ctx, what, tickets), ''
+    except PersonsDecision as refused:
+        return None, f' {refused.message}'
 
 
 def ticket_name(store: Store, work_id: str) -> str:

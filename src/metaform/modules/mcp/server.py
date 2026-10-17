@@ -807,6 +807,7 @@ def _prepare(folder: Path, module: Module, verb: Verb, name: str, arguments: dic
         switches['layers'] = [str(item) for item in cast(list[Any], layers)]
     made = context(module.id, folder, project=project, nouns=nouns, switches=switches, sink=lines.append,
                    surface='mcp', client=client, session=session, identity=identity)
+    made.consented = consented
     if verb.person_says and not consented:  # the person's decision: only their answer to the form runs it, CLI-011
         raise persons_decision(caution_of(verb, made), person_command(module.id, verb, arguments), verb.page)
     if verb.caution and not (confirmed or consented):
