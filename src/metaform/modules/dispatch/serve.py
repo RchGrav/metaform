@@ -73,7 +73,7 @@ EDITOR_TASK = 'Sessions from editors'  # the held ticket editor sessions hang on
 OWN = 'metaform:'  # the ids of the requests Metaform itself sends, apart from any the editor or the agent uses
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 STREAM_EVERY = 0.5  # seconds between writes of a message still being written, so the page shows it as it grows
-LINES_EVERY = 0.25  # at most one `dispatch.lines` event per this many seconds
+LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds
 PAGE = 50  # sessions in one page of session/list
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
 SETTLE_LIMIT = 10  # seconds a closing session waits for its record to be written
@@ -836,8 +836,8 @@ class Served:
             if store is None:
                 return []
             with Store(store.project_id, module='dispatch').tables(write=False) as tx:
-                return [dict(row) for row in tx.rows('lines', {'session_id': session_id}, by=('session_id', 'seq'),
-                                                      limit=0).results]
+                return [dict(row) for row in tx.rows('session_lines', {'session_id': session_id},
+                                                      by=('session_id', 'seq'), limit=0).results]
         for row in await asyncio.to_thread(read):
             kind, text = str(row['kind']), str(row['text'])
             if kind in REPLAYED:
@@ -1161,9 +1161,9 @@ def _states(store: Store, session_ids: list[str]) -> dict[str, dict[str, Any]]:
     try:
         with Store(store.project_id, module='dispatch').tables(write=False) as tx:
             for session_id in session_ids:
-                if tx.get('lines', {'session_id': session_id, 'name': UNLISTED}) is not None:
+                if tx.get('session_lines', {'session_id': session_id, 'name': UNLISTED}) is not None:
                     continue
-                line = tx.get('lines', {'session_id': session_id, 'name': 'state'})
+                line = tx.get('session_lines', {'session_id': session_id, 'name': 'state'})
                 held: Any = None
                 with contextlib.suppress(ValueError, TypeError, KeyError):
                     held = json.loads(str(line['text'])) if line is not None else None
@@ -1181,12 +1181,13 @@ def _unlist(session_id: str, cwd: str | None) -> bool:
     for store in stores:
         try:
             with Store(store.project_id, module='dispatch').tables() as tx:
-                row = tx.get('sessions', {'session_id': session_id})
+                row = tx.get('agent_sessions', {'session_id': session_id})
                 if row is None:
                     continue
-                if tx.get('lines', {'session_id': session_id, 'name': UNLISTED}) is None:
-                    tx.insert('lines', {'session_id': session_id, 'name': UNLISTED, 'work_id': row['work_id'],
-                                        'kind': UNLISTED, 'text': _stamp(), 'seq': 0})
+                if tx.get('session_lines', {'session_id': session_id, 'name': UNLISTED}) is None:
+                    tx.insert('session_lines', {'session_id': session_id, 'name': UNLISTED,
+                                                'work_id': row['work_id'], 'kind': UNLISTED, 'text': _stamp(),
+                                                'seq': 0})
                 return True
         except StoreError:
             continue
@@ -1262,7 +1263,7 @@ class Record:
         mapped = ctx.require_store()
         first = mapped.graph(limit=50).elements
         held = anchor(ctx, mapped, first[0].element.address if first else None, task=EDITOR_TASK)
-        return cls(served, session, ctx, store, held.id)
+        return cls(served, session, ctx, store, held)
 
     async def open(self, row: dict[str, Any] | None) -> None:
         self.server = await asyncio.start_server(self.control, '127.0.0.1', 0)
@@ -1272,28 +1273,29 @@ class Record:
         session_id = self.session.session_id
 
         def write(tx: Any) -> None:
-            if row is not None and tx.get('sessions', {'session_id': session_id}) is not None:
-                tx.update('sessions', {'session_id': session_id}, mine)
-                found = tx.rows('lines', {'session_id': session_id}, by=('session_id', 'seq'), limit=0).results
+            if row is not None and tx.get('agent_sessions', {'session_id': session_id}) is not None:
+                tx.update('agent_sessions', {'session_id': session_id}, mine)
+                found = tx.rows('session_lines', {'session_id': session_id}, by=('session_id', 'seq'),
+                                limit=0).results
                 self.lines = max((int(one['seq']) for one in found), default=0)
                 self.named = {str(one['name']) for one in found}
             else:
-                tx.insert('sessions', {'session_id': session_id, 'work_id': self.work_id,
-                                       'agent': self.served.agent, 'started': _stamp(),
-                                       'seq': time.time_ns() // 1_000_000, **mine})
-        await self.table(write, 'sessions')
+                tx.insert('agent_sessions', {'session_id': session_id, 'work_id': self.work_id,
+                                             'agent': self.served.agent, 'started': _stamp(),
+                                             'seq': time.time_ns() // 1_000_000, **mine})
+        await self.table(write, 'agent_sessions')
         await self.state({'editor': True, 'cwd': self.session.cwd,
                           'additional_directories': self.session.directories,
                           'capabilities': self.served.capabilities,
                           'agent_info': self.served.agent_info,
                           'commands': _dicts(self.served.agent_commands.get(session_id))})
 
-    async def table(self, change: Callable[[Any], Any], name: str = 'lines') -> Any:
+    async def table(self, change: Callable[[Any], Any], name: str = 'session_lines') -> Any:
         def done() -> Any:
             with self.store.tables() as tx:
                 return change(tx)
         result = await asyncio.to_thread(done)
-        if name == 'lines':
+        if name == 'session_lines':
             await self.lines_changed()
         else:
             await self.changed([f'dispatch.{name}'])
@@ -1307,7 +1309,7 @@ class Record:
             self.lines_due.cancel()
             self.lines_due = None
         self.lines_at = time.monotonic()
-        named: list[str] = sorted({*(tables or []), 'dispatch.lines'})
+        named: list[str] = sorted({*(tables or []), 'dispatch.session_lines'})
         await self.ctx.publish_async('map.changed', {'project': self.store.project_id, 'base_id': self.base_id,
                                                      'tables': 'dispatch', 'dispatch_tables': named,
                                                      **concerning(self.work_id, self.session.session_id, named)})
@@ -1419,7 +1421,7 @@ class Record:
         session_id = self.session.session_id
 
         def merged(tx: Any) -> None:
-            found = tx.get('lines', {'session_id': session_id, 'name': 'state'})
+            found = tx.get('session_lines', {'session_id': session_id, 'name': 'state'})
             held: dict[str, Any] = {}
             if found is not None:
                 with contextlib.suppress(ValueError, TypeError):
@@ -1442,8 +1444,8 @@ class Record:
         session_id = self.session.session_id
         if self.server is not None:
             self.server.close()
-        await self.table(lambda tx: tx.update('sessions', {'session_id': session_id}, {'state': 'ended', 'how': how}),
-                         'sessions')
+        await self.table(lambda tx: tx.update('agent_sessions', {'session_id': session_id},
+                                              {'state': 'ended', 'how': how}), 'agent_sessions')
 
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One request on the control port with this session's token, as the page sends a runner's: `status`,

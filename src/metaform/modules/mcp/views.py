@@ -243,7 +243,7 @@ def traced(payload: dict[str, Any], project: str, work_id: str) -> bool:
     if payload.get('project') not in (None, '', project):
         return False
     tables: Any = payload.get('tables')
-    if not work_id and tables in ('dispatch', ['dispatch']) and payload.get('dispatch_tables') == ['dispatch.lines'] \
+    if not work_id and tables in ('dispatch', ['dispatch']) and payload.get('dispatch_tables') in (['dispatch.lines'], ['dispatch.session_lines']) \
             and not payload.get('signal'):
         return False
     named: Any = payload.get('work_ids')

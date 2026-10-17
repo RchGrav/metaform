@@ -168,8 +168,12 @@ class Dispatch:
         from metaform.data import Store, StoreError
         try:
             with Store('proj', module='dispatch').tables(write=False) as tx:
-                table = 'sessions' if kind == 'session' else 'lines'
-                rows = sorted((dict(row) for row in tx.rows(table, limit=0).results), key=lambda row: row['seq'])
+                table = 'agent_sessions' if kind == 'session' else 'session_lines'
+                rows = [dict(row) for row in tx.rows(table, limit=0).results]
+            if kind != 'session':  # with the signals and a ticket's progress, which are kept beside the map
+                with Store('proj', module='dispatch').tables(write=False) as tx:
+                    rows += [dict(row) for row in tx.rows('lines', limit=0).results]
+            rows.sort(key=lambda row: row['seq'])
         except StoreError:
             return []
         if kind == 'session':
@@ -630,7 +634,7 @@ def test_a_broadcast_reaches_each_running_agent_as_the_persons_message_and_is_ke
 
     def marked():
         with Store('proj', module='dispatch').tables(write=False) as tx:
-            return [dict(row) for row in tx.rows('lines', {'session_id': session_id}, limit=0).results
+            return [dict(row) for row in tx.rows('session_lines', {'session_id': session_id}, limit=0).results
                     if row['name'] == f'broadcast:{kept["id"]}']
     [line] = eventually(marked)
     assert (line['kind'], line['text']) == ('person', 'stop and commit')
@@ -654,7 +658,7 @@ def test_a_second_writer_on_the_session_never_ends_the_runner_and_lines_keep_one
     last = max((line.extra['seq'] for line in dispatch.items('note')), default=0)
     with Store('proj', module='dispatch').tables() as tx:
         for seq in range(last + 1, last + 4):
-            tx.insert('lines', {'session_id': session_id, 'name': f'line:{seq}', 'work_id': dispatch.id,
+            tx.insert('session_lines', {'session_id': session_id, 'name': f'line:{seq}', 'work_id': dispatch.id,
                                 'kind': 'stderr', 'text': 'the other writer', 'seq': seq})
     run('dispatch', 'message', dispatch.id, 'also', 'run', 'the', 'tests', cwd=dispatch.folder)
     (gates / '1').touch()
@@ -1108,8 +1112,8 @@ def test_a_dispatched_agent_writes_nothing_on_the_map_and_its_session_and_transc
     assert 'dispatch' not in [layer.name for layer in dispatch.store.layers(limit=0).results]
     from metaform.data import Store
     with Store('proj', module='dispatch').tables(write=False) as tx:
-        sessions = list(tx.rows('sessions', limit=0).results)
-        lines = list(tx.rows('lines', limit=0).results)
+        sessions = list(tx.rows('agent_sessions', limit=0).results)
+        lines = list(tx.rows('session_lines', limit=0).results)
     assert [(row['work_id'], row['state']) for row in sessions] == [(dispatch.id, 'running')]
     assert [row['text'] for row in lines if row['kind'] == 'agent_message_chunk'] == ['Hello from fake']
     dispatch.stop()
@@ -1288,16 +1292,18 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
     with store.tables() as tx:
         for number in range(40):
             session_id = f'ended-{number}'
-            tx.insert('sessions', {'session_id': session_id, 'work_id': dispatch.id, 'agent': 'claude',
-                                   'state': 'ended', 'how': 'the agent ended its turn', 'started': '2026-10-16T00:00:00Z',
-                                   'seq': number + 1})
+            tx.insert('agent_sessions', {'session_id': session_id, 'work_id': dispatch.id, 'agent': 'claude',
+                                         'state': 'ended', 'how': 'the agent ended its turn', 'started': '2026-10-16T00:00:00Z',
+                                         'seq': number + 1})
             state = {'commands': [{'name': f'command-{one}'} for one in range(50)], 'about': 'system' if number < 2
                      else None, 'intake': None}
-            tx.insert('lines', {'session_id': session_id, 'name': 'state', 'work_id': dispatch.id, 'kind': 'state',
-                                'text': json.dumps(state), 'seq': 1})
-            tx.insert('lines', {'session_id': session_id, 'name': 'line:2', 'work_id': dispatch.id,
-                                'kind': 'agent_message_chunk', 'text': 'Done.', 'seq': 2})
+            tx.insert('session_lines', {'session_id': session_id, 'name': 'state', 'work_id': dispatch.id,
+                                        'kind': 'state', 'text': json.dumps(state), 'seq': 1})
+            tx.insert('session_lines', {'session_id': session_id, 'name': 'line:2', 'work_id': dispatch.id,
+                                        'kind': 'agent_message_chunk', 'text': 'Done.', 'seq': 2})
     signals.record(store, 'stopped-open', work_id=dispatch.id, session_id='ended-39')
+    from metaform.modules.dispatch import carry_conversations
+    carry_conversations(store)  # what the metaform holds of the conversations, none here, is carried once by itself
     executed = []
     plain = tables.TableTx._execute
 
@@ -1310,14 +1316,15 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
     from metaform.modules.dispatch import read_sessions
     ctx = chassis.context('dispatch', dispatch.folder, project='proj', nouns={'thread': False})
     read = read_sessions(ctx)
-    lines = [sql for sql in executed if 'FROM "dispatch.lines"' in sql]
+    lines = [sql for sql in executed if 'FROM "dispatch.lines"' in sql or 'FROM "dispatch.session_lines"' in sql]
     assert len(lines) == 2 and all(' WHERE ' in sql for sql in lines), lines
     assert len(read['sessions']) == 40 and [one['signal'] for one in read['signals']] == ['stopped-open']
     assert read['states'] == {f'ended-{number}': {'about': 'system' if number < 2 else None, 'intake': None}
                               for number in range(40)}
     executed.clear()
     assert read_sessions(ctx)['states'] == read['states']
-    assert len([sql for sql in executed if 'FROM "dispatch.lines"' in sql]) == 1, executed  # the signals alone
+    assert len([sql for sql in executed if 'FROM "dispatch.lines"' in sql or 'FROM "dispatch.session_lines"' in sql]) \
+        == 1, executed  # the signals alone
     shown = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
     assert shown['states'] == read['states'] and shown['signals'] == read['signals']
 
@@ -1729,7 +1736,7 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
     assert not [line for line in lines if 'Replayed history' in line['text']], 'a replay is never written again'
     assert [line['text'] for line in lines[before:] if line['kind'] == 'person'] == ['Carry on']
     with Store('proj', module='dispatch').tables() as tx:  # a session that kept no state, as one older than it
-        tx.insert('sessions', {'session_id': 'older', 'work_id': dispatch.id, 'agent': 'codex', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 'older', 'work_id': dispatch.id, 'agent': 'codex', 'state': 'ended',
                                'started': '2026-10-01T00:00:00Z', 'seq': 1})
     refused = run('dispatch', 'resume', dispatch.id, 'session=older', cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0 and f'dispatch talk session={dispatch.id}:older' in refused.stdout + refused.stderr
@@ -2065,7 +2072,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
 
         # B's tool call edited src/shared.js, as a runner records it
         with Store('proj', module='dispatch').tables() as tx:
-            tx.insert('lines', {'session_id': b_session, 'name': 'detail:edit-1', 'work_id': other.id,
+            tx.insert('session_lines', {'session_id': b_session, 'name': 'detail:edit-1', 'work_id': other.id,
                                 'kind': 'tool_detail', 'seq': 10 ** 6, 'text': json.dumps(
                                     {'kind': 'edit', 'diffs': [{'path': 'src/shared.js', 'added': 2, 'removed': 1}],
                                      'locations': [{'path': 'src/shared.js', 'line': 42}]})})
@@ -2540,10 +2547,10 @@ def test_the_supervisor_resumes_a_stopped_session_with_backoff_then_hands_it_ove
     from metaform.modules import dispatch as module
     dispatch.store.take_work(dispatch.id, None, 'claude s1')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
                                'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1,
                                'origin': module.origin()})
-        tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
+        tx.insert('session_lines', {'session_id': 's1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
                             'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})})
     spawned = []
     monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: spawned.append(extra) or {'pid': 0})
@@ -2553,7 +2560,7 @@ def test_the_supervisor_resumes_a_stopped_session_with_backoff_then_hands_it_ove
 
     def due():
         with Store('proj', module='dispatch').tables() as tx:
-            tx.update('attempts', {'work_id': dispatch.id}, {'next_at': 0.0})
+            tx.update('session_attempts', {'work_id': dispatch.id}, {'next_at': 0.0})
     due()
     assert [one['retry'] for one in module.retry(ctx, dispatch.store)['retried']] == [1]
     assert spawned == [['resume=s1', 'retry=true']]
@@ -2564,8 +2571,8 @@ def test_the_supervisor_resumes_a_stopped_session_with_backoff_then_hands_it_ove
     [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
     assert handed['next'] == f'metaform dispatch resume {dispatch.id} session=s1'
     with Store('proj', module='dispatch').tables() as tx:
-        tx.delete('attempts', {'work_id': dispatch.id})
-        tx.update('sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
+        tx.delete('session_attempts', {'work_id': dispatch.id})
+        tx.update('agent_sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
     assert module.retry(ctx, dispatch.store) == {'retried': []}, 'never a session the person stopped'
 
 
@@ -2906,18 +2913,18 @@ def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_ru
     with Store('proj', module='dispatch').tables() as tx:
         for session, work, how in (('s1', dispatch.id, 'it failed: Claude Code needs a login before it makes a session'),
                                    ('s2', other, 'the agent ended with exit code 1')):
-            tx.insert('sessions', {'session_id': session, 'work_id': work, 'agent': 'claude', 'state': 'ended',
+            tx.insert('agent_sessions', {'session_id': session, 'work_id': work, 'agent': 'claude', 'state': 'ended',
                                    'how': how, 'started': '2026-10-11T00:00:00Z', 'seq': 1, 'origin': module.origin()})
-            tx.insert('lines', {'session_id': session, 'name': 'state', 'work_id': work, 'kind': 'state', 'seq': 1,
+            tx.insert('session_lines', {'session_id': session, 'name': 'state', 'work_id': work, 'kind': 'state', 'seq': 1,
                                 'text': state})
-        tx.insert('spend', {'session_id': 's2', 'seq': 1, 'work_id': other, 'run': 'run-a', 'day': '2026-10-11',
-                            'tokens': 10})
+        tx.insert('spending', {'session_id': 's2', 'seq': 1, 'work_id': other, 'run': 'run-a', 'day': '2026-10-11',
+                               'tokens': 10})
     spawned = []
     monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: spawned.append(extra) or {'pid': 0})
     ctx = context('dispatch', dispatch.folder, project='proj')
     module.retry(ctx, dispatch.store)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.update('attempts', {'work_id': other}, {'next_at': 0.0})
+        tx.update('session_attempts', {'work_id': other}, {'next_at': 0.0})
     module.retry(ctx, dispatch.store)
     assert spawned == [['resume=s2', 'retry=true', 'run=run-a']], 'the logged-out session is never retried'
     [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
@@ -2936,10 +2943,10 @@ def stay_connected(dispatch, run, monkeypatch, caps):
     ctx = context('dispatch', dispatch.folder, project='proj')
     held = module.anchor(ctx, dispatch.store, NODE)  # this map has no roots, so the held ticket is at the node
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 's1', 'work_id': held.id, 'agent': 'claude', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 's1', 'work_id': held, 'agent': 'claude', 'state': 'ended',
                                'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1,
                                'origin': module.origin()})
-        tx.insert('lines', {'session_id': 's1', 'name': 'state', 'work_id': held.id, 'kind': 'state', 'seq': 1,
+        tx.insert('session_lines', {'session_id': 's1', 'name': 'state', 'work_id': held, 'kind': 'state', 'seq': 1,
                             'text': json.dumps({'capabilities': caps, 'cwd': str(dispatch.folder), 'about': 'system'})})
     started = []
     monkeypatch.setattr(module, 'spawn', lambda store, work_id, agent, extra, name: started.append(extra) or {'pid': 0})
@@ -2953,7 +2960,7 @@ def stay_connected(dispatch, run, monkeypatch, caps):
 def due(work_id):
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
-        tx.update('attempts', {'work_id': work_id}, {'next_at': 0.0})
+        tx.update('session_attempts', {'work_id': work_id}, {'next_at': 0.0})
 
 
 @pytest.mark.req('VIEW-045')
@@ -2965,19 +2972,19 @@ def test_the_system_agent_kept_connected_is_resumed_in_place_with_backoff_then_w
     first = module.stay_connected(ctx, dispatch.store)
     assert started == [] and first['retry_due'] > time.time(), 'the first resume waits dispatch_retry_seconds'
     assert module.autostart(ctx)['retry_due'] == first['retry_due'], 'the agent starter says when, with Autostart off'
-    due(held.id)
+    due(held)
     resumed = module.stay_connected(ctx, dispatch.store)['connected']
     assert started == [['resume=s1', 'system=true']] and resumed['retry'] == 1, 'in place, never as a worker retry'
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
-        waited = tx.get('attempts', {'work_id': held.id})['next_at'] - time.time()
+        waited = tx.get('session_attempts', {'work_id': held})['next_at'] - time.time()
     assert 50 < waited <= 60, 'the next waits twice as long'
-    due(held.id)
+    due(held)
     module.stay_connected(ctx, dispatch.store)
-    due(held.id)
+    due(held)
     assert module.stay_connected(ctx, dispatch.store) == {} and len(started) == 2, 'dispatch_retries is 2'
     [handed] = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
-    assert handed['work_id'] == held.id and handed['next'] == 'metaform dispatch system'
+    assert handed['work_id'] == held and handed['next'] == 'metaform dispatch system'
 
 
 @pytest.mark.req('VIEW-045')
@@ -2985,9 +2992,9 @@ def test_a_system_agent_that_cannot_resume_starts_a_new_conversation_and_the_per
         dispatch, run, monkeypatch):
     module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {})
     module.stay_connected(ctx, dispatch.store)
-    due(held.id)
+    due(held)
     module.stay_connected(ctx, dispatch.store)
-    due(held.id)
+    due(held)
     module.stay_connected(ctx, dispatch.store)
     assert started[0] == ['new', 'codex'], 'a new conversation with the default agent'
     told = [one for one in module.read_signals(ctx)['signals'] if one['signal'] == 'new-conversation']
@@ -3002,8 +3009,8 @@ def test_new_on_my_agent_ends_the_running_system_agent_and_starts_a_new_one(disp
     from metaform.modules import dispatch as module
     ctx = context('dispatch', dispatch.folder, project='proj')
     held = module.anchor(ctx, dispatch.store, NODE)
-    running = {'session_id': 's1', 'work_id': held.id, 'agent': 'claude', 'state': 'running'}
-    monkeypatch.setattr(module, 'sessions', lambda store, work_id: [] if ended else [running])
+    running = {'session_id': 's1', 'work_id': held, 'agent': 'claude', 'state': 'running'}
+    monkeypatch.setattr(module, 'sessions', lambda store, work_id=None: [] if ended else [running])
     ended, started = [], []
     monkeypatch.setattr(module, 'ended_by_person', lambda store, row: ended.append(row['session_id']) or {})
     monkeypatch.setattr(module, 'converse', lambda ctx, store, work_id, agent, extra: started.append(extra)
@@ -3021,7 +3028,7 @@ def test_the_persons_stop_of_their_system_agent_turns_stay_connected_off_and_an_
     agent does not come straight back; an agent's stop over MCP leaves the person's setting as it is."""
     from metaform.module import context
     module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
-    row = {'work_id': held.id, 'session_id': 's1'}
+    row = {'work_id': held, 'session_id': 's1'}
     agent = context('dispatch', dispatch.folder, project='proj', surface='mcp')
     assert module.disconnect(agent, dispatch.store, row) is False and ctx.setting('dispatch_stay_connected')
     assert module.disconnect(ctx, dispatch.store, row) is True
@@ -3029,7 +3036,7 @@ def test_the_persons_stop_of_their_system_agent_turns_stay_connected_off_and_an_
     run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
-        tx.update('sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
+        tx.update('agent_sessions', {'session_id': 's1'}, {'how': 'stopped by the person'})
     run('set', '--dispatch-agent=claude', cwd=dispatch.folder)  # as Call does, the default agent's conversation
     module.stay_connected(ctx, dispatch.store)
     assert started == [['resume=s1', 'system=true']], 'turned on again, it connects at once, resumed in place'
@@ -3050,12 +3057,12 @@ def test_a_home_copied_with_its_store_resumes_none_of_the_sessions_the_original_
     module, _, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
     dispatch.store.take_work(dispatch.id, None, 'claude w1')
     with Store('proj', module='dispatch').tables() as tx:  # as on 2026-10-14: a running row whose runner is gone
-        tx.update('sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': 2 ** 22 + 7, 'port': 9,
+        tx.update('agent_sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': 2 ** 22 + 7, 'port': 9,
                                                      'token': 'x'})
-        tx.insert('sessions', {'session_id': 'w1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 'w1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
                                'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 2,
                                'origin': module.origin()})
-        tx.insert('lines', {'session_id': 'w1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
+        tx.insert('session_lines', {'session_id': 'w1', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state', 'seq': 1,
                             'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder)})})
     run('set', '--dispatch-autostart', cwd=dispatch.folder)
     monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: started.append(['start', ctx.nouns['id']]))
@@ -3066,7 +3073,7 @@ def test_a_home_copied_with_its_store_resumes_none_of_the_sessions_the_original_
         monkeypatch.setenv('METAFORM_HOME', str(home))
         for _ in range(2):  # the first pass of each waits dispatch_retry_seconds; the second is due
             module.autostart(context('dispatch', dispatch.folder, project='proj'))
-            due(held.id)
+            due(held)
             due(dispatch.id)
         return {row['session_id']: (row['state'], row['how']) for row in module.sessions(Store('proj'))}
 
@@ -3085,7 +3092,7 @@ def test_a_legacy_row_is_resumed_by_the_persons_call_and_never_by_stay_connected
     module, ctx, _, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
     run('set', '--dispatch-agent=claude', cwd=dispatch.folder)
     with Store('proj', module='dispatch').tables() as tx:
-        tx.update('sessions', {'session_id': 's1'}, {'origin': None})
+        tx.update('agent_sessions', {'session_id': 's1'}, {'origin': None})
     for _ in range(2):
         assert module.stay_connected(ctx, dispatch.store) == {'legacy': 's1', 'next': 'metaform dispatch system'}
     assert started == [], 'nothing automatic resumes it'
@@ -3093,9 +3100,139 @@ def test_a_legacy_row_is_resumed_by_the_persons_call_and_never_by_stay_connected
     assert 'Call resumes it' in told['reason'] and told['next'] == 'metaform dispatch system'
     assert module.system(ctx)['conversation'] is True and started == [['resume=s1', 'system=true']]
     with Store('proj', module='dispatch').tables() as tx:
-        tx.update('sessions', {'session_id': 's1'}, {'origin': 'elsewhere:/home/other/.metaform'})
+        tx.update('agent_sessions', {'session_id': 's1'}, {'origin': 'elsewhere:/home/other/.metaform'})
     module.system(ctx)
     assert started[1:] == [['new', 'claude']], "another home's conversation is never resumed by Call"
+
+
+def said(session_id, work_id, text, seq=1):
+    """A session's row and one line of its thread, as a runner writes them: in the project's own tables, or, `legacy`,
+    beside the map as versions before 16 did."""
+    return ({'session_id': session_id, 'work_id': work_id, 'agent': 'claude', 'state': 'ended', 'how': 'ended',
+             'started': '2026-10-16T00:00:00Z', 'seq': seq},
+            {'session_id': session_id, 'name': 'line:1', 'work_id': work_id, 'kind': 'person', 'text': text,
+             'seq': 1})
+
+
+def threads():
+    """Each session the project holds, by its id, with the text of its thread's lines."""
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    rows = module.sessions(Store('proj'), verify=False)
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        return {row['session_id']: [line['text'] for line in tx.rows('session_lines', {'session_id': row['session_id']},
+                                                                     limit=0).results] for row in rows}
+
+
+@pytest.mark.req('PROJ-025')
+@pytest.mark.req('PROJ-026')
+@pytest.mark.req('PROJ-030')
+def test_a_clear_and_a_restore_keep_every_conversation_and_merge_what_was_said_since_the_backup(dispatch):
+    """Rich, 2026-10-16: a clear starts the map again and nothing else. The conversations are the project's: a clear
+    keeps them, those a metaform still held from before version 16 carried out first; a restore keeps what was said
+    since its backup and merges what the backup's own stores held, never losing a row. The map's own lines, a
+    ticket's progress, go with the map."""
+    from metaform import home
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    with Store('proj', module='dispatch').tables() as tx:
+        session, line = said('kept', dispatch.id, 'Said in the project store.')
+        tx.insert('agent_sessions', session)
+        tx.insert('session_lines', line)
+    with Store('proj', module='dispatch').tables() as tx:  # written by a runner before version 16, beside the map
+        session, line = said('older', dispatch.id, 'Said beside the map.')
+        tx.insert('sessions', session)
+        tx.insert('lines', line)
+        tx.insert('lines', {'session_id': 'monitor:progress', 'name': dispatch.id, 'work_id': dispatch.id,
+                            'kind': 'progress', 'text': '{}', 'seq': 1})
+    saved = home.backup_project('proj')  # a backup made by a version before 16: its store still holds `older`
+    cleared = home.clear_project('proj')
+    assert 'conversations with agents stay' in cleared.said and not home.bases('proj')
+    assert threads() == {'kept': ['Said in the project store.'], 'older': ['Said beside the map.']}
+    with Store('proj', module='dispatch').tables() as tx:
+        session, line = said('since', module.conversation_id(module.SYSTEM_TASK), 'Said after the clear.', seq=2)
+        tx.insert('agent_sessions', session)
+        tx.insert('session_lines', line)
+    assert not home.bases('proj'), 'talking made no map again'
+    restored = home.restore_project('proj', saved.name)
+    assert 'conversations with agents were kept' in restored.said
+    assert threads() == {'kept': ['Said in the project store.'], 'older': ['Said beside the map.'],
+                         'since': ['Said after the clear.']}
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        assert tx.rows('sessions', limit=0).results == ()  # carried out of the restored store, once
+        assert [row['session_id'] for row in tx.rows('lines', limit=0).results] == ['monitor:progress']
+    assert dispatch.ticket().id == dispatch.id, 'the map is the backup\'s again'
+
+
+@pytest.mark.req('PROJ-026')
+@pytest.mark.req('STORE-045')
+def test_carrying_the_conversations_out_of_every_metaform_is_idempotent_and_never_drops_a_row(dispatch):
+    """The carry out of each metaform's store: run twice, cut short, or over a row the project holds already, every
+    row is there once; the project's row, written since, is kept over the metaform's copy; signals stay with the map."""
+    import shutil
+
+    from metaform import home
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    other = Store('proj').add_base('other', activate=False)
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {**said('both', dispatch.id, '')[0], 'how': 'the project\'s, newer'})
+    for base, session_id in ((home.active_base('proj').id, 'main-1'), (other.id, 'other-1')):
+        with Store('proj', base=base, module='dispatch').tables() as tx:
+            session, line = said(session_id, dispatch.id, f'Said in {session_id}.')
+            tx.insert('sessions', session)
+            tx.insert('lines', line)
+            tx.insert('lines', {**line, 'session_id': 'broadcasts', 'name': f'broadcast:{session_id}'})
+            tx.insert('sessions', {**said('both', dispatch.id, '')[0], 'how': 'the metaform\'s, older'})
+            tx.insert('lines', {'session_id': f'work:{dispatch.id}', 'name': 'signal:x:', 'work_id': dispatch.id,
+                                'kind': 'signal', 'text': '{}', 'seq': 1})
+    path = home.store_file('proj', 'other')
+    shutil.copyfile(path, path.with_name('copy-of-other.sqlite3'))  # the store as it was, to carry again
+    for _ in range(2):
+        module.carry_conversations(Store('proj', module='dispatch'))
+    assert threads() == {'both': [], 'main-1': ['Said in main-1.'], 'other-1': ['Said in other-1.']}
+    shutil.copyfile(path.with_name('copy-of-other.sqlite3'), path)  # carried again from the copy: nothing doubles
+    module.carry_conversations(Store('proj', module='dispatch'))
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        assert tx.get('agent_sessions', {'session_id': 'both'})['how'] == "the project's, newer"
+        assert len(tx.rows('agent_sessions', limit=0).results) == 3
+        assert sorted(row['name'] for row in tx.rows('session_lines', {'session_id': 'broadcasts'}, limit=0).results) \
+            == ['broadcast:main-1', 'broadcast:other-1']
+    for base in home.bases('proj'):
+        with Store('proj', base=base.id, module='dispatch').tables(write=False) as tx:
+            assert tx.rows('sessions', limit=0).results == ()
+            assert [row['kind'] for row in tx.rows('lines', limit=0).results] == ['signal'], 'the map\'s own stays'
+
+
+@pytest.mark.req('VIEW-045')
+def test_the_person_talks_with_their_own_agent_with_no_map_and_no_intake(dispatch, run, monkeypatch):
+    """Rich, 2026-10-16: the person can always talk to their own agent. With no element on the map, cleared or never
+    made, their system agent hangs on a work id that is no ticket, nothing is written to the map, its runner talks and
+    keeps its thread, and an intake is offered, never required first."""
+    from metaform import home
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    home.clear_project('proj')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = module.anchor(ctx, Store('proj'))
+    assert held == 'conversation-system' and module.held_ticket(Store('proj'), held) is None
+    started = []
+    monkeypatch.setattr(module, 'converse', lambda ctx, store, work_id, agent, extra: started.append(work_id)
+                        or {'state': 'starting', 'work_id': work_id, 'conversation': True})
+    assert module.system(ctx)['work_id'] == held and started == [held], 'Call starts it, with no intake first'
+    run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
+    assert module.stay_connected(ctx, Store('proj'))['connected']['work_id'] == held, 'kept connected with no map'
+    dispatch.id = held
+    dispatch.start('hold', 'system=true')
+    row = dispatch.session().extra
+    assert row['work_id'] == held and row['state'] == 'running'
+    eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
+    found = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
+    assert [one['work_id'] for one in found['sessions']] == [held]
+    dispatch.stop()
+    eventually(lambda: dispatch.session().extra['state'] == 'ended')
+    assert not home.bases('proj'), 'talking with their agent made no map'
 
 
 @pytest.mark.req('VIEW-045')
@@ -3115,7 +3252,7 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
     orphan = subprocess.run(  # a runner of s1 whose starter has exited, so it is no child of this process
         [sys.executable, '-c', ('import subprocess, sys; print(subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, '
                                 'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True).pid)'),
-         sys.executable, '-c', 'import time; time.sleep(120)', 'dispatch', 'run', held.id, 'claude', 'resume=s1',
+         sys.executable, '-c', 'import time; time.sleep(120)', 'dispatch', 'run', held, 'claude', 'resume=s1',
          'system=true'], capture_output=True, text=True, check=True)
     alive = int(orphan.stdout)
     try:
@@ -3131,7 +3268,7 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
         port = closed.getsockname()[1]
         closed.close()
         with Store('proj', module='dispatch').tables() as tx:  # its row written, its control port not answering
-            tx.update('sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': alive, 'port': port,
+            tx.update('agent_sessions', {'session_id': 's1'}, {'state': 'running', 'how': None, 'pid': alive, 'port': port,
                                                          'token': 'x'})
         module.resuming_path('s1').unlink()
         restarted = context('dispatch', dispatch.folder, project='proj')
@@ -3139,27 +3276,27 @@ def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session
         # that ends it, never running, since the person cannot talk to it
         again = module.system(restarted)
         assert (again['state'], again['session_id'], again['pid']) == ('held', 's1', alive) and len(started) == 1
-        assert again['next'] == f'metaform dispatch stop {held.id} session=s1', again
-        told = run('dispatch', 'message', held.id, 'session=s1', 'Hello', cwd=dispatch.folder, ok=False)
+        assert again['next'] == f'metaform dispatch stop {held} session=s1', again
+        told = run('dispatch', 'message', held, 'session=s1', 'Hello', cwd=dispatch.folder, ok=False)
         said = told.stdout + told.stderr
         assert told.returncode != 0 and f'held by its runner, process {alive}' in said and 'dispatch stop' in said, said
         # a newer system conversation that ended on its own is not resumed beside the older one's live runner
         with Store('proj', module='dispatch').tables() as tx:
-            tx.insert('sessions', {'session_id': 's2', 'work_id': held.id, 'agent': 'claude', 'state': 'ended',
-                                   'how': 'the agent ended with exit code 1', 'started': '2026-10-15T00:00:00Z',
+            tx.insert('agent_sessions', {'session_id': 's2', 'work_id': held, 'agent': 'claude', 'state': 'ended',
+                                         'how': 'the agent ended with exit code 1', 'started': '2026-10-15T00:00:00Z',
                                    'seq': 2, 'origin': module.origin()})
-            tx.insert('lines', {'session_id': 's2', 'name': 'state', 'work_id': held.id, 'kind': 'state', 'seq': 1,
+            tx.insert('session_lines', {'session_id': 's2', 'name': 'state', 'work_id': held, 'kind': 'state', 'seq': 1,
                                 'text': json.dumps({'capabilities': {'load': True}, 'cwd': str(dispatch.folder),
                                                     'about': 'system'})})
         for _ in range(2):  # the second pass is due
             assert module.stay_connected(restarted, dispatch.store) == {} and len(started) == 1, started
-            due(held.id)
+            due(held)
         assert module.system(restarted)['state'] == 'held', 'the older conversation is still held'
-        refused = run('dispatch', 'run', held.id, 'claude', 'resume=s1', 'system=true', cwd=dispatch.folder, ok=False)
+        refused = run('dispatch', 'run', held, 'claude', 'resume=s1', 'system=true', cwd=dispatch.folder, ok=False)
         said = refused.stdout + refused.stderr
         assert refused.returncode != 0 and f'held by its live runner, process {alive}' in said, said
         # the person's stop ends the held runner's process group, and their next Call starts one runner
-        stopped = module.stop(context('dispatch', dispatch.folder, project='proj', nouns={'id': held.id, 'session': 's1'}))
+        stopped = module.stop(context('dispatch', dispatch.folder, project='proj', nouns={'id': held, 'session': 's1'}))
         assert stopped['stopped'] is True and stopped['pid'] == alive
         eventually(lambda: module.runner_of(alive) is None, 5)
         assert module.system(context('dispatch', dispatch.folder, project='proj'))['state'] == 'starting'
@@ -3250,11 +3387,11 @@ def test_serve_alone_answers_its_commands_lists_and_loads_dispatch_sessions_and_
 
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 'page-1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 'page-1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
                                'how': 'the ticket is done', 'started': '2026-10-11T00:00:00Z', 'seq': 1})
-        tx.insert('lines', {'session_id': 'page-1', 'name': 'line:1', 'work_id': dispatch.id, 'kind': 'person',
+        tx.insert('session_lines', {'session_id': 'page-1', 'name': 'line:1', 'work_id': dispatch.id, 'kind': 'person',
                             'text': 'Write it.', 'seq': 1})
-        tx.insert('lines', {'session_id': 'page-1', 'name': 'flow:1', 'work_id': dispatch.id,
+        tx.insert('session_lines', {'session_id': 'page-1', 'name': 'flow:1', 'work_id': dispatch.id,
                             'kind': 'agent_message_chunk', 'text': 'Written.', 'seq': 2})
 
     async def body(conn, editor, init):
@@ -3458,7 +3595,7 @@ def test_serve_keeps_the_agents_order_pages_its_list_deletes_forks_and_reaches_t
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
         for n in range(60):
-            tx.insert('sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
+            tx.insert('agent_sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
                                    'state': 'ended', 'how': 'the ticket is done', 'seq': n,
                                    'started': f'2026-10-11T00:{n:02}:00Z'})
     editor = Lines(dispatch, 'agent=claude', env=dispatch.env('ask', FAKE_ACP_LOAD='1', FAKE_ACP_INFO='1',
@@ -3516,7 +3653,7 @@ def test_serve_keeps_the_agents_order_pages_its_list_deletes_forks_and_reaches_t
         eventually(lambda: any(one.extra['session_id'] == forked for one in dispatch.items('session')))
         # a row a killed process left, the latest on the ticket, is passed over for the live session before it
         with Store('proj', module='dispatch').tables() as tx:
-            tx.insert('sessions', {'session_id': 'dead-1', 'work_id': row['work_id'], 'agent': 'claude',
+            tx.insert('agent_sessions', {'session_id': 'dead-1', 'work_id': row['work_id'], 'agent': 'claude',
                                    'state': 'running', 'pid': 2 ** 22 + 7, 'port': 9, 'token': 'x', 'seq': 10 ** 15,
                                    'started': '2026-10-12T00:00:00Z'})
         dispatch.run('dispatch', 'message', row['work_id'], 'hello', cwd=dispatch.folder)
@@ -3614,7 +3751,7 @@ def test_serve_lists_the_agents_pages_then_its_own_each_session_once(dispatch):
     from metaform.data import Store
     with Store('proj', module='dispatch').tables() as tx:
         for n in range(60):
-            tx.insert('sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
+            tx.insert('agent_sessions', {'session_id': f'seed-{n:02}', 'work_id': dispatch.id, 'agent': 'claude',
                                    'state': 'ended', 'how': 'the ticket is done', 'seq': n,
                                    'started': f'2026-10-11T00:{n:02}:00Z'})
     editor = Lines(dispatch, 'agent=claude', env=dispatch.env('ask', FAKE_ACP_LOAD='1', FAKE_ACP_LIST='1'))
@@ -4384,7 +4521,7 @@ def test_a_runner_the_store_outgrew_hands_its_session_and_what_it_was_sent_to_th
 
     dispatch.store.take_work(dispatch.id, None, 'claude s1')
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+        tx.insert('agent_sessions', {'session_id': 's1', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
                                'pid': os.getpid(), 'runner': 'r1', 'started': '2026-10-15T22:05:00Z', 'seq': 1,
                                'origin': module.origin()})
     module.resuming_path('s1').parent.mkdir(parents=True, exist_ok=True)

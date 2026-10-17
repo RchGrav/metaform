@@ -744,14 +744,14 @@ def test_clear_project_removes_the_metaforms_and_reports_and_keeps_registration_
     assert refused.returncode == 2
     assert refused.stderr.splitlines() == [
         ('Error: Clearing proj removes two bases, main and fresh, with their stores, and one report file. '
-         'Its registration, folder, settings, origins and variants stay.'),
+         'Its registration, folder, settings, origins, variants and conversations with agents stay.'),
         'Next: If you are sure: metaform clear project proj --confirm']
     assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
 
     said = lines(run('clear', 'project', 'proj', '--confirm', cwd=elsewhere))
     assert said[0] == ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
-                       'settings, origins and variants stay.')
+                       'settings, origins, variants and conversations with agents stay.')
     assert len(said) == 3 and said[1].startswith('Backed up as ') and said[2] == \
         'To bring it back: metaform restore project proj'  # PROJ-030
     assert run('list', 'bases', cwd=project).stdout == ''
@@ -833,7 +833,7 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
         assert stuck.is_file()
     said = lines(cleared)
     assert said[0] == ('Cleared proj: one base, main, and one report file. Its registration, folder, settings, '
-                       'origins and variants stay.')
+                       'origins, variants and conversations with agents stay.')
     assert said[1].startswith('Backed up as ') and said[2] == 'To bring it back: metaform restore project proj'
     assert said[3] == 'Not removed, still on disk:'
     assert said[4].startswith(f'  {stuck}: ') and len(said[4]) > len(f'  {stuck}: ')
@@ -843,12 +843,13 @@ def test_clear_project_names_a_file_it_could_not_remove_with_the_reason_and_what
     assert not list(own('proj').glob('*.metaform.sqlite3'))
 
     again = lines(run('clear', 'project', '--confirm', cwd=project))
-    assert again[0] == ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins '
-                        'and variants stay.') and again[1].startswith('Backed up as ') and len(again) == 3
+    assert again[0] == ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins, '
+                        'variants and conversations with agents stay.') and again[1].startswith('Backed up as ') \
+        and len(again) == 3
     assert not reports.exists()
     assert run('clear', 'project', cwd=project, ok=False).stderr.splitlines()[0] == (
-        'Error: Clearing proj removes no bases and no report files. Its registration, folder, settings, origins '
-        'and variants stay.')
+        'Error: Clearing proj removes no bases and no report files. Its registration, folder, settings, origins, '
+        'variants and conversations with agents stay.')
 
 
 @pytest.mark.req('STORE-027')
@@ -1149,7 +1150,8 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     assert run('list', 'bases', cwd=project).stdout == ''
 
     assert lines(run('restore', 'project', cwd=project)) == [
-        f'Restored proj from {name}: two bases, main and fresh, and one report file.']
+        f'Restored proj from {name}: two bases, main and fresh, and one report file. The conversations with agents '
+        'were kept, with everything said since the backup.']
     assert lines(run('list', 'bases', cwd=project)) == before['metaforms']
     assert run('map', 'layer', 'notes', '--json', cwd=project).stdout == before['memory']
     assert sorted(path.name for path in (own('proj') / 'reports').iterdir()) == before['reports']
@@ -1159,7 +1161,8 @@ def test_a_clear_backs_the_project_up_first_and_restore_brings_it_back_as_it_was
     later = run('map', 'layer', 'notes', '--json', cwd=project).stdout
     assert later != before['memory']
     again = lines(run('restore', 'project', 'proj', name, cwd=project))
-    assert again[0] == f'Restored proj from {name}: two bases, main and fresh, and one report file.'
+    assert again[0] == (f'Restored proj from {name}: two bases, main and fresh, and one report file. The '
+                        'conversations with agents were kept, with everything said since the backup.')
     assert again[1].startswith('What it held was backed up as ') and run('map', 'layer', 'notes', '--json',
                                                                           cwd=project).stdout == before['memory']
     names = [line.split()[0] for line in lines(run('list', 'backups', cwd=project))]
@@ -1184,7 +1187,8 @@ def test_a_clear_stops_when_the_backup_cannot_be_made_and_a_project_with_nothing
     (home / 'backups' / 'clear').unlink()
     assert len(lines(run('clear', 'project', '--confirm', cwd=project))) == 3
     assert lines(run('clear', 'project', '--confirm', cwd=project)) == [  # nothing to remove: no backup is made
-        'Cleared proj: no bases and no report files. Its registration, folder, settings, origins and variants stay.']
+        'Cleared proj: no bases and no report files. Its registration, folder, settings, origins, variants and '
+        'conversations with agents stay.']
     assert len(lines(run('list', 'backups', cwd=project))) == 1
 
 

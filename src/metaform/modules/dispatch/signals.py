@@ -1,4 +1,6 @@
-"""Dispatch signals in existing transcript storage, without upgrading beneath active runners."""
+"""Dispatch signals in existing transcript storage, without upgrading beneath active runners: a signal is a line of
+`lines`, beside the map whose tickets and sessions it is raised on, and a thread's own lines are in the project's
+`session_lines`, which no clear removes, PROJ-026."""
 from __future__ import annotations
 
 import hashlib
@@ -12,7 +14,10 @@ from metaform.module import Context
 
 # the kind of change each of dispatch's tables carries on `map.changed`, `concerning`
 KINDS = {'dispatch.lines': 'line', 'dispatch.permissions': 'permission', 'dispatch.sessions': 'session',
-         'dispatch.spending': 'spend', 'dispatch.settings': 'session', 'dispatch.merges': 'merge'}
+         'dispatch.spending': 'spend', 'dispatch.settings': 'session', 'dispatch.merges': 'merge',
+         'dispatch.session_lines': 'line', 'dispatch.agent_sessions': 'session'}
+# The tables a session's thread is in: its own lines, the project's since version 16, and the signals beside the map.
+THREAD_TABLES = frozenset({'dispatch.session_lines', 'dispatch.lines'})
 
 
 def concerning(work_id: str | None, session_id: str | None, dispatch_tables: Sequence[str] | None = None,
@@ -49,19 +54,19 @@ def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str,
     other takes the seq after the session's last, read from the rows past `known`, the last seq the writer saw.
     Returns its name and seq."""
     if key:
-        kept = tx.get('lines', {'session_id': session_id, 'name': key})
+        kept = tx.get('session_lines', {'session_id': session_id, 'name': key})
         if kept is not None:
-            tx.update('lines', {'session_id': session_id, 'name': key}, {'text': text})
+            tx.update('session_lines', {'session_id': session_id, 'name': key}, {'text': text})
             return key, int(kept['seq'])
-    later = tx.rows('lines', {'session_id': session_id}, by=('session_id', 'seq'), after=json.dumps([known, '']),
-                    limit=0).results
+    later = tx.rows('session_lines', {'session_id': session_id}, by=('session_id', 'seq'),
+                    after=json.dumps([known, '']), limit=0).results
     seq = max((int(row['seq']) for row in later), default=known) + 1
     name = key or f'line:{seq}'
-    while not key and tx.get('lines', {'session_id': session_id, 'name': name}) is not None:
+    while not key and tx.get('session_lines', {'session_id': session_id, 'name': name}) is not None:
         seq += 1
         name = f'line:{seq}'
-    tx.insert('lines', {'session_id': session_id, 'name': name, 'work_id': work_id, 'kind': kind, 'text': text,
-                        'seq': seq})
+    tx.insert('session_lines', {'session_id': session_id, 'name': name, 'work_id': work_id, 'kind': kind,
+                                'text': text, 'seq': seq})
     return name, seq
 
 
@@ -75,7 +80,7 @@ def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str) 
     """Set one receiver's delivery state on the copy of a peer note a thread keeps, `peer:<id>`, read and written in
     the caller's transaction so a sender's copy that several receivers mark keeps every mark; a state never goes back.
     False when that thread keeps no such note or the state is not newer."""
-    row = tx.get('lines', {'session_id': session_id, 'name': f'peer:{note_id}'})
+    row = tx.get('session_lines', {'session_id': session_id, 'name': f'peer:{note_id}'})
     if row is None:
         return False
     try:
@@ -93,7 +98,7 @@ def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str) 
     if state != 'failed' and before in rank and rank.get(state, -1) <= rank[before]:
         return False
     states[work_id] = state
-    tx.update('lines', {'session_id': session_id, 'name': f'peer:{note_id}'},
+    tx.update('session_lines', {'session_id': session_id, 'name': f'peer:{note_id}'},
               {'text': json.dumps(value, ensure_ascii=False)})
     return True
 
@@ -104,6 +109,8 @@ def record(store: Store, signal: str, *, work_id: str = '', session_id: str = ''
     own = own_store(store)
     source = session_id or f'work:{work_id}'
     name = f'signal:{signal}:{key}'
+    if not active and own.bound_base() is None:  # no metaform holds a signal to clear, and none is made for it
+        return None
     with own.tables() as tx:
         previous = tx.rows('lines', {'session_id': source, 'name': name}, limit=1).results
         if previous and json.loads(previous[0]['text'])['active'] == active:

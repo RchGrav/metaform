@@ -100,6 +100,12 @@ class Store:
     def project_id(self) -> str:
         return self._record.project_id
 
+    @property
+    def in_atomic(self) -> bool:
+        """Whether this store's writes join an `atomic()` block open now, so a write of another store made here would
+        take that store's lock while this one's is held, STORE-024."""
+        return self._session.in_atomic
+
     @contextmanager
     def atomic(self) -> Generator[None, None, None]:
         """Every write inside the block commits together, or none does, STORE-024."""

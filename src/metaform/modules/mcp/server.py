@@ -286,7 +286,8 @@ SURFACED: dict[str, tuple[str, dict[str, Any]]] = {
                                                    'newest. Omit this when creating a prompt.'}}}),
     'clear_project': (("Clear the project's map, as metaform clear project does: remove its bases and reports. A "
                        'backup is made first, and metaform restore project brings it back; its registration, folder, '
-                       'settings, origins and variants stay. Without confirm it only says what it would remove.'),
+                       'settings, origins, variants and conversations with agents stay. Without confirm it only says '
+                       'what it would remove.'),
                       {'type': 'object', 'additionalProperties': False,
                        'properties': {'confirm': CONFIRM, 'project': PROJECT}}),
     'extract': (('Write variants out to folders as files you can read or run, with Python alone, as metaform '

@@ -390,7 +390,8 @@ def _lines_only(payload: dict[str, Any]) -> bool:
     """Whether a change names dispatch's thread lines and nothing else: no signal, no session, no map table."""
     tables: Any = payload.get('tables')
     named: Any = payload.get('dispatch_tables')
-    return (tables == 'dispatch' or tables == ['dispatch']) and named == ['dispatch.lines'] \
+    return (tables == 'dispatch' or tables == ['dispatch']) \
+        and named in (['dispatch.lines'], ['dispatch.session_lines']) \
         and not payload.get('signal')
 
 

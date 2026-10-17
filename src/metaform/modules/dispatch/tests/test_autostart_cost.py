@@ -50,7 +50,7 @@ def test_session_verification_reuses_the_unfiltered_open_work_snapshot(dispatch,
     from metaform.modules import dispatch as module
 
     with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('sessions', {'session_id': 'live', 'work_id': dispatch.id, 'agent': 'codex',
+        tx.insert('agent_sessions', {'session_id': 'live', 'work_id': dispatch.id, 'agent': 'codex',
                                'state': 'running', 'started': '2026-10-05', 'pid': 1, 'port': 1, 'token': 'test',
                                'seq': 1})
     opened = dispatch.store.work(open=True, limit=0).results

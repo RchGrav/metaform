@@ -8,7 +8,7 @@ base, and everything else of the project. A project is found by looking where it
 written into a project's own source folder.
 
 Modules use the home through its public names, BASE-004: `home`, `projects`, `project` and `Project`; `to_clear`,
-`clear_project` and `Cleared`; `backups`, `restore_project`, `Backup` and `Restored`; and `not_empty`,
+`clear_project` and `Cleared`; `backups`, `restore_project`, `Backup` and `Restored`; `CARRIERS`; and `not_empty`,
 `removal_caution` and `remove_project`. Everything else here is private to the chassis.
 """
 from __future__ import annotations
@@ -983,7 +983,9 @@ class Removed:
 def remove_base(project_id: str, name: str) -> Removed:
     """Take one base out of a project: its row goes, and its store file goes after a copy is kept under
     `backups/remove-base/<project>/<stamp>/`. The active base is refused: activate another first. A project's bases
-    are never removed any other way but clearing the project, STORE-041."""
+    are never removed any other way but clearing the project, STORE-041. What a module keeps of the project outside
+    the map, the conversations with its agents, is carried out of the store first, `CARRIERS`."""
+    carry_out(project_id)
     with _bases_db(project_id, write=True) as db:
         row = db.execute('SELECT id FROM bases WHERE project_id=? AND name=?', (project_id, name)).fetchone()
         if row is None:
@@ -1049,6 +1051,23 @@ def base_owner(base_id: str) -> str | None:
     return None
 
 
+# What a module keeps of a project that is not its map and must not go with a base's store: each module's function
+# carrying what the project's base stores still hold of it into the module's project-level store, which no clear,
+# restore or removal of a base touches, STORE-045. Run before a clear or the removal of a base takes stores away and
+# after a restore brings stores back, so nothing of it is lost and a restored backup's is merged with what was said
+# since. Dispatch carries the conversations with agents this way, PROJ-026. A module registers its own under its id.
+CARRIERS: dict[str, Callable[[str], None]] = {}
+
+
+def carry_out(project_id: str) -> None:
+    """Run every module's carrier on the project; the first that fails raises."""
+    for carrier in list(CARRIERS.values()):
+        carrier(project_id)
+
+
+KEPT = 'Its registration, folder, settings, origins, variants and conversations with agents stay.'
+
+
 @dataclass(frozen=True)
 class Cleared:
     """What clearing a project removed, PROJ-025, and each path it could not remove with the system's reason."""
@@ -1080,15 +1099,13 @@ class Cleared:
     def caution(self) -> str:
         """What `clear project` removes, said before it does."""
         return (f'Clearing {self.project_id} removes {self._bases(True)} and '
-                f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
-                'and variants stay.')
+                f'{counted(self.reports, "report file", "report files")}. {KEPT}')
 
     @property
     def said(self) -> str:
         """What `clear project` removed, said after it did."""
         return (f'Cleared {self.project_id}: {self._bases(False)} and '
-                f'{counted(self.reports, "report file", "report files")}. Its registration, folder, settings, origins '
-                'and variants stay.')
+                f'{counted(self.reports, "report file", "report files")}. {KEPT}')
 
     @property
     def restore(self) -> str:
@@ -1125,10 +1142,19 @@ def to_clear(project_id: str) -> Cleared:
 def clear_project(project_id: str) -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
-    The registration, the settings, the history and everything else in the project's folder stay, PROJ-026. The
-    rows go whatever happens to the files; a file or folder that cannot be removed is named in the result.
+    The registration, the settings, the history, the conversations with agents and everything else in the project's
+    folder stay, PROJ-026. The rows go whatever happens to the files; a file or folder that cannot be removed is named
+    in the result.
     """
     found = to_clear(project_id)
+    # What the stores still hold that is not the map, a conversation written there before it had a store of its own,
+    # is carried out first, and nothing goes when it cannot be: a clear starts the map again and nothing else, PROJ-026.
+    try:
+        carry_out(project_id)
+    except (OSError, sqlite3.Error, Stop) as error:
+        reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
+        raise StoreError(f'{project_id} was not cleared, since the conversations with its agents could not be kept '
+                         f'first: {reason}.', 'metaform dispatch sessions thread=false') from error
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
     try:
@@ -1257,7 +1283,8 @@ class Restored:
 
     @property
     def said(self) -> str:
-        return f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}.'
+        return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}. The conversations '
+                'with agents were kept, with everything said since the backup.')
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before}
@@ -1265,7 +1292,9 @@ class Restored:
 
 def restore_project(project_id: str, name: str | None = None) -> Restored:
     """Bring a backup back, the newest when none is named. A project that holds metaforms or reports is cleared
-    first, which backs up what it holds, so a restore loses nothing either, PROJ-030."""
+    first, which backs up what it holds, so a restore loses nothing either, PROJ-030. The conversations with agents
+    are never in what a clear removes, so what was said since the backup stays, and what the backup's stores still
+    hold of them, kept there before they had a store of their own, is carried into it with them, `CARRIERS`."""
     known = backups(project_id)
     chosen = next((one for one in known if name is None or one.name == name), None)
     if chosen is None:
@@ -1287,6 +1316,10 @@ def restore_project(project_id: str, name: str | None = None) -> Restored:
             db.execute('INSERT INTO active_bases(project_id, base_id) VALUES (?, ?)',
                        (project_id, rows['active']))
     changes.note(project_id)
+    try:
+        carry_out(project_id)
+    except (OSError, sqlite3.Error, Stop):
+        pass  # the restore stands; what the backup's stores hold of them is still there, carried by the next read
     return Restored(chosen, before)
 
 

@@ -121,15 +121,20 @@ def _tail(path: Path) -> str:
 
 
 def agent_work() -> set[str]:
-    """The work ids of every agent session this home's projects recorded, in any of their metaforms: the tickets and
-    intakes its dispatch runners worked."""
+    """The work ids of every agent session this home's projects recorded: the tickets, intakes and conversations its
+    dispatch runners worked, kept in each project's own store, and those its metaforms still hold from before."""
     found: set[str] = set()
     for project in home.projects():
+        try:
+            with Store(project.project_id, module='dispatch').tables(write=False) as tx:
+                found |= {str(row['work_id']) for row in tx.rows('agent_sessions', limit=0).results}
+        except StoreError:  # dispatch is off there, or never ran
+            pass
         for base in home.bases(project.project_id):
             try:
                 with Store(project.project_id, base=base.id, module='dispatch').tables(write=False) as tx:
                     found |= {str(row['work_id']) for row in tx.rows('sessions', limit=0).results}
-            except StoreError:  # dispatch is off there, or never ran
+            except StoreError:
                 continue
     return found
 

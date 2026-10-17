@@ -1338,7 +1338,7 @@ docs.command(Command('clear', "Remove a project's bases and reports; its registr
                      description='Clears what Metaform inferred about the project so an intake can be taken again '
                                  'from nothing. Every base goes with its store, and every report, feedback and '
                                  'shape file. The registration, the folder and every file in it, the folder settings, '
-                                 'and the origins and variants stay.',
+                                 'the origins and variants, and the conversations with agents stay.',
                      details='It backs the project up before it removes anything, says the backup\'s name, and '
                              'metaform restore project brings it back. '
                              'Without --confirm it says exactly what it would remove and removes nothing. After a '
