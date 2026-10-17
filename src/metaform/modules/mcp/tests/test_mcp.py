@@ -2187,14 +2187,14 @@ def test_the_connect_message_is_an_order_with_a_line_per_module_and_fits_what_th
     order = prompt_files.module('mcp', 'instructions')
     end = prompt_files.module('mcp', 'instructions_end', terms=prompt_files.module('mcp', 'instructions_terms',
                                                                                      project='proj'))
-    lines = sent.splitlines()
-    assert lines[0] == order
+    lines, opening = sent.splitlines(), order.splitlines()  # the working principles open it, then the order
+    assert lines[:len(opening)] == opening
     uses = [line for line in (prompt_files.module(module, 'connect') for module in sorted(SHIPPED)) if line]
-    assert lines[1:1 + len(uses)] == uses and all(line.startswith('– ') for line in uses)
+    assert lines[len(opening):len(opening) + len(uses)] == uses and all(line.startswith('– ') for line in uses)
     assert [line.split(':')[0] for line in uses] == [f'– {module}' for module in sorted(SHIPPED)
                                                     if module not in ('mcp', 'template')]  # empty adds nothing
     assert sent.index(end) > sent.index(uses[-1]) and 'metaform://metaform' in end
-    assert len(sent) <= 1500, len(sent)
+    assert len(sent) <= 2048, len(sent)
     bare = tmp_path / 'bare'
     bare.mkdir()
     run('add', 'project', 'bare', str(bare))
@@ -2202,7 +2202,7 @@ def test_the_connect_message_is_an_order_with_a_line_per_module_and_fits_what_th
     end = end.replace('metaform://proj', 'metaform://bare')
     assert before.startswith(order) and before.index(end) < len(before) - len(end) - 2 and len(before) <= 2048
     run('set', '--modules', 'map', cwd=mapped)  # what the folder's surface leaves out says nothing
-    assert startup(mapped).splitlines()[1:2] == [prompt_files.module('map', 'connect')]
+    assert startup(mapped).splitlines()[len(opening):len(opening) + 1] == [prompt_files.module('map', 'connect')]
 
 
 @pytest.mark.req('MCP-037')
