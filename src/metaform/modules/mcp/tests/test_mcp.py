@@ -798,7 +798,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     said = '\n'.join(text(refused))
     assert 'Clearing proj removes' in said and 'main holds one open ticket' in said
     assert 'A backup is made first' in said and "This is the person's decision" in said
-    assert 'Next: the person runs: metaform clear project proj --confirm or use Clear project on the page' in said
+    assert 'Next: ask the person in chat; to do it they use Clear project on the page, or paste into their own ' \
+        'terminal window' in said and said.endswith(': metaform clear project proj --confirm')
     assert 'with confirm true' not in said
     assert still.is_error is False  # the caution alone changed nothing
     assert confirmed.is_error is True and "the person's decision" in '\n'.join(text(confirmed))
@@ -814,6 +815,17 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
+
+    # person-consent F2: the undo is on the same surface, the person's too; an agent alone is told what it brings back
+    async def restore(client):
+        return await called(client, 'metaform_restore_project', {'backup': backup})
+    asked = session(home, mapped, lambda client, init: restore(client))  # no form to show: the agent is refused
+    assert asked.is_error is True and f'Restoring proj from backup {backup} brings back one base' in text(asked)[-1]
+    assert run('list', 'bases', cwd=mapped).stdout == ''
+    restored = consenting(home, mapped, restore)
+    assert restored.is_error is False, text(restored)
+    assert json.loads(text(restored)[-1])['backup'] == backup
+    assert run('list', 'bases', cwd=mapped).stdout.split()[:1] == ['main']
 
 
 @pytest.mark.req('CLI-011')
@@ -836,11 +848,54 @@ def test_a_dispatched_agent_gets_the_persons_decision_never_its_own_confirm(run,
     tools, refused = consenting(home, mapped, check, answers=(), env={'METAFORM_ROLE': 'system', 'METAFORM_WORK': 'x'})
     said = '\n'.join(text(refused))
     assert refused.is_error is True, said
-    assert "This is the person's decision, not an agent's" in said and '\nNext: the person runs: metaform ' in said
+    assert "This is the person's decision, not an agent's" in said and '\nNext: ask the person in chat; ' in said
+    assert 'paste into their own terminal window' in said and ': metaform ' in said
     assert 'with confirm true' not in said and 'call ' not in said.split('\nNext: ')[1]
     assert tools[tool].annotations.destructive_hint is True
     assert Store('proj').active_base().name == 'main' and len(Store('proj').bases().results) == 1
     assert 'It rings.' in run('memory', 'open_nodes', 'names=["kept"]', cwd=mapped).stdout
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('MCP-006')
+def test_a_dispatched_system_agents_switch_runs_once_on_the_persons_allow_in_its_chat(run, home, mapped, tmp_path):
+    """UX review round 2, person-consent F5: the person's own system agent, dispatched, asks for a switch of the map
+    and its call waits on a consent card in its chat; the person's Allow runs it once, their Decline runs nothing, and
+    the map changes exactly once. Every agent the runner could start is the fake agent."""
+    import threading
+
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
+    made = Dispatch(run, home, mapped, tmp_path)
+    try:
+        made.start('hold', 'system=true')
+        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
+                                          if row.get('state') == 'running' and row.get('runner')), None))
+        cards: list[dict] = []
+
+        def person():  # on the page: Allow the first card, Decline the second
+            for choice in ('accept', 'decline'):
+                card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
+                                                if one['kind'] == 'elicitation' and one['data'].get('consent')
+                                                and one['data']['state'] == 'waiting'), None), limit=60)
+                run('dispatch', 'permit', made.id, card['request'], '--', choice, cwd=mapped, isolated=True)
+                cards.append(card)
+        answering = threading.Thread(target=person)
+        answering.start()
+
+        async def check(client):
+            return (await called(client, 'map_add-base', {'name': 'fresh'}),
+                    await called(client, 'map_add-base', {'name': 'other'}))
+        allowed, declined = consenting(home, mapped, check, answers=(), env={
+            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner})
+        answering.join(timeout=60)
+        assert allowed.is_error is False, text(allowed)
+        assert declined.is_error is True, text(declined)
+        assert [card['consent']['command'] for card in cards] == ['metaform map add-base name=fresh --confirm',
+                                                                  'metaform map add-base name=other --confirm']
+        assert [one.name for one in Store('proj').bases().results] == ['main', 'fresh']
+    finally:
+        made.stop()
+        made.close()
 
 
 @pytest.mark.req('MCP-006')
@@ -931,7 +986,8 @@ def test_each_command_is_its_own_tool_described_once_with_typed_arguments_and_an
     wanted = {f'{module.id}_{verb.name}' for module in loader.enabled() for verb in module.verbs
               if 'mcp' in verb.surfaces and on_this_system(verb) and (verb.listed is None or verb.listed(mapped))}
     assert set(tools) == wanted | REGISTERED_TOOLS | HISTORY_TOOLS | {
-        'metaform_prompts', 'metaform_prompt', 'metaform_save_prompt', 'metaform_clear_project'}
+        'metaform_prompts', 'metaform_prompt', 'metaform_save_prompt', 'metaform_clear_project',
+        'metaform_restore_project'}
     assert 'mcp_serve' not in tools and 'map' not in tools                   # no tool for a module, no wrapper
     assert list(tools) == sorted(tools) and list(again) == list(tools)
     assert [tool.model_dump() for tool in again.values()] == [tool.model_dump() for tool in tools.values()]
@@ -1927,8 +1983,10 @@ def test_an_agent_over_mcp_cannot_set_what_decides_its_own_permissions(run, home
         return refused.is_error, text(refused)[0], {one['name'] for one in offered.structured_content['settings']}
     error, said, offered = session(home, mapped, call)
     assert error and 'dispatch_prompts is set only by the person' in said
-    assert [line for line in said.splitlines() if line.startswith('Next: ')] == [
-        'Next: call map_work op=edit id=<your work id> note="..."']
+    assert [line for line in said.splitlines() if line.startswith('Next: ')] == [  # the person's way, person-consent F2
+        ('Next: ask the person in chat; to do it they use the settings screen on the page, or paste into their own '
+        'terminal window (an AI tool runs commands without the consent a terminal carries): '
+        'metaform set --dispatch-prompts approve-all')]
     assert 'dispatch_prompts' not in offered and 'debug' in offered
     shown = {row['key']: row for row in json.loads(run('config', '--show', '--json', cwd=mapped).stdout)}
     assert shown['dispatch_prompts']['state'] == shown['debug']['state'] == 'default'

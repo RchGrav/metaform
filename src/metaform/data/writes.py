@@ -309,8 +309,9 @@ def unchangeable(tx: Tx, found: LayerRow, thing: str) -> Notice | None:
     """Why a thing cannot change in place: memory has its own operations; the finished base changes only by
     refining, which keeps every version, LAYER-025."""
     if found.kind == 'memory':
-        return Notice('id', f'{thing} is a memory; change it with the memory operations, such as metaform memory '
-                            'delete_observations. Nothing was written.')
+        return Notice('id', f'{thing} is a memory; an agent records a correction with metaform memory '
+                            'add_observations, and only the person deletes one, on the page\'s memory panel or in '
+                            'their own terminal. Nothing was written.')
     if found.kind in BASE_KINDS and found.finished:
         return Notice('id', f'{thing} belongs to {found.name}; the base changes by refining, which keeps every '
                             f'version: {rows.refine_step(thing)}. Nothing was written.')

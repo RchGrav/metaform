@@ -181,7 +181,7 @@ def test_confirm_is_never_a_setting(run):
 def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switches, key, default):
     refused = run('set', *switches, env={'METAFORM_ROLE': 'worker'}, ok=False)
     assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert "Say what you need in your ticket's note." in refused.stderr
+    assert "A worker agent asks no one: say what you need in your ticket's note" in refused.stderr
     assert 'Next: metaform map work op=edit' in refused.stderr
     assert shown(run)[key]['value'] == default
 
@@ -193,7 +193,7 @@ def test_a_dispatched_agent_cannot_give_itself_person_only_switches_on_a_verb(ru
     refused = run(*call, cwd=project, env={'METAFORM_ROLE': 'system'}, ok=False)
     assert refused.returncode == 2, refused.stdout + refused.stderr
     assert 'dispatch_agents, dispatch_autostart are set only by the person' in refused.stderr
-    assert 'Next: metaform map work op=edit' in refused.stderr
+    assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person, person-consent F2
     assert 'retried' in run(*call, cwd=project, env={'METAFORM_ROLE': ''}).stdout
 
 
@@ -205,7 +205,7 @@ def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run,
     for args in (('unset', *switches), ('set', '--modules', 'chassis', '--jev')):
         refused = run(*args, env={'METAFORM_ROLE': 'system'}, ok=False)
         assert refused.returncode == 2
-        assert 'Next: metaform map work op=edit' in refused.stderr
+        assert 'Next: ask the person in chat' in refused.stderr  # the system agent asks the person
         assert shown(run) == before
 
 
@@ -891,17 +891,81 @@ def test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_pers
         refused = as_agent(project, home, *args)
         assert refused.returncode == 2, (args, refused.stdout, refused.stderr)
         said = refused.stderr
+        # the agent is told to ask the person in chat; the person, how to do it themselves, never a ticket's note
+        assert 'Ask the person in your chat' in said and 'Next: ask the person in chat' in said, said
+        assert 'paste into their own terminal window' in said and '<your work id>' not in said, said
         if args[0] == 'set':
-            assert 'set only by the person' in said, said
+            assert 'set only by the person' in said and 'settings screen on the page' in said, said
         else:
-            assert "This is the person's decision, not an agent's" in said and '\nNext: the person runs: metaform ' \
-                in said, said
+            assert "This is the person's decision, not an agent's" in said, said
     assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main']
     assert shown(run, cwd=project)['jev']['value'] is False
     asked = as_agent(project, home, 'clear', 'project', 'proj').stderr
     assert 'main holds one open ticket and one knowledge layer' in asked and 'A backup is made first' in asked
     run('add', 'base', 'fresh', cwd=project)  # the person's own shell
     assert [line.split()[0] for line in lines(run('list', 'bases', cwd=project))] == ['main', 'fresh']
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
+def test_no_command_without_the_persons_terminal_carries_their_consent_however_it_was_started(run, project, home,
+                                                                                            tmp_path):
+    """UX review round 2, person-consent F1: consent is not judged from the processes above a command, which an agent
+    changes with one shell line. A command an agent's shell re-parents to init with `( cmd & )`, and one started with
+    no terminal and no agent above it, switch nothing and set nothing; at a terminal of its own, the person's, the
+    same command runs."""
+    noted(run, project, 'Counts down.')
+    out = tmp_path / 'out'
+    line = f'( "$0" -m metaform map add-base evil --confirm > {out} 2>&1 & )'  # the verifier's idiom, word for word
+    env = {**os.environ, 'METAFORM_HOME': str(home), 'METAFORM_ROLE': '',
+           'AGENT_NAME': os.path.join(sys.base_prefix, 'bin', 'claude')}
+    subprocess.run(['bash', '-c', 'exec -a "$AGENT_NAME" bash -c "$1" "$0"', sys.executable, line], cwd=project,
+                   env=env, timeout=60, check=True)
+    deadline = time.monotonic() + 60
+    while not any(word in (out.read_text() if out.exists() else '') for word in ("person's decision", 'evil')):
+        assert time.monotonic() < deadline, 'the re-parented command did not finish'  # nothing can wait on it
+        time.sleep(0.05)
+    assert "This is the person's decision, not an agent's" in out.read_text(), out.read_text()
+    detached = subprocess.run([sys.executable, '-m', 'metaform', 'set', '--jev'], cwd=project, env=env,
+                              capture_output=True, text=True, timeout=60, start_new_session=True, check=False)
+    assert detached.returncode == 2 and 'set only by the person' in detached.stderr, detached.stderr
+    assert [one.split()[0] for one in lines(run('list', 'bases', cwd=project))] == ['main']
+    assert shown(run, cwd=project)['jev']['value'] is False
+    run('set', '--jev', cwd=project, isolated=True)  # its own process, at a terminal of its own: the person's
+    assert shown(run, cwd=project)['jev']['value'] is True
+
+
+@pytest.mark.req('CLI-011')
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
+def test_the_command_a_refusal_gives_the_person_runs_when_pasted(run, project, home):
+    """UX review round 2, person-consent F4: the command the person is given is quoted for a shell, so a JSON
+    argument pastes as it was given and deletes the memory; the caution counts what the graph holds and names what
+    it does not."""
+    run('enable', 'memory')
+    noted(run, project, 'Counts down.')
+    run('memory', 'create_entities', json.dumps([{'name': 'k3', 'entityType': 'part', 'observations': ['Old.'],
+                                                    'why': 'A test of the paste.'}]),
+        cwd=project)
+    refused = as_agent(project, home, 'memory', 'delete_entities', json.dumps(['k3', 'nope']), '--confirm')
+    assert refused.returncode == 2, refused.stderr
+    assert 'Deleting 1 memory, k3, with 1 observation and 0 relations' in refused.stderr, refused.stderr
+    assert 'nope is not in the memory graph' in refused.stderr, refused.stderr
+    pasted = refused.stderr.rsplit('carries): ', 1)[1].strip()
+    from conftest import own_terminal
+    terminal, ends = own_terminal()
+    try:
+        done = subprocess.run(['bash', '-c', pasted.replace('metaform', f'"{sys.executable}" -m metaform', 1)],
+                              cwd=project, env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True,
+                              text=True, timeout=60, check=False, **terminal)
+    finally:
+        for end in ends:
+            os.close(end)
+    assert done.returncode == 0, (pasted, done.stdout, done.stderr)
+    assert json.loads(run('memory', 'read_graph', '--json', cwd=project).stdout)['entities'] == []
+    # person-consent F6: a switch to the map already active takes nothing, and says so
+    same = run('map', 'activate', 'main', cwd=project, ok=False)
+    assert same.returncode == 2 and 'main is already the active map of proj; nothing changes.' in same.stderr
+    run('map', 'activate', 'main', '--confirm', cwd=project)
 
 
 @pytest.mark.req('STORE-027')

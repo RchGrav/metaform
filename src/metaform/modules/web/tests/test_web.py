@@ -46,7 +46,46 @@ def free_port() -> int:
             return port
 
 
+PAGE_KEYS: dict[tuple[str, int], str] = {}  # the page cookie each server gave this test process, by its address
+
+
+def page_cookie(port, address='127.0.0.1', host=None, *, again=False, token=None):
+    """The cookie with the key the server gives a page it serves, as a browser keeps it from loading the page: a write
+    that is the person's alone is taken only with it, CLI-011 (UX review, person-consent F1). `token`: the one a
+    server on another bind asks of the page's load."""
+    if again or (address, port) not in PAGE_KEYS:
+        connection = http.client.HTTPConnection(address, port, timeout=10)
+        try:
+            connection.putrequest('GET', '/', skip_host=True, skip_accept_encoding=True)
+            connection.putheader('Host', host or f'{address}:{port}')
+            if token:
+                connection.putheader('X-Metaform-Token', token)
+            connection.endheaders()
+            response = connection.getresponse()
+            response.read()
+            given = [one.split(';', 1)[0] for one in response.msg.get_all('Set-Cookie') or []
+                     if one.startswith('metaform_page_')]
+        finally:
+            connection.close()
+        PAGE_KEYS[(address, port)] = '; '.join(given)
+    return PAGE_KEYS[(address, port)]
+
+
 def request(port, path='/', *, address='127.0.0.1', host=None, method='GET', body=None, headers=None):
+    """One request; a POST carrying an Origin, as the page's writes do, carries the page's cookie too, unless it names
+    a Cookie of its own, as a browser that loaded the page sends it."""
+    if method == 'POST' and 'Origin' in (headers or {}) and 'Cookie' not in (headers or {}):
+        token = (headers or {}).get('X-Metaform-Token')
+        sent = _request(port, path, address=address, host=host, method=method, body=body,
+                        headers={**(headers or {}), 'Cookie': page_cookie(port, address, host, token=token)})
+        if sent[0] == 403 and 'carries no key this server gave' in sent[1]:  # a key the server has since let go
+            sent = _request(port, path, address=address, host=host, method=method, body=body, headers={
+                **(headers or {}), 'Cookie': page_cookie(port, address, host, again=True, token=token)})
+        return sent
+    return _request(port, path, address=address, host=host, method=method, body=body, headers=headers)
+
+
+def _request(port, path='/', *, address='127.0.0.1', host=None, method='GET', body=None, headers=None):
     connection = http.client.HTTPConnection(address, port, timeout=10)
     try:
         connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
@@ -58,7 +97,10 @@ def request(port, path='/', *, address='127.0.0.1', host=None, method='GET', bod
             connection.putheader('Content-Length', str(len(data)))
         connection.endheaders(data or None)
         response = connection.getresponse()
-        return response.status, response.read().decode('utf-8', errors='replace'), dict(response.getheaders())
+        held: dict[str, str] = {}
+        for key, value in response.getheaders():  # a header sent twice, as two cookies are, keeps both, a line each
+            held[key] = f'{held[key]}\n{value}' if key in held else value
+        return response.status, response.read().decode('utf-8', errors='replace'), held
     finally:
         connection.close()
 
@@ -9900,6 +9942,57 @@ def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, 
     assert problems == []
 
 
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('VIEW-045')
+def test_a_consent_card_shows_what_runs_and_the_persons_allow_answers_the_waiting_call(run, web, mapped, browser,
+                                                                                     tmp_path, watch_dispatch):
+    """UX review round 2, person-consent F5: the system agent's call that is the person's decision waits on a card in
+    its chat that says who asks, the caution and the command it runs; Allow once answers the waiting call, and the
+    card then says it was allowed once."""
+    import sys
+    import threading
+
+    from metaform.data import Store
+    from metaform.modules.dispatch import ask_consent
+    log = tmp_path / 'fake.jsonl'
+    run('enable', 'dispatch')
+    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
+    page, problems, _ = opened(browser, web)
+    watch_dispatch(page)
+    page.wait_for_function('() => window.metaform.loaded()')
+    work = page.evaluate("""fetch('/api/system-chat', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project: 'proj', agent: 'codex'})}).then(r => r.json())""")['work_id']
+    deadline = time.monotonic() + 60
+    while True:  # the session's runner, once it holds its session
+        rows = json.loads(run('dispatch', 'sessions', f'id={work}', '--json', cwd=mapped).stdout)['sessions']
+        runner = next((row['runner'] for row in rows if row.get('state') == 'running' and row.get('runner')), None)
+        if runner or time.monotonic() > deadline:
+            break
+        time.sleep(0.1)
+    assert runner, rows
+    answers: list[dict] = []
+    asking = threading.Thread(target=lambda: answers.append(ask_consent(
+        Store('proj'), 'Switching to fresh takes main out of view.', tool='map_add-base',
+        command='metaform map add-base name=fresh --confirm', caution='Switching to fresh takes main out of view.',
+        wait=60, work=work, runner=runner)))
+    asking.start()
+    page.evaluate(f'window.metaform.agent("{work}")')
+    card = '#helpdesk .elicitation.waiting'
+    page.wait_for_selector(f'{card} .answers button', timeout=30000)
+    shown = page.inner_text(card)
+    assert 'asks for your consent' in shown and 'Switching to fresh takes main out of view.' in shown
+    assert 'metaform map add-base name=fresh --confirm' in shown
+    assert page.eval_on_selector_all(f'{card} .answers button', 'found => found.map(one => one.textContent)') \
+        == ['Allow once', 'Decline']
+    page.click(f'{card} .answers button:text-is("Allow once")')
+    asking.join(timeout=30)
+    assert answers and answers[0]['action'] == 'accept', answers
+    page.wait_for_selector('#helpdesk .elicitation.answered:has-text("Allowed once")', timeout=30000)
+    run('dispatch', 'stop', work, cwd=mapped)
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-045')
 def test_an_intake_is_started_from_the_page_with_the_agent_the_person_chose(run, home, web, browser, tmp_path,
                                                                              dispatch_runners):
@@ -10136,6 +10229,19 @@ answer = connection.getresponse()
 print(answer.status, answer.read().decode())
 """
 
+# The forged write sent from a process its parent leaves at once, so it is re-parented to init: `( cmd & )` in a shell.
+REPARENTED = """import os, subprocess, sys
+subprocess.Popen([os.environ['AGENT_PYTHON'], '-c', sys.argv[3], sys.argv[1]], stdout=open(sys.argv[2], 'w'))
+"""
+# A page asked for by an agent's process: the cookies it is given, one per line.
+FETCHED = """import http.client, sys
+connection = http.client.HTTPConnection('127.0.0.1', int(sys.argv[1]), timeout=10)
+connection.request('GET', '/')
+answer = connection.getresponse()
+answer.read()
+print('\\n'.join(answer.msg.get_all('Set-Cookie') or []))
+"""
+
 
 def under_claude(home, *args, **extra):
     """`args` run by a parent that runs as `claude` in the same home, with METAFORM_ROLE cleared. It is named by a
@@ -10173,6 +10279,17 @@ def test_a_persons_write_from_an_agents_process_is_refused_whatever_origin_it_se
                 said = sender.communicate(timeout=60)[0]
             assert said.startswith('403 ') and "is the person's to do on the page" in said, said
             assert settings.value('jev', mapped) is False
+        # person-consent F1: the same write re-parented to init passed every guard; the page's key now stops it
+        out = home.parent / 'reparented.out'
+        under_claude(home, '-c', REPARENTED, str(port), str(out), FORGED).communicate(timeout=60)
+        deadline = time.monotonic() + 60
+        while not out.read_text().strip():  # the re-parented sender, which nothing can wait on
+            assert time.monotonic() < deadline, 'the re-parented sender did not answer'
+            time.sleep(0.05)
+        assert out.read_text().startswith('403 ') and 'carries no key' in out.read_text(), out.read_text()
+        assert settings.value('jev', mapped) is False
+        given = under_claude(home, '-c', FETCHED, str(port)).communicate(timeout=60)[0]
+        assert 'metaform_page_' not in given, given  # an agent's process is served the page without a key
         status, saved = setting_write(port, '/api/settings', key='jev', value=True)  # the person, from this process
         assert status == 200, saved
         assert settings.value('jev', mapped) is True

@@ -174,10 +174,12 @@ class Verb:
     what is at hand, a file or a row, and never the network; a call to a verb not listed still runs and says why.
 
     `person_says` marks a verb that is the person's decision, never an agent's, such as one that clears, switches or
-    removes the map or deletes what agents recorded: it runs only on the person's own yes, given on their command line
-    with `--confirm`, on the page, or in the form their AI tool shows them, CLI-011 and MCP-006. An agent's `confirm`
-    never runs it: its call is refused with the caution and the command the person runs, and its tool is marked
-    destructive. It needs a `caution`. `cautioned`, given the call's context, says the caution with what the call
+    removes the map or deletes what agents recorded: it runs only on the person's own yes, given at their own terminal
+    with `--confirm`, on the page, in the form their AI tool shows them, or on the consent card a dispatched agent's
+    chat shows them, CLI-011 and MCP-006 (`metaform.caller`). An agent's `confirm` never runs it: its call is refused
+    with the caution, told to ask the person in chat, and given the command the person pastes, and its tool is marked
+    destructive. It needs a `caution`. `page` names the control on the page that does the same, such as "the base
+    picker", so the refusal can send the person there. `cautioned`, given the call's context, says the caution with what the call
     would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
     """
@@ -203,6 +205,7 @@ class Verb:
     listed: Callable[[Path], bool] | None = None
     person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
+    page: str | None = None
 
     def __post_init__(self) -> None:
         if self.person_says and not self.caution:
@@ -816,11 +819,11 @@ def caution_of(verb: Verb, ctx: Context) -> str:
 
 
 def agent_caller() -> str | None:
-    """Why this process acts for an agent, None when it acts for the person, from facts the agent's own process does
-    not control: the identity a runner sets, the processes that started it, and the web server's vouch. See
-    `metaform.caller`."""
+    """Why this process does not carry the person's consent, None when it does: it runs at the person's own
+    terminal with no agent above it, or the web server ran it for a write from its own page. No other process acts for
+    the person, whatever its environment or its parents say. See `metaform.caller`."""
     from . import caller
-    return caller.agent()
+    return caller.unconsented()
 
 
 def persons_decision(caution: str, command: str, page: str | None = None) -> PersonsDecision:

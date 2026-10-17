@@ -134,6 +134,11 @@ def _switch_caution(ctx: Context) -> str:
     return home.switch_caution(_other_project(ctx).project_id)
 
 
+def _activate_caution(ctx: Context) -> str:
+    """activate's caution for this call: nothing, said so, when the base named is the active map already."""
+    return home.switch_caution(_other_project(ctx).project_id, str(ctx.nouns.get('name') or '') or None)
+
+
 def _remove_caution(ctx: Context) -> str:
     """remove-base's caution for this call: the base named, with what it holds, and the copy kept."""
     return home.remove_caution(_other_project(ctx).project_id, str(ctx.nouns.get('name') or ''))
@@ -1806,14 +1811,15 @@ MODULE = Module(
              nouns=(_noun('project', 'A project id.'), *PAGING), effect='read'),
         Verb('add-base', add_base, 'Start a new, empty base for the project and make it the active map.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
-             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution),
+             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution, page='the base picker'),
         Verb('activate', activate, "Make one of the project's bases the active map.",
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
-             caution=BASE_SWITCH, person_says=True, cautioned=_switch_caution),
+             caution=BASE_SWITCH, person_says=True, cautioned=_activate_caution, page='the base picker'),
         Verb('remove-base', remove_base, 'Take one base out of the project; a copy of its store is kept.',
              nouns=(Noun('name', 'The base name.'), _noun('project', 'A project id.')),
              caution='Removes the base and its store; a copy is kept under backups/remove-base. The active base '
-                     'is refused.', effect='remove', person_says=True, cautioned=_remove_caution),
+                     'is refused.', effect='remove', person_says=True, cautioned=_remove_caution,
+             page='the base picker'),
         Verb('collapse', collapse, 'Rewrite the current map as a new base of one base layer and make it active; the '
                                    'old one is kept whole. Each element and join is written once, with the same ids.',
              nouns=(Noun('name', 'The new base name.'), _noun('project', 'A project id.')),

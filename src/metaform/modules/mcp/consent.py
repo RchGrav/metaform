@@ -5,11 +5,15 @@ metaform_clear_project, and a change to a setting only the person sets. Where th
 and `mcp_consent` is `ask`, the server asks the person there, by the standard each wire uses: on MCP 2026-07-28 the
 call answers with an `input_required` result holding the form, and the client calls again with the person's answer
 (multi round-trip requests, SEP-2322); on the 2025 handshake the server sends `elicitation/create` while the call
-waits. The form carries the choices and why each is asked. A dispatched agent is never asked through: no person sits
-at its client. Elsewhere the call keeps the plain rule, `confirm=true` for a caution and a refusal with its next step
-for a person-only setting, except for what is the person's decision (a verb declared `person_says`, and
-metaform_clear_project): that runs only on the person's answer to the form, and is refused otherwise, for a dispatched
-agent always, with the caution and the command the person runs (UX review round 1, 2026-10-17).
+waits. The form carries the choices and why each is asked. No person sits at a dispatched agent's client, so it is
+never asked a form; what is the person's decision is asked of them on a consent card in the agent's chat on the page
+instead, and the call waits for their answer (the server's `carded`, dispatch's `ask_consent`; UX review round 2,
+person-consent F5). Elsewhere the call keeps the plain rule, `confirm=true` for a caution and a refusal with its next
+step for a person-only setting, except for what is the person's decision (a verb declared `person_says`,
+metaform_clear_project, metaform_restore_project and a save of a prompt Metaform sends its agents): that runs only on
+the person's answer, and is refused otherwise with the caution, told to ask the person in chat, and given the command
+the person pastes (UX review rounds 1 and 2, 2026-10-17). An agent that runs its own MCP client against this server
+can answer the form itself: that is a deliberate attack the command sandbox stops, `metaform.caller`.
 
 Sources, read 2026-10-12: the 2026-07-28 changelog and the multi round-trip request pattern,
 modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr; elicitation, form mode and its restricted
@@ -38,10 +42,16 @@ def _prompt(name: str, **fills: str) -> str:
     return prompt_files.module('mcp', name, **fills) or ''
 
 
+def dispatched() -> bool:
+    """Whether this server serves a dispatched agent: its runner set the agent's role and ticket on it, BASE-052.
+    Such an agent asks the person through a consent card in its chat on the page, never a form."""
+    return any(os.environ.get(key) for key in DISPATCHED)
+
+
 def can_ask(capabilities: Any, folder: Path) -> bool:
     """Whether this call can ask the person: `mcp_consent` is ask, the client shows forms, and no dispatched agent is
     behind it. A client that declares elicitation with no mode takes forms, as the 2025-11-25 revision says."""
-    if settings.value('mcp_consent', folder) != 'ask' or any(os.environ.get(key) for key in DISPATCHED):
+    if settings.value('mcp_consent', folder) != 'ask' or dispatched():
         return False
     elicitation = getattr(capabilities, 'elicitation', None)
     if elicitation is None:

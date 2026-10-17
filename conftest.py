@@ -36,8 +36,32 @@ def home(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     # Intake's optional live classifier must never inherit real billing credentials in fixture tests.
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    # The test process stands at the person's own terminal: a command it runs in this process carries their consent,
+    # as one typed there does, while the identity names and the processes above it still take that away,
+    # metaform.caller. A command run as its own process gets a terminal of its own instead, `own_terminal`.
+    from metaform import caller
+    monkeypatch.setattr(caller, '_at_tty', lambda: None)
     yield path
     loader.reset()
+
+
+def own_terminal():
+    """Popen keywords that give a command run as its own process a terminal of its own, in whose foreground it runs,
+    as a command the person types does, metaform.caller: a new session whose controlling terminal is a fresh
+    pseudo-terminal. Its input and output stay as given. The second value is the terminal's two ends, closed by the
+    caller once the command is done; ({}, ()) where there are no terminals to make."""
+    if os.name != 'posix':
+        return {}, ()
+    master, slave = os.openpty()
+    name = os.ttyname(slave)
+
+    def acquire():
+        import fcntl
+        import termios
+        held = os.open(name, os.O_RDWR)
+        fcntl.ioctl(held, termios.TIOCSCTTY, 0)
+        os.close(held)
+    return {'start_new_session': True, 'preexec_fn': acquire}, (master, slave)
 
 
 def _loop_running():
@@ -66,12 +90,16 @@ def run(home, tmp_path, request):
         # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
         if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
             # A hung call names itself, well inside the test's own time limit (pyproject.toml).
+            terminal, ends = own_terminal()  # typed at the person's terminal, as the in-process run stands
             try:
                 result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
                                         capture_output=True, text=True, encoding='utf-8', input=input,
-                                        timeout=CLI_LIMIT, check=False)
+                                        timeout=CLI_LIMIT, check=False, **terminal)
             except subprocess.TimeoutExpired:
                 raise AssertionError(f'metaform {" ".join(args)} did not finish in {CLI_LIMIT} s') from None
+            finally:
+                for end in ends:
+                    os.close(end)
         else:
             result = _in_process(list(args), folder, environment, input)
         # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
