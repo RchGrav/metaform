@@ -1387,6 +1387,90 @@ def test_an_intake_is_recorded_only_while_its_agents_process_lives_and_is_left_u
     assert Store('timer').graph(raw=True, limit=0).elements == ()
 
 
+# An intake agent's runner, as dispatch starts one: its launch noted, then `intake.agent` held while it lives.
+_INTAKE_AGENT = """
+import json, sys
+from metaform.data import Store
+store = Store('timer')
+store.note_intake_launch(json.loads(sys.argv[1]))
+assert store.hold_intake_agent(json.loads(sys.argv[1])['work']) is None
+print('holding', flush=True)
+sys.stdin.read()
+"""
+
+
+def _intake_runner(home, project, **launch):
+    import subprocess
+    import sys
+    record = {'work': 'intake-x', 'agent': 'claude', 'since': '2026-10-17T05:00:00Z', **launch}
+    held = subprocess.Popen([sys.executable, '-c', _INTAKE_AGENT, json.dumps(record)], cwd=project, text=True,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={**os.environ, 'METAFORM_HOME': str(home)})
+    assert held.stdout is not None and held.stdout.readline().strip() == 'holding'
+    return held
+
+
+def _let_go(held):
+    held.stdin.close()
+    held.wait(30)
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('MCP-009')
+def test_an_intake_agent_at_work_holds_the_intake_against_every_other_caller_and_no_agent_is_told_first_run(
+        run, home, project):
+    """UX review round 1, 2026-10-17 (cross-surface F3, F4): while a dispatched intake agent's runner lives, before its
+    first record too, the person's own agent is not told FIRST RUN or that an intake was aborted; another caller's
+    start, record, finish or discard is refused; and the intake its records go into, through the command line too, is
+    being recorded, never left unfinished."""
+    held = _intake_runner(home, project)
+    try:
+        shown = run('help', 'agents', cwd=project).stdout
+        assert onboarding() not in shown and 'FIRST RUN' not in shown
+        assert 'an agent Metaform started is at work on it now (claude), work intake-x' in run(cwd=project).stdout
+        assert 'metaform dispatch stop intake-x' in run('intake', 'status', cwd=project).stdout
+        for words in (('start',), ('element', 'code.timer.kitchen', 'role=DE'), ('finish',)):
+            refused = run('intake', *words, cwd=project, ok=False)
+            assert refused.returncode != 0 and 'dispatch stop intake-x' in refused.stdout + refused.stderr, words
+        mine = {'METAFORM_WORK': 'intake-x'}  # the intake agent itself, through its shell's command line
+        run('intake', 'start', cwd=project, env=mine)
+        run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=project, env=mine)
+        [now] = Store('timer').intake_building().results
+        assert now.recording, 'the intake agent records it whatever surface it records through'
+        assert 'aborted' not in run('help', 'agents', cwd=project).stdout
+        refused = run('intake', 'discard', '--confirm', cwd=project, ok=False)
+        assert refused.returncode != 0 and 'dispatch stop intake-x' in refused.stdout + refused.stderr
+        run('intake', 'finish', cwd=project, env=mine)
+    finally:
+        _let_go(held)
+    assert Store('timer').intake_agent() is None and 'FIRST RUN' not in run('help', 'agents', cwd=project).stdout
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+def test_the_map_the_person_chose_for_an_intake_agent_decides_its_start(run, home, project):
+    """UX review round 1, 2026-10-17 (fresh-start F5, web-gui F12): on a mapped project, an intake agent launched with
+    map=new opens the new map beside the one in use, named as chosen, though its start gives no name; with map=extend
+    its start writes onto the map in use, whatever name the agent gives."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE')
+    recorded(run, project, 'finish')
+    mine = {'METAFORM_WORK': 'intake-x'}
+    held = _intake_runner(home, project, map='new', name='v2')
+    try:
+        said = json.loads(run('intake', 'start', '--json', cwd=project, env=mine).stdout)
+        assert said['base'] == 'v2' and metaform_home.active_base('timer').name == 'main', said
+    finally:
+        _let_go(held)
+    run('map', 'remove-base', 'v2', '--confirm', cwd=project)
+    held = _intake_runner(home, project, map='extend')
+    try:
+        said = json.loads(run('intake', 'start', 'name=elsewhere', '--json', cwd=project, env=mine).stdout)
+        assert said['base'] == 'main' and 'opens no new map' in json.dumps(said['notices']), said
+        assert [base.name for base in metaform_home.bases('timer')] == ['main']
+    finally:
+        _let_go(held)
+
+
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('BASE-044')
 def test_a_join_with_no_elements_records_nothing_and_starts_no_intake(run, project):

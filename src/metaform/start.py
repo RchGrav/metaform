@@ -83,9 +83,16 @@ def start(args: list[str], folder: Path, say: Say) -> None:
         say(f'Read: {summary(found)}')
         ask(found, project, say)
     address = web(folder, project)
-    opened = open_browser(address)
-    say(f'Map: {address}' + ('' if opened else '  (open it in your browser)'))
-    intake(folder, project, found, mapped, recording, say, left)
+    shown: list[bool] = []
+
+    def show() -> None:
+        """Open the page once: after the intake's launch is noted when one starts, so its first read shows the intake
+        starting, never the empty map's Start the intake, UX review round 1 (2026-10-17) cross-surface F1."""
+        if not shown:
+            shown.append(True)
+            say(f'Map: {address}' + ('' if open_browser(address) else '  (open it in your browser)'))
+    intake(folder, project, found, mapped, recording, say, left, show)
+    show()
 
 
 # Registration and modules ------------------------------------------------------------------
@@ -123,14 +130,15 @@ def enable(say: Say) -> None:
         raise Stop(f'This Metaform has no {", ".join(missing)} module, which start needs.', 'metaform list modules')
 
 
-def run_verb(identifier: str, verb_name: str, folder: Path, project: str, nouns: dict[str, Any] | None = None) -> Any:
-    """One module verb, run as the CLI runs it, with its own Context."""
+def run_verb(identifier: str, verb_name: str, folder: Path, project: str, nouns: dict[str, Any] | None = None,
+             sink: Callable[[str], None] | None = None) -> Any:
+    """One module verb, run as the CLI runs it, with its own Context; what it says goes to `sink`, else is printed."""
     found = loader.get(identifier)
     if found is None or found.module is None:
         raise Stop(f'Module {identifier} did not load: {found.problem if found else "not found"}.',
                    'metaform list modules')
     verb = next(verb for verb in found.module.verbs if verb.name == verb_name)
-    return call(verb.run, context.build(identifier, folder, project=project, nouns=nouns or {}, sink=_line))
+    return call(verb.run, context.build(identifier, folder, project=project, nouns=nouns or {}, sink=sink or _line))
 
 
 def _line(text: str) -> None:
@@ -389,22 +397,26 @@ def intake_agent(folder: Path) -> str | None:
 
 
 def agent_at_work(folder: Path, project: str) -> bool:
-    """Whether an intake agent dispatch started is running in the project; it reads before it records, so the
-    project can hold no intake layer yet while one works."""
+    """Whether an intake agent dispatch started is starting or running in the project, as `dispatch sessions` lists
+    it from the one record of an intake under way; it reads before it records, so the project can hold no intake
+    layer yet while one works."""
     try:
         listed = cast(dict[str, Any], run_verb('dispatch', 'sessions', folder, project, {'thread': False}))
     except Stop:
         return False
-    return any(str(row.get('work_id', '')).startswith('intake-') and row.get('state') == 'running'
+    return any(str(row.get('work_id', '')).startswith('intake-') and row.get('state') in ('running', 'starting')
                for row in cast(list[dict[str, Any]], listed.get('sessions') or []))
 
 
 def intake(folder: Path, project: str, found: Read | None, mapped: bool, recording: bool, say: Say,
-           left: Recording | None = None) -> None:
+           left: Recording | None = None, show: Callable[[], None] = lambda: None) -> None:
     """Start the intake agent with what the files said, unless the project is mapped, an intake is being recorded,
     or one was left unfinished, which is the person's to resume, finish or discard. With no AI tool here and no agent
     chosen, none is started, so nothing is fetched for one. It says the agent is mapping only once the agent has made
-    its session; an agent that does not start is said with why and its next step. The page is open already."""
+    its session; an agent that does not start is said with why and its next step. `show` opens the page: once the
+    launch is noted when an agent starts, so the page reads it starting, and first otherwise."""
+    if mapped or recording or left is not None:
+        show()
     if mapped:
         say('Intake: the map is recorded; opening it.')
         return
@@ -420,19 +432,24 @@ def intake(folder: Path, project: str, found: Read | None, mapped: bool, recordi
     agent = intake_agent(folder)
     kept = '; your answers are kept for it' if found.answers else ''
     if agent is None and settings.state('dispatch_agent', folder) == 'default':
+        show()
         say(f'Intake: not started; no AI tool here can run it{kept}.')
         say('  Install Claude Code, then run metaform start here again; the page shows the project meanwhile.')
         return
     nouns: dict[str, Any] = {'text': brief(folder, project, found), 'wait': True, **({'agent': agent} if agent else {})}
     say(f'Intake: starting {agent or settings.value("dispatch_agent", folder)}; a first start may take a minute.')
     try:
-        started = cast(dict[str, Any], run_verb('dispatch', 'intake', folder, project, nouns))
+        # the intake says its launch is noted before it waits for the agent's session: the page opens there
+        started = cast(dict[str, Any], run_verb('dispatch', 'intake', folder, project, nouns,
+                                                sink=lambda _text: show()))
     except Stop as stop:
-        if 'already at work' in str(stop) or 'is starting' in str(stop):
+        show()
+        if agent_at_work(folder, project):  # refused because one is under way: read, never matched from the words
             say('Intake: an agent is already mapping the project; the page follows it.')
             return
         say(f'Intake: not started{kept}. {stop} Next: {stop.next_step}')
         return
+    show()
     if started.get('state') == 'running':
         say(f'Intake: {started["agent"]} is mapping the project; the page shows each part as it is recorded.')
         return

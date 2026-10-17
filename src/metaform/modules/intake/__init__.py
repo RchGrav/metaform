@@ -307,6 +307,7 @@ BASE_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # what an intake's metaform may
 def _recording(ctx: Context, notices: Notices) -> Recording:
     """The intake being recorded; a record sent before any start starts one, and says so."""
     store = ctx.require_store()
+    _refuse_beside_agent(store)
     found = _building(store)
     if found is not None:
         return _holding(found)
@@ -315,6 +316,36 @@ def _recording(ctx: Context, notices: Notices) -> Recording:
         notices.append({'where': 'intake', 'message': f'No intake was being recorded, so this call started one: '
                                                       f'layer {made.layer.name} in metaform {made.metaform}.'})
     return _holding(made)
+
+
+def _agent_at_work(store: Store) -> dict[str, Any] | None:
+    """The intake agent Metaform started that is at work on this project now, its runner holding `intake.agent` for as
+    long as it lives, BASE-039; None when there is none, or when the caller is that agent, its own work id in
+    METAFORM_WORK, which its MCP server and its shell carry."""
+    held = store.intake_agent()
+    if held is None or held.get('work') and held.get('work') == os.environ.get('METAFORM_WORK'):
+        return None
+    return held
+
+
+def _refuse_beside_agent(store: Store) -> None:
+    """Refuse an intake recorded, finished or discarded beside the intake agent at work, whatever surface asks, since
+    the two would interleave their records in one layer or take it from under that agent, BASE-039."""
+    held = _agent_at_work(store)
+    if held is None:
+        return
+    work = held.get('work')
+    raise Stop(f'An intake agent Metaform started is at work on this project now{f", work {work}" if work else ""}; '
+               'one intake runs at a time. Stop it first, or let it finish.',
+               f'metaform dispatch stop {work}' if work else 'metaform dispatch sessions')
+
+
+def _own_launch(store: Store) -> dict[str, Any] | None:
+    """The launch of the intake agent calling, when it is one Metaform started: what map the person chose it makes."""
+    held = store.intake_agent()
+    if held is None or not held.get('work') or held.get('work') != os.environ.get('METAFORM_WORK'):
+        return None
+    return held
 
 
 def _holding(rec: Recording) -> Recording:
@@ -400,8 +431,18 @@ def _opened(ctx: Context, store: Store, notices: Notices, named: str = '') -> tu
 def start(ctx: Context) -> Any:
     """Open the intake layer the records go into, or resume the one already being recorded."""
     store = ctx.require_store()
+    _refuse_beside_agent(store)
     notices: Notices = []
     found = _building(store)
+    # The map the person chose when they started this intake agent, VIEW-045 as amended 2026-10-17: a new map beside
+    # the one in use, named as they named it, or the map in use checked and extended, whatever name the agent gives.
+    launch = _own_launch(store)
+    if launch is not None and launch.get('map') == 'new' and not ctx.nouns.get('name'):
+        ctx.nouns['name'] = str(launch.get('name') or '')
+    elif launch is not None and launch.get('map') == 'extend' and ctx.nouns.get('name'):
+        notices.append({'where': 'name', 'message': f'The person chose to check and extend the map in use, so the '
+                                                    f'name {ctx.nouns["name"]} opens no new map.'})
+        ctx.nouns['name'] = None
     # a name asks for a new intake
     if found is None and (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):
         active = store.active_base()
@@ -1007,6 +1048,7 @@ def discard(ctx: Context) -> Any:
     recording into nothing."""
     store = ctx.require_store()
     with _lock(store):  # no record goes into the layer while it is dropped
+        _refuse_beside_agent(store)
         found = _building(store)
         if found is None:
             return {'layer': None, 'project': store.project_id, 'base': None, 'parts': 0,
@@ -1035,6 +1077,7 @@ def finish(ctx: Context) -> Any:
     report = _given(ctx, 'report', notices)
     feedback = _given(ctx, 'feedback', notices)
     with _lock(store):  # the intake finished is the one being recorded when the lock is held, and none opens meanwhile
+        _refuse_beside_agent(store)  # an intake agent at work finishes its own intake, never another caller
         found = _building(store)
         held_pass = _pass(store) if found is None else None
         verified = held_pass is not None and (found := _active_map(store)) is not None
@@ -1129,6 +1172,14 @@ def _state(store: Store) -> str:
     return RECORDING if building and building[0].recording else LEFT
 
 
+def _busy_line(held: dict[str, Any]) -> str:
+    """The intake agent at work, said in one line: its agent and work id, and since when."""
+    who = f' ({held["agent"]})' if held.get('agent') else ''
+    work = f', work {held["work"]}' if held.get('work') else ''
+    since = f', since {held["since"]}' if held.get('since') else ''
+    return f'Intake: an agent Metaform started is at work on it now{who}{work}{since}'
+
+
 def status_verb(ctx: Context) -> str:
     store = ctx.require_store()
     found = _building(store)
@@ -1136,6 +1187,9 @@ def status_verb(ctx: Context) -> str:
     if store.has_intake():
         latest = store.layers(kind='intake', limit=0).results[-1]
         lines.append(f'This project has an intake. Latest intake layer: {latest.name}')
+    if (agent := _agent_at_work(store)) is not None:  # starting, or reading before its first record, BASE-039
+        lines.append(_busy_line(agent) + (f'; metaform dispatch stop {agent["work"]} stops it.' if agent.get('work')
+                                          else '.'))
     if found is not None:
         state = _state(store)
         lines.append(f'An intake is {state} in layer {found.layer.name} of metaform {found.metaform}.'
@@ -1178,14 +1232,22 @@ def status(ctx: Context) -> Status:
         return Status(instruction=prompt_files.required(here, 'no_intake', register=step))
     found = _building(ctx.store)
     several = _several(ctx.store)
-    recording = (f'Intake: {_state(ctx.store)} in layer {found.layer.name} of metaform {found.metaform}',
+    state = _state(ctx.store) if found is not None else None
+    recording = (f'Intake: {state} in layer {found.layer.name} of metaform {found.metaform}',
                  *((several,) if several is not None else ())) if found is not None else ()
-    # The instructions agents read name an intake started and not finished, or else a project with no intake, MCP-009.
-    unfinished = prompt_files.required(here, 'unfinished') if found is not None else None
+    # An intake agent at work now, started from any surface and before its first record too, BASE-039: the agent is
+    # told only that, never to start an intake or that one was aborted, UX review round 1 (2026-10-17) F4.
+    agent = _agent_at_work(ctx.store)
+    busy = (_busy_line(agent),) if agent is not None and found is None else ()
+    # The instructions agents read name an intake started and left unfinished, its agent gone, or else a project with
+    # no intake, MCP-009; neither while an agent is at work on one.
+    unfinished = prompt_files.required(here, 'unfinished') if found is not None and state == LEFT else None
     if ctx.store.has_intake():
-        return Status(lines=('Intake: complete', *recording), instruction=unfinished)
+        return Status(lines=('Intake: complete', *busy, *recording), instruction=unfinished)
     if found is not None:
         return Status(lines=recording, instruction=unfinished)
+    if busy:
+        return Status(lines=busy)
     # A project whose finished intake is in another metaform than the active one has been analysed: no agent is told
     # it is a first run, which would send the person's own agent to map it again, MCP-009 as amended 2026-10-17.
     if (elsewhere := _mapped_elsewhere(ctx.store)) is not None:

@@ -1196,13 +1196,16 @@ def chained(monkeypatch):
     made: list[tuple[str, str, str, dict]] = []
     running: list[dict] = []
 
-    def verb(identifier, name, folder, project, nouns=None):
+    def verb(identifier, name, folder, project, nouns=None, sink=None):
         made.append((identifier, name, project, dict(nouns or {})))
         if (identifier, name) == ('web', 'start'):
             return {'state': 'started', 'address': 'http://127.0.0.1:7491/'}
         if (identifier, name) == ('dispatch', 'sessions'):
             return {'sessions': list(running)}
         running.append({'work_id': 'intake-1', 'state': 'running'})
+        if sink is not None and (nouns or {}).get('wait'):  # the launch is noted, then its session waited for
+            made.append(('dispatch', 'launched', project, {}))
+            sink('The intake agent is launched, work intake-1; waiting for it to make its session.')
         return {'state': 'running' if (nouns or {}).get('wait') else 'starting', 'work_id': 'intake-1',
                 'agent': (nouns or {}).get('agent', 'codex')}
     monkeypatch.setattr(start, 'run_verb', verb)
@@ -1227,8 +1230,9 @@ def test_start_registers_the_folder_connects_claude_code_and_starts_the_intake_a
                    (f'Claude Code: wrote the metaform MCP server into {folder / ".mcp.json"}; Claude Code asks once '
                     'to use it.'),
                    'Read: Python, one code file; README.md says what it is.',
-                   'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)',
                    'Intake: starting claude; a first start may take a minute.',
+                   # the page opens once the launch is noted, so it shows the intake starting, cross-surface F1
+                   'Map: http://127.0.0.1:7491/#p=my-notes  (open it in your browser)',
                    'Intake: claude is mapping the project; the page shows each part as it is recorded.']
     assert json.loads((folder / '.mcp.json').read_text(encoding='utf-8'))['mcpServers'] == {
         'other': {'command': 'x'},
@@ -1294,7 +1298,7 @@ def test_start_says_an_agent_that_did_not_start_with_why_and_its_next_step(run, 
     from metaform import start
     plain = start.run_verb
 
-    def verb(identifier, name, folder, project, nouns=None):
+    def verb(identifier, name, folder, project, nouns=None, sink=None):
         if (identifier, name) == ('dispatch', 'intake'):
             return {'state': 'failed', 'work_id': 'intake-1', 'agent': 'claude', 'log': '/tmp/run.log',
                     'reason': 'it did not start: Claude Code needs a login before it makes a session'}

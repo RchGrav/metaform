@@ -9875,6 +9875,80 @@ def test_an_intake_is_started_from_the_page_with_the_agent_the_person_chose(run,
     assert page.is_hidden('#emptyStage') and problems == []
 
 
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
+@pytest.mark.skipif(os.name == 'nt', reason='the slow start is a POSIX shell script')
+def test_an_intake_launched_from_the_command_line_shows_starting_on_the_page_with_a_stop_that_works(
+        run, home, web, browser, tmp_path, dispatch_runners):
+    """UX review round 1, 2026-10-17 (cross-surface F1, F5): an intake launched from the command line, its agent slow
+    to start, is shown on an open page as starting within moments, never the empty map's Start the intake; a second
+    is not offered there; and the bar's Stop ends it before its agent starts, the empty map returning."""
+    folder, log = tmp_path / 'cli', tmp_path / 'fake.jsonl'
+    folder.mkdir()
+    run('add', 'project', 'cli', str(folder))
+    run('enable', 'dispatch')
+    slow = tmp_path / 'slow-agent.sh'
+    slow.write_text(f'#!/bin/sh\nsleep 60\nexec "{sys.executable}" "{FAKE_AGENT}" "$@"\n', encoding='utf-8')
+    slow.chmod(0o755)
+    run('set', '--dispatch-claude', str(slow), cwd=folder)
+    run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    problems = []
+    page.on('console', lambda message: problems.append(message.text) if message.type == 'error' else None)
+    page.on('pageerror', lambda error: problems.append(str(error)))
+    page.goto(f'http://127.0.0.1:{web}/#p=cli')
+    page.wait_for_selector('#emptyStage:not([hidden])', timeout=60000)
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', cwd=folder,
+                             env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}).stdout)
+    dispatch_runners.append((started, folder, log))
+    page.wait_for_selector('#intakeBar:not([hidden]) .doing:has-text("Starting")', timeout=5000)
+    assert page.is_hidden('#emptyStage')
+    page.click('#adminBtn')
+    page.click('#intakeBtn')                                            # no second intake is offered
+    page.wait_for_selector('#toast:has-text("An intake is starting")', timeout=5000)
+    assert page.is_hidden('#intake')
+    page.click('#intakeBar button:has-text("Stop")')
+    with page.expect_response(lambda response: '/api/dispatch-stop' in response.url) as answered:
+        page.click('#confirm button.confirm')
+    assert answered.value.ok and answered.value.json()['how'] == 'stopped while starting', answered.value.json()
+    page.wait_for_selector('#intakeBar', state='hidden', timeout=10000)
+    page.wait_for_selector('#emptyStage:not([hidden])', timeout=10000)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-045')
+def test_running_the_intake_again_asks_which_map_it_makes_and_sends_that_choice(run, web, mapped, browser):
+    """UX review round 1, 2026-10-17 (fresh-start F5, web-gui F12): on a mapped project the intake window asks whether
+    the intake checks and extends the map in use or starts a new map beside it, with its name, and sends the choice;
+    the server refuses a name without a new map."""
+    run('enable', 'dispatch')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes > 0', timeout=30000)
+    page.click('#adminBtn')
+    page.click('#intakeBtn')
+    page.wait_for_selector('#intake .mapchoice:not([hidden])')
+    assert page.inner_text('#intake .start') == 'Check and extend the map'
+    assert page.is_hidden('#intake .newname')
+    page.check('#intake .mapchoice input[value="new"]')
+    assert page.inner_text('#intake .start') == 'Start a new map' and page.is_visible('#intake .newname')
+    page.fill('#intake .mapname', 'v2')
+    choose_agent(page, '#intake', 'claude')
+    sent = []
+    page.route('**/api/dispatch-intake', lambda route: (sent.append(route.request.post_data_json), route.fulfill(
+        status=400, content_type='application/json', body=json.dumps({'error': 'stand-in'}))))
+    page.click('#intake .start')
+    page.wait_for_selector('#intake .failed:not([hidden])')
+    assert sent and sent[0]['map'] == 'new' and sent[0]['name'] == 'v2', sent
+    page.unroute('**/api/dispatch-intake')
+    status, body = page.evaluate('''() => fetch('/api/dispatch-intake', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project: 'proj', map: 'extend', name: 'v2'})}).then(r => r.json().then(b => [r.status, b]))''')
+    assert status == 400 and 'new map' in body['error'], body
+    assert [one for one in problems if 'status of 400' not in one] == []  # the two refusals asked for, nothing else
+
+
 @pytest.mark.req('VIEW-023')
 def test_the_text_size_buttons_scale_the_page_and_reset_puts_every_size_back(run, web, mapped, browser):
     """The View menu's Text size list makes the whole page's text larger or smaller, header and panel alike, and the size
