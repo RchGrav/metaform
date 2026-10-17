@@ -9,29 +9,28 @@
      to every agent at connect under <instructions> and listed in metaform help agents. -->
 <connect></connect>
 <!-- The MCP server's instructions: the order that opens the connect message, sent as written to every agent when it
-     connects over MCP. It opens with the working principles every agent follows, before anything else. Each enabled module's <connect> line follows it, one per line, then <instructions_end>, then
+     connects over MCP. It opens with the rules every agent follows, before anything else. Each enabled module's <connect> line follows it, one per line, then <instructions_end>, then
      the notices the folder's state calls for, each from the module that owns that state, such as intake's first-run
      notice. Keep the whole well under 2,048 characters: Claude Code keeps only the first 2,048. It is also what
      metaform_instructions gives for module mcp, and mcp's entry in the full command-line guide. Empty sends the module
      lines and the closing line without it; the notices still go. -->
-<instructions>&lt;THINK_BEFORE_CODING&gt;
-    +&gt; State assumptions explicitly.
-    +&gt; Ask when unsure.
-    !&gt; Never guess an unstated requirement.
-&lt;/THINK_BEFORE_CODING&gt;
-&lt;SIMPLICITY_FIRST&gt;
-    +&gt; Write the minimum code that solves the problem.
-    !&gt; No abstractions, config, or flexibility nobody asked for.
-&lt;/SIMPLICITY_FIRST&gt;
-&lt;SURGICAL_CHANGES&gt;
-    !&gt; Do not touch code unrelated to the request.
-    +&gt; Every changed line traces to what was asked.
-    ~&gt; Report unrelated defects separately. Do not fix them.
-&lt;/SURGICAL_CHANGES&gt;
-&lt;GOAL_DRIVEN_EXECUTION&gt;
-    +&gt; Turn vague instructions into verifiable success criteria before writing any code.
-    +&gt; Done = criteria met, checked.
-&lt;/GOAL_DRIVEN_EXECUTION&gt;
+<instructions>@CONSTRAINT:
+  → think before coding
+  +&gt; state your assumptions.
+  +&gt; ask when unsure.
+  !&gt; never guess.
+
+  → simplicity first
+  +&gt; write the minimum code that solves the problem.
+  !&gt; no abstractions nobody asked for.
+
+  → surgical changes
+  !&gt; don't touch code unrelated to the request.
+  +&gt; every changed line must trace back to what was asked.
+
+  → goal-driven execution
+  +&gt; turn vague instructions into verifiable success criteria before writing a single line.
+
 You must use Metaform for this project; it is not optional. Use it to:</instructions>
 <!-- The closing line of the connect message's order, sent after the module lines and before the state notices, to every
      agent when it connects over MCP: read Metaform's glossary before any work, and the project's own. <terms/> takes
