@@ -26,7 +26,7 @@ import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
- * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle and facing the eye.
+ * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle.
  * Its size and its opacity say how near it is: its letters are a size in the map, so perspective alone sizes them, a
  * near name large and a far one small, as small as perspective makes it, with no least or most size on the screen: a
  * name too far to read is left small, and a click brings its node into focus. The nearest label is solid and the
@@ -47,7 +47,7 @@ import {joinTitle} from '/page/app/map2d/inside.js';
  * alone and every one is drawn: no preset holds the letters between a least and a most size on the screen, and none
  * leaves a name out where names crowd. Restored 2026-10-17 at Rich's request: the clamps of 2026-10-12 held every far
  * name at one size and flattened the map; scale and depth come before legibility at a distance, and a selection brings
- * a node into focus. Every name faces the eye, never edge on or mirrored. */
+ * a node into focus. */
 const LABEL_PRESETS = {
   organic: {place: 'out', farthest: 0.34},
   clusters: {place: 'above', farthest: 0.18},
@@ -142,7 +142,7 @@ function labelFor(node) {
   const texture = new THREE.CanvasTexture(document.createElement('canvas'));
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter, generateMipmaps: false});
-  // A sign in the scene, standing out from the map's middle and turned to face the eye, so its name always reads as
+  // A sign in the scene, standing out from the map's middle, turned round when seen from behind so its name reads as
   // written. `sprite` is the name it has always had in the page's reads.
   LABELS.plane ??= new THREE.PlaneGeometry(1, 1);
   // It is tested against what is nearer, so a nearer node or edge hides it, but writes no depth of its own and is
