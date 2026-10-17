@@ -3335,9 +3335,15 @@ def test_following_a_new_intake_with_nothing_recorded_clears_the_panel_of_the_ea
                            '&& window.metaform.drawn().nodes === 1', timeout=30000)
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
                            timeout=15000)
-    run('intake', 'start', cwd=folder)
-    run('intake', 'element', 'code.alarm.audible', 'role=SE', cwd=folder)  # new shape: the new intake base opens
+    run('intake', 'start', 'name=alarm', cwd=folder)  # a named intake: the new intake base opens
+    run('intake', 'element', 'code.alarm.audible', 'role=SE', cwd=folder)
     page.wait_for_function('() => window.metaform.live() !== null', timeout=15000)
+    # UX review round 1, 2026-10-17 (agent-identity-handoff F8): an intake in a base of its own no longer swaps the
+    # whole page to it; the base list offers it, and the page follows it once the person shows it
+    page.wait_for_function('() => document.querySelectorAll("#mf option").length === 2', timeout=15000)
+    assert page.evaluate('window.metaform.drawn().nodes') == 1
+    assert 'code.timer.kitchen' in page.inner_text('#p-object'), 'the map shown stays as it was'
+    page.select_option('#mf', page.evaluate('[...document.querySelectorAll("#mf option")].find(o => !o.selected).value'))
     page.wait_for_function('() => window.metaform.drawn().nodes === 1', timeout=15000)
     page.wait_for_function('() => !document.querySelector("#p-object").innerText.includes("code.timer.kitchen")',
                            timeout=10000)  # once the panel's reads settle
@@ -3803,7 +3809,8 @@ def test_clearing_from_the_page_clears_what_the_command_clears_and_every_open_pa
               'files': sorted(path.name for path in mapped.iterdir())}
     heard, first = events_on(web)
     status, answer = clear(web, confirm=True)
-    assert answer.pop('backup') and answer.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    backup = answer.pop('backup')
+    assert backup and answer.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030, by name
     assert status == 200 and answer == {
         'project': 'proj', 'bases': ['main', 'fresh'], 'reports': 1,
         'said': ('Cleared proj: two bases, main and fresh, and one report file. Its registration, folder, '
@@ -3847,7 +3854,8 @@ def test_a_clear_from_the_page_names_a_file_it_could_not_remove_with_its_reason_
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not list(own('proj').glob('*.metaform.sqlite3'))
     status, again = clear(web, confirm=True)
-    assert again.pop('backup') and again.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    backup = again.pop('backup')
+    assert backup and again.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030, by name
     assert (status, again) == (200, {
         'project': 'proj', 'bases': [], 'reports': 1,
         'said': ('Cleared proj: no bases and one report file. Its registration, folder, settings, origins, '

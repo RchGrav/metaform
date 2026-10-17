@@ -520,16 +520,39 @@ def bases(ctx: Context) -> Any:
     return _other_project(ctx).bases(**_paging(ctx))
 
 
+def _switched(store: Store, switch: Callable[[], home.Base]) -> home.Base:
+    """A switch of the active base, with a notice naming the agents at work on the base it left: each stays on the
+    base it began on, where its ticket is, and is still listed and stopped, STORE-041 and BASE-052."""
+    left = store.active_base()
+    made = switch()
+    now = store.active_base()
+    notices = list(made.notices)
+    said = home.staying(store.project_id, left, now)
+    if said:
+        notices.append(Notice('agents', said))
+    if left is not None and now is not None and left.id != now.id:
+        # the tickets stay with the base they were written on, out of view until it is shown again, D111
+        opened = len(Store(store.project_id, base=left.id).work(open=True, limit=0).results)
+        if opened:
+            notices.append(Notice('work', f'{opened} open {"ticket stays" if opened == 1 else "tickets stay"} with '
+                                          f'{left.name}, out of view until it is active again: metaform map activate '
+                                          f'{left.name} --confirm'))
+    return dataclasses.replace(made, notices=tuple(notices)) if notices != list(made.notices) else made
+
+
 def add_base(ctx: Context) -> Any:
-    return _other_project(ctx).add_base(ctx.nouns['name'])
+    store = _other_project(ctx)
+    return _switched(store, lambda: store.add_base(ctx.nouns['name']))
 
 
 def collapse(ctx: Context) -> Any:
-    return _other_project(ctx).collapse(ctx.nouns['name'])
+    store = _other_project(ctx)
+    return _switched(store, lambda: store.collapse(ctx.nouns['name']))
 
 
 def activate(ctx: Context) -> Any:
-    return _other_project(ctx).activate_base(ctx.nouns['name'])
+    store = _other_project(ctx)
+    return _switched(store, lambda: store.activate_base(ctx.nouns['name']))
 
 
 def remove_base(ctx: Context) -> Any:

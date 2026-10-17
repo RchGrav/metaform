@@ -3235,6 +3235,85 @@ def test_the_person_talks_with_their_own_agent_with_no_map_and_no_intake(dispatc
     assert not home.bases('proj'), 'talking with their agent made no map'
 
 
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('PROJ-026')
+def test_a_worker_keeps_its_base_when_another_becomes_active_and_stays_listed_counted_and_stoppable(dispatch, run):
+    """UX review round 1, 2026-10-17 (fresh-start-intake F2, dispatch-concurrency F1, interrupt-failure-recovery F2,
+    web-gui-controls F2): a new base made active while an agent works left the agent invisible, unstoppable and out of
+    the slot count, or ended it with 'No work record has the id'. Every runner is pinned to the base it began on: it
+    keeps working there, is listed and counted, the switch says so, and the person's stop reaches it."""
+    from metaform import home
+    from metaform.data import Node, Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    main = home.active_base('proj')
+    dispatch.start('hold')
+    row = dispatch.session().extra
+    assert row['state'] == 'running' and row['base'] == main.id, 'pinned to the base it began on'
+    said = run('map', 'add-base', 'fresh', '--confirm', '--json', cwd=dispatch.folder).stdout
+    assert home.active_base('proj').name == 'fresh'
+    assert 'One agent at work on main stays on it' in said and dispatch.id in said, said
+    fresh = Store('proj')
+    fresh.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
+    fresh.add_element('parts', NODE)
+    fresh.add_work(Node('element', NODE), 'unbuilt', task='Another ticket')  # a change the runner hears and reads for
+    time.sleep(2)
+    assert dispatch.process.poll() is None, 'the runner keeps working on main'
+    found = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['sessions']
+    assert [(one['work_id'], one['state']) for one in found] == [(dispatch.id, 'running')], found
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert module.slots_used(ctx, Store('proj', module='dispatch')) == 1, 'it still takes its slot'
+    stopped = json.loads(run('dispatch', 'stop', dispatch.id, '--json', cwd=dispatch.folder).stdout)
+    assert stopped.get('stopped') is not False, stopped
+    eventually(lambda: dispatch.process.poll() is not None)
+    eventually(lambda: dispatch.session().extra['state'] == 'ended')
+    assert Store('proj', base=main.id).ticket(dispatch.id).work.taken, 'its ticket stays in main, taken as it was'
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('PROJ-026')
+def test_the_persons_agent_is_the_same_conversation_after_a_switch_to_an_empty_base(dispatch, run):
+    """UX review round 1, 2026-10-17 (agent-identity-handoff F1 and F3, web-gui-controls F3, orchestrator F1): after a
+    switch to an empty base, Call said 'Talking with an agent needs a map with one element at least', or started a
+    second system agent that knew nothing while the first ran unseen. The same conversation is found and reused."""
+    from metaform import home
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = module.anchor(ctx, Store('proj'), NODE)
+    dispatch.id = held
+    dispatch.start('hold', 'system=true')
+    first = dispatch.session().extra
+    eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
+    run('map', 'add-base', 'empty', '--confirm', cwd=dispatch.folder)
+    assert home.active_base('proj').name == 'empty' and not Store('proj').roots(limit=1).entry
+    again = module.system(context('dispatch', dispatch.folder, project='proj'))
+    assert (again['state'], again['session_id']) == ('running', first['session_id']), again
+    found = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['sessions']
+    assert [one['session_id'] for one in found if one['state'] == 'running'] == [first['session_id']]
+    dispatch.stop()
+    eventually(lambda: dispatch.session().extra['state'] == 'ended')
+
+
+@pytest.mark.req('PROJ-025')
+def test_a_clear_stops_the_agents_at_work_first_and_says_so(dispatch, run):
+    """UX review round 1, 2026-10-17 (cross-surface-state F6): a clear while an agent worked left it running, unseen
+    and unstoppable, writing a new base into the cleared project. The clear's caution names it, the clear stops it
+    through dispatch before the stores go, and its result says so; its conversation stays."""
+    from metaform import home
+    dispatch.start('hold')
+    row = dispatch.session().extra
+    caution = run('clear', 'project', cwd=dispatch.folder, ok=False).stderr
+    assert 'It stops one agent at work on it first' in caution and dispatch.id in caution, caution
+    said = run('clear', 'project', '--confirm', cwd=dispatch.folder).stdout
+    assert 'Stopped one agent at work on it first' in said, said
+    eventually(lambda: dispatch.process.poll() is not None)
+    assert dispatch.session().extra['session_id'] == row['session_id']
+    assert dispatch.session().extra['state'] == 'ended', 'stopped before its store went, and its row kept'
+    assert not home.bases('proj'), 'nothing made the cleared map again'
+
+
 @pytest.mark.req('VIEW-045')
 def test_a_runner_that_outlived_its_server_is_reused_by_a_summon_and_its_session_never_resumed_twice(
         dispatch, run, monkeypatch):

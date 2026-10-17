@@ -1309,10 +1309,12 @@ class Handler(BaseHTTPRequestHandler):
         if project is None or not isinstance(name, str) or not name:
             return self.send(400, {'error': 'Activate takes a registered project and a base name.'})
         try:
+            left = home.active_base(project.project_id)
             made = home.activate_base(project.project_id, name)
         except StoreError as error:
             return self.refuse(error, 404)
-        self.send(200, plain(made))
+        said = home.staying(project.project_id, left, made)  # the agents at work on the base left stay on it
+        self.send(200, {**plain(made), **({'agents': said} if said else {})})
 
     def remove_base(self, given: dict[str, Any]) -> None:
         """Take one base out of the project, as `metaform map remove-base <name> --confirm` does, only with `confirm`
@@ -2901,8 +2903,8 @@ def run_dispatch(project_id: str, verb: str, nouns: list[str], base: str | None 
 
 def chosen_base(given: dict[str, Any]) -> str | None:
     """The base the page shows when it is not the project's active one, None otherwise. Dispatch runs on it, and the
-    runner and agent it starts stay on it, since their ticket is there; on the active base nothing is bound, so they
-    follow whichever base is active, as before."""
+    runner and agent it starts stay on it, since their ticket is there; on the active base nothing is bound here, and
+    dispatch pins the runner to the base active as it starts, so it stays there whichever is made active later."""
     base, project = str(given.get('base') or ''), home.project(str(given.get('project', '')))
     if not base or project is None:
         return None

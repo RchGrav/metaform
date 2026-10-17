@@ -75,7 +75,7 @@ def start(args: list[str], folder: Path, say: Say) -> None:
     project = register(folder, say)
     connect(folder, say)
     store = Store(project)
-    mapped = store.has_intake()
+    mapped = store.has_intake() or bool(store.intake_bases())  # mapped in a metaform not active now, MCP-009
     recording = bool(store.intake_recording().results) or agent_at_work(folder, project)
     left = None if recording else next(iter(store.intake_building().results), None)  # no agent records it any more
     found = read_folder(folder) if not (mapped or recording or left) else None

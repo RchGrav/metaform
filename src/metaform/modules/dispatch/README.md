@@ -42,7 +42,7 @@ never read-only, H17.
 
 Signals are JSON records of kind `signal` in the existing dispatch `lines` table, beside the map whose tickets and
 sessions they are raised on. This keeps storage compatible with live runners. The conversations themselves, each
-session and its thread, are the project's since tables version 16: `agent_sessions`, `session_lines` and
+session and its thread, are the project's since tables version 17: `agent_sessions`, `session_lines` and
 `session_attempts` in `modules/dispatch.sqlite3`, which no clear, restore, new base or switch of bases removes;
 `carry_conversations` moves what a metaform's store still holds of them there, idempotently, on each read of the
 sessions and through `home.CARRIERS` before a clear and after a restore, PROJ-026. With no element on the map the

@@ -153,7 +153,7 @@ Serve the intake and record its result as it is reasoned.
 | Tool | What it does | Effect |
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
-| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
+| `intake_finish` | Finish the intake. One recorded in a base of its own is finished beside the active map, which stays active: metaform map activate <its name> --confirm makes it the active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
 | `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |

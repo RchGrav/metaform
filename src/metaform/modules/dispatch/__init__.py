@@ -44,7 +44,19 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files, settings
-from metaform.data import Column, Index, NewerStore, Node, Store, StoreError, Table, Tables, WorkRecord, status
+from metaform.data import (
+    BASE_VARIABLE,
+    Column,
+    Index,
+    NewerStore,
+    Node,
+    Store,
+    StoreError,
+    Table,
+    Tables,
+    WorkRecord,
+    status,
+)
 from metaform.module import (
     Context,
     Module,
@@ -112,11 +124,14 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 # `session_lines` and `session_attempts`, so a clear, a restore, a new base or a switch of bases never takes them,
 # PROJ-026. What stays beside each metaform's map is the map's own: a ticket's progress and the signals in `lines`, and
 # the launches waiting in `raised`, whose tickets and intakes are the map's. As with spend, the per-metaform tables stay
-# declared under their names, for version 5's code and for carry_conversations() to move their rows.
+# declared under their names, for version 5's code and for carry_conversations() to move their rows. A session row
+# also says the metaform its runner is pinned to, `base`, the one active when it started, so it is stopped, resumed and
+# read with its ticket there whichever metaform is made active since; a row with none is a conversation on no map or
+# one written before.
 SESSION = (Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
            Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
            Column('token'), Column('how'), Column('started', required=True), Column('seq', 'int', required=True),
-           Column('runner'), Column('recovery', 'json'), Column('origin'))
+           Column('runner'), Column('recovery', 'json'), Column('origin'), Column('base'))
 LINE = (Column('session_id', required=True), Column('name', required=True), Column('work_id', required=True),
         Column('kind', required=True), Column('text', required=True), Column('seq', 'int', required=True))
 ATTEMPT = (Column('work_id', required=True), Column('session_id', required=True),
@@ -910,6 +925,25 @@ def agent_named(name: str) -> str:
     return name
 
 
+def pinned(store: Store) -> dict[str, str]:
+    """The environment that pins a runner to the metaform `store` reads, the active one unless one is bound: every
+    runner, its agent and that agent's MCP server stay on the metaform their ticket or conversation began in, whichever
+    is made active since, so a switch of the map never takes a running agent's ticket from under it, BASE-052. None
+    with no metaform yet: a conversation on no map follows the first one made."""
+    bound = store.bound_base()
+    return {BASE_VARIABLE: bound.id} if bound is not None else {}
+
+
+def base_store(store: Store, row: dict[str, Any]) -> Store:
+    """Dispatch's store on the metaform a session's runner is pinned to, its row's `base`, where its ticket is: the one
+    given when that is it, or when the row names none, or one the project no longer holds."""
+    base = row.get('base')
+    bound = store.bound_base()
+    if not base or bound is not None and bound.id == base or home.base_by_id(store.project_id, str(base)) is None:
+        return own_store(store)
+    return Store(store.project_id, base=str(base), module='dispatch')
+
+
 def ticket(store: Store, work_id: str) -> WorkRecord:
     """Read the work record alone, without rebuilding the context of its node and linked nodes."""
     try:
@@ -927,7 +961,7 @@ def ticket(store: Store, work_id: str) -> WorkRecord:
 
 # An intake agent's session holds no ticket: its work id is this prefix and a token of its own, so the CLI and the
 # page reach it as they reach any session, and nothing takes it for a ticket. Its row is the project's, as every
-# session's is since version 16, so an intake into a new base, and the base it activates at its finish, both reach
+# session's is since version 17, so an intake into a new base, and that base once the person activates it, both reach
 # it, VIEW-045 and BASE-039.
 INTAKE = 'intake-'
 # The person's conversations hang on a held ticket of the map, `anchor`; with no map yet, or none since a clear, they
@@ -1166,6 +1200,15 @@ def verified(store: Store, rows: Sequence[dict[str, Any]],
                    for row in asked}
         opened = {record.id for record in (open_work if open_work is not None
                                            else store.work(open=True, limit=0).results)}
+        # a runner pinned to another metaform, made active before or since, works a ticket of that one, BASE-052
+        bound = store.bound_base()
+        for base in sorted({str(row['base']) for row in asked if row.get('base')} - {bound.id if bound else ''}):
+            if home.base_by_id(store.project_id, base) is not None:
+                try:
+                    opened |= {record.id for record in Store(store.project_id, base=base).work(open=True,
+                                                                                               limit=0).results}
+                except StoreError:
+                    continue
         found: list[dict[str, Any]] = []
         for row in rows:
             # a session on no ticket, an intake's or a conversation's, is ended by no ticket's being done
@@ -1635,7 +1678,7 @@ def _conversation_line(row: dict[str, Any]) -> bool:
 
 
 def carry_conversations(store: Store) -> None:
-    """Move the conversations a metaform of the project still holds beside its map, written there before version 16,
+    """Move the conversations a metaform of the project still holds beside its map, written there before version 17,
     by a runner started before it, or brought back by a restore of a backup made before it, into the project's own
     tables, then delete them there, PROJ-026. A row the project holds already is kept as it is, being the one written
     since, and the metaform's copy goes, so a carry cut short is finished by the next one and a restore merges what its
@@ -1678,6 +1721,39 @@ def carry_project(project_id: str) -> None:
 
 
 home.CARRIERS['dispatch'] = carry_project
+
+
+def agents_at_work(project_id: str, base_id: str | None, stop: bool) -> tuple[str, ...]:
+    """The chassis's AT_WORK for dispatch: the agents running on the project's metaforms, on `base_id` alone when
+    given, one line each, and with `stop` each ended as the person's stop ends it, so a clear or the removal of a
+    metaform leaves none at work on a map that is gone, PROJ-025. A runner is on the metaform it was pinned to, its
+    row's `base`; one with none, from before, on the active one. The person's own agent is never among them: it is
+    theirs to talk with whatever the map holds, VIEW-045. Nor is a session an editor runs, which ends in the editor."""
+    project = home.project(project_id)
+    if project is None or not any(module.id == 'dispatch' for module in surface(Path(project.path))):
+        return ()
+    store = Store(project_id, module='dispatch')
+    rows = [row for row in sessions(store) if row['state'] == 'running' and not editor(row)]
+    theirs = {row['session_id'] for row in system_sessions(store, rows)}
+    active = home.active_base(project_id)
+    said: list[str] = []
+    for row in rows:
+        on = str(row.get('base') or (active.id if active is not None else ''))
+        if row['session_id'] in theirs or base_id is not None and on != base_id:
+            continue
+        work_id = str(row['work_id'])
+        line = f'{agent_label(str(row["agent"]))} on {"an intake" if intake_id(work_id) else "work " + work_id}'
+        if stop:
+            try:
+                ended = ended_by_person(store, row)
+                line += f' (not stopped: {ended["error"]})' if ended.get('error') else ''
+            except (Stop, OSError) as error:
+                line += f' (not stopped: {error})'
+        said.append(line)
+    return tuple(said)
+
+
+home.AT_WORK['dispatch'] = agents_at_work
 
 
 def spend_rows(store: Store, where: dict[str, str]) -> list[dict[str, Any]]:
@@ -2158,7 +2234,7 @@ def system_sessions(store: Store, rows: Sequence[dict[str, Any]] | None = None) 
         work_id = str(row['work_id'])
         if about != 'system' or intake_id(work_id):
             return False
-        if role:  # recorded since version 16
+        if role:  # recorded since version 17
             return role == 'system'
         # Before it, an intake and a sentinel were about the system too: the system agent's hang on its held ticket,
         # or on one this map no longer holds, the map it was made on having been cleared.
@@ -2469,7 +2545,7 @@ def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | 
                                         *([f'chosen={ctx.nouns["chosen"]}'] if ctx.nouns.get('chosen') else []),
                                         '--project', store.project_id],
                                        cwd=folder, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
-                                       env=child_environment(), **group_options())
+                                       env=child_environment(**pinned(store)), **group_options())
     except OSError:
         with store.atomic():
             record = ticket(store, work_id)
@@ -2497,7 +2573,7 @@ def prep(ctx: Context) -> dict[str, Any]:
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, 'prep=true',
                                     '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
-                                   env=child_environment(), **group_options())
+                                   env=child_environment(**pinned(store)), **group_options())
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'pid': process.pid, 'log': log}
 
 
@@ -2548,7 +2624,7 @@ def converse(ctx: Context, store: Store, work_id: str, agent: str, extra: Sequen
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, 'system=true',
                                     *extra, '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
-                                   env=child_environment(), **group_options())
+                                   env=child_environment(**pinned(store)), **group_options())
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'pid': process.pid, 'log': log, 'session_id': None,
             'conversation': True}
 
@@ -3216,10 +3292,11 @@ def ended_held(store: Store, row: dict[str, Any]) -> dict[str, Any]:
     and its ticket through `release`."""
     pid, work_id, session_id = int(row['pid']), str(row['work_id']), str(row['session_id'])
     end_group(pid)
-    held = (intake_store(store, work_id) or store) if intake_id(work_id) else store
+    held = base_store((intake_store(store, work_id) or store) if intake_id(work_id) else store, row)
     by = f'{row["agent"]} {session_id}'
-    took = not intake_id(work_id) and ticket(store, work_id).taken_by == by
-    release(own_store(held), work_id, by, took, session_id, 'stopped by the person', row.get('runner'))
+    record = None if intake_id(work_id) else held_ticket(held, work_id)  # its ticket in the metaform it is pinned to
+    took = record is not None and record.taken_by == by
+    release(held, work_id, by, took, session_id, 'stopped by the person', row.get('runner'))
     return {'work_id': work_id, 'session_id': session_id, 'stopped': True, 'pid': pid,
             'how': 'stopped by the person'}
 
@@ -3901,7 +3978,7 @@ def spawn(store: Store, work_id: str, agent: str, extra: list[str], name: str, *
         process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', work_id, agent, *extra,
                                     '--project', store.project_id],
                                    cwd=store.project().path, stdin=subprocess.DEVNULL, stdout=written, stderr=written,
-                                   env=child_environment(), **group_options())
+                                   env=child_environment(**pinned(store)), **group_options())
     if kept:
         RUNNERS[process.pid] = process
     return {'pid': process.pid, 'log': log}
@@ -3940,7 +4017,8 @@ def resume(ctx: Context) -> dict[str, Any]:
     if not isinstance(cwd, str) or not os.path.isdir(cwd):
         raise Stop(f'The folder session {session_id} worked in, {cwd}, is gone.', fresh)
     runnable(ctx, agent)
-    record = None if intake_id(work_id) else ticket(store, work_id)
+    held = base_store(held, row)  # its ticket is in the metaform its runner was pinned to, and it goes on there
+    record = None if intake_id(work_id) else held_ticket(held, work_id)
     worker = record is not None and not record.done and record.taken_by == f'{agent} {session_id}'
     if worker and running(store, work_id) is not None:
         raise Stop(f'Another agent is at work on work {work_id}.', f'metaform dispatch sessions id={work_id}')

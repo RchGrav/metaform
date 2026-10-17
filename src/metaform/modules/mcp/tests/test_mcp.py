@@ -776,7 +776,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert still.is_error is False  # the caution alone changed nothing
     assert cleared.is_error is False
     told = json.loads(text(cleared)[-1])
-    assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    backup = told.pop('backup')
+    assert backup and told.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030, by its name
     assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()

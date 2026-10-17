@@ -8,7 +8,7 @@ base, and everything else of the project. A project is found by looking where it
 written into a project's own source folder.
 
 Modules use the home through its public names, BASE-004: `home`, `projects`, `project` and `Project`; `to_clear`,
-`clear_project` and `Cleared`; `backups`, `restore_project`, `Backup` and `Restored`; `CARRIERS`; and `not_empty`,
+`clear_project` and `Cleared`; `backups`, `restore_project`, `Backup` and `Restored`; `CARRIERS` and `AT_WORK`; and `not_empty`,
 `removal_caution` and `remove_project`. Everything else here is private to the chassis.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ import sys
 import threading
 import uuid
 from collections.abc import Callable, Generator, Iterable
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, suppress
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
@@ -972,20 +972,25 @@ class Removed:
     base_id: str
     kept: str
     notices: tuple[Any, ...] = ()
+    stopped: tuple[str, ...] = ()  # the agents at work on it, stopped before it went, `AT_WORK`
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def __str__(self) -> str:
-        return f'Removed base {self.name} from {self.project_id}; its store is kept at {self.kept}'
+        return (f'Removed base {self.name} from {self.project_id}; its store is kept at {self.kept}' +
+                (f'. Stopped first, at work on it: {"; ".join(self.stopped)}' if self.stopped else ''))
 
 
 def remove_base(project_id: str, name: str) -> Removed:
     """Take one base out of a project: its row goes, and its store file goes after a copy is kept under
     `backups/remove-base/<project>/<stamp>/`. The active base is refused: activate another first. A project's bases
     are never removed any other way but clearing the project, STORE-041. What a module keeps of the project outside
-    the map, the conversations with its agents, is carried out of the store first, `CARRIERS`."""
+    the map, the conversations with its agents, is carried out of the store first, `CARRIERS`, and the agents at work
+    on it are stopped first, `AT_WORK`, since what they work on goes with it; the result names them."""
     carry_out(project_id)
+    held = next((form for form in bases(project_id) if form.name == name), None)
+    stopped = at_work(project_id, held.id, stop=True) if held is not None and not held.active else ()
     with _bases_db(project_id, write=True) as db:
         row = db.execute('SELECT id FROM bases WHERE project_id=? AND name=?', (project_id, name)).fetchone()
         if row is None:
@@ -1009,7 +1014,7 @@ def remove_base(project_id: str, name: str) -> Removed:
         db.execute('DELETE FROM bases WHERE id=? AND project_id=?', (base_id, project_id))
     remove_store(path)
     changes.note(project_id)
-    return Removed(project_id, name, base_id, str(kept / path.name))
+    return Removed(project_id, name, base_id, str(kept / path.name), stopped=stopped)
 
 
 def activate_base(project_id: str, name: str) -> Base:
@@ -1057,12 +1062,55 @@ def base_owner(base_id: str) -> str | None:
 # after a restore brings stores back, so nothing of it is lost and a restored backup's is merged with what was said
 # since. Dispatch carries the conversations with agents this way, PROJ-026. A module registers its own under its id.
 CARRIERS: dict[str, Callable[[str], None]] = {}
+# What a module runs on a project's metaforms, its agents at work: each module's function naming it, one line each,
+# and with `stop` ending it first. Asked with a metaform's id, what runs on that one; with None, what runs on any of
+# them, as a clear takes every one. A clear and the removal of a metaform stop them before their stores go, and say so,
+# so no agent is left at work on a map that is gone, unseen and unstoppable; a switch of the active metaform names them,
+# since they stay on the one they began on, PROJ-025 and STORE-041. A module registers its own under its id.
+AT_WORK: dict[str, Callable[[str, str | None, bool], tuple[str, ...]]] = {}
+
+
+def _hooked() -> None:
+    """The enabled modules loaded, so each has registered its CARRIERS and AT_WORK: a command of the chassis, such as
+    clear project, may run in a process that has loaded none of them yet."""
+    from . import loader
+    with suppress(Exception):  # a module that does not load has registered nothing to run
+        loader.enabled()
 
 
 def carry_out(project_id: str) -> None:
     """Run every module's carrier on the project; the first that fails raises."""
+    _hooked()
     for carrier in list(CARRIERS.values()):
         carrier(project_id)
+
+
+def staying(project_id: str, left: Base | None, now: Base | None) -> str | None:
+    """What a switch of the active metaform from `left` to `now` says of the agents at work on `left`: they stay on
+    it, where their tickets are, listed and stopped as before, STORE-041. None when nothing changed or none works."""
+    if left is None or now is None or left.id == now.id:
+        return None
+    working = at_work(project_id, left.id)
+    if not working:
+        return None
+    count = counted(len(working), 'agent', 'agents')
+    return (f'{count[:1].upper()}{count[1:]} at work on {left.name} '
+            f'{"stays" if len(working) == 1 else "stay"} on it, where {"its" if len(working) == 1 else "their"} '
+            f'work is: {"; ".join(working)}. metaform dispatch sessions lists them and metaform dispatch stop <id> '
+            'ends one.')
+
+
+def at_work(project_id: str, base_id: str | None = None, *, stop: bool = False) -> tuple[str, ...]:
+    """What the modules run on the project's metaforms, on `base_id` alone when given, one line each; with `stop`, each
+    is ended first and the lines say what was stopped. A module that cannot say adds nothing."""
+    _hooked()
+    found: list[str] = []
+    for named in list(AT_WORK.values()):
+        try:
+            found += named(project_id, base_id, stop)
+        except (OSError, sqlite3.Error, Stop, StoreError):
+            continue
+    return tuple(found)
 
 
 KEPT = 'Its registration, folder, settings, origins, variants and conversations with agents stay.'
@@ -1076,6 +1124,7 @@ class Cleared:
     reports: int
     not_removed: tuple[tuple[str, str], ...] = ()
     backup: str | None = None  # the backup made before anything was removed, PROJ-030
+    agents: tuple[str, ...] = ()  # the agents at work on its maps, stopped before anything was removed, `AT_WORK`
 
     def to_dict(self) -> dict[str, Any]:
         found: dict[str, Any] = {'project': self.project_id, 'bases': list(self.bases),
@@ -1085,7 +1134,18 @@ class Cleared:
             found['restore'] = self.restore
         if self.not_removed:
             found['not_removed'] = [{'path': path, 'reason': reason} for path, reason in self.not_removed]
+        if self.agents:
+            found['stopped'] = list(self.agents)
         return found
+
+    def _agents(self, done: bool) -> str:
+        """The agents at work on its maps, which the clear stops first; nothing when none is."""
+        if not self.agents:
+            return ''
+        return (f' {"Stopped" if done else "It stops"} {counted(len(self.agents), "agent", "agents")} at work on '
+                f'{"them" if len(self.bases) != 1 else "it"} first: {"; ".join(self.agents)}. '
+                + ('Its conversation stays, and a resume brings it back.' if len(self.agents) == 1 else
+                   'Their conversations stay, and a resume brings each one back.'))
 
     def _bases(self, stores: bool) -> str:
         """The metaforms by name, and with their stores when `stores`; a clause set off by commas when named."""
@@ -1099,18 +1159,19 @@ class Cleared:
     def caution(self) -> str:
         """What `clear project` removes, said before it does."""
         return (f'Clearing {self.project_id} removes {self._bases(True)} and '
-                f'{counted(self.reports, "report file", "report files")}. {KEPT}')
+                f'{counted(self.reports, "report file", "report files")}.{self._agents(False)} {KEPT}')
 
     @property
     def said(self) -> str:
         """What `clear project` removed, said after it did."""
         return (f'Cleared {self.project_id}: {self._bases(False)} and '
-                f'{counted(self.reports, "report file", "report files")}. {KEPT}')
+                f'{counted(self.reports, "report file", "report files")}.{self._agents(True)} {KEPT}')
 
     @property
     def restore(self) -> str:
-        """The one command that brings back what the clear removed."""
-        return f'metaform restore project {self.project_id}'
+        """The one command that brings back what the clear removed: its own backup by name, since a later clear or
+        restore makes a newer one, PROJ-030."""
+        return f'metaform restore project {self.project_id}' + (f' {self.backup}' if self.backup else '')
 
     @property
     def held(self) -> str:
@@ -1130,23 +1191,24 @@ class Cleared:
             'They could not be removed and are still on disk.'
 
 
-def to_clear(project_id: str) -> Cleared:
-    """What `clear project` would remove: the project's bases by name, in creation order, and its report files."""
+def to_clear(project_id: str, *, agents: bool = True) -> Cleared:
+    """What `clear project` would remove: the project's bases by name, in creation order, and its report files; and
+    the agents at work on them, which it stops first, unless `agents` is off."""
     names = tuple(form.name for form in bases(project_id))
     folder = project_folder(project_id)
     reports = folder / 'reports' if folder is not None else None
     count = sum(1 for path in reports.iterdir() if path.is_file()) if reports is not None and reports.is_dir() else 0
-    return Cleared(project_id, names, count)
+    return Cleared(project_id, names, count, agents=at_work(project_id) if agents and names else ())
 
 
-def clear_project(project_id: str) -> Cleared:
+def clear_project(project_id: str, *, made_by: str = 'clear') -> Cleared:
     """Remove every base of the project with its store and its report files, PROJ-025.
 
     The registration, the settings, the history, the conversations with agents and everything else in the project's
     folder stay, PROJ-026. The rows go whatever happens to the files; a file or folder that cannot be removed is named
     in the result.
     """
-    found = to_clear(project_id)
+    found = to_clear(project_id, agents=False)
     # What the stores still hold that is not the map, a conversation written there before it had a store of its own,
     # is carried out first, and nothing goes when it cannot be: a clear starts the map again and nothing else, PROJ-026.
     try:
@@ -1155,10 +1217,13 @@ def clear_project(project_id: str) -> Cleared:
         reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
         raise StoreError(f'{project_id} was not cleared, since the conversations with its agents could not be kept '
                          f'first: {reason}.', 'metaform dispatch sessions thread=false') from error
+    # The agents at work on its maps are stopped through the module that runs them before their stores go, so none
+    # is left working, unseen and unstoppable, on a map that is gone; their conversations stay, `AT_WORK`.
+    stopped = at_work(project_id, None, stop=True)
     # It is backed up before anything goes, and nothing goes when it cannot be: what a clear removes cannot be made
     # again by an intake, and a clear without its backup is a loss the person learns of when they need it, PROJ-030.
     try:
-        saved = backup_project(project_id)
+        saved = backup_project(project_id, made_by=made_by)
     except (OSError, sqlite3.Error) as error:
         reason = error.strerror if isinstance(error, OSError) and error.strerror else str(error)
         raise StoreError(f'{project_id} was not cleared, since it could not be backed up first: {reason}.',
@@ -1174,7 +1239,7 @@ def clear_project(project_id: str) -> Cleared:
     _remove_tree(folder / 'reports', failed)
     changes.note(project_id)
     return Cleared(found.project_id, found.bases, found.reports, _innermost(failed),
-                   saved.name if saved is not None else None)
+                   saved.name if saved is not None else None, stopped)
 
 
 @dataclass(frozen=True)
@@ -1184,6 +1249,7 @@ class Backup:
     name: str
     bases: tuple[str, ...]
     reports: int
+    made_by: str = 'clear'  # what made it: a clear, or a restore's clear of what it replaced
 
     @property
     def held(self) -> str:
@@ -1223,9 +1289,10 @@ def _copied(source: Path, target: Path) -> None:
                 os.utime(to, ns=(found.st_atime_ns, found.st_mtime_ns))
 
 
-def backup_project(project_id: str) -> Backup | None:
-    """Save what a clear would remove, or nothing when the project holds nothing."""
-    found = to_clear(project_id)
+def backup_project(project_id: str, *, made_by: str = 'clear') -> Backup | None:
+    """Save what a clear would remove, or nothing when the project holds nothing; `made_by` is the clear's, or a
+    restore's, which clears first, so a bare restore never takes the backup of what a restore replaced, PROJ-030."""
+    found = to_clear(project_id, agents=False)
     if not found.bases and not found.reports:
         return None
     stamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')
@@ -1239,7 +1306,8 @@ def backup_project(project_id: str) -> Backup | None:
     forms = bases(project_id)
     rows = {'bases': [{'id': form.id, 'name': form.name, 'created': form.created}
                           for form in forms],
-            'active': next((form.id for form in forms if form.active), None), 'reports': found.reports}
+            'active': next((form.id for form in forms if form.active), None), 'reports': found.reports,
+            'made_by': made_by}
     folder = _folder_of_project(project_id)
     try:
         (kept / 'stores').mkdir(mode=0o700)
@@ -1260,7 +1328,7 @@ def backup_project(project_id: str) -> Backup | None:
         # clutter beside the real backups.
         shutil.rmtree(kept, ignore_errors=True)
         raise
-    return Backup(project_id, name, found.bases, found.reports)
+    return Backup(project_id, name, found.bases, found.reports, made_by)
 
 
 def backups(project_id: str) -> tuple[Backup, ...]:
@@ -1271,7 +1339,7 @@ def backups(project_id: str) -> tuple[Backup, ...]:
                        key=lambda path: path.name, reverse=True) if folder.is_dir() else ():
         rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
         found.append(Backup(project_id, kept.name, tuple(row['name'] for row in rows.get('bases', rows.get('metaforms', ()))),
-                            int(rows.get('reports', 0))))
+                            int(rows.get('reports', 0)), str(rows.get('made_by') or 'clear')))
     return tuple(found)
 
 
@@ -1286,21 +1354,31 @@ class Restored:
         return (f'Restored {self.backup.project_id} from {self.backup.name}: {self.backup.held}. The conversations '
                 'with agents were kept, with everything said since the backup.')
 
+    @property
+    def back(self) -> str | None:
+        """The one command that brings back what the project held before the restore, by its backup's name, which a
+        bare restore never takes, PROJ-030; None when it held nothing."""
+        return f'metaform restore project {self.backup.project_id} {self.held_before}' if self.held_before else None
+
     def to_dict(self) -> dict[str, Any]:
-        return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before}
+        return {**self.backup.to_dict(), 'said': self.said, 'held_before': self.held_before,
+                **({'restore_before': self.back} if self.back else {})}
 
 
 def restore_project(project_id: str, name: str | None = None) -> Restored:
-    """Bring a backup back, the newest when none is named. A project that holds metaforms or reports is cleared
-    first, which backs up what it holds, so a restore loses nothing either, PROJ-030. The conversations with agents
+    """Bring a backup back, the newest a clear made when none is named: one a restore made of what it replaced is
+    restored only by its name, so the command a clear printed never brings back an emptier map. A project that holds
+    metaforms or reports is cleared first, which backs up what it holds, so a restore loses nothing either, PROJ-030. The conversations with agents
     are never in what a clear removes, so what was said since the backup stays, and what the backup's stores still
     hold of them, kept there before they had a store of their own, is carried into it with them, `CARRIERS`."""
     known = backups(project_id)
-    chosen = next((one for one in known if name is None or one.name == name), None)
+    chosen = next((one for one in known if one.name == name or name is None and one.made_by != 'restore'), None)
     if chosen is None:
-        raise StoreError(f'No backup {name} of {project_id}.' if name else f'{project_id} has no backup.',
+        raise StoreError(f'No backup {name} of {project_id}.' if name else
+                         f'{project_id} has no backup a clear made; each one a restore made of what it replaced is '
+                         'restored by its name.' if known else f'{project_id} has no backup.',
                          f'metaform list backups {project_id}')
-    before = clear_project(project_id).backup
+    before = clear_project(project_id, made_by='restore').backup
     kept = _backups(project_id) / chosen.name
     rows = json.loads((kept / 'rows.json').read_text(encoding='utf-8'))
     folder = _folder_of_project(project_id)
@@ -1346,7 +1424,7 @@ def _holds_records(path: Path) -> bool:
 def not_empty(project_id: str) -> str | None:
     """Why the project cannot be removed yet: it holds what a clear removes and backs up, PROJ-031. None when empty: a
     metaform that holds nothing, as a read after a clear makes again, does not count."""
-    found = to_clear(project_id)
+    found = to_clear(project_id, agents=False)
     held = tuple(name for name in found.bases if _holds_records(store_file(project_id, name)))
     if not held and not found.reports:
         return None

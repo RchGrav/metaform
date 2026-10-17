@@ -41,7 +41,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
@@ -82,7 +82,7 @@ from acp.schema import (
 )
 
 from metaform import home, jev, prompt_files
-from metaform.data import NewerStore, Node, Store, StoreError, WorkRecord
+from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
 from metaform.module import (
     WITHHELD,
     Context,
@@ -833,6 +833,15 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
     has none waiting or a session ends with its ticket not done."""
     store = ctx.require_store()
+    # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
+    # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
+    # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
+    bound = await asyncio.to_thread(store.bound_base)
+    if bound is not None:
+        os.environ[BASE_VARIABLE] = bound.id
+        store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
+                      write_layer=store.write_layer)
+        ctx = replace(ctx, store=store)
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
     command = argv(start_command(ctx, agent))
     resume = str(ctx.nouns['resume']) if ctx.nouns.get('resume') else None
@@ -3358,8 +3367,9 @@ class Session:
         if self.ending:
             return
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
+        pinned = await asyncio.to_thread(self.store.bound_base)  # the metaform this runner stays on, `dispatch`
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
-                   origin=origin())
+                   origin=origin(), base=pinned.id if pinned is not None else None)
         def take() -> None:
             # A worker takes its ticket and records its session together. A conversation takes nothing of the map,
             # so it writes no metaform, and one held on no map makes none, PROJ-026.
@@ -3387,7 +3397,7 @@ class Session:
                             raise Stop(f'Session {self.session_id} has been resumed already.',
                                        f'metaform dispatch sessions id={self.work_id}')
                         # a conversation goes on where it hangs now, the map it began on cleared or restored since
-                        kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin',
+                        kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin', 'base',
                                 *(('work_id',) if self.system else ()))
                         tx.update('agent_sessions', {'session_id': self.session_id}, {key: row[key] for key in kept})
                         with contextlib.suppress(OSError):  # its row holds it now, not the file its start left
@@ -3401,10 +3411,11 @@ class Session:
             self.took = not self.prep
             self.recorded = True
         await self.write(take)
-        if self.node is None:  # an intake agent stays in the metaform it began in, whichever becomes active later
-            bound = await asyncio.to_thread(self.store.bound_base)
-            if bound is not None:
-                self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
+        # every runner stays in the metaform it began in, whichever becomes active later, `dispatch`; one started by
+        # an older starter, with none named, is bound here to the one it took its ticket in
+        bound = await asyncio.to_thread(self.store.bound_base)
+        if bound is not None:
+            self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
         await self.save_state()
         await self.apply_options()  # dispatch_<agent>_<option> and the ticket's own, on new, load and resume, P199
         if self.ending:
@@ -4291,7 +4302,9 @@ class Session:
                 sys.stderr.write(f'Could not end session {self.session_id} on work {self.work_id}: {error}\n'
                                  f'Nor with the code on disk: {failed}\n')
                 if self.took:
+                    on = os.environ.get(BASE_VARIABLE)  # its ticket is in the metaform this runner stayed on
                     sys.stderr.write(f'Work {self.work_id} stays taken by {self.by}. To put it back: '
+                                     f'{f"{BASE_VARIABLE}={on} " if on else ""}'
                                      f'metaform map work op=move id={self.work_id} column=todo\n')
                 return
         with contextlib.suppress(Exception):  # the release stands whether or not an open page hears of it

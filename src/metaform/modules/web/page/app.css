@@ -1279,6 +1279,7 @@ button.toolhead:hover{border-color:var(--control)}
 .emptystage h2{font-size:var(--t-xl)}
 .emptystage p{margin:0;color:var(--muted);font:var(--t-base)/1.55 var(--sans)}
 .emptystage small{color:var(--faint);font:var(--t-sm)/1.4 var(--sans)}
+.emptystage .other:empty{display:none}
 .emptypanel{display:grid;gap:var(--s3);justify-items:start}
 
 .linkish{background:none;border:0;padding:var(--s1);color:var(--muted);font:var(--t-sm) var(--sans);text-decoration:underline;text-underline-offset:3px;cursor:pointer}

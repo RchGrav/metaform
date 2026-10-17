@@ -272,8 +272,10 @@ def _open(ctx: Context, store: Store, notices: Notices, named: str = '') -> Reco
         target, name, is_active = Store(store.project_id, base=fresh.id), fresh.name, False
         notices.append({'where': 'base', 'message': f'This project already has an intake in base '
                                                         f'{active.name}. This one is recorded in the new base '
-                                                        f'{name}, which becomes the active one when the intake '
-                                                        'finishes; the earlier one is kept whole.'})
+                                                        f'{name}, beside it: {active.name} stays the active map '
+                                                        'for the person and every agent, and once this intake is '
+                                                        f'finished the person makes {name} the active one with '
+                                                        f'metaform map activate {name} --confirm.'})
     # No copy of the intake text is kept: the intake's purpose never changes, STORE-016.
     provenance = {'module': 'intake', 'workflow': 'canonical-intake', 'prompt': None,
                   'model': ctx.nouns.get('model'), 'role': ctx.nouns.get('role')}
@@ -1043,13 +1045,15 @@ def finish(ctx: Context) -> Any:
         else:
             _note(notices, found.store.finish(found.layer.name))
         if not found.active:
+            # A separate intake is finished beside the active map, never made active by itself: which map the
+            # person and every agent work on is the person's to change, and their tickets, conversations and agents
+            # at work stay where they are, STORE-041 as amended 2026-10-17.
             previous = store.active_base()
-            store.activate_base(found.metaform)
     if previous is not None:
-        notices.append({'where': 'base', 'message': f'This intake was stored as the new active base '
-                                                    f'{found.metaform}; the earlier one, {previous.name}, is '
-                                                    'kept whole. To switch back: metaform map activate '
-                                                    f'{previous.name}'})
+        notices.append({'where': 'base', 'message': f'This intake was stored as the base {found.metaform}, finished '
+                                                    f'beside the active map, {previous.name}, which stays active. '
+                                                    f'To make {found.metaform} the active map: metaform map activate '
+                                                    f'{found.metaform} --confirm'})
         if previous.name != found.metaform:
             # what the map in use until now held that this one does not, so a partial intake is seen at once
             earlier = [placed.element.address for placed in
@@ -1059,7 +1063,7 @@ def finish(ctx: Context) -> Any:
             if lacking:
                 shown = ', '.join(lacking[:10]) + (f' and {len(lacking) - 10} more' if len(lacking) > 10 else '')
                 notices.append({'where': 'elements', 'message': f'This intake holds {len(elements)} elements; '
-                                                                f'the map {previous.name} held {len(earlier)}, and '
+                                                                f'the map {previous.name} holds {len(earlier)}, and '
                                                                 f'{len(lacking)} of them are not in it: {shown}.'})
     for kind, text in (('report', report), ('feedback', feedback)):
         if text is not None:
@@ -1125,9 +1129,24 @@ def status_verb(ctx: Context) -> str:
                                                        'or discard it with metaform intake discard --confirm.'))
     if (several := _several(store)) is not None:
         lines.append(several)
+    if not store.has_intake() and (elsewhere := _mapped_elsewhere(store)):
+        # the project was mapped: its active base is empty, or new, and the map it had is kept, MCP-009
+        lines.insert(0, elsewhere)
     if not lines:
         lines.append('No intake yet. Read the instructions with metaform intake prompt.')
     return '\n'.join(lines) + '\n'
+
+
+def _mapped_elsewhere(store: Store) -> str | None:
+    """That the project has a finished intake in another metaform than the active one, which has none, with the
+    command that makes one of them active; None when no other has one, MCP-009."""
+    others = store.intake_bases()
+    if not others:
+        return None
+    active = store.active_base()
+    return (f'Intake: none in the active map {active.name if active is not None else "(none yet)"}; this project has '
+            f'a finished intake in {", ".join(others)}. To work on it again: metaform map activate {others[-1]} '
+            '--confirm')
 
 
 def status(ctx: Context) -> Status:
@@ -1153,6 +1172,10 @@ def status(ctx: Context) -> Status:
         return Status(lines=('Intake: complete', *recording), instruction=unfinished)
     if found is not None:
         return Status(lines=recording, instruction=unfinished)
+    # A project whose finished intake is in another metaform than the active one has been analysed: no agent is told
+    # it is a first run, which would send the person's own agent to map it again, MCP-009 as amended 2026-10-17.
+    if (elsewhere := _mapped_elsewhere(ctx.store)) is not None:
+        return Status(lines=(elsewhere,))
     return Status(lines=('Intake: none yet',), instruction=prompt_files.required(here, 'no_intake'))
 
 
@@ -1233,9 +1256,9 @@ MODULE = Module(
              nouns=(Noun('receiver', P('receiver', ''), required=False),
                     Noun('provider', P('provider', ''), required=False),
                     Noun(ADDRESS, E(ADDRESS, ''), required=False)), effect='remove', listed=recording),
-        Verb('finish', finish, 'Finish the intake and make its base the active map, keeping the earlier one whole. '
-                               'Switch back with metaform map activate <previous-name>. A verification pass is closed '
-                               'on the map it wrote onto, activating nothing. After finish the metaform '
+        Verb('finish', finish, 'Finish the intake. One recorded in a base of its own is finished beside the active '
+                               'map, which stays active: metaform map activate <its name> --confirm makes it the '
+                               'active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform '
                                'changes by refining, metaform map refine, or by another intake.',
              nouns=(Noun('report', 'Your report on the project you examined: broken code, things that need fixing, '
                                    'anything not working or partially working. On the command line a file is read '

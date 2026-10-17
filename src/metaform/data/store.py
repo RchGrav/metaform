@@ -633,6 +633,19 @@ class Store:
         with self._read() as tx:
             return reads.has_intake(tx)
 
+    def intake_bases(self) -> tuple[str, ...]:
+        """The names of the project's metaforms that hold a finished intake, in creation order, whichever is active:
+        whether the project has been mapped is the project's, not the active metaform's, which a new base or a clear
+        may leave empty, MCP-009 as amended 2026-10-17. A metaform that cannot be read is left out."""
+        found: list[str] = []
+        for base in home.bases(self.project_id):
+            try:
+                if Store(self.project_id, base=base.id).has_intake():
+                    found.append(base.name)
+            except StoreError:
+                continue
+        return tuple(found)
+
     def bases(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Base]:
         return sliced(home.bases(self.project_id), limit, after)
 
