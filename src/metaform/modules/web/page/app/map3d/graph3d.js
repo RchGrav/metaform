@@ -9,6 +9,7 @@ import * as ULTRA from '/page/ultra.js';
 import {$, css, reduced, h, fill} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
+import {selectedNode} from '/page/app/graph/data.js';
 import {MASCOT, HANDDRAG} from '/page/app/figures/mascot.js';
 import {FIGURE_PICK, figureAt, openFigure} from '/page/app/figures/ask.js';
 import {shownNode, colorOf, dim, dimmed, VIEW_SETTINGS, addBehind} from '/page/app/map3d/light.js';
@@ -367,7 +368,7 @@ function create3D() {
   addBehind();
   addBloom();
   ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides the look
-  ULTRA.attach(G, {wake: wake3d, reduced, css, selected: () => S.selected, hovered: () => hovered?.id ?? null,  // ULTRA
+  ULTRA.attach(G, {wake: wake3d, reduced, css, selected: selectedNode, hovered: () => hovered?.id ?? null,  // ULTRA
     dimmed: node => Boolean(dimmed(node)), idle:() => performance.now() - FRAMES.active > FRAMES.idle, toast,
     chained: () => FRAMES.id > 0, settings: async () => (await read('settings')).settings || [],
     save: async value => {  // the theme the look names: space, or the last plain one; draw3d.js loads after this part

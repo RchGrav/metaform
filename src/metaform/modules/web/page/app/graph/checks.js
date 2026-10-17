@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
 import {$, css} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
-import {graphData, READY} from '/page/app/graph/data.js';
+import {graphData, READY, nodeIn} from '/page/app/graph/data.js';
 import {ROAM, embody, bodies, characters} from '/page/app/figures/agents.js';
 import {MASCOT, mascotGlyph, mascotDriven} from '/page/app/figures/mascot.js';
 import {BUBBLE, say, readFor, CUT, cutMode, cutLink} from '/page/app/figures/cut.js';
@@ -47,7 +47,7 @@ import {P} from '/page/app/panel/prompts.js';
 import {LIVE} from '/page/app/live/stream.js';
 
 const accessed = (value, item) => typeof value === 'function' ? value(item) : value;
-const node3d = id => G?.graphData().nodes.find(item => item.id === id);
+const node3d = id => (G ? nodeIn(G.graphData(), id) : undefined);  // a join's, its receiver's
 const stageBox = () => $('#stage').getBoundingClientRect();
 
 window.metaform = {graph: () => graphData(), selected: () => S.selected, select: id => select(id, true),
@@ -55,7 +55,8 @@ window.metaform = {graph: () => graphData(), selected: () => S.selected, select:
   selectAddress,
   viewSlot: () => $('#viewslot'),
   find: address => [...S.elements.values()].find(entry => entry.element.address === address)?.element.id ?? null,
-  click3d: id => clicked3d(node3d(id)),
+  // a join is clicked on its edge, having no node of its own, as `clickedAt3d` takes an edge
+  click3d: id => (id.startsWith('p:') ? select(id, true) : clicked3d(node3d(id))),
   drawn: () => G ? {nodes: G.graphData().nodes.length, links: G.graphData().links.length} : null,
   curves: () => G ? G.graphData().links.map(link => ({k: link.k, curve: accessed(G.linkCurvature(), link)})) : [],
   linkColors: () => G ? G.graphData().links.map(link => ({join: link.join || null, k: link.k,
@@ -328,7 +329,7 @@ function toHex(color) {
 function look(id) {
   const node = G ? node3d(id) : null;
   const group = (M.base?.nodes.get(id) || M.nodes.get(id))?.g || null;
-  const box = group?.querySelector('rect') || null;
+  const box = group?.querySelector(':scope > rect:not(.glow2d)') || group?.querySelector('rect') || null;
   const material = node?.__threeObj?.material || null;
   return {...look2d(group, box), ...look3d(node, material, id),
     reach3d: R.nodes.has(id), reach2d: Boolean(group?.classList.contains('reach')),
@@ -341,10 +342,12 @@ function look2d(group, box) {
   const moving = part => getComputedStyle(part).animationName !== 'none';
   const animated = box ? moving(box) || moving(group) : false;
   const marked = ['broken', 'trouble', 'question', 'message'].some(name => group?.classList.contains('work-' + name));
+  // a pulsing glow is drawn by a copy beneath the part, `glow2d`
+  const glowing = [group, box, ...(group?.querySelectorAll(':scope > .glow2d') || [])].filter(Boolean);
   return {classes: group ? [...group.classList].filter(name => name.startsWith('work-')) : [],
     opacity2d: group ? Number(getComputedStyle(group).opacity) : null,
-    animated2d: animated,
-    glow2d: Boolean(box) && marked && [group, box].some(part => getComputedStyle(part).filter.includes('drop-shadow')),
+    animated2d: animated || glowing.some(moving),
+    glow2d: Boolean(box) && marked && glowing.some(part => getComputedStyle(part).filter.includes('drop-shadow')),
     bloom2d: Boolean(box && getComputedStyle(group).filter.includes('drop-shadow')),
     stroke2d: box ? toHex(getComputedStyle(box).stroke) : null};
 }

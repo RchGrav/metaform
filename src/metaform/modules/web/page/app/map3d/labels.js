@@ -24,6 +24,8 @@ import {flight} from '/page/app/camera/flight.js';
 import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet, meetEnds} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
+import {joinOf} from '/page/app/graph/data.js';
+import {atlasPaint, atlasDrop, atlasDraw, HIDDEN_LAYER} from '/page/app/map3d/nodes3d.js';
 
 /* The labels of the 3D map, VIEW-038, are drawn inside the scene, each its element's whole name, wrapped at word
  * breaks, painted on a canvas and shown as a sign in the scene, standing out from the map's middle.
@@ -77,7 +79,11 @@ export const LABEL = {size: 11, chosen: 13, wide: 9, line: 1.15, padX: 6, padY: 
   rate: 0.75, at: 1};
 // by node id: the label's sprite, its canvas, what it shows and where it is on the screen
 export const tags = new Map();
-export const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map(), fading: false};
+export const LABELS = {group: null, plane: null, on: true, only: null, pen: null, measured: new Map(), fading: false,
+  behind: false, paintUntil: 0};
+// the time a frame may spend painting labels, ms: a map that comes in, or a selection that dims every name, has
+// thousands to paint, so each frame paints what fits and the next frames go on, `layerLabel`; never fewer frames
+const PAINT_MS = 6;
 export const OUT = new THREE.Vector3(), UP = new THREE.Vector3(), AT = new THREE.Vector3();
 export const middle = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);  // the map's own up, which an outward sign keeps
@@ -125,6 +131,7 @@ function painted(tag, look, ratio, shape) {
   }
   tag.texture.dispose();                    // the canvas may have changed size
   tag.texture.needsUpdate = true;
+  atlasPaint(tag);  // drawn from its slot in the labels' atlas, `atlasDraw`
   Object.assign(tag, {lines: shape.lines, width: shape.width, height: shape.height, color: look.color});
 }
 function labelFor(node) {
@@ -133,6 +140,8 @@ function labelFor(node) {
   if (!LABELS.group) {
     LABELS.group = new THREE.Group();
     G.scene().add(LABELS.group);
+    // the signs are drawn by the atlas, `atlasDraw`, which composes each one's place itself as it draws it
+    LABELS.group.matrixWorldAutoUpdate = false;
     // Measured and painted again once the page's face is there.
     const faces = [500, 600].map(weight => document.fonts.load(`${weight} ${LABEL.size}px ${css('--sans')}`));
     Promise.all(faces).then(() => {
@@ -156,9 +165,10 @@ function labelFor(node) {
   // its own fade by depth, `layerLabel`, is its haze: the scene's, `depth3d`, would fade it twice
   sprite.renderOrder = LABEL.after;
   sprite.raycast = () => {};                // a label is never picked in place of the node
+  sprite.layers.set(HIDDEN_LAYER);  // never drawn itself: the atlas draws it, `atlasDraw`
   LABELS.group.add(sprite);
   tag = {id: node.id, text: node.name || '', sprite, texture, key: '', classes: [], lines: [], width: 0, height: 0,
-    under: false, z: 0, hidden: true, rect: null, color: ''};
+    under: false, z: 0, hidden: true, rect: null, color: '', slot: null, uv0: 0, uv1: 0, uvw: 0, uvh: 0};
   tags.set(node.id, tag);
   return tag;
 }
@@ -167,6 +177,7 @@ export function dropLabel(id) {
   if (!tag) return;
   LABELS.group?.remove(tag.sprite);
   tag.texture.dispose(); tag.sprite.material.dispose();
+  atlasDrop(tag);
   tags.delete(id);
 }
 /* What a label shows from its classes, as the page's own styles would give it. */
@@ -185,8 +196,14 @@ function lookOf(classes, palette) {
  * again (round 7's F5, 2026-10-15: 2.4 ms a frame with the camera still, for 397 nodes). */
 export function layered() {
   if (LABELS.group) LABELS.group.visible = LABELS.on;
-  if (unchanged()) return metSign(MEET.on ? tags.get(MEET.back?.id) : null, false);
+  selected3d();
+  if (unchanged()) {
+    metSign(MEET.on ? tags.get(MEET.back?.id) : null, false);
+    return atlasDraw(ORDER, ORDER.length, LABELS.on);
+  }
   LABELS.fading = false;
+  LABELS.behind = false;
+  LABELS.paintUntil = performance.now() + PAINT_MS;
   const frame = labelFrame();
   UP.set(0, 1, 0).applyQuaternion(frame.camera.quaternion);
   RIGHT.set(1, 0, 0).applyQuaternion(frame.camera.quaternion);
@@ -200,8 +217,23 @@ export function layered() {
   shown.sort((one, two) => one.far - two.far);
   const grid = screenGrid(frame.area, spheres);
   shown.forEach((label, index) => layerLabel(label, index, shown.length, grid, frame));
-  SEEN.moving = LABELS.fading || GHOSTS.built.size > 0;  // a title fading or a ghost rising is placed every frame
+  ORDER.length = 0;  // the labels nearest first, as the atlas draws them, farthest first, `atlasDraw`
+  for (let at = 0; at < shown.length; at++) ORDER.push(shown[at].tag);
+  // a title fading, a ghost rising or labels still to be painted are placed every frame
+  SEEN.moving = LABELS.fading || GHOSTS.built.size > 0 || LABELS.behind;
+  if (LABELS.behind) wake3d();
   metSign(MEET.on ? tags.get(MEET.back?.id) : null, true);
+  atlasDraw(ORDER, ORDER.length, LABELS.on);
+}
+const ORDER = [];
+/* The node the selection is drawn on: the selected node, or for a join, which has no node of its own, its receiving
+ * element, with the join's id. Worked out once a frame. */
+export const SELECTED3D = {key: null, id: null, join: null, joins: 0};
+function selected3d() {
+  if (SELECTED3D.key === S.selected && (!SELECTED3D.join || S.joins.length === SELECTED3D.joins)) return;
+  const key = S.selected, join = key && key.startsWith('p:') ? joinOf(key) : null;
+  SELECTED3D.key = key; SELECTED3D.id = join ? join.receiver : key; SELECTED3D.join = join ? join.id : null;
+  SELECTED3D.joins = S.joins.length;
 }
 /* What the labels were last placed from, `unchanged`: the camera's matrices and each node's place in typed arrays,
  * sized again only when the map's size changes, and the rest by value or identity. */
@@ -282,7 +314,9 @@ function placeLabel(node, frame, nearest, deepest) {
   const titled = node.t === 'purpose' && (node.id === S.selected || tags.get(node.id)?.fade > 0);
   if (node.t !== 'el' && !titled) return null;
   const tag = labelFor(node);
-  tag.text = titled ? joinTitle(node) : node.name || '';
+  // a join selected has no node of its own: its title is on its receiving element's sign while it is selected
+  const joined = SELECTED3D.join && node.id === SELECTED3D.id;
+  tag.text = titled ? joinTitle(node) : joined ? joinTitle({join: SELECTED3D.join}) : node.name || '';
   if (titled) {
     tag.fade = Math.max(0, Math.min(1, (tag.fade || 0) + (node.id === S.selected ? 1 : -1) * LABEL.titleStep));
     if (tag.fade > 0 && tag.fade < 1) { LABELS.fading = true; wake3d(); }
@@ -290,7 +324,7 @@ function placeLabel(node, frame, nearest, deepest) {
   tag.hidden = node.x === undefined;
   tag.sprite.visible = !tag.hidden && (!LABELS.only || LABELS.only.has(node.id));
   if (tag.hidden) return null;
-  tag.classes = [node.id === S.selected ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
+  tag.classes = [node.id === SELECTED3D.id ? 'sel' : S.neighbors.has(node.id) ? 'near' : S.selected ? 'dim' : '',
     ...(node.work || []).map(condition => `work-${condition}`), R.nodes.has(node.id) ? 'reach' : ''].filter(Boolean);
   const look = lookOf(tag.classes, frame.palette), how = frame.how;
   const depth = frame.depthOf(node), unit = frame.perPixel(Math.max(depth, 1e-3));
@@ -350,7 +384,11 @@ export function signsFor(camera) {
     FACE.set(0, 0, 1).applyQuaternion(sprite.quaternion);  // a sign's face is its plane's +z
     if (FACE.dot(TOWARD_EYE.subVectors(camera.position, sprite.position)) < 0) sprite.quaternion.multiply(TURNED);
   }
-  return () => { for (const [sprite, turn] of kept) sprite.quaternion.copy(turn); };
+  atlasDraw(ORDER, ORDER.length, LABELS.on);  // the atlas drawn as this eye sees the signs
+  return () => {
+    for (const [sprite, turn] of kept) sprite.quaternion.copy(turn);
+    atlasDraw(ORDER, ORDER.length, LABELS.on);
+  };
 }
 /* OUT, the way from the map's middle to a node, or up at the middle itself. */
 function outward(node) {
@@ -420,7 +458,11 @@ function layerLabel(label, index, count, grid, {how, palette, ratio}) {
   // painted for the size it is drawn at, in steps, so a near label is as sharp as one at its own size
   const sharp = ratio * Math.min(LABEL.largest, Math.max(1, Math.ceil(tag.grown / LABEL.sharper) * LABEL.sharper));
   const key = [tag.text, fontOf(look), look.color, look.ground, look.glow, sharp, tag.shape.lines.length].join('|');
-  if (key !== tag.key) { painted(tag, look, sharp, tag.shape); tag.key = key; }
+  if (key === tag.key) return;
+  // painted while this frame's time for painting lasts; the rest keep their picture, or wait unseen, for the next
+  if (performance.now() > LABELS.paintUntil) { LABELS.behind = true; return; }
+  painted(tag, look, sharp, tag.shape);
+  tag.key = key;
 }
 /* The met sign on the canvas, VIEW-005: while the camera meets a sign square on, the sign in the scene and its face
  * drawn flat on the screen look the same, so it is drawn on a layer over the map at the very rectangle its four

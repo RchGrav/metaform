@@ -644,22 +644,29 @@ const BATCH_HALO = HALO_FRAGMENT.replace(OWN, GIVEN)
 export function batch(object) {
   if (U.drawn !== 'ultra') return null;
   const material = object.material;
+  // each batch made once for a material and kept on it while what it was made from holds, so a frame makes none
   if (material instanceof BodyMaterial && !material.transparent && material.visible && !object.userData.host) {
-    return {key: `body:${material.kind}:${material.uniforms.radius.value}`, look: material, make: () =>
-      new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_BODY, fog: true,
-        defines: {KIND: KIND[material.kind]},
-        uniforms: {radius: {value: material.uniforms.radius.value}, ...U.shared, ...FOGGED()}})};
+    const radius = material.uniforms.radius.value, kept = BATCHED.get(material);
+    if (kept && kept.a === radius) return kept;
+    return keptBatch(material, {key: `body:${material.kind}:${radius}`, look: material, a: radius, b: 0,
+      make: () => new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_BODY, fog: true,
+        defines: {KIND: KIND[material.kind]}, uniforms: {radius: {value: radius}, ...U.shared, ...FOGGED()}})});
   }
   const host = object.userData.host?.material;
   if (material?.fragmentShader === HALO_FRAGMENT && host instanceof BodyMaterial) {
-    const {edge, strength} = material.uniforms;
-    return {key: `halo:${edge.value}:${strength.value}`, look: host, make: () =>
+    const {edge, strength} = material.uniforms, kept = BATCHED.get(material);
+    if (kept && kept.look === host && kept.a === edge.value && kept.b === strength.value) return kept;
+    return keptBatch(material, {key: `halo:${edge.value}:${strength.value}`, look: host, a: edge.value,
+      b: strength.value, make: () =>
       new THREE.ShaderMaterial({vertexShader: BATCH_VERTEX, fragmentShader: BATCH_HALO, side: THREE.BackSide,
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true,
-        uniforms: {edge: {value: edge.value}, strength: {value: strength.value}, ...U.shared, ...FOGGED()}})};
+        uniforms: {edge: {value: edge.value}, strength: {value: strength.value}, ...U.shared, ...FOGGED()}})});
   }
   return null;
 }
+// each material's batch, kept beside it and not in its userData, which three.js copies through JSON when it clones
+const BATCHED = new WeakMap();
+const keptBatch = (material, batch) => { BATCHED.set(material, batch); return batch; };
 /* What one instance takes from a body's material: its color and opacity, its signal light, its seed, selection and
  * dimming, as the body's own material and its halo's `follows` read them. The selection and the dimming ease toward
  * where they go and never quite arrive, so they are taken to a thousandth, and a body at rest sends nothing. */

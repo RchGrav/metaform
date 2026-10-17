@@ -44,7 +44,8 @@ function pickable3d(link) {
   if (!link.join || (link.k !== 'purpose' && link.k !== 'encounter')) return false;
   return typeof from === 'object' && from.x !== undefined && to.x !== undefined && shownNode(from) && shownNode(to);
 }
-export const purposeOf = link => endOf(link.k === 'purpose' ? link.target : link.source);
+// the join an edge draws, as a selection names it: a join has no node of its own, only its edges
+export const purposeOf = link => 'p:' + link.join;
 /* Each node's reach, in both maps: the area of the screen where the pointer takes it. It reaches half the distance to
  * its nearest neighbour on the screen, centre to centre, so neighbours share the room between them evenly; never less
  * than the node as drawn, and never more than REACH.most CSS pixels, so a node alone does not take the empty space

@@ -77,22 +77,31 @@ export function parentOf(key) {
   return across(new Set(receivers))[0] || null;
 }
 export function roots() {  // the nodes nothing receives from, CQUs first; then any part of the map they do not reach
-  const top = [...S.elements.keys()].filter(key => !parentOf(key));
+  // what each element receives from, and every element some element receives from, found in one pass over the joins:
+  // asked of each element in turn, each asking walked every join (critic F1, 2026-10-17)
+  const below = new Map(), provided = new Set();
+  for (const join of S.joins) {
+    if (!S.elements.has(join.receiver)) continue;
+    let row = below.get(join.receiver);
+    if (!row) below.set(join.receiver, row = []);
+    for (const id of join.providers) if (S.elements.has(id)) { row.push(id); provided.add(id); }
+  }
+  const top = [...S.elements.keys()].filter(key => !provided.has(key));
   const cqu = key => S.elements.get(key).element.role === 'CQU';
   const ordered = [...across(top.filter(cqu)), ...across(top.filter(key => !cqu(key)))];
   const reached = new Set(ordered);
-  reachAll([...ordered], reached);
+  reachAll([...ordered], reached, below);
   for (const key of across([...S.elements.keys()].filter(key => !reached.has(key)))) {
     if (reached.has(key)) continue;
     ordered.push(key); reached.add(key);
-    reachAll([key], reached);
+    reachAll([key], reached, below);
   }
   return ordered;
 }
 /* Every node reached down the tree from the ones queued, marked reached. */
-function reachAll(queue, reached) {
-  while (queue.length) {
-    for (const next of childrenOf(queue.shift())) if (!reached.has(next)) { reached.add(next); queue.push(next); }
+function reachAll(queue, reached, below) {
+  for (let at = 0; at < queue.length; at++) {
+    for (const next of below.get(queue[at]) || []) if (!reached.has(next)) { reached.add(next); queue.push(next); }
   }
 }
 export function goInside(key) { if (!MEM.key) enter(key); }  // a memory network has no inside of its own
@@ -175,8 +184,9 @@ function levels() {
   };
   // the tops, in the order `roots` gives them and then what only a hidden element received; then, one at a time as
   // `roots` takes them, any loop no top reaches
-  down([...roots(), ...S.elements.keys()].filter(key => seen(key) && !provided.has(key)));
-  for (const key of [...roots(), ...S.elements.keys()]) if (seen(key) && !level.has(key)) down([key]);
+  const order = [...roots(), ...S.elements.keys()];
+  down(order.filter(key => seen(key) && !provided.has(key)));
+  for (const key of order) if (seen(key) && !level.has(key)) down([key]);
   let least = Infinity, deepest = 0;
   for (const at of level.values()) deepest = Math.max(deepest, at);
   for (const [receiver, row] of below) {  // a join is drawn once its receiver and a provider are

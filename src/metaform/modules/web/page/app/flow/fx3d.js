@@ -280,8 +280,8 @@ export function flow3d(now, data) {
   }
   fxDone();
 }
-/* The links that carry a join's flow: from its receiver to its purpose vertex, and on to the elements it holds. */
-export const carries = link => !reduced() && (link.k === 'purpose' || link.k === 'encounter') ? 1 : 0;
+/* The links that carry a join's flow: its edges, from its receiver to each element it holds. */
+export const carries = link => !reduced() && link.k === 'encounter' ? 1 : 0;
 /* Each join drawn, by its links that carry the flow and are shown: its receiver, its purpose vertex and the elements
  * drawn that it holds; and how many such links there are. While the flow is held, `dots3d`, the library's own dots,
  * made for that check alone, are shown held at that share of the way instead, and no way is gathered. */
@@ -300,8 +300,8 @@ function waysOf(data) {
     if (!carries(link) || !shown(link)) continue;
     count++;
     let way = ways.get(link.join);
-    if (!way) ways.set(link.join, way = {receiver: null, purpose: null, providers: []});
-    if (link.k === 'purpose') Object.assign(way, {receiver: from, purpose: to}); else way.providers.push(to);
+    if (!way) ways.set(link.join, way = {receiver: from, providers: []});
+    way.providers.push(to);
   }
   return {ways, count};
 }
@@ -323,7 +323,7 @@ function flowJoin(id, join, way, ease, colors) {
   FLOW.count++;
   const {asks, since, size, reply} = flowAt(join);
   for (const to of way.providers) {
-    const path = [way.receiver, way.purpose, to];
+    const path = [way.receiver, to];
     if (!asks) fxRecord(path, since, colors.record, false);
     else if (since < FLOW.ask) fxRequest(path, since / FLOW.ask, false);
     else if (since < FLOW.ask + reply) for (const back of join.ifd === 'both' ? [true, false] : [true]) {

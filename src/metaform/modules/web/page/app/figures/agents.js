@@ -15,7 +15,8 @@ import {AT} from '/page/app/map3d/labels.js';
 import {flowLive, flowTickets} from '/page/app/flow/flow.js';
 import {wake2d} from '/page/app/map2d/flow2d.js';
 import {D, ticketOf, glyphFor} from '/page/app/agents/dispatch.js';
-import {holderOf} from '/page/app/keys/walk.js';
+import {holderOf, depthView} from '/page/app/keys/walk.js';
+import {nodeIn} from '/page/app/graph/data.js';
 import {keepMascot} from '/page/app/views/settings.js';
 
 /* ---------- 3D: a synaptic map, drawn as the approved prototype draws it ---------- */
@@ -50,7 +51,8 @@ export const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, si
   held: (() => { try { return localStorage.getItem('metaform.agentSizeHeld') === '1'; } catch { return false; } })(),
   // told the node when a figure starts or ends its time at work there, the work camera's `workChanged`
   onWork: null};
-export const nodeById = (data, id) => data.nodes.find(node => node.id === id);
+// a join's key names its receiving element's node, as a join has no node of its own, `nodeIn`
+export const nodeById = (data, id) => nodeIn(data, id);
 export const primaryOf = data => data.nodes.find(node => node.t === 'el' && node.role === 'DE')
   || data.nodes.find(node => node.t === 'el');
 export const ticketNode = ticket => ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id;
@@ -103,11 +105,11 @@ export function figures(tickets) {
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
   if (!home) return;
-  const live = liveWork();
+  const live = liveWork(), view = depthView();  // what the depth shows, worked out once for every ticket
   for (const ticket of tickets) {
     // a part held deeper than the depth is worked at the node that holds it, VIEW-051
     const figure = ROAM.figures.get(ticket.id);
-    const target = holderOf(ticket.held ? talkTarget(ticket, data) : ticketNode(ticket));
+    const target = holderOf(ticket.held ? talkTarget(ticket, data) : ticketNode(ticket), view);
     const working = drawnWorking(ticket, live);
     if (figure) {
       if (working && figure.done) turnRound(figure, data);

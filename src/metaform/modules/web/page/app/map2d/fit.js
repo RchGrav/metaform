@@ -6,7 +6,7 @@ import {FRAMED, S} from '/page/app/core/reads.js';
 import {paceOf} from '/page/app/map3d/light.js';
 import {MARGIN} from '/page/app/camera/flight.js';
 import {VIEW, PEEK} from '/page/app/views/settings.js';
-import {M, FIT2D, build2D} from '/page/app/map2d/build.js';
+import {M, FIT2D, build2D, glow2d, elkLaid, elkLayout} from '/page/app/map2d/build.js';
 import {renderCrumbs} from '/page/app/map2d/inside.js';
 import {frame, arrive, into, setCam, stopCam, moveCam, area2d, focus2d, aim2d,
   center2d, foot2d} from '/page/app/map2d/camera.js';
@@ -198,14 +198,28 @@ export async function fitPick2d(body, shape, generation) {
     if (!drawing) {
       await (shown ? idle2d() : new Promise(go => setTimeout(go)));  // the page takes its input, as one layout holds it
       if (generation !== M.generation) return null;
-      drawing = await drawWay(way, body, `map2d${generation}n${at}`);
+      // a map drawn one way is laid out the other ways by ELK alone, in its worker, and only the way chosen is drawn
+      const laid = FIT2D.laid.get(text);
+      drawing = laid ? await sizeWay(way, laid) : await drawWay(way, body, `map2d${generation}n${at}`, shape.nodes);
       if (!drawing) { if (generation !== M.generation) return null; continue; }  // the other ways may still be drawn
+      if (drawing.laid) {
+        FIT2D.laid.set(text, drawing.laid);
+        while (FIT2D.laid.size > 4) FIT2D.laid.delete(FIT2D.laid.keys().next().value);  // each a whole graph
+      }
     }
     FIT2D.drawn.set(key, drawing);  // the latest last, and the oldest let go
     while (FIT2D.drawn.size > FIT2D.most) FIT2D.drawn.delete(FIT2D.drawn.keys().next().value);
     if (generation !== M.generation) return null;  // kept for the choice that follows
     const score = fitScale2d(drawing, area);
-    if (!best || score > best.score) best = {...drawing, way, score};
+    if (!best || score > best.score) best = {...drawing, way, score, key};
+  }
+  if (best && !best.result) {  // the way chosen was laid out and not drawn: it is drawn now, the one Mermaid drawing
+    await (shown ? idle2d() : new Promise(go => setTimeout(go)));
+    if (generation !== M.generation) return null;
+    const drawn = await drawWay(best.way, body, `map2d${generation}c`, shape.nodes);
+    if (generation !== M.generation) return null;
+    if (drawn) FIT2D.drawn.set(best.key, drawn);  // kept drawn, so the same map in the same pane is drawn at once
+    best = drawn ? {...drawn, way: best.way, score: best.score, key: best.key} : null;
   }
   if (!best) { FIT2D.since = null; throw new Error('ELK laid out none of the ways.'); }
   if (fitPin2d() !== pin) return fitPick2d(body, shape, generation);  // its direction was changed meanwhile
@@ -231,11 +245,35 @@ function waysFor(shape, pin, aim) {
     {vertical: !first, wrap: false, aim}];
 }
 /* One way laid out now, with its size; null where ELK fails it, or Mermaid gives back a drawing with no size. */
-async function drawWay(way, body, id) {
+async function drawWay(way, body, id, nodes = null) {
   try {
+    elkLaid();  // a layout asked before this drawing is not this drawing's
     const {svg} = await fitDraw2d(id, `flowchart ${way.vertical ? 'TB' : 'LR'}\n${body}`, fitOptions2d(way));
     const box = (svg.match(/viewBox="([^"]+)"/)?.[1] || '').split(/[\s,]+/).map(Number);
-    return box[2] > 0 && box[3] > 0 ? {result: {svg}, w: box[2], h: box[3]} : null;
+    if (!(box[2] > 0 && box[3] > 0)) return null;
+    // what ELK laid this drawing out from, kept with how much larger Mermaid draws it than ELK laid it out, so the
+    // other ways to lay the map out are measured from ELK's layouts alone, `sizeWay`
+    const elk = elkLaid(), ok = elk && nodes !== null && elk.asked.graph?.children?.length === nodes;
+    const pad = ok ? {w: box[2] - elk.answer.width, h: box[3] - elk.answer.height} : null;
+    const laid = ok ? {asked: elk.asked, way, pad} : null;
+    return {result: {svg}, w: box[2], h: box[3], laid};
+  } catch (error) { return null; }
+}
+/* One way laid out by ELK alone, in its worker, from the graph a drawing of the same map was laid out from: the size
+ * Mermaid would draw it, and no drawing, which is made only for the way chosen, `fitPick2d`. The graph's own options
+ * are those that drawing was given, ELK's direction and the options of its way, `fitOptions2d`, given in place of the
+ * drawing's; null where ELK fails it. */
+async function sizeWay(way, laid) {
+  const own = fitOptions2d(laid.way), options = {...laid.asked.graph.layoutOptions};
+  // the drawing's own way's options taken out where they are still its own, and this way's put in their place, so
+  // an option Mermaid set over the page's stays Mermaid's
+  for (const [name, value] of Object.entries(own)) if (options[name] === value) delete options[name];
+  for (const [name, value] of Object.entries(fitOptions2d(way))) if (!(name in options)) options[name] = value;
+  options['elk.direction'] = way.vertical ? 'DOWN' : 'RIGHT';
+  const message = {...laid.asked, graph: {...laid.asked.graph, layoutOptions: options}};
+  try {
+    const answer = await elkLayout(message);
+    return {result: null, w: answer.width + laid.pad.w, h: answer.height + laid.pad.h, laid: null};
   } catch (error) { return null; }
 }
 /* A pane reshaped into another step of width to height, `fitStep2d`, lays the map out again, P043: 150 ms after it
@@ -339,16 +377,24 @@ export function mountSvg(result, host, hidden) {
   if (hidden) { svg.style.visibility = 'hidden'; host.append(svg); } else fill(host, svg);
   return svg;
 }
-/* `title` names the node in full, kept on it as `data-title`; `tip` is its hovertext, shown only while the map's text
- * is drawn smaller than Small, `hover2d`. */
-export function placeIn(nodes, id, group, title, work, tip = title) {
+/* Where a node's group is drawn: its box and its middle in the drawing's units. A drawing's nodes are all measured
+ * before any is marked, `nodesIn`: a mark written between two measures made the browser lay the drawing out again for
+ * each node. */
+export function measureIn(group) {
   const box = group.getBBox();
   const matrix = group.transform.baseVal.consolidate()?.matrix;
   const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2).matrixTransform(matrix || new DOMMatrix());
+  return {box, center};
+}
+/* `title` names the node in full, kept on it as `data-title`; `tip` is its hovertext, shown only while the map's text
+ * is drawn smaller than Small, `hover2d`. */
+export function placeIn(nodes, id, group, title, work, tip = title, measured = measureIn(group)) {
+  const {box, center} = measured;
   nodes.set(id, {g: group, x: center.x, y: center.y, w: box.width, h: box.height, tip});
   group.dataset.key = id;  // what the node stands for, kept from one drawing to the next as the mermaid id is not
   group.dataset.title = title;
   for (const condition of work || []) group.classList.add(`work-${condition}`);  // the node's condition, MAP-046
+  if (work?.length) glow2d(group);  // its pulse drawn by a copy, `glow2d`
   const paced = S.progress?.get(id);
   if (paced) group.style.setProperty('--pace', `${paceOf({id})}s`);
   group.addEventListener('click', event => { event.stopPropagation(); clicked2d(id, event); });

@@ -4,6 +4,7 @@ import '/page/app/map3d/light.js';  // the part before runs first, so the parts 
 import * as THREE from 'three';
 import {reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
+import {nodeIn} from '/page/app/graph/data.js';
 import {layerColor} from '/page/app/header/layers.js';
 import {colorOf, ownColor, colored, shine} from '/page/app/map3d/light.js';
 import {G} from '/page/app/map3d/graph3d.js';
@@ -74,7 +75,7 @@ function reached(id, from, outward) {
 /* From the element the property is linked to the wave goes both ways; past it, it keeps its way, on toward the
  * leaves or on toward the trunk, and never out along a branch the property does not reach. */
 function send(data, id, from, outward) {
-  const template = data.nodes.find(node => node.id === id)?.__threeObj;
+  const template = nodeIn(data, id)?.__threeObj;
   if (!template || !template.material) return;
   for (const link of data.links) {
     if (!inReach(link)) continue;

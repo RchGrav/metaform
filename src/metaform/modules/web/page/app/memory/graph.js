@@ -3,7 +3,7 @@ import '/page/app/map2d/inside.js';  // the part before runs first, so the parts
 import {$, reduced, h, fill} from '/page/app/core/dom.js';
 import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
 import {colorVar} from '/page/app/header/layers.js';
-import {joinOf} from '/page/app/graph/data.js';
+import {joinOf, nodeIn} from '/page/app/graph/data.js';
 import {G, nodeSize} from '/page/app/map3d/graph3d.js';
 import {draw3D} from '/page/app/map3d/draw3d.js';
 import {V3, away3d} from '/page/app/camera/flight.js';
@@ -95,7 +95,7 @@ export function memoryData() {
  * toward the background. With reduced motion the views change at once. */
 function into3d(key) {
   if (!G || reduced()) return Promise.resolve();
-  const node = G.graphData().nodes.find(item => item.id === key);
+  const node = nodeIn(G.graphData(), key);
   if (node && node.x !== undefined) {
     // the camera leaves a sign it met, whose name is drawn over the map only while it is met square on
     meetEnds();
