@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tomllib
 import webbrowser
@@ -448,6 +449,8 @@ def open_browser(address: str) -> bool:
     agent's run, or where the only browser found would take over this terminal."""
     if os.environ.get('METAFORM_ROLE') not in (None, '', 'none'):
         return False
+    if wsl():
+        return open_on_windows(address)
     if sys.platform not in ('win32', 'darwin') and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
         return False
     try:
@@ -460,3 +463,33 @@ def open_browser(address: str) -> bool:
         return bool(browser.open(address))
     except OSError:
         return False
+
+
+def wsl() -> bool:
+    """Running inside WSL, where a Linux browser would open in a WSL window instead of the person's Windows desktop."""
+    if sys.platform != 'linux':
+        return False
+    if os.environ.get('WSL_DISTRO_NAME') or os.environ.get('WSL_INTEROP'):
+        return True
+    try:
+        return 'microsoft' in Path('/proc/sys/kernel/osrelease').read_text().lower()
+    except OSError:
+        return False
+
+
+def open_on_windows(address: str) -> bool:
+    """Open the page in the Windows default browser from WSL: wslview when installed, otherwise explorer.exe (on PATH
+    or under /mnt/c), which
+    hands an address to the default browser. Never a browser inside WSL; when neither is found nothing opens and the
+    caller prints the address."""
+    windows = Path('/mnt/c')
+    explorer = windows / 'Windows' / 'explorer.exe'  # appendWindowsPath = false leaves it off PATH
+    command = shutil.which('wslview') or shutil.which('explorer.exe') or (str(explorer) if explorer.is_file() else None)
+    if not command:
+        return False
+    try:
+        subprocess.Popen([command, address], cwd=windows if windows.is_dir() else None, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return False
+    return True

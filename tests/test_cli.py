@@ -1431,3 +1431,16 @@ def test_the_demo_mascot_tries_again_only_when_a_page_of_its_project_opens(monke
     shown.wait(5)
     assert (quiet, burst) == (1, 0)
     assert len(tries) >= 2 and tries[1] - began < 1
+
+
+def test_open_browser_under_wsl_opens_the_windows_browser(monkeypatch):
+    """Under WSL (WSLg sets DISPLAY) the page opens in the Windows default browser, never a browser inside WSL."""
+    from metaform import start
+    launched = []
+    monkeypatch.delenv('METAFORM_ROLE', raising=False)
+    monkeypatch.setattr(start, 'wsl', lambda: True)
+    monkeypatch.setattr(start.shutil, 'which', lambda name: '/usr/bin/wslview' if name == 'wslview' else None)
+    monkeypatch.setattr(start.subprocess, 'Popen', lambda command, **kw: launched.append(command))
+    monkeypatch.setattr(start.webbrowser, 'get', lambda: pytest.fail('a WSL browser was looked up'))
+    assert start.open_browser('http://127.0.0.1:7433/') is True
+    assert launched == [['/usr/bin/wslview', 'http://127.0.0.1:7433/']]
