@@ -328,8 +328,10 @@ const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyo
   at: -Infinity};
 /* Whether no agents read is pending or running, for a check that must count reads a change of its own causes. */
 export const agentsIdle = () => !AGENTS.busy && !AGENTS.sessions && !AGENTS.chat && !AGENTS.whole;
+// a thread's own lines, the project's, and the signals beside the map, dispatch's THREAD_TABLES
+const THREAD_TABLES = ['dispatch.session_lines', 'dispatch.lines'];
 export const linesOnly = payload => payload.tables === 'dispatch' && Array.isArray(payload.dispatch_tables)
-  && payload.dispatch_tables.length > 0 && payload.dispatch_tables.every(table => table === 'dispatch.lines');
+  && payload.dispatch_tables.length > 0 && payload.dispatch_tables.every(table => THREAD_TABLES.includes(table));
 const SESSION_KINDS = ['session', 'signal', 'permission', 'question'];
 /* Whether `kinds` holds one of `wanted`, walked by index, so an event allocates nothing. */
 export function holdsAny(kinds, wanted) {

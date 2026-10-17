@@ -41,7 +41,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
 from pathlib import Path
 from typing import Any, cast
@@ -82,7 +82,7 @@ from acp.schema import (
 )
 
 from metaform import home, jev, prompt_files
-from metaform.data import NewerStore, Node, Store, StoreError, WorkRecord
+from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
 from metaform.module import (
     WITHHELD,
     Context,
@@ -111,6 +111,7 @@ from . import (
     group_options,
     handed_path,
     handoff_parts,
+    held_ticket,
     holder,
     intake_id,
     intake_prompt,
@@ -142,7 +143,7 @@ from . import (
     workflow_skill,
 )
 from .merge import checkpoint
-from .signals import add_line, concerning, mark_peer
+from .signals import THREAD_TABLES, add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
@@ -283,7 +284,7 @@ def confined_command(denied: Sequence[str], command: str, args: Sequence[str]) -
                 *args]
     return None
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
-LINES_EVERY = 0.25  # at most one `dispatch.lines` event per this many seconds; the rows are written at once
+LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
 RELEASE_LIMIT = 90.0  # the one wait for a new process to release: its start, and two writes that may each wait on a lock
 RELEASE = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import release; '
@@ -832,6 +833,15 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
     has none waiting or a session ends with its ticket not done."""
     store = ctx.require_store()
+    # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
+    # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
+    # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
+    bound = await asyncio.to_thread(store.bound_base)
+    if bound is not None:
+        os.environ[BASE_VARIABLE] = bound.id
+        store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
+                      write_layer=store.write_layer)
+        ctx = replace(ctx, store=store)
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
     command = argv(start_command(ctx, agent))
     resume = str(ctx.nouns['resume']) if ctx.nouns.get('resume') else None
@@ -853,9 +863,10 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         return await moved_on(store, await Session(ctx, held_in, None, agent, command, resumed, prep=True, system=True,
                                                    work_id=work_id, resume=resume).run())
     if ctx.nouns.get('system'):  # the person's system agent, the +1: talks with them in the project's folder
-        held = await asyncio.to_thread(ticket, store, work_id)
+        # on its held ticket; with no map, or on a ticket a map cleared since took with it, on no ticket, PROJ-026
+        held = await asyncio.to_thread(held_ticket, store, work_id)
         return await moved_on(store, await Session(ctx, store, held, agent, command, resumed, prep=True, system=True,
-                                                   resume=resume).run())
+                                                   work_id=work_id, resume=resume).run())
     if ctx.nouns.get('prep'):  # VIEW-044: an agent helps the person prepare a merge under review, in its worktree
         from .merge import worktree_of
         held = await asyncio.to_thread(ticket, store, work_id)
@@ -1248,8 +1259,11 @@ class Session:
                                     # how the person chose this session's permission requests are answered, one of
                                     # dispatch_prompts' choices over the launch's and the project's, `answering`
                                     'prompts': None,
-                                    # what a conversation is about, so the person's next Call or Chat on it resumes it
-                                    'about': str(ctx.nouns.get('talk') or 'system') if system else None}
+                                    # what a conversation is about, so the person's next Call or Chat on it resumes it,
+                                    # and what its agent is, so the person's system agent is told from an intake or a
+                                    # sentinel whatever its work id hangs on, PROJ-026
+                                    'about': str(ctx.nouns.get('talk') or 'system') if system else None,
+                                    'role': self.role}
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
@@ -1271,7 +1285,7 @@ class Session:
         self.flow_text = ''
         self.flow_key: str | None = None  # the note the text being written grows in
         self.flow_at = 0.0
-        self.lines_at = 0.0  # when the last `dispatch.lines` event was fired
+        self.lines_at = 0.0  # when the last `dispatch.session_lines` event was fired
         self.lines_due: asyncio.TimerHandle | None = None  # the event that covers lines written since, when one waits
         self.flows = 0
         self.asked: dict[str, tuple[asyncio.Future[str | None], list[PermissionOption], str]] = {}
@@ -1474,7 +1488,7 @@ class Session:
             raise
         return result
 
-    async def table(self, change: Callable[[Any], Any], *, name: str = 'lines', fatal: bool = True) -> Any:
+    async def table(self, change: Callable[[Any], Any], *, name: str = 'session_lines', fatal: bool = True) -> Any:
         """One write to this module's own tables, off the loop, then `map.changed` naming the dispatch tables, so an
         open agent window shows it at once and an open page reads only its agents again, not the map, STORE-045. A
         write that is not `fatal`, a line of a thread, is logged when it fails and the runner goes on without it,
@@ -1484,7 +1498,7 @@ class Session:
                 return change(tx)
         try:
             result = await asyncio.to_thread(done)
-            if name == 'lines':
+            if name == 'session_lines':
                 await self.lines_changed()
             else:
                 await self.changed(tables='dispatch', dispatch_tables=[f'dispatch.{name}'])
@@ -1505,13 +1519,13 @@ class Session:
         when that time is up, covering every line written meanwhile. Any other event announces them with it."""
         wait = self.lines_at + LINES_EVERY - time.monotonic()
         if wait <= 0:
-            await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines'])
+            await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines'])
         elif self.lines_due is None:
             self.lines_due = asyncio.get_running_loop().call_later(wait, lambda: self.spawn(self.lines_flush()))
 
     async def lines_flush(self) -> None:
         if self.lines_due is not None:  # an event fired since has announced them
-            await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines'])
+            await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines'])
 
     def lines_covered(self) -> None:
         """An event about to fire tells readers of the lines too, so a waiting one is not needed."""
@@ -1531,13 +1545,13 @@ class Session:
         if tables:
             payload['tables'] = tables
         if dispatch_tables is not None and self.lines_due is not None:
-            dispatch_tables = sorted({*dispatch_tables, 'dispatch.lines'})
+            dispatch_tables = sorted({*dispatch_tables, 'dispatch.session_lines'})
         if dispatch_tables is not None:
             payload['dispatch_tables'] = dispatch_tables
         if self.flowing:  # where the agent's tool calls reached since the last event, `flowed`
             payload['flow'], self.flowing = self.flowing, []
         stated = False
-        if tables != 'dispatch' or dispatch_tables is None or 'dispatch.lines' in dispatch_tables:
+        if tables != 'dispatch' or dispatch_tables is None or THREAD_TABLES.intersection(dispatch_tables):
             self.lines_covered()  # no detail, or the map's tables, reads the agents too
             stated, self.state_noted = self.state_noted, False
         if tables == 'dispatch':  # this session's own tables: its ticket and session, so no other runner reads for it
@@ -1581,9 +1595,9 @@ class Session:
                    origin=origin())
 
         def write(tx: Any) -> None:
-            tx.insert('sessions', row)
+            tx.insert('agent_sessions', row)
             add_line(tx, row['session_id'], self.work_id, None, 'failed', text)
-        await self.table(write, name='sessions', fatal=False)
+        await self.table(write, name='agent_sessions', fatal=False)
 
     async def flush(self) -> None:
         """The message or thought text gathered so far, as one note: the note it has grown in while it was written."""
@@ -2808,7 +2822,7 @@ class Session:
             async with self.lock:
                 await self.flush()
                 await self.note(None, 'approved', f'{title}: approved by {said}')
-        await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines', 'dispatch.permissions'])
+        await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines', 'dispatch.permissions'])
         return {'prompts': how, 'from': 'session', 'approved': approved}
 
     async def request_permission(self, session_id: str, tool_call: ToolCallUpdate, options: list[PermissionOption],
@@ -2891,7 +2905,7 @@ class Session:
             'said': before.strip() or None}
         await self.permission(request)
         await self.raise_signal('permission-waiting', key=request, message_id=message_id, request=request, tool=title)
-        await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines', 'dispatch.permissions'])
+        await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines', 'dispatch.permissions'])
         return request
 
     async def check(self) -> None:
@@ -3036,7 +3050,7 @@ class Session:
                 else:
                     held['state'] = 'completed'
                     await self.note(name, 'elicitation', json.dumps(held, ensure_ascii=False))
-            await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines'])
+            await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines'])
             return
         if len(self.completed_early) >= 32:
             self.completed_early.pop()
@@ -3066,7 +3080,7 @@ class Session:
             found = self.incoming.pop(rpc, None)
             if found is None or await self.withdrawn_now(*found):  # one answered already gets its answer, as the RFD says
                 self.withdrawn.add(rpc)
-        await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines', 'dispatch.permissions'])
+        await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines', 'dispatch.permissions'])
 
     async def withdrawn_now(self, kind: str, request: str) -> bool:
         """Withdraw one waiting question or permission request, the caller holding the lock; False when it no longer
@@ -3152,7 +3166,7 @@ class Session:
             await self.child_note(str(scope['session_id']), None, 'notice', f'Asked the person: {message}')
         await self.raise_signal('question-waiting', key=request, message_id=message_id, request=request,
                                 question=message, url=url, tool_call_id=scope.get('tool_call_id'))
-        await self.changed(tables='dispatch', dispatch_tables=['dispatch.lines'])
+        await self.changed(tables='dispatch', dispatch_tables=['dispatch.session_lines'])
         return request
 
     async def elicit_answered(self, request: str, answer: str | None, *, reask: bool = False) -> dict[str, Any]:
@@ -3353,10 +3367,13 @@ class Session:
         if self.ending:
             return
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
+        pinned = await asyncio.to_thread(self.store.bound_base)  # the metaform this runner stays on, `dispatch`
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
-                   origin=origin())
+                   origin=origin(), base=pinned.id if pinned is not None else None)
         def take() -> None:
-            with self.store.atomic():
+            # A worker takes its ticket and records its session together. A conversation takes nothing of the map,
+            # so it writes no metaform, and one held on no map makes none, PROJ-026.
+            with self.store.atomic() if not self.prep else contextlib.nullcontext():
                 if not self.prep:
                     record = ticket(self.store, self.work_id)
                     if self.resume:  # a worker resumed in place goes on only with the ticket still its own
@@ -3374,18 +3391,19 @@ class Session:
                     if self.resume:  # the ended session's own row runs again
                         # Two resumes at once, a second click on Resume, would run one ACP session twice: the first
                         # to get here holds it, and a row another live runner of this work holds is not taken over.
-                        held = tx.rows('sessions', {'session_id': self.session_id}, limit=1).results
+                        held = tx.rows('agent_sessions', {'session_id': self.session_id}, limit=1).results
                         other = held[0]['pid'] if held and held[0]['state'] == 'running' else None
                         if other not in (None, os.getpid()) and runner_of(other) == self.work_id:
                             raise Stop(f'Session {self.session_id} has been resumed already.',
                                        f'metaform dispatch sessions id={self.work_id}')
-                        tx.update('sessions', {'session_id': self.session_id},
-                                  {key: row[key] for key in ('state', 'recovery', 'pid', 'port', 'token', 'how',
-                                                             'runner', 'origin')})
+                        # a conversation goes on where it hangs now, the map it began on cleared or restored since
+                        kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin', 'base',
+                                *(('work_id',) if self.system else ()))
+                        tx.update('agent_sessions', {'session_id': self.session_id}, {key: row[key] for key in kept})
                         with contextlib.suppress(OSError):  # its row holds it now, not the file its start left
                             resuming_path(str(self.session_id)).unlink()
                     else:
-                        tx.insert('sessions', row)
+                        tx.insert('agent_sessions', row)
                 if not self.prep:
                     from .progress import begin
                     begin(self.store, ticket(self.store, self.work_id), str(self.session_id), str(self.runner))
@@ -3393,10 +3411,11 @@ class Session:
             self.took = not self.prep
             self.recorded = True
         await self.write(take)
-        if self.node is None:  # an intake agent stays in the metaform it began in, whichever becomes active later
-            bound = await asyncio.to_thread(self.store.bound_base)
-            if bound is not None:
-                self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
+        # every runner stays in the metaform it began in, whichever becomes active later, `dispatch`; one started by
+        # an older starter, with none named, is bound here to the one it took its ticket in
+        bound = await asyncio.to_thread(self.store.bound_base)
+        if bound is not None:
+            self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
         await self.save_state()
         await self.apply_options()  # dispatch_<agent>_<option> and the ticket's own, on new, load and resume, P199
         if self.ending:
@@ -3589,7 +3608,7 @@ class Session:
         commands, each named in `before_resume` until the agent reports it again. Its settings and capabilities are
         not carried: the agent gives them afresh when it starts and resumes."""
         with self.store.tables(write=False) as tx:
-            rows = tx.rows('lines', {'session_id': self.session_id}, by=('session_id', 'seq'), limit=0).results
+            rows = tx.rows('session_lines', {'session_id': self.session_id}, by=('session_id', 'seq'), limit=0).results
         self.named = {str(row['name']) for row in rows}
         self.lines = max((int(row['seq']) for row in rows), default=0)
         self.flows = max((int(name[5:]) for name in self.named if name.startswith('flow:') and name[5:].isdigit()),
@@ -4283,7 +4302,9 @@ class Session:
                 sys.stderr.write(f'Could not end session {self.session_id} on work {self.work_id}: {error}\n'
                                  f'Nor with the code on disk: {failed}\n')
                 if self.took:
+                    on = os.environ.get(BASE_VARIABLE)  # its ticket is in the metaform this runner stayed on
                     sys.stderr.write(f'Work {self.work_id} stays taken by {self.by}. To put it back: '
+                                     f'{f"{BASE_VARIABLE}={on} " if on else ""}'
                                      f'metaform map work op=move id={self.work_id} column=todo\n')
                 return
         with contextlib.suppress(Exception):  # the release stands whether or not an open page hears of it

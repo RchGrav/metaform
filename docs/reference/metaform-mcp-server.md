@@ -153,7 +153,7 @@ Serve the intake and record its result as it is reasoned.
 | Tool | What it does | Effect |
 |---|---|---|
 | `intake_element` | Record one element of the intake at its address; recording it again replaces the fields given. | write |
-| `intake_finish` | Finish the intake and make its base the active map, keeping the earlier one whole. Switch back with metaform map activate <previous-name>. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
+| `intake_finish` | Finish the intake. One recorded in a base of its own is finished beside the active map, which stays active: metaform map activate <its name> --confirm makes it the active one. A verification pass is closed on the map it wrote onto, activating nothing. After finish the metaform changes by refining, metaform map refine, or by another intake. | write |
 | `intake_prompt` | Read the intake instructions an agent follows to record this project's map. | read |
 | `intake_purpose` | Record one purpose record: a receiver's OP and the elements that serve it, with its EF. Recorded again with an element it holds, the fields given replace its own and new elements are added. | write |
 | `intake_remove` | Remove one element, one purpose record, or one element from a purpose record, from the intake being recorded. Each is named by addresses. | remove |
@@ -310,7 +310,7 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 |---|---|---|
 | `metaform_add_origin` | Establish an origin from the project's current state: the baseline that variants of work are stored against. As metaform add origin does. | write |
 | `metaform_add_variant` | Collect a folder, such as a worker's worktree, as a variant of an origin: the work's changes against it. As metaform add variant does. | remove |
-| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins and variants stay. Without confirm it only says what it would remove. | remove |
+| `metaform_clear_project` | Clear the project's map, as metaform clear project does: remove its bases and reports. A backup is made first, and metaform restore project brings it back; its registration, folder, settings, origins, variants and conversations with agents stay. Without confirm it only says what it would remove. | remove |
 | `metaform_extract` | Write variants out to folders as files you can read or run, with Python alone, as metaform extract does. | write |
 | `metaform_feedback` | Save feedback on the Metaform process: a problem, bad semantics, or a trouble report when you cannot continue. Attach your report and the shape you could not submit when you have them. Always available. | write |
 | `metaform_instructions` | Read how to use Metaform here: the guide to this folder's modules and state, or one module's instructions. As metaform instructions prints it; with module, that module's full instructions. Always available. | read |

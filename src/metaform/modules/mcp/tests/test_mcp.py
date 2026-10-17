@@ -776,7 +776,8 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     assert still.is_error is False  # the caution alone changed nothing
     assert cleared.is_error is False
     told = json.loads(text(cleared)[-1])
-    assert told.pop('backup') and told.pop('restore') == 'metaform restore project proj'  # PROJ-030
+    backup = told.pop('backup')
+    assert backup and told.pop('restore') == f'metaform restore project proj {backup}'  # PROJ-030, by its name
     assert told == {'project': 'proj', 'bases': ['main'], 'reports': 1}
     assert run('list', 'bases', cwd=mapped).stdout == ''
     assert not (own('proj') / 'reports').exists()
@@ -2901,7 +2902,7 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
                              for number, how in ((4, 'ring'), (5, 'buzz'), (6, 'chime'))]
         run('map', 'work', 'op=take', f'id={died}', cwd=mapped)
         with Store('proj', module='dispatch').tables() as tx:
-            tx.insert('sessions', {'session_id': 's-died', 'work_id': died, 'agent': 'claude', 'state': 'ended',
+            tx.insert('agent_sessions', {'session_id': 's-died', 'work_id': died, 'agent': 'claude', 'state': 'ended',
                                    'how': 'the runner is no longer running', 'started': '2026-10-11T00:00:00Z',
                                    'seq': 1})
         run('map', 'work', 'op=edit', f'id={held}', 'held=true', cwd=mapped)
@@ -2997,11 +2998,11 @@ def seed_thread(work_id, lines, first=1):
     from metaform import events, home
     store = Store('proj', module='dispatch')
     with store.tables() as tx:
-        if not tx.rows('sessions', {'session_id': 's-1'}, limit=1).results:
-            tx.insert('sessions', {'session_id': 's-1', 'work_id': work_id, 'agent': 'claude', 'state': 'ended',
+        if not tx.rows('agent_sessions', {'session_id': 's-1'}, limit=1).results:
+            tx.insert('agent_sessions', {'session_id': 's-1', 'work_id': work_id, 'agent': 'claude', 'state': 'ended',
                                    'started': '2026-10-12T06:30:00Z', 'seq': 1})
         for seq, (kind, text) in enumerate(lines, start=first):
-            tx.insert('lines', {'session_id': 's-1', 'name': f'line:{seq}', 'work_id': work_id, 'kind': kind,
+            tx.insert('session_lines', {'session_id': 's-1', 'name': f'line:{seq}', 'work_id': work_id, 'kind': kind,
                                 'text': text, 'seq': seq})
     project = home.project('proj')
     assert project is not None

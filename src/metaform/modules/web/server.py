@@ -139,8 +139,9 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
 DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
-                              'map.question_work', 'dispatch.sessions', 'dispatch.questions', 'dispatch.settings',
-                              'dispatch.claims', 'dispatch.claim_work', 'dispatch.raised'})
+                              'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
+                              'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
+                              'dispatch.raised'})
 
 
 # What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
@@ -1308,10 +1309,12 @@ class Handler(BaseHTTPRequestHandler):
         if project is None or not isinstance(name, str) or not name:
             return self.send(400, {'error': 'Activate takes a registered project and a base name.'})
         try:
+            left = home.active_base(project.project_id)
             made = home.activate_base(project.project_id, name)
         except StoreError as error:
             return self.refuse(error, 404)
-        self.send(200, plain(made))
+        said = home.staying(project.project_id, left, made)  # the agents at work on the base left stay on it
+        self.send(200, {**plain(made), **({'agents': said} if said else {})})
 
     def remove_base(self, given: dict[str, Any]) -> None:
         """Take one base out of the project, as `metaform map remove-base <name> --confirm` does, only with `confirm`
@@ -2681,7 +2684,7 @@ def said(given: dict[str, str], sessions: list[dict[str, Any]]) -> None:
             for session in running:
                 key = str(session['session_id'])
                 seq, text = SAID.get(key, (0, ''))
-                for row in tx.rows('lines', {'session_id': key}, by=('session_id', 'seq'), limit=0,
+                for row in tx.rows('session_lines', {'session_id': key}, by=('session_id', 'seq'), limit=0,
                                    after=json.dumps([seq - 1, ''])).results:
                     if row['kind'] == 'agent_message_chunk' and int(row['seq']) >= seq and str(row['text']).strip():
                         seq, text = int(row['seq']), str(row['text'])
@@ -2900,8 +2903,8 @@ def run_dispatch(project_id: str, verb: str, nouns: list[str], base: str | None 
 
 def chosen_base(given: dict[str, Any]) -> str | None:
     """The base the page shows when it is not the project's active one, None otherwise. Dispatch runs on it, and the
-    runner and agent it starts stay on it, since their ticket is there; on the active base nothing is bound, so they
-    follow whichever base is active, as before."""
+    runner and agent it starts stay on it, since their ticket is there; on the active base nothing is bound here, and
+    dispatch pins the runner to the base active as it starts, so it stays there whichever is made active later."""
     base, project = str(given.get('base') or ''), home.project(str(given.get('project', '')))
     if not base or project is None:
         return None

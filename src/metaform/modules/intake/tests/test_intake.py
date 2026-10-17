@@ -362,7 +362,10 @@ def test_a_new_intake_is_named_for_what_it_is_for(run, project, tmp_path, home):
 @pytest.mark.req('BASE-039')
 @pytest.mark.req('MAP-045')
 @pytest.mark.req('STORE-041')
-def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kept(run, project, tmp_path, home):
+def test_a_second_intake_is_stored_as_a_new_metaform_beside_the_active_one_and_the_first_is_kept(
+        run, project, tmp_path, home):
+    """UX review round 1, 2026-10-17 (fresh-start-intake F7): finishing a separate intake no longer makes its base the
+    active map for everyone by itself. It is finished beside it, and the person makes it active."""
     first = submit(run, project, FIXTURE, tmp_path)
     main = metaform_home.active_base('timer')
     before = metaform_home.store_path('timer', main.id).read_bytes()
@@ -371,12 +374,13 @@ def test_a_second_intake_is_stored_as_a_new_active_metaform_and_the_first_is_kep
     changed['elements'][1]['joins'][0]['provider'] = 'code.alarm.visual'
     second = submit(run, project, changed, tmp_path, extra=('name=alarm-visual',))  # a separate intake is named
     assert second['base'] == 'alarm-visual'
-    active = metaform_home.active_base('timer')
-    assert active.name == second['base'] and active.id != main.id
-    assert any('metaform map activate main' in notice['message'] for notice in second['notices'])
+    assert metaform_home.active_base('timer').id == main.id, 'the active map stays the person\'s'
+    assert any('metaform map activate alarm-visual --confirm' in notice['message'] for notice in second['notices'])
+    assert Store('timer').element('code.alarm.audible') is not None
+    assert metaform_home.store_path('timer', main.id).read_bytes() == before
+    run('activate', 'base', 'alarm-visual', cwd=project)
     store = Store('timer')
     assert store.element('code.alarm.visual') is not None and store.element('code.alarm.audible') is None
-    assert metaform_home.store_path('timer', main.id).read_bytes() == before
     run('activate', 'base', 'main', cwd=project)
     assert Store('timer').element('code.alarm.audible') is not None
     assert Store('timer').layers(kind='intake').results[0].name == first['layer']
@@ -468,6 +472,21 @@ def test_status_says_whether_there_is_an_intake_and_gives_no_intake_or_map_direc
     at = out.index('Intake: complete')
     assert not any('subagent' in line or 'This project has a map' in line for line in out[at:])
     assert report['layer'] in run('intake', 'status', cwd=project).stdout
+
+
+@pytest.mark.req('MCP-009')
+def test_a_project_mapped_in_another_base_is_never_told_first_run(run, project, tmp_path):
+    """UX review round 1, 2026-10-17 (fresh-start-intake F6, orchestrator F2): with a new, empty base active and the
+    finished intake in main, no agent is told FIRST RUN, and intake status names the base that holds it."""
+    notice = onboarding()
+    submit(run, project, FIXTURE, tmp_path)
+    run('map', 'add-base', 'fresh', '--confirm', cwd=project)
+    assert metaform_home.active_base('timer').name == 'fresh'
+    assert notice not in run('help', 'agents', cwd=project).stdout
+    said = run('intake', 'status', cwd=project).stdout
+    assert 'none in the active map fresh' in said and 'finished intake in main' in said, said
+    assert 'metaform map activate main --confirm' in said and 'No intake yet' not in said
+    assert 'Intake: none in the active map fresh' in run(cwd=project).stdout
 
 
 @pytest.mark.req('MCP-009')
@@ -1403,7 +1422,7 @@ def test_code_intake_follow_on_sees_committed_active_base(run, project, monkeypa
     def follow_on(payload, ctx):
         assert ctx.project == 'timer'
         store = Store(payload['project'], base=payload['base'])
-        assert store.active_base().id == recording.base_id
+        assert store.bound_base().id == recording.base_id  # a separate intake's base, finished beside the active one
         assert store.layers(kind='intake', limit=0).results[0].ready is not None
         assert store.element('code.example') is not None
         seen.append(payload)

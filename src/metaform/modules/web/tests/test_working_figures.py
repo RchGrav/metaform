@@ -233,7 +233,7 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
         live_session(ticket.id, 'claude')
     with Store('proj', module='dispatch').tables() as tx:
         for n, ticket in enumerate(tickets):
-            tx.insert('lines', {'session_id': f's-{ticket.id}', 'name': 'l1', 'work_id': ticket.id,
+            tx.insert('session_lines', {'session_id': f's-{ticket.id}', 'name': 'l1', 'work_id': ticket.id,
                                 'kind': 'agent_message_chunk', 'seq': 1,
                                 'text': f'Reading part {n} of the code to see where each speech bubble goes'})
     started(run)

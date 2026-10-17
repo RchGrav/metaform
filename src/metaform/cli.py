@@ -356,8 +356,12 @@ def activate(args: list[str], folder: Path) -> None:
     known = {form.name for form in home.bases(project_id)}
     if args[1] not in known:
         raise Stop(f'No base {args[1]} in {project_id}.', 'metaform list bases')
-    home.activate_base(project_id, args[1])
+    left = home.active_base(project_id)
+    made = home.activate_base(project_id, args[1])
     out(f'Active base for {project_id}: {args[1]}')
+    said = home.staying(project_id, left, made)
+    if said:
+        out(said)
 
 
 
@@ -413,7 +417,7 @@ def restore(args: list[str], folder: Path) -> None:
     restored = home.restore_project(project_id, args[2] if len(args) == 3 else None)
     out(restored.said)
     if restored.held_before:
-        out(f'What it held was backed up as {restored.held_before}.')
+        out(f'What it held was backed up as {restored.held_before}. To bring that back: {restored.back}')
 
 
 def _toggle(args: list[str], on: bool, folder: Path) -> None:
@@ -1338,7 +1342,7 @@ docs.command(Command('clear', "Remove a project's bases and reports; its registr
                      description='Clears what Metaform inferred about the project so an intake can be taken again '
                                  'from nothing. Every base goes with its store, and every report, feedback and '
                                  'shape file. The registration, the folder and every file in it, the folder settings, '
-                                 'and the origins and variants stay.',
+                                 'the origins and variants, and the conversations with agents stay.',
                      details='It backs the project up before it removes anything, says the backup\'s name, and '
                              'metaform restore project brings it back. '
                              'Without --confirm it says exactly what it would remove and removes nothing. After a '

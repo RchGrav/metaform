@@ -19,7 +19,7 @@ import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
   agentsChanged, linesOnly, listen, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
-import {loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
+import {listBases, loadGraph, loadProject, toProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
@@ -52,27 +52,42 @@ export async function loadLive() {
 }
 /* Follow the intake being recorded, found = {layer, base_id}, or return to the map when it is no longer being
  * recorded, saying what happened: its agent stopped when it is left unfinished, it finished when its metaform still
- * stands, or it stopped because the project was cleared, the one thing that takes a metaform away, VIEW-019. */
+ * stands, or it stopped because the project was cleared, the one thing that takes a metaform away, VIEW-019. An intake
+ * recorded in a base of its own, beside the one shown, is followed only once the person shows that base: the page,
+ * its board, chats and agents stay where they are, and the base list offers the new one, VIEW-045 as amended
+ * 2026-10-17. */
 async function follow(found) {
   if (found) ELSEWHERE.followed.add(`${S.project}/${found.base_id}/${found.layer}`);
   if (found && found.layer !== LIVE.layer) {
     Object.assign(LIVE, {layer: found.layer, base: found.base_id, seen: ''});
-    if (S.base !== found.base_id) await loadProject(found.base_id);
-    else { S.layers = (await read('layers', {limit: 0})).results; renderChips(); }
+    if (S.base !== found.base_id) {
+      const named = (await listBases()).find(item => item.id === found.base_id)?.name || 'a base of its own';
+      drawIntake();
+      toast(`An intake is being recorded in ${named}, beside the map shown here, which stays as it is with its `
+        + `tickets and chats. Choose ${named} in the base list to watch it.`);
+      return;
+    }
+    S.layers = (await read('layers', {limit: 0})).results; renderChips();
     drawIntake();
     toast(`An intake is being recorded in ${found.layer}; the map follows it as each object is recorded.`);
   } else if (!found && LIVE.layer) {
     const {base, layer} = LIVE;
     const left = LIVE.left && LIVE.left.base_id === base && LIVE.left.layer.name === layer;
-    const stands = !left && (await read('bases', {limit: 0})).results.some(item => item.id === base);
+    const now = left ? [] : await listBases();
+    const stands = now.some(item => item.id === base);
     Object.assign(LIVE, {layer: null, base: null, seen: ''});
     renderLegend();
     drawIntake();
+    // one finished in a base of its own is finished beside the active map, which stays active until the person
+    // activates it, STORE-041 as amended 2026-10-17; the page stays on the base it shows
+    const beside = stands && !now.find(item => item.id === base).active;
     toast(left ? `The intake agent stopped; the intake ${layer} was left unfinished.`
+      : beside ? `The intake ${layer} finished in a base of its own, beside the active map, which stays active: `
+        + 'choose it in the base list and press Activate to work on it.'
       : stands ? `The intake finished.` : `The intake stopped: ${S.project} was cleared.`);
     if (stands) attend(`intake:${base}`, 'The intake finished', null, null);  // the mascot says so too, `ATTN`
     if (stands) offerNext();
-    await loadProject();
+    await loadProject(stands ? S.base : null);
     return;
   }
   if (following()) await loadLive();

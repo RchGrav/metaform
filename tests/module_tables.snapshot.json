@@ -342,9 +342,151 @@
  },
  "cloud": null,
  "dispatch": {
-  "version": 16,
+  "version": 17,
   "compatible_from": 5,
   "tables": {
+   "agent_sessions": {
+    "place": "project",
+    "key": [
+     "session_id"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "base": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "how": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "nonce": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "origin": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "pid": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "port": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "recovery": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "runner": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "started": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "token": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "attempts": {
     "place": "metaform",
     "key": [
@@ -915,6 +1057,192 @@
     "on_conflict": [],
     "generated": []
    },
+   "session_attempts": {
+    "place": "project",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "handed": [
+      "bool",
+      "INTEGER",
+      false,
+      "0"
+     ],
+     "how": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "next_at": [
+      "real",
+      "REAL",
+      true,
+      null
+     ],
+     "retries": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "session_lines": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "name"
+    ],
+    "columns": {
+     "kind": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "seq": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "text": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "sessions": {
     "place": "metaform",
     "key": [
@@ -925,6 +1253,12 @@
       "text",
       "TEXT",
       true,
+      null
+     ],
+     "base": [
+      "text",
+      "TEXT",
+      false,
       null
      ],
      "how": [

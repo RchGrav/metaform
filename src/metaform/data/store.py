@@ -100,6 +100,12 @@ class Store:
     def project_id(self) -> str:
         return self._record.project_id
 
+    @property
+    def in_atomic(self) -> bool:
+        """Whether this store's writes join an `atomic()` block open now, so a write of another store made here would
+        take that store's lock while this one's is held, STORE-024."""
+        return self._session.in_atomic
+
     @contextmanager
     def atomic(self) -> Generator[None, None, None]:
         """Every write inside the block commits together, or none does, STORE-024."""
@@ -626,6 +632,19 @@ class Store:
     def has_intake(self) -> bool:
         with self._read() as tx:
             return reads.has_intake(tx)
+
+    def intake_bases(self) -> tuple[str, ...]:
+        """The names of the project's metaforms that hold a finished intake, in creation order, whichever is active:
+        whether the project has been mapped is the project's, not the active metaform's, which a new base or a clear
+        may leave empty, MCP-009 as amended 2026-10-17. A metaform that cannot be read is left out."""
+        found: list[str] = []
+        for base in home.bases(self.project_id):
+            try:
+                if Store(self.project_id, base=base.id).has_intake():
+                    found.append(base.name)
+            except StoreError:
+                continue
+        return tuple(found)
 
     def bases(self, *, limit: int = LIMIT, after: str | None = None) -> Page[home.Base]:
         return sliced(home.bases(self.project_id), limit, after)

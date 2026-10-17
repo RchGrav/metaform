@@ -16,7 +16,7 @@ import {D, WAITS_ON_PERSON, renderAgents} from '/page/app/agents/dispatch.js';
 import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker} from '/page/app/agents/pickers.js';
 import {isIntake} from '/page/app/session/tools.js';
 import {drawIntakeSettings} from '/page/app/session/settings.js';
-import {LIVE, recordingNow} from '/page/app/live/stream.js';
+import {LIVE, following, recordingNow} from '/page/app/live/stream.js';
 
 /* ---------- the intake, started from the page, VIEW-045 and BASE-039 ----------
  * An agent the person chooses runs the project's intake and records the map as it goes; the page follows the intake
@@ -136,13 +136,14 @@ export function drawIntake() {
   // that has stopped working, or was used for something else, would otherwise read Starting for as long as it runs
   const activity = INTAKE.session?.activity;
   const doing = INTAKE.waiting ? `${agentName(INTAKE.agent)} waits for your permission`
-    : recording ? `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far`
+    : recording ? `Recording ${LIVE.layer} · ${following() ? `${plural(parts, 'part')} so far` : 'in a base of its own'}`
     : firstWait || (activity === 'working' ? 'Reading the project'
       : activity === 'idle' && INTAKE.session?.session_id ? 'Idle · its turn has ended, and nothing is being recorded'
         : 'Starting');
   bar.classList.toggle('asks', INTAKE.waiting > 0);
   const said = (INTAKE.signals || []).map(signalChip);
-  const outside = `Recording ${LIVE.layer} · ${plural(parts, 'part')} so far · by an agent outside the page`;
+  const outside = `Recording ${LIVE.layer} · ${following() ? `${plural(parts, 'part')} so far` : 'in a base of its own'}`
+    + ' · by an agent outside the page';
   fill(bar, h('span', {class: 'pulse', 'aria-hidden': 'true'}),
     h('span', {class: 'what'}, h('b', {}, running ? `Intake · ${agentName(INTAKE.agent)}` : 'Intake'),
       h('span', {class: 'doing'}, running ? doing : outside),
@@ -297,7 +298,19 @@ export function drawEmpty() {
   FIRST.drawn?.(Boolean(empty), settled);
   $('#emptyStage').hidden = !empty;
   if (!empty) return;
-  fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : `${S.project}'s map is empty.`);
+  // a base shown empty beside others that hold maps says they are kept and offers them first, ahead of a new intake
+  const others = S.bases.filter(item => item.id !== S.base);
+  fill($('#emptyStage .what'), noMetaform() ? `${S.project} has no map yet.` : others.length
+    ? `This base of ${S.project} is empty. Its other bases are kept: ${others.map(item => item.name).join(', ')}.`
+    : `${S.project}'s map is empty.`);
+  const back = others.find(item => item.active) || others[others.length - 1];
+  fill($('#emptyStage .other'), back ? h('button', {class: 'btn', type: 'button', onclick: () => showBase(back.id)},
+    `Show ${back.name}`) : null);
+}
+/* Show another base, as choosing it in the base list does: nothing is activated. */
+function showBase(id) {
+  $('#mf').value = id;
+  $('#mf').onchange();
 }
 $('#emptyStage .start').onclick = () => openIntake();
 /* An intake left unfinished, BASE-039: no agent records it, so it is never shown as being recorded nor followed. One

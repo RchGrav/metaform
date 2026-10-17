@@ -333,8 +333,8 @@ def test_automatic_recovery_keeps_tickets_when_safe_cleanup_cannot_be_proved(dis
     dispatch.process.wait()
     def evidence(change):  # the session row's private recovery evidence, as the runner wrote it
         with Store('proj', module='dispatch').tables() as tx:
-            row = tx.get('sessions', {'session_id': held['session_id']})
-            tx.update('sessions', {'session_id': held['session_id']}, {'recovery': change(row['recovery'])})
+            row = tx.get('agent_sessions', {'session_id': held['session_id']})
+            tx.update('agent_sessions', {'session_id': held['session_id']}, {'recovery': change(row['recovery'])})
 
     if unsafe == 'legacy':  # a session recorded before the evidence was kept has none
         evidence(lambda kept: None)
@@ -806,17 +806,17 @@ def test_legacy_activity_uses_transcript_evidence_without_rewriting_lifecycle(di
     store = Store('proj', module='dispatch')
     held = dispatch.session().extra
     with store.tables() as tx:  # the transcript of an older runner whose turn ended
-        tx.insert('lines', {'session_id': held['session_id'], 'name': 'turn', 'work_id': dispatch.id,
+        tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'turn', 'work_id': dispatch.id,
                             'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 900})
     [shown] = module.sessions(store)
     assert shown['state'] == 'running' and shown['activity'] == 'idle'
     assert dispatch.session().extra['state'] == 'running'
     held = dispatch.session().extra
     with store.tables() as tx:
-        tx.insert('lines', {'session_id': held['session_id'], 'name': 'later', 'work_id': dispatch.id,
+        tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'later', 'work_id': dispatch.id,
                             'kind': 'agent_message_chunk', 'text': 'Resuming', 'seq': 1000})
         if tied:
-            tx.insert('lines', {'session_id': held['session_id'], 'name': 'zz-turn', 'work_id': dispatch.id,
+            tx.insert('session_lines', {'session_id': held['session_id'], 'name': 'zz-turn', 'work_id': dispatch.id,
                                 'kind': 'turn', 'text': 'The turn ended: end_turn.', 'seq': 1000})
     [shown] = module.sessions(store)
     assert shown['state'] == 'running' and shown['activity'] == 'unknown'

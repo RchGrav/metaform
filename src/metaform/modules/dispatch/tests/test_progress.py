@@ -138,7 +138,7 @@ def test_automatic_queue_glyph_and_supervisor_wait_but_explicit_start_can_finish
     assert started == [] and module.next_ticket(ctx, dispatch.store, 'kite', agent='claude') is None
     dispatch.store.take_work(dispatch.id, by='claude same-session')
     with store.tables() as tx:
-        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
+        tx.insert('agent_sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'ended',
                                'how': 'the agent ended with exit code 1', 'started': '2026-10-14T00:00:00Z', 'seq': 1,
                                'origin': module.origin()})
     assert module.retry(ctx, dispatch.store) == {'retried': []}
@@ -192,7 +192,7 @@ def test_manual_requeue_and_reset_cannot_lose_or_duplicate_an_executed_attempt(d
     begin(store, dispatch.ticket(), 'same-session', 'dead-runner')
     executed(store, dispatch.id, 'dead-runner')
     with store.tables() as tx:
-        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+        tx.insert('agent_sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
                                'runner': 'dead-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
     monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])  # verified gone, no process is launched here
     assert module.reset(ctx)['released'] == [dispatch.id]
@@ -237,13 +237,13 @@ def test_late_release_cannot_end_a_resumed_worker_or_clear_its_permissions(dispa
     begin(store, dispatch.ticket(), 'same-session', 'resumed-runner')
     executed(store, dispatch.id, 'resumed-runner')
     with store.tables() as tx:
-        tx.insert('sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+        tx.insert('agent_sessions', {'session_id': 'same-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
                                'runner': 'resumed-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
     publish(ctx, 'permission-waiting', work_id=dispatch.id, session_id='same-session', key='permission',
             message_id='permission')
     release(store, dispatch.id, 'claude same-session', True, 'same-session', 'late cleanup', runner='old-runner')
     with store.tables(write=False) as tx:
-        assert tx.get('sessions', {'session_id': 'same-session'})['state'] == 'running'
+        assert tx.get('agent_sessions', {'session_id': 'same-session'})['state'] == 'running'
     assert [one for one in rows(store, dispatch.id) if one['signal'] == 'permission-waiting']
     assert not blocked(ctx, store, dispatch.ticket())
     for _ in range(2):
@@ -258,10 +258,10 @@ def test_reset_of_a_dead_intake_needs_no_ticket_or_progress_counter(dispatch, mo
     from metaform.modules import dispatch as module
     store = Store('proj', module='dispatch')
     with store.tables() as tx:
-        tx.insert('sessions', {'session_id': 'intake-session', 'work_id': 'intake-dead', 'agent': 'claude',
+        tx.insert('agent_sessions', {'session_id': 'intake-session', 'work_id': 'intake-dead', 'agent': 'claude',
                                'state': 'running', 'runner': 'dead-runner', 'started': '2026-10-14T00:00:00Z', 'seq': 1})
     monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])
     result = module.reset(context('dispatch', dispatch.folder, project='proj'))
     assert result == {'released': [], 'sessions_ended': ['intake-dead'], 'still_working': []}
     with store.tables(write=False) as tx:
-        assert tx.get('sessions', {'session_id': 'intake-session'})['state'] == 'ended'
+        assert tx.get('agent_sessions', {'session_id': 'intake-session'})['state'] == 'ended'

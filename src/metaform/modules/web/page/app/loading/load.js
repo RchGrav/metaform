@@ -187,16 +187,28 @@ async function readProject(wanted) {
   const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
 
-  S.bases = metaforms;
   const active = metaforms.find(item => item.id === wanted) || metaforms.find(item => item.active) || metaforms[0];
   S.base = active ? active.id : null;
-  const option = item => h('option', {value: item.id, selected: item === active},
+  chooser(metaforms);
+  foldHeader();  // the names chosen take their room
+  await loadMetaform();
+}
+/* The base chooser, with the base shown chosen: S.bases as read, the active one marked. */
+function chooser(metaforms) {
+  S.bases = metaforms;
+  const option = item => h('option', {value: item.id, selected: item.id === S.base},
     item.name + (item.active ? ' · active' : ''));
   fill($('#mf'), ...(metaforms.length ? metaforms.map(option) : [h('option', {}, 'none yet')]));
   $('#mf').disabled = !metaforms.length;
   baseButtons();
-  foldHeader();  // the names chosen take their room
-  await loadMetaform();
+}
+/* The project's bases read again into the chooser, the one shown kept: a base an intake opened beside it is offered,
+ * and nothing else the page shows changes. */
+export async function listBases() {
+  const project = S.project;
+  const metaforms = (await read('bases', {limit: 0})).results;
+  if (S.project === project) chooser(metaforms);
+  return metaforms;
 }
 /* Activate and Remove beside the base chooser, STORE-041: the chooser only changes what the page shows; Activate makes
  * the chosen base the active one, and Remove takes it out of the project with a copy kept. Neither acts on the active
@@ -210,7 +222,9 @@ async function activateBase() {
   const chosen = S.bases.find(item => item.id === $('#mf').value);
   if (!chosen) return;
   $('#activateBase').disabled = true;
-  if (await wrote('/api/activate-base', {name: chosen.name})) toast(`${chosen.name} is the active base.`);
+  const made = await wrote('/api/activate-base', {name: chosen.name});
+  // the agents at work on the base it left stay on it, and the server says which, STORE-041
+  if (made) toast(`${chosen.name} is the active base.` + (made.agents ? ` ${made.agents}` : ''));
   else baseButtons();
 }
 $('#activateBase').onclick = activateBase;

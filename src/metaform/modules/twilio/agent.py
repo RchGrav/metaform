@@ -22,7 +22,8 @@ from typing import Any, Protocol, cast
 from metaform import events
 from metaform.module import Stop, context, surface
 
-READ_AGAIN = {'dispatch.lines', 'dispatch.sessions'}  # the dispatch tables whose change is read again
+# the dispatch tables whose change is read again: a thread's lines and sessions, kept beside the map before version 16
+READ_AGAIN = {'dispatch.lines', 'dispatch.sessions', 'dispatch.session_lines', 'dispatch.agent_sessions'}
 START_LIMIT = 90.0   # seconds a system agent may take to start before the call is told it could not
 TURN_LIMIT = 180.0   # seconds an answer may take before what has come is all there is
 
