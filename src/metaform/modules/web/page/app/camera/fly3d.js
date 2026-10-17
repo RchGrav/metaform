@@ -5,6 +5,7 @@ import '/page/app/camera/flight.js';  // the part before runs first, so the part
 import * as THREE from 'three';
 import {$, reduced} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
+import {nodeIn, selectedNode} from '/page/app/graph/data.js';
 import {ROAM, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {shownNode} from '/page/app/map3d/light.js';
 import {endOf} from '/page/app/map3d/waves.js';
@@ -48,7 +49,7 @@ function nameFar(node, share) {
   return Math.log(reach + out);
 }
 export function fly3d(id, close = true) {
-  const data = G ? G.graphData() : null, node = data?.nodes.find(item => item.id === id);
+  const data = G ? G.graphData() : null, node = nodeIn(data, id);
   if (!node || node.x === undefined) return false;
   const around = nearestAround(data, node);
   const facing = facingOf(node, fitBalls(data));
@@ -65,7 +66,7 @@ export function fly3d(id, close = true) {
   const named = close ? nameFar(node, small3d() ? NAME.in : NAME.level / 4) : null;
   if (named !== null) view.far = named;
   V3.auto = false;
-  const sign = close ? tags.get(id)?.sprite : null;
+  const sign = close ? tags.get(node.id)?.sprite : null;  // a join's, its receiver's, which bears its title
   if (sign?.scale.x && !MEM.key && flyToSign(sign, node, view, data)) return true;
   flyTo(view);
   return true;
@@ -102,7 +103,7 @@ function flyToSign(sign, node, view, data) {
   flyTo({x: sign.position.x, y: sign.position.y, z: sign.position.z, ...square, far: Math.log(reach)},
     {done: () => meetBegins(reach, reach + out - ring)});
   V3.focus = node.id;
-  if (small3d() && node.id === S.selected) {
+  if (small3d() && node.id === selectedNode()) {  // the selection's node, a join's receiver
     V3.hold = {id: node.id, node, data, x: node.x, y: node.y, z: node.z, shape: null, out: null};
   }
   return true;
@@ -118,10 +119,10 @@ function flyToSign(sign, node, view, data) {
 export function holdMet(data) {
   const hold = V3.hold;
   if (!hold) return;
-  if (!small3d() || hold.id !== S.selected || MEM.key) { V3.hold = null; return; }
+  if (!small3d() || hold.id !== selectedNode() || MEM.key) { V3.hold = null; return; }
   if (hold.data !== data) {
     hold.data = data;
-    hold.node = data.nodes.find(node => node.id === hold.id);
+    hold.node = nodeIn(data, hold.id);
     if (!hold.node) { V3.hold = null; return; }
   }
   const node = hold.node;
@@ -279,7 +280,7 @@ function gatherWork(focus, data) {
   let workers = 0;
   for (const figure of ROAM.figures.values()) {
     if (figure.stage !== 'circling' || figure.done || (focus !== null && figure.target !== focus)) continue;
-    const node = data.nodes.find(item => item.id === figure.target);
+    const node = nodeIn(data, figure.target);
     if (!node || node.x === undefined) continue;
     const at = figure.mesh.position;
     addPoint(at.x, at.y, at.z, SHOT.size * 0.8);

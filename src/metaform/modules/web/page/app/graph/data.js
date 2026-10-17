@@ -17,20 +17,24 @@ export function graphData() {
   addElements(graph);
   addJoins(graph);
   const drawn = new Set(graph.nodes.map(node => node.id));
-  addItems(graph, drawn);
-  addMemories(graph, drawn);
+  // what is kept at a join hangs from its receiving element, the join having no node of its own (the Join rule)
+  const receivers = new Map();
+  for (const join of S.joins) receivers.set('p:' + join.id, join.receiver);
+  const onNode = key => receivers.get(key) ?? key;
+  addItems(graph, drawn, onNode);
+  addMemories(graph, drawn, onNode);
   return graph;
 }
 /* Each element shown, linked to its nearest parent element; one deeper than the depth stays inside the node that
  * holds it, which says how many it holds, VIEW-051. */
 function addElements({nodes, links}) {
   const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
-  const {shown, held} = depthView();
+  const {shown, held} = depthView(), work = workShown();
   for (const {element, parent} of S.elements.values()) {
     if (underHiddenRoot(element.address)) continue;  // an edge of the project the viewer turned off
     if (shown && !shown.has(element.id)) continue;
     nodes.push({id: element.id, t: 'el', name: heldName(labelOf(element), held.get(element.id)),
-      address: element.address, role: element.role, work: element.open_work || [], layer: element.layer,
+      address: element.address, role: element.role, work: work.get(element.id) || [], layer: element.layer,
       held: held.get(element.id) || 0});
     const above = parent && byAddress.get(parent);  // a parent held deeper than the depth is not drawn to
     if (above && (!shown || shown.has(above))) links.push({source: above, target: element.id, k: 'tree'});
@@ -38,24 +42,69 @@ function addElements({nodes, links}) {
 }
 /* A node's name with the count of the parts it holds beneath it, VIEW-051. */
 export const heldName = (name, held) => held ? `${name} +${held}` : name;
-/* Each join whose receiver and some provider are drawn: its purpose vertex, a link from the receiver to it, and an
- * encounter on to each provider drawn. */
+/* Each join whose receiver and some provider are drawn is drawn as edges alone, one from its receiver to each provider
+ * drawn, with no node of its own: nothing attaches to a join, everything to its receiving element (the Join rule,
+ * Rich, 2026-10-17). What the join's node showed, its open work, shows on its receiver; the edges keep the join's
+ * id, layer and work, so a join is still picked by its edge and its flow runs along it. The namespace's own link
+ * between the same two elements is left out where a join's edge draws it, so no two fibers lie on one another. */
 function addJoins({nodes, links}) {
-  const ids = new Set(nodes.map(node => node.id));
+  const byId = new Map();
+  for (const node of nodes) byId.set(node.id, node);
+  const joined = new Set();
   for (const join of S.joins) {
-    const drawnTo = join.providers.filter(id => ids.has(id));
-    if (!ids.has(join.receiver) || !drawnTo.length) continue;
-    const purpose = 'p:' + join.id, work = join.open_work || [];
-    nodes.push({id: purpose, t: 'purpose', join: join.id, layer: join.layer, work});
-    links.push({source: join.receiver, target: purpose, k: 'purpose', layer: join.layer, join: join.id, work});
-    for (const provider of drawnTo)
-      links.push({source: purpose, target: provider, k: 'encounter', layer: join.layer, join: join.id, work});
+    if (!byId.has(join.receiver)) continue;
+    const work = join.open_work || [];
+    for (const provider of join.providers) {
+      if (provider === join.receiver || !byId.has(provider)) continue;
+      links.push({source: join.receiver, target: provider, k: 'encounter', layer: join.layer, join: join.id, work});
+      joined.add(join.receiver + '>' + provider).add(provider + '>' + join.receiver);
+    }
   }
+  if (!joined.size) return;
+  let kept = 0;
+  for (const link of links) {
+    if (link.k === 'tree' && joined.has(link.source + '>' + link.target)) continue;
+    links[kept++] = link;
+  }
+  links.length = kept;
+}
+/* Each element's open work as both maps show it: its own, then that of the joins it receives, which have no node of
+ * their own to show it on; worked out once for a whole drawing. */
+export function workShown() {
+  const shown = new Map();
+  for (const {element} of S.elements.values()) shown.set(element.id, element.open_work || []);
+  for (const join of S.joins) {
+    const own = shown.get(join.receiver), work = join.open_work;
+    if (!own || !work?.length) continue;
+    shown.set(join.receiver, [...new Set([...own, ...work])]);
+  }
+  return shown;
+}
+/* The node the selection is drawn on in the 3D map: the selected node's, or a join's receiving element's. */
+export const selectedNode = () => {
+  const id = S.selected;
+  return id && id.startsWith('p:') ? joinOf(id)?.receiver ?? id : id;
+};
+/* The node a key stands for in the 3D map: a join's, 'p:<id>', is its receiving element's, as a join has no node of
+ * its own; each map's nodes indexed once by id, so a frame looks a node up without walking them. */
+const INDEXED = new WeakMap();
+export function nodeIn(data, key) {
+  if (!data || !key) return undefined;
+  let byId = INDEXED.get(data.nodes);
+  if (!byId || byId.size !== data.nodes.length) {
+    byId = new Map();
+    for (const node of data.nodes) byId.set(node.id, node);
+    INDEXED.set(data.nodes, byId);
+  }
+  const found = byId.get(key);
+  if (found || typeof key !== 'string' || !key.startsWith('p:')) return found;
+  const join = S.joins.find(one => 'p:' + one.id === key);
+  return join ? byId.get(join.receiver) : undefined;
 }
 /* Every item and property of the layers turned on is its own node, hung from its node; a link runs on, VIEW-017.
  * The sources layer's refs are shown in the panel and never hung on the map, the map is the design. */
-function addItems({nodes, links}, drawn) {
-  const at = thing => thing.kind === 'property' ? thing.item.element_id : keyOf(thing.item.target);
+function addItems({nodes, links}, drawn, onNode) {
+  const at = thing => thing.kind === 'property' ? thing.item.element_id : onNode(keyOf(thing.item.target));
   const hung = [...S.items.values()].filter(thing => drawn.has(at(thing)) && thing.layer !== 'sources');
   for (const thing of hung) {
     nodes.push({id: thing.key, t: 'item', layer: thing.layer, text: itemText(thing.value)});
@@ -63,15 +112,16 @@ function addItems({nodes, links}, drawn) {
   }
   for (const thing of hung) {
     links.push({source: at(thing), target: thing.key, k: 'item', layer: thing.layer});
-    const to = keyOf(thing.item.link);
+    const to = onNode(keyOf(thing.item.link));
     if (to && drawn.has(to)) links.push({source: thing.key, target: to, k: 'relation', layer: thing.layer});
   }
 }
 /* Every memory shown at a node is its own node, hung from each node it is kept at, and each relation between two
  * memories drawn is a link, LAYER-013 and VIEW-017. */
-function addMemories({nodes, links}, drawn) {
+function addMemories({nodes, links}, drawn, onNode) {
   const memory = memoryLayer();
-  for (const [key, names] of S.memory.at) {
+  for (const [at, names] of S.memory.at) {
+    const key = onNode(at);
     if (!drawn.has(key)) continue;
     for (const name of names) {
       if (!drawn.has(memoryKey(name))) {

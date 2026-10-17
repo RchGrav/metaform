@@ -405,7 +405,8 @@ function hitAt(x, y, ray) {
       : {kind: node.t || 'node', id: node.id, name: node.name || null, distance: Math.round(away * 10) / 10};
     return {at, seen: {...seen, point: rounded(at)}};
   }
-  const link = linkAt3d(x, y), purpose = link ? G.graphData().nodes.find(one => one.id === purposeOf(link)) : null;
+  // a join is seen on its edge, having no node of its own
+  const link = linkAt3d(x, y), purpose = link ? {id: purposeOf(link), t: 'purpose', work: link.work || []} : null;
   if (!purpose) return null;
   const at = new THREE.Vector3();
   ray.distanceSqToSegment(LINK_FROM.set(link.source.x, link.source.y, link.source.z),

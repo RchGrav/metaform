@@ -652,6 +652,20 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 @keyframes flash{0%,100%{stroke:var(--node-line);fill:var(--node);filter:none}50%{stroke:var(--broken);fill:var(--node-broken);filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}}
 .map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{stroke:var(--broken)!important;animation:flash var(--pace,1s) ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){.map2d .node.work-broken rect,.map2d .cluster.work-broken rect,.map2d .node.work-trouble rect,.map2d .cluster.work-trouble rect{animation:none;fill:var(--node-broken)!important}}
+/* A pulsing glow on the 2D map drawn by a copy beneath its part with the glow at its brightest, its opacity pulsing on
+ * the same clock, `glow2d` in map2d/build.js: a filter that changes every frame made the browser lay the whole drawing
+ * out in layers again each frame. The part keeps its colours' pulse and the faint glow its pulse begins from. */
+@keyframes flash-plain{0%,100%{stroke:var(--node-line);fill:var(--node)}50%{stroke:var(--broken);fill:var(--node-broken)}}
+@keyframes glow-beat{0%,100%{opacity:0}50%{opacity:1}}
+@media (prefers-reduced-motion: no-preference){
+.map2d .node.glowed:is(.work-broken,.work-trouble) rect{animation-name:flash-plain}
+.map2d .glowed.glowed:is(.work-message,.work-question,.work-under-construction){animation:none;filter:drop-shadow(0 0 1px var(--text)) drop-shadow(0 0 3px var(--c,var(--node-line)))}
+.map2d .node.glowed path.glow2d{animation:glow-beat var(--pace,1s) ease-in-out infinite;stroke:var(--broken)!important;fill:var(--node-broken)!important;filter:drop-shadow(0 0 4px var(--broken)) drop-shadow(0 0 12px var(--broken)) drop-shadow(0 0 24px var(--broken))}
+.map2d .pulse2d.pulse2d{animation:glow-beat 1.6s ease-in-out infinite;filter:drop-shadow(0 0 4px var(--text)) drop-shadow(0 0 12px var(--c,var(--node-line))) drop-shadow(0 0 24px var(--c,var(--node-line)))}
+}
+.map2d .glow2d{pointer-events:none}
+.map2d .glow2d *{animation:none!important;filter:none!important;transition:none!important}
+@media (prefers-reduced-motion: reduce){.map2d .glow2d{display:none}}
 .map2d.focused .node:not(.sel):not(.near) text,.map2d.focused .node:not(.sel):not(.near) .nodeLabel{fill:var(--muted)!important}
 .map2d .edgePaths path{stroke:var(--edge)!important;stroke-width:max(1.2px,calc(var(--pixel2d,0) * 1px))!important;transition:stroke .3s,opacity .3s}
 .map2d .edgePaths path.on{stroke:var(--intake)!important;stroke-width:max(1.8px,calc(var(--pixel2d,0) * 1.5px))!important}

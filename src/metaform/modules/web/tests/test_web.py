@@ -1012,9 +1012,10 @@ def config_layers(run, folder):
 
 
 def drawn_as_paths(graph, expected):
-    """The page's graph against the store's: one vertex per element, each join one path from its receiver to its own
-    purpose vertex and on to each element it holds with nothing back to the receiver, MAP-002, and each element's
-    namespace edge from its nearest parent element, VIEW-005."""
+    """The page's graph against the store's: one vertex per element and none for a join, each join an edge from its
+    receiver to each element it holds, with nothing back to the receiver, MAP-002 and the Join rule (Rich,
+    2026-10-17), and each element's namespace edge from its nearest parent element, VIEW-005, where no join's edge
+    already joins the two."""
     elements = {entry['element']['id'] for entry in expected['elements']}
     by_address = {entry['element']['address']: entry['element']['id'] for entry in expected['elements']}
     links = graph['links']
@@ -1023,16 +1024,16 @@ def drawn_as_paths(graph, expected):
     for link in links:
         if link.get('join'):
             by_join.setdefault(link['join'], []).append((link['source'], link['target'], link['k']))
+    joined = set()
     for join in expected['joins']:
-        purpose = 'p:' + join['id']
         assert sorted(by_join.pop(join['id'])) == sorted(
-            [(join['receiver'], purpose, 'purpose')]
-            + [(purpose, each['element_id'], 'encounter') for each in join['elements']])
+            (join['receiver'], each['element_id'], 'encounter') for each in join['elements'])
+        joined |= {frozenset((join['receiver'], each['element_id'])) for each in join['elements']}
     assert by_join == {}
     assert sorted((link['source'], link['target']) for link in links if link['k'] == 'tree') == sorted(
-        (by_address[entry['parent']], entry['element']['id']) for entry in expected['elements'] if entry['parent'])
-    assert not [link for link in links if link['k'] != 'tree' and {link['source'], link['target']} <= elements]
-    assert len([node for node in graph['nodes'] if node['t'] == 'purpose']) == len(expected['joins'])
+        (by_address[entry['parent']], entry['element']['id']) for entry in expected['elements']
+        if entry['parent'] and frozenset((by_address[entry['parent']], entry['element']['id'])) not in joined)
+    assert not [node for node in graph['nodes'] if node['t'] == 'purpose']
 
 
 @pytest.mark.req('VIEW-005')
@@ -1151,7 +1152,8 @@ def test_a_refined_join_is_drawn_as_the_metaform_is_and_the_page_offers_no_corre
     again, again_problems, _ = opened(browser, web)
     again.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     assert colors(again) == before
-    assert again.evaluate(f'window.metaform.graph().nodes.find(node => node.id === "p:{join}").layer') == 'intake-1'
+    # the join's edges keep its layer, a join having no node of its own
+    assert again.evaluate(f'window.metaform.graph().links.find(link => link.join === "{join}").layer') == 'intake-1'
     again.click('#layersBtn')
     rows = again.evaluate("[...document.querySelectorAll('#layerlist .layerrow .name')].map(name => name.textContent)")
     assert sorted(rows) == ['downstream', 'extra', 'intake-1', 'notes', 'secret', 'upstream']  # roots as toggles
@@ -1247,8 +1249,9 @@ def test_a_node_with_open_unbuilt_work_is_a_ghost_a_broken_one_flashes_red_until
 @pytest.mark.req('VIEW-027')
 @pytest.mark.req('MAP-046')
 def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, browser):
-    """An open missing record on a join shows on the join itself: its purpose node is a ghost in 3D, VIEW-027, and
-    its edge has a glow in 2D, with its color and opacity as they are."""
+    """An open missing record on a join shows on its receiving element in 3D, the join having no node of its own:
+    the receiver is a ghost, VIEW-027 and the Join rule (Rich, 2026-10-17); and its edge has a glow in 2D, with its
+    color and opacity as they are."""
     from metaform.data import Node, Store
     store = Store('proj')
     joins = list(store.joins('code.timer.kitchen').results)
@@ -1258,10 +1261,12 @@ def test_a_join_that_is_not_built_yet_is_marked_in_both_views(run, web, mapped, 
     page.wait_for_function('() => window.metaform.loaded()')
     links = page.evaluate('window.metaform.linkColors()')
     assert not any(link['color'].startswith('rgba(') for link in links)  # its links keep their color and opacity
-    page.wait_for_function(f'() => window.metaform.look("p:{joins[0].id}").ghost === true', timeout=5000)
-    assert page.evaluate(f'window.metaform.look("p:{joins[0].id}").around3d') == 0
-    built = [join['id'] for join in keys_of(web)[0]['joins'] if join['id'] != joins[0].id]
-    assert built and page.evaluate(f'window.metaform.look("p:{built[0]}").ghost') is False
+    receiver = store.element('code.timer.kitchen').id
+    page.wait_for_function(f'() => window.metaform.look("{receiver}").ghost === true', timeout=5000)
+    assert page.evaluate(f'window.metaform.look("p:{joins[0].id}").ghost') is True  # a join's key, its receiver
+    assert 'unbuilt' in page.evaluate(f'window.metaform.look("{receiver}").work')  # beside its own broken record
+    other = store.element('code.alarm.audible').id
+    assert page.evaluate(f'window.metaform.look("{other}").ghost') is False
     assert page.evaluate(f'window.metaform.edge2d("{joins[0].id}")') == ['work-unbuilt']
     glow = page.evaluate("""(() => { const path = document.querySelector('#map2d svg path.work-unbuilt');
         const style = getComputedStyle(path); return [Number(style.opacity), style.filter]; })()""")
@@ -2006,7 +2011,7 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
 def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_draws(run, web, mapped, browser):
     """What is behind the glass reaches it through the pictures the page draws each frame, as drei's component does.
     It is read with the frosting and the absorption off, since with them what is behind is blurred into the node's
-    own color: a join's purpose node set behind the cook shows through the cook, and moving it away changes the cook."""
+    own color: another element set behind the cook shows through the cook, and moving it away changes the cook."""
     from metaform.data import Store
     store = Store('proj')
     for record in store.work(None, None, True, limit=0).results:  # nothing lit, nothing drawn in characters
@@ -2018,7 +2023,7 @@ def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_d
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
     page.evaluate('window.metaform.glass(true, {roughness: 0, attenuationDistance: 1e9, transmission: 1})')
-    behind = next(node['id'] for node in page.evaluate('window.metaform.graph().nodes') if node['id'].startswith('p:'))
+    behind = store.element('code.alarm.audible').id
     staged(page, {cook: (2000, 0, 0), behind: (2000, 0, -40)},
            ({'x': 2000, 'y': 0, 'z': 80}, {'x': 2000, 'y': 0, 'z': 0}))
     node = page.evaluate(f'window.metaform.screen3d("{cook}")')
@@ -2692,8 +2697,8 @@ def test_in_3d_every_item_of_the_layers_turned_on_is_its_own_node_joined_to_its_
     assert sorted(memory) == ['alarm pitch', 'countdown drift', 'lost tick', 'quiet tone']  # each memory its own node
     edges = {(link['source'], link['target'], link['k']) for link in graph['links']}
     assert {(kitchen, memory['countdown drift'], 'item'), (alarm, memory['alarm pitch'], 'item'),
-            ('p:' + to_alarm, memory['quiet tone'], 'item'),
-            (tick, memory['lost tick'], 'item')} <= edges  # from each element and from the join
+            (kitchen, memory['quiet tone'], 'item'),
+            (tick, memory['lost tick'], 'item')} <= edges  # from each element, and from the join's receiver
     assert (memory['countdown drift'], memory['alarm pitch'], 'relation') in edges  # a relation is a link
     page.wait_for_function('() => window.metaform.drawn().nodes === window.metaform.graph().nodes.length')
     page.evaluate(f'window.metaform.click3d("{memory["countdown drift"]}")')
@@ -3212,8 +3217,10 @@ def test_every_element_and_join_of_every_page_is_drawn(run, home, web, mapped, b
     page.goto(f'http://127.0.0.1:{web}/#p=big')
     page.reload()
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn() '
-                           '&& window.metaform.drawn().nodes > 1000', timeout=60000)
-    assert page.evaluate('window.metaform.drawn()') == {'nodes': 630 + 601, 'links': 600 + 2 * 601 + 10}
+                           '&& window.metaform.drawn().nodes >= 630', timeout=60000)
+    # every element a node and every join its edges, one to each element it holds, and no node of its own; each
+    # namespace edge from code.gN to its elements
+    assert page.evaluate('window.metaform.drawn()') == {'nodes': 630, 'links': 600 + 601 + 10}
     assert page.inner_text('#count').startswith('630 elements · 601 joins')
     drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=big&limit=0')[1])
     assert problems == []
@@ -3282,18 +3289,20 @@ def test_an_intake_being_recorded_is_drawn_live_as_each_object_arrives(run, home
     page.wait_for_timeout(3000)  # nothing happens: a page that is told asks nothing, QUAL-015
     assert asked == []
     run('intake', 'purpose', 'stakeholder.cook.home', '["code.timer.kitchen"]', 'purpose=p', 'ef=f', cwd=folder)
-    page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=1500)  # pushed, not waited for
+    # pushed, not waited for: the join is an edge, the timer it holds a node
+    page.wait_for_function('() => window.metaform.drawn().nodes === 2 && window.metaform.drawn().links === 1',
+                           timeout=1500)
     page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length === 2', timeout=15000)
     page.wait_for_timeout(300)  # the panel's reads for the selected node settle
     assert not [text for text in page.evaluate('window.toasts') if 'Nothing for' in text]  # an unfinished layer is no error
     run('intake', 'element', 'code.loop.tick', 'role=SE', cwd=folder)
-    page.wait_for_function('() => window.metaform.drawn().nodes === 4', timeout=15000)
+    page.wait_for_function('() => window.metaform.drawn().nodes === 3', timeout=15000)
     run('intake', 'purpose', 'stakeholder.cook.home', '["code.timer.kitchen", "code.loop.tick"]',
         cwd=folder)  # annealed into the cook's join, the join that holds the kitchen timer
-    page.wait_for_function('() => window.metaform.drawn().links === 3', timeout=15000)
+    page.wait_for_function('() => window.metaform.drawn().links === 2', timeout=15000)  # an edge to each
     run('intake', 'finish', cwd=folder)
     page.wait_for_function('() => window.metaform.live() === null', timeout=15000)
-    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 4', timeout=15000)
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes === 3', timeout=15000)
     assert 'intake being recorded' not in page.inner_text('#count')
     ended(agent)
     drawn_as_paths(page.evaluate('window.metaform.graph()'), api(web, '/api/graph?project=live&limit=0')[1])
@@ -4330,11 +4339,13 @@ def test_choosing_a_theme_recolors_both_views_at_once_and_the_page_keeps_it(run,
         if name == 'space':
             continue
         pick_theme(page, name)
-        page.wait_for_function('() => document.querySelectorAll("#map2d svg g.node").length > 0')
+        # the 2D map is laid out again in the theme's colors off the page's thread, and shown once it is drawn
+        page.wait_for_function('() => window.metaform.loaded() && document.querySelectorAll("#map2d svg g.node").length > 0')
         assert page.evaluate('document.documentElement.dataset.theme') == name
         assert token('--ground') == colors['--ground'] == page.evaluate('window.metaform.ground()')
         drawn = page.evaluate('window.metaform.linkColors()')
-        assert {link['color'] for link in drawn if link['k'] == 'tree'} == {colors['--tree']}
+        # a namespace edge where no join's edge draws the same two elements, as none in this map
+        assert {link['color'] for link in drawn if link['k'] == 'tree'} <= {colors['--tree']}
         # the 3D labels are painted again in the theme's own colors, VIEW-038
         palette = [colors[token].lower() for token in ('--text', '--muted', '--signal', '--broken')]
         page.wait_for_function('palette => window.metaform.labels3d().every(label => label.hidden '
@@ -4356,7 +4367,7 @@ def test_every_link_of_the_3d_map_is_a_straight_line(run, web, mapped, browser):
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
     curves = page.evaluate('window.metaform.curves()')
-    assert curves and {link['k'] for link in curves} >= {'purpose', 'encounter', 'tree'}
+    assert curves and 'encounter' in {link['k'] for link in curves}  # a join's edges
     assert [link for link in curves if link['curve'] != 0] == []
     assert problems == []
 
@@ -4750,7 +4761,7 @@ def test_with_the_bloom_off_a_glass_node_is_drawn_to_its_sphere_and_takes_the_po
 @pytest.mark.req('VIEW-029')
 def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_nearer_the_eye(run, web, mapped, browser):
     """The glow was painted on top of everything when it should be behind. The broken kitchen timer
-    gives off its light; a join's purpose node is set nearer the eye, beside it, where its glow falls. The glow shows
+    gives off its light; another element is set nearer the eye, beside it, where its glow falls. The glow shows
     over the background around the timer and not over the nearer node."""
     from metaform.data import Node, Store
     store = Store('proj')
@@ -4762,8 +4773,8 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     page.emulate_media(reduced_motion='reduce')           # the light is steady
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    front = next(node['id'] for node in page.evaluate('window.metaform.graph().nodes') if node['id'].startswith('p:'))
-    staged(page, {kitchen: (2000, 0, 0), front: (2000, 7, 150)},
+    front = store.element('code.loop.tick').id
+    staged(page, {kitchen: (2000, 0, 0), front: (2000, 16, 150)},
            ({'x': 2000, 'y': 0, 'z': 300}, {'x': 2000, 'y': 0, 'z': 0}))
     page.wait_for_function(f'() => window.metaform.look("{kitchen}").light3d > 1 && window.metaform.bloom().on')
     lit, near = (page.evaluate(f'window.metaform.screen3d("{node}")') for node in (kitchen, front))
@@ -4849,12 +4860,12 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
     kitchen = at['code.timer.kitchen']
     page, problems, _ = opened(browser, web, plain=True)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    # The join the kitchen timer receives: its dots leave the timer's center for the purpose vertex, set in front of the
-    # timer, above it and nearer the eye.
+    # The join the kitchen timer receives: its dots leave the timer's center along the join's edge for an element it
+    # holds, set in front of the timer, above it and nearer the eye; a join has no node of its own.
     purpose = next(link['target'] for link in page.evaluate('window.metaform.graph().links')
-                   if link['k'] == 'purpose' and link['source'] == kitchen)
+                   if link['k'] == 'encounter' and link['source'] == kitchen)
     camera = ({'x': 2000, 'y': 0, 'z': 40}, {'x': 2000, 'y': 0, 'z': 0})
-    staged(page, {kitchen: (2000, 0, 0), purpose: (2000, 12, 25), at['code.alarm.audible']: (2100, 40, 80)}, camera)
+    staged(page, {kitchen: (2000, 0, 0), purpose: (2000, 12, 25)}, camera)
     close = f'window.metaform.screen3d("{kitchen}").r > 100'
     for _ in range(20):  # on a loaded machine the page's own fit of the whole map can still be moving the camera
         page.evaluate(f'window.metaform.view3d({json.dumps(camera[0])}, {json.dumps(camera[1])})')
@@ -4882,7 +4893,7 @@ def test_a_dot_passing_through_the_white_node_never_turns_it_dark(run, web, mapp
     darker = [sum(one) - sum(two) for one, two in zip(clear, inside)]
     assert max(darker) <= 12, list(zip(clear, inside))
     # In front of the node, with the bloom pass on, the dot is drawn as it is farther along its link.
-    run('map', 'ask', 'element:code.alarm.audible', 'Still wanted?', *ASK_FORM, cwd=mapped)  # the alarm, out of view, lights
+    run('map', 'ask', 'element:exterior.cook', 'Still wanted?', *ASK_FORM, cwd=mapped)  # the cook, out of view, lights
     page.wait_for_function('() => window.metaform.bloom().on', timeout=30000)
     drawn(page)  # the map read again with the question is drawn, its dots made again, before they are held
     front = held(0.3)
@@ -10928,9 +10939,9 @@ def test_depth_counts_its_levels_in_what_the_viewer_sees_with_an_edge_of_the_pro
     while True:
         now = page.evaluate("""async () => {
             const {G} = await import('/page/app/map3d/graph3d.js');
-            const nodes = G.graphData().nodes;
+            const {nodes, links} = G.graphData();
             return {els: nodes.filter(node => node.t === 'el').map(node => [node.id, node.name]),
-                    joins: nodes.filter(node => node.t === 'purpose').length};
+                    joins: new Set(links.filter(link => link.k === 'encounter').map(link => link.join)).size};
         }""")
         if sorted(one for one, _ in now['els']) == want or time.monotonic() > deadline:
             break

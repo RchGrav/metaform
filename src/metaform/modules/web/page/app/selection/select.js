@@ -6,7 +6,7 @@ import {OVERLAY, shown, overlay, overlayHolds} from '/page/app/core/overlays.js'
 import {toast} from '/page/app/core/controls.js';
 import {FRAMED, S, MEM, read} from '/page/app/core/reads.js';
 import {largeView} from '/page/app/header/menus.js';
-import {joinOf, addressOf} from '/page/app/graph/data.js';
+import {joinOf, addressOf, nodeIn} from '/page/app/graph/data.js';
 import {revealDepth} from '/page/app/keys/walk.js';
 import {noticeAttention} from '/page/app/figures/attention.js';
 import {setReach} from '/page/app/map3d/waves.js';
@@ -73,7 +73,7 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   S.neighbors = neighborsOf(id, join);
   if (G) {
     G.nodeColor(G.nodeColor());
-    const node = G.graphData().nodes.find(item => item.id === id);
+    const node = nodeIn(G.graphData(), id);
     if (fly && node) follow3d(id);
   }
   focus2D(id, frame);

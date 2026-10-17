@@ -5,10 +5,11 @@ import '/page/app/flow/fx3d.js';  // the part before runs first, so the parts ru
 import * as ULTRA from '/page/ultra.js';
 import {$, css} from '/page/app/core/dom.js';
 import {S, MEM} from '/page/app/core/reads.js';
-import {graphData} from '/page/app/graph/data.js';
+import {graphData, nodeIn, workShown, joinOf} from '/page/app/graph/data.js';
 import {ballOf} from '/page/app/figures/agents.js';
 import {endOf} from '/page/app/map3d/waves.js';
-import {G, grounded} from '/page/app/map3d/graph3d.js';
+import {G, grounded, wake3d, FIBERS} from '/page/app/map3d/graph3d.js';
+import {unbuilt} from '/page/app/map3d/ghosts.js';
 import {hovered, setHovered} from '/page/app/map3d/pick3d.js';
 import {tags, dropLabel, relabel} from '/page/app/map3d/labels.js';
 import {phaseOf} from '/page/app/flow/fx3d.js';
@@ -23,21 +24,92 @@ import {posted} from '/page/app/intake/intake.js';
 export function draw3D(previous = null) {
   if (!G) return;
   if (MEM.key && S.loading) return;  // a memory network is drawn once the map and its items are read again
-  previous = previous || new Map(G.graphData().nodes.map(node => [node.id, node]));
-  const data = MEM.key ? memoryData() : graphData();
+  const shown = G.graphData();
+  previous = previous || new Map(shown.nodes.map(node => [node.id, node]));
+  const fresh = MEM.key ? memoryData() : graphData();
+  // the map's nodes and links drawn already are kept, the same objects, so the graph makes again only what is new or
+  // now looks otherwise; a memory network is drawn whole
+  const {data, same} = MEM.key ? {data: fresh, same: false} : kept3d(shown, fresh);
   keepPlaces(data, previous);
   arrivals(data);
   const named = new Set(data.nodes.filter(node => node.t === 'el').map(node => node.id));
   for (const id of [...tags.keys()]) if (!named.has(id)) dropLabel(id);
   if (hovered) setHovered(data.nodes.find(node => node.id === hovered.id) || null);
   $('#tip3d').hidden = !hovered;
-  if (inPlace(data)) return;
+  if (same) {  // nothing added, removed or to be made again: what changed was copied onto what is drawn, VIEW-018
+    relabel();  // a name or a record changed in the same nodes
+    FIBERS.version++;  // and the links' looks are read again
+    wake3d();
+    return;
+  }
   // A memory network is laid out before it is shown, so it opens settled and whole in view; the map keeps its own
   // layout running from where each node stands.
   G.warmupTicks(MEM.key ? 120 : 0);
   G.graphData(data);
   applyPhysics(PHYS.name, false);  // its chains of service and its parts read again
   V3.layouts++;
+}
+/* The graph to draw, built of the objects drawn now wherever they stand for the same thing: the graph library knows a
+ * node or link by its object, so a node given as a new object was made again, with all it draws, for every node at
+ * every change, and for every page of a load (critic F1, 2026-10-17). A node whose look its object was made for
+ * changed, a part built or not built any more, of another role, address or layer, is given as new and so made again;
+ * every other keeps its object and takes the new values. `same`: nothing new, gone or made again. */
+function kept3d(shown, fresh) {
+  const byId = new Map();
+  for (const node of shown.nodes) byId.set(node.id, node);
+  const nodes = [], links = [], pending = new Map();
+  let same = shown.nodes.length === fresh.nodes.length && shown.links.length === fresh.links.length;
+  for (const node of fresh.nodes) {
+    const old = byId.get(node.id);
+    if (old && sameLook(old, node)) { copyOnto(old, node); nodes.push(old); } else { nodes.push(node); same = false; }
+  }
+  for (const link of shown.links) listAt(pending, linkKey(link)).push(link);
+  for (const link of fresh.links) {
+    const old = pending.get(linkKey(link))?.pop();
+    // a link to a node made again is made again too, so it joins the node's new object
+    if (old && byId.get(end(old.source)) === nodeOf(nodes, end(link.source))
+      && byId.get(end(old.target)) === nodeOf(nodes, end(link.target))) {
+      copyOnto(old, link);
+      links.push(old);
+    } else { links.push(link); same = false; }
+  }
+  return {data: {nodes, links}, same};
+}
+let NODES_AT = null;
+function nodeOf(nodes, id) {  // the node kept or made for an id, indexed once for the list
+  if (!NODES_AT || NODES_AT.list !== nodes || NODES_AT.size !== nodes.length) {
+    NODES_AT = {list: nodes, size: nodes.length, byId: new Map()};
+    for (const node of nodes) NODES_AT.byId.set(node.id, node);
+  }
+  return NODES_AT.byId.get(id);
+}
+const sameLook = (old, node) => old.t === node.t && old.role === node.role && old.address === node.address
+  && old.layer === node.layer && unbuilt(old) === unbuilt(node);
+function copyOnto(into, from) {
+  for (const key of Object.keys(from)) if (!PLACE.has(key)) into[key] = from[key];
+}
+/* The nodes of the 3D map whose open work changed, given it where they are drawn, and the edges of the joins they
+ * receive: the graph is not given new data for a ticket, which adds and removes nothing, VIEW-018. A node's light and
+ * its sign read its work each frame they are drawn, so it is marked and the next frame drawn. A part built, or no
+ * longer built, is drawn as another object, a ghost or solid, so the map is drawn again for it, which makes that node
+ * again and keeps every other, `kept3d`. */
+export function markWork3d(changed) {
+  if (!G || MEM.key || !changed.size) return;
+  const data = G.graphData(), work = workShown();
+  let remade = false;
+  for (const id of changed) {
+    const node = nodeIn(data, id);
+    if (!node || node.t !== 'el') continue;
+    const now = work.get(id) || [];
+    if (unbuilt(node) !== unbuilt({work: now})) remade = true;
+    else node.work = now;
+  }
+  if (remade) return draw3D();
+  for (const link of data.links) {
+    if (link.join && changed.has(endOf(link.source))) link.work = joinOf('p:' + link.join)?.open_work || [];
+  }
+  relabel();
+  wake3d();
 }
 /* Each node keeps where it was drawn, so the picture does not jump as pages arrive. */
 function keepPlaces(data, previous) {
@@ -85,33 +157,11 @@ function placeBeside(node, beside) {
   Object.assign(node, {x: beside.x + Math.cos(turn) * out * apart, y: beside.y + rise * apart,
     z: beside.z + Math.sin(turn) * out * apart, vx: 0, vy: 0, vz: 0});
 }
-/* New data starts the 3D layout again at full strength, which shakes the map, so a change that adds or removes no node
- * and no link is copied onto what is drawn, which is drawn again where it stands, VIEW-018. */
-const PLACE = new Set(['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', 'index', '__threeObj', 'source', 'target']);
+/* What a node or link is apart from where the layout puts it and what the graph library binds to it. */
+const PLACE = new Set(['x', 'y', 'z', 'vx', 'vy', 'vz', 'fx', 'fy', 'fz', 'index', '__threeObj', '__lineObj',
+  '__arrowObj', '__photonsObj', '__curve', 'source', 'target']);
 const end = value => value && typeof value === 'object' ? value.id : value;
-const linkKey = link => `${end(link.source)}>${end(link.target)}>${link.k}`;
-function inPlace(data) {
-  const shown = G.graphData();
-  if (shown.nodes.length !== data.nodes.length || shown.links.length !== data.links.length) return false;
-  const nodes = new Map(shown.nodes.map(node => [node.id, node]));
-  if (data.nodes.some(node => !nodes.has(node.id))) return false;
-  const links = new Map();
-  for (const link of shown.links) listAt(links, linkKey(link)).push(link);
-  const pairs = [];
-  for (const link of data.links) {
-    const same = links.get(linkKey(link));
-    if (!same?.length) return false;
-    pairs.push([same.shift(), link]);
-  }
-  const copy = (into, from) => {
-    for (const [key, value] of Object.entries(from)) if (!PLACE.has(key)) into[key] = value;
-  };
-  for (const node of data.nodes) copy(nodes.get(node.id), node);
-  for (const [into, from] of pairs) copy(into, from);
-  relabel();  // a name or a record changed in the same nodes
-  G.refresh();
-  return true;
-}
+const linkKey = link => `${end(link.source)}>${end(link.target)}>${link.k}>${link.join ?? ''}`;
 /* A theme recolors both views in place, VIEW-023: the 3D view rereads its colors, the 2D map is drawn again. The
  * choice is the viewer's own, kept in this browser. */
 /* The theme is the one choice of look: space draws the 3D map in outer space, ULTRA, and every other theme flat. */

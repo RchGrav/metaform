@@ -127,12 +127,12 @@ export const signsFacing = () => VIEW.signs === 'facing'
   || Boolean(PHYSICS.find(([name]) => name === PHYS.name)?.[3].facing);
 const baseCharge = node => node.t === 'el' ? -140 : node.t === 'item' ? -10 : -18;
 const baseDistance = link => link.k === 'layer' ? 8 : link.k === 'item' ? 12 : link.k === 'tree' ? 60 : 34;
-/* Each node's step along the chains of service: 0 for an element that serves no one, a join's purpose half a step on
- * from its receiver, and each part serving it a whole step. A node off every chain has none and is not pulled. */
+/* Each node's step along the chains of service: 0 for an element that serves no one, and each part serving it a whole
+ * step on, along the join's edge from its receiver. A node off every chain has none and is not pulled. */
 function serviceSteps(data) {
   const next = new Map(), served = new Set(), steps = new Map();
   for (const link of data.links) {
-    if (link.k !== 'purpose' && link.k !== 'encounter') continue;
+    if (link.k !== 'encounter') continue;
     const from = endOf(link.source), to = endOf(link.target);
     if (!next.has(from)) next.set(from, []);
     next.get(from).push(to);
@@ -142,7 +142,7 @@ function serviceSteps(data) {
   for (const id of queue) steps.set(id, 0);
   while (queue.length) {
     const id = queue.shift();
-    for (const to of next.get(id) || []) if (!steps.has(to)) { steps.set(to, steps.get(id) + 0.5); queue.push(to); }
+    for (const to of next.get(id) || []) if (!steps.has(to)) { steps.set(to, steps.get(id) + 1); queue.push(to); }
   }
   return steps;
 }

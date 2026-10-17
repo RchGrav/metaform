@@ -12,7 +12,7 @@ import {FRAMES} from '/page/app/map3d/graph3d.js';
 import {M} from '/page/app/map2d/build.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {glyphFor} from '/page/app/agents/dispatch.js';
-import {holderOf} from '/page/app/keys/walk.js';
+import {holderOf, depthView} from '/page/app/keys/walk.js';
 import {openFigure} from '/page/app/figures/ask.js';
 import {followed2d} from '/page/app/figures/eyes.js';
 import {figureWords} from '/page/app/map3d/readout.js';
@@ -59,9 +59,9 @@ export function spot2d(base, key) {  // where a 2D figure stands: an element's b
   const middle = path.getPointAtLength(path.getTotalLength() / 2);
   return {x: middle.x, y: middle.y, w: 0, h: 0};
 }
-function target2d(base, ticket) {  // the ticket's place, and the element its walk ends at
+function target2d(base, ticket, view) {  // the ticket's place, and the element its walk ends at
   // a part held deeper than the depth is worked at the node that holds it, VIEW-051
-  const at = holderOf(ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id);
+  const at = holderOf(ticket.node_kind === 'join' ? 'p:' + ticket.node_id : ticket.node_id, view);
   if (!at.startsWith('p:')) return base.nodes.has(at) ? {key: at, last: at} : null;
   const edge = base.edges.find(one => 'p:' + one.join.id === at);
   return edge ? {key: at, last: edge.join.receiver} : null;
@@ -73,7 +73,7 @@ function back2d(base, figure) {  // the way home, from the middle of a join's ed
 export function figures2d(tickets) {
   const base = M.base, home = base && home2d();
   if (!base || !home || !base.nodes.has(home)) return;
-  const live = liveWork();
+  const live = liveWork(), view = depthView();  // what the depth shows, once for every ticket
   for (const ticket of tickets) {
     const figure = ROAM2D.figures.get(ticket.id);
     if (figure) {
@@ -83,7 +83,7 @@ export function figures2d(tickets) {
       figure.done = done;
       continue;
     }
-    const working = drawnWorking(ticket, live), target = working && target2d(base, ticket);
+    const working = drawnWorking(ticket, live), target = working && target2d(base, ticket, view);
     if (target && !ROAM2D.seen.has(ticket.id)) startFigure2d(ticket, base, home, target);
   }
   for (const [id, figure] of ROAM2D.figures) if (!tickets.some(ticket => ticket.id === id)) figure.done = true;

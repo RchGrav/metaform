@@ -29,6 +29,7 @@ import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
+import {nodeIn} from '/page/app/graph/data.js';
 
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
@@ -370,7 +371,7 @@ function followStart(sessions) {
   const newest = begun.sort((a, b) => (Date.parse(a.started) || 0) - (Date.parse(b.started) || 0)).at(-1);
   if (!newest) return;
   const node = ticketNode(ticketOf(newest.work_id));
-  if (G?.graphData().nodes.some(item => item.id === node)) follow3d(node);
+  if (G && nodeIn(G.graphData(), node)) follow3d(node);
   autoZoom2d(node);
 }
 /* The sessions of the tickets a change named, each ticket read on its own; the claims are not read again, as no

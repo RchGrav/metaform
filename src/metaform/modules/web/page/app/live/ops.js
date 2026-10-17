@@ -10,10 +10,10 @@ import {withProviders, joinOf} from '/page/app/graph/data.js';
 import {figures} from '/page/app/figures/agents.js';
 import {mascotEvent} from '/page/app/figures/attention.js';
 import {flowEvent, flowWritten} from '/page/app/flow/flow.js';
-import {draw3D} from '/page/app/map3d/draw3d.js';
+import {draw3D, markWork3d} from '/page/app/map3d/draw3d.js';
 import {renderChips} from '/page/app/header/layers.js';
 import {renderLegend} from '/page/app/views/lens.js';
-import {build2D} from '/page/app/map2d/build.js';
+import {build2DSoon, markWork2d} from '/page/app/map2d/build.js';
 import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {drawAgentList} from '/page/app/dock/threads.js';
@@ -46,15 +46,18 @@ function layerInView(layerId) {
 }
 /* An element's parent: the element that holds it, when the intake recorded it; otherwise the
  * nearest address it starts with. */
-function holderOf(element) {
-  if (element.within && [...S.elements.values()].some(entry => entry.element.address === element.within)) {
-    return element.within;
-  }
-  return nearestParent(element.address);
+function holderOf(element, byAddress = addressesNow()) {
+  if (element.within && byAddress.has(element.within)) return element.within;
+  return nearestParent(element.address, byAddress);
 }
-function nearestParent(address) {
+/* The elements' ids by their addresses, made once for a batch of ops and not once for each element. */
+function addressesNow() {
+  const byAddress = new Map();
+  for (const entry of S.elements.values()) byAddress.set(entry.element.address, entry.element.id);
+  return byAddress;
+}
+function nearestParent(address, byAddress) {
   const parts = address.split('.');
-  const byAddress = new Map([...S.elements.values()].map(entry => [entry.element.address, entry.element.id]));
   for (let n = parts.length - 1; n > 0; n--) {
     const prefix = parts.slice(0, n).join('.');
     if (byAddress.has(prefix)) return prefix;
@@ -89,13 +92,14 @@ export async function appliedOps() {
     if (layer === false) continue;  // not in view: nothing to draw
     if (!applyOp(op, layer)) return false;
   }
-  for (const entry of S.elements.values()) entry.parent = holderOf(entry.element);
+  const byAddress = addressesNow();
+  for (const entry of S.elements.values()) entry.parent = holderOf(entry.element, byAddress);
   S.whole = {elements: S.elements, joins: S.joins};
   S.seq = ops[ops.length - 1].seq;
   flowWritten(ops);  // what was written on a node lands there as a record, `FLOW`
   draw3D();
   renderLegend();
-  await build2D();
+  await build2DSoon();
   await reselect();
   return true;
 }
@@ -130,7 +134,7 @@ function applyElement(op, layer) {
   element.reading = plainWords(element.address);
   element.short_name = shortName(element.address, element.name_length);
   element.open_work = kept.open_work || [];
-  S.elements.set(op.id, {element, parent: holderOf(element)});
+  S.elements.set(op.id, {element, parent: null});  // its parent is found with every other once the batch is in
   return true;
 }
 function applyJoin(op, layer) {
@@ -267,14 +271,20 @@ export async function ticketsChanged() {
   if (S.project !== project || S.base !== metaform) return;
   if (!every && !got.length && !messages) return;
   S.progress = every ? got : progressFrom(S.tickets);
-  openWork();
-  draw3D();
+  // A change to tickets adds and removes no node and no edge: each map marks the nodes whose work changed where they
+  // are drawn, and neither is drawn again, VIEW-018.
+  const changed = openWork();
+  // and those whose ticket's steps changed, which pace their light; every one when every ticket was read
+  if (every) for (const id of S.elements.keys()) changed.add(id);
+  else for (const ticket of got) changed.add(ticket.node_kind === 'join' ? joinOf('p:' + ticket.node_id)?.receiver
+    : ticket.node_id);
+  markWork3d(changed);
+  markWork2d(changed);
   renderLegend();
   figures(S.tickets || []);
   boardFromTickets();
   drawAgentList();  // the full-size dock's rows say each ticket's steps
   if (every || messages || got.some(atSelected)) workInPanel();
-  await build2D();
 }
 export function boardFromTickets() {
   if ($('#board').hidden || !S.tickets) return;
@@ -289,8 +299,24 @@ function openWork() {
     if (!ticket.done && ticket.condition) add(`${ticket.node_kind}:${ticket.node_id}`, ticket.condition);
   }
   for (const message of Q.open) add(`${message.node_kind}:${message.node_id}`, message.kind);
-  for (const entry of S.elements.values()) entry.element.open_work = open.get(`element:${entry.element.id}`) || [];
-  for (const join of S.joins) join.open_work = open.get(`join:${join.id}`) || [];
+  // the elements whose open work as the maps show it changed: their own, or that of a join they receive
+  const changed = new Set();
+  for (const entry of S.elements.values()) {
+    const now = open.get(`element:${entry.element.id}`) || [];
+    if (!sameWork(entry.element.open_work, now)) changed.add(entry.element.id);
+    entry.element.open_work = now;
+  }
+  for (const join of S.joins) {
+    const now = open.get(`join:${join.id}`) || [];
+    if (!sameWork(join.open_work, now)) changed.add(join.receiver);
+    join.open_work = now;
+  }
+  return changed;
+}
+function sameWork(one, two) {
+  if (!one || one.length !== two.length) return false;
+  for (let at = 0; at < one.length; at++) if (one[at] !== two[at]) return false;
+  return true;
 }
 /* Whether a ticket is in the selected node's Work box: on it, or, for an element, on a join it receives or holds,
  * as the box's read with joins gives it. */
