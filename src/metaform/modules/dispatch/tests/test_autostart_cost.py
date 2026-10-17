@@ -1,4 +1,5 @@
 """Autostart reads selection inputs once and preserves ticket selection rules."""
+import json
 from collections import Counter
 
 import pytest
@@ -42,7 +43,47 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert result['started'] == [{'id': first, 'agent': 'claude'}, {'id': second, 'agent': 'gemini'}]
-    assert calls['work'] == 1, 'selection must not reread work to obtain map settings'
+    # one read decides there is something to start, and one inside the write transaction counts and reserves
+    assert calls['work'] == 2, 'selection must not reread work to obtain map settings'
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_pass_with_nothing_to_start_reads_once_and_takes_no_write_lock(dispatch, run, monkeypatch):  # noqa: F811
+    """UX review round 1, runaway F3: with every slot in use, a pass of the agent starter is one read of the open
+    tickets; it reconciles no ticket's progress, and opens no write transaction on the work store."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import progress, recovery
+
+    run('set', '--dispatch-autostart', '--dispatch-agents=1', cwd=dispatch.folder)
+    for number in range(20):
+        dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Ticket {number}')
+    monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    dispatch.store.take_work(dispatch.id, by='claude 0123456789abcdef')  # the one slot is in use
+    calls = Counter()
+    atomic, work = Store.atomic, Store.__getattr__
+
+    def counted(self, name):
+        method = work(self, name)
+        if name != 'work':
+            return method
+        def read(*args, **kwargs):
+            calls['work'] += 1
+            return method(*args, **kwargs)
+        return read
+
+    def locked(self):
+        calls['atomic'] += 1
+        return atomic(self)
+
+    monkeypatch.setattr(Store, '__getattr__', counted)
+    monkeypatch.setattr(Store, 'atomic', locked)
+    monkeypatch.setattr(progress, 'refresh', lambda *args: calls.update(['refresh']))
+    result = module.start_work(context('dispatch', dispatch.folder, project='proj'), dispatch.store, {})
+    assert result['started'] == []
+    assert (calls['work'], calls['atomic'], calls['refresh']) == (1, 0, 0), calls
 
 
 def test_session_verification_reuses_the_unfiltered_open_work_snapshot(dispatch, monkeypatch):  # noqa: F811
@@ -126,3 +167,74 @@ def test_autostart_without_page_off_starts_nothing_when_a_runner_finishes(dispat
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()
     assert dispatch.store.ticket(second).work.taken is None
+
+
+def _passes(dispatch, monkeypatch):  # noqa: F811
+    """One pass of the agent starter, as autostart runs it, with the launch stubbed: the tickets it reserved."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import recovery
+
+    monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    return lambda: [one['id'] for one in module.autostart(context('dispatch', dispatch.folder, project='proj'))['started']]
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_held_ticket_waits_in_backlog_for_the_person_and_autostart_never_starts_it(dispatch, run,  # noqa: F811
+                                                                                    monkeypatch):
+    """UX review round 1, orchestrator F5: held=true put a ticket in Backlog, and autostart started it after To do."""
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Planned, held', held=True).id
+    kept = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held from agents').id
+    run('map', 'work', 'op=edit', f'id={kept}', 'hold=true', cwd=dispatch.folder)
+    started = _passes(dispatch, monkeypatch)
+    assert started() == [dispatch.id], 'only the To do ticket starts'
+    assert dispatch.store.ticket(held).work.taken is None and dispatch.store.ticket(held).work.column == 'backlog'
+    run('map', 'work', 'op=move', f'id={held}', 'column=todo', cwd=dispatch.folder)  # the person releases it
+    assert started() == [held]
+
+
+@pytest.mark.req('VIEW-042')
+def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run, monkeypatch):  # noqa: F811
+    """UX review round 1, orchestrator F6: a plan's order holds; with five slots, B waits on A."""
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='After the first').id
+    said = run('map', 'work', 'op=edit', f'id={second}', f'after_work=["{dispatch.id}"]', '--json',
+               cwd=dispatch.folder).stdout
+    assert json.loads(said)['map']['after_work'] == [dispatch.id]
+    started = _passes(dispatch, monkeypatch)
+    assert started() == [dispatch.id]
+    assert dispatch.store.ticket(second).work.taken is None
+    refused = run('dispatch', 'start', second, 'claude', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and f'waits on {dispatch.id}' in refused.stderr + refused.stdout
+    dispatch.store.finish_work(dispatch.id, 'Done.', 'It is done.')
+    assert started() == [second], 'the next pass starts what the done ticket freed'
+
+
+@pytest.mark.req('VIEW-045')
+def test_a_ticket_an_agent_writes_is_held_so_no_work_starts_its_own_successor(dispatch, run):  # noqa: F811
+    """UX review round 1, runaway F5: a ticket written by an agent of Metaform waits in Backlog for the person."""
+    said = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Follow up',
+                          'title=Follow up', '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'}).stdout)
+    assert said['held'] is True, said
+    assert 'waits in Backlog' in json.dumps(said)
+    mine = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Mine', 'title=Mine',
+                          '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': ''}).stdout)
+    assert mine['held'] is False, "the person's own ticket goes to To do"
+
+
+@pytest.mark.req('BASE-052')
+def test_a_glyphs_next_ticket_is_never_one_waiting_on_an_open_ticket(dispatch, run):  # noqa: F811
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+
+    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held', held=True).id
+    waiting = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Waiting').id
+    ready = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Ready').id
+    for one in (held, waiting, ready):
+        run('map', 'work', 'op=edit', f'id={one}', 'glyph=kite', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={waiting}', f'after_work=["{dispatch.id}"]', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    found = module.next_ticket(ctx, dispatch.store, 'kite', agent='claude', exclude=(dispatch.id,))
+    assert found is not None and found.id == ready

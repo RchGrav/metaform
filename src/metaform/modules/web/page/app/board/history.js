@@ -26,6 +26,17 @@ export async function history(id) {
     : h('p', {class: 'empty'}, 'No work here yet.'));
   $('#float').hidden = false;
 }
+/* Who has a ticket, in words: an agent starting, the agent at work by its name, or who took it by hand; never the
+ * reservation token or the session id it is recorded with, which stay on hover, UX review round 1 (web-gui-controls
+ * F11). */
+export function takenWords(ticket) {
+  const by = String(ticket?.taken_by || '');
+  if (!by) return null;
+  const [who, ...rest] = by.split(' ');
+  const said = by.startsWith('dispatch starting ') ? 'Starting…'
+    : rest.length === 1 && /^[0-9a-f-]{8,}$/i.test(rest[0]) ? agentName(who) : by;
+  return h('span', {class: 'by', title: by}, said);
+}
 /* How long since a ticket was opened, taken or done, its date on hover. */
 export function ageOf(ticket) {
   const at = ticket.done || ticket.taken || ticket.created;
@@ -38,7 +49,7 @@ function historyTicket(ticket, dispatched) {
   return h('div', {class: 'ticket'},
     h('div', {class: 'head'}, conditionLabel(ticket),
       h('span', {class: 'column'}, COLUMN_NAMES[columnOf(ticket)]),
-      ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
+      takenWords(ticket),
       ageOf(ticket)),
     ticket.task ? h('p', {class: 'task'}, ...linked(ticket.task)) : null,
     ticket.note ? h('p', {class: 'note'}, ...linked(ticket.note)) : null,

@@ -138,7 +138,7 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # The page's modulepreload links, with what they were worked out from: the import map and module scripts, and the
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
-DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible',
+DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after',
                               'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
                               'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
                               'dispatch.raised'})
@@ -147,9 +147,12 @@ DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_sett
 # What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
 # work, a ticket made ready, released or freed, a message or question answered; and the inputs no kind names, read from
 # the tables. A session that ended says no kinds (dispatch's release), so the tables decide; `session` alone is a
-# runner's own state, working or idle, which starts nothing.
+# runner's own state, working or idle, which starts nothing. A ticket's words, `note`, and its plan and steps, `step`,
+# start nothing either, so an agent editing its note or reporting a step costs the starter no pass (UX review round 1,
+# runaway F3): only `ticket` does, a ticket written, released, freed, done or given a task.
 STARTS = frozenset({'ticket', 'message', 'question'})
-UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'dispatch.settings', 'dispatch.claims',
+UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
+                      'dispatch.claims',
                       'dispatch.claim_work', 'dispatch.raised'})
 MERGES = 'dispatch.merges'
 

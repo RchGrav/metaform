@@ -764,6 +764,9 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card .progress span{position:absolute;left:0;top:0;bottom:0;background:var(--c);border-radius:inherit;transition:width .4s}
 #board .card .progress small{position:absolute;right:0;top:6px;font:calc(10px * var(--ui)) var(--mono);color:var(--muted)}
 #board .card .resolution{margin-top:6px;font:var(--t-sm) var(--sans);color:var(--signal)}
+#board .card .ended{display:flex;align-items:center;gap:var(--s2);margin-top:6px;font:var(--t-sm)/1.4 var(--sans);color:var(--muted)}
+#board .card .ended .why{flex:1;min-width:0}
+#dispatch .slots{margin:0 0 var(--s2)}
 /* A card's acts are one row: start and chat on the left, its order on the right; its agent settings fold away. */
 #board .card .acts{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1);margin-top:var(--s2);padding-top:var(--s2);border-top:1px solid var(--line)}
 #board .card .acts .grow{flex:1}

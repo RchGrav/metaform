@@ -1,5 +1,6 @@
 """VIEW-044: a done ticket's worktree waits for review, then merges into the active dev branch and is logged; a review
 takes it over for good; with no test command nothing is offered. A real git repository and the fake agent, no model."""
+import importlib
 import json
 import subprocess
 
@@ -48,7 +49,69 @@ def test_a_done_ticket_in_its_own_worktree_waits_for_review_then_merges_and_is_l
     logged = [record for record in dispatch.store.work(open=True, limit=0).results
               if 'needs testing before the next release' in (record.task or '')]
     assert len(logged) == 1 and logged[0].condition == ''
+    assert logged[0].held, 'the release log waits in Backlog: a merged ticket never writes and starts its successor'
     assert json.loads(run('dispatch', 'merges', '--json', cwd=repo).stdout)['merges'] == []
+
+
+def _killed_at(monkeypatch, step):
+    """merge.git, raising as if the process were killed right after the git command `step` ran."""
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    real = merge.git
+
+    def git_then_die(folder, *words, **kwargs):
+        done = real(folder, *words, **kwargs)
+        if words and words[0] == step:
+            raise SystemExit('killed')
+        return done
+    monkeypatch.setattr(merge, 'git', git_then_die)
+    return real
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('step', ['rebase', 'reset', 'commit', 'merge'])
+def test_a_merge_killed_part_way_leaves_the_agents_branch_as_it_was_and_the_next_check_merges_it_once(
+        dispatch, repo, run, monkeypatch, step):
+    """UX review round 1, interrupt F7: the merge moved the agent's branch in place, so one killed after its soft
+    reset left the work only staged and the next attempt said there was a conflict. The agent's branch is never
+    moved now, the merge is journaled, and the next check finishes it or makes it again, with one release log."""
+    from metaform.module import context
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    [waiting] = worked(dispatch, repo)
+    tip = git(repo, 'rev-parse', waiting['branch'])
+    ctx = context('dispatch', repo, project='proj')
+    real = _killed_at(monkeypatch, step)
+    with pytest.raises(SystemExit):
+        merge.merge_due(ctx, dispatch.store, dispatch.id)
+    monkeypatch.setattr(merge, 'git', real)
+    assert git(repo, 'rev-parse', waiting['branch']) == tip, 'the agent\'s branch never moves'
+    [row] = json.loads(run('dispatch', 'merges', '--json', cwd=repo).stdout)['merges']
+    assert row['state'] == 'merging', 'the merge under way is journaled'
+    dead = subprocess.Popen(['true'])
+    dead.wait()
+    merge.Queued(repo).path.write_text(str(dead.pid), encoding='utf-8')  # the lock a killed merge leaves
+    merged = merge.merge_due(ctx, dispatch.store, dispatch.id)
+    assert merged['merged'] is True and 'conflict' not in merged['why'], merged
+    assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'changed by the fake agent\n'
+    assert git(repo, 'log', '--format=%B').count(f'Metaform-Ticket: {dispatch.id}') == 1
+    logged = [record for record in dispatch.store.work(open=True, limit=0).results
+              if (record.task or '').startswith(merge.RELEASE)]
+    assert len(logged) == 1 and logged[0].held
+    assert not git(repo, 'branch', '--list', 'metaform*') and git(repo, 'status', '--porcelain') == ''
+
+
+def test_autostart_never_starts_the_release_log_a_merge_writes(dispatch, repo, run, monkeypatch):
+    """UX review round 1, runaway F5: the follow-up a merge wrote was an open ticket autostart started, and its agent
+    could merge and write the next one; the release log is held, so nothing starts it."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import recovery
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    worked(dispatch, repo)
+    assert merge.merge_due(context('dispatch', repo, project='proj'), dispatch.store, dispatch.id)['merged']
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=repo)
+    monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation: dict(ctx.nouns))
+    assert module.autostart(context('dispatch', repo, project='proj'))['started'] == []
 
 
 def test_review_takes_the_merge_over_for_good(dispatch, repo, run):

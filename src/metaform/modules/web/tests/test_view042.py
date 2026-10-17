@@ -36,7 +36,9 @@ def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_a
         store.finish_work(ticket.id, 'Existing fixture work completed.')
     node = Node('element', store.element('code.alarm.audible').id)
     tickets = [store.add_work(node, 'unbuilt', task=f'Complete task {n}') for n in range(3)]
-    questioned = store.add_work(node, 'unbuilt', task='Continue independent work', held=True)
+    questioned = store.add_work(node, 'unbuilt', task='Continue independent work')
+    # held in Backlog, which only the person releases: autostart never starts it (UX review round 1, orchestrator F5)
+    held = store.add_work(node, 'unbuilt', task='Planned and held', held=True)
     question = store.ask(node, 'Which approach?', work=questioned.id, suggestions=['Use the existing approach'])
     started(run)
     headers = {'Content-Type': 'application/json', 'Origin': f'http://127.0.0.1:{web}'}
@@ -58,6 +60,7 @@ def test_autostart_clears_waiting_work_including_questioned_tickets_before_the_a
         # order among them is not fixed
         expected = [ticket.id for ticket in tickets] + [questioned.id]
         assert sorted(session['work_id'] for session in sessions) == sorted(expected)
+        assert store.ticket(held.id).work.taken is None and store.ticket(held.id).work.column == 'backlog'
     finally:
         api(web, '/api/dispatch-autostart', method='POST', headers=headers,
             body=json.dumps({'project': 'proj', 'value': False}))

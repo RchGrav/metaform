@@ -1094,9 +1094,9 @@ WORK_READS: dict[str, frozenset[str]] = {
                        'hold'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'hold', 'eligible', 'title'}),
+                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
-                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'title'}),
+                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
@@ -1267,6 +1267,9 @@ def work(ctx: Context) -> Any:
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
+    if isinstance(nouns.get('after_work'), list):  # each as `map work` takes it: its id, or its `<address>#<n>`
+        nouns['after_work'] = [_work_id(store, one) if isinstance(one, str) else one
+                               for one in cast(list[Any], nouns['after_work'])]
     if op == 'glyphs':
         return {'glyphs': list(AGENT_GLYPHS)}
     if op == 'list':
@@ -1292,6 +1295,11 @@ def work(ctx: Context) -> Any:
             raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
         titled(ctx, 'The ticket', nouns.get('title'))  # it takes the next number at its node, MCP-037
         _numbering(store)
+        writer = _agent_writing(ctx)
+        if writer and not nouns.get('held'):  # work never writes its own successor work and starts it
+            nouns['held'] = True
+            notices.append(Notice('held', f'A ticket a {writer} agent writes waits in Backlog, held, until the person '
+                                          'releases it or starts it: no agent starts it by itself.'))
         # A missing condition is stored empty, and the store names it in its notice, STORE-042.
         with store.atomic():
             added = store.add_work(node, nouns.get('condition'),
@@ -1392,12 +1400,26 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
     with store.tables(write=False) as tx:
         found = {work_id: tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids}
         eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
+        after = {work_id: tx.get('after', {'work_id': work_id}) for work_id in work_ids}
     kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold'])} for work_id, row in found.items()
             if row is not None}
     for work_id, row in eligible.items():
         if row is not None:
             kept.setdefault(work_id, {})['eligible'] = row['agents']
+    for work_id, row in after.items():
+        if row is not None:
+            kept.setdefault(work_id, {})['after_work'] = row['works']
     return kept
+
+
+def _agent_writing(ctx: Context) -> str | None:
+    """The role of the Metaform agent writing this ticket, from the environment its runner sets, or None for the person
+    and a session they run outside dispatch; the page is the person's. UX review round 1, runaway F5: a ticket an
+    agent writes is held, so work cannot write its successor and have it started with no one deciding."""
+    if ctx.surface not in ('mcp', 'cli'):
+        return None
+    role = os.environ.get('METAFORM_ROLE')
+    return role if role and role != 'none' else None
 
 
 def _may_write_ticket(ctx: Context) -> None:
@@ -1449,7 +1471,7 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
         changes['agent'] = agent
     if 'hold' in nouns:
         changes['hold'] = 1 if nouns['hold'] else 0
-    if not changes and 'eligible' not in nouns:
+    if not changes and 'eligible' not in nouns and 'after_work' not in nouns:
         return
     with store.tables() as tx:
         if changes and tx.update('ticket_settings', {'work_id': work_id}, changes) is None:
@@ -1465,6 +1487,19 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
                 values: dict[str, Any] = {'agents': agents}
                 if tx.update('eligible', {'work_id': work_id}, values) is None:
                     tx.insert('eligible', {'work_id': work_id, **values})
+        if 'after_work' in nouns:  # the tickets it waits on, read by the agent starter, UX review round 1 (F6)
+            waits = nouns['after_work']
+            if waits in ([], None, ''):
+                tx.delete('after', {'work_id': work_id})
+            else:
+                if not isinstance(waits, list) or any(not isinstance(one, str) for one in cast(list[Any], waits)):
+                    notices.append(Notice('after_work', f'{waits!r} is not a list of work ids; it was not stored.'))
+                    return
+                if work_id in waits:
+                    notices.append(Notice('after_work', 'A ticket does not wait on itself; its own id was left out.'))
+                kept = sorted({str(one) for one in cast(list[str], waits)} - {work_id})
+                if tx.update('after', {'work_id': work_id}, {'works': kept}) is None:
+                    tx.insert('after', {'work_id': work_id, 'works': kept})
 
 
 def _glyphed(store: Store, result: Any) -> Any:
@@ -1624,7 +1659,9 @@ WORK_NOUNS = (
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
-    _noun('held', 'add and edit: keep it waiting until agents are assigned or take it.', 'bool'),
+    _noun('held', 'add and edit: put it in Backlog, where it waits: Autostart and Start all never start it; the '
+                  'person releases it to To do, starts it on its own, or gives it an agent\'s glyph. A ticket an '
+                  'agent of Metaform writes is always held.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
                    'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
@@ -1635,6 +1672,9 @@ WORK_NOUNS = (
     _noun('eligible', 'add and edit: the eligible agent types as a JSON list, claude, codex or gemini; [] allows '
                      'Any agent, the default for existing and new tickets. Dispatch and agent claims honor it.', 'json',
           {'type': 'array', 'items': {'type': 'string', 'enum': ['claude', 'codex', 'gemini']}}),
+    _noun('after_work', 'add and edit: the work ids this ticket waits on, as a JSON list; no agent starts it '
+                        'automatically until each of them is done. [] waits on none.', 'json',
+          {'type': 'array', 'items': {'type': 'string'}}),
     _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets not done and not taken are given the first '
                     'that many glyphs in turn, To do first and then Backlog.', 'int'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '

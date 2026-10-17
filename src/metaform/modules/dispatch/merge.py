@@ -24,6 +24,7 @@ from typing import Any
 from metaform.data import Node, Store, WorkRecord
 
 READY, REVIEW, MERGED, FAILED = 'ready', 'review', 'merged', 'failed'
+MERGING = 'merging'  # journaled: a merge under way, or left part way by one that died, `merge_due`
 FOLDER = '.worktrees'  # inside the project folder, so an agent there reaches the project; kept out of git status
 TRAILER = 'Metaform-Ticket'  # the git trailer every commit made for a ticket carries, P009
 SNAPSHOTS = 'refs/metaform/snapshot'  # where the snapshot a ticket's worktree began from is kept, by its branch name
@@ -207,10 +208,11 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
 
 
 def due(store: Store) -> list[dict[str, Any]]:
-    """The merges waiting for review, the soonest first."""
+    """The merges waiting for review, the soonest first, with any a merge left part way, `merging`, whose deadline is
+    past, so the next check finishes it."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        rows = [dict(row) for row in tx.rows('merges', {'state': READY}, limit=0).results]
+        rows = [dict(row) for state in (READY, MERGING) for row in tx.rows('merges', {'state': state}, limit=0).results]
     return sorted(rows, key=lambda row: row['deadline'])
 
 
@@ -226,24 +228,40 @@ def review(store: Store, work_id: str) -> bool:
 
 
 class Queued:
-    """One merge at a time in a project, P018: a lock file in the project's git folder, taken over only once it is
-    older than QUEUE_LIMIT, left by a merge that died."""
+    """One merge at a time in a project, P018: a lock file in the project's git folder naming the process that holds
+    it, taken over at once when that process is gone, and otherwise once it is older than QUEUE_LIMIT, as a lock left
+    by a merge from code before it named its process. A merge killed part way so leaves no ten-minute block on every
+    other merge (UX review round 1, interrupt F7)."""
 
     def __init__(self, project: Path) -> None:
         found = git(project, 'rev-parse', '--git-common-dir').stdout.strip()
         self.path = (project / found if found else project / '.git') / QUEUE
         self.held = False
 
+    def _left(self) -> bool:
+        """Whether the lock there was left by a merge that is no longer running."""
+        try:
+            said = self.path.read_text(encoding='utf-8').strip()
+            if said.isdigit():
+                return not _alive(int(said))
+            return time.time() - self.path.stat().st_mtime >= QUEUE_LIMIT
+        except OSError:
+            return False
+
     def __enter__(self) -> bool:
         for _ in range(2):
             try:
-                os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+                handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                try:
+                    os.write(handle, str(os.getpid()).encode('ascii'))
+                finally:
+                    os.close(handle)
                 self.held = True
                 return True
             except FileExistsError:
+                if not self._left():
+                    return False
                 try:
-                    if time.time() - self.path.stat().st_mtime < QUEUE_LIMIT:
-                        return False
                     self.path.unlink()
                 except OSError:
                     return False
@@ -259,17 +277,79 @@ class Queued:
                 pass
 
 
+def _alive(pid: int) -> bool:
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:  # it exists, as another user's, or the platform cannot say: taken as alive
+        return True
+    return True
+
+
+def merging_branch(work_id: str) -> str:
+    """The branch a merge is made on, beside the agent's own, which a merge never moves."""
+    return f'metaform-merging/{work_id[:12]}'
+
+
+def merging_folder(project: Path, work_id: str) -> Path:
+    return project / FOLDER / f'merging-{work_id[:12]}'
+
+
+def _dropped(project: Path, work_id: str) -> None:
+    """A merge's own worktree and branch removed, whatever state it was left in: a rebase stopped part way included."""
+    folder = merging_folder(project, work_id)
+    if folder.exists():
+        git(project, 'worktree', 'remove', '--force', str(folder))
+    git(project, 'worktree', 'prune')
+    if git(project, 'rev-parse', '--verify', '--quiet', merging_branch(work_id)).returncode == 0:
+        git(project, 'branch', '-D', merging_branch(work_id))
+
+
+def _conflicting(folder: str | Path, said: str) -> bool:
+    """Whether a rebase that failed stopped on a genuine conflict, rather than on git refusing for another reason."""
+    unmerged = git(folder, 'diff', '--name-only', '--diff-filter=U').stdout.strip()
+    return bool(unmerged) or 'CONFLICT' in said
+
+
+RELEASE = 'Newly committed feature, needs testing before the next release: '  # the release log ticket's task, VIEW-044
+
+
+def _logged(ctx: Any, store: Store, work_id: str, dev: str, branch: str) -> None:
+    """The release log of a merge made without review, VIEW-044: a ticket held in Backlog, so no agent starts it by
+    itself and a merged ticket never writes and starts its own successor (UX review round 1, runaway F5). Written once,
+    though a merge resumed after a crash comes here again; a merge of a release log's own ticket writes none."""
+    record = store.ticket(work_id).work
+    if (record.task or '').startswith(RELEASE):
+        return
+    note = f'Merged into {dev} without review, from {branch}, after its tests passed: work {work_id}.'
+    if any(other.note == note for other in store.work(open=None, limit=0).results):
+        return
+    store.add_work(Node.of(record.node_kind, record.node_id), None, note=note, held=True,
+                   task=f'{RELEASE}{record.task or record.note or work_id}')
+
+
 def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
     """At the deadline, with no review, one merge at a time, P018 and P011: the branch's own work, since the snapshot it
-    began from, rebased onto the active dev branch in its worktree, the tests run there again, squashed into one commit
-    with the ticket's trailer, and the dev branch fast-forwarded to it, which only a folder with no uncommitted change
-    to a tracked file takes; then the worktree, the branch and its snapshot are removed, P192, and the ticket that says
-    the feature needs testing before the next release is written. Anything that no longer passes is not merged; a
-    folder with uncommitted changes, or another merge under way, leaves it waiting."""
+    began from, rebased onto the active dev branch in a worktree of the merge's own, on a branch of its own, the tests
+    run there again, squashed into one commit with the ticket's trailer, and the dev branch fast-forwarded to it, which
+    only a folder with no uncommitted change to a tracked file takes; then the worktrees, the branches and the snapshot
+    are removed, P192, and the held ticket that says the feature needs testing before the next release is written.
+    Anything that no longer passes is not merged; a folder with uncommitted changes, or another merge under way, leaves
+    it waiting.
+
+    The agent's branch and worktree are never moved, and the merge is journaled: its row reads `merging` from before
+    the first git step to the last. A merge killed part way is found so on the next call, under the queue's lock, so it
+    is not still running: when the dev branch already holds its commit it is finished, and otherwise its own worktree
+    and branch are dropped and it is made again from the agent's branch as it was. Only a genuine conflict is said
+    with `conflict:` (UX review round 1, interrupt F7: a merge killed after its soft reset left the agent's work only
+    staged, and the next attempt reported a conflict that did not exist)."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
-    if row is None or row['state'] != READY:
+    if row is None or row['state'] not in (READY, MERGING):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(row)
     project = Path(store.project().path)
@@ -277,44 +357,71 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
     with Queued(project) as first:
         if not first:
             return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; this one waits'}
-        if git(project, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
-            return {'work_id': work_id, 'merged': False,
-                    'why': 'the project folder has uncommitted changes; the merge waits until they are committed'}
         dev = dev_branch(project)
         if dev is None:
             return {'work_id': work_id, 'merged': False, 'why': 'the project folder is not on a branch'}
+        temp, here = merging_branch(work_id), merging_folder(project, work_id)
+        if row['state'] == MERGING:  # left part way by a merge that died: finish it, or begin it again
+            # the dev branch holds its squashed commit when the merge's own branch is a commit of this ticket's, by its
+            # trailer, that dev has: only the fast-forward puts one there
+            made = git(project, 'rev-parse', '--verify', '--quiet', temp).stdout.strip()
+            ours = bool(made) and f'{TRAILER}: {work_id}' in git(project, 'log', '-1', '--format=%B', made).stdout
+            if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
+                return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+            _dropped(project, work_id)
+            with own.tables() as tx:
+                tx.update('merges', {'work_id': work_id}, {'state': READY, 'reason': ''})
+        if git(project, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
+            return {'work_id': work_id, 'merged': False,
+                    'why': 'the project folder has uncommitted changes; the merge waits until they are committed'}
         passed, why = clean_merge(project, branch)
         outcome: dict[str, Any] = {'state': FAILED, 'reason': why}
+        began = ''
         if passed:
+            with own.tables() as tx:  # the journal: from here to the end the merge reads `merging`
+                tx.update('merges', {'work_id': work_id}, {'state': MERGING, 'reason': ''})
+            _dropped(project, work_id)
             began = snapshot_of(project, branch) or git(project, 'merge-base', dev, branch).stdout.strip()
-            moved = git(folder, 'rebase', '--onto', dev, began)
-            if moved.returncode != 0:
-                git(folder, 'rebase', '--abort')
-                outcome['reason'] = 'conflict: ' + (moved.stdout + moved.stderr).strip()[-400:]
+            made = git(project, 'worktree', 'add', '-b', temp, str(here), branch)
+            if made.returncode != 0:
+                outcome['reason'] = 'git: ' + (made.stdout + made.stderr).strip()[-400:]
                 passed = False
         if passed:
-            passed, said = tests_pass(folder, str(ctx.setting('dispatch_test_command')))
+            moved = git(here, 'rebase', '--onto', dev, began)
+            if moved.returncode != 0:
+                said = (moved.stdout + moved.stderr).strip()
+                outcome['reason'] = ('conflict: ' if _conflicting(here, said) else 'git: ') + said[-400:]
+                git(here, 'rebase', '--abort')
+                passed = False
+        if passed:
+            passed, said = tests_pass(here, str(ctx.setting('dispatch_test_command')))
             outcome['reason'] = said
         if passed:
             record = store.ticket(work_id).work
-            git(folder, 'reset', '--soft', dev)
-            squashed = git(folder, 'commit', '-q', '-m',
+            git(here, 'reset', '--soft', dev)
+            squashed = git(here, 'commit', '-q', '-m',
                            f'{record.condition or "work"}: {(record.task or record.note or work_id)[:60]}',
                            '-m', f'Work {work_id}: {record.resolution or ""}', '-m', f'{TRAILER}: {work_id}')
-            done = git(project, 'merge', '--ff-only', branch) if squashed.returncode == 0 else squashed
+            done = git(project, 'merge', '--ff-only', temp) if squashed.returncode == 0 else squashed
             if done.returncode == 0:
-                outcome = {'state': MERGED, 'reason': ''}
-                store.add_work(Node.of(record.node_kind, record.node_id), None,
-                               note=f'Merged into {dev} without review, from {branch}, after its tests passed: '
-                                    f'work {work_id}.',
-                               task=f'Newly committed feature, needs testing before the next release: '
-                                    f'{record.task or record.note or work_id}')
-                removed(project, folder, branch)
-            else:
-                outcome['reason'] = (done.stdout + done.stderr).strip()[-400:]
+                return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+            outcome['reason'] = 'git: ' + (done.stdout + done.stderr).strip()[-400:]
+        _dropped(project, work_id)
     with own.tables() as tx:
         tx.update('merges', {'work_id': work_id}, outcome)
-    return {'work_id': work_id, 'merged': outcome['state'] == MERGED, 'why': outcome['reason']}
+    return {'work_id': work_id, 'merged': False, 'why': outcome['reason']}
+
+
+def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev: str, folder: str,
+            branch: str) -> dict[str, Any]:
+    """The end of a merge whose commit the dev branch holds: its release log written, its worktrees, branches and
+    snapshot removed, and its row merged, each step safe to run again."""
+    _logged(ctx, store, work_id, dev, branch)
+    _dropped(project, work_id)
+    removed(project, folder, branch)
+    with own.tables() as tx:
+        tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': ''})
+    return {'work_id': work_id, 'merged': True, 'why': ''}
 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
@@ -327,7 +434,7 @@ def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
     listed = git(project, 'for-each-ref', '--format=%(refname:short) %(committerdate:unix)', 'refs/heads/metaform/')
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results if row['state'] in (READY, REVIEW)}
+        waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results if row['state'] in (READY, REVIEW, MERGING)}
     closed = {branch_of(record.id): record for record in store.work(open=False, limit=0).results}
     gone: list[str] = []
     for line in listed.stdout.splitlines():

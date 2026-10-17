@@ -8597,7 +8597,8 @@ def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_boar
     page.click('#board .start-all')
     page.wait_for_selector('#dispatch:not([hidden])')
     choose_agent(page, '#dispatch', 'codex')
-    expected = [tickets[2], tickets[3]] if distributed else [tickets[2], tickets[3], tickets[1], tickets[0]]
+    # the Backlog ticket is held: Start all never starts it, UX review round 1 (orchestrator F5)
+    expected = [tickets[2], tickets[3]] if distributed else [tickets[2], tickets[3], tickets[1]]
     assert page.eval_on_selector_all('#dispatch .ticket', 'rows => rows.map(row => row.dataset.id)') == expected
     # the launches' own permissions, at the project's setting until chosen, approving everything saying its risk
     page.wait_for_selector('#dispatch .permissions select.prompts')
@@ -8614,6 +8615,7 @@ def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_boar
     for work_id in expected:
         eventually(lambda work_id=work_id: store.ticket(work_id).work.taken)
     assert store.ticket(excluded).work.taken is None and store.ticket(busy).work.taken is None
+    assert store.ticket(tickets[0]).work.taken is None, 'a held ticket waits for the person'
     if distributed:
         assert store.ticket(tickets[0]).work.taken is None and store.ticket(tickets[1]).work.taken is None
     shown = page.evaluate(TOPMOST_TOAST)
@@ -8675,6 +8677,50 @@ def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes
     assert [one['work_id'] for one in sent].count(success) == 1
     assert [one['work_id'] for one in sent].count(failed) == 2
     assert problems == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']
+
+
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('VIEW-037')
+def test_the_start_window_says_the_free_slots_and_a_card_says_why_its_agent_ended(run, web, mapped, browser):
+    """UX review round 1, web-gui-controls F10 and F11: with no slot free the Start window offered nine enabled Start
+    buttons, and a card read `Ended · dispatch starting <32 hex>` with its cause only in the session row."""
+    import re
+
+    from metaform.data import Node, Store
+    from metaform.modules import dispatch as modules
+    run('enable', 'dispatch')
+    run('set', '--dispatch-agents=1', cwd=mapped)
+    store = Store('proj')
+    for record in store.work(open=True, limit=0).results:
+        store.finish_work(record.id, 'fixture setup')
+    node = Node('element', 'code.alarm.audible')
+    busy = store.add_work(node, 'unbuilt', task='Running').id
+    store.take_work(busy, by=f'claude s-{busy}')
+    live_session(busy)
+    store.add_work(node, 'unbuilt', task='Waiting for a slot')
+    failed = store.add_work(node, 'unbuilt', task='Its launch failed').id
+    token = 'dispatch starting ' + 'a' * 32
+    store.take_work(failed, by=token)
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'failed-launch', 'work_id': failed, 'agent': 'claude',
+                                     'state': 'ended', 'how': 'it did not start: Connection closed',
+                                     'started': '2999-01-01T00:00:00Z', 'seq': 10 ** 9, 'origin': modules.origin()})
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    card = page.locator(f'#board .card[data-id="{failed}"]')
+    card.locator('.ended .why').wait_for()
+    shown = card.text_content()
+    assert 'Connection closed' in shown and 'Starting…' in shown, shown
+    assert not re.search('[0-9a-f]{32}', shown), 'no reservation token on the card'
+    assert card.locator('.ended button.back').is_visible()
+    page.evaluate('async () => { await document.querySelector("#board .start-all").onclick(); }')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    page.wait_for_function('() => document.querySelector("#dispatch .slots").textContent.startsWith("0 of 1")')
+    assert page.locator('#dispatch .start-all').is_disabled()
+    assert all(button.is_disabled() for button in page.locator('#dispatch .ticket .start').all())
+    assert problems == []
 
 
 @pytest.mark.req('VIEW-018')

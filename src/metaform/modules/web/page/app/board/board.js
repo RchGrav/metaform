@@ -10,7 +10,7 @@ import {select} from '/page/app/selection/select.js';
 import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
 import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords} from '/page/app/board/refs.js';
-import {COLUMN_NAMES, columnOf, history, ageOf, wrote} from '/page/app/board/history.js';
+import {COLUMN_NAMES, columnOf, history, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
@@ -120,6 +120,7 @@ function card(ticket, place, total) {
       ends: [ticket.receiver_address, ticket.provider_address]}, 'assigned'),
       ...(ticket.links || []).map(link => nodeChip(link, 'ref'))),
     cardProgress(ticket),
+    cardEnded(ticket),
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
     cardActs(ticket, place, total, move),
     h('details', {class: 'ticket-settings', onclick: event => event.stopPropagation()},
@@ -144,8 +145,43 @@ function cardTop(ticket) {
     title: `Closed ${ticket.outcome}, not completed`}, ticket.outcome === 'cancelled' ? 'Cancelled' : ticket.outcome)
     : null,
   !ticket.done ? statusChip(ticketStatus(ticket)) : null,
-  ticket.taken_by ? h('span', {class: 'by'}, ticket.taken_by) : null,
+  waitsOn(ticket).length ? h('span', {class: 'statechip submitted waiting-on',
+    title: 'No agent starts it by itself until these are done'},
+  `Waiting on ${waitsOn(ticket).map(handleOf).join(', ')}`) : null,
+  takenWords(ticket),
   ageOf(ticket));
+}
+/* The open tickets a ticket waits on, `after_work`: no agent starter starts it until they are done, VIEW-042. */
+export const waitsOn = ticket => (Array.isArray(ticket?.map?.after_work) ? ticket.map.after_work : [])
+  .filter(id => B.tickets.some(other => other.id === id && !other.done));
+const handleOf = id => {
+  const other = B.tickets.find(one => one.id === id);
+  return other?.map?.item || other?.map?.title || id.slice(0, 8);
+};
+/* Whether Start all and autostart start a ticket by themselves: waiting in To do, not held in Backlog, not held from
+ * agents, and waiting on no open ticket. A held ticket is the person's to release or start on its own card, UX review
+ * round 1 (orchestrator F5). */
+export const startsByItself = ticket => waiting(ticket) && !ticket.held && !ticket.map?.hold && !waitsOn(ticket).length;
+/* Why a ticket taken by an agent whose session has ended stands still, in words on the card, not only on hover, and
+ * the one act that puts it back: its session's own end, as the chat's thread says it, UX review round 1
+ * (web-gui-controls F11). */
+function cardEnded(ticket) {
+  if (ticket.done || !ticket.taken) return null;
+  // the session that holds it now: the one its taking names, or, for a start's reservation, one begun since it
+  const session = D.sessions.filter(one => one.work_id === ticket.id).at(-1);
+  const by = String(ticket.taken_by || '');
+  if (!session || !(by.endsWith(` ${session.session_id}`)
+    || (by.startsWith('dispatch starting ') && String(session.started || '') >= String(ticket.taken)))) return null;
+  const status = ticketStatus(ticket);
+  if (!status || ['running', 'input_required', 'completed'].includes(status.state)) return null;
+  const back = async event => {
+    event.stopPropagation();
+    event.currentTarget.disabled = true;
+    if (await wrote('/api/move', {work_id: ticket.id, column: 'todo', by: 'user'})) await renderBoard();
+  };
+  return h('div', {class: 'ended'}, h('span', {class: 'why'}, status.why || status.words),
+    h('button', {class: 'btn sm back', type: 'button', title: 'Put the ticket back in To do, its steps and log kept',
+      onclick: back}, 'Back to To do'));
 }
 /* How many of its planned steps have been filed, as a bar. */
 function cardProgress(ticket) {
@@ -191,7 +227,7 @@ export function drawBoard() {
   fill($('#board .columns'), BOARD.map(([column, title]) => columnBox(column, title)));
   for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box);
   for (const [key, box] of folds($('#board'))) if (opened.has(key)) box.open = true;
-  $('#board .start-all').disabled = D.starting || !B.tickets.some(waiting);
+  $('#board .start-all').disabled = D.starting || !B.tickets.some(startsByItself);
 }
 /* A kind shown or hidden on the board. */
 function kindToggle(kind) {
@@ -263,8 +299,7 @@ $('#board .close').onclick = () => { $('#board').hidden = true; };
 overlay($('#board'), {kind: 'dialog', focus: '.search'});
 $('#board .start-all').onclick = async () => {
   await renderBoard();
-  const tickets = B.tickets.filter(waiting).sort((one, two) =>
-    Number(Boolean(one.held)) - Number(Boolean(two.held)) || (one.position ?? 1e9) - (two.position ?? 1e9));
+  const tickets = B.tickets.filter(startsByItself).sort((one, two) => (one.position ?? 1e9) - (two.position ?? 1e9));
   startWindow('Start all agents', tickets, true);
 };
 // Distribute, VIEW-040: the open tickets not taken get the first N agents' glyphs in turn, To do first, then Backlog.

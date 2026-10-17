@@ -37,7 +37,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from importlib import resources
 from pathlib import Path
@@ -1423,6 +1423,11 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
     if not (record.task or '').strip():
         raise Stop(f'Work {record.id} has no task: nothing for an agent to do until one is written.',
                    f'metaform map work op=edit id={record.id} task="<what it needs>"')
+    blocking = waiting_on(after_of(store, record.id), {other.id for other in store.work(open=True, limit=0).results})
+    if blocking:  # the plan's order, `after_work`: UX review round 1, orchestrator F6
+        raise Stop(f'Work {record.id} waits on {", ".join(blocking)}, not done yet; it starts once '
+                   f'{"that is" if len(blocking) == 1 else "they are"} done.',
+                   f'metaform map work id={blocking[0]}')
     lock = claimed(store, record.address or record.receiver_address, record.id)
     if lock is not None:  # work claims are the scheduling lock, LAYER-029: no ticket inside another's claim starts
         raise Stop(f'Work {record.id} is on a part of the map claimed by "{lock["name"]}" until that work has landed.',
@@ -1450,10 +1455,14 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
 def next_ticket(ctx: Context, store: Store, glyph: str, *, agent: str | None = None,
                 exclude: tuple[str, ...] = ()) -> WorkRecord | None:
     """The glyph's next ticket, VIEW-040: the first not done and not taken in board order, To do before Backlog, each by
-    its place, a ticket with none after, as Distribute deals them; an exclude record is no ticket."""
+    its place, a ticket with none after, as Distribute deals them; an exclude record is no ticket. A glyph given to a
+    held ticket is the person assigning it to that agent, so its agent takes it after To do; a ticket waiting on one
+    still open is never taken next (UX review round 1, orchestrator F6)."""
     kept = ticket_settings(ctx)
-    waiting = [record for record in store.work(open=True, limit=0).results
-               if not record.taken and record.id not in exclude
+    opened = store.work(open=True, limit=0).results
+    open_ids = {record.id for record in opened}
+    waiting = [record for record in opened
+               if not record.taken and record.id not in exclude and not waiting_on(kept.get(record.id), open_ids)
                and not kept.get(record.id, {}).get('hold') and (record.task or '').strip()]  # no task: nothing to do
     waiting.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
     chosen = agent or ctx.nouns.get('agent') or str(ctx.setting('dispatch_agent'))
@@ -1873,7 +1882,37 @@ def ticket_settings(ctx: Context) -> dict[str, dict[str, Any]]:
             kept.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
         for row in tx.rows('eligible', limit=0).results:
             kept.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
+        for row in tx.rows('after', limit=0).results:
+            kept.setdefault(str(row['work_id']), {})['after_work'] = row['works']
     return kept
+
+
+def after_of(store: Store, work_id: str) -> dict[str, Any]:
+    """One ticket's `after_work` as the map module keeps it, read alone; nothing where the map keeps none."""
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            row = tx.get('after', {'work_id': work_id})
+    except StoreError:
+        return {}
+    return {'after_work': row['works']} if row is not None else {}
+
+
+def waiting_on(kept: dict[str, Any] | None, opened: Iterable[str]) -> list[str]:
+    """The tickets a ticket waits on, `after_work`, that are still open: none is started by an agent starter while
+    any is, so a plan's order holds (UX review round 1, orchestrator F6). A ticket done, or gone, is waited on no more;
+    a ticket's done is a `map.changed` naming it, so the next pass starts what it freed."""
+    raw: Any = (kept or {}).get('after_work')
+    if not isinstance(raw, list):
+        return []
+    open_ids = opened if isinstance(opened, (set, frozenset)) else set(opened)
+    return [str(one) for one in cast(list[Any], raw) if str(one) in open_ids]
+
+
+def waits(record: WorkRecord, kept: dict[str, Any] | None, opened: Iterable[str]) -> bool:
+    """Whether no agent starter starts this ticket now: it is held in Backlog, which the person releases, or it waits
+    on a ticket still open. UX review round 1 (orchestrator F5): `held` held nothing, and autostart started held
+    Backlog tickets after To do."""
+    return bool(record.held) or bool(waiting_on(kept, opened))
 
 
 def jev_choices(ctx: Context, store: Store) -> dict[str, dict[str, str]]:
@@ -1887,8 +1926,11 @@ def jev_choices(ctx: Context, store: Store) -> dict[str, dict[str, str]]:
         if jev.config(ctx.folder, 'choose_agent') is None:
             return {}
         kept = ticket_settings(ctx)
-        waiting = sorted((record for record in store.work(open=True, limit=0).results
+        opened = store.work(open=True, limit=0).results
+        open_ids = {record.id for record in opened}
+        waiting = sorted((record for record in opened
                           if not record.taken and (record.task or '').strip() and not kept.get(record.id, {}).get('hold')
+                          and not waits(record, kept.get(record.id), open_ids)
                           and not kept.get(record.id, {}).get('agent')),
                          key=lambda record: (record.held, record.position is None, record.position or 0))
         waiting = waiting[:int(ctx.setting('dispatch_agents'))]
@@ -1989,6 +2031,23 @@ def one_node(a: WorkRecord, b: WorkRecord) -> bool:
     return False
 
 
+def may_start(ctx: Context, store: Store, opened: Sequence[WorkRecord]) -> bool:
+    """Whether a pass of the agent starter can write anything, decided from reads alone: a reservation old enough to
+    have gone stale, or a ticket it could start and an agent slot free for it. False means `start_work` takes no
+    write lock; True only lets it count again inside its transaction, where every rule is checked."""
+    now = time.time()
+    if any(record.taken and (record.taken_by or '').startswith('dispatch starting ')
+           and now - _seconds(record.taken) > STALE_START for record in opened):
+        return True
+    kept = ticket_settings(ctx)
+    open_ids = {record.id for record in opened}
+    if not any(not record.taken and not kept.get(record.id, {}).get('hold')
+               and ((record.task or '').strip() or record.condition in MARKERS)
+               and not waits(record, kept.get(record.id), open_ids) for record in opened):
+        return False
+    return slots_used(ctx, store, opened) < int(ctx.setting('dispatch_agents'))
+
+
 def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[str, Any]:
     """The tickets the agent starter starts and the workers' sessions the supervisor resumes, `autostart`, only while
     Autostart agents is checked."""
@@ -2004,12 +2063,16 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
     if reached is not None:
         publish(ctx, 'budget', key=f'day:{today()}', **reached)
         return {'started': [], 'recovery': recovered, 'budget': reached}
+    # Read first: a pass that finds nothing it could start and no reservation gone stale writes nothing, so the
+    # changes that start no work cost one read, never the write lock every agent's writes wait on (UX review round
+    # 1, runaway F3: each pass reconciled every open ticket's progress in a write transaction first, 93% of a core
+    # under a burst of note edits). A ticket's progress is reconciled where its change is heard, progress.changed.
+    opened = store.work(open=True, limit=0).results
+    if not may_start(ctx, store, opened):
+        return {'started': [], 'recovery': recovered, **retry(ctx, store, opened)}
     # Jev's choice of agent, model and effort for the tickets the person gave no agent, asked before the transaction
     # below, so no network call is ever made inside it; nothing when Jev is off, H23.
     picks = jev_choices(ctx, store)
-    from .progress import refresh
-    for record in store.work(open=True, limit=0).results:
-        refresh(ctx, store, record)
     reserved: list[tuple[WorkRecord, str, str]] = []
     # Counting and reserving are one write transaction on the work store, so two checks at once, the page's and a
     # runner's, never both see the same free slot. Inside it the map's and dispatch's own tables are only read, and
@@ -2019,8 +2082,12 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any]) -> dict[st
         opened = store.work(open=True, limit=0).results
         open_work = [record for record in opened
                      if not kept.get(record.id, {}).get('hold')]
+        open_ids = {record.id for record in opened}
+        # held in Backlog, or waiting on a ticket still open: never started here, UX review round 1 (orchestrator F5
+        # and F6)
         candidates = [record for record in open_work
-                      if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)]
+                      if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)
+                      and not waits(record, kept.get(record.id), open_ids)]
         rows = sessions(store, open_work=opened)
         active = [row for row in rows if row['state'] == 'running']
         editing = {row['work_id'] for row in active if editor(row)}  # the person's editor sessions take no slot
@@ -2151,24 +2218,28 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
     latest = {(row['work_id'], row['session_id']): row for row in rows}
     resumed: list[dict[str, Any]] = []
     due: float | None = None
+    choices = agent_choices()  # read once, not once per open ticket: each read is the registry's (runaway F3)
     for record in opened if opened is not None else store.work(open=True, limit=0).results:
         agent, _, session_id = (record.taken_by or '').partition(' ')
         row = latest.get((record.id, session_id))
-        if agent not in agent_choices() or row is None or row['state'] != 'ended' or str(row.get('how') or '') in PERSON_ENDS:
+        if agent not in choices or row is None or row['state'] != 'ended' or str(row.get('how') or '') in PERSON_ENDS:
             continue
         if foreign(row):  # another home's session, in a store copied here: that home's to resume, never this one's
             continue
         if rework_blocked(ctx, store, record):
             continue
-        with own_store(store).tables() as tx:
+        with own_store(store).tables(write=False) as tx:  # read first: a count already kept is not written again
             held = tx.get('session_attempts', {'work_id': record.id})
-            if held is not None and held['session_id'] != session_id:  # another session's count is not this one's
-                tx.delete('session_attempts', {'work_id': record.id})
-                held = None
-            if held is None:
-                held = tx.insert('session_attempts', {'work_id': record.id, 'session_id': session_id,
-                                                      'retries': 0, 'next_at': time.time() + wait,
-                                                      'how': row.get('how'), 'seq': time.time_ns()})
+        if held is None or held['session_id'] != session_id:
+            with own_store(store).tables() as tx:
+                held = tx.get('session_attempts', {'work_id': record.id})
+                if held is not None and held['session_id'] != session_id:  # another session's count is not this one's
+                    tx.delete('session_attempts', {'work_id': record.id})
+                    held = None
+                if held is None:
+                    held = tx.insert('session_attempts', {'work_id': record.id, 'session_id': session_id,
+                                                          'retries': 0, 'next_at': time.time() + wait,
+                                                          'how': row.get('how'), 'seq': time.time_ns()})
         if held['handed']:
             continue
         caps = cast(dict[str, Any], (session_state(store, session_id) or {}).get('capabilities') or {})
@@ -2813,16 +2884,16 @@ def free_slots(ctx: Context, store: Store) -> int:
     return max(0, int(ctx.setting('dispatch_agents')) - slots_used(ctx, store))
 
 
-def slots_used(ctx: Context, store: Store) -> int:
+def slots_used(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None) -> int:
     """The agent slots in use: the tickets in motion, the workers' sessions and the summoned agents beyond the one that
-    is always the person's, as autostart counts them."""
-    opened = store.work(open=True, limit=0).results
-    rows = sessions(store, open_work=opened)
+    is always the person's, as autostart counts them; from the open tickets given, as read once, or read here."""
+    found: Sequence[WorkRecord] = store.work(open=True, limit=0).results if opened is None else opened
+    rows = sessions(store, open_work=found)
     active = [row for row in rows if row['state'] == 'running']
     editing = {row['work_id'] for row in active if editor(row)}
     chatting = {row['work_id'] for row in active if summoned(row)}
-    in_motion = ({record.id for record in opened if record.taken and not record.done} - chatting - editing
-                 - left_waiting(store, opened, rows))
+    in_motion = ({record.id for record in found if record.taken and not record.done} - chatting - editing
+                 - left_waiting(store, found, rows))
     workers = {row['work_id'] for row in active if not summoned(row) and not editor(row)}
     extra = max(0, sum(1 for row in active if summoned(row)) - 1)
     return extra + len(in_motion | workers)
@@ -3816,6 +3887,7 @@ def harnesses(ctx: Context) -> dict[str, Any]:
     if ctx.store is not None:
         result['room'] = summon_room(ctx, ctx.store)
         result['free'] = free_slots(ctx, ctx.store)  # how many tickets may start now, for Start all
+        result['slots'] = int(ctx.setting('dispatch_agents'))  # of how many: the Start window says "N of M free"
     return result
 
 

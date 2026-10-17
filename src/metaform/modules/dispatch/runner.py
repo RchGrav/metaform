@@ -38,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import uuid
 from collections import deque
 from collections.abc import Callable, Coroutine, Sequence
@@ -322,7 +323,16 @@ STDERR_KB = 64
 # says. Fixed in the same cleanup (dispatch_terminal_kb).
 TERMINAL_KB = 1024
 LOGIN_LIMIT = 600.0  # the one wait for an agent's own login, which may wait on the person in a browser
-RETRY_WAIT_LIMIT = 3600.0  # the longest a runner whose session stopped waits to come back for a due retry
+# The longest a runner whose session stopped waits to come back for a due retry: the supervisor's own longest backoff,
+# RETRY_SECONDS doubled for each retry dispatch_retries allows, plus a moment for the clock; a retry due later is the
+# web server's retry timer's and the next change's, never an idle runner's held for up to an hour (UX review round 1,
+# runaway F8).
+RETRY_WAIT_SLACK = 5.0
+
+
+def retry_wait_limit(ctx: Context) -> float:
+    from . import RETRY_SECONDS
+    return float(RETRY_SECONDS) * 2 ** max(0, int(ctx.setting('dispatch_retries'))) + RETRY_WAIT_SLACK
 AUTH_REQUIRED = -32000  # ACP's auth_required error: the agent needs a login before it makes a session
 # The order a session's chosen settings are applied in, by ACP category: a model switch may replace the effort and
 # config options it offers, and set_config_option answers with the whole new set, so what depends on the model goes
@@ -831,7 +841,24 @@ class Exits(asyncio.subprocess.SubprocessStreamProtocol):
 async def dispatch(ctx: Context) -> dict[str, Any]:
     """`metaform dispatch run <id> <agent>`: the session for one ticket, until it ends. When the ticket is done and has an
     agent glyph, VIEW-040, the glyph's next ticket in board order gets a session of its own, and so on until the glyph
-    has none waiting or a session ends with its ticket not done."""
+    has none waiting or a session ends with its ticket not done. A runner that fails in any way before its session
+    holds the ticket gives the ticket's reservation back at once, with the traceback in its log (UX review round 1,
+    runaway F6): a reservation held a slot for 180 s after a start died, and the log said one line."""
+    try:
+        return await dispatching(ctx)
+    except Stop:
+        await asyncio.to_thread(given_back, ctx.require_store(), ctx.nouns['id'], ctx.nouns.get('reservation'))
+        raise
+    except BaseException:
+        sys.stderr.write(traceback.format_exc())
+        try:
+            await asyncio.to_thread(given_back, ctx.require_store(), ctx.nouns['id'], ctx.nouns.get('reservation'))
+        except BaseException:  # noqa: BLE001  the failure itself is what the runner reports
+            sys.stderr.write(traceback.format_exc())
+        raise
+
+
+async def dispatching(ctx: Context) -> dict[str, Any]:
     store = ctx.require_store()
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
@@ -846,11 +873,9 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
     command = argv(start_command(ctx, agent))
     resume = str(ctx.nouns['resume']) if ctx.nouns.get('resume') else None
     run_id = str(ctx.nouns.get('run') or RUN)  # a retry goes on spending against the run of the session it resumes
-    try:  # a server it could not choose refuses the start before any agent runs, MCP-006 and MCP-010
-        await asyncio.to_thread(mcp_server, Path(store.project().path))
-    except Stop:
-        await asyncio.to_thread(given_back, store, work_id, ctx.nouns.get('reservation'))
-        raise
+    # a server it could not choose refuses the start before any agent runs, MCP-006 and MCP-010; `dispatch` gives the
+    # reservation back
+    await asyncio.to_thread(mcp_server, Path(store.project().path))
     if resume:  # a session a live runner holds is never resumed a second time, before its agent is even started
         holds = (intake_store(store, work_id) or store) if intake_id(work_id) else store
         pid = await asyncio.to_thread(holder, holds, work_id, resume, besides=os.getpid())
@@ -960,8 +985,10 @@ async def moved_on(store: Store, ended: dict[str, Any]) -> dict[str, Any]:
             # A session that stopped without the person's stop is retried after a wait, P012: this runner, which saw
             # it stop, comes back once the retry is due, so no timer runs anywhere else.
             due = started.get('retry_due')
-            if due is not None and str(ended.get('ended') or '') not in PERSON_ENDS:
-                await asyncio.sleep(min(max(float(due) - time.time(), 0.0), RETRY_WAIT_LIMIT))
+            wait = max(float(due) - time.time(), 0.0) if due is not None else None
+            if wait is not None and wait <= retry_wait_limit(ctx) and \
+                    str(ended.get('ended') or '') not in PERSON_ENDS:
+                await asyncio.sleep(wait)
                 await asyncio.to_thread(autostart, ctx)
         except Exception as error:  # noqa: BLE001  the session's own result stands whatever the next start meets
             sys.stderr.write(f'Could not start the waiting tickets: {error}\n')

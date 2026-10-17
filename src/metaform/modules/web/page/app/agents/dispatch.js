@@ -26,7 +26,7 @@ import {conditionLabel, partAt, taskWords} from '/page/app/board/refs.js';
 import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
-import {readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart} from '/page/app/session/tools.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 
@@ -111,9 +111,18 @@ export function startWindow(title, tickets, all = false) {
   const draw = () => {
     const agent = pick.value();
     shown = all ? startable(tickets, agent) : tickets;
-    startAll.disabled = !shown.length || !agent;
-    fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
-      conditionLabel(ticket), startButton(ticket, agent, pick),
+    // the free agent slots, read with the agents: Start all says how many it starts, and a Start past them is off,
+    // with why, UX review round 1 (web-gui-controls F10)
+    const free = HARNESS.free, slots = $('#dispatch .slots');
+    slots.textContent = free === null ? ''
+      : `${free} of ${HARNESS.slots ?? free} agent slots free.` + (free ? ''
+        : ' A ticket can start once an agent finishes or is stopped.');
+    slots.hidden = !slots.textContent;
+    const starting = free === null ? shown.length : Math.min(free, shown.length);
+    startAll.textContent = all && free !== null && shown.length ? `Start ${starting}` : 'Start all';
+    startAll.disabled = !starting || !agent;
+    fill($('#dispatch .tickets'), shown.map((ticket, place) => h('div', {class: 'ticket', 'data-id': ticket.id},
+      conditionLabel(ticket), startButton(ticket, agent, pick, free !== null && place >= free),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
     drawPermissions(agent);
   };
@@ -215,12 +224,13 @@ async function startAllTickets(tickets, pick, startAll) {
   if (started === pending.length) $('#dispatch').hidden = true;
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
     + (started < pending.length ? ` ${pending.length - started} could not start; retry their tickets.` : '')
-    + (waiting ? ` ${waiting} wait in To do for a free agent slot; with Autostart agents checked they start as agents`
-      + ' finish.' : ''));
+    + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
+      ? 'with Autostart agents checked they start as agents finish.'
+      : 'they wait until you start them or check Autostart agents.') : ''));
   await renderBoard();
 }
 /* One ticket's Start, for the agent chosen above, unless the ticket's eligible agents leave it out. */
-function startButton(ticket, agent, pick) {
+function startButton(ticket, agent, pick, full = false) {
   const start = async event => {
     const chosen = pick.value();
     event.target.disabled = true;
@@ -229,9 +239,11 @@ function startButton(ticket, agent, pick) {
       else event.target.disabled = false;
     } catch (error) { toast(error.message); event.target.disabled = false; }
   };
-  return h('button', {class: 'btn primary start', type: 'button', disabled: !agent || !allowsAgent(ticket, agent),
-    title: allowsAgent(ticket, agent) ? 'Start the agent chosen above on this ticket'
-      : `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`, onclick: start}, 'Start');
+  return h('button', {class: 'btn primary start', type: 'button',
+    disabled: !agent || !allowsAgent(ticket, agent) || full,
+    title: !allowsAgent(ticket, agent) ? `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`
+      : full ? 'Every free agent slot is taken by the tickets above; it can start once an agent finishes or is stopped'
+      : 'Start the agent chosen above on this ticket', onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
 const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null};

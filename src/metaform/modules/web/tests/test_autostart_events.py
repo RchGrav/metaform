@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from metaform.modules.dispatch.tests.test_dispatch import dispatch as dispatch  # noqa: PLC0414 fixture re-export
 from metaform.modules.web import server as module
 
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
@@ -32,6 +33,11 @@ pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
     ({'tables': 'dispatch', 'kinds': ['session'], 'session_ids': ['s']}, False),  # a runner's working or idle
     ({'tables': ['dispatch.sessions', 'work']}, True),  # a session's end releases its ticket, with no kinds
     ({'tables': ['map.glyphs'], 'kinds': []}, True),
+    # a ticket's words and its steps start nothing (UX review round 1, runaway F3); what it waits on can
+    ({'tables': ['work'], 'kinds': ['note'], 'work_ids': ['w']}, False),
+    ({'tables': ['map.numbered', 'work'], 'kinds': ['note'], 'work_ids': ['w']}, False),
+    ({'tables': ['work', 'work_steps'], 'kinds': ['step'], 'work_ids': ['w']}, False),
+    ({'tables': ['map.after', 'work'], 'kinds': ['note'], 'work_ids': ['w']}, True),
     ({'tables': ['elements', 'joins'], 'kinds': []}, False),
 ])
 def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypatch):
@@ -63,6 +69,43 @@ def test_where_an_agents_tool_calls_reached_goes_to_pages_as_its_own_event_and_l
     server.changed({**change, 'flow': flow})
     assert page.get_nowait() == {'topic': 'map.flow', 'payload': {'project': 'proj', 'flows': flow}}
     assert page.get_nowait() == {'topic': 'map.changed', 'payload': change}
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_burst_of_note_edits_runs_no_agent_starter_pass_and_one_ticket_change_runs_one(dispatch, run,
+                                                                                         monkeypatch):
+    """UX review round 1, runaway F3: 100 note edits, as an agent writes them, with Autostart on, reach the pages and
+    cause no pass of the agent starter; one ticket made ready then causes one."""
+    from metaform import changes, events
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    fired = []
+    monkeypatch.setattr(events, 'publish', lambda topic, payload, source: fired.append(payload) or [])
+    changes.announce(dispatch.folder, 'cli')
+    fired.clear()
+    for number in range(100):
+        dispatch.store.edit_work(dispatch.id, {'note': f'Note {number}.'})
+        changes.announce(dispatch.folder, 'cli')
+    server = object.__new__(module.Server)
+    page = queue.SimpleQueue()
+    server.listeners, server.listening = {page}, threading.Lock()
+    server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
+    server.dispatch_pending, server.merges_pending = set(), set()
+    monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+    monkeypatch.setattr(module.events, 'announce', lambda *args: [])
+    monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
+    passes = []
+    monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: passes.append(args) or {})
+    burst = [dict(one) for one in fired if one.get('base_id')]
+    assert len(burst) == 100
+    assert sum(server.changed(payload) for payload in burst) == 100, 'every change still reaches the page'
+    assert passes == []
+    fired.clear()
+    dispatch.store.add_work(dispatch.node, 'unbuilt', task='Ready to start')
+    changes.announce(dispatch.folder, 'cli')
+    for payload in [one for one in fired if one.get('base_id')]:
+        server.changed(dict(payload))
+    assert len(passes) == 1
 
 
 def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypatch):
