@@ -1225,6 +1225,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.writing(path)
             finally:
                 VOUCHED.server = None
+        if path in WORDED_WRITES and self.gui.page_key_held(self.page_key_given()) and chassis.page_caller(
+                self.client_address[:2], self.connection.getsockname()[:2], home.home()) is None:
+            # the person's own message in their system agent's chat, from the page with its key: the command that
+            # carries it has this server's vouch, so the turn it starts carries their word; a message without the key
+            # is still sent, with no word
+            VOUCHED.server = self.gui
+            try:
+                return self.writing(path)
+            finally:
+                VOUCHED.server = None
         return self.writing(path)
 
     def writing(self, path: str) -> None:
@@ -3044,6 +3054,12 @@ PERSONS_WRITES = frozenset({
     '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
     '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel'})
+
+
+# The writes that carry the person's word when the page sends them with its key: a message in an agent's chat, whose
+# turn of the person's system agent may then do the reversible work of orchestration they asked for
+# (`metaform.module.persons_word`). Without the key they are taken as before, carrying no word.
+WORDED_WRITES = frozenset({'/api/dispatch-message'})
 
 
 class _Vouched(threading.local):

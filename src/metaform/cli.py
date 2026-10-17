@@ -45,7 +45,7 @@ from . import (
 from .data import Store, export_document, history, import_document, prompts
 from .docs import Command, Switch
 from .errors import Stop, StoreError
-from .module import Verb, call, caution_of, on_this_system
+from .module import Verb, call, caution_of, on_this_system, persons_word, persons_word_acted
 from .wording import count, counted
 
 EMPTY_IS_ALL = settings.EMPTY_IS_ALL
@@ -533,9 +533,15 @@ def set_(args: list[str], folder: Path) -> None:
         raise Stop('--confirm is not a setting.', 'metaform help --confirm')
     if not pairs:
         raise Stop('set needs at least one setting switch.', 'metaform set --help')
+    word: dict[str, Any] | None = None
     if caller.unconsented():
-        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control.
-        settings.refuse_held_control((setting.key for setting, _ in pairs), folder, _set_command(pairs))
+        # Check the whole call before validation, confirmation or writes: --confirm cannot grant control. Autostart
+        # agents, asked by the person in their system agent's chat, is set in the turn their message started.
+        keys = [setting.key for setting, _ in pairs]
+        if settings.on_persons_word(keys):
+            word = persons_word(folder, f'Setting {", ".join(keys)}')
+        if word is None:
+            settings.refuse_held_control(keys, folder, _set_command(pairs))
     for setting, raw in pairs:
         try:
             settings.checked(setting.key, raw, folder)
@@ -563,6 +569,11 @@ def set_(args: list[str], folder: Path) -> None:
         notices += [(setting.key, message) for message in noted]
     for key, message in notices:
         out(f'Notice: {key}: {message}')
+    if word is not None:  # what it did on the person's word, in their system agent's chat
+        said = 'set ' + ', '.join(f'{key} to {show(key, new)}' for key, _, new in updates) if updates else \
+            'left the settings as they were'
+        persons_word_acted(folder, word, said)
+        out(f'On the person\'s word, "{word.get("text")}": {said}.')
     if quiet:
         return
     where = f' for {folder}' if named else ''

@@ -1245,9 +1245,12 @@ def withheld_named(line: str, entries: Sequence[str], effects: dict[tuple[str, s
 
 @dataclass
 class ActiveTurn:
-    """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it."""
+    """Cancellation belongs to one prompt, including its turn-start publication before ACP receives it. `word` is the
+    person's own message that started the prompt, or was steered into it, when the session is their system agent: kept
+    here, in the runner's memory, where the agent cannot write it, and read by op `word`."""
     sent: bool = False
     cancel_requested: bool = False
+    word: dict[str, Any] | None = None
 
 
 class Session:
@@ -1343,6 +1346,8 @@ class Session:
         # beside each, the ACP blocks of the person's recording and the frame they sent, the ones its agent takes
         self.voiced: deque[list[Any]] = deque()
         self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
+        # beside each, the person's own message it is, when it is one to the person's system agent, `ActiveTurn.word`
+        self.worded: deque[dict[str, Any] | None] = deque()
         self.awaiting: dict[str, dict[str, Any]] = {}  # this session's questions waiting for replies, by note id
         self.timers: dict[str, dict[str, Any]] = {}  # the agent's own timers, `dispatch timer`, by id
         self.idle = asyncio.Event()
@@ -3102,6 +3107,30 @@ class Session:
         return DeclineElicitationResponse(action='decline') if action == 'decline' else \
             CancelElicitationResponse(action='cancel')
 
+    def word_now(self) -> dict[str, Any] | None:
+        """The person's own message that started the turn in flight of their system agent, or was steered into it:
+        None for a turn a timer, a peer's note, a notice, a workflow's answer or the agent's own continuation started,
+        for a session that is not the person's system agent, and between turns."""
+        current = self.active_turn
+        if self.role != 'system' or self.ending or current is None or not current.sent or current.cancel_requested:
+            return None
+        return dict(current.word) if current.word is not None else None
+
+    async def acted(self, word: str, said: str) -> bool:
+        """Write in the chat what the person's system agent did on their word, beside the message that authorized it,
+        so the person sees what it did and why; only for the word the turn in flight carries, so no other turn's call
+        writes a record of a word it never had."""
+        current = self.word_now()
+        if current is None or current.get('id') != word or not said.strip():
+            return False
+        quoted = ' '.join(str(current.get('text') or '').split())
+        quoted = quoted if len(quoted) <= 160 else quoted[:157] + '...'
+        async with self.lock:
+            await self.flush()
+            await self.note(None, 'notice', f'On your word, "{quoted}" ({current.get("at")}): {said.strip()}.')
+        await self.changed(tables='dispatch', kinds=['session'])
+        return True
+
     async def consent_asked(self, asked: dict[str, Any], reader: asyncio.StreamReader) -> dict[str, Any]:
         """A call of this session's agent that is the person's decision, put to the person as a consent card in its
         chat on the page by the agent's own MCP server, op `consent` (UX review, person-consent F5): the call's
@@ -3872,7 +3901,8 @@ class Session:
                                 'version_id': one.version_id} for one in taken]}
         self.spawn(self.ctx.publish_async('prompt.sent', payload))
 
-    def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None) -> None:
+    def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None,
+             word: dict[str, Any] | None = None) -> None:
         if self.handing:  # the runner taking the session over sends it
             self.handed_on.append({'text': text, 'by': None})
             return
@@ -3883,6 +3913,7 @@ class Session:
         self.pending.append(text)
         self.voiced.append([block for block in (audio, image) if block is not None])
         self.peered.append(list(peers or []))  # the peer notes the turn carries, marked as it is sent and read
+        self.worded.append(word)  # the person's word, for their system agent's turn their own message starts
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -3906,6 +3937,7 @@ class Session:
                     text = self.pending.popleft()
                     beside = self.voiced.popleft() if self.voiced else []
                     marks = self.peered.popleft() if self.peered else []
+                    current.word = self.worded.popleft() if self.worded else None
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
@@ -4230,10 +4262,16 @@ class Session:
                     return
                 # Into the turn in flight when the agent offers steering and nothing waits before it, P016; otherwise
                 # it waits its turn, in order.
+                # The person's own message to their system agent, through the page with its key or at their own
+                # terminal, `dispatch message`: the turn it starts carries their word, `ActiveTurn.word`
+                word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
+                    if asked.get('word') is True and not by and self.role == 'system' else None
                 current = self.active_turn
                 steered = (await self.steer(text) if self.turns and not self.pending and current is not None
                            and current.sent and not current.cancel_requested and audio is None and image is None
                            and not self.opening else False)
+                if steered and word is not None and current is not None and current is self.active_turn:
+                    current.word = word  # taken into the turn in flight: from here on it acts on the person's word
                 if steered is not False:
                     async with self.lock:
                         await self.note(None, 'steered', 'Delivered into the running turn.' if steered else
@@ -4241,9 +4279,14 @@ class Session:
                                         'have reached the turn, so it is not sent again. Send it again if it did not.')
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
-                self.turn(text, audio, image)
+                self.turn(text, audio, image, word=word)
                 await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
                                           'image': image is not None})
+            elif op == 'word':  # the person's word the turn in flight carries, `metaform.module.persons_word`
+                await self.reply(writer, {**said, 'word': self.word_now()})
+            elif op == 'acted':  # what the system agent did on that word, written in its chat with the word
+                await self.reply(writer, {**said, 'recorded': await self.acted(str(asked.get('word') or ''),
+                                                                               str(asked.get('said') or ''))})
             elif op == 'timer':  # the agent's own timers, `dispatch timer`
                 await self.reply(writer, {**said, **self.timer(asked)})
             elif op == 'note':  # a peer note, `dispatch note`: kept in the thread, and the receiver's next turn
@@ -4315,6 +4358,7 @@ class Session:
         self.pending.clear()
         self.voiced.clear()
         self.peered.clear()
+        self.worded.clear()
         for held in self.timers.values():  # a timer never outlives the session it wakes
             held['handle'].cancel()
         self.timers.clear()

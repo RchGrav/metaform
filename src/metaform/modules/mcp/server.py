@@ -72,6 +72,8 @@ from metaform.module import (
     on_surface,
     on_this_system,
     persons_decision,
+    persons_word,
+    persons_word_acted,
     project_for,
     provided,
     provisioning_notice,
@@ -1088,6 +1090,37 @@ def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
                                                   if key in verb.switches}, folder))
 
 
+WORDED = '_persons_word'  # the person's word a call runs on, carried from `consented` to the record after it ran
+
+
+def word_for(folder: Path, name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The person's word that lets a dispatched system agent's call run without a card: a call that changes only
+    person-only settings the person's own system agent may change on their word (`Setting.on_persons_word`, such as
+    Autostart agents), in a turn their own message in its chat started (`persons_word`). None for any other call: what
+    is the person's decision (a verb declared person_says, clear, restore, a save of what agents are sent) still waits
+    on its card, whoever's turn it is."""
+    own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
+    if own == 'set':
+        named = consent.held({key: value for key, value in arguments.items() if key not in ('glue', 'confirm')}, folder)
+    elif own:
+        return None
+    else:
+        found = tools(folder).get(name)
+        if found is None or found[1].person_says:
+            return None
+        named = consent.held({key: value for key, value in arguments.items() if key in found[1].switches}, folder)
+    if not settings.on_persons_word(named):
+        return None
+    return persons_word(folder, f'Setting {", ".join(sorted(named))}')
+
+
+def word_said(arguments: dict[str, Any]) -> str:
+    """What a settings call did on the person's word, as their system agent's chat records it."""
+    return 'set ' + ', '.join(f'{key} to {"on" if value is True else "off" if value is False else value}'
+                              for key, value in arguments.items()
+                              if (setting := settings.SCHEMA.get(key)) is not None and setting.on_persons_word)
+
+
 def persons_line(folder: Path, name: str, arguments: dict[str, Any]) -> str:
     """The command line that does what a call asks, as the person pastes it into their own terminal."""
     own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
@@ -1917,6 +1950,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         `(arguments, None)` unchanged when the call needs no form or none can be shown."""
         if not await anyio.to_thread.run_sync(consent.can_ask, capabilities(ctx), folder):
             if consent.dispatched() and await anyio.to_thread.run_sync(persons_call, folder, name, arguments):
+                # Autostart on or off, asked by the person in their system agent's chat, is done in the turn their
+                # message started without a card; anything else that is theirs waits on its card
+                word = await anyio.to_thread.run_sync(word_for, folder, name, arguments)
+                if word is not None:
+                    return {**arguments, WORDED: word}, True
                 return await carded(name, arguments)
             return arguments, None
         ask = await anyio.to_thread.run_sync(needs, folder, name, arguments)
@@ -1991,6 +2029,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         given, answered = await consented(ctx, params, name, arguments)
         if given is None:
             return answered
+        word = cast(dict[str, Any] | None, given.pop(WORDED, None))
         approved = answered is True
         listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
         tasked_as = listed.task if listed is not None and tasked.declared(capabilities(ctx)) else False
@@ -2011,6 +2050,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             guide = await anyio.to_thread.run_sync(guided, listed, client, session)
             blocks = [guide, *blocks] if guide else blocks
         await announce(ctx, fired)
+        if word is not None and not error:  # what it did on the person's word, in their system agent's chat
+            said = word_said(given)
+            await anyio.to_thread.run_sync(lambda: persons_word_acted(folder, word, said, cast(
+                str | None, given.get('project')) if isinstance(given.get('project'), str) else None))
+            blocks = [*blocks, f'On the person\'s word, "{word.get("text")}": {said}.']
         if not error:
             discussed(ctx, name, given)
         if tasked_as == 'run' and not error and isinstance((structured or {}).get('run'), str):

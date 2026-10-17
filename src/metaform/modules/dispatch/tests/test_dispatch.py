@@ -2772,6 +2772,90 @@ def test_a_system_agents_call_that_is_the_persons_decision_waits_on_a_card_only_
     dispatch.stop()
 
 
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('VIEW-045')
+def test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_and_no_other(dispatch, run, tmp_path):
+    """UX review round 2, person-consent: a turn of the person's system agent that their own message in its chat
+    started carries their word, kept by its runner: in it the agent starts and stops an agent, releases a held ticket
+    and turns Autostart on with no card, and each is written in its chat with that message. A turn its own timer woke
+    carries none: the same calls are refused and change nothing. What cannot be undone is the person's decision in
+    either turn. Every agent here is the fake agent."""
+    from metaform.data import Node
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    (gates / '1').touch()  # the greeting ends at once; the person's turn and the timer's wait on their gates
+    dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+    runner = eventually(lambda: next((row['runner'] for row in read(run, dispatch)['sessions']
+                                      if row.get('state') == 'running' and row.get('runner')), None))
+
+    def prompts():  # the system agent's own turns, apart from those of the agents it starts
+        return [one for one in dispatch.received('session/prompt') if one['params']['sessionId'] == 'fake-session-1']
+
+    eventually(lambda: len(prompts()) == 1 and read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
+    agent = {'METAFORM_ROLE': 'system', 'METAFORM_WORK': dispatch.id, 'METAFORM_SESSION': runner}
+    others = {'FAKE_ACP_LOG': str(dispatch.log), 'FAKE_ACP_MODE': 'plain'}  # the agents it starts: turns end at once
+    other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Write other.txt').id
+    held = [dispatch.store.add_work(Node('element', LINKED), 'unbuilt', task=f'Held {at}', held=True).id
+            for at in range(2)]
+    later = dispatch.store.add_work(Node('element', LINKED), 'unbuilt', task='Later').id
+
+    def running(work):
+        return any(row.get('state') == 'running' for row in read(run, dispatch, work)['sessions'])
+
+    def autostart():
+        shown = json.loads(run('config', '--show', '--json', cwd=dispatch.folder).stdout)
+        return next(row['value'] for row in shown if row['key'] == 'dispatch_autostart')
+
+    def on_word():
+        return [line['text'] for line in read(run, dispatch)['lines']
+                if line['kind'] == 'notice' and line['text'].startswith('On your word')]
+
+    try:
+        run('dispatch', 'message', dispatch.id, '--', 'Start the other ticket, let the held one go, then stop it',
+            cwd=dispatch.folder)  # the person, at their own terminal
+        eventually(lambda: len(prompts()) == 2)
+        run('set', '--dispatch-autostart', cwd=dispatch.folder, env=agent)  # before any runner it starts could end
+        assert autostart() is True
+        run('set', '--no-dispatch-autostart', cwd=dispatch.folder, env=agent)
+        assert autostart() is False
+        started = json.loads(run('dispatch', 'start', other, 'claude', '--json', cwd=dispatch.folder,
+                                 env={**agent, **others}).stdout)
+        assert started['on_word']['text'].startswith('Start the other ticket'), started
+        released = json.loads(run('map', 'work', 'op=edit', f'id={held[0]}', 'held=false', '--json',
+                                  cwd=dispatch.folder, env=agent).stdout)
+        assert released['on_word']['did'] == f'released it from Backlog on ticket {held[0]}'
+        assert not dispatch.store.ticket(held[0]).work.held
+        eventually(lambda: running(other))
+        stopped = json.loads(run('dispatch', 'stop', other, '--json', cwd=dispatch.folder, env=agent).stdout)
+        assert stopped['on_word']['did'].startswith(f'stopped the agent on ticket {other}')
+        switched = run('map', 'add-base', 'name=fresh', '--confirm', cwd=dispatch.folder, env=agent, ok=False)
+        assert switched.returncode == 2 and "This is the person's decision" in switched.stderr  # never on a word
+        notes = eventually(lambda: found if len(found := on_word()) == 5 else None)
+        assert all('"Start the other ticket, let the held one go, then stop it"' in note for note in notes), notes
+        assert any(f'started Claude Code on ticket {other}' in note for note in notes), notes
+        assert any('set dispatch_autostart to' in note for note in notes), notes
+
+        # the agent's own timer wakes it: that turn carries no word of the person's
+        run('dispatch', 'timer', 'seconds=1', '--', 'Check on things', cwd=dispatch.folder, env=agent)
+        run('dispatch', 'start', later, 'claude', cwd=dispatch.folder, env=others)  # the person, at their terminal
+        (gates / '2').touch()
+        eventually(lambda: len(prompts()) == 3)
+        eventually(lambda: running(later))
+        for words in (('dispatch', 'start', other, 'claude'), ('map', 'work', 'op=edit', f'id={held[1]}', 'held=false'),
+                      ('dispatch', 'stop', later), ('set', '--dispatch-autostart')):
+            refused = run(*words, cwd=dispatch.folder, env={**agent, **others}, ok=False)
+            assert refused.returncode == 2, (words, refused.stdout, refused.stderr)
+            assert "carries no word of theirs" in refused.stderr or 'set only by the person' in refused.stderr, \
+                refused.stderr
+        assert dispatch.store.ticket(held[1]).work.held and running(later) and not running(other)
+        assert autostart() is False and len(on_word()) == 5  # and nothing was recorded on a word it never had
+    finally:
+        run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+        for work in (other, later):
+            run('dispatch', 'stop', work, cwd=dispatch.folder, ok=False)
+        dispatch.stop()
+
+
 @pytest.mark.req('BASE-052')
 def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer(dispatch, run):
     """URL-mode elicitation, as an MCP server's sign-in asks it: the full address and its host are put to the person,

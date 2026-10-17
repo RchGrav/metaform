@@ -74,6 +74,7 @@ from metaform.module import (
     context,
     held_role,
     mcp_server,
+    on_persons_word,
     project_for,
     provided,
     request_scope,
@@ -226,7 +227,7 @@ NODE = '22'
 # A setting that decides which agents run, how they start, what they are permitted, how they are watched or when
 # their work lands is person_only: written by the person, never by an agent over MCP, CLI-011. How long one wait
 # blocks only paces the agent that calls it, so it is not.
-settings.boolean('dispatch_autostart', False, label='Start agents on their own', person_only=True,
+settings.boolean('dispatch_autostart', False, label='Start agents on their own', person_only=True, on_persons_word=True,
                  help='Start agents on tickets that have not been tried, and resume a worker\'s session that ended '
                       'without your stop, up to dispatch_retries; a ticket whose agent stopped with it open waits for '
                       'you.',
@@ -2703,10 +2704,13 @@ def sender(ctx: Context) -> str | None:
 
 
 def start(ctx: Context) -> dict[str, Any]:
-    """Start the runner for one ticket as a process detached from the terminal, and return at once."""
+    """Start the runner for one ticket as a process detached from the terminal, and return at once. A dispatched
+    agent starts one only in a turn of the person's own system agent that the person's message started, and the
+    start is recorded in its chat with that message, `on_persons_word`."""
     may_steer(ctx)
     store = ctx.require_store()
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
+    word = on_persons_word(ctx, f'Starting an agent on ticket {work_id}')
     command = argv(start_command(ctx, agent))
     if shutil.which(command[0]) is None:
         raise Stop(f'{command[0]}, the start command of {agent}, is not found on this system.',
@@ -2723,7 +2727,8 @@ def start(ctx: Context) -> dict[str, Any]:
         store.take_work(work_id, by=reservation)
     started = run_reserved(ctx, reservation, given)
     return {**started, **{field: value for field, value in given.items() if value},
-            **({'notices': notices} if notices else {})}
+            **({'notices': notices} if notices else {}),
+            **on_word(ctx, word, f'started {agent_label(agent)} on ticket {ticket_label(store, str(work_id))}')}
 
 
 def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | None = None) -> dict[str, Any]:
@@ -3392,9 +3397,14 @@ def message(ctx: Context) -> dict[str, Any]:
     words = [str(word) for word in cast(list[Any], given)] if isinstance(given, (list, tuple)) else [str(given)]
     text = ' '.join(words)
     given_by: dict[str, Any] = {'by': role} if (role := sender(ctx)) else {}
+    if not given_by and ctx.surface == 'cli' and agent_caller() is None:
+        # the person's own message, sent from the page with its key or at their own terminal: the turn it starts in
+        # their system agent carries their word, `metaform.module.persons_word`; no other sender's does
+        given_by['word'] = True
     if ctx.nouns.get('audio'):  # the person's recording, sent beside its transcript where the agent takes audio
         audio = Path(str(ctx.nouns['audio'])).expanduser().resolve()
-        if given_by or audio.parent != (home.home() / 'run' / 'voice' / 'clips').resolve() or not audio.is_file():
+        clips = (home.home() / 'run' / 'voice' / 'clips').resolve()
+        if 'by' in given_by or audio.parent != clips or not audio.is_file():
             raise Stop('A recording goes with a person\'s own message, as a clip the web GUI kept.',
                        f'metaform dispatch message {ctx.nouns["id"]} -- "<text>"')
         given_by['audio'] = str(audio)
@@ -3514,6 +3524,65 @@ def ask_consent(store: Store, message: str, *, tool: str, command: str, caution:
     except OSError as error:
         return {'action': 'cancel', 'error': f'Your session\'s runner could not be reached: {error}.'}
     return answer if answer.get('action') else {'action': 'cancel', 'error': 'Your session\'s runner did not answer.'}
+
+
+def own_session(store: Store, work: str | None = None, runner: str | None = None) -> dict[str, Any] | None:
+    """The running session of the calling agent, METAFORM_WORK and METAFORM_SESSION unless `work` and `runner` name
+    it, found as its timer is; None when the call comes from no dispatched agent's running session."""
+    work, runner = work or os.environ.get('METAFORM_WORK'), runner or os.environ.get('METAFORM_SESSION')
+    if not work or not runner:
+        return None
+    held = (intake_store(store, work) or store) if intake_id(work) else store
+    return next((one for one in sessions(held, work, verify=False)
+                 if one.get('runner') == runner and one.get('state') == 'running'), None)
+
+
+def persons_word(store: Store, what: str, *, work: str | None = None,
+                 runner: str | None = None) -> dict[str, Any] | None:
+    """The person's message that started the calling agent's turn in flight, as its runner keeps it, op `word`: only
+    the person's own system agent's turn has one, and only when the person's message in its chat (from the page with
+    its key, or their own terminal) started it or was steered into it. None for any other turn, any other agent, or a
+    runner that cannot be reached. `what` is the action asked, which the runner does not act on."""
+    row = own_session(store, work, runner)
+    if row is None:
+        return None
+    try:
+        answer = tell(row, 'word', what=what)
+    except OSError:
+        return None
+    word = answer.get('word')
+    return cast(dict[str, Any], word) if isinstance(word, dict) else None
+
+
+def persons_word_acted(store: Store, word: dict[str, Any], said: str, *, work: str | None = None,
+                       runner: str | None = None) -> None:
+    """Record in the calling system agent's chat what it did on the person's word, op `acted`: the runner writes it as
+    a notice of the thread with the message that authorized it, when that message still holds the turn in flight."""
+    row = own_session(store, work, runner)
+    if row is None:
+        return
+    with contextlib.suppress(OSError):
+        tell(row, 'acted', word=str(word.get('id') or ''), said=said)
+
+
+def ticket_label(store: Store, work_id: str) -> str:
+    """A ticket as a record of what was done to it names it: its id and where it is."""
+    try:
+        record = ticket(store, work_id)
+    except (Stop, StoreError):
+        return work_id
+    at = record.address or ' and '.join(end for end in (record.receiver_address, record.provider_address) if end)
+    return f'{work_id} at {at}' if at else work_id
+
+
+def on_word(ctx: Context, word: dict[str, Any] | None, said: str) -> dict[str, Any]:
+    """After an action the person's word let their system agent take, `on_persons_word`: the record in its chat, and
+    what the result says of it; nothing when the action needed no word."""
+    if word is None:
+        return {}
+    with contextlib.suppress(Stop, StoreError):
+        persons_word_acted(ctx.require_store(), word, said)
+    return {'on_word': {'text': word.get('text'), 'at': word.get('at'), 'did': said}}
 
 
 def timer(ctx: Context) -> dict[str, Any]:
@@ -3702,9 +3771,11 @@ def stop(ctx: Context) -> dict[str, Any]:
     and does not answer, such as one under load, has its process group ended here and its session recorded as stopped,
     so the next Call or resume starts it once. The person stopping their system agent turns dispatch_stay_connected
     off for the project, `disconnect`, and the result says so; the person stopping any other agent while Autostart
-    agents is checked turns that off, `paused`, so no waiting ticket starts in its place, and the result says so."""
+    agents is checked turns that off, `paused`, so no waiting ticket starts in its place, and the result says so. A
+    dispatched agent stops one only on the person's word, as `start`."""
     may_steer(ctx)
     store = ctx.require_store()
+    word = on_persons_word(ctx, f'Stopping the agent on ticket {ctx.nouns["id"]}')
     if intake_id(ctx.nouns['id']) and not ctx.nouns.get('session'):
         starting = intake_under_way(store)
         if starting is not None and starting['state'] == 'starting' and starting['work_id'] == ctx.nouns['id']:
@@ -3719,7 +3790,8 @@ def stop(ctx: Context) -> dict[str, Any]:
         if held:  # nothing was stopped, so the queue goes on as it was
             settings.put('dispatch_autostart', True, Path(store.project().path))
         raise Stop(str(result['error']), f'metaform dispatch sessions id={ctx.nouns["id"]}')
-    return {**result, **({'stay_connected': False} if off else {}), **(QUEUE_PAUSED if held else {})}
+    return {**result, **({'stay_connected': False} if off else {}), **(QUEUE_PAUSED if held else {}),
+            **on_word(ctx, word, f'stopped the agent on ticket {ticket_label(store, str(row["work_id"]))}')}
 
 
 # What a stop by the person that turned Autostart agents off says. UX review round 1, 2026-10-17
@@ -3751,8 +3823,10 @@ def stop_all(ctx: Context) -> dict[str, Any]:
     editor, and an agent calling it is never stopped by its own call. UX review round 1, 2026-10-17
     (dispatch-concurrency F5, interrupt-failure-recovery F6, settings-govern-behavior F3, runaway-and-load F4,
     web-gui-controls F5): nothing stopped every agent at once, so a machine at its limit needed one stop per agent,
-    each of which started the next waiting ticket."""
+    each of which started the next waiting ticket. A dispatched agent stops them all only on the person's word, as
+    `start`."""
     may_steer(ctx)
+    word = on_persons_word(ctx, 'Stopping every agent')
     person = ctx.surface != 'mcp' and sender(ctx) is None
     if ctx.nouns.get('home'):
         busy = {str(entry.get('project')) for entry in launches()}
@@ -3810,7 +3884,9 @@ def stop_all(ctx: Context) -> dict[str, Any]:
                     given_back_reservation(held, record.id, str(record.taken_by))
     return {'stopped': stopped, 'failed': failed, 'turned_off': turned_off,
             **({'notice': 'Autostart agents is off, so nothing starts again until you check it.'}
-               if turned_off else {})}
+               if turned_off else {}),
+            **(on_word(ctx, word, f'stopped every agent ({len(stopped)}) and turned Autostart agents off')
+               if word is not None else {})}
 
 
 def ended_launch(store: Store, starting: dict[str, Any]) -> dict[str, Any]:
@@ -5401,7 +5477,10 @@ MODULE = Module(
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
-    provides=(Provides('base.holds', base_holds), Provides('person.consent', ask_consent)),
+    # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the
+    # record in its chat of what it did on it, `metaform.module.persons_word`
+    provides=(Provides('base.holds', base_holds), Provides('person.consent', ask_consent),
+              Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted)),
     start=started,
     stop=None,
     status=None,

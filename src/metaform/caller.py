@@ -92,6 +92,33 @@ def agent() -> str | None:
     return _agent_above(os.getpid(), own) or _leader_agent(os.getpid(), own)
 
 
+RUNNER = 'a Metaform dispatch runner'  # what `agent_process` names a runner
+
+
+def dispatched() -> str | None:
+    """Why this process is known to run for an agent a Metaform dispatch runner started, in a few words; None when
+    nothing says so: the identity names a runner sets, or a runner above this process (never the process itself, so
+    a runner's own calls are not its agent's) or above the leader of its session. An agent that clears those names
+    is still known by the runner above it; one that leaves the runner's tree on purpose is the deliberate attack the
+    command sandbox stops. Only the agents a runner started are judged so: the person's own AI tool, run outside
+    dispatch, is not."""
+    named = [name for name in IDENTITY if os.environ.get(name)]
+    if named:
+        return f'{named[0]} is set'
+    if not sys.platform.startswith('linux'):
+        return None
+    own = _same(home.home())
+    found = _agent_above(os.getppid(), own, RUNNER)
+    if found is None:
+        try:
+            leader = os.getsid(os.getpid())
+        except OSError:
+            leader = 0
+        if leader not in (os.getpid(), 0, 1):
+            found = _agent_above(leader, own, RUNNER)
+    return found
+
+
 def terminal() -> str | None:
     """Why this process is not at the person's own interactive terminal; None when it is: it has a controlling
     terminal, runs in that terminal's foreground, and neither it nor the terminal's session leader was started by an
@@ -186,8 +213,9 @@ def _same(path: Path) -> str:
         return str(path)
 
 
-def _agent_above(pid: int, own_home: str) -> str | None:
-    """The first agent process at `pid` or above it working in the home `own_home`, named, else None."""
+def _agent_above(pid: int, own_home: str, only: str | None = None) -> str | None:
+    """The first agent process at `pid` or above it working in the home `own_home`, named, else None; with `only`,
+    the first agent of that kind, such as RUNNER."""
     if not sys.platform.startswith('linux'):
         return None
     seen = 0
@@ -195,7 +223,7 @@ def _agent_above(pid: int, own_home: str) -> str | None:
         seen += 1
         argv = _argv(pid)
         what = agent_process(argv) if argv else None
-        if what is not None:
+        if what is not None and (only is None or what == only):
             environ = _environ(pid)
             if environ is None or _home_of(environ) == own_home:  # unreadable counts as the same home
                 return f'{what} (process {pid})'
@@ -213,7 +241,7 @@ def agent_process(argv: list[str]) -> str | None:
     if 'metaform' in words:
         rest = words[words.index('metaform') + 1:]
         if any(rest[at:at + 2] == ['dispatch', 'run'] for at in range(len(rest))):
-            return 'a Metaform dispatch runner'
+            return RUNNER
         if any(rest[at:at + 2] == ['mcp', 'serve'] for at in range(len(rest))):
             return 'a Metaform MCP server'
     if not words:

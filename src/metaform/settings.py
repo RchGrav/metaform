@@ -74,6 +74,10 @@ class Setting:
     # A setting that decides what agents may do or how they are started and overseen. MCP and a dispatched agent's
     # CLI refuse it unless the person has allowed agents to set control, so an agent cannot widen its own control.
     person_only: bool = False
+    # A person_only setting that is part of the ordinary, reversible work of orchestration, such as Autostart agents:
+    # the person's own system agent changes it without a consent card in a turn the person's own message in its chat
+    # started (`metaform.module.persons_word`), and in no other turn, nor any other agent.
+    on_persons_word: bool = False
     # A list whose entries are `<name><exclusive><value>`, such as `claude.model=opus` with `=`, holds one value per
     # name: two are refused, and a picker that checks one unchecks the others of its name.
     exclusive: str | None = None
@@ -167,6 +171,13 @@ def asking(folder: Path | None = None) -> tuple[str, str]:
         return said, 'metaform map work op=edit id=<your work id> note="..."; to do it the person '
     return ('Ask the person in your chat with them: say what you propose and why, then wait for their answer.',
             'ask the person in chat; to do it they ')
+
+
+def on_persons_word(keys: Iterable[str]) -> bool:
+    """Whether every person-only setting among `keys` is one the person's own system agent may change on the person's
+    word in its chat (`Setting.on_persons_word`), and at least one is named."""
+    held = [SCHEMA[key] for key in keys if key in SCHEMA and SCHEMA[key].person_only]
+    return bool(held) and all(setting.on_persons_word for setting in held)
 
 
 def refuse_held_control(keys: Iterable[str], folder: Path | None = None, command: str | None = None) -> None:

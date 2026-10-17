@@ -51,6 +51,8 @@ from metaform.module import (
     item_read,
     latest_item,
     node_reads,
+    on_persons_word,
+    persons_word_acted,
     project_for,
     titled,
     work_reads,
@@ -1315,6 +1317,7 @@ def work(ctx: Context) -> Any:
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = _work_id(store, str(nouns['id']))
+    word = _orchestrating(ctx, store, op, work_id, nouns)
     if op == 'read':
         return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
@@ -1329,7 +1332,7 @@ def work(ctx: Context) -> Any:
         if previous != 'todo' and moved.column == 'todo':
             ctx.publish('work.requeued', {'project': store.project_id, 'work_id': work_id,
                                          'previous': previous, 'revision': time.time_ns()})
-        return _written(ctx, store, moved, 'move', notices)
+        return _on_word(ctx, word, _written(ctx, store, moved, 'move', notices))
     if op == 'plan':
         return _written(ctx, store, store.plan_work(work_id, nouns['steps']), 'plan', notices)
     if op == 'step':
@@ -1346,7 +1349,7 @@ def work(ctx: Context) -> Any:
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
             _keep(store, work_id, nouns, notices)
-        return _written(ctx, store, edited, 'edit', notices)
+        return _on_word(ctx, word, _written(ctx, store, edited, 'edit', notices))
     # A resolution records a decision, so it carries a short why, kept with the ticket's number, MCP-037.
     titled(ctx, 'The resolution', None, nouns.get('why'), why_needed=True, title_needed=False,
            why_step='add why: one line saying why it was resolved this way')
@@ -1415,6 +1418,58 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
         if row is not None:
             kept.setdefault(work_id, {})['after_work'] = row['works']
     return kept
+
+
+def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
+                   nouns: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
+    """The person's word for a ticket write that is the person's orchestration, with what it does, or None when the
+    write is none or needs no word: releasing a held ticket (held=false or hold=false on a ticket held so, or a move of
+    a Backlog ticket to To do), or setting an order between tickets (after_work, or a move to a place in To do or
+    Backlog). A dispatched agent makes one only in a turn of the person's system agent their own message started,
+    `on_persons_word`; the page, the person's terminal and an AI tool outside dispatch as before."""
+    if ctx.surface not in ('mcp', 'cli'):
+        return None
+    if not (op == 'edit' and (nouns.get('held') is False or nouns.get('hold') is False or 'after_work' in nouns)
+            or op == 'move' and nouns.get('column') in ('todo', 'backlog')):
+        return None  # decided from the call alone: most writes read nothing more
+    record = store.ticket(work_id).work
+    kept = _settings(store, [work_id]).get(work_id, {})
+    did: list[str] = []
+    if op == 'edit':
+        if nouns.get('held') is False and record.held:
+            did.append('released it from Backlog')
+        if nouns.get('hold') is False and kept.get('hold'):
+            did.append('let go of its hold')
+        if 'after_work' in nouns:
+            waits = nouns['after_work']
+            did.append(f'set it to wait on {", ".join(str(one) for one in cast(list[Any], waits))}'
+                       if isinstance(waits, list) and waits else 'set it to wait on no other ticket')
+    else:
+        if record.held and nouns.get('column') == 'todo':
+            did.append('released it from Backlog to To do')
+        if nouns.get('position') is not None and nouns.get('column') in ('todo', 'backlog'):
+            did.append(f'put it at place {nouns["position"]} of {nouns["column"]}')
+    if not did:
+        return None
+    said = f'{" and ".join(did)} on ticket {work_id}'
+    word = on_persons_word(ctx, f'Releasing or ordering tickets ({said})')
+    return None if word is None else (word, said)
+
+
+def _on_word(ctx: Context, word: tuple[dict[str, Any], str] | None, result: Any) -> Any:
+    """A ticket write the person's word let their system agent make, recorded in its chat with that word, and said in
+    the result; any other write's result as it is."""
+    if word is None:
+        return result
+    given, said = word
+    persons_word_acted(ctx.folder, given, said, ctx.project)
+    line = f'On the person\'s word, "{given.get("text")}": {said}.'
+    if isinstance(result, str):
+        return f'{result}\n{line}'
+    if isinstance(result, dict):
+        return {**cast(dict[str, Any], result), 'on_word': {'text': given.get('text'), 'at': given.get('at'),
+                                                             'did': said}}
+    return result
 
 
 def _agent_writing(ctx: Context) -> str | None:

@@ -11,6 +11,7 @@ with `metaform.settings`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import inspect
 import os
@@ -831,6 +832,74 @@ def persons_decision(caution: str, command: str, page: str | None = None) -> Per
     the person runs, `command`, with the page's control `page` when there is one."""
     from . import caller
     return caller.persons_decision(caution, command, page)
+
+
+def persons_word(folder: Path, what: str, project: str | None = None) -> dict[str, Any] | None:
+    """The person's own message that started the turn this call is made in, when the caller is the person's own system
+    agent, dispatched, and its runner says the turn in flight came from a message the person typed in its chat on the
+    page (with the key the server gave that page) or at their own terminal: `{'id', 'text', 'at'}`. None otherwise:
+    a turn a timer, a peer's note, a notice or the agent's own continuation started, any other agent, or a caller no
+    runner started. The runner keeps it in its own memory, where the agent cannot write it; each enabled module's
+    `Provides('person.word', ask)`, `ask(store, what)`, asks it (dispatch's). What the person's word lets the agent do
+    is the reversible work of orchestration (`on_persons_word`); what cannot be undone still waits on a card."""
+    from . import caller
+    if caller.dispatched() is None:
+        return None
+    from .data import Store
+    try:
+        named = project_for(folder, project)
+    except Exception:  # noqa: BLE001  no project here: no runner to ask, so no word
+        return None
+    if named is None:
+        return None
+    for _, ask in provided(folder, 'person.word'):
+        try:
+            found = ask(Store(named), what)
+        except Exception:  # noqa: BLE001  a runner that cannot be asked gives no word
+            found = None
+        if isinstance(found, dict):
+            return cast(dict[str, Any], found)
+    return None
+
+
+def persons_word_acted(folder: Path, word: dict[str, Any], said: str, project: str | None = None) -> None:
+    """Record, in the chat of the system agent whose turn the person's message `word` started, what it did on that
+    word, `said`, so the person sees what their agent did and why: each enabled module's
+    `Provides('person.word.acted', record)`, `record(store, word, said)`. A record that cannot be written is let go;
+    the call's result says the same."""
+    from .data import Store
+    try:
+        named = project_for(folder, project)
+    except Exception:  # noqa: BLE001
+        return
+    if named is None:
+        return
+    for _, record in provided(folder, 'person.word.acted'):
+        with contextlib.suppress(Exception):  # the action is done; its record is the thread's, the result says it
+            record(Store(named), word, said)
+
+
+def on_persons_word(ctx: Context, what: str) -> dict[str, Any] | None:
+    """Guard one of the person's reversible orchestration actions, such as starting or stopping an agent, releasing a
+    held ticket or setting an order between tickets, against an agent's own momentum: a call from the page, from the
+    person's own terminal, or from an AI tool run outside dispatch goes on as before (None); a dispatched agent's call
+    goes on only in a turn of the person's own system agent that the person's message started, and the word is
+    returned so the caller records what it did on it (`persons_word_acted`); any other dispatched agent's call is
+    refused, with how the person does it. What cannot be undone is not guarded here: it stays `person_says`."""
+    if ctx.surface not in ('mcp', 'cli'):
+        return None  # the page is the person's
+    if ctx.surface == 'cli' and agent_caller() is None:
+        return None  # at the person's own terminal, or run by the web server for their page
+    from . import caller, settings
+    if caller.dispatched() is None:
+        return None  # the person's own AI tool, run outside dispatch
+    word = persons_word(ctx.folder, what, ctx.project)
+    if word is not None:
+        return word
+    said, step = settings.asking(ctx.folder)
+    raise PersonsDecision(f'{what} is the person\'s to decide. Their own system agent does it when they ask in their '
+                          'chat, in the turn their message starts; this turn was not started by their message, so it '
+                          f'carries no word of theirs. {said}', f'{step}use its control on the page')
 
 
 def page_vouch() -> Any:

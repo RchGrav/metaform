@@ -898,6 +898,62 @@ def test_a_dispatched_system_agents_switch_runs_once_on_the_persons_allow_in_its
         made.close()
 
 
+@pytest.mark.req('CLI-011')
+@pytest.mark.req('MCP-006')
+def test_on_the_persons_word_their_system_agent_starts_work_with_no_card_and_a_switch_still_asks(run, home, mapped,
+                                                                                                 tmp_path):
+    """UX review round 2, person-consent: in the turn the person's own message started, their system agent's MCP call
+    to start an agent, or to turn Autostart agents off, runs with no card; a switch of the map cannot be undone, so the
+    same turn still puts it on a card, and the person's Decline runs nothing. Every agent is the fake agent."""
+    import threading
+
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
+    made = Dispatch(run, home, mapped, tmp_path)
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    (gates / '1').touch()
+    other = made.store.add_work(made.node, 'unbuilt', task='Write other.txt').id
+    try:
+        made.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+        runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
+                                          if row.get('state') == 'running' and row.get('runner')), None))
+        eventually(lambda: read(run, made)['sessions'][-1].get('activity') == 'idle')
+        run('dispatch', 'message', made.id, '--', 'Start the other ticket and switch to a fresh map', cwd=mapped)
+        eventually(lambda: read(run, made)['sessions'][-1].get('activity') == 'working')
+        cards: list[dict] = []
+
+        def person():  # on the page: Decline the one card
+            card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
+                                            if one['kind'] == 'elicitation' and one['data'].get('consent')
+                                            and one['data']['state'] == 'waiting'), None), limit=60)
+            run('dispatch', 'permit', made.id, card['request'], '--', 'decline', cwd=mapped, isolated=True)
+            cards.append(card)
+        answering = threading.Thread(target=person)
+        answering.start()
+
+        async def check(client):
+            return (await called(client, 'dispatch_start', {'id': other, 'agent': 'claude'}),
+                    await called(client, 'metaform_set', {'dispatch_autostart': False}),
+                    await called(client, 'map_add-base', {'name': 'fresh'}))
+        started, unset, switched = consenting(home, mapped, check, answers=(), env={
+            'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner,
+            'FAKE_ACP_LOG': str(made.log), 'FAKE_ACP_MODE': 'plain'})
+        answering.join(timeout=60)
+        assert started.is_error is False, text(started)
+        assert unset.is_error is False and 'On the person\'s word, "Start the other ticket' in text(unset)[-1], \
+            text(unset)
+        assert switched.is_error is True, text(switched)
+        assert [card['consent']['command'] for card in cards] == ['metaform map add-base name=fresh --confirm']
+        assert [one.name for one in Store('proj').bases().results] == ['main']
+        notes = [line['text'] for line in read(run, made)['lines'] if line['kind'] == 'notice'
+                 and line['text'].startswith('On your word')]
+        assert len(notes) == 2 and f'started Claude Code on ticket {other}' in notes[0], notes
+    finally:
+        run('dispatch', 'stop', other, cwd=mapped, ok=False)
+        made.stop()
+        made.close()
+
+
 @pytest.mark.req('MCP-006')
 def test_switching_the_active_base_asks_for_confirm(run, home, mapped):
     """map activate, add-base and collapse change the active map for every agent and the page of a project, and any
