@@ -1255,7 +1255,7 @@ def test_a_ticket_taken_back_to_its_place_names_itself_alone_and_a_move_names_on
     store = Store('proj')
     ids = [store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task=f'task {n}').id for n in range(6)]
     taken = ids[2]
-    for unplaced in (True, False):  # tickets as they are made, with no place, then in an order the board gave them
+    for unplaced in (True, False):  # tickets as they are made, placed last in turn, then in an order the board gave
         if not unplaced:
             for place, work_id in enumerate(ids):
                 store.move_work(work_id, 'todo', place)
@@ -1267,9 +1267,11 @@ def test_a_ticket_taken_back_to_its_place_names_itself_alone_and_a_move_names_on
         base = next(iter(changes.take()['proj']))
         assert changes.concerns('proj', base)['work_ids'] == [taken]
         if unplaced:
-            assert all(record.position is None for record in store.work(Node('element', 'code.timer.kitchen'),
-                                                                        limit=0).results)
-            store.move_work(taken, 'todo')
+            assert sorted(record.position for record in store.work(Node('element', 'code.timer.kitchen'),
+                                                                    limit=0).results) == [0, 1, 2, 3, 4, 5]
+            changes.take()
+            store.move_work(taken, 'todo')  # dropped at the end of a new To do: its place is the only one written
+            assert changes.concerns('proj', next(iter(changes.take()['proj'])))['work_ids'] == [taken]
     store.move_work(taken, 'todo', 2)
     store.take_work(taken, by='dispatch starting r')
     changes.take()
