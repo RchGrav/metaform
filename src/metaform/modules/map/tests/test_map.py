@@ -2016,7 +2016,7 @@ def test_where_carries_the_code_attached_to_each_purpose_join(run, described):
 @pytest.mark.req('MCP-039')
 def test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_changed(run, mapped, monkeypatch):
     """An agent is told what is held at its node and around it once per session; a later read in that session says
-    only a count that changed, and what the session wrote itself is never news to it."""
+    what changed. Counts and authored writes do not stand in for receiving a complete memory body."""
     def where(session: str) -> dict:
         monkeypatch.setenv('METAFORM_SESSION', session)
         return j(run, 'where', 'code.timer.kitchen', cwd=mapped)
@@ -2033,14 +2033,15 @@ def test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_chang
     again = where('agent-a')
     assert 'around' not in again and 'changed' not in again and again['element'] == first['element']
     remember('agent-b', 'code.alarm.audible', 'tone')
-    assert where('agent-a')['changed'] == ['1 new memory at code.alarm.audible']
+    changes = where('agent-a')['changed']
+    assert len(changes) == 1 and '1 unread' in changes[0] and 'code.alarm.audible' in changes[0]
     remember('agent-a', 'code.timer.kitchen', 'mine')
-    assert 'changed' not in where('agent-a'), 'what the session wrote itself is not news to it'
+    assert 'code.timer.kitchen' in where('agent-a')['changed'][0]
     fresh = where('agent-c')['around']
-    assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +1 memory · 1 new', fresh)
-    assert re.search(r'└ code\.alarm\.audible +1 memory · 1 new', fresh)
-    assert ('Read them: metaform memory read_graph node=code.timer.kitchen · metaform memory read_graph '
-            'node=code.alarm.audible') in fresh and '<address>' not in fresh  # each address with new ones, filled
+    assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +1 memory · 1 unread', fresh)
+    assert re.search(r'└ code\.alarm\.audible +1 memory · 1 unread', fresh)
+    assert 'metaform memory read_unread node=element:code.timer.kitchen' in fresh
+    assert 'metaform memory read_unread node=element:code.alarm.audible' in fresh and '<address>' not in fresh
 
 
 @pytest.mark.req('MCP-039')

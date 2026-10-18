@@ -2143,10 +2143,12 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://tools',
                                       'metaform://runtime/compaction-state',
+                                      'metaform://orchestration/bmad',
                                       'metaform://instructions', 'metaform://intake/procedure',
                                       'metaform://intake/schema'}
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
+                         'metaform://role/{name}', 'metaform://orchestration/assignment/{assignment}',
                          'metaform://{address}', 'metaform://{address}/items/{n}'}
     from metaform import prompt_files
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served
@@ -2229,7 +2231,8 @@ def test_ticket_authority_lets_a_session_with_no_role_write_a_ticket_over_mcp(ru
 
 @pytest.mark.req('MAP-050')
 def test_ticket_authority_refuses_a_worker_over_mcp_and_on_the_command_line(run, home, mapped, monkeypatch):
-    """A worker writes no ticket, by the role its runner gave it, on either surface; the refusal names the role."""
+    """A person-configured restriction applies on either surface and names the actual execution role."""
+    run('set', '--roles-without-authority', 'worker', cwd=mapped)
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
 
     async def call(client, init):
@@ -2862,8 +2865,8 @@ def test_the_resource_watcher_reads_nothing_for_changes_that_number_nothing_at_i
         number, check, checked = watch._number, watch.check, anyio.Event()
         watch._number = lambda uri: reads.append(uri) or number(uri)
 
-        async def counted() -> None:
-            await check()
+        async def counted(uris=None) -> None:
+            await check(uris)
             checked.set()
         watch.check = counted
         async with anyio.create_task_group() as group:
@@ -3711,8 +3714,8 @@ def ticket(run, folder, node='code.timer.kitchen', title='Ring louder'):
     return json.loads(made.stdout)['id']
 
 
-# What a worker is never given: the board's controls, the intake's and the person's sentences, startup orders.
-NOT_FOR_A_WORKER = ('distribute', 'glyph', 'gitignore', 'YIELD', 'upon loading', 'legacy migration',
+# A worker explicitly held back by the person's configuration keeps its ticket-oriented schema and guides.
+NOT_FOR_A_RESTRICTED_WORKER = ('distribute', 'glyph', 'gitignore', 'YIELD', 'upon loading', 'legacy migration',
                     'The person writes', 'memory prompt', '<address>', "full worker's brief")
 
 
@@ -3723,8 +3726,8 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     without the module lines; it is listed metaform_catalog and the tools of the ticket category, the one its first task
     uses; opening remember lists that category's tools in place of ticket's, announced, its purpose not said again
     after the category list said it; once its AI tool is seen to list again, the next opening is one line, and
-    reopening the open one is one line; a tool of a category its role does not open is refused, by name and through
-    the catalog."""
+    reopening the open one is one line. The role can discover every category and call an available tool by name
+    or through the catalog; the person's configured controls remain the authority."""
     from metaform import prompt_files
     run('enable', 'memory', cwd=mapped)
     heard = []
@@ -3736,8 +3739,8 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
         second = await first_listed(client)
         orient = await called(client, 'metaform_catalog', {'category': 'orient'})
         again = await called(client, 'metaform_catalog', {'category': 'orient'})
-        refused = await called(client, 'metaform_set', {'tmux': True})
-        through = await called(client, 'metaform_catalog', {'tool': 'metaform_set', 'arguments': {'tmux': True}})
+        refused = await called(client, 'metaform_set', {})
+        through = await called(client, 'metaform_catalog', {'tool': 'metaform_set', 'arguments': {}})
         found = await called(client, 'metaform_catalog', {'search': 'note another agent'})
         role_said = (await client.read_resource('metaform://role/worker')).contents[0].text
         return init.instructions, role_said, first, categories, opened, second, orient, again, refused, through, found
@@ -3745,13 +3748,14 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     said, role_said, first, categories, opened, second, orient, again, refused, through, found = session(
         home, mapped, check, heard, env=env)
     assert said.splitlines()[0] == prompt_files.module('mcp', 'connect_directive') and 'metaform://role/worker' in said
-    assert role_said.startswith('You work one ticket at its node, so you are given the tool categories that work needs: ')
+    assert role_said.startswith('Your operational session works assignment ')
+    assert 'Your authored responsibilities are supplied separately' in role_said
     assert 'metaform_catalog' in role_said and 'The ticket category is open now' in role_said
     assert 'You must use Metaform' not in role_said and 'compacted=true' not in role_said
     assert 'metaform_catalog' in first and 'map_work' in first and 'memory_read_graph' not in first
     assert not {'metaform_set', 'dispatch_start', 'map_activate'} & set(first)
     listing = blocks(categories)[-1]
-    assert 'ticket (open): ' in listing and 'remember: ' in listing and 'steer' not in listing and 'setup' not in listing
+    assert 'ticket (open): ' in listing and 'remember: ' in listing and 'steer: ' in listing and 'setup: ' in listing
     head = blocks(opened)[0]
     assert head.startswith('remember is open, in place of ticket: its tools are listed to you now.')
     assert 'memory_read_graph(' in head and 'metaform_catalog tool=' in head and 'Read and record' not in head
@@ -3760,20 +3764,21 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     assert blocks(orient) == ['orient is open, in place of remember: its tools are listed to you now.']
     assert blocks(again) == ['orient is open already, so its tools are listed to you.']
     for answer in (refused, through):
-        assert answer.is_error and 'metaform_set is not among the tools a worker agent is given' in blocks(answer)[0]
+        assert not answer.is_error, blocks(answer)
     assert blocks(found)[-1].splitlines()[0].endswith('[coordinate]')
 
 
 @pytest.mark.req('MCP-003')
 @pytest.mark.req('MCP-039')
 @pytest.mark.req('MAP-050')
-def test_a_worker_is_given_only_what_its_own_ticket_needs(run, home, mapped):
-    """Everything a worker reads on its ticket, from connect to its steps: its map_work schema and guides hold none of
+def test_a_configured_restricted_worker_keeps_its_ticket_schema_and_guides(run, home, mapped):
+    """Everything a configured restricted worker reads on its ticket: its map_work schema and guides hold none of
     the board's ops and arguments, a read by id gives the id's help alone, a write's guide none of the intake's and
     the person's sentences; it is pointed to the glossary whole at connect, never to a part of it; the hand-off
     names the memory tool with the real node; who else is at work is said with the tool that reaches them."""
     run('enable', 'memory', cwd=mapped)
     run('enable', 'dispatch', cwd=mapped)
+    run('set', '--roles-without-authority', 'worker', cwd=mapped)
     run('memory', 'create_entities', json.dumps([{'name': 'tone', 'entityType': 'finding', 'why': 'The cook misses it.',
                                                    'observations': ['The tone is too quiet.']}]),
         'node=code.timer.kitchen', cwd=mapped)
@@ -3792,7 +3797,7 @@ def test_a_worker_is_given_only_what_its_own_ticket_needs(run, home, mapped):
     said, listed_now, results = session(home, mapped, check, env=env)
     schemas = json.dumps({name: [tool.description, tool.input_schema] for name, tool in listed_now.items()})
     transcript = '\n'.join([said, schemas, *(block for result in results for block in blocks(result))])
-    assert not [word for word in NOT_FOR_A_WORKER if word in transcript]
+    assert not [word for word in NOT_FOR_A_RESTRICTED_WORKER if word in transcript]
     work_schema = listed_now['map_work'].input_schema['properties']
     assert work_schema['op']['enum'] == ['list', 'edit', 'take', 'plan', 'step', 'done']
     assert not {'column', 'glyph', 'agents', 'held', 'title', 'task', 'links'} & work_schema.keys()
@@ -3800,8 +3805,8 @@ def test_a_worker_is_given_only_what_its_own_ticket_needs(run, home, mapped):
     assert read[0].splitlines()[1:] == [line for line in read[0].splitlines()[1:] if line.startswith('id: ')]
     assert 'A work record is attached to one element or join' in taken[0]  # its details, with its first write
     assert 'metaform://metaform/terms' not in transcript and 'metaform://metaform' in said
-    assert 'memory_read_graph node=code.timer.kitchen' in '\n'.join(read)  # the counts' call, its address filled in
-    assert 'memory_create_entities node=code.timer.kitchen' in '\n'.join(handed)
+    assert 'memory_read_unread node=element:code.timer.kitchen' in '\n'.join(read)  # the exact functional entry
+    assert 'Maintain relevant project knowledge at code.timer.kitchen' in '\n'.join(handed)
     assert 'dispatch_note to=' in '\n'.join(peers) and 'dispatch note' not in '\n'.join(peers)
     assert not any(one.startswith('Results are trimmed') for one in [*read, *where])  # said with a list, not a record
 

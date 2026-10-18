@@ -1,0 +1,7 @@
+{
+  "source": "/workspace/scratch/243b683ad142/swarm-browser-tests/test_role_picker_keeps_native_0/role-picker-acp.jsonl",
+  "uncompressed_bytes": 32071,
+  "sha256": "1b1a2f8f93e13f030697159799495ffc53f679fe7adbf0f1bba4620583c795f4",
+  "format": "gzip-compressed JSON lines; actual browser-triggered fake ACP transcript",
+  "runtime_candidate": "8c9bf81eaa6876b5dc34766574ebb1eece2a5851"
+}

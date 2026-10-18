@@ -19,16 +19,19 @@ file, the line and the prompt; a bare `&` is read as the character it is.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import sys
 import xml.etree.ElementTree as ET
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cache
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
@@ -47,6 +50,11 @@ class Sent:
     number: int | None
     origin: str
     version_id: str | None
+    selected_version_id: str | None = None
+    rendered_fingerprint: str = ''
+    bindings: dict[str, str] = field(default_factory=dict[str, str])
+    problems: tuple[str, ...] = ()
+    rendered_text: str = ''
 
 
 @dataclass(frozen=True)
@@ -215,8 +223,88 @@ def _edits() -> dict[str, str]:
         found = prompts.edits()
     except Exception:  # noqa: BLE001  a store this code cannot read sends the files' text
         found = {}
+    for name in found:
+        try:
+            merged = merge_selected_updates(name)
+            if merged is not None and merged['state'] == 'applied':
+                found[name] = prompts.prompt_version(name).text
+        except Exception as error:  # noqa: BLE001  a migration fault cannot discard the person's selected edit
+            notice = f'{name}: its selected update could not be merged ({error}); the selected edit is retained.'
+            if notice not in _TOLD:
+                _TOLD.add(notice)
+                sys.stderr.write(notice + '\n')
     _EDITS[:] = [(mark, found)]
     return found
+
+
+@cache
+def prompt_updates() -> dict[str, dict[str, Any]]:
+    """The shipped exact-anchor migrations keyed by existing component identity, including selected skill files."""
+    manifest = json.loads((resources.files('metaform') / 'resources' / 'prompt_updates.json').read_text('utf-8'))
+    return {one['name']: {**one, 'baseline': manifest['baseline'],
+                         'reviewed_baseline': manifest['reviewed_baseline']} for one in manifest['updates']}
+
+
+_MERGED: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def merge_selected_updates(name: str, *, retry: bool = False) -> dict[str, Any] | None:
+    """Merge the requested shipped change into a selected edit using its actual source/version, once.
+
+    An exact, unique old anchor is replaced; an exact new anchor is already integrated. Missing or ambiguous
+    anchors keep the entire selected edit intact and report the mismatch. Later user edits are never auto-replaced.
+    """
+    update = prompt_updates().get(name)
+    if update is None:
+        return None
+    from .data import prompts
+    key = str(prompts.store_path()), update['id']
+    if not retry and key in _MERGED:
+        return _MERGED[key]
+
+    def transform(version: PromptVersion) -> tuple[str, list[str]]:
+        # Older prompt review saved whole skill files with format=xml, though their consumers read them literally.
+        # Follow that actual source contract instead of parsing Axiom or legacy library sections as XML.
+        xml = version.format == 'xml' and not name.startswith('skill:') and not update.get('source_component')
+        if xml:
+            try:
+                rendered(version.text)
+            except ValueError as error:
+                return version.text, [f'{name} version {version.number}: {error}; the selected edit is retained.']
+        source = plain(version.text) if xml else version.text
+        text = source
+        conflicts: list[str] = []
+        for number, edit in enumerate(update['edits'], 1):
+            old, new = str(edit['old']), str(edit['new'])
+            before, after = text.count(old), text.count(new)
+            if before == 1 and after == 0:
+                text = text.replace(old, new, 1)
+            elif before == 0 and after == 1:
+                continue
+            else:
+                conflicts.append(f'{name} version {version.number}: update anchor {number} '
+                                 f'has {before} old and {after} new matches; the selected edit is retained.')
+        if conflicts:
+            return version.text, conflicts
+        declared = set(places(version.text)) | set(places(_source(name) or ''))
+        stored = encode(text, declared) if xml else text
+        return stored, []
+
+    merged = prompts.merge_selected(name, str(update['id']), transform,
+        source={key: update[key] for key in ('source', 'baseline', 'reviewed_baseline')}, retry=retry)
+    _MERGED[key] = merged
+    return merged
+
+
+def _selected_update(version: PromptVersion) -> tuple[PromptVersion, list[str]]:
+    from .data import prompts
+    merged = merge_selected_updates(version.name)
+    if merged is None:
+        return version, []
+    if merged['after_number'] > version.number:
+        version = prompts.prompt_version(version.name)
+    notices: list[str] = merged['conflicts'] if merged['state'] == 'conflict' and merged['before_version_id'] == version.version_id else []
+    return version, notices
 
 
 def _last_shipped(key: str, name: str) -> ET.Element | None:
@@ -442,9 +530,21 @@ def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 
         raise ValueError(f'{name} is {FIXED[name]}, so an edit of it would never be sent')
     source = shipped_text if shipped_text is not None else _source(name)
     if source is None:
+        update = prompt_updates().get(name)
+        if update is not None:
+            source_component = update.get('source_component')
+            if source_component:
+                selected_source = _source(str(source_component))
+                if selected_source is not None:
+                    _selected_update(prompts.shipped(name, 'text', rendered(selected_source)))
+            elif name.startswith('skill:'):
+                file = resources.files('metaform').joinpath(*str(update['source']).split('/')[2:])
+                if file.is_file():
+                    _selected_update(prompts.shipped(name, format, file.read_text('utf-8').strip()))
         return prompts.save_prompt(name, text, format=format, parent=parent), []
     stored, notices = checked(name, text, source)
-    prompts.shipped(name, 'xml', source)  # the shipped text is the version the edit is made from
+    # Consume requested source migrations before this explicit edit, so its newer instructions remain selected.
+    _selected_update(prompts.shipped(name, 'xml', source))
     return prompts.save_prompt(name, stored, format='xml', parent=parent), notices
 
 
@@ -518,42 +618,101 @@ def _noted(sent: Sent) -> None:
         held.append(sent)
 
 
-def served(folder: Traversable, name: str, /, **fills: str) -> str:
-    """The prompt `name` of this package folder as the prompt store serves it, STORE-044: the shipped element is
-    registered as a version when its text changed, and the newest version is sent, an edit saved in the store in its
-    place. A prompt on trial is read first and never stored. A missing element is a defect, as for `required`. An edit
-    that is not well formed is not sent: the shipped text is, and the reason goes to stderr, for `agents show` names
-    it on the role."""
+def component(name: str, text: str, *, version_id: str | None = None,
+              bindings: dict[str, str] | None = None) -> dict[str, Any]:
+    """One exact rendered context component; constructing it establishes no delivery."""
+    return {'name': name, 'text': text, 'actual_version_id': version_id,
+            'selected_version_id': version_id, 'number': None, 'origin': 'generated',
+            'rendered_fingerprint': hashlib.sha256(text.encode('utf-8')).hexdigest(),
+            'bindings': dict(bindings or {}), 'problems': []}
+
+
+def resolve(name: str, /, **fills: str) -> dict[str, Any]:
+    """Resolve a shipped or generated prompt-store component without claiming an agent received it.
+
+    Generated duties need no XML element. An invalid override is identified separately from the actual fallback;
+    when current shipped text has no stored version yet, its content identity names that source snapshot honestly.
+    """
+    identifier, _, element = name.partition(':')
+    folder = _folder(identifier)
+    if folder is not None and element and '.' not in element and _element(folder, element) is not None:
+        return _resolved(folder, element, **fills)
+    from .data import prompts
+    shipped_text = shipped(identifier, element) if folder is not None and element else None
+    selected = prompts.shipped(name, 'text', shipped_text) if shipped_text is not None else prompts.prompt_version(name)
+    selected, notices = _selected_update(selected)
+    text = rendered(selected.text, **fills) if selected.format == 'xml' else selected.text
+    return {**component(name, text, version_id=selected.version_id, bindings=fills),
+            'number': selected.number, 'origin': selected.origin, 'notices': notices}
+
+
+def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]:
     key = f'{owner(folder)}:{name}'
     trial = os.environ.get(TRIAL)
     if trial and os.path.isfile(trial):
         held = _parsed(Path(trial))
         tried = None if held is None else held.root.find(name)
         if tried is not None and ((tried.text or '').strip() or len(tried)):
-            _noted(Sent(key, None, 'trial', None))
-            return required(folder, name, **fills)
+            return {**component(key, rendered(body(tried), **fills), bindings=fills), 'origin': 'trial'}
     found = _element(folder, name)
     if found is None:
         raise LookupError(f'{folder / "resources" / FILE} has no prompt {name}.')
     from .data import prompts
-    text = body(found)
-    version = prompts.shipped(key, 'xml', text)
-    _noted(Sent(key, version.number, version.origin, version.version_id))
+    source = body(found)
+    selected = prompts.shipped(key, 'xml', source)
+    selected, notices = _selected_update(selected)
     try:
-        return rendered(version.text, **fills)
+        text = rendered(selected.text, **fills)
     except ValueError as error:
-        sys.stderr.write(f'Prompt {key} version {version.number} is {error}; its shipped text is sent.\n')
-        return rendered(text, **fills)
+        problem = f'Prompt {key} version {selected.number} is {error}; its shipped text is sent.'
+        actual = next((one for one in prompts.prompt_versions(key)
+                       if one.origin == 'shipped' and one.text == source), None)
+        source_id = actual.version_id if actual else 'shipped:' + hashlib.sha256(source.encode()).hexdigest()
+        return {**component(key, rendered(source, **fills), version_id=source_id, bindings=fills),
+                'selected_version_id': selected.version_id, 'selected_number': selected.number,
+                'number': actual.number if actual else None, 'origin': 'shipped', 'problems': [problem],
+                'notices': notices}
+    return {**component(key, text, version_id=selected.version_id, bindings=fills),
+            'number': selected.number, 'origin': selected.origin, 'notices': notices}
+
+
+def served(folder: Traversable, name: str, /, **fills: str) -> str:
+    """The prompt `name` of this package folder as the prompt store serves it, STORE-044: the shipped element is
+    registered as a version when its text changed, and the newest version is sent, an edit saved in the store in its
+    place. A prompt on trial is read first and never stored. A missing element is a defect, as for `required`. An edit
+    that is not well formed is not sent: the shipped text is, and the reason goes to stderr, for `agents show` names
+    it on the role."""
+    resolved = _resolved(folder, name, **fills)
+    for problem in [*resolved['problems'], *resolved.get('notices', [])]:
+        sys.stderr.write(str(problem) + '\n')
+    _noted(Sent(resolved['name'], resolved['number'], resolved['origin'], resolved['actual_version_id'],
+                resolved['selected_version_id'], resolved['rendered_fingerprint'], resolved['bindings'],
+                tuple(resolved['problems']), str(resolved['text'])))
+    return str(resolved['text'])
+
+
+def resolve_text(name: str, text: str) -> dict[str, Any]:
+    """Resolve a whole authored file's selected version without claiming it was delivered to any agent.
+
+    Such files are read literally, including historical skill edits labeled XML by an older review surface.
+    Deployment and direct serving therefore use the same text and exact selected version.
+    """
+    from .data import prompts
+    version, notices = _selected_update(prompts.shipped(name, 'text', text))
+    return {**component(name, version.text, version_id=version.version_id),
+            'number': version.number, 'origin': version.origin, 'notices': notices}
 
 
 def served_text(name: str, text: str) -> str:
     """A prompt kept whole in a file, read by the caller as `text`, as the prompt store serves it under `name`, the
     name `metaform prompts review` gives it (`intake:intake.axiom`, `skill:<name>`), STORE-044: the text when it is
     the newest version, else the edit saved in its place. The caller fills it as it fills the file."""
-    from .data import prompts
-    version = prompts.shipped(name, 'text', text)
-    _noted(Sent(name, version.number, version.origin, version.version_id))
-    return version.text
+    resolved = resolve_text(name, text)
+    for notice in resolved['notices']:
+        sys.stderr.write(notice + '\n')
+    _noted(Sent(name, resolved['number'], resolved['origin'], resolved['actual_version_id'],
+                resolved['selected_version_id'], resolved['rendered_fingerprint'], rendered_text=resolved['text']))
+    return str(resolved['text'])
 
 
 def module_commands(identifier: str) -> list[tuple[str, dict[str, str], str, str, bool]]:

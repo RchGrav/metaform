@@ -15,7 +15,9 @@
      handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is filled
      with the address that holds new memories, or each of them, the call given once per address; else with each
      address that holds any, so no placeholder is sent. Empty leaves the line out and the counts stand alone. -->
-<counts>New = recorded by the last session here. Read them: metaform memory read_graph node=&lt;address&gt;</counts>
+<counts>
+<total/> memories; <unread/> unread, including <updated/> updated. Read applicable unread contents with <read_unread/>.
+</counts>
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
 <note_counts>The person's note: metaform memory note node=&lt;address&gt;</note_counts>
@@ -49,38 +51,22 @@
      To change it, save an edit through the prompt store (metaform prompt memory:instructions); the edit is what
      agents receive. The Axiom text it replaced is that prompt's earlier version. Empty sends nothing; off when the
      memory module is disabled or the folder's modules setting leaves it out. -->
-<instructions>Follow these steps for each interaction:
-
-1. Project Identification:
-   - Assume you are operating within Metaform and the functional namespace of your current project.
-   - Identify the functional namespace associated with your assignment and the entities representing its components, capabilities, and responsibilities.
-   - If the relevant namespace or entities have not been identified, discover them through Metaform's memory.
-
-2. Memory Retrieval:
-   - Always begin your interaction by saying only "Remembering..." and retrieve all relevant information from your knowledge graph.
-   - Use the functional namespace to locate relevant entities, their observations, and their relationships to other nodes.
-   - Follow relationships to understand functional dependencies, interactions, and surrounding project context.
-   - Always refer to your knowledge graph as your "memory".
-
-3. Memory:
-   - While working on the project, be attentive to new information that falls into these categories:
-     a) Functional Identity (namespaces, components, capabilities, purposes, responsibilities, etc.)
-     b) Structure (modules, interfaces, operations, resources, and their organization)
-     c) Behavior (how components operate, interact, exchange information, and fulfill their functions)
-     d) Knowledge (implementation details, discoveries, decisions, constraints, and observed behavior)
-     e) Relationships (dependencies, connections, functional interactions, and associations between entities)
-
-4. Memory Update:
-   - As new information is discovered or established during your work, update your memory as follows:
-     a) Create entities for newly identified functional components, capabilities, and other significant project elements, using their functional namespace identifiers.
-     b) Connect entities using directed, active-voice relations describing how they interact, depend on, or contribute to one another.
-     c) Store discrete, atomic facts as observations attached to their relevant entities. Add new observations to existing entities as knowledge develops.
-   - Maintain these memories within the project's functional namespace so that other agents can retrieve, understand, and build upon the accumulated knowledge.</instructions>
+<instructions>
+Use the Metaform map as the index into this project's memory. Functional nodes and joins are entry points to the knowledge that is relevant there.
+Read applicable unread memories at the functionality you work on. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.
+Maintain memory as uniquely named entities with types, atomic string observations and explicit directed relations in active voice. Keep each observation to one fact about its entity. Represent relationships as relations rather than leaving them only in prose.
+Refine existing relevant knowledge as your work establishes better understanding. Correct inaccurate observations and relations, add missing relevant relations, consolidate duplicates, and remove outdated entities, observations and relations. Add new entities and observations when the knowledge is new.
+Use canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.
+Associate memories with the functional entry points where they are relevant, following the receiving-element and join semantics. Memory entities and relations represent the knowledge; the map supplies its index locations. An entity's name need not be a map address.
+During discovery, link meaningful implementation entry points as functional references. Keep execution progress and return details in work records; preserve maintained project knowledge in memory.
+</instructions>
 <!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {element} ..."
      bullet when the agent has no assigned element: one connected over MCP outside dispatch, the system agent, or a
      ticket with no node. Held as its own element so both forms stay word for word and the code swaps whole bullets,
      never words. Empty leaves line 2 with no bullet. -->
-<instructions_unassigned>This is the address of the element you are working on at any given time.</instructions_unassigned>
+<instructions_unassigned>
+When work is assigned, use its functional locations as entry points to the applicable unread memories.
+</instructions_unassigned>
 <!-- What a memory write answers an agent over MCP, one line, MCP-037: the memories are a read away, so what the agent
      just sent is not handed back. <items/> is each memory joined at the node, "<address>#<n>  <title>", separated by
      semicolons; <names/> the memories written to the whole graph at no node; <added/> each entity with the count of

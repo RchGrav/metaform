@@ -10,18 +10,20 @@ edit, so the person sees their edit is behind and can merge or drop it.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
-PROMPT_SCHEMA_VERSION = '3'  # the prompt database's own layout, apart from the store's, STORE-029
+PROMPT_SCHEMA_VERSION = '4'  # the prompt database's own layout, apart from the store's, STORE-029
 # 2 renamed the column code at 1 reads, STORE-029; 3 adds prompt_shipped, which code at 2 never reads, so 2 still
 # reads and writes a file at 3
 PROMPT_COMPATIBLE_FROM = '2'
@@ -31,6 +33,16 @@ SHIPPED_TABLE = """CREATE TABLE IF NOT EXISTS prompt_shipped(
   version_id TEXT PRIMARY KEY REFERENCES prompt_versions(version_id),
   text       TEXT NOT NULL,
   seen       TEXT NOT NULL
+);"""
+MERGE_TABLE = """CREATE TABLE IF NOT EXISTS prompt_merges(
+  prompt_id TEXT NOT NULL REFERENCES prompts(prompt_id),
+  migration_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  before_version_id TEXT NOT NULL REFERENCES prompt_versions(version_id),
+  after_version_id TEXT NOT NULL REFERENCES prompt_versions(version_id),
+  details TEXT NOT NULL,
+  created TEXT NOT NULL,
+  PRIMARY KEY(prompt_id, migration_id)
 );"""
 PROMPT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -59,22 +71,23 @@ CREATE TABLE IF NOT EXISTS prompt_uses(
   PRIMARY KEY(project_id, base_id, layer_id)
 );
 CREATE INDEX IF NOT EXISTS prompt_uses_by_version ON prompt_uses(version_id);
-""" + SHIPPED_TABLE + '\n'
+""" + SHIPPED_TABLE + '\n' + MERGE_TABLE + '\n'
 FORMATS = ('xml', 'markdown', 'text')
 
 
 def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Version 2 names a use's base `base_id`, the change order of 2026-10-07 item 1; version 3 adds prompt_shipped."""
-    if found not in ('1', '2'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1 and 2.',
+    """Version 2 names base_id, 3 keeps shipped text behind edits, and 4 records selected-source migrations."""
+    if found not in ('1', '2', '3'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1, 2 and 3.',
                          'install the Metaform release that wrote it')
     db.execute('BEGIN IMMEDIATE')
     try:
         at = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if at in (('1',), ('2',)):  # read again inside the lock: another process may have upgraded it first
+        if at in (('1',), ('2',), ('3',)):  # read again inside the lock: another process may have upgraded it first
             if at == ('1',):
                 db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
             db.execute(SHIPPED_TABLE)
+            db.execute(MERGE_TABLE)
             sqlite.stamp(db, PROMPT_SCHEMA_VERSION, PROMPT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
@@ -242,6 +255,56 @@ def save_prompt(name: str, text: str, *, format: str = 'text', parent: int | Non
         if parent is not None:
             raise StoreError(f'Prompt {name} has no version {parent}.', f'metaform prompt {name}')
         return _create(db, name, format, text, 'edited')
+
+
+def merge_selected(prompt: str, migration_id: str,
+                   transform: Callable[[PromptVersion], tuple[str, list[str]]], *,
+                   source: Mapping[str, Any] | None = None, retry: bool = False) -> dict[str, Any]:
+    """Apply an exact selected-source merge once, preserving prompt identity and every immutable version.
+
+    `transform` runs on the current selected version under the same transaction as its append. It returns the new
+    stored text and any conflicts; conflicts keep the selection unchanged. A recorded migration never changes a
+    later user edit. Explicit `retry` retries a previously conflicted merge against the current selection.
+    """
+    with _db(write=True) as db:
+        record = _prompt_row(db, prompt)
+        prior = db.execute('SELECT * FROM prompt_merges WHERE prompt_id=? AND migration_id=?',
+                           (record['prompt_id'], migration_id)).fetchone()
+        if prior is not None and not (retry and prior['state'] == 'conflict'):
+            return {'name': record['name'], 'migration_id': migration_id, 'state': prior['state'],
+                    'before_version_id': prior['before_version_id'], 'after_version_id': prior['after_version_id'],
+                    **json.loads(prior['details'])}
+        newest = _newest(db, record['prompt_id'])
+        assert newest is not None
+        before = _version(newest)
+        after, conflicts = before, []
+        state = 'shipped'
+        if before.origin == 'edited':
+            text, conflicts = transform(before)
+            state = 'conflict' if conflicts else 'already_applied' if text == before.text else 'applied'
+            if state == 'applied':
+                after = _edit(db, record, text, before.version_id)
+        details = {'conflicts': conflicts, 'source': dict(source or {}),
+                   'before_number': before.number, 'after_number': after.number}
+        db.execute('INSERT INTO prompt_merges(prompt_id,migration_id,state,before_version_id,after_version_id,'
+                   'details,created) VALUES (?,?,?,?,?,?,?) ON CONFLICT(prompt_id,migration_id) DO UPDATE SET '
+                   'state=excluded.state,before_version_id=excluded.before_version_id,'
+                   'after_version_id=excluded.after_version_id,details=excluded.details,created=excluded.created',
+                   (record['prompt_id'], migration_id, state, before.version_id, after.version_id,
+                    json.dumps(details, sort_keys=True), home.now()))
+        return {'name': record['name'], 'migration_id': migration_id, 'state': state,
+                'before_version_id': before.version_id, 'after_version_id': after.version_id, **details}
+
+
+def prompt_merges(prompt: str | None = None) -> list[dict[str, Any]]:
+    """Selected-source migration evidence, including exact input/output versions and conflicts left untouched."""
+    with _db() as db:
+        sql = ('SELECT m.*, p.name FROM prompt_merges m JOIN prompts p ON p.prompt_id=m.prompt_id'
+               + (' WHERE p.name=?' if prompt else '') + ' ORDER BY m.created,m.migration_id')
+        rows = db.execute(sql, (prompt,) if prompt else ()).fetchall()
+    return [{'name': row['name'], 'migration_id': row['migration_id'], 'state': row['state'],
+             'before_version_id': row['before_version_id'], 'after_version_id': row['after_version_id'],
+             'created': row['created'], **json.loads(row['details'])} for row in rows]
 
 
 def shipped(name: str, format: str, text: str) -> PromptVersion:

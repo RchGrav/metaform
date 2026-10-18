@@ -1,0 +1,894 @@
+{
+  "thread": {
+    "id": "01a14e41-01da-7c92-86f8-0584d4d92209",
+    "environments": null,
+    "extra": null,
+    "sessionId": "01a14e41-01da-7c92-86f8-0584d4d92209",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.\n\n{\n  \"execution_role\": \"system\",\n  \"adapter\": {\n    \"load\": true,\n    \"resume\": true,\n    \"list\": true,\n    \"close\": true,\n    \"fork\": true,\n    \"delete\": true,\n    \"image\": true,\n    \"audio\": false,\n    \"embedded_context\": true,\n    \"steering\": true,\n    \"auth_status\": true,\n    \"logout\": true,\n    \"execution_role\": \"system\"\n  },\n  \"tools\": {\n    \"dispatch_broadcast\": {\n      \"required\": [\n        \"text\"\n      ],\n      \"arguments\": {\n        \"team\": {\n          \"type\": \"string\"\n        },\n        \"system\": {\n          \"type\": \"boolean\"\n        },\n        \"text\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_broadcasts\": {\n      \"required\": [],\n      \"arguments\": {\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"dispatch_interrupt\": {\n      \"required\": [\n        \"id\"\n      ],\n      \"arguments\": {\n        \"id\": {\n          \"type\": \"string\"\n        },\n        \"session\": {\n          \"type\": \"string\"\n        },\n        \"direction\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_note\": {\n      \"required\": [\n        \"text\"\n      ],\n      \"arguments\": {\n        \"to\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"file\": {\n          \"type\": \"string\"\n        },\n        \"topic\": {\n          \"type\": \"string\"\n        },\n        \"reply\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"integer\"\n        },\n        \"text\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_notes\": {\n      \"required\": [],\n      \"arguments\": {\n        \"note\": {\n          \"type\": \"string\"\n        },\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"dispatch_peers\": {\n      \"required\": [],\n      \"arguments\": {\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"file\": {\n          \"type\": \"string\"\n        },\n        \"topic\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"map_work\": {\n      \"required\": [],\n      \"arguments\": {\n        \"op\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"list\",\n            \"add\",\n            \"edit\",\n            \"take\",\n            \"plan\",\n            \"step\",\n            \"move\",\n            \"distribute\",\n            \"glyphs\",\n            \"done\"\n          ]\n        },\n        \"steps\": {\n          \"type\": \"integer\"\n        },\n        \"said\": {\n          \"type\": \"string\"\n        },\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"condition\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"unbuilt\",\n            \"under-construction\",\n            \"built\",\n            \"broken\",\n            \"trouble\",\n            \"missing\",\n            \"ok\",\n            \"none\"\n          ]\n        },\n        \"kind\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"broken\",\n            \"flawed\",\n            \"enhancement\",\n            \"none\"\n          ]\n        },\n        \"links\": {\n          \"type\": \"array\"\n        },\n        \"by\": {\n          \"type\": \"string\"\n        },\n        \"column\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"backlog\",\n            \"todo\",\n            \"doing\",\n            \"done\"\n          ]\n        },\n        \"position\": {\n          \"type\": \"integer\"\n        },\n        \"note\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"held\": {\n          \"type\": \"boolean\"\n        },\n        \"reviewed\": {\n          \"type\": \"boolean\"\n        },\n        \"agent\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"claude\",\n            \"codex\",\n            \"gemini\"\n          ]\n        },\n        \"hold\": {\n          \"type\": \"boolean\"\n        },\n        \"glyph\": {\n          \"type\": \"string\"\n        },\n        \"eligible\": {\n          \"type\": \"array\"\n        },\n        \"after_work\": {\n          \"type\": \"array\"\n        },\n        \"agents\": {\n          \"type\": \"integer\"\n        },\n        \"id\": {\n          \"type\": \"string\"\n        },\n        \"resolution\": {\n          \"type\": \"string\"\n        },\n        \"title\": {\n          \"type\": \"string\"\n        },\n        \"why\": {\n          \"type\": \"string\"\n        },\n        \"open\": {\n          \"type\": \"boolean\"\n        },\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"after\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"memory_join\": {\n      \"required\": [\n        \"entity\"\n      ],\n      \"arguments\": {\n        \"entity\": {\n          \"type\": \"string\"\n        },\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"memory_read_unread\": {\n      \"required\": [],\n      \"arguments\": {\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_assess\": {\n      \"required\": [\n        \"summary\"\n      ],\n      \"arguments\": {\n        \"summary\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"evidence\": {\n          \"type\": \"array\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_bmad\": {\n      \"required\": [],\n      \"arguments\": {\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_call\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_change\": {\n      \"required\": [\n        \"content\",\n        \"reason\"\n      ],\n      \"arguments\": {\n        \"content\": {\n          \"type\": \"string\"\n        },\n        \"reason\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"specification\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"assessment\": {\n          \"type\": \"string\"\n        },\n        \"base\": {\n          \"type\": \"string\"\n        },\n        \"observed_limitation\": {\n          \"type\": \"string\"\n        },\n        \"affected_work_ids\": {\n          \"type\": \"array\"\n        },\n        \"user_instruction\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_changes\": {\n      \"required\": [],\n      \"arguments\": {\n        \"change\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_check-in\": {\n      \"required\": [\n        \"state\",\n        \"summary\"\n      ],\n      \"arguments\": {\n        \"state\": {\n          \"type\": \"string\"\n        },\n        \"summary\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"evidence\": {\n          \"type\": \"array\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"work_so_far\": {\n          \"type\": \"string\"\n        },\n        \"findings\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_claim\": {\n      \"required\": [\n        \"work\"\n      ],\n      \"arguments\": {\n        \"work\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"specification\": {\n          \"type\": \"object\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"mode\": {\n          \"type\": \"string\"\n        },\n        \"session\": {\n          \"type\": \"string\"\n        },\n        \"pm_session\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_commission\": {\n      \"required\": [\n        \"request\"\n      ],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_delegate\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_handoff\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_inspect\": {\n      \"required\": [],\n      \"arguments\": {\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"work\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_mode\": {\n      \"required\": [\n        \"assignment\",\n        \"mode\"\n      ],\n      \"arguments\": {\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"mode\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_publish_role\": {\n      \"required\": [\n        \"request\",\n        \"duty\"\n      ],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"duty\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_role_requests\": {\n      \"required\": [],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_team\": {\n      \"required\": [],\n      \"arguments\": {\n        \"team\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    }\n  }\n}\n\nUse the Metaform map as the index into this project's memory. Functional nodes and joins are entry points to the knowledge that is relevant there.\nRead applicable unread memories at the functionality you work on. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.\nMaintain memory as uniquely named entities with types, atomic string observations and explicit directed relations in active voice. Keep each observation to one fact about its entity. Represent relationships as relations rather than leaving them only in prose.\nRefine existing relevant knowledge as your work establishes better understanding. Correct inaccurate observations and relations, add missing relevant relations, consolidate duplicates, and remove outdated entities, observations and relations. Add new entities and observations when the knowledge is new.\nUse canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.\nAssociate memories with the functional entry points where they are relevant, following the receiving-element and join semantics. Memory entities and relations represent the knowledge; the map supplies its index locations. An entity's name need not be a map address.\nDuring discovery, link meaningful implementation entry points as functional references. Keep execution progress and return details in work records; preserve maintained project knowledge in memory.\n\nDelivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nVerification evidence:\n- {\"command\": \"python -m unittest -v\", \"cwd\": \"/tmp/metaform-review-live/project\", \"exit_status\": 0, \"output\": \"GC independent run: Ran 11 tests in 0.000s; OK.\"}\n- {\"verification\": \"GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.\", \"exit_status\": 0}\n- {\"request_id\": \"faa7e55084e858488121b2dbabeb24df\", \"published_role\": \"metaform://role/label_normalizer\", \"role_version\": \"27355977ddd54ff4b210b9aac6ca367e\", \"creator_assignment\": \"51357703485f49feae0338c96d5c21dd\", \"specialist_assignment\": \"d6b63545b4dc47e48e38424fea95a854\"}\n- {\"verification\": \"Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation.\"}\n\nPassed independent functional assessment of label-normalizer-d6b63545.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nFunctional assessment passed for label-normalizer-d6b63545. The implementation serves C(T) for configuration-label callers: surrounding whitespace is removed, each internal Python whitespace run becomes one underscore, labels are lowercased, punctuation is preserved, and empty/whitespace-only strings raise ValueError. No implementation defect or limiting specification found; no adaptation or corrective work required. Assessment scope is the typed str API and supplied project context; the map records no further upstream/downstream joins. Existing indexed memories accurately describe implementation and tests and require no changes. Return assessment to responsible GC and preserve PM/user notification continuation.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nVerification evidence:\n- {\"command\": \"python -m unittest -v\", \"exit_status\": 0, \"result\": \"FQC independent run: 11 tests passed.\"}\n- {\"command\": \"sha256sum label_tools.py test_label_tools.py\", \"exit_status\": 0, \"result\": \"Both files match exact candidate hashes.\"}\n- {\"verification\": \"Inspected function, all test cases, GC delivered task and mode, all four indexed memories and directed relations. Existing implementation and test references are linked at code.label.normalizer.\"}\n- {\"coordination\": \"Enumerated peers; no other active agent. Direct GC note could not deliver because GC session is no longer running; recorded assessment continuation supplies the return route.\"}\n\n# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When they ask for engineering work, you act as Triage / PM by the instructions below. The register and writing rules below hold for everything you say to them.\n\nWhen preparing and following engineering work, follow these instructions.\n\n# Triage / PM — System Prompt\n\n**ROLE:**\n - You are the Triage / PM and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, prepare functionally grounded tickets, and communicate with the user while GCs own ticket execution.\n\n# Unslop / Anti-Slop Directive\nYou must actively strip away all generic AI writing patterns and \"slop\" metrics:\n1. Language & Vocabulary: Ban all typical AI \"tell\" words. Never use: \"testament\", \"delve\", \"tapestry\", \"revolutionize\", \"seamless\", \"fostering\", \"moreover\", \"vibrant\", \"holistic\", \"dynamic\", \"not just X, but Y\", or \"beacon\".\n2. Structural Layout: Avoid identical paragraph structures, perfect structural symmetry, rules of three, or multi-sentence lists with uniform bolded lead-ins. Write with natural, varied human rhythms. \n3. Punctuation & Style: Ban em-dashes for emphasis. Strictly limit colons. Do not use decorative emojis. Use sentence case naturally. \n4. Content & Tone: Eliminate importance inflation, manufactured drama, and performative phrasing. Do not wrap up with generic summaries or concluding platitudes. \n5. Plain Speech: Prioritize active voice, plain verbs (e.g., \"wrote\", \"used\", \"made\"), and hard, verifiable literal facts over emotional descriptions or abstract metaphor nouns.\n6. Never fake understanding, you must find a big picture understanding of the project to align the request to.\n\n# Execution\nBefore you send anything you write (replies, plans, tickets), evaluate your own text, diagnose structural and tonal \"slop\", and perform a targeted, clean reconstruction preserving only the core facts, technical accuracy, and honest authorial intent.\n\n**CONTEXT:**  \nThe project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.\n\n**TASK:**\nRead the user's request in the project's functional context, implementation, architecture, applicable memories and existing work. Establish its intended outcome and current requirements.\nWrite tickets against the functional element most closely aligned with each part of the request. Use the project's canonical terminology. Give each ticket its overall objective, purpose, relevant functionality, starting points, dependencies, related assignments and expected outcome. Account for existing work, Git state and concurrent changes when defining the work.\nPlace the tickets in the queue for GCs to claim. A GC owns execution, specialist delegation, coordination, verification and integration for its ticket. Follow the returned outcomes and remaining work, reconcile them with the user's request, and communicate the resulting state accurately.\nIncorporate new user instructions into the operative requirements and affected tickets. Route reported poor behavior or a limiting specification into functional assessment. Surface specification adaptations as messages to the user and pass their implications to the responsible GCs. Apply the selected adaptive or strict mode.\nUse available project evidence and responsible roles to resolve questions. Bring decisions that require the user back to them with the relevant findings.\n\n**CONSTRAINTS:**\nPreserve user intent and use independent, project-grounded engineering judgment. Use the project's canonical terminology and actual functional relationships. Give assignments the context and references they need to reason independently. Protect existing work and account for concurrent development. Remain accountable for the accuracy and completeness of tickets and user-facing reports.",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "low",
+    "createdAt": 1792314245,
+    "updatedAt": 1792314294,
+    "recencyAt": 1792314280,
+    "status": {
+      "type": "notLoaded"
+    },
+    "path": "/root/.codex/sessions/2026/10/18/rollout-2026-10-18T04-04-05-01a14e41-01da-7c92-86f8-0584d4d92209.jsonl",
+    "cwd": "/tmp/metaform-review-live/project",
+    "cliVersion": "0.160.1",
+    "originator": "metaform",
+    "source": "vscode",
+    "canAcceptDirectInput": null,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": "Functional namespace assignment workflow",
+    "daybreakEnabled": null,
+    "turns": [
+      {
+        "id": "01a14e41-039d-7f01-ba0f-9637f9130d4b",
+        "items": [
+          {
+            "type": "userMessage",
+            "id": "01a14e41-09dc-7162-beee-fe948800f26b",
+            "clientId": null,
+            "content": [
+              {
+                "type": "text",
+                "text": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.\n\n{\n  \"execution_role\": \"system\",\n  \"adapter\": {\n    \"load\": true,\n    \"resume\": true,\n    \"list\": true,\n    \"close\": true,\n    \"fork\": true,\n    \"delete\": true,\n    \"image\": true,\n    \"audio\": false,\n    \"embedded_context\": true,\n    \"steering\": true,\n    \"auth_status\": true,\n    \"logout\": true,\n    \"execution_role\": \"system\"\n  },\n  \"tools\": {\n    \"dispatch_broadcast\": {\n      \"required\": [\n        \"text\"\n      ],\n      \"arguments\": {\n        \"team\": {\n          \"type\": \"string\"\n        },\n        \"system\": {\n          \"type\": \"boolean\"\n        },\n        \"text\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_broadcasts\": {\n      \"required\": [],\n      \"arguments\": {\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"dispatch_interrupt\": {\n      \"required\": [\n        \"id\"\n      ],\n      \"arguments\": {\n        \"id\": {\n          \"type\": \"string\"\n        },\n        \"session\": {\n          \"type\": \"string\"\n        },\n        \"direction\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_note\": {\n      \"required\": [\n        \"text\"\n      ],\n      \"arguments\": {\n        \"to\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"file\": {\n          \"type\": \"string\"\n        },\n        \"topic\": {\n          \"type\": \"string\"\n        },\n        \"reply\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"integer\"\n        },\n        \"text\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"dispatch_notes\": {\n      \"required\": [],\n      \"arguments\": {\n        \"note\": {\n          \"type\": \"string\"\n        },\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"dispatch_peers\": {\n      \"required\": [],\n      \"arguments\": {\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"file\": {\n          \"type\": \"string\"\n        },\n        \"topic\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"map_work\": {\n      \"required\": [],\n      \"arguments\": {\n        \"op\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"list\",\n            \"add\",\n            \"edit\",\n            \"take\",\n            \"plan\",\n            \"step\",\n            \"move\",\n            \"distribute\",\n            \"glyphs\",\n            \"done\"\n          ]\n        },\n        \"steps\": {\n          \"type\": \"integer\"\n        },\n        \"said\": {\n          \"type\": \"string\"\n        },\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"condition\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"unbuilt\",\n            \"under-construction\",\n            \"built\",\n            \"broken\",\n            \"trouble\",\n            \"missing\",\n            \"ok\",\n            \"none\"\n          ]\n        },\n        \"kind\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"broken\",\n            \"flawed\",\n            \"enhancement\",\n            \"none\"\n          ]\n        },\n        \"links\": {\n          \"type\": \"array\"\n        },\n        \"by\": {\n          \"type\": \"string\"\n        },\n        \"column\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"backlog\",\n            \"todo\",\n            \"doing\",\n            \"done\"\n          ]\n        },\n        \"position\": {\n          \"type\": \"integer\"\n        },\n        \"note\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"held\": {\n          \"type\": \"boolean\"\n        },\n        \"reviewed\": {\n          \"type\": \"boolean\"\n        },\n        \"agent\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"claude\",\n            \"codex\",\n            \"gemini\"\n          ]\n        },\n        \"hold\": {\n          \"type\": \"boolean\"\n        },\n        \"glyph\": {\n          \"type\": \"string\"\n        },\n        \"eligible\": {\n          \"type\": \"array\"\n        },\n        \"after_work\": {\n          \"type\": \"array\"\n        },\n        \"agents\": {\n          \"type\": \"integer\"\n        },\n        \"id\": {\n          \"type\": \"string\"\n        },\n        \"resolution\": {\n          \"type\": \"string\"\n        },\n        \"title\": {\n          \"type\": \"string\"\n        },\n        \"why\": {\n          \"type\": \"string\"\n        },\n        \"open\": {\n          \"type\": \"boolean\"\n        },\n        \"limit\": {\n          \"type\": \"integer\"\n        },\n        \"after\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"memory_join\": {\n      \"required\": [\n        \"entity\"\n      ],\n      \"arguments\": {\n        \"entity\": {\n          \"type\": \"string\"\n        },\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"memory_read_unread\": {\n      \"required\": [],\n      \"arguments\": {\n        \"node\": {\n          \"type\": \"string\"\n        },\n        \"receiver\": {\n          \"type\": \"string\"\n        },\n        \"provider\": {\n          \"type\": \"string\"\n        },\n        \"address\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_assess\": {\n      \"required\": [\n        \"summary\"\n      ],\n      \"arguments\": {\n        \"summary\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"evidence\": {\n          \"type\": \"array\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_bmad\": {\n      \"required\": [],\n      \"arguments\": {\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_call\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_change\": {\n      \"required\": [\n        \"content\",\n        \"reason\"\n      ],\n      \"arguments\": {\n        \"content\": {\n          \"type\": \"string\"\n        },\n        \"reason\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"specification\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"assessment\": {\n          \"type\": \"string\"\n        },\n        \"base\": {\n          \"type\": \"string\"\n        },\n        \"observed_limitation\": {\n          \"type\": \"string\"\n        },\n        \"affected_work_ids\": {\n          \"type\": \"array\"\n        },\n        \"user_instruction\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_changes\": {\n      \"required\": [],\n      \"arguments\": {\n        \"change\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_check-in\": {\n      \"required\": [\n        \"state\",\n        \"summary\"\n      ],\n      \"arguments\": {\n        \"state\": {\n          \"type\": \"string\"\n        },\n        \"summary\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"evidence\": {\n          \"type\": \"array\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"work_so_far\": {\n          \"type\": \"string\"\n        },\n        \"findings\": {\n          \"type\": \"array\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_claim\": {\n      \"required\": [\n        \"work\"\n      ],\n      \"arguments\": {\n        \"work\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"specification\": {\n          \"type\": \"object\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"mode\": {\n          \"type\": \"string\"\n        },\n        \"session\": {\n          \"type\": \"string\"\n        },\n        \"pm_session\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_commission\": {\n      \"required\": [\n        \"request\"\n      ],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_delegate\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_handoff\": {\n      \"required\": [\n        \"role\",\n        \"task\"\n      ],\n      \"arguments\": {\n        \"role\": {\n          \"type\": \"string\"\n        },\n        \"task\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"at\": {\n          \"type\": \"string\"\n        },\n        \"result\": {\n          \"type\": \"string\"\n        },\n        \"wait\": {\n          \"type\": \"boolean\"\n        },\n        \"key\": {\n          \"type\": \"string\"\n        },\n        \"candidate\": {\n          \"type\": \"object\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"contribution\": {\n          \"type\": \"string\"\n        },\n        \"context\": {\n          \"type\": \"object\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_inspect\": {\n      \"required\": [],\n      \"arguments\": {\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"work\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_mode\": {\n      \"required\": [\n        \"assignment\",\n        \"mode\"\n      ],\n      \"arguments\": {\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"mode\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_publish_role\": {\n      \"required\": [\n        \"request\",\n        \"duty\"\n      ],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"duty\": {\n          \"type\": \"string\"\n        },\n        \"assignment\": {\n          \"type\": \"string\"\n        },\n        \"purpose\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"write\",\n      \"person_decides\": false\n    },\n    \"orchestration_role_requests\": {\n      \"required\": [],\n      \"arguments\": {\n        \"request\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    },\n    \"orchestration_team\": {\n      \"required\": [],\n      \"arguments\": {\n        \"team\": {\n          \"type\": \"string\"\n        },\n        \"project\": {\n          \"type\": \"string\"\n        },\n        \"view\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"triage\",\n            \"full\",\n            \"count\"\n          ]\n        },\n        \"fields\": {\n          \"type\": \"array\"\n        },\n        \"must_contain\": {\n          \"type\": \"string\"\n        },\n        \"status_equals\": {\n          \"type\": \"string\"\n        }\n      },\n      \"effect\": \"read\",\n      \"person_decides\": false\n    }\n  }\n}\n\nUse the Metaform map as the index into this project's memory. Functional nodes and joins are entry points to the knowledge that is relevant there.\nRead applicable unread memories at the functionality you work on. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.\nMaintain memory as uniquely named entities with types, atomic string observations and explicit directed relations in active voice. Keep each observation to one fact about its entity. Represent relationships as relations rather than leaving them only in prose.\nRefine existing relevant knowledge as your work establishes better understanding. Correct inaccurate observations and relations, add missing relevant relations, consolidate duplicates, and remove outdated entities, observations and relations. Add new entities and observations when the knowledge is new.\nUse canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.\nAssociate memories with the functional entry points where they are relevant, following the receiving-element and join semantics. Memory entities and relations represent the knowledge; the map supplies its index locations. An entity's name need not be a map address.\nDuring discovery, link meaningful implementation entry points as functional references. Keep execution progress and return details in work records; preserve maintained project knowledge in memory.\n\nDelivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nVerification evidence:\n- {\"command\": \"python -m unittest -v\", \"cwd\": \"/tmp/metaform-review-live/project\", \"exit_status\": 0, \"output\": \"GC independent run: Ran 11 tests in 0.000s; OK.\"}\n- {\"verification\": \"GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.\", \"exit_status\": 0}\n- {\"request_id\": \"faa7e55084e858488121b2dbabeb24df\", \"published_role\": \"metaform://role/label_normalizer\", \"role_version\": \"27355977ddd54ff4b210b9aac6ca367e\", \"creator_assignment\": \"51357703485f49feae0338c96d5c21dd\", \"specialist_assignment\": \"d6b63545b4dc47e48e38424fea95a854\"}\n- {\"verification\": \"Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation.\"}\n\nPassed independent functional assessment of label-normalizer-d6b63545.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nFunctional assessment passed for label-normalizer-d6b63545. The implementation serves C(T) for configuration-label callers: surrounding whitespace is removed, each internal Python whitespace run becomes one underscore, labels are lowercased, punctuation is preserved, and empty/whitespace-only strings raise ValueError. No implementation defect or limiting specification found; no adaptation or corrective work required. Assessment scope is the typed str API and supplied project context; the map records no further upstream/downstream joins. Existing indexed memories accurately describe implementation and tests and require no changes. Return assessment to responsible GC and preserve PM/user notification continuation.\n\nCandidate: {\"id\": \"label-normalizer-d6b63545\", \"files\": [{\"path\": \"/tmp/metaform-review-live/project/label_tools.py\", \"sha256\": \"d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\"}, {\"path\": \"/tmp/metaform-review-live/project/test_label_tools.py\", \"sha256\": \"5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\"}]}\n\nVerification evidence:\n- {\"command\": \"python -m unittest -v\", \"exit_status\": 0, \"result\": \"FQC independent run: 11 tests passed.\"}\n- {\"command\": \"sha256sum label_tools.py test_label_tools.py\", \"exit_status\": 0, \"result\": \"Both files match exact candidate hashes.\"}\n- {\"verification\": \"Inspected function, all test cases, GC delivered task and mode, all four indexed memories and directed relations. Existing implementation and test references are linked at code.label.normalizer.\"}\n- {\"coordination\": \"Enumerated peers; no other active agent. Direct GC note could not deliver because GC session is no longer running; recorded assessment continuation supplies the return route.\"}\n\n# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When they ask for engineering work, you act as Triage / PM by the instructions below. The register and writing rules below hold for everything you say to them.\n\nWhen preparing and following engineering work, follow these instructions.\n\n# Triage / PM — System Prompt\n\n**ROLE:**\n - You are the Triage / PM and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, prepare functionally grounded tickets, and communicate with the user while GCs own ticket execution.\n\n# Unslop / Anti-Slop Directive\nYou must actively strip away all generic AI writing patterns and \"slop\" metrics:\n1. Language & Vocabulary: Ban all typical AI \"tell\" words. Never use: \"testament\", \"delve\", \"tapestry\", \"revolutionize\", \"seamless\", \"fostering\", \"moreover\", \"vibrant\", \"holistic\", \"dynamic\", \"not just X, but Y\", or \"beacon\".\n2. Structural Layout: Avoid identical paragraph structures, perfect structural symmetry, rules of three, or multi-sentence lists with uniform bolded lead-ins. Write with natural, varied human rhythms. \n3. Punctuation & Style: Ban em-dashes for emphasis. Strictly limit colons. Do not use decorative emojis. Use sentence case naturally. \n4. Content & Tone: Eliminate importance inflation, manufactured drama, and performative phrasing. Do not wrap up with generic summaries or concluding platitudes. \n5. Plain Speech: Prioritize active voice, plain verbs (e.g., \"wrote\", \"used\", \"made\"), and hard, verifiable literal facts over emotional descriptions or abstract metaphor nouns.\n6. Never fake understanding, you must find a big picture understanding of the project to align the request to.\n\n# Execution\nBefore you send anything you write (replies, plans, tickets), evaluate your own text, diagnose structural and tonal \"slop\", and perform a targeted, clean reconstruction preserving only the core facts, technical accuracy, and honest authorial intent.\n\n**CONTEXT:**  \nThe project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.\n\n**TASK:**\nRead the user's request in the project's functional context, implementation, architecture, applicable memories and existing work. Establish its intended outcome and current requirements.\nWrite tickets against the functional element most closely aligned with each part of the request. Use the project's canonical terminology. Give each ticket its overall objective, purpose, relevant functionality, starting points, dependencies, related assignments and expected outcome. Account for existing work, Git state and concurrent changes when defining the work.\nPlace the tickets in the queue for GCs to claim. A GC owns execution, specialist delegation, coordination, verification and integration for its ticket. Follow the returned outcomes and remaining work, reconcile them with the user's request, and communicate the resulting state accurately.\nIncorporate new user instructions into the operative requirements and affected tickets. Route reported poor behavior or a limiting specification into functional assessment. Surface specification adaptations as messages to the user and pass their implications to the responsible GCs. Apply the selected adaptive or strict mode.\nUse available project evidence and responsible roles to resolve questions. Bring decisions that require the user back to them with the relevant findings.\n\n**CONSTRAINTS:**\nPreserve user intent and use independent, project-grounded engineering judgment. Use the project's canonical terminology and actual functional relationships. Give assignments the context and references they need to reason independently. Protect existing work and account for concurrent development. Remain accountable for the accuracy and completeness of tickets and user-facing reports.",
+                "text_elements": []
+              }
+            ]
+          },
+          {
+            "type": "agentMessage",
+            "id": "msg_0dc35d1abdc4b288016ad48b89601c819abdfab4702e3fc668",
+            "text": "I’ll check the recorded return state and finish the PM notification for the assessed candidate.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          {
+            "type": "commandExecution",
+            "id": "exec-166677ec-95ef-43cc-ae23-7b674413c2a8",
+            "pluginId": null,
+            "scriptPath": null,
+            "command": "/bin/bash -lc 'ls -a'",
+            "cwd": "/tmp/metaform-review-live/project",
+            "processId": "56416",
+            "source": "unifiedExecStartup",
+            "status": "completed",
+            "commandActions": [
+              {
+                "type": "listFiles",
+                "command": "ls -a",
+                "path": null
+              }
+            ],
+            "aggregatedOutput": ".\n..\n.agents\n.aws\n.codex\n.git\n__pycache__\nlabel_tools.py\ntest_label_tools.py\n",
+            "exitCode": 0,
+            "durationMs": 0
+          },
+          {
+            "type": "commandExecution",
+            "id": "exec-f5f6e6c5-8d0d-44f3-bc82-46076a0411a6",
+            "pluginId": null,
+            "scriptPath": null,
+            "command": "/bin/bash -lc \"rg --files --hidden -g '\"'!.git/**'\"' -g '\"'!__pycache__/**'\"'\"",
+            "cwd": "/tmp/metaform-review-live/project",
+            "processId": "39454",
+            "source": "unifiedExecStartup",
+            "status": "completed",
+            "commandActions": [
+              {
+                "type": "listFiles",
+                "command": "rg --files --hidden -g '!.git/**' -g '!__pycache__/**'",
+                "path": null
+              }
+            ],
+            "aggregatedOutput": "test_label_tools.py\nlabel_tools.py\n",
+            "exitCode": 0,
+            "durationMs": 0
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-4a334675-a3e0-4146-ae51-8a62cecfae14",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "search": "inspect current assignment check-in peers read unread memory map"
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "orchestration_inspect(assignment?, work?): Read assignment ownership, operative state and recorded return route [coordinate]\nmemory_read_unread(node?, receiver?, provider?, address?): Read applicable unread memory entities [remember]\nmemory_joins(node?, receiver?, provider?, address?, entity?): List the memory joins that tie entities to map nodes [remember]\nmemory_read_graph(node?, receiver?, provider?, address?): Read the memories at a node of the map [remember]\norchestration_check-in(state, summary, assignment?, evidence?, candidate?, key?, work_so_far?, findings?): Record progress, a blocker, result or delivery and route its continuation [coordinate]\nmemory_graph(): Read the whole memory graph with its joins to the map [remember]\nmemory_note(node, provider?, address?, text?, by?): Read the person's one note at a node of the map [remember]\nmemory_orphaned(): List the memory joins whose address the active map no longer holds [remember]"
+                }
+              ],
+              "structuredContent": null,
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 698
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-8aa0d227-fc66-4546-ad3a-945294be0a15",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "orchestration_inspect",
+              "arguments": {}
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [],
+              "structuredContent": null,
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 480
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-85a70e4f-a5f0-4a01-ac4c-bcbc579c6a9e",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "dispatch_peers",
+              "arguments": {}
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "How to use dispatch_peers, given once in this session:\nWith at=, file= or topic=, who else is in that part or file, with a note ready to ask them before you edit."
+                },
+                {
+                  "type": "text",
+                  "text": "said: 1 registered agents are working or waiting; send one a note with dispatch_note to=, at=, file= or topic=.\npeers:\nwork_id|item|agent|session_id|runner|activity|said|yours\nconversation-system|conversation-system|codex|01a14e41-01da-7c92-86f8-0584d4d92209|bd7c23d7095dce93|working|I’ll check the recorded return state and finish the PM notification for the assessed candidate.|true"
+                }
+              ],
+              "structuredContent": {
+                "peers": [
+                  {
+                    "work_id": "conversation-system",
+                    "item": "conversation-system",
+                    "agent": "codex",
+                    "session_id": "01a14e41-01da-7c92-86f8-0584d4d92209",
+                    "runner": "bd7c23d7095dce93",
+                    "activity": "working",
+                    "said": "I’ll check the recorded return state and finish the PM notification for the assessed candidate.",
+                    "yours": true
+                  }
+                ],
+                "said": "1 registered agents are working or waiting; send one a note with dispatch_note to=, at=, file= or topic=."
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 549
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-de664834-f30e-4505-aba7-e95550d4e90a",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "memory_read_unread",
+              "arguments": {
+                "node": "code.label.normalizer"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The memory module's rules, given once in this session, each with its reason:\nRecord each memory at the RE whose goal it serves, never at a PE that provides for it. Why: The Join rule attaches all knowledge to the RE, so the next agent finds a memory where the goal it serves is borne, and memory cannot tell an RE from a PE for you.\n\nHow to use memory_read_unread, given once in this session:\nnode: The map element whose memories the command acts on, element:<address>. Without node, receiver, provider or address the command acts on the whole memory graph.\nreceiver: A purpose whose memories the command acts on: the address of the element that holds it, with provider.\nprovider: A purpose whose memories the command acts on: the address of the element that serves it, with receiver.\naddress: An element, by address; with receiver and provider, the element at that address the join holds."
+                },
+                {
+                  "type": "text",
+                  "text": "relations:\nfrom|to|relationType\nrole.label_normalizer|contract.label_normalizer|implements\nimplementation.label_tools.normalize_label|contract.label_normalizer|implements\ntests.label_tools.NormalizeLabelTests|implementation.label_tools.normalize_label|verifies\nentities:\nname|entityType|observations\nrole.label_normalizer|specialist_role|The registered role URI is metaform://role/label_normalizer., The agents provider stores the specialist duty in agents:generated_review_live_label_normalizer.\ncontract.label_normalizer|functional_contract|Normalization trims surrounding whitespace., Normalization replaces each internal whitespace run with one underscore., Normalization lowercases labels., Normalization preserves punctuation., Normalization raises ValueError for empty and whitespace-only labels.\nimplementation.label_tools.normalize_label|python_function|The implementation entry point is label_tools.py:normalize_label., The function uses str.split() to separate runs of Python whitespace., The function joins parts with underscores and applies str.lower()., The function raises ValueError when str.split() yields no parts., The function treats Unicode characters recognized by Python str.isspace() as whitespace., The function preserves existing underscores.\ntests.label_tools.NormalizeLabelTests|unittest_suite|The test entry point is test_label_tools.py:NormalizeLabelTests., The suite covers required acceptance cases., The suite covers mixed whitespace and Unicode whitespace., The suite covers punctuation and existing underscores., The suite contains eleven unittest test methods., Run the suite from the project folder with python -m unittest -v."
+                }
+              ],
+              "structuredContent": {
+                "entities": [
+                  {
+                    "name": "role.label_normalizer",
+                    "entityType": "specialist_role",
+                    "observations": [
+                      "The registered role URI is metaform://role/label_normalizer.",
+                      "The agents provider stores the specialist duty in agents:generated_review_live_label_normalizer."
+                    ]
+                  },
+                  {
+                    "name": "contract.label_normalizer",
+                    "entityType": "functional_contract",
+                    "observations": [
+                      "Normalization trims surrounding whitespace.",
+                      "Normalization replaces each internal whitespace run with one underscore.",
+                      "Normalization lowercases labels.",
+                      "Normalization preserves punctuation.",
+                      "Normalization raises ValueError for empty and whitespace-only labels."
+                    ]
+                  },
+                  {
+                    "name": "implementation.label_tools.normalize_label",
+                    "entityType": "python_function",
+                    "observations": [
+                      "The implementation entry point is label_tools.py:normalize_label.",
+                      "The function uses str.split() to separate runs of Python whitespace.",
+                      "The function joins parts with underscores and applies str.lower().",
+                      "The function raises ValueError when str.split() yields no parts.",
+                      "The function treats Unicode characters recognized by Python str.isspace() as whitespace.",
+                      "The function preserves existing underscores."
+                    ]
+                  },
+                  {
+                    "name": "tests.label_tools.NormalizeLabelTests",
+                    "entityType": "unittest_suite",
+                    "observations": [
+                      "The test entry point is test_label_tools.py:NormalizeLabelTests.",
+                      "The suite covers required acceptance cases.",
+                      "The suite covers mixed whitespace and Unicode whitespace.",
+                      "The suite covers punctuation and existing underscores.",
+                      "The suite contains eleven unittest test methods.",
+                      "Run the suite from the project folder with python -m unittest -v."
+                    ]
+                  }
+                ],
+                "relations": [
+                  {
+                    "from": "role.label_normalizer",
+                    "to": "contract.label_normalizer",
+                    "relationType": "implements"
+                  },
+                  {
+                    "from": "implementation.label_tools.normalize_label",
+                    "to": "contract.label_normalizer",
+                    "relationType": "implements"
+                  },
+                  {
+                    "from": "tests.label_tools.NormalizeLabelTests",
+                    "to": "implementation.label_tools.normalize_label",
+                    "relationType": "verifies"
+                  }
+                ]
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 562
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-08b55655-6445-47da-9f8e-346c4e2bc7e3",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "orchestration_inspect",
+              "arguments": {
+                "assignment": "d6b63545b4dc47e48e38424fea95a854"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "assignment_id: d6b63545b4dc47e48e38424fea95a854\nwork_id: afee0f4ed5e943579bf85e8d25727ca6\nroot_work_id: fcc7915d466e450eac7a45284cf63ddd\nteam_id: 78d96dd251ca55b2abb943084b145a8d\ngc_assignment_id: 78d96dd251ca55b2abb943084b145a8d\nparent_assignment_id: 78d96dd251ca55b2abb943084b145a8d\nowner_session_id: 01a14e38-d216-7e83-88fb-8d66fbfc37cf\nauthored_role_uri: metaform://role/label_normalizer\nexecution_role: worker\ntask:\n  Implement normalize_label(text: str) -> str: trim surrounding whitespace, collapse every internal whitespace run to one underscore, lowercase, preserve punctuation; empty and whitespace-only labels raise ValueError. Acceptance: '  Core Switch  ' -> 'core_switch'; 'WAN\\t\\tUplink' -> 'wan_uplink'; 'Core-Switch' -> 'core-switch'; '' and '   ' raise ValueError. Create test_label_tools.py with standard unittest and run python -m unittest -v. Link functional file entry points and maintain knowledge at code.label.normalizer. Return implementation and evidence to immediate calling GC through runtime check-in.\n  \n  Supplied caller context:\n  {\"project_folder\": \"/tmp/metaform-review-live/project\", \"functional_location\": \"code.label.normalizer\", \"mode\": \"adaptive\", \"root_ticket\": \"fcc7915d466e450eac7a45284cf63ddd\", \"existing_work\": \"Empty project; functional node exists, no unread memories or other peers.\", \"role_creation_journey\": \"GC requests missing specialist; GC commissions Role Creator; published duty resumes original specialist call. Do implementation only after publication.\"}\nrequested_result: Implement normalize_label(text: str) -> str: trim surrounding whitespace, collapse every internal whitespace run to one underscore, lowercase, preserve punctuation; empty and whitespace-only labels raise ValueError. Acceptance: '  Core Switch  ' -> 'core_switch'; 'WAN\\t\\tUplink' -> 'wan_uplink'; 'Core-Switch' -> 'core-switch'; '' and '   ' raise ValueError. Create test_label_tools.py with standard unittest and run python -m unittest -v. Link functional file entry points and maintain knowledge at code.label.normalizer. Return implementation and evidence to immediate calling GC through runtime check-in.\ncandidate.id: label-normalizer-d6b63545\ncandidate.files:\npath|sha256\n/tmp/metaform-review-live/project/label_tools.py|d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\n/tmp/metaform-review-live/project/test_label_tools.py|5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\nmode: adaptive\nstate: returned\nreturn_to.assignment_id: 78d96dd251ca55b2abb943084b145a8d\nreturn_to.role_request_id: faa7e55084e858488121b2dbabeb24df\nresult: Implemented normalize_label and 11 passing unittest tests without specification adaptation. Functional files linked and typed knowledge maintained. No specialist work remains; calling GC independently validates and delivers root.\nevidence:\ncommand|cwd|exit_status|output\npython -m unittest -v|/tmp/metaform-review-live/project|0|test_collapses_actual_tabs (test_label_tools.NormalizeLabelTests.test_collapses_actual_tabs) ... ok\\ntest_mixed_whitespace (test_label_tools.NormalizeLabelTests.test_mixed_whitespace) ... ok\\ntest_preserves_hyphen (test_label_tools.NormalizeLabelTests.test_preserves_hyphen) ... ok\\ntest_preserves_punctuation_and_existing_underscores (test_label_tools.NormalizeLabelTests.test_preserves_punctuation_and_existing_underscores) ... ok\\ntest_punctuation_only_is_valid (test_label_tools.NormalizeLabelTests.test_punctuation_only_is_valid) ... ok\\ntest_rejects_empty (test_label_tools.NormalizeLabelTests.test_rejects_empty) ... ok\\ntest_rejects_other_whitespace_only (test_label_tools.NormalizeLabelTests.test_rejects_other_whitespace_only) ... ok\\ntest_rejects_spaces_only (test_label_tools.NormalizeLabelTests.test_rejects_spaces_only) ... ok\\ntest_single_character_and_normalized_label (test_label_tools.NormalizeLabelTests.test_single_character_and_normalized_label) ... ok\\ntest_trims_and_collapses_spaces (test_label_tools.NormalizeLabelTests.test_trims_and_collapses_spaces) ... ok\\ntest_unicode_whitespace (test_label_tools.NormalizeLabelTests.test_unicode_whitespace) ... ok\\n\\n----------------------------------------------------------------------\\nRan 11 tests in 0.001s\\n\\nOK\\n\ncreated: 2026-10-18T08:53:56Z\nupdated: 2026-10-18T08:56:29Z\nfunctional_locations:\nkind|id|address\nelement|code.label.normalizer|code.label.normalizer"
+                }
+              ],
+              "structuredContent": {
+                "assignment_id": "d6b63545b4dc47e48e38424fea95a854",
+                "work_id": "afee0f4ed5e943579bf85e8d25727ca6",
+                "root_work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                "team_id": "78d96dd251ca55b2abb943084b145a8d",
+                "gc_assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "parent_assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "owner_session_id": "01a14e38-d216-7e83-88fb-8d66fbfc37cf",
+                "authored_role_uri": "metaform://role/label_normalizer",
+                "execution_role": "worker",
+                "functional_locations": [
+                  {
+                    "kind": "element",
+                    "id": "code.label.normalizer",
+                    "address": "code.label.normalizer"
+                  }
+                ],
+                "task": "Implement normalize_label(text: str) -> str: trim surrounding whitespace, collapse every internal whitespace run to one underscore, lowercase, preserve punctuation; empty and whitespace-only labels raise ValueError. Acceptance: '  Core Switch  ' -> 'core_switch'; 'WAN\\t\\tUplink' -> 'wan_uplink'; 'Core-Switch' -> 'core-switch'; '' and '   ' raise ValueError. Create test_label_tools.py with standard unittest and run python -m unittest -v. Link functional file entry points and maintain knowledge at code.label.normalizer. Return implementation and evidence to immediate calling GC through runtime check-in.\n\nSupplied caller context:\n{\"project_folder\": \"/tmp/metaform-review-live/project\", \"functional_location\": \"code.label.normalizer\", \"mode\": \"adaptive\", \"root_ticket\": \"fcc7915d466e450eac7a45284cf63ddd\", \"existing_work\": \"Empty project; functional node exists, no unread memories or other peers.\", \"role_creation_journey\": \"GC requests missing specialist; GC commissions Role Creator; published duty resumes original specialist call. Do implementation only after publication.\"}",
+                "requested_result": "Implement normalize_label(text: str) -> str: trim surrounding whitespace, collapse every internal whitespace run to one underscore, lowercase, preserve punctuation; empty and whitespace-only labels raise ValueError. Acceptance: '  Core Switch  ' -> 'core_switch'; 'WAN\\t\\tUplink' -> 'wan_uplink'; 'Core-Switch' -> 'core-switch'; '' and '   ' raise ValueError. Create test_label_tools.py with standard unittest and run python -m unittest -v. Link functional file entry points and maintain knowledge at code.label.normalizer. Return implementation and evidence to immediate calling GC through runtime check-in.",
+                "candidate": {
+                  "id": "label-normalizer-d6b63545",
+                  "files": [
+                    {
+                      "path": "/tmp/metaform-review-live/project/label_tools.py",
+                      "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+                    },
+                    {
+                      "path": "/tmp/metaform-review-live/project/test_label_tools.py",
+                      "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+                    }
+                  ]
+                },
+                "mode": "adaptive",
+                "state": "returned",
+                "return_to": {
+                  "assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                  "role_request_id": "faa7e55084e858488121b2dbabeb24df"
+                },
+                "result": "Implemented normalize_label and 11 passing unittest tests without specification adaptation. Functional files linked and typed knowledge maintained. No specialist work remains; calling GC independently validates and delivers root.",
+                "evidence": [
+                  {
+                    "command": "python -m unittest -v",
+                    "cwd": "/tmp/metaform-review-live/project",
+                    "exit_status": 0,
+                    "output": "test_collapses_actual_tabs (test_label_tools.NormalizeLabelTests.test_collapses_actual_tabs) ... ok\ntest_mixed_whitespace (test_label_tools.NormalizeLabelTests.test_mixed_whitespace) ... ok\ntest_preserves_hyphen (test_label_tools.NormalizeLabelTests.test_preserves_hyphen) ... ok\ntest_preserves_punctuation_and_existing_underscores (test_label_tools.NormalizeLabelTests.test_preserves_punctuation_and_existing_underscores) ... ok\ntest_punctuation_only_is_valid (test_label_tools.NormalizeLabelTests.test_punctuation_only_is_valid) ... ok\ntest_rejects_empty (test_label_tools.NormalizeLabelTests.test_rejects_empty) ... ok\ntest_rejects_other_whitespace_only (test_label_tools.NormalizeLabelTests.test_rejects_other_whitespace_only) ... ok\ntest_rejects_spaces_only (test_label_tools.NormalizeLabelTests.test_rejects_spaces_only) ... ok\ntest_single_character_and_normalized_label (test_label_tools.NormalizeLabelTests.test_single_character_and_normalized_label) ... ok\ntest_trims_and_collapses_spaces (test_label_tools.NormalizeLabelTests.test_trims_and_collapses_spaces) ... ok\ntest_unicode_whitespace (test_label_tools.NormalizeLabelTests.test_unicode_whitespace) ... ok\n\n----------------------------------------------------------------------\nRan 11 tests in 0.001s\n\nOK\n"
+                  }
+                ],
+                "created": "2026-10-18T08:53:56Z",
+                "updated": "2026-10-18T08:56:29Z"
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 446
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-a0abd707-c493-43ae-bbb1-3039d6f6358c",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "map_work",
+              "arguments": {
+                "op": "list"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "How to use map_work, given once in this session:\nTo work a ticket handed to you: read it with id=; op=plan with the steps you plan; op=step as each finishes, saying what you did and any choice you made with its why; op=done with a resolution and a why when it is complete; when you stop with it open, op=edit its note to say what is true now and where. A ticket never changes the map, and it moves across the board as it is worked.\n\nop: list, the default; add; edit, which, when you stop with your ticket open, sets its note to what is true now and where; take, which says an agent has started on the task; plan, which says how many steps you plan, first, and again when the plan changes; step, which says you finished one, with what you did and any choice you made and why; move, which puts it in a column of the board; distribute, which gives the open tickets the glyphs of N agents; glyphs, which reads the available agent glyph names; or done, which closes it with its resolution and why once the work is complete.\nnode: list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. list gives its own records and those on the joins it receives or provides.\nreceiver: list, add and edit: a join, by the address of the element that holds it, with provider.\nprovider: list, add and edit: a join, by the address of an element it holds, with receiver.\ncondition: add, edit, and list as a filter: the state of the part the record is at, never the kind of ticket. missing is intended functionality that is absent, a finding. A stage, unbuilt, under-construction or built, says where the part is on its way to existing; built is the normal state and marks nothing. broken is a built part that does not do its job. A task on a part that exists and works carries none. The intake and the person set it, since they judge the state of the part; an agent at work says what it found in its note instead. condition=none on edit clears it.\nkind: add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: broken, a fix for a part that does not do its job; flawed, a part that works but is not right; enhancement, a part that works and could be better; or none for a plain task. kind=none on edit clears it.\nid: The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one ticket with the where read of its node and of each node it links: their refs, open work and open questions, knowledge layers and modules' memories. past_work lists completed tickets with their age; read one with id= to see its log.\nopen: list: true, the default, for records not done; false for those done. A listed record leaves out its task, said and resolution; read them with id=.\n\ncall map_work condition=broken open=true: List the parts recorded broken, with their open tasks.\ncall map_work id=<work id>: Read one ticket with its node, how much is held there, and the nodes it links."
+                },
+                {
+                  "type": "text",
+                  "text": "results:\n(none)"
+                },
+                {
+                  "type": "text",
+                  "text": "Results are trimmed to the fields most next steps need, so you read only those: view=full gives every field, fields=[...] keeps the ones you name, view=count counts the records by the fields you name, and must_contain or status_equals filter a list before it reaches you."
+                }
+              ],
+              "structuredContent": {
+                "results": []
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 571
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-c6e0b47f-685f-47ac-88f2-5fe91385015c",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "orchestration_inspect",
+              "arguments": {
+                "work": "fcc7915d466e450eac7a45284cf63ddd"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "assignment_id: 78d96dd251ca55b2abb943084b145a8d\nwork_id: fcc7915d466e450eac7a45284cf63ddd\nroot_work_id: fcc7915d466e450eac7a45284cf63ddd\nteam_id: 78d96dd251ca55b2abb943084b145a8d\ngc_assignment_id: 78d96dd251ca55b2abb943084b145a8d\nowner_session_id: 01a14e36-7ea1-7882-8b8c-3bf1ebd347a8\nauthored_role_uri: metaform://role/gc\nexecution_role: worker\nfunctional_locations:\nkind|id|address\nelement|code.label.normalizer|code.label.normalizer\ntask:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \nrequested_result:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \ncandidate.id: label-normalizer-d6b63545\ncandidate.files:\npath|sha256\n/tmp/metaform-review-live/project/label_tools.py|d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\n/tmp/metaform-review-live/project/test_label_tools.py|5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\nmode: adaptive\nstate: delivered\nreturn_to.kind: pm\nresult: Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\nlast_check_in.summary: Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.\nlast_check_in.evidence:\nrequest_id|role_uri|role_version|specialist_assignment\nfaa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|d6b63545b4dc47e48e38424fea95a854\nlast_check_in.work_so_far: Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty.\ncreated: 2026-10-18T08:52:37Z\nupdated: 2026-10-18T08:57:32Z\nevidence:\ncommand|cwd|exit_status|output|verification|request_id|published_role|role_version|creator_assignment|specialist_assignment\npython -m unittest -v|/tmp/metaform-review-live/project|0|GC independent run: Ran 11 tests in 0.000s; OK.||||||\n||0||GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.|||||\n|||||faa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|51357703485f49feae0338c96d5c21dd|d6b63545b4dc47e48e38424fea95a854\n||||Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation.|||||"
+                }
+              ],
+              "structuredContent": {
+                "assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                "root_work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                "team_id": "78d96dd251ca55b2abb943084b145a8d",
+                "gc_assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "owner_session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+                "authored_role_uri": "metaform://role/gc",
+                "execution_role": "worker",
+                "functional_locations": [
+                  {
+                    "kind": "element",
+                    "id": "code.label.normalizer",
+                    "address": "code.label.normalizer"
+                  }
+                ],
+                "task": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                "requested_result": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                "candidate": {
+                  "id": "label-normalizer-d6b63545",
+                  "files": [
+                    {
+                      "path": "/tmp/metaform-review-live/project/label_tools.py",
+                      "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+                    },
+                    {
+                      "path": "/tmp/metaform-review-live/project/test_label_tools.py",
+                      "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+                    }
+                  ]
+                },
+                "mode": "adaptive",
+                "state": "delivered",
+                "return_to": {
+                  "kind": "pm"
+                },
+                "result": "Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.",
+                "evidence": [
+                  {
+                    "command": "python -m unittest -v",
+                    "cwd": "/tmp/metaform-review-live/project",
+                    "exit_status": 0,
+                    "output": "GC independent run: Ran 11 tests in 0.000s; OK."
+                  },
+                  {
+                    "verification": "GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.",
+                    "exit_status": 0
+                  },
+                  {
+                    "request_id": "faa7e55084e858488121b2dbabeb24df",
+                    "published_role": "metaform://role/label_normalizer",
+                    "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                    "creator_assignment": "51357703485f49feae0338c96d5c21dd",
+                    "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                  },
+                  {
+                    "verification": "Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation."
+                  }
+                ],
+                "last_check_in": {
+                  "summary": "Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.",
+                  "evidence": [
+                    {
+                      "request_id": "faa7e55084e858488121b2dbabeb24df",
+                      "role_uri": "metaform://role/label_normalizer",
+                      "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                      "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                    }
+                  ],
+                  "work_so_far": "Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty."
+                },
+                "created": "2026-10-18T08:52:37Z",
+                "updated": "2026-10-18T08:57:32Z"
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 422
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-248d4bda-ab40-4380-a339-e06063fe957c",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "failed",
+            "arguments": {
+              "tool": "orchestration_check-in",
+              "arguments": {
+                "state": "completed",
+                "summary": "PM reconciled delivered candidate label-normalizer-d6b63545 with passed independent functional assessment. User notification completes this return. No corrective work or specification adaptation remains.",
+                "candidate": {
+                  "id": "label-normalizer-d6b63545",
+                  "files": [
+                    {
+                      "path": "/tmp/metaform-review-live/project/label_tools.py",
+                      "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+                    },
+                    {
+                      "path": "/tmp/metaform-review-live/project/test_label_tools.py",
+                      "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+                    }
+                  ]
+                },
+                "evidence": [
+                  {
+                    "verification": "GC and independent functional assessor each reported 11 passing unittest tests and matching candidate hashes. Functional assessment passed; indexed memories read and remain accurate. No other peers active."
+                  }
+                ]
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Error: No recorded assignment for this call.\nNext: call orchestration_claim <work>"
+                }
+              ],
+              "structuredContent": null,
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 421
+          },
+          {
+            "type": "agentMessage",
+            "id": "msg_0dc35d1abdc4b288016ad48ba55044819a861a62ffb5899d0c",
+            "text": "Candidate `label-normalizer-d6b63545` is complete and passed independent functional assessment.\n\n[normalize_label](/tmp/metaform-review-live/project/label_tools.py) trims whitespace, replaces internal whitespace runs with underscores, lowercases labels, preserves punctuation, and rejects blank input.\n\nAll 11 tests passed; both file hashes matched the assessed candidate. The specialist role creation and return completed. No implementation work remains.\n\nPM check-in could not be recorded because this session has no assigned work record.",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          }
+        ],
+        "itemsView": "full",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1792314246,
+        "completedAt": 1792314279,
+        "durationMs": 33751
+      },
+      {
+        "id": "01a14e41-885f-7fd2-aba7-84e00f743340",
+        "items": [
+          {
+            "type": "userMessage",
+            "id": "01a14e41-8970-7251-a709-6750612b3457",
+            "clientId": null,
+            "content": [
+              {
+                "type": "text",
+                "text": "Report the completed status of root ticket fcc7915d466e450eac7a45284cf63ddd from its current records and the delivery/FQC updates supplied to you. Include the GC-requested generated role, specialist result, actual validation evidence, independent assessment result, and whether any work remains.",
+                "text_elements": []
+              }
+            ]
+          },
+          {
+            "type": "agentMessage",
+            "id": "msg_0dc35d1abdc4b288016ad48baa6460819a831854445609ef18",
+            "text": "I’ll read the root ticket’s current records and reconcile them with the supplied delivery and FQC updates.",
+            "phase": "commentary",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-7f49cb12-5cc8-4481-8c1a-2123d85dc923",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "orchestration_inspect",
+              "arguments": {
+                "work": "fcc7915d466e450eac7a45284cf63ddd"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "assignment_id: 78d96dd251ca55b2abb943084b145a8d\nwork_id: fcc7915d466e450eac7a45284cf63ddd\nroot_work_id: fcc7915d466e450eac7a45284cf63ddd\nteam_id: 78d96dd251ca55b2abb943084b145a8d\ngc_assignment_id: 78d96dd251ca55b2abb943084b145a8d\nowner_session_id: 01a14e36-7ea1-7882-8b8c-3bf1ebd347a8\nauthored_role_uri: metaform://role/gc\nexecution_role: worker\nfunctional_locations:\nkind|id|address\nelement|code.label.normalizer|code.label.normalizer\ntask:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \nrequested_result:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \ncandidate.id: label-normalizer-d6b63545\ncandidate.files:\npath|sha256\n/tmp/metaform-review-live/project/label_tools.py|d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\n/tmp/metaform-review-live/project/test_label_tools.py|5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\nmode: adaptive\nstate: delivered\nreturn_to.kind: pm\nresult: Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\nlast_check_in.summary: Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.\nlast_check_in.evidence:\nrequest_id|role_uri|role_version|specialist_assignment\nfaa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|d6b63545b4dc47e48e38424fea95a854\nlast_check_in.work_so_far: Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty.\ncreated: 2026-10-18T08:52:37Z\nupdated: 2026-10-18T08:57:32Z\nevidence:\ncommand|cwd|exit_status|output|verification|request_id|published_role|role_version|creator_assignment|specialist_assignment\npython -m unittest -v|/tmp/metaform-review-live/project|0|GC independent run: Ran 11 tests in 0.000s; OK.||||||\n||0||GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.|||||\n|||||faa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|51357703485f49feae0338c96d5c21dd|d6b63545b4dc47e48e38424fea95a854\n||||Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation.|||||"
+                }
+              ],
+              "structuredContent": {
+                "assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                "root_work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                "team_id": "78d96dd251ca55b2abb943084b145a8d",
+                "gc_assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                "owner_session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+                "authored_role_uri": "metaform://role/gc",
+                "execution_role": "worker",
+                "functional_locations": [
+                  {
+                    "kind": "element",
+                    "id": "code.label.normalizer",
+                    "address": "code.label.normalizer"
+                  }
+                ],
+                "task": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                "requested_result": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                "candidate": {
+                  "id": "label-normalizer-d6b63545",
+                  "files": [
+                    {
+                      "path": "/tmp/metaform-review-live/project/label_tools.py",
+                      "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+                    },
+                    {
+                      "path": "/tmp/metaform-review-live/project/test_label_tools.py",
+                      "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+                    }
+                  ]
+                },
+                "mode": "adaptive",
+                "state": "delivered",
+                "return_to": {
+                  "kind": "pm"
+                },
+                "result": "Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.",
+                "evidence": [
+                  {
+                    "command": "python -m unittest -v",
+                    "cwd": "/tmp/metaform-review-live/project",
+                    "exit_status": 0,
+                    "output": "GC independent run: Ran 11 tests in 0.000s; OK."
+                  },
+                  {
+                    "verification": "GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.",
+                    "exit_status": 0
+                  },
+                  {
+                    "request_id": "faa7e55084e858488121b2dbabeb24df",
+                    "published_role": "metaform://role/label_normalizer",
+                    "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                    "creator_assignment": "51357703485f49feae0338c96d5c21dd",
+                    "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                  },
+                  {
+                    "verification": "Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation."
+                  }
+                ],
+                "last_check_in": {
+                  "summary": "Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.",
+                  "evidence": [
+                    {
+                      "request_id": "faa7e55084e858488121b2dbabeb24df",
+                      "role_uri": "metaform://role/label_normalizer",
+                      "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                      "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                    }
+                  ],
+                  "work_so_far": "Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty."
+                },
+                "created": "2026-10-18T08:52:37Z",
+                "updated": "2026-10-18T08:57:32Z"
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 422
+          },
+          {
+            "type": "mcpToolCall",
+            "id": "exec-780ed5c9-9688-4804-97e8-a9b55f1a01fc",
+            "server": "metaform",
+            "tool": "metaform_catalog",
+            "status": "completed",
+            "arguments": {
+              "tool": "map_work",
+              "arguments": {
+                "id": "fcc7915d466e450eac7a45284cf63ddd"
+              }
+            },
+            "appContext": null,
+            "mcpAppUi": null,
+            "pluginId": null,
+            "readOnlyHint": false,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "id: fcc7915d466e450eac7a45284cf63ddd\naddress: code.label.normalizer\ncondition: unbuilt\nnote: Independent FQC assessment a04354b70c9258b2b95169247ce63e74, work 5fca231d6f0741e8ade759af59cbcd7b: PASS for label-normalizer-d6b63545. Recorded destination: GC assignment 78d96dd251ca55b2abb943084b145a8d. No functional defect, specification adaptation or corrective work. FQC independently ran python -m unittest -v in /tmp/metaform-review-live/project: exit 0, 11 tests passed. sha256sum matched label_tools.py=d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50 and test_label_tools.py=5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d. Independent normalization and blank-rejection checks passed for all 29 Python Unicode whitespace characters; five idempotence checks passed. Indexed implementation memory extended with Unicode whitespace recognition and existing underscore preservation through canonical add_observations; established relations retained. Completion reconciliation: terminal check-in returns the existing assignment unchanged with evidence empty; evidence is therefore preserved here at the recorded GC destination and in the FQC work record.\ntask:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \ncreated: 2026-10-18T08:51:57Z\ndone: 2026-10-18T08:57:32Z\nresolution: Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\nsteps: 3\nsteps_done: 2\ntaken: 2026-10-18T08:52:37Z\ntaken_by: codex 01a14e36-7ea1-7882-8b8c-3bf1ebd347a8\noutcome: completed\nat.kind: element\nat.element.address: code.label.normalizer\nat.element.layer: code.label.normalizer@smoke_location\nat.element.reading: normalizer label code\nat.element.short_name: normalizer label\nat.element.name_length: 2\nat.element.name: Label normalizer\nat.sources: path=label_tools.py, path=test_label_tools.py\nat.around:\n  ▶ code.label.normalizer  normalizer label  4 memories · 1 layer item · 5 earlier runs\n    Latest: code.label.normalizer#9  Functional assessment of fcc7915d466e450eac7a45284cf63ddd; the last session added #2–#9(3 of them)\n  4 memories; 0 unread, including 0 updated. Read applicable unread contents with memory_read_unread node=element:code.label.normalizer.\n  Read here: layer items: map_node node=element:code.label.normalizer · earlier runs: map_work node=code.label.normalizer open=false\ndispatch.sessions:\nsession_id|work_id|agent|state|how|started|seq|runner|base|activity|status|reason\n01a14e36-7ea1-7882-8b8c-3bf1ebd347a8|fcc7915d466e450eac7a45284cf63ddd|codex|ended|the ticket is done|2026-10-18T08:52:37Z|1792313557527|32759d77fe5a644a|da08378042f74dca8f6052db5ecb4d3d|idle|completed|the ticket is done\ndispatch.status: completed\nmap.agent: codex\nmap.eligible: codex\nmap.item: code.label.normalizer#1\nmap.title: Normalize labels through a GC-created specialist\nmap.why: Assigned outcome returned.\norchestration.assignment_id: 78d96dd251ca55b2abb943084b145a8d\norchestration.work_id: fcc7915d466e450eac7a45284cf63ddd\norchestration.root_work_id: fcc7915d466e450eac7a45284cf63ddd\norchestration.team_id: 78d96dd251ca55b2abb943084b145a8d\norchestration.gc_assignment_id: 78d96dd251ca55b2abb943084b145a8d\norchestration.owner_session_id: 01a14e36-7ea1-7882-8b8c-3bf1ebd347a8\norchestration.authored_role_uri: metaform://role/gc\norchestration.execution_role: worker\norchestration.functional_locations:\nkind|id|address\nelement|code.label.normalizer|code.label.normalizer\norchestration.task:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \norchestration.requested_result:\n  Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n  \n  Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\n  lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\n  Acceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n  \"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\n  Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n  \n  Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\n  specialist yourself through orchestration_call, with its purpose, requested contribution and this context.\n  When that returns the missing-role request, commission that request through orchestration_commission.\n  The Role Creator authors and publishes the reusable duty; the original requested specialist call then\n  continues and its result returns to you. Use the generated specialist to implement and test the function.\n  On its return, independently validate the requested outcome and deliver the root with the exact candidate\n  files, hashes and verification evidence. The normal independent functionality assessment and user/PM\n  notification should follow the existing runtime continuations.\n  \n  The isolated project already contains the functional location for this task: code.label.normalizer.\n  All work for this smoke journey belongs in this project folder.\n  \norchestration.candidate.id: label-normalizer-d6b63545\norchestration.candidate.files:\npath|sha256\n/tmp/metaform-review-live/project/label_tools.py|d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50\n/tmp/metaform-review-live/project/test_label_tools.py|5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d\norchestration.mode: adaptive\norchestration.state: delivered\norchestration.return_to.kind: pm\norchestration.result: Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.\norchestration.evidence:\ncommand|cwd|exit_status|output|verification|request_id|published_role|role_version|creator_assignment|specialist_assignment\npython -m unittest -v|/tmp/metaform-review-live/project|0|GC independent run: Ran 11 tests in 0.000s; OK.||||||\n||0||GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.|||||\n|||||faa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|51357703485f49feae0338c96d5c21dd|d6b63545b4dc47e48e38424fea95a854\n||||Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation.|||||\norchestration.last_check_in.summary: Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.\norchestration.last_check_in.evidence:\nrequest_id|role_uri|role_version|specialist_assignment\nfaa7e55084e858488121b2dbabeb24df|metaform://role/label_normalizer|27355977ddd54ff4b210b9aac6ca367e|d6b63545b4dc47e48e38424fea95a854\norchestration.last_check_in.work_so_far: Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty.\norchestration.created: 2026-10-18T08:52:37Z\norchestration.updated: 2026-10-18T08:57:32Z\nsaid:\nnumber|said|at\n1|Read functional node and memories; requested missing label_normalizer and commissioned request faa7e55084e858488121b2dbabeb24df. Role Creator published duty version 27355977ddd54ff4b210b9aac6ca367e; original specialist assignment d6b63545b4dc47e48e38424fea95a854 is queued.|2026-10-18T08:55:05Z\n2|Integrated generated specialist candidate label-normalizer-d6b63545. GC inspected implementation and independently ran python -m unittest -v (11 passed, exit 0) and six direct acceptance checks (exit 0). Both file SHA-256 hashes match specialist return.|2026-10-18T08:57:10Z"
+                }
+              ],
+              "structuredContent": {
+                "id": "fcc7915d466e450eac7a45284cf63ddd",
+                "address": "code.label.normalizer",
+                "condition": "unbuilt",
+                "note": "Independent FQC assessment a04354b70c9258b2b95169247ce63e74, work 5fca231d6f0741e8ade759af59cbcd7b: PASS for label-normalizer-d6b63545. Recorded destination: GC assignment 78d96dd251ca55b2abb943084b145a8d. No functional defect, specification adaptation or corrective work. FQC independently ran python -m unittest -v in /tmp/metaform-review-live/project: exit 0, 11 tests passed. sha256sum matched label_tools.py=d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50 and test_label_tools.py=5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d. Independent normalization and blank-rejection checks passed for all 29 Python Unicode whitespace characters; five idempotence checks passed. Indexed implementation memory extended with Unicode whitespace recognition and existing underscore preservation through canonical add_observations; established relations retained. Completion reconciliation: terminal check-in returns the existing assignment unchanged with evidence empty; evidence is therefore preserved here at the recorded GC destination and in the FQC work record.",
+                "task": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                "created": "2026-10-18T08:51:57Z",
+                "done": "2026-10-18T08:57:32Z",
+                "resolution": "Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.",
+                "steps": 3,
+                "steps_done": 2,
+                "said": [
+                  {
+                    "number": 1,
+                    "said": "Read functional node and memories; requested missing label_normalizer and commissioned request faa7e55084e858488121b2dbabeb24df. Role Creator published duty version 27355977ddd54ff4b210b9aac6ca367e; original specialist assignment d6b63545b4dc47e48e38424fea95a854 is queued.",
+                    "at": "2026-10-18T08:55:05Z"
+                  },
+                  {
+                    "number": 2,
+                    "said": "Integrated generated specialist candidate label-normalizer-d6b63545. GC inspected implementation and independently ran python -m unittest -v (11 passed, exit 0) and six direct acceptance checks (exit 0). Both file SHA-256 hashes match specialist return.",
+                    "at": "2026-10-18T08:57:10Z"
+                  }
+                ],
+                "taken": "2026-10-18T08:52:37Z",
+                "taken_by": "codex 01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+                "outcome": "completed",
+                "at": {
+                  "kind": "element",
+                  "element": {
+                    "address": "code.label.normalizer",
+                    "layer": "code.label.normalizer@smoke_location",
+                    "reading": "normalizer label code",
+                    "short_name": "normalizer label",
+                    "name_length": 2,
+                    "name": "Label normalizer"
+                  },
+                  "sources": [
+                    "path=label_tools.py",
+                    "path=test_label_tools.py"
+                  ],
+                  "around": "▶ code.label.normalizer  normalizer label  4 memories · 1 layer item · 5 earlier runs\n  Latest: code.label.normalizer#9  Functional assessment of fcc7915d466e450eac7a45284cf63ddd; the last session added #2–#9(3 of them)\n4 memories; 0 unread, including 0 updated. Read applicable unread contents with memory_read_unread node=element:code.label.normalizer.\nRead here: layer items: map_node node=element:code.label.normalizer · earlier runs: map_work node=code.label.normalizer open=false"
+                },
+                "dispatch": {
+                  "sessions": [
+                    {
+                      "session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+                      "work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                      "agent": "codex",
+                      "state": "ended",
+                      "how": "the ticket is done",
+                      "started": "2026-10-18T08:52:37Z",
+                      "seq": 1792313557527,
+                      "runner": "32759d77fe5a644a",
+                      "base": "da08378042f74dca8f6052db5ecb4d3d",
+                      "activity": "idle",
+                      "status": "completed",
+                      "reason": "the ticket is done"
+                    }
+                  ],
+                  "status": "completed"
+                },
+                "map": {
+                  "agent": "codex",
+                  "eligible": [
+                    "codex"
+                  ],
+                  "item": "code.label.normalizer#1",
+                  "title": "Normalize labels through a GC-created specialist",
+                  "why": "Assigned outcome returned."
+                },
+                "orchestration": {
+                  "assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                  "work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                  "root_work_id": "fcc7915d466e450eac7a45284cf63ddd",
+                  "team_id": "78d96dd251ca55b2abb943084b145a8d",
+                  "gc_assignment_id": "78d96dd251ca55b2abb943084b145a8d",
+                  "owner_session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+                  "authored_role_uri": "metaform://role/gc",
+                  "execution_role": "worker",
+                  "functional_locations": [
+                    {
+                      "kind": "element",
+                      "id": "code.label.normalizer",
+                      "address": "code.label.normalizer"
+                    }
+                  ],
+                  "task": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                  "requested_result": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+                  "candidate": {
+                    "id": "label-normalizer-d6b63545",
+                    "files": [
+                      {
+                        "path": "/tmp/metaform-review-live/project/label_tools.py",
+                        "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+                      },
+                      {
+                        "path": "/tmp/metaform-review-live/project/test_label_tools.py",
+                        "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+                      }
+                    ]
+                  },
+                  "mode": "adaptive",
+                  "state": "delivered",
+                  "return_to": {
+                    "kind": "pm"
+                  },
+                  "result": "Delivered label-normalizer-d6b63545: generated specialist implemented normalize_label and tests; GC independently inspected and verified. No implementation work remains. Route normal independent functionality assessment and PM/user notification.",
+                  "evidence": [
+                    {
+                      "command": "python -m unittest -v",
+                      "cwd": "/tmp/metaform-review-live/project",
+                      "exit_status": 0,
+                      "output": "GC independent run: Ran 11 tests in 0.000s; OK."
+                    },
+                    {
+                      "verification": "GC independently checked 6 acceptance cases and computed both SHA-256 hashes; all passed and hashes matched specialist return.",
+                      "exit_status": 0
+                    },
+                    {
+                      "request_id": "faa7e55084e858488121b2dbabeb24df",
+                      "published_role": "metaform://role/label_normalizer",
+                      "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                      "creator_assignment": "51357703485f49feae0338c96d5c21dd",
+                      "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                    },
+                    {
+                      "verification": "Both functional file entry points linked. GC read specialist-maintained typed memories and directed relations at code.label.normalizer. No pending changes or adaptation."
+                    }
+                  ],
+                  "last_check_in": {
+                    "summary": "Published label_normalizer role accepted; waiting for original resumed specialist assignment d6b63545b4dc47e48e38424fea95a854 to implement and test. Next GC action: independently inspect files, rerun unittest and acceptance checks, record exact hashes and deliver root for runtime assessment.",
+                    "evidence": [
+                      {
+                        "request_id": "faa7e55084e858488121b2dbabeb24df",
+                        "role_uri": "metaform://role/label_normalizer",
+                        "role_version": "27355977ddd54ff4b210b9aac6ca367e",
+                        "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854"
+                      }
+                    ],
+                    "work_so_far": "Functional grounding and unread memories read. Missing role requested and commissioned successfully; Role Creator returned published reusable duty."
+                  },
+                  "created": "2026-10-18T08:52:37Z",
+                  "updated": "2026-10-18T08:57:32Z"
+                }
+              },
+              "_meta": null
+            },
+            "error": null,
+            "durationMs": 486
+          },
+          {
+            "type": "agentMessage",
+            "id": "msg_0dc35d1abdc4b288016ad48bae3958819abf789281d1c22b10",
+            "text": "Root ticket `fcc7915d466e450eac7a45284cf63ddd` is **completed**. The work record shows completion at `2026-10-18T08:57:32Z`; the GC assignment is `delivered`, and independent FQC passed.\n\n- **Generated role:** The GC requested and commissioned `label_normalizer`. Role Creator published `metaform://role/label_normalizer`, version `27355977ddd54ff4b210b9aac6ca367e`, and the original specialist call resumed.\n- **Specialist result:** Assignment `d6b63545b4dc47e48e38424fea95a854` returned candidate `label-normalizer-d6b63545`, containing [label_tools.py](/tmp/metaform-review-live/project/label_tools.py) and [test_label_tools.py](/tmp/metaform-review-live/project/test_label_tools.py). It implements the requested normalization and blank-input rejection.\n- **GC validation:** `python -m unittest -v` passed all 11 tests with exit status 0. Six direct acceptance checks passed, and both SHA-256 hashes matched the specialist return.\n- **Independent FQC:** Assessment `a04354b70c9258b2b95169247ce63e74` passed. FQC independently reran all 11 tests, confirmed both hashes, checked normalization and blank rejection for all 29 Python Unicode whitespace characters, and passed five idempotence checks. It found no functional defect or need to adapt the specification.\n\n**No implementation, assessment, or corrective work remains.** Functional references and indexed memories are maintained. The older waiting check-in, `unbuilt` condition, and 2-of-3 step counter are stale bookkeeping fields; the completion record, delivery, and FQC result establish the completed outcome.",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          }
+        ],
+        "itemsView": "full",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1792314280,
+        "completedAt": 1792314294,
+        "durationMs": 14674
+      }
+    ]
+  }
+}

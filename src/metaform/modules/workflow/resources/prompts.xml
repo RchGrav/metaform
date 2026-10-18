@@ -85,9 +85,12 @@
 <!-- How an agent carries out one subroutine: follow its logic, use call, handoff or parallel, and finish with complete or fail. <run/> is the call's run id.
      Returned as the instructions field of every workflow run, call and resume.
      Always sent with a step; empty sends an empty field. Must not be removed: the code requires it. -->
-<execution>Axiom is interpreted by the agent reading this subroutine. Its content and bound arguments are supplied unchanged. Follow its conditions, routing, loops, Retry, Catch and verification. Your saved variables are provided beside it.
-Use workflow call for a same-agent subroutine call, and workflow handoff where the authored call requires a fresh agent. Supply this call's run id, <run/>, and your current variables. For authored Parallel, workflow parallel takes the independent calls and returns their handoff run ids; the caller resumes when every branch has returned.
-Use workflow complete with the subroutine's RETURN expression and final variables to deliver its result. A named error goes through workflow fail to the caller, which interprets its authored Retry or Catch. A same-agent return supplies the caller's values so that agent continues at the calling step. A fresh-agent return supplies only its caller's run id: give it back to the caller or orchestrator. The caller resumes its run and continues its own Axiom.</execution>
+<execution>
+Interpret this selected Axiom subroutine using its bound arguments, saved variables, current assignment and operative specification/mode. Follow its conditions, routing, loops, Retry, Catch and verification. Reconcile an observed blocker or limiting specification through the assignment's functional assessment route.
+Use workflow call for a same-agent subroutine and workflow handoff where the selected procedure calls for another agent. Supply run <run/> and current variables. For Parallel, workflow parallel records the independent calls and their return continuations.
+Use workflow complete with RETURN and final variables to deliver the result; use workflow fail for a named error and its authored handling. A handoff's bound assignment starts its recipient through dispatch and routes the result to its caller/GC. A returned run ID identifies the persisted continuation; completion activates that route.
+If a published adaptation changes this run's operative logic, use the supplied successor run/revision and recorded progress. Preserve the earlier frozen run as history rather than treating its old text as the current specification.
+</execution>
 <!-- What an agent is told once it has paused run <run/> on the person with workflow pause: end its turn, since nothing starts again by itself, VIEW-042.
      Returned as the next field of workflow pause, once per pause. Must not be removed: the code requires it. -->
 <paused>Run <run/> waits for the person. End your turn; whoever resumes the run reads their answer with metaform workflow resume run=<run/>.</paused>
@@ -106,7 +109,9 @@ Use workflow complete with the subroutine's RETURN expression and final variable
 <!-- One line telling the agent to give run <run/> of project <project/> to a fresh agent, which resumes it to carry out the step.
      Returned with each run id by workflow handoff and workflow parallel.
      Must not be removed: the code requires it. -->
-<handoff>Give run <run/> to a fresh agent. It resumes the run with metaform workflow resume run=<run/> --project <project/> on the CLI or workflow_resume with run <run/> over MCP and receives its subroutine and bound values.</handoff>
+<handoff>
+Run <run/> is handed to the assigned role through the recorded continuation in project <project/>. Its recipient resumes with workflow_resume to receive the subroutine and bound values, alongside its own role, functional grounding and current assignment. Completion returns through the recorded caller route.
+</handoff>
 
 <!-- The frame that follows the scan skill in workflow scan: <workflow/> is the procedure given, marked as data, and <task/> the task given.
      Sent only by workflow scan.

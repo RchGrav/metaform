@@ -61,6 +61,7 @@ from metaform.module import (
     call,
     caution_of,
     chassis_version,
+    collecting_agent_context,
     command_summary,
     context,
     decided,
@@ -80,13 +81,16 @@ from metaform.module import (
     persons_decision,
     persons_word,
     persons_word_acted,
+    prepare_agent_context,
     project_for,
     provided,
     provisioning_notice,
     read_report,
+    record_agent_context,
     record_shown,
     refresh_modules,
     request_scope,
+    resolve_agent_role,
     result_json,
     serve_session,
     served_session,
@@ -634,11 +638,17 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
     person's own sessions and the system agent the skill index for the connecting AI tool, `client`, BASE-059."""
     named = catalog.role()
     project = project_for(folder)
+    assignment = assignment_context(folder, session)
+    authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or
+                        'unbound; this session has no recorded authored responsibility')
+    assignment_id = str(assignment.get('assignment_id') or assignment.get('work_id') or
+                        'unbound; this session has no managed assignment')
     lines: list[str] = []
     if named is None or named == 'system':
         head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
         lines.append('\n'.join(part for part in (head, *category_lines(folder)) if part))
-    elif said := prompt_files.module('mcp', f'role_{named}', categories=', '.join(openable(folder))):
+    elif said := prompt_files.module('mcp', f'role_{named}', categories=', '.join(openable(folder)),
+                                     assignment=assignment_id, authored_role=authored_role):
         lines.append(said)
     opened, first = catalog.opens(named), catalog.first(named)
     held = prompt_files.module('mcp', 'connect_open', category=opened) if opened and keyed else \
@@ -1279,6 +1289,18 @@ def given_tools(folder: Path) -> dict[str, Listed]:
     return {name: one for name, one in listing(folder).items() if catalog.in_scope(name, declared, folder)}
 
 
+def action_bindings(ctx: Context, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Bindings generated from implemented, surfaced tool declarations and the caller's actual adapter evidence."""
+    declared = tools(ctx.folder)
+    named = str((capabilities or {}).get('execution_role') or ctx.identity.get('execution_role') or catalog.role() or '')
+    active = {name: one for name, one in listing(ctx.folder, ctx.client).items()
+              if catalog.in_scope(name, declared, ctx.folder, named or None)}
+    return {'execution_role': named or None, 'adapter': dict(capabilities or {}),
+            'tools': {name: {'description': one.description, 'arguments': one.schema(),
+                             'effect': one.effect, 'person_decides': one.persons}
+                      for name, one in active.items()}}
+
+
 def open_category(folder: Path, session: str | None) -> str | None:
     """The category a session has open: the one it opened last, else the one its role starts with; None for none."""
     held = shown_before(session, catalog.OPEN_KEY)
@@ -1570,7 +1592,46 @@ async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client
     return error, blocks
 
 
+def _contains_delivery(value: Any, wanted: Any) -> bool:
+    if value == wanted:
+        return True
+    if isinstance(value, dict):
+        return any(_contains_delivery(one, wanted) for one in cast(dict[str, Any], value).values())
+    if isinstance(value, list):
+        return any(_contains_delivery(one, wanted) for one in cast(list[Any], value))
+    return isinstance(value, str) and isinstance(wanted, str) and bool(wanted) and wanted in value
+
+
+def _commit_response(receipts: list[dict[str, Any]], blocks: list[str], data: Any, channel: str) -> None:
+    """A complete body survived rendering and shaping; acknowledge its captured revision, never a fresh read."""
+    candidates = [data, *blocks]
+    for block in blocks:
+        try:
+            candidates.append(json.loads(block))
+        except ValueError:
+            pass
+    for receipt in receipts:
+        one = cast(dict[str, Any], receipt['component'])
+        wanted = one.get('delivered_value', one.get('text'))
+        if wanted is None or not any(_contains_delivery(value, wanted) for value in candidates):
+            continue
+        record_agent_context(receipt['folder'], receipt['session'], [one], project=receipt['project'],
+                             epoch=int(receipt['epoch']), channel=channel)
+
+
 async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
+                 consented: bool = False, session: str | None = None,
+                 identity: dict[str, str] | None = None,
+                 shape: shaping.Shape | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
+    with collecting_agent_context(session) as receipts:
+        outcome = await _answer(folder, name, arguments, client=client, consented=consented, session=session,
+                                identity=identity, shape=shape)
+    if not outcome[0] and receipts:
+        await anyio.to_thread.run_sync(_commit_response, receipts, outcome[1], outcome[2], 'mcp_tool')
+    return outcome
+
+
+async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
                  consented: bool = False, session: str | None = None,
                  identity: dict[str, str] | None = None,
                  shape: shaping.Shape | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
@@ -1914,9 +1975,24 @@ def memory_text(folder: Path) -> str | None:
 
 
 def _role_read(reading: Reading, uri: str) -> str | None:
-    if uri != ROLE_URI + (catalog.role() or PERSON):
-        return None
-    return role_text(reading.folder, reading.client, reading.session, reading.keyed)
+    if uri == ROLE_URI + (catalog.role() or PERSON):
+        return role_text(reading.folder, reading.client, reading.session, reading.keyed)
+    if uri.startswith(ROLE_URI):
+        found = resolve_agent_role(reading.folder, uri)
+        if found.get('missing'):
+            return None
+        return '\n\n'.join(part for part in (str(found.get('text') or ''),
+                                              '\n'.join(found.get('problems') or [])) if part)
+    return None
+
+
+def assignment_context(folder: Path, session: str | None = None) -> dict[str, Any]:
+    """Current recorded authored responsibility; inspection never changes its execution role or assignment."""
+    for owner, service in provided(folder, 'orchestration'):
+        ctx = context(owner, folder, session=session)
+        held = service.assignment(ctx, session_id=session or ctx.session)
+        return cast(dict[str, Any], held or {})
+    return {}
 
 
 def _project_read(reading: Reading, uri: str) -> str | None:
@@ -1943,7 +2019,14 @@ def links(folder: Path, role: str | None = None, withheld: str = '') -> list[str
     not withhold it."""
     named = role if role and role != 'none' else None
     agent = Agent(folder, named, tuple(module.id for module in withhold(surface(folder), withheld)))
-    return [uri for block in BLOCKS if (uri := block.link(agent))]
+    found = [uri for block in BLOCKS if (uri := block.link(agent))]
+    assignment = assignment_context(folder, served_session())
+    authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or '')
+    if authored_role:
+        uri = authored_role if authored_role.startswith(ROLE_URI) else ROLE_URI + authored_role
+        if uri not in found:
+            found.append(uri)
+    return found
 
 
 def opening(folder: Path, role: str | None = None, withheld: str = '') -> str:
@@ -2023,6 +2106,47 @@ def module_templates(folder: Path) -> list[tuple[str, str, str, str]]:
 
 async def read_resource_text(folder: Path, uri: str, *, client: str | None = None, session: str | None = None,
                              keyed: bool = True) -> tuple[str, str] | None:
+    with collecting_agent_context(session) as receipts:
+        found = await _read_resource_text(folder, uri, client=client, session=session, keyed=keyed)
+    if found is None:
+        return None
+    text, mime = found
+    components: list[dict[str, Any]] = []
+    if uri.startswith(ROLE_URI) and uri != ROLE_URI + (catalog.role() or PERSON):
+        resolved = await anyio.to_thread.run_sync(resolve_agent_role, folder, uri)
+        components = list(resolved.get('components') or [])
+        if resolved.get('missing'):
+            raise Missing('\n'.join(resolved.get('problems') or []), 'read metaform agents roles')
+    elif uri == MEMORY_URI:
+        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'memory:instructions')
+        one.update(text=text, bindings={'project': str(project_for(folder) or '{project}')})
+        components = [one]
+    elif uri == RULES_URI:
+        components = [await anyio.to_thread.run_sync(prompt_files.resolve, 'mcp:connect_rules')]
+    elif uri == GLOSSARY_URI:
+        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'mcp:glossary')
+        one['text'] = text
+        components = [one]
+    elif uri == project_uri(folder):
+        components = [prompt_files.component('map:project_glossary', text)]
+    elif uri == ROLE_URI + (catalog.role() or PERSON):
+        components = [prompt_files.component('mcp:role_' + (catalog.role() or PERSON), text)]
+    if components:
+        prepared = await anyio.to_thread.run_sync(prepare_agent_context, folder, session, components)
+        due = cast(list[dict[str, Any]], prepared['components'])
+        if due:
+            text = str(prepared['text'])
+            await anyio.to_thread.run_sync(functools.partial(record_agent_context, folder, session, due,
+                                                            epoch=int(prepared['epoch']), channel='mcp_resource'))
+        else:
+            text = prompt_files.module('mcp', 'already_read', uri=uri, again='use the current context') or ''
+    if receipts:
+        await anyio.to_thread.run_sync(_commit_response, receipts, [text], None, 'mcp_resource')
+    return text, mime
+
+
+async def _read_resource_text(folder: Path, uri: str, *, client: str | None = None, session: str | None = None,
+                              keyed: bool = True) -> tuple[str, str] | None:
     """A resource's text and media type, or None when this folder serves no such resource. The instruction blocks are
     read first, so metaform://metaform is Metaform's own glossary whatever the folder's project or modules are called.
     `session` and `keyed` say what metaform://role/<role> tells this connection, as `role_text` says."""
@@ -2904,16 +3028,11 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             said = await anyio.to_thread.run_sync(compaction_state, folder, session_of(ctx), follows(ctx))
             return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=said,
                                                                                  mime_type='text/plain')])
-        if uri == GLOSSARY_URI or uri == await anyio.to_thread.run_sync(project_uri, folder):
-            repeat = await anyio.to_thread.run_sync(glossary_repeat, folder, session_of(ctx), uri)
-            if repeat:
-                return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=repeat,
-                                                                                     mime_type='text/plain')])
         # A resource that does not exist: -32602 on the July 2026 wire, which moved it there, -32002 before it.
         missing_code = -32602 if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS else -32002
         try:
             client = client_of(ctx)
-            found = await read_resource_text(folder, uri, client=client, session=None if http else served_session(client),
+            found = await read_resource_text(folder, uri, client=client, session=session_of(ctx),
                                              keyed=not http or session_of(ctx) is not None)
         except Missing as missing:
             raise MCPError(missing_code, f'Error: {missing}\nNext: {missing.next_step}') from None
@@ -3141,6 +3260,7 @@ class Watch:
     def __init__(self, folder: Path, bus: Any, updated: Any) -> None:
         self.folder, self.bus, self.updated = folder, bus, updated
         self.latest: dict[str, int] = {}
+        self.memory_latest: dict[str, str] = {}
         self.listeners: dict[str, int] = {}  # how many open streams name each URI
         self.sessions: dict[str, list[Any]] = {}  # the 2025-handshake sessions subscribed to each URI
         self.listener: Any = None
@@ -3149,6 +3269,7 @@ class Watch:
         self.group: Any = None  # the server's task group, which a check heard from another process runs in
         self.checking = False
         self.again = False  # a change heard while a check ran: one more check after it
+        self.pending_uris: set[str] = set()
 
     def _number(self, uri: str) -> int | None:
         found = ADDRESS.match(uri)
@@ -3157,12 +3278,23 @@ class Watch:
         project = project_for(self.folder)
         return None if project is None else Store(project).latest_number(found.group('address'))
 
+    def _memory_revision(self, uri: str) -> str:
+        found = ADDRESS.match(uri)
+        if found is None or found.group('number') is not None:
+            return ''
+        project = self.project or project_for(self.folder)
+        if project is None:
+            return ''
+        return '|'.join(str(read(project, found.group('address')))
+                        for _, read in provided(self.folder, 'memory.revision'))
+
     async def open(self, uris: list[str], session: Any = None) -> None:
         for uri in uris:
             number = await anyio.to_thread.run_sync(self._number, uri)
             if number is None:
                 continue
             self.latest.setdefault(uri, number)
+            self.memory_latest.setdefault(uri, await anyio.to_thread.run_sync(self._memory_revision, uri))
             if session is None:
                 self.listeners[uri] = self.listeners.get(uri, 0) + 1
             elif session not in self.sessions.setdefault(uri, []):
@@ -3184,6 +3316,8 @@ class Watch:
                     del self.sessions[uri]
             if uri not in self.listeners and uri not in self.sessions:
                 self.latest.pop(uri, None)
+                self.memory_latest.pop(uri, None)
+                self.pending_uris.discard(uri)
 
     async def seen(self, uri: str) -> None:
         """A brief read anew: what it showed is what the client has, so only items added after it are news."""
@@ -3204,16 +3338,29 @@ class Watch:
         if isinstance(tables, str):
             return False
         if isinstance(tables, list) and tables:
-            return not all(str(table) == 'dispatch' or str(table).startswith(QUIET)
-                           for table in cast(list[Any], tables))
+            if all(str(table) in ('memory.encounters',) or str(table) == 'dispatch' or str(table).startswith(QUIET)
+                   for table in cast(list[Any], tables)):
+                return False
+            if all(str(table).startswith('memory.') for table in cast(list[Any], tables)):
+                addresses = {str(kind)[7:] for kind in payload.get('kinds', [])
+                             if str(kind).startswith('memory:')}
+                if addresses:
+                    return any((match := ADDRESS.match(uri)) is not None and match.group('address') in addresses
+                               for uri in self.latest)
         return True
 
-    async def check(self) -> None:
-        for uri, last in list(self.latest.items()):
+    async def check(self, uris: set[str] | None = None) -> None:
+        for uri in list(self.latest if uris is None else uris):
+            if uri not in self.latest:
+                continue
+            last = self.latest[uri]
             number = await anyio.to_thread.run_sync(self._number, uri)
-            if number is None or number <= last or uri not in self.latest:
+            memory_revision = await anyio.to_thread.run_sync(self._memory_revision, uri)
+            if number is None or uri not in self.latest or \
+                    (number <= last and memory_revision == self.memory_latest.get(uri, '')):
                 continue
             self.latest[uri] = number
+            self.memory_latest[uri] = memory_revision
             if uri in self.listeners:
                 await self.bus.publish(self.updated(uri=uri))
             for session in list(self.sessions.get(uri, ())):
@@ -3229,12 +3376,15 @@ class Watch:
             self.again = True
             while self.again:
                 self.again = False
-                await self.check()
+                wanted = self.pending_uris
+                self.pending_uris = set()
+                await self.check(wanted or None)
         finally:
             self.checking = False
 
-    def _wanted(self) -> None:
+    def _wanted(self, uris: set[str] | None = None) -> None:
         """In the server's loop: a check, or one more after the one running."""
+        self.pending_uris.update(self.latest if uris is None else uris)
         if self.checking:
             self.again = True
         elif self.group is not None:
@@ -3245,8 +3395,13 @@ class Watch:
         asks the server's loop for a check, without waiting for it."""
         if not self.concerns(payload):
             return
+        addresses = {str(kind)[7:] for kind in payload.get('kinds', []) if str(kind).startswith('memory:')}
+        tables = cast(list[Any], payload.get('tables') or [])
+        restricted = bool(addresses) and all(str(table).startswith('memory.') for table in tables)
+        wanted = {uri for uri in self.latest if not restricted or
+                  ((match := ADDRESS.match(uri)) is not None and match.group('address') in addresses)}
         try:
-            anyio.from_thread.run_sync(self._wanted, token=self.token)
+            anyio.from_thread.run_sync(self._wanted, wanted, token=self.token)
         except Exception:  # noqa: BLE001, S110  a server that stopped has nothing left to tell
             pass
 

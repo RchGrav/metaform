@@ -47,7 +47,7 @@ def test_roles_lists_the_code_s_six_roles_each_with_the_prompts_it_is_sent(run, 
     assert [one['role'] for one in found['roles']] == list(settings.AGENT_ROLES)
     worker = next(one for one in found['roles'] if one['role'] == 'worker')
     assert worker['prompts'][:2] == ['dispatch:work', 'dispatch:work_record'] and worker['broken'] == []
-    assert worker['held_back'] is True and worker['running'] == 0
+    assert worker['held_back'] is False and worker['running'] == 0
     system = next(one for one in found['roles'] if one['role'] == 'system')
     assert system['prompts'][0] == 'dispatch:system' and system['held_back'] is False
 
@@ -60,7 +60,7 @@ def test_role_shows_each_prompt_with_its_text_and_the_version_the_store_sends(ru
     found = read(run, 'role', 'name=worker', folder=project_folder)
     work = prompt_of(found, 'dispatch:work')
     assert (work['revision'], work['origin']) == (1, 'shipped') and 'note' not in work
-    assert found['held_back'] is True and found['asks_person'] is False and found['running'] == []
+    assert found['held_back'] is False and found['asks_person'] is False and found['running'] == []
     assert [one['name'] for one in found['prompts']][-3:] == ['dispatch:timer', 'dispatch:peer_note',
                                                                'dispatch:workflow_answered']
 
@@ -196,7 +196,8 @@ def test_an_override_says_truly_when_each_role_takes_it(run, project_folder):
     conversation running now included; a prompt sent only as a conversation begins reaches the next conversation."""
     system = read(run, 'override', 'name=dispatch:system', 'text=Plain orchestrator. <mascot/>', '--confirm',
                   folder=project_folder)
-    assert system['sent'] == 'to the system role from its next turn'
+    assert system['sent'] == ('to the system role from its next turn; '
+                              'the authored triage role from its next turn')
     talk = read(run, 'override', 'name=dispatch:talk', 'text=Talk about <about/>. <read/> <eyes/>', '--confirm',
                 folder=project_folder)
     assert talk['sent'] == 'to the talk role from its next new conversation'
@@ -219,4 +220,4 @@ def test_a_prompt_written_wrong_in_its_file_is_named_on_its_role_and_still_sent(
     assert system['file_problem'].startswith(f'{path}: line ')
     assert 'in <system>: <address> starts a tag that is never closed' in system['file_problem']
     assert prompt_files.served(renamed, 'system', project='proj', mascot='') == before
-    assert prompt_files.served(renamed, 'retry', work_id='T1').startswith('Your session stopped')
+    assert prompt_files.served(renamed, 'retry', work_id='T1').startswith('Resume ticket T1')

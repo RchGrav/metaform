@@ -105,8 +105,9 @@ class Around:
         said: list[str] = []
         for count in self.counts.values():
             total, new, _ = count.at.get(address, (0, 0, 0))
-            if total:
-                said.append(count.said(total) + (f' · {new} new' if new else ''))
+            if total or new:
+                label = 'unread' if count.revisions else 'new'
+                said.append(count.said(total) + (f' · {new} {label}' if new else ''))
         if address == self.address:
             said += [word for word, _, _ in self.own]
         return said
@@ -114,15 +115,17 @@ class Around:
     def held(self, address: str) -> int:
         return sum(count.at.get(address, (0, 0, 0))[0] for count in self.counts.values())
 
-    def state(self) -> dict[str, dict[str, int]]:
+    def state(self) -> dict[str, dict[str, Any]]:
         """What a later read compares: at each address, each module's count without this session's own writes, which
         are never news to it, and the messages at the node."""
-        found: dict[str, dict[str, int]] = {}
+        found: dict[str, dict[str, Any]] = {}
         for address in (self.address, *self.above, *self.below):
             for module, count in self.counts.items():
                 total, _, mine = count.at.get(address, (0, 0, 0))
                 if total - mine:
                     found.setdefault(address, {})[module] = total - mine
+                if address in count.revisions:
+                    found.setdefault(address, {})[f'{module}:revision'] = count.revisions[address]
         if self.found.messages:
             found.setdefault(self.address, {})['messages'] = len(self.found.messages)
         return found
@@ -167,18 +170,25 @@ class Around:
         legends = [legend(count.legend, [one for one in everyone if count.at.get(one, (0, 0, 0))[1]] or
                           [one for one in everyone if count.at.get(one, (0, 0, 0))[0]])
                    for count in self.counts.values()
-                   if count.legend and any(count.at.get(one, (0, 0, 0))[0] for one in everyone)]
+                   if count.legend and any(any(count.at.get(one, (0, 0, 0))[:2]) for one in everyone)]
         reads = ' · '.join(f'{name}: {read}' for _, name, read in self.own)
         closing = _prompt('around_read', reads=reads) if reads else ''
         return self.ctx.calls('\n'.join([*lines, *legends, *([closing] if closing else [])]))
 
-    def changed(self, before: dict[str, dict[str, int]]) -> list[str]:
+    def changed(self, before: dict[str, dict[str, Any]]) -> list[str]:
         """A line per count that changed since the session was last shown it: how many more, or how many now."""
         now = self.state()
         said: list[str] = []
+        revised: dict[str, list[str]] = {}
         for address in dict.fromkeys([*before, *now]):
             was, held = before.get(address, {}), now.get(address, {})
+            for kind, count in self.counts.items():
+                key = f'{kind}:revision'
+                if address in count.revisions and was.get(key) != held.get(key):
+                    revised.setdefault(kind, []).append(address)
             for kind in dict.fromkeys([*was, *held]):
+                if kind.endswith(':revision') or address in revised.get(kind, []):
+                    continue
                 old, new = was.get(kind, 0), held.get(kind, 0)
                 if old == new:
                     continue
@@ -191,6 +201,10 @@ class Around:
                     line = _prompt('around_fewer', what=words[1], address=address, count=str(new))
                 if line:
                     said.append(line)
+        for kind, addresses in revised.items():
+            count = self.counts[kind]
+            if count.legend:
+                said.append(self.ctx.calls(legend(count.legend, addresses)))
         return said
 
 
@@ -222,5 +236,5 @@ def told(ctx: Context, found: Where, fits: Callable[[dict[str, Any]], bool] | No
             side -= 1
             said = {'around': around.tree(side)}
         return said
-    changed = around.changed(cast(dict[str, dict[str, int]], before))
+    changed = around.changed(cast(dict[str, dict[str, Any]], before))
     return {'changed': changed} if changed else {}

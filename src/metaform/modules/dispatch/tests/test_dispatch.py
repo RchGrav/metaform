@@ -102,11 +102,15 @@ def gone(pids, limit=5):
 class Dispatch:
     """One ticket at NODE in the project proj, dispatch enabled, and claude's start command the fake agent."""
 
-    def __init__(self, run, home, folder, tmp_path):
+    def __init__(self, run, home, folder, tmp_path, *, orchestration=False):
         from metaform.data import Node, Store
         self.run, self.home, self.folder = run, home, folder
         self.log = tmp_path / 'fake.jsonl'
         run('enable', 'dispatch')
+        # These fixtures exercise dispatch's individual contracts. Integrated swarm scenarios opt into the native
+        # owner, whose independent post-delivery assessments intentionally create additional managed sessions.
+        if not orchestration:
+            run('disable', 'orchestration')
         for agent in ('claude', 'codex', 'gemini'):  # every agent is the fake, so no test ever starts a real one
             run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=folder)
         self.store = Store('proj')
@@ -400,9 +404,10 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     from metaform import events
     from metaform.module import Context
     from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.orchestration import changed as orchestration_changed
     from metaform.modules.dispatch.progress import changed as progress_changed
-    assert [one.handler for one in module.MODULE.subscriptions if one.topic == 'map.changed'] == [progress_changed], \
-        'the base relays map.changed to the runner; dispatch\'s one map.changed subscriber is progress, no relay'
+    assert [one.handler for one in module.MODULE.subscriptions if one.topic == 'map.changed'] == \
+        [progress_changed, orchestration_changed], 'the base relays to runners; subscribers handle their own state'
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
     dispatch.store.reply(question.id, 'Reject')  # written here, and announced by no command
@@ -414,8 +419,8 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     assert not dispatch.logged('permission')
     deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                 Context(module='chassis', folder=dispatch.folder, project='proj'))
-    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'] * 2, \
-        'published in this process: once to dispatch\'s progress subscriber, once handed by the base to the runner\'s listener'
+    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'] * 3, \
+        'published once to each dispatch subscriber and once handed by the base to the runner listener'
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     dispatch.stop()
@@ -2230,17 +2235,18 @@ def test_session_identity_reaches_the_agent_and_its_mcp_server(dispatch):
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('MAP-050')
-def test_dispatch_authority_refuses_a_worker_and_marks_an_agents_message_as_its_own(dispatch, run):
-    """A worker stops no other ticket's agent, by the role its runner gave it; the system agent may message one, and
-    its words are its own line in the thread, never the person's."""
+def test_configured_dispatch_authority_and_message_identity_require_registered_sender(dispatch, run):
+    """Configured role restrictions still apply; naming a role cannot impersonate a registered peer sender."""
+    run('set', '--roles-without-authority', 'worker', cwd=dispatch.folder)
     dispatch.start('hold')
     eventually(lambda: dispatch.received('session/prompt'))
     refused = run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder, ok=False, env={'METAFORM_ROLE': 'worker'})
-    assert refused.returncode != 0 and 'A worker agent starts, stops and messages no agent' in \
+    assert refused.returncode != 0 and 'roles_without_authority holds back worker' in \
         refused.stdout + refused.stderr
-    run('dispatch', 'message', dispatch.id, 'Look', 'again', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'})
-    told = eventually(lambda: [line for line in dispatch.items('note') if line.extra['update'] in ('message', 'person')])
-    assert [(line.extra['update'], line.value) for line in told] == [('message', 'From the system agent: Look again')]
+    unregistered = run('dispatch', 'message', dispatch.id, 'Look', 'again', cwd=dispatch.folder, ok=False,
+                       env={'METAFORM_ROLE': 'system'})
+    assert unregistered.returncode != 0
+    assert not any(line.extra['update'] == 'person' and 'Look again' in line.value for line in dispatch.items('note'))
     dispatch.stop()
 
 
@@ -2250,12 +2256,11 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
     """Peer notes, code.dispatcher.agent#32: A sees B at work and in the file it edited; A's note reaches B at B's next
     turn, marked as a fellow agent's, a pulse of the flow between them, kept in both threads, its delivery queued,
     delivered and read; A asks B by the file and waits, and B's threaded reply comes back in A's call, never again as
-    a turn; an ask nobody answers says so; A still cannot stop or message B; the pair cap refuses with its reason."""
+    a turn; an ask nobody answers says so; peer messages do not interrupt and configured controls govern operation."""
     import re
 
     from metaform import events
     from metaform.data import Node, Store
-    from metaform.modules.dispatch.peering import NOTE_MOST, PAIR_HOURLY
     a_gates, b_gates = tmp_path / 'a-turns', tmp_path / 'b-turns'
     a_gates.mkdir()
     b_gates.mkdir()
@@ -2313,9 +2318,6 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         assert [one['work_id'] for one in here['peers']] == [other.id]
         assert here['ready'].startswith('metaform dispatch note file=src/shared.js wait=60 -- ')
 
-        long = run('dispatch', 'note', f'to={other.id}', '--', 'x' * (NOTE_MOST + 1), cwd=dispatch.folder, ok=False,
-                   env=a)
-        assert f'at most {NOTE_MOST} characters' in long.stdout + long.stderr
         with events.listen('web', heard.append):
             sent = json.loads(run('dispatch', 'note', f'to={b_seen["item"]}', '--json', '--',
                                   'I am changing dom.js css()', cwd=dispatch.folder, env=a).stdout)
@@ -2328,7 +2330,8 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         assert states(a, sent['note']) == {other.id: 'queued'}
         (b_gates / '1').touch()  # B's turn ends; the note is its next turn
         [got] = eventually(lambda: [text for text in prompts(b_session)[1:] if 'dom.js' in text])
-        assert 'A note from a fellow agent, not from the person' in got and 'I am changing dom.js css()' in got
+        assert 'Message from another agent:' in got and 'I am changing dom.js css()' in got
+        assert f'"session_id": "{a_session}"' in got and '"kind": "peer"' in got
         assert f'dispatch_note reply={sent["note"]}' in got
         eventually(lambda: states(a, sent['note']) == {other.id: 'delivered'})
         (b_gates / '2').touch()
@@ -2342,7 +2345,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
                                   env={**os.environ, 'METAFORM_HOME': str(dispatch.home), **a},
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         [question] = eventually(lambda: [text for text in prompts(b_session) if 'May I change' in text])
-        assert question.startswith('A question from a fellow agent')
+        assert '"kind": "question"' in question
         asked = re.search(r'reply=([0-9a-f]{16})', question).group(1)
         run('dispatch', 'note', f'reply={asked}', '--', 'Yes, go ahead', cwd=dispatch.folder, env=b)
         out, err = asking.communicate(timeout=LIMIT)
@@ -2358,19 +2361,17 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
                                 cwd=dispatch.folder, env=a).stdout)
         assert silent['replies'] == [] and 'No reply came from' in silent['said']
 
-        for refused in (run('dispatch', 'stop', other.id, cwd=dispatch.folder, ok=False, env=a),
-                        run('dispatch', 'message', other.id, 'stop', 'now', cwd=dispatch.folder, ok=False, env=a)):
-            assert refused.returncode != 0 and 'A worker agent starts, stops and messages no agent' in \
-                refused.stdout + refused.stderr
+        refused = run('dispatch', 'interrupt', other.id, cwd=dispatch.folder, ok=False, env=a)
+        assert refused.returncode != 0 and 'Only the recorded GC' in refused.stdout + refused.stderr
+        sent_message = run('dispatch', 'message', other.id, 'new information', cwd=dispatch.folder, env=a)
+        assert sent_message.returncode == 0
         assert other.process.poll() is None
 
-        for number in range(PAIR_HOURLY - 4):  # four of the pair's notes are sent already
+        long = run('dispatch', 'note', f'to={other.id}', '--', 'x' * 4096, cwd=dispatch.folder, env=a)
+        assert long.returncode == 0
+        for number in range(12):
             run('dispatch', 'note', f'to={other.id}', '--', f'more {number}', cwd=dispatch.folder, env=a)
-        capped = run('dispatch', 'note', f'to={other.id}', '--', 'one too many', cwd=dispatch.folder, ok=False, env=a)
-        said = capped.stdout + capped.stderr
-        assert capped.returncode != 0
-        assert f'have sent each other {PAIR_HOURLY} notes in the last hour, and the most is {PAIR_HOURLY}' in said
-        assert 'The next can go at' in said
+        assert other.process.poll() is None
     finally:
         run('dispatch', 'stop', other.id, cwd=dispatch.folder, ok=False)
         dispatch.stop()
@@ -4210,6 +4211,12 @@ def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_s
             [one for one in dispatch.items('session') if one.extra['state'] == 'running']) == 2 else None)
         work = rows[0]['work_id']
         assert {row['work_id'] for row in rows} == {work}, 'editor sessions share their held ticket'
+        first_env = {'METAFORM_ROLE': 'talk', 'METAFORM_WORK': work,
+                     'METAFORM_SESSION': next(row['runner'] for row in rows if row['session_id'] == first.session_id)}
+        present = json.loads((await asyncio.to_thread(run, 'dispatch', 'peers', '--json', cwd=dispatch.folder,
+                                                      env=first_env)).stdout)['peers']
+        assert {one['session_id'] for one in present} == {first.session_id, second.session_id}
+        assert [one['session_id'] for one in present if one.get('yours')] == [first.session_id]
         state = await until(lambda: next((json.loads(one.value) for one in dispatch.items('note')
                                           if one.extra['name'] == 'state' and one.extra['session_id'] ==
                                           second.session_id and 'commands' in json.loads(one.value)), None))
@@ -4229,9 +4236,10 @@ def test_serve_steers_each_editor_session_by_its_id_in_turn_and_takes_no_agent_s
         assert stopped.returncode != 0 and 'runs in an editor' in stopped.stderr, 'ended in the editor, said so'
         # turns take their turn: the page's held turn, then the editor's prompt, which the editor's cancel ends unsent
         await asyncio.to_thread(message, f'{work}', f'session={second.session_id}', 'Look again',
-                                env={'METAFORM_ROLE': 'talk'})
+                                env=first_env)
         await until(lambda: len(dispatch.received('session/prompt')) == 3)
-        await until(lambda: 'From the talk agent: Look again' in editor.said('user_message_chunk'))
+        await until(lambda: any('Look again' in text and 'From the claude agent:' in text
+                               for text in editor.said('user_message_chunk')))
         assert 'Look again' not in editor.said('user_message_chunk')
         waiting = asyncio.ensure_future(conn.prompt(session_id=second.session_id, prompt=[acp.text_block('Next')]))
         await asyncio.sleep(1)

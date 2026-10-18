@@ -1,0 +1,105 @@
+{
+  "runtime_candidate": "8c9bf81eaa6876b5dc34766574ebb1eece2a5851",
+  "reports": [
+    {
+      "report": "browser.xml",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 2
+    },
+    {
+      "report": "cross-team.xml",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    {
+      "report": "dispatch-cancel.xml",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 2
+    },
+    {
+      "report": "dispatch-capacity-events.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 4
+    },
+    {
+      "report": "dispatch-lifecycle.xml",
+      "tests": 35,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 35
+    },
+    {
+      "report": "dispatch-peer-identity.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 4
+    },
+    {
+      "report": "integrated-runtime-initial.xml",
+      "tests": 9,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 8
+    },
+    {
+      "report": "integrated-strict-rerun.xml",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    {
+      "report": "memory-focused.xml",
+      "tests": 63,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 63
+    },
+    {
+      "report": "orchestration-contracts.xml",
+      "tests": 27,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 27
+    },
+    {
+      "report": "resource-inventory.xml",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 1
+    },
+    {
+      "report": "roles-prompts.xml",
+      "tests": 125,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 124
+    }
+  ],
+  "interpretation": "Reports overlap; do not sum them as unique coverage. The initial integrated strict PM-readiness failure and original resource-inventory expectation failure are retained with their successful test-only correction reruns. Runtime and prompt source did not change.",
+  "trace_archive_sha256_verified": true,
+  "trace_members": 30,
+  "relative_markdown_links_verified": true
+}

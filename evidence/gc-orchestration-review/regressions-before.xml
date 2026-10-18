@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="1.741" timestamp="2026-10-18T03:39:38.673172-05:00" hostname="d9991d6ce5f3"><testcase classname="src.metaform.modules.orchestration.tests.test_review_regressions" name="test_gc_missing_specialist_request_can_reach_its_own_commission" time="0.785"><failure message="AssertionError: {'gc': {'assignment_id': '69f37422191f59b6a1ae9c4a5690faf3', 'work_id': 'f711bda793ec4f359ef88df970b4bf94', 'root_work...ind': 'send', ...}], 'suspensions': [('69f37422191f59b6a1ae9c4a5690faf3', 'Waiting for a requested specialist role.')]}&#10;assert set()&#10; +  where set() = &lt;metaform.modules.orchestration.tests.test_orchestration.Transport object at 0x7f259af4dc40&gt;.running">project = (&lt;metaform.data.store.Store object at 0x7f259b64b380&gt;, PosixPath('/tmp/metaform-review-regressions-before/test_gc_missing_specialist_req0/proj'), &lt;metaform.modules.orchestration.tests.test_orchestration.Transport object at 0x7f259af4dc40&gt;)
+
+    def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
+        """Draining a self-request must leave a GC able to act on the recorded request."""
+        gc = claim(project)
+        actual = project[2]
+        request = verb(called(project, 'gc'), 'orchestration', 'call', role='alarm_domain',
+                       task='Establish the audible alarm constraints.', result='Return the alarm constraints.',
+                       key='gc-alarm-specialist')
+        assert request['caller_assignment_id'] == request['gc_assignment_id'] == gc['assignment_id']
+        assert request['state'] == 'requested'
+        assert verb(called(project, 'gc'), 'orchestration', 'call', role='alarm_domain',
+                    task='Establish the audible alarm constraints.', result='Return the alarm constraints.',
+                    key='gc-alarm-specialist')['request_id'] == request['request_id']
+    
+        SERVICE.drain(called(project))
+&gt;       assert actual.running, {
+            'gc': SERVICE.assignment(called(project), assignment_id=gc['assignment_id']),
+            'pending': SERVICE.pending(called(project)),
+            'suspensions': actual.suspensions,
+        }
+E       AssertionError: {'gc': {'assignment_id': '69f37422191f59b6a1ae9c4a5690faf3', 'work_id': 'f711bda793ec4f359ef88df970b4bf94', 'root_work...ind': 'send', ...}], 'suspensions': [('69f37422191f59b6a1ae9c4a5690faf3', 'Waiting for a requested specialist role.')]}
+E       assert set()
+E        +  where set() = &lt;metaform.modules.orchestration.tests.test_orchestration.Transport object at 0x7f259af4dc40&gt;.running
+
+src/metaform/modules/orchestration/tests/test_review_regressions.py:64: AssertionError</failure></testcase><testcase classname="src.metaform.modules.orchestration.tests.test_review_regressions" name="test_role_commission_obeys_current_blacklist_without_mutating_work" time="0.782"><failure message="Failed: DID NOT RAISE Stop">project = (&lt;metaform.data.store.Store object at 0x7f259a295a00&gt;, PosixPath('/tmp/metaform-review-regressions-before/test_role_commission_obeys_cur0/proj'), &lt;metaform.modules.orchestration.tests.test_orchestration.Transport object at 0x7f259ae8b5c0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f259a295970&gt;
+
+    def test_role_commission_obeys_current_blacklist_without_mutating_work(project, monkeypatch):
+        gc = claim(project)
+        worker = verb(called(project, 'gc'), 'orchestration', 'delegate',
+                      role='implementer', task='Implement the countdown.')
+        SERVICE.bind(called(project), worker['assignment_id'], 'worker')
+        request = verb(called(project, 'worker'), 'orchestration', 'call',
+                       role='alarm_domain', task='Establish alarm constraints.', key='worker-alarm-specialist')
+        assert request['caller_assignment_id'] == worker['assignment_id']
+        assert request['gc_assignment_id'] == gc['assignment_id']
+    
+        settings.put('roles_without_authority', ['worker'], project[1])
+        monkeypatch.setenv('METAFORM_ROLE', 'worker')
+        before = snapshot(project)
+        for surface in ('cli', 'mcp'):
+            with pytest.raises(Stop, match='roles_without_authority.*worker'):
+                verb(called(project, 'gc', surface), 'orchestration', 'delegate',
+                     role='investigator', task='Trace the countdown.')
+&gt;           with pytest.raises(Stop, match='roles_without_authority.*worker'):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE Stop
+
+src/metaform/modules/orchestration/tests/test_review_regressions.py:99: Failed</failure></testcase></testsuite></testsuites>

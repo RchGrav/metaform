@@ -177,7 +177,7 @@ def save_edit(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
     changed exactly, the edit becomes a packet under artifacts/prompt-edits and the caller tells the person to hand
     it to an agent. Returns the file updated, or the packet."""
     if entry.owner == 'store':  # a stored prompt is its own source: the new version is the edit
-        store.save_prompt(entry.name, new_text)
+        prompt_files.save_edit(entry.name, new_text, format=store.prompt_version(entry.name).format)
         return Path('(prompt store)')
     if entry.stored:  # an element of a prompts.xml, edited as plain text: through the gate every surface saves through
         try:
@@ -186,7 +186,7 @@ def save_edit(entry: Entry, new_text: str, folder: Path | None = None) -> Path:
             raise Stop(f'{error}.', f'metaform prompt {entry.key}') from None
         written = version.text  # the file's form of it, written where the prompt lives
     else:
-        store.save_prompt(entry.key, new_text, format='xml')
+        prompt_files.save_edit(entry.key, new_text, format='text' if entry.owner == 'skill' else 'xml')
         written = new_text
     if update_source(entry, written):
         entry.text, entry.stored = new_text, written if entry.stored else ''

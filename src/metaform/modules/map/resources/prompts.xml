@@ -175,60 +175,12 @@ All agent inference, communication, and authored work must use the project's can
      Returned by metaform_instructions with module map, at metaform://instructions/map, and by metaform instructions map; printed in the
      command-line guide while connect_instructions is full. The tasks prompt follows it while the setting tasks is on.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
-<instructions>@STATE_INIT:
-  {Task}:=[assigned task]; {Functionality}:=UNRESOLVED;
-  {Specifications}:=UNRESOLVED; {Blocked}:=FALSE; {State}:=READ
-
-@CONSTRAINT:
-When you are assigned a task, understand the functionality you are working
-on and validate your understanding against the project specifications.
-Look for answers in the specifications, code and map before deciding.
-The ticket was decided before you took it. Make every reversible choice it
-leaves open yourself, write the choice and its reason on the ticket as a
-step or in its note, and carry on. Build a real fork that changes behavior
-significantly and has tradeoffs behind a setting with a sensible default;
-record the setting, its default and the reason on the ticket, and carry on.
-A small choice of style or wording is reversible, not a setting.
-When something the ticket does not decide stops you,
-write what you found and what it needs in the ticket's note and end your
-turn with the ticket open; the person reads it there.
-
-@CONDITION:
-  ?IF ( no task is assigned ) -&gt; {State}:=IDLE
-  :ELSE ?IF ( functionality or specifications are unresolved ) -&gt; {State}:=READ
-  :ELSE ?IF ( an executable step remains ) -&gt; {State}:=WORK
-  :ELSE -&gt; {State}:=BLOCKED
-
-@ROUTER:
-  @MATCH({State}):
-    | [IDLE] -&gt; EXECUTE_PIPELINE(None)
-    | [READ] -&gt; EXECUTE_PIPELINE(Read)
-    | [WORK] -&gt; EXECUTE_PIPELINE(Work)
-    | [BLOCKED] -&gt; EXECUTE_PIPELINE(Blocked)
-
-@EXECUTE_PIPELINE(None):
-  YIELD
-
-@EXECUTE_PIPELINE(Read):
-  ∇({Task}) =&gt; identify the functionality and its project specifications.
-  ∇(functionality, specifications) =&gt; validate your understanding.
-  Δ(understanding) =&gt; {Functionality}; {Specifications}.
-  =&gt; reevaluate state.
-
-@EXECUTE_PIPELINE(Work):
-  YIELD to the assigned task with understanding validated.
-
-@EXECUTE_PIPELINE(Blocked):
-  YIELD with the ticket open and what stopped you written in its note, for the person to read.
-
-@VERIFY:
-  {Valid}:=(no task is assigned OR
-    (functionality understood AND understanding validated against project specifications
-     AND reversible choices and their reasons recorded on the ticket
-     AND significant behavior forks built behind settings with sensible defaults and their reasons recorded
-     AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)))
-  ?IF ({Valid}) -&gt; YIELD
-  :ELSE -&gt; CORRECT the unresolved understanding.</instructions>
+<instructions>
+When assigned work, understand its functionality through the map, relationships, applicable knowledge, references, unread memories and current specification.
+Use C(T) and the active adaptive or strict mode as supplied by the assignment. A specification describes the current detailed approach; in adaptive mode it can evolve when a better approach serves C(T) and fits the full design. Record specification adaptations and surface them as user messages. New user instructions revise the operative requirements in either mode.
+Resolve ordinary work choices with project evidence and judgment, recording material decisions and reasons on the ticket. Work through your assigned role, parent/GC and recorded return destination. Apply current change orders.
+When blocked, record the observed problem, evidence, work so far and operative specification through the check-in route. It informs the GC and activates functional assessment. Preserve the continuation and continue useful work that remains available.
+</instructions>
 
 
 <!-- The opening of a blind-spot review: asks a fresh reviewer for substantial oversights and describes both modes.

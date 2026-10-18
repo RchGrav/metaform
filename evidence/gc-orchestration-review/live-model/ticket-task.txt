@@ -1,0 +1,19 @@
+Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.
+
+Functional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,
+lowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.
+Acceptance examples: "  Core Switch  " becomes "core_switch"; "WAN\t\tUplink" becomes "wan_uplink";
+"Core-Switch" becomes "core-switch"; "" and "   " each raise ValueError.
+Create test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.
+
+Exercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer
+specialist yourself through orchestration_call, with its purpose, requested contribution and this context.
+When that returns the missing-role request, commission that request through orchestration_commission.
+The Role Creator authors and publishes the reusable duty; the original requested specialist call then
+continues and its result returns to you. Use the generated specialist to implement and test the function.
+On its return, independently validate the requested outcome and deliver the root with the exact candidate
+files, hashes and verification evidence. The normal independent functionality assessment and user/PM
+notification should follow the existing runtime continuations.
+
+The isolated project already contains the functional location for this task: code.label.normalizer.
+All work for this smoke journey belongs in this project folder.

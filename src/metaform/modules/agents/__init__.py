@@ -17,7 +17,21 @@ from typing import Any, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import Column, Index, Store, StoreError, Table, Tables, prompts
-from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, context, held_role, surface
+from metaform.module import (
+    Context,
+    Module,
+    Noun,
+    Provides,
+    Resource,
+    Stop,
+    Subscription,
+    Verb,
+    context,
+    held_role,
+    surface,
+)
+
+from . import roles as authored
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -106,12 +120,13 @@ assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record f
 
 # Version 1: what each session was sent, one row for each turn that carried a prompt, kept in the project so a clear
 # keeps it; a session is read by its id or by its runner's, METAFORM_SESSION.
-TABLES = Tables(version=1, tables=(
+TABLES = Tables(version=2, compatible_from=1, tables=(
     Table('sent', place='project', key=('session_id', 'seq'),
           columns=(Column('session_id', required=True), Column('seq', 'int', required=True),
                    Column('work_id', required=True), Column('runner'), Column('role', required=True),
                    Column('agent'), Column('at', required=True), Column('prompts', 'json', required=True)),
           indexes=(Index(('runner',)),)),
+    *authored.TABLES,
 ))
 
 
@@ -163,6 +178,11 @@ FIXED = prompt_files.FIXED
 
 
 def _format(name: str) -> str:
+    if name.startswith('agents:generated_'):
+        try:
+            return prompts.prompt_version(name).format
+        except StoreError:
+            return 'text'
     return 'xml' if '.' not in name.partition(':')[2] and not name.startswith('skill:') else 'text'
 
 
@@ -315,7 +335,11 @@ def roles(ctx: Context) -> dict[str, Any]:
                        'behind': [one['name'] for one in named if 'behind' in one],
                        'held_back': each.name in held,
                        'running': sum(1 for one in running if one['role'] == each.name)})
-    return {'roles': listed, 'next': 'metaform agents role name=<role>'}
+    return {'roles': listed,
+            'authored': [{'role': role.name, 'uri': f'metaform://role/{role.name}', 'provider': owner,
+                           'purpose': role.purpose, 'prompts': list(role.prompts)}
+                          for owner, role in authored.definitions(ctx)],
+            'next': 'metaform agents role name=<execution role>; metaform agents resolve name=<authored role>'}
 
 
 def role(ctx: Context) -> dict[str, Any]:
@@ -358,6 +382,12 @@ def sent(ctx: Context) -> dict[str, Any]:
             'next': 'metaform prompt <name> <version> reads the exact text of a version'}
 
 
+def updates(ctx: Context) -> dict[str, Any]:
+    """Inspect version-preserving prompt merges and custom selections deliberately left untouched."""
+    name = ctx.nouns.get('name')
+    return {'updates': prompts.prompt_merges(str(name) if name else None)}
+
+
 def _refused(ctx: Context) -> None:
     held = held_role(ctx)
     if held is not None:
@@ -367,7 +397,8 @@ def _refused(ctx: Context) -> None:
 
 def _known(ctx: Context, name: str) -> str:
     """The shipped text of a prompt some role names; a name no role names is refused, so an edit goes nowhere unsent."""
-    if not any(sends.name == name for role in ROLES for sends in _sends(role)):
+    if not any(sends.name == name for role in ROLES for sends in _sends(role)) and not any(
+            name in role.prompts for _, role in authored.definitions(ctx)):
         raise Stop(f'No role is sent a prompt {name}.', 'metaform agents roles')
     if name in FIXED:
         raise Stop(f'{name} is {FIXED[name]}.', 'metaform agents role name=intake')
@@ -376,6 +407,10 @@ def _known(ctx: Context, name: str) -> str:
     except Unread as unread:
         raise Stop(str(unread), 'metaform enable workflow') from None
     if shipped is None:
+        try:
+            return prompts.prompt_version(name).text
+        except StoreError:
+            pass
         raise Stop(str(problem), 'metaform agents roles')
     return shipped
 
@@ -399,6 +434,9 @@ def _reach(ctx: Context, name: str) -> tuple[list[str], list[str]]:
         said.append(f'the {role.name} role from its next new conversation' + (
             f'; the {len(ids)} running now keep the text they began with' if ids else ''))
         kept += ids
+    for _, role in authored.definitions(ctx):
+        if name in role.prompts:
+            said.append(f'the authored {role.name} role from its next turn')
     return said, kept
 
 
@@ -506,6 +544,15 @@ MODULE = Module(
         Verb('role', role, 'Read one role: what it is for, each prompt it is sent with its text and version, its '
                            'tools and authority, and the agents running as it.',
              nouns=(Noun('name', 'The role: intake, system, sentinel, talk, prep or worker.'),), effect='read'),
+        Verb('resolve', authored.resolve, 'Resolve authored responsibilities and actual selected prompt components '
+                                          'without changing an agent assignment.',
+             nouns=(Noun('name', 'The authored role name or URI from an enabled module provider.'),),
+             effect='read', category='coordinate'),
+        Verb('receipts', authored.inspect_receipts, 'Read exact context components delivered in each agent epoch.',
+             nouns=(SESSION,), effect='read', category='coordinate'),
+        Verb('updates', updates, 'Read selected prompt merge evidence, exact parent versions and retained conflicts.',
+             nouns=(Noun('name', 'An existing prompt component identity; omit to read every applied update.',
+                         required=False),), effect='read', category='coordinate'),
         Verb('sent', sent, 'Read which role a session ran as and which prompt versions each of its turns carried.',
              nouns=(SESSION,), effect='read'),
         Verb('override', override, "Save an edit of a role's prompt, sent in place of the shipped text; the result "
@@ -521,6 +568,9 @@ MODULE = Module(
                      'it.',
              person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
     ),
-    subscriptions=(Subscription('prompt.sent', record),),
+    subscriptions=(Subscription('prompt.sent', record), Subscription('session.compacted', authored.compacted)),
+    provides=(Provides('agent.role', authored.SERVICE), Provides('agent.roles', authored.generated)),
+    resources=(Resource('metaform://role/{name}', 'Authored role',
+                        'The authored responsibility, provider and resolved prompt versions.', 'resolve'),),
     tables=TABLES,
 )

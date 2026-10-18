@@ -1,0 +1,6 @@
+2026-10-18T09:09:02.064669Z ERROR codex_app_server: Project-local config, hooks, and exec policies are disabled in the following folders until the project is trusted, but skills still load.
+    1. /tmp/metaform-review-live/project/.codex
+       To load project-local config, hooks, and exec policies, add /tmp/metaform-review-live/project as a trusted project in /root/.codex/config.toml.
+
+2026-10-18T09:09:02.064741Z ERROR codex_app_server: Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.
+  user (/root/.codex/config.toml): `features.experimental_use_rmcp_client` is ignored.

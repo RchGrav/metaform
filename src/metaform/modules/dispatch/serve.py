@@ -59,7 +59,7 @@ from metaform.module import (
 
 from . import AGENTS, REPLY_LIMIT, SERVED, anchor, argv, end_group, group_options, origin, prompt, runner_of, sessions
 from . import proxy as layers
-from .signals import add_line, concerning
+from .signals import add_line, concerning, mark_peer
 
 settings.choice('dispatch_serve_agent', ['default', 'none', *AGENTS], 'default', person_only=True,
                 label='Editor agent',
@@ -1041,6 +1041,30 @@ class Served:
             finally:
                 self.release(ident)
 
+    async def peer_turn(self, session: Session, envelope: dict[str, Any]) -> None:
+        """An editor's registered agent receives peer messages at a normal turn, with actual sender provenance."""
+        from .orchestration import note_context
+        text = prompt('peer_note', message_context=note_context(envelope), note=str(envelope.get('text') or ''))
+        async with self.queue(session):
+            record = session.record
+            if record is None or record.closed:
+                return
+            sender = cast(dict[str, Any], envelope.get('from') or {})
+            self.shown(session, text, str(sender.get('agent') or 'peer'))
+            ident = self.own_id()
+            try:
+                answer = await self.turn(session, {'id': ident, 'method': 'session/prompt',
+                    'params': {'sessionId': session.session_id, 'prompt': [{'type': 'text', 'text': text}]}})
+                if 'error' in answer:
+                    await record.peer_state(envelope, 'failed')
+                else:
+                    await record.peer_state(envelope, 'delivered')
+                    result = cast(dict[str, Any], answer.get('result') or {})
+                    if self.version < 2 and result.get('stopReason') != 'cancelled':
+                        await record.peer_state(envelope, 'read')
+            finally:
+                self.release(ident)
+
     def cancel(self, message: dict[str, Any]) -> None:
         """session/cancel: Metaform's command stops; the agent's turn, the page's included, is cancelled by the agent;
         and an editor prompt still waiting for the page's turn is answered cancelled, never sent."""
@@ -1224,6 +1248,7 @@ class Record:
         self.how: str | None = None
         self.backlog: deque[Callable[[], Awaitable[Any]]] = deque()
         self.writer: asyncio.Task[Any] | None = None
+        self.queued_peer_ids: set[str] = set()
 
     def later(self, step: Callable[[], Awaitable[Any]]) -> None:
         """Write to the record in order, after what was asked before, on a task of its own: what the editor and the
@@ -1447,6 +1472,15 @@ class Record:
         await self.table(lambda tx: tx.update('agent_sessions', {'session_id': session_id},
                                               {'state': 'ended', 'how': how}), 'agent_sessions')
 
+    async def peer_state(self, envelope: dict[str, Any], state: str) -> None:
+        sender = cast(dict[str, Any], envelope.get('from') or {})
+        recipient = self.session.session_id
+
+        def write(tx: Any) -> None:
+            for session_id in {recipient, str(sender.get('session_id') or '')} - {''}:
+                mark_peer(tx, session_id, str(envelope['id']), self.work_id, state, recipient_session=recipient)
+        await self.table(write)
+
     async def control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """One request on the control port with this session's token, as the page sends a runner's: `status`,
         `message` and `interrupt`. Permission requests are the editor's to answer, and the session ends when the
@@ -1466,6 +1500,17 @@ class Record:
                 await _reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': live,
                                       'activity': 'working' if session.turns else 'idle', 'interrupting': False,
                                       'how': None if live else self.how})
+            elif op == 'note':
+                envelope = cast(dict[str, Any], asked.get('line') or {})
+                note_id = str(envelope.get('id') or '')
+                if not note_id or self.closed:
+                    await _reply(writer, {**said, 'noted': False, 'error': 'The note or recipient is unavailable.'})
+                    return
+                await self.note(f'peer:{note_id}', 'peer', json.dumps(envelope, ensure_ascii=False))
+                if asked.get('deliver') and note_id not in self.queued_peer_ids:
+                    self.queued_peer_ids.add(note_id)
+                    self.served.spawn(self.served.peer_turn(session, envelope))
+                await _reply(writer, {**said, 'noted': True, 'queued': bool(asked.get('deliver')), 'steered': False})
             elif op == 'message':
                 text, by = str(asked.get('text', '')), str(asked.get('by') or '')
                 sent = str(asked.get('broadcast') or '')  # one message of a broadcast, kept under its id

@@ -1,0 +1,14 @@
+{
+  "label": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "source": "/workspace/scratch/243b683ad142/metaform/src/metaform",
+  "interval_seconds": 60.0001334539993,
+  "cpu_seconds": {
+    "runner": 0.020000000000000018,
+    "adapter": 0.0
+  },
+  "cpu_percent_of_one_core": {
+    "runner": 0.033333259192387554,
+    "adapter": 0.0
+  },
+  "native_orchestration": true
+}

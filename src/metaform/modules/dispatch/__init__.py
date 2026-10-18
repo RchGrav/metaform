@@ -1709,7 +1709,7 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
             # an ended session is no longer stopped and waiting; not-smooth below says what is left, BASE-057
             publish(ctx, 'stopped-open', work_id=work_id, session_id=session_id, active=False,
                     reason='the session ended')
-        if record is not None and not record.done:
+        if record is not None and not record.done and how != 'orchestration suspended':
             publish(ctx, 'not-smooth', work_id=work_id, session_id=session_id or '', key=by, reason=how)
             if requeued:
                 publish(ctx, 'requeue', work_id=work_id, session_id=session_id or '', key=by, reason=how)
@@ -2230,11 +2230,14 @@ def autostart(ctx: Context) -> dict[str, Any]:
         return {'started': [], 'halted': stopped['by']}
     recovered = recover(ctx)
     settle(ctx)  # after recover, which under automatic recovery returns such a ticket to the queue instead
+    from .orchestration import drain
+    continued = drain(ctx)  # restart/reconnect reconciliation of explicitly recorded continuations
     start_raised(ctx, store, asked)  # the person raised these, so they start whether Autostart agents is checked or not
     connected = stay_connected(ctx, store, asked)  # the person's own, whether Autostart agents is checked or not
     started = start_work(ctx, store, recovered, asked)
     due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None)) if one is not None]
-    return {**started, **connected, **({'retry_due': min(due)} if due else {})}
+    return {**started, **connected, **({'continuations': continued} if continued else {}),
+            **({'retry_due': min(due)} if due else {})}
 
 
 MARKERS = {'trouble': 'This part is marked trouble: it does not do its job. Fix it as the note says.',
@@ -2936,20 +2939,23 @@ def editor(row: dict[str, Any]) -> bool:
 
 
 def may_steer(ctx: Context) -> None:
-    """An agent whose role the person holds back, a worker and a merge preparation by default, starts, stops, messages
-    or steers no agent, BASE-052: it would assign work or override the person's direction of another agent. The page
-    is the person's and is never held; the person lifts this with `roles_without_authority`, MAP-050."""
+    """Honor the person's configured operational-role restrictions, BASE-052 and MAP-050.
+
+    Authored swarm responsibilities do not override this dynamic blacklist. Ordinary peer delivery uses its own
+    public note path; GC ownership is additionally checked before an agent broadcasts or interrupts a member.
+    """
     role = held_role(ctx)
     if role is not None:
-        raise Stop(f'A {role} agent starts, stops and messages no agent: that is for the person and the agents that '
-                   'serve them. Write what you found in your own ticket\'s note.',
+        raise Stop(f'The configured roles_without_authority holds back {role} agents from directing agents. '
+                   'Record the requested contribution and context for your GC.',
                    'metaform map work op=edit id=<your work id> note="..."')
 
 
 def sender(ctx: Context) -> str | None:
     """The role of the agent a message comes from, None for the person: on the page always the person, elsewhere the
     role the runner gave the calling agent, BASE-052."""
-    return os.environ.get('METAFORM_ROLE') or None if ctx.surface in ('mcp', 'cli') else None
+    return (os.environ.get('METAFORM_ROLE') or ('agent' if os.environ.get('METAFORM_SESSION') else None)) \
+        if ctx.surface in ('mcp', 'cli') else None
 
 
 def start(ctx: Context) -> dict[str, Any]:
@@ -2978,6 +2984,11 @@ def start(ctx: Context) -> dict[str, Any]:
         # said before the ticket is taken; the gate counts again at the start. An agent's start is not the person's
         # retry of an agent that keeps failing.
         admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=not person_asks(ctx))
+        if person_asks(ctx):
+            from .orchestration import service
+            owner = service(ctx)
+            if owner is not None:
+                owner.reopen(ctx, str(work_id))
         store.take_work(work_id, by=reservation)
     started = run_reserved(ctx, reservation, given, asked=asked, auto=not person_asks(ctx))
     return {**started, **{field: value for field, value in given.items() if value},
@@ -3213,8 +3224,16 @@ def claimed(store: Store, address: str | None, work_id: str | None = None) -> di
     """The active claim reserving an address that the work is not part of, or None."""
     if not address:
         return None
-    return next((claim for claim in claim_rows(store) if claim['state'] == 'active' and address in claim['nodes']
-                 and work_id not in claim['work']), None)
+    found = [claim for claim in claim_rows(store) if claim['state'] == 'active' and address in claim['nodes']
+             and work_id not in claim['work']]
+    if work_id and found:
+        from .orchestration import service
+        ctx = runner_context(store)
+        owner = service(ctx)
+        if owner is not None:
+            found = [claim for claim in found if not any(owner.same_team(ctx, work_id, str(other))
+                                                        for other in claim['work'])]
+    return next(iter(found), None)
 
 
 def in_use(store: Store, node: str) -> list[str]:
@@ -3373,6 +3392,13 @@ def what_follows(ctx: Context, kind: str) -> str:
 
 def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
           asked: int | None = None, agent: str | None = None, auto: bool = False) -> None:
+    """Apply the gate against current settings, including calls made inside a long-lived runner."""
+    with home.registry_scope(fresh=True):
+        _admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto)
+
+
+def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
+           asked: int | None = None, agent: str | None = None, auto: bool = False) -> None:
     """Refuse a start the gate has no room for, saying which limit binds and what follows: a halt newer than the start
     was asked for, `halted`; an agent that keeps failing, for an automatic start, `failing_agent`; the machine's
     agents, dispatch_machine_agents; the project's slots, dispatch_agents; the day's budget. Run under the gate's
@@ -3584,6 +3610,29 @@ def leave_ledger() -> None:
     run the queue, `moved_on`."""
     with contextlib.suppress(OSError):
         (ledger() / f'{os.getpid()}.json').unlink()
+    for path in ledger().glob(f'{os.getpid()}-fork-*.json'):
+        with contextlib.suppress(OSError):
+            path.unlink()
+
+
+def fork_capacity(ctx: Context, store: Store, work_id: str, agent: str) -> Path:
+    """Reserve an active ACP fork through the same machine-wide admission lock as a managed runner.
+
+    A fork shares its adapter process and inherited context, but can execute beside its parent. Its active turn
+    therefore counts separately. The reservation lives until that turn ends, or the parent adapter ends; a dead
+    runner's reservations are pruned by the ordinary ledger read, with no polling or separate capacity policy.
+    """
+    from .recovery import identity
+    with home.file_lock(admit_lock()):
+        admit(ctx, store, work_id, 'worker', agent=agent)
+        token = secrets.token_hex(16)
+        path = ledger() / f'{os.getpid()}-fork-{token}.json'
+        temporary = path.with_suffix('.tmp')
+        home.write_private(temporary, json.dumps({'pid': os.getpid(), 'born': identity(os.getpid()) or '',
+            'project': store.project_id, 'work_id': work_id, 'agent': agent, 'kind': 'worker',
+            'started': time.time(), 'asked': time.time_ns(), 'fork': token}))
+        os.replace(temporary, path)
+        return path
 
 
 def given_back_reservation(store: Store, work_id: str, reservation: str) -> None:
@@ -4237,6 +4286,16 @@ async def run(ctx: Context) -> dict[str, Any]:
 def message(ctx: Context) -> dict[str, Any]:
     """Carry a person's message to the agent working a ticket, as session/prompt; one an agent sends carries its role,
     so its thread never shows it as the person's, BASE-052."""
+    if sender(ctx):
+        # Agent messages are ordinary peer notes, with authenticated session provenance and no steering.
+        from dataclasses import replace
+
+        from .peering import send
+        text: Any = ctx.nouns['text']
+        words = ' '.join(str(one) for one in cast(list[Any], text)) if isinstance(text, (list, tuple)) else str(text)
+        made = send(replace(ctx, nouns={'to': ctx.nouns.get('session') or ctx.nouns['id']}),
+                    ctx.require_store(), words, 0)
+        return {key: value for key, value in made.items() if not key.startswith('_')}
     may_steer(ctx)
     store = ctx.require_store()
     given: Any = ctx.nouns['text']
@@ -4260,7 +4319,13 @@ def message(ctx: Context) -> dict[str, Any]:
             raise Stop('A frame goes with a person\'s own message, as one the web GUI kept.',
                        f'metaform dispatch message {ctx.nouns["id"]} -- "<text>"')
         given_by['image'] = str(image)
-    return _told(_running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session')), 'message', text=text, **given_by)
+    row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
+    from .orchestration import service
+    owner = service(ctx)
+    if owner is not None and owner.assignment(ctx, session_id=row['session_id']) is not None:
+        owner.directed(ctx, row['session_id'], {'kind': 'user_direction', 'id': secrets.token_hex(16),
+                                               'text': text, 'at': home.now(), 'from': {'kind': 'user'}})
+    return _told(row, 'message', text=text, **given_by)
 
 
 def fork(ctx: Context) -> dict[str, Any]:
@@ -4273,8 +4338,9 @@ def fork(ctx: Context) -> dict[str, Any]:
     text = ' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple)) else str(given)
     row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     if ctx.nouns.get('fork'):
-        return _told(row, 'message', text=text, fork=str(ctx.nouns['fork']))
-    answer = _told(row, 'fork', text=text)
+        answer = _told(row, 'message', text=text, fork=str(ctx.nouns['fork']))
+    else:
+        answer = _told(row, 'fork', text=text)
     if answer.get('error'):
         raise Stop(str(answer['error']), f'metaform dispatch sessions id={ctx.nouns["id"]}')
     return answer
@@ -4296,6 +4362,9 @@ def broadcast(ctx: Context) -> dict[str, Any]:
     text = ' '.join(words).strip()
     if not text:
         raise Stop('A broadcast says something.', 'metaform dispatch broadcast -- "<message>"')
+    if sender(ctx) or ctx.nouns.get('team'):
+        from .orchestration import broadcast as team_broadcast
+        return team_broadcast(ctx, text, ctx.nouns.get('team'))
     given_by: dict[str, Any] = {'by': role} if (role := sender(ctx)) else {}
     caller = os.environ.get('METAFORM_SESSION') if given_by else None  # an agent's broadcast does not tell itself
     running = [row for row in sessions(store) if row['state'] == 'running'
@@ -4309,6 +4378,13 @@ def broadcast(ctx: Context) -> dict[str, Any]:
                    'Only your chat agent is working on this project; broadcast with system=true to tell it.',
                    'metaform dispatch sessions thread=false')
     sent_id = secrets.token_hex(8)
+    from .orchestration import service
+    owner = service(ctx)
+    if owner is not None:
+        for row in told:
+            if owner.assignment(ctx, session_id=row['session_id']) is not None:
+                owner.directed(ctx, row['session_id'], {'kind': 'user_direction', 'id': sent_id, 'text': text,
+                                                       'at': home.now(), 'from': {'kind': 'user'}})
 
     def one(row: dict[str, Any]) -> dict[str, Any]:
         said = {key: row[key] for key in ('work_id', 'session_id', 'agent')}
@@ -4718,7 +4794,26 @@ def interrupt(ctx: Context) -> dict[str, Any]:
     """Cancel the current turn while keeping the session reachable and queued messages in order."""
     may_steer(ctx)
     row = _running_or_stop(ctx.require_store(), ctx.nouns['id'], ctx.nouns.get('session'))
-    result = _told(row, 'interrupt')
+    direction = str(ctx.nouns.get('direction') or '')
+    envelope: dict[str, Any] | None = None
+    if sender(ctx):
+        from .orchestration import identity, service
+        owner = service(ctx)
+        mine, actual = identity(ctx)
+        if owner is None or not owner.owns(ctx, str(mine['session_id']), str(row['session_id'])):
+            raise Stop('Only the recorded GC can interrupt a member of its own swarm.',
+                       'metaform dispatch note to=<session> -- "<message>"')
+        envelope = {'kind': 'gc_direction', 'from': actual, 'body': direction,
+                    'id': secrets.token_hex(16), 'at': home.now()}
+        owner.interrupted(ctx, str(row['session_id']), envelope)
+    elif direction:
+        from .orchestration import service
+        owner = service(ctx)
+        envelope = {'kind': 'user_direction', 'from': {'agent': 'person'}, 'body': direction,
+                    'id': secrets.token_hex(16), 'at': home.now()}
+        if owner is not None and owner.assignment(ctx, session_id=str(row['session_id'])):
+            owner.interrupted(ctx, str(row['session_id']), envelope)
+    result = _told(row, 'interrupt', direction=envelope)
     if result.get('error'):
         raise Stop(str(result['error']), f'metaform dispatch stop {ctx.nouns["id"]}')
     return result
@@ -4738,12 +4833,39 @@ def stop(ctx: Context) -> dict[str, Any]:
         starting = intake_under_way(store)
         if starting is not None and starting['state'] == 'starting' and starting['work_id'] == ctx.nouns['id']:
             return ended_launch(store, starting)
-    row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'), gone_ok=True)
+    from .orchestration import service
+    owner = service(ctx)
+    acting = person_asks(ctx) or word is not None
+    try:
+        row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'), gone_ok=True)
+    except Stop:
+        # At capacity one a waiting GC has ended its adapter. The user's Stop still names the delivery ticket,
+        # including a not-yet-launched assignment, and must cancel its descendants and recorded continuations.
+        assignment = owner.assignment(ctx, work_id=str(ctx.nouns['id'])) if owner is not None else None
+        if not acting or assignment is None or owner is None:
+            raise
+        stopped_work = owner.stopped(ctx, work_id=str(ctx.nouns['id']), by='user')
+        persons_stopped(store, stopped_work)
+        held = paused(ctx, store, None)
+        ended: list[dict[str, Any]] = []
+        for child in sessions(store, verify=False):
+            if child['work_id'] in stopped_work and child['state'] == 'running':
+                ended.append(ended_by_person(store, child, stopper(ctx)))
+        for launch in launches():
+            if launch.get('project') == ctx.project and launch.get('work_id') in stopped_work:
+                ended.append(ended_launch(store, launch))
+        return {'stopped': True, 'work_id': str(ctx.nouns['id']), 'assignments': stopped_work,
+                'sessions': ended, **(QUEUE_PAUSED if held else {})}
     if word is None:  # on the person's word their system agent stops what it did not start
         may_stop(ctx, row)
     if word is None or not word.get('covered'):  # the person's stop, or one their message asked: the work it is part
         # of starts no more on their earlier word, before this agent's end can wake their system agent
         persons_stopped(store, [str(row['work_id'])])
+    stopped_work: list[str] = owner.stopped(ctx, work_id=str(row['work_id']),
+        by='user' if acting else stopper(ctx)) if owner is not None else []
+    for child in sessions(store, verify=False) if len(stopped_work) > 1 else []:
+        if child['work_id'] in stopped_work and child['session_id'] != row['session_id'] and child['state'] == 'running':
+            ended_by_person(store, child, stopper(ctx))
     if row.get('gone'):  # its runner had ended already: nothing to stop, and the person is told so
         return ended_gone(store, row, stopper(ctx))
     off = disconnect(ctx, store, row)
@@ -4880,6 +5002,13 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                     turned_off.append(f'{project.project_id}:{key}')
             if acting:
                 persons_stopped(held, None)  # Stop all: no work the person's word started goes on
+                from .orchestration import service
+                project_ctx = context('dispatch', folder, project=project.project_id)
+                owner = service(project_ctx)
+                if owner is not None:
+                    for assignment in owner.assignments(project_ctx):
+                        if not assignment.get('stop'):
+                            owner.stopped(project_ctx, work_id=assignment['work_id'], by='user')
             rows = [row for row in sessions(held, verify=False) if row['state'] == 'running'
                     and runner_of(row.get('pid')) == row['work_id'] and (me is None or row.get('runner') != me)
                     and (acting or started_by_caller(row))]
@@ -4985,7 +5114,7 @@ def stopped_how(by: str | None) -> str:
 
 def stop_end(how: str) -> bool:
     """Whether a session ended at someone's word, the person's or an agent's, or with its work: never retried, P012."""
-    return how in PERSON_ENDS or how.startswith('stopped by ')
+    return how in PERSON_ENDS or how.startswith('stopped by ') or how == 'orchestration suspended'
 
 
 def ended_held(store: Store, row: dict[str, Any], by_agent: str | None = None) -> dict[str, Any]:
@@ -5383,7 +5512,8 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 
 
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
-ENDED_STATE = ('about', 'intake')  # what the agents key keeps of an ended session's state: its conversation, intake
+ENDED_STATE = ('about', 'intake', 'notification', 'title', 'role', 'authored_role_uri', 'assignment_id', 'team_id',
+               'latest_message_id', 'latest_message_text', 'updated_at')
 # What the agents key kept of each ended session's state, by project and session id, with the stored row it was read
 # for, `ended_mark`; None for a session that kept no state. A session's state line holds about 50 KB, its commands
 # mostly, and reading and parsing every ended session's on every read was the most of this read's cost,
@@ -5522,6 +5652,44 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         if busy is not None and busy['state'] == 'starting' and (not work_id or busy['work_id'] == work_id):
             starting = [{**{key: value for key, value in busy.items() if key not in PRIVATE}, 'how': None,
                          'status': 'submitted', 'reason': 'starting'}]
+    from .orchestration import service
+    owner = service(ctx)
+    if owner is not None:
+        if work_id:
+            # A ticket-scoped event reads only that assignment and its actual relationship targets. Its opened
+            # thread includes pending continuation delivery; the compact Agents menu needs no transition bodies.
+            scoped = owner.context(ctx, work_id=str(work_id)) if ctx.nouns.get('thread') is not False else \
+                owner.assignment(ctx, work_id=str(work_id))
+            assignments = [scoped] if scoped is not None else []
+        else:
+            assignments = owner.assignments(ctx)
+        by_work = {str(one['work_id']): one for one in assignments}
+        by_id = {str(one['assignment_id']): one for one in assignments}
+        if work_id and assignments:
+            for key in ('parent_assignment_id', 'reviewed_assignment_id'):
+                related = assignments[0].get(key)
+                if related and related not in by_id:
+                    held = owner.assignment(ctx, assignment_id=str(related))
+                    if held is not None:
+                        by_id[str(related)] = held
+        for session in found:
+            assigned = by_work.get(str(session['work_id']))
+            if assigned is None:
+                continue
+            parent: dict[str, Any] = by_id.get(str(assigned.get('parent_assignment_id'))) or {}
+            reviewed: dict[str, Any] = by_id.get(str(assigned.get('reviewed_assignment_id'))) or {}
+            directions: list[dict[str, Any]] = assigned.get('pending_direction') or []
+            states.setdefault(str(session['session_id']), {}).update({
+                'orchestration': assigned, 'authored_role_uri': assigned['authored_role_uri'],
+                'assignment_id': assigned['assignment_id'], 'team_id': assigned['team_id'],
+                'owner_gc_id': assigned['gc_assignment_id'], 'root_work_id': assigned['root_work_id'],
+                'parent_assignment_id': assigned.get('parent_assignment_id'),
+                'parent_session_id': parent.get('owner_session_id'), 'parent_work_id': parent.get('work_id'),
+                'delivery_state': assigned['state'], 'pending_direction': directions,
+                'latest_direction': directions[-1] if directions else None,
+                'assessment_work_id': assigned['work_id'] if reviewed else None,
+                'reviewed_work_id': reviewed.get('work_id'), 'reviewed_session_id': reviewed.get('owner_session_id'),
+                'reviewed_gc_id': reviewed.get('assignment_id')})
     return {'sessions': [*({**{key: value for key, value in session.items() if key not in PRIVATE},
                             **session_work_status(session, [one for one in raised
                                                             if one.get('work_id') == session['work_id']])}
@@ -5774,9 +5942,17 @@ def resume(ctx: Context) -> dict[str, Any]:
     held = base_store(held, row)  # its ticket is in the metaform its runner was pinned to, and it goes on there
     record = None if intake_id(work_id) else held_ticket(held, work_id)
     worker = record is not None and not record.done and record.taken_by == f'{agent} {session_id}'
+    from .orchestration import service
+    owner = service(ctx)
+    assignment = owner.assignment(ctx, work_id=work_id) if owner is not None else None
+    if assignment and assignment.get('owner_session_id') == session_id and record is not None and not record.done:
+        worker = True
     if worker and running(store, work_id) is not None:
         raise Stop(f'Another agent is at work on work {work_id}.', f'metaform dispatch sessions id={work_id}')
     # a worker's resume and a conversation's alike go through the gate, which refuses past the slots, VIEW-039
+    if assignment and owner is not None and person_asks(ctx):
+        admit(ctx, held, work_id, 'worker' if worker else 'summoned', agent=agent)
+        owner.reopen(ctx, work_id)
     started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume',
                            ctx=ctx)
     if started.get('state') == 'running' and silent(row, started.get('pid')):
@@ -6196,6 +6372,10 @@ def merge_waits(folder: Path) -> bool:
     return project is not None and bool(due(Store(project)))
 
 
+from .orchestration import TRANSPORT
+from .orchestration import changed as orchestration_changed
+from .orchestration import render as render_prompt
+
 MODULE = Module(
     id='dispatch',
     summary='Start an agent on a ticket through ACP, follow it, message it and stop it.',
@@ -6400,6 +6580,7 @@ MODULE = Module(
                     Noun('sentinel', 'The address of the node the person raised an issue on; the ticket holds the '
                                      'report, and the sentinel prompt is served.', required=False),
                     Noun('reservation', 'The startup reservation made by start.', required=False),
+                    Noun('assignment', 'The recorded authored assignment this managed launch continues.', required=False),
                     Noun('resume', 'The ended session to go on with, loaded or resumed through ACP.', required=False),
                     Noun('intake', 'true: an intake agent, whose work id names no ticket and whose first turn is the '
                                    'intake, with what the person asked for kept in its launch\'s row.', kind='bool',
@@ -6437,7 +6618,9 @@ MODULE = Module(
                         listed=session_live),
         Verb('broadcast', broadcast, "Send a person's message to every agent running on the project at once, and keep "
                                      'it with whom it reached.',
-             nouns=(Noun('system', "true: tell the person's own system agent too; it is left out otherwise.",
+             nouns=(Noun('team', 'A GC broadcasts to its recorded swarm, including descendants and waiting members.',
+                         required=False),
+                    Noun('system', "true: tell the person's own system agent too; it is left out otherwise.",
                          kind='bool', required=False),
                     Noun('text', 'The message.', many=True)),
              examples=(('metaform dispatch broadcast -- "stop and commit what you have"',
@@ -6454,10 +6637,10 @@ MODULE = Module(
                         'Wakes this session in 30 seconds with that note.'),
                        ('metaform dispatch timer cancel=1a2b3c4d', 'Takes that timer back.')), open_world=True,
                        listed=in_session),
-        Verb('note', note, 'Send a short note to the agents working other open tickets, by ticket, part of the map, file '
+        Verb('note', note, 'Send a note to other registered agents, by session, ticket, part of the map, file '
                            'or topic: information each reads at its next turn, kept on every ticket it touches; it never '
                            'steers. With wait=<seconds> it is a question, and the call waits for the replies.',
-             nouns=(Noun('to', 'One ticket: its work id, or its number, <address>#<n>.', required=False),
+             nouns=(Noun('to', 'One agent: its session id, work id, or ticket number, <address>#<n>.', required=False),
                     Noun('at', 'A part of the map, by Address: every agent at work at it or inside it, so a trunk '
                                'Address reaches a whole area.', required=False),
                     Noun('file', 'A file or folder, from the project folder: every agent whose tool calls touched it.',
@@ -6467,7 +6650,7 @@ MODULE = Module(
                          required=False),
                     Noun('wait', 'Seconds, 1 to 120, to wait for the replies, which the call returns; it says plainly '
                                  'who did not answer.', kind='int', required=False),
-                    Noun('text', 'The note, at most 1,000 characters.', many=True)),
+                    Noun('text', 'The note.', many=True)),
              examples=((('metaform dispatch note file=src/metaform/modules/web/page/app/core/dom.js wait=60 -- "I am '
                          'about to change css(); anything I should know?"'),
                         'Asks every agent that touched dom.js, and waits up to a minute for their replies.'),
@@ -6478,7 +6661,7 @@ MODULE = Module(
              nouns=(Noun('note', 'A note\'s id, for it and the replies threaded to it.', required=False),
                     Noun('limit', 'How many, the latest first; 20 by default.', kind='int', required=False)),
              effect='read'),
-        Verb('peers', peers, 'See who is at work where: each agent on an open ticket, its Address, the files it touched '
+        Verb('peers', peers, 'See registered agents, their assignments and conversations, Addresses, files touched '
                              'and what it said last. With at=, file= or topic=, who else is in that part or file, with '
                              'a note ready to ask them before you edit.',
              nouns=(Noun('at', 'A part of the map, by Address: those at work at it or inside it.', required=False),
@@ -6504,7 +6687,9 @@ MODULE = Module(
                         'Links run.py to code.engine.runner as engine.run@code.engine.runner.'),)),
         Verb('interrupt', interrupt, 'Interrupt the turn of the agent working a ticket, keeping its conversation open.',
              nouns=(Noun('id', 'The work id of the ticket.'),
-                    Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
+                    Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False),
+                    Noun('direction', 'New direction retained before cancellation and delivered on the next turn.',
+                         required=False)),
              examples=(('metaform dispatch interrupt 198452e1...', 'Requests cancellation; the session stays available.'),), open_world=True,
              listed=session_live),
         Verb('stop', stop, 'Stop the agent working a ticket.',
@@ -6613,14 +6798,16 @@ MODULE = Module(
     ),
     tables=TABLES,
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
-                   Subscription('signal.raised', collect), Subscription('map.changed', progress_changed)),
+                   Subscription('signal.raised', collect), Subscription('map.changed', progress_changed),
+                   Subscription('map.changed', orchestration_changed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the
     # record in its chat of what it did on it, `metaform.module.persons_word`
     provides=(Provides('base.holds', base_holds), Provides('dispatch.deaths', watch_deaths),
               Provides('person.consent', ask_consent), Provides('work.overlap', overlap),
-              Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted)),
+              Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
+              Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt)),
     start=started,
     stop=None,
     status=None,

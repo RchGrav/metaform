@@ -79,7 +79,8 @@ def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str,
 PEER_STATES = ('queued', 'delivered', 'read', 'replied')
 
 
-def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str) -> bool:
+def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str,
+              recipient_session: str | None = None) -> bool:
     """Set one receiver's delivery state on the copy of a peer note a thread keeps, `peer:<id>`, read and written in
     the caller's transaction so a sender's copy that several receivers mark keeps every mark; a state never goes back.
     False when that thread keeps no such note or the state is not newer."""
@@ -94,13 +95,16 @@ def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str) 
         return False
     value = cast(dict[str, Any], found)
     states = cast(dict[str, str], value.setdefault('states', {}))
-    before = states.get(work_id)
+    per_session = cast(dict[str, str], value.setdefault('session_states', {}))
+    before = per_session.get(recipient_session) if recipient_session else states.get(work_id)
     rank = {name: place for place, name in enumerate(PEER_STATES)}
     if state == 'failed' and before not in (None, 'queued'):
         return False
     if state != 'failed' and before in rank and rank.get(state, -1) <= rank[before]:
         return False
     states[work_id] = state
+    if recipient_session:
+        per_session[recipient_session] = state
     tx.update('session_lines', {'session_id': session_id, 'name': f'peer:{note_id}'},
               {'text': json.dumps(value, ensure_ascii=False)})
     return True

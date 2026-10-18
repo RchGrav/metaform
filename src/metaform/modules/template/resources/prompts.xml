@@ -27,4 +27,6 @@
      <rule why="The next agent reads the title to decide whether to open the record.">Give every record a title.</rule>
      A rule without a why, or with no sentence, stops the module loading. Empty, as here, sends nothing. -->
 <rules></rules>
+<!-- A copy can write its authored duty here and reference template:role_duty from an AgentRoleDefinition. -->
+<role_duty/>
 </prompts>

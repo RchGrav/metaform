@@ -1,0 +1,17 @@
+{
+  "python": "3.12.14",
+  "platform": "linux",
+  "dependencies": {
+    "pytest": "9.1.1",
+    "pytest-xdist": "3.8.0",
+    "agent-client-protocol": "0.12.1",
+    "mcp": "2.2.0",
+    "anyio": "4.15.1",
+    "pyright": "1.1.414",
+    "ruff": "0.16.9",
+    "playwright": "1.63.0"
+  },
+  "browser": "Chrome headless shell 153.0.8010.12; Playwright build 1243",
+  "runtime": "Real Metaform runner and stdio MCP subprocesses with scripted fake ACP adapters; no production-model invocation.",
+  "test_execution": "Outside sandbox due to independently reproduced AnyIO thread hang in sandbox; isolated test homes and fixture projects outside the Git checkout."
+}

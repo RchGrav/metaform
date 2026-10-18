@@ -1,0 +1,58 @@
+{
+  "agents": [
+    {
+      "agent": "claude",
+      "label": "Claude Code",
+      "command": "npx -y @agentclientprotocol/claude-agent-acp@0.89.1",
+      "available": true,
+      "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/npx",
+      "default": false,
+      "version": null,
+      "settings": null,
+      "pinned": null,
+      "next": null
+    },
+    {
+      "agent": "codex",
+      "label": "Codex",
+      "command": "/tmp/metaform-review-live-adapter/node_modules/.bin/codex-acp",
+      "available": true,
+      "path": "/tmp/metaform-review-live-adapter/node_modules/.bin/codex-acp",
+      "default": true,
+      "version": "2.2.2",
+      "settings": 5,
+      "pinned": null,
+      "next": null
+    },
+    {
+      "agent": "gemini",
+      "label": "Gemini CLI",
+      "command": "npx -y @google/gemini-cli@0.63.0 --acp",
+      "available": true,
+      "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/npx",
+      "default": false,
+      "version": null,
+      "settings": null,
+      "pinned": null,
+      "next": null
+    }
+  ],
+  "default": "codex",
+  "room": 1,
+  "free": 1,
+  "slots": {
+    "limit": 1,
+    "used": 0,
+    "workers": 0,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 0,
+    "machine_free": 1,
+    "projects": 0
+  },
+  "footprint": {
+    "agents": 0,
+    "kb": 0,
+    "per_agent_kb": 0
+  }
+}

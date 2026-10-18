@@ -1,0 +1,1 @@
+Return one short sentence confirming that this model request was received. No tools are needed.

@@ -15,25 +15,14 @@
      whole. The same line and links open the agent's first turn after every compaction: a dispatched agent's runner
      puts them at the head of that turn, and metaform_catalog compacted=true and metaform://runtime/compaction-state
      answer with them first. Write no link here. Empty sends the links alone. -->
-<connect_directive>Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your role is for.</connect_directive>
+<connect_directive>
+Read the applicable instruction resources linked below whose contents are due in this context. They supply shared project terms, your responsibilities and memory instructions. Components already delivered unchanged in this context are omitted by the delivery service.
+</connect_directive>
 <!-- The rules every agent works by, served whole and exactly as written at metaform://rules, the first link of every
      agent's connect message and of its first turn after each compaction. Empty serves an empty resource. -->
-<connect_rules>@CONSTRAINT:
-  → think before coding
-  +&gt; state your assumptions.
-  +&gt; ask when unsure.
-  !&gt; never guess.
-
-  → simplicity first
-  +&gt; write the minimum code that solves the problem.
-  !&gt; no abstractions nobody asked for.
-
-  → surgical changes
-  !&gt; don't touch code unrelated to the request.
-  +&gt; every changed line must trace back to what was asked.
-
-  → goal-driven execution
-  +&gt; turn vague instructions into verifiable success criteria before writing a single line.</connect_rules>
+<connect_rules>
+Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; route decisions that require the user through the PM. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
+</connect_rules>
 <!-- The mcp module's instructions: what metaform_instructions gives for module mcp, and mcp's entry in the full
      command-line guide, with each module's <connect> line after it. Not sent at connect: the connect message is
      <connect_directive> and its links. Empty gives the module lines without it. -->
@@ -281,8 +270,12 @@
      tools its role is not given. <categories/> is the categories the role may open, by name. role_system is followed
      by one line per category with what it is for. The element is role_<role>; a role without one gets no line.
      Empty sends none. -->
-<role_worker>You work one ticket at its node, so you are given the tool categories that work needs: <categories/>.</role_worker>
-<role_prep>You prepare one merge for the person's review, so you are given the tool categories that work needs: <categories/>.</role_prep>
+<role_worker>
+Your operational session works assignment <assignment/>. Your authored responsibilities are supplied separately at <authored_role/>. Use the current assignment, specification, mode and return route. Available tool categories reflect the active modules and configured controls: <categories/>.
+</role_worker>
+<role_prep>
+Your operational session uses the existing merge-preparation path. Your authored responsibilities are supplied at <authored_role/>. Use the assigned candidate, current specification and return route. Available tool categories reflect the active modules and configured controls: <categories/>.
+</role_prep>
 <role_intake>You map this project's AUE from its source, so you are given the tool categories that work needs: <categories/>.</role_intake>
 <role_sentinel>You take up an issue the person raised on a node, so you are given the tool categories that work needs: <categories/>.</role_sentinel>
 <role_talk>You talk with the person about what they clicked on the map, so you are given the tool categories that conversation needs: <categories/>.</role_talk>

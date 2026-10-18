@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="9" time="229.780" timestamp="2026-10-18T02:33:45.986263-05:00" hostname="d9991d6ce5f3"><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_worker_missing_role_returns_through_gc_creator_published_duty_and_registered_reuse" time="79.992" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_capacity_one_gc_worker_specialist_return_and_independent_fqc" time="56.223" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_gc" time="30.130" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_memory" time="18.250" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_user_stops_a_suspended_gc_and_its_live_child_without_restarting_pending_work" time="15.433" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[adaptive]" time="91.469" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[strict]" time="65.682"><failure message="AssertionError: metaform dispatch system --json failed (2):&#10;Error: 1 agent is running on this machine across 1 project, the most dispatch_machine_agents allows (1). Ask again when one is free.&#10;Next: metaform dispatch sessions">swarm = &lt;metaform.modules.dispatch.tests.test_dispatch.Dispatch object at 0x7f0b4e62c620&gt;
+mode = 'strict'
+
+    @pytest.mark.parametrize('mode', ['adaptive', 'strict'])
+    def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected(swarm, mode):
+        swarm.run('set', '--orchestration-mode', mode, cwd=swarm.folder)
+        swarm.start(FAKE_SWARM_SCENARIO=mode, FAKE_SWARM_STATE=str(swarm.swarm_state))
+        assignments = completed(swarm)
+        changes = records('orchestration', 'changes')
+        assert len(changes) == 1
+        change = changes[0]
+        assert change['state'] == ('published' if mode == 'adaptive' else 'recommendation')
+        assert change['user_message_state'] == 'delivered'
+        assert 'C(T)' in change['reason'] and change['observed_limitation']
+        logged = swarm.entries()
+        returned = [one for one in logged if 'gc_change_received' in one]
+        assert returned, 'The resumed GC read the actual operative state after the FQC result.'
+        notice_lines = [one for one in records('dispatch', 'session_lines')
+                        if one['session_id'] == 'conversation-orchestration-updates' and
+                        one['kind'] == 'agent_message_chunk']
+        assert any('C(T)' in one['text'] and change['reason'] in one['text'] for one in notice_lines)
+        assert not swarm.questions(), 'Adaptive visibility is an actual message and does not ask approval.'
+        contexts = [one['recipient_context'] for one in logged if one.get('role') == 'gc' and 'recipient_context' in one]
+        if mode == 'adaptive':
+            assert (swarm.folder / 'OPERATIVE.md').read_text() == change['content']
+            assert any('change_order' in one and change['current_revision'] in one for one in contexts)
+            corrections = [one for one in assignments if one['authored_role_uri'] == 'metaform://role/gc'
+                           and one['parent_assignment_id']]
+            assert len(corrections) == 1 and corrections[0]['state'] == 'delivered'
+            assert any(one['reviewed_assignment_id'] == corrections[0]['assignment_id'] for one in assignments)
+            assert any('CORRECTIVE_GC_DELIVERED' in one['text'] for one in notice_lines)
+        else:
+            assert (swarm.folder / 'OPERATIVE.md').read_text() == change['before_content']
+            assert any('recommendation' in one for one in contexts)
+            assert not any('correction_delivered' in one for one in logged)
+        capacities = [one['capacity'] for one in logged if 'capacity' in one]
+        assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
+&gt;       pm_evidence(swarm, mode, ['GC_VALIDATED', 'FQC_ACCEPTED', change['reason'], 'C(T)'])
+
+src/metaform/modules/dispatch/tests/test_orchestration_runtime.py:341: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/metaform/modules/dispatch/tests/test_orchestration_runtime.py:105: in pm_evidence
+    started = json.loads(swarm.run('dispatch', 'system', '--json', cwd=swarm.folder, env=environment).stdout)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cwd = PosixPath('/tmp/metaform-gc-8c9bf81-runtime/popen-gw0/test_independent_fqc_change_or0/proj')
+ok = True, input = None
+env = {'METAFORM_CANDIDATE_LABEL': '8c9bf81eaa6876b5dc34766574ebb1eece2a5851', 'COLORTERM': '', 'no_proxy': '127.0.0.1,localhost,gaas-browser', 'RSYNC_HOST': 'gaas-browser', ...}
+isolated = False, args = ('dispatch', 'system', '--json')
+
+    def invoke(*args, cwd=None, ok=True, input=None, env=None, isolated=separate):
+        folder = Path(cwd or tmp_path)
+        folder.mkdir(parents=True, exist_ok=True)
+        environment = {**os.environ, 'METAFORM_HOME': str(home), **(env or {})}
+        # A call made while an event loop runs on this thread, as a browser test's driver keeps one, would publish
+        # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
+        if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
+            # A hung call names itself, well inside the test's own time limit (pyproject.toml).
+            terminal, ends = own_terminal()  # typed at the person's terminal, as the in-process run stands
+            try:
+                result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
+                                        capture_output=True, text=True, encoding='utf-8', input=input,
+                                        timeout=CLI_LIMIT, check=False, **terminal)
+            except subprocess.TimeoutExpired:
+                raise AssertionError(f'metaform {" ".join(args)} did not finish in {CLI_LIMIT} s') from None
+            finally:
+                for end in ends:
+                    os.close(end)
+        else:
+            result = _in_process(list(args), folder, environment, input)
+        # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
+        # The notice drops its first-run sentence once an intake exists, so both forms are stripped.
+        for notice in (harness.NOTICE, harness.NOTICE.removeprefix(harness.FIRST_RUN)):
+            result.stderr = result.stderr.removeprefix(f'Notice: {notice}\n')
+        if ok and result.returncode != 0:
+&gt;           raise AssertionError(f'metaform {" ".join(args)} failed ({result.returncode}):\n'
+                                 f'{result.stdout}{result.stderr}')
+E           AssertionError: metaform dispatch system --json failed (2):
+E           Error: 1 agent is running on this machine across 1 project, the most dispatch_machine_agents allows (1). Ask again when one is free.
+E           Next: metaform dispatch sessions
+
+conftest.py:110: AssertionError</failure></testcase><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[True]" time="44.397" /><testcase classname="src.metaform.modules.dispatch.tests.test_orchestration_runtime" name="test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[False]" time="39.169" /></testsuite></testsuites>

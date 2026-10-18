@@ -1194,6 +1194,19 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 .sessionbar .grow{flex:1}
 .sessionbar .usage{font:var(--t-xs)/1 var(--mono);color:var(--faint);white-space:nowrap}
 #helpdesk .sessionbar{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);background:var(--panel)}
+.assignmentbox{flex:none;border-bottom:1px solid var(--line);font:var(--t-sm)/1.4 var(--sans);color:var(--muted)}
+.assignmentbox summary{padding:var(--s2) var(--s3);cursor:pointer;color:var(--text)}
+.assignmentbox dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:var(--s1) var(--s2);margin:0;padding:0 var(--s3) var(--s2)}
+.assignmentbox dt{color:var(--faint)}
+.assignmentbox dd{margin:0;overflow-wrap:anywhere}
+.assignmentbox section,.assignmentbox .hint{margin:0;padding:0 var(--s3) var(--s2)}
+.assignmentbox section p{white-space:pre-wrap;margin:var(--s1) 0;overflow-wrap:anywhere}
+.assignmentbox details[open]{max-height:260px;overflow:auto}
+.assignmentbox .specialist-form,.assignmentbox .specialist-form label{display:grid;gap:var(--s2);min-width:0}
+.assignmentbox .specialist-form :is(select,input,textarea){width:100%;min-width:0;box-sizing:border-box}
+.assignmentbox .specialist-form .source{overflow-wrap:anywhere}
+.assignmentbox .specialist-form pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:var(--s2)}
+.assignmentbox .specialist-form .hint{padding:0}
 
 /* The plan: a checklist that grows as the agent works, the step under way marked, the done ones struck through. */
 .planbox{flex:none}

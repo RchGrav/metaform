@@ -19,6 +19,7 @@ from . import catalog, executor, runs
 from . import preprocess as preprocessing
 from .binding import Logic, Lookup, destination
 from .element import ElementValue, Value, element_value
+from .revisions import revise
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -516,6 +517,11 @@ MODULE = Module(
              nouns=(ADDRESS, LAYER, Noun('name', 'The subroutine name.'), Noun('content', 'Verbatim Axiom.'), PROVENANCE)),
         Verb('history', history, 'Read every saved version of one named Axiom subroutine on an element.',
              nouns=(ADDRESS, Noun('name', 'The subroutine name.'), LAYER), effect='read'),
+        Verb('revise', revise, 'Bind a frozen call and its recorded progress to the operative successor revision.',
+             nouns=(Noun('run', 'The active workflow run.'), Noun('change', 'Stable specification change id.'),
+                    ADDRESS, Noun('name', 'The changed subroutine name.'),
+                    Noun('revision', 'The committed operative logic revision.'),
+                    Noun('layer', 'The stored logic layer.', required=False)), category='workflow'),
         Verb('export', export, 'Export a workflow from its stored layer as a portable document, printed or written to '
                                'a file.',
              nouns=(ADDRESS, LAYER, Noun('file', 'The destination <workflow name>.metaform file.', required=False))),

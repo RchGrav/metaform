@@ -193,6 +193,7 @@ def rework(tx: TableTx, checker: Checker, paths: set[str] | None = None) -> int:
     file's size and time, for each citation whose file is no longer as it was when its result was worked out. The
     watcher's pass after a change; how many citations' results changed."""
     changed = 0
+    affected: set[str] = set()
     for row in tx.rows('citations', limit=0).results:
         path = str(row['path'])
         if paths is not None and path not in paths:
@@ -203,5 +204,13 @@ def rework(tx: TableTx, checker: Checker, paths: set[str] | None = None) -> int:
         why = checker.stale(row)
         tx.update('citations', {'entity': row['entity'], 'cite': row['cite']},
                   {'stale': why, 'checked_size': size, 'checked_mtime': mtime})
-        changed += why != (row.get('stale') or None)
+        different = why != (row.get('stale') or None)
+        changed += different
+        if different:
+            affected.add(str(row['entity']))
+    if affected:
+        from .delivery import changed as memory_changed
+        keys = {(str(row['receiver']), str(row['provider'])) for name in affected
+                for row in tx.rows('joins', {'entity': name}, limit=0).results}
+        memory_changed(tx, keys)
     return changed

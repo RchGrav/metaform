@@ -1,0 +1,168 @@
+{
+  "status": "completed",
+  "source_candidate": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "source_tree": "f8dbc2419e340f98f951fbe1aef57f24975ace71",
+  "code_modified_during_journey": false,
+  "project": "review_live",
+  "root_ticket": "fcc7915d466e450eac7a45284cf63ddd",
+  "model": "gpt-6.1-sol",
+  "provider": "openai",
+  "reasoning_effort": "low",
+  "harness": {
+    "adapter": "@agentclientprotocol/codex-acp",
+    "version": "2.2.2",
+    "codex_cli": "0.160.1",
+    "sdk": "1.9.0",
+    "authentication": "normal existing Codex ChatGPT login, verified by official login status",
+    "probe_is_separate": true,
+    "actual_thread_export": "harness/manifest.json"
+  },
+  "sessions": [
+    {
+      "session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+      "runner": "32759d77fe5a644a",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 11,
+      "turn_statuses": {
+        "interrupted": 2,
+        "completed": 9
+      }
+    },
+    {
+      "session_id": "01a14e37-0196-78f3-a7b8-6dbf4542fc8b",
+      "runner": "93ed5e3148fbb235",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 3,
+      "turn_statuses": {
+        "completed": 3
+      }
+    },
+    {
+      "session_id": "01a14e38-d216-7e83-88fb-8d66fbfc37cf",
+      "runner": "b6700b823b00159e",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 3,
+      "turn_statuses": {
+        "completed": 3
+      }
+    },
+    {
+      "session_id": "01a14e3c-38f2-7e81-8029-22d1bfbca421",
+      "runner": "d28eb607d7f825b9",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 3,
+      "turn_statuses": {
+        "completed": 3
+      }
+    },
+    {
+      "session_id": "01a14e3e-79fb-7fd2-ad9c-5c741f6211ba",
+      "runner": "3be5a164107ec572",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 3,
+      "turn_statuses": {
+        "completed": 3
+      }
+    },
+    {
+      "session_id": "01a14e41-01da-7c92-86f8-0584d4d92209",
+      "runner": "bd7c23d7095dce93",
+      "model": "gpt-6.1-sol",
+      "model_provider": "openai",
+      "turn_count": 2,
+      "turn_statuses": {
+        "completed": 2
+      }
+    }
+  ],
+  "role_request": "faa7e55084e858488121b2dbabeb24df",
+  "gc_assignment": "78d96dd251ca55b2abb943084b145a8d",
+  "creator_assignment": "51357703485f49feae0338c96d5c21dd",
+  "specialist_assignment": "d6b63545b4dc47e48e38424fea95a854",
+  "generated_role": "metaform://role/label_normalizer",
+  "generated_prompt": "agents:generated_review_live_label_normalizer",
+  "generated_version": "27355977ddd54ff4b210b9aac6ca367e",
+  "assessment_assignments": [
+    "a04354b70c9258b2b95169247ce63e74",
+    "a2afce9f50295a159b37f19471a1e43b"
+  ],
+  "outcome": "Root delivered; specialist returned; both independent FQCs passed; PM consumed three actual notifications and reported complete.",
+  "smoke_candidate": "label-normalizer-d6b63545",
+  "files": [
+    {
+      "path": "result/label_tools.py",
+      "sha256": "d7631640c4bff29ba8139c043b3a00dd59bd1e4ff440ee5888ddc68d028a7e50"
+    },
+    {
+      "path": "result/test_label_tools.py",
+      "sha256": "5df3bb81b2da8eedade8e8602127c03c46e8708495cc003184f3fdf6b05dfd4d"
+    }
+  ],
+  "verification": [
+    "Generated specialist ran python -m unittest -v: 11 tests passed, exit 0.",
+    "GC independently ran python -m unittest -v: 11 tests passed, exit 0; six direct acceptance checks and exact hashes passed.",
+    "FQC1 independently reran 11 tests and hashes; additional 29 Python Unicode whitespace and five idempotence checks passed.",
+    "FQC2 independently reran 11 tests and hashes and inspected functional memory and typed API constraints.",
+    "PM received three acp_prompt notification receipts at 2026-10-18T09:04:06Z and gave an actual status response."
+  ],
+  "capacity": {
+    "project_limit": 1,
+    "machine_limit": 1,
+    "max_observed_project_used": 1,
+    "max_observed_machine_used": 1,
+    "final": {
+      "snapshot": "20261018T090905",
+      "limit": 1,
+      "used": 0,
+      "workers": 0,
+      "summoned": 0,
+      "machine_limit": 1,
+      "machine_used": 0,
+      "machine_free": 1,
+      "projects": 0
+    },
+    "scope": "Public capacity observations at each retained stage; durable suspend/relaunch transitions and same GC session show capacity-one progress."
+  },
+  "runtime_counts": {
+    "agents": {
+      "contexts": 6,
+      "receipts": 116,
+      "definition_history": 1
+    },
+    "orchestration": {
+      "assignments": 5,
+      "sessions": 5,
+      "transitions": 20,
+      "role_requests": 1,
+      "changes": 0
+    },
+    "memory": {
+      "entities": 4,
+      "observations": 19,
+      "relations": 3,
+      "joins": 4
+    }
+  },
+  "pm_session_stopped": true,
+  "all_managed_sessions_ended": true,
+  "observed_limitations": [
+    "GC delivery automatically created FQC1. A later real GC orchestration_assess call during completion reconciliation created FQC2; both ran serially and passed.",
+    "FQC1 called map_work done before submitting rich check-in. Its terminal assignment retains an empty evidence list; it preserved independent evidence in the root ticket note and actual harness commands.",
+    "Two informational FQC pass-result sends to the already-ended GC remain pending. No corrective finding existed to create a corrective launch; PM actually received the results.",
+    "The conversational PM attempted assignment check-in and was correctly rejected because it has no work assignment. It still consumed notification context and reported completion to the user.",
+    "PM reported stale root waiting check-in, unbuilt condition and 2-of-3 progress counter alongside the authoritative completion/delivery records.",
+    "Official Codex thread/read omits the in-flight commissioning MCP item when suspension interrupts its turn. Native Metaform transcript retains its in-progress tool id and suspension notice; durable creator launch/publication and real model continuation establish the transition.",
+    "Adapter emitted a goals-feature-disabled notice after cancellation; the session resumed and completed. Original restricted-terminal settings refusal succeeded with identical public CLI command through normal unsandboxed terminal, without identity or store bypass.",
+    "This single live journey required no specification adaptation, corrective work, second use of the generated role, peer interruption or context compaction. Broader fake-ACP process/contract evidence remains separate."
+  ],
+  "evidence_filtering": {
+    "auth_account_fields_omitted": 31,
+    "thought_items_omitted": 4
+  },
+  "evidence_filter_policy": "Filtered operational exports omit reasoning/agent thought items and adapter auth account identity. Actual visible model text, task/role inputs, completed tool calls/results, commands, file edits and runtime identifiers are retained."
+}
