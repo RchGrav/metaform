@@ -44,6 +44,10 @@ sections below say why, part by part.
   Specifications are short-sighted by design: they are written before the thing is built, so they cannot foresee all of
   what building it will show. A specification turning out wrong is expected, not a failure, and it is why C(T), not the
   specification, has the last word.
+- **Specifications are followed until they are the problem.** A specification is the problem when it has to change for
+  something to work, when it holds the design back, or when it is not the right solution for the functionality it
+  describes. Then C(T) wins. How an agent knows the right thing to do: C(T) tells it. The right change is the one that
+  lets each receiving element's purpose be served by what provides for it.
 - **The loop, in any project:** problems are seen; agents file a ticket; tickets start automatically; the problem is
   fixed against C(T); where a specification had to adapt, the user is told.
 - **Agents report trouble, in any project.** Trouble is trouble and a problem is a problem, wherever an agent meets it:
