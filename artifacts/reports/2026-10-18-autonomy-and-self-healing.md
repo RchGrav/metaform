@@ -6,6 +6,11 @@ references are to the working tree committed with this report.
 
 ## The goal
 
+Metaform is for building things: any project a user brings to it, of any kind. Metaform itself is only the project it
+happens to be building right now. Whatever a user specifies should come about, and come about to a high quality, with
+the project keeping itself healthy as it is built. Everything below applies to every project built with Metaform, not
+to Metaform alone.
+
 Metaform should run a project on its own when the user wants it to. Issues become tickets, tickets get fixed, fixes are
 proven, the board stays clean, and the user is asked only about decisions that are theirs. The user chooses how much
 autonomy the system has; at full autonomy it does everything.
@@ -26,15 +31,15 @@ sections below say why, part by part.
 - **The user decides what the project is for, not how well it is made.** The user is asked only when a change would
   alter a part's purpose or what it serves, when an act cannot be undone, or when they have chosen a lower level of
   autonomy.
-- **The system keeps itself clean.** Errors become tickets, tickets get fixed, fixes are proven, the board stays
+- **Every project keeps itself clean while it is built.** Not Metaform alone: any project built with it. Errors become tickets, tickets get fixed, fixes are proven, the board stays
   workable, and old code is removed when a design changes, all without the user watching. Until it does, the user sees
   only a lot of things broken; getting it to keep itself clean comes before adding more.
 - **The agent the user talks to is their advisor.** It notices what is not working and says so, with a fix, unasked.
 
 ### The quality standard
 
-The software that comes out of Metaform, Metaform itself and every project it runs, is to be built to a high quality
-standard. Working is not enough: a part is done when it does its purpose fully, has no known errors, carries a check
+Whatever is built with Metaform is to be built to a high quality standard: what the user specifies comes about, and
+comes about well. That holds for any project, of any kind, not only for Metaform building itself. Working is not enough: a part is done when it does its purpose fully, has no known errors, carries a check
 that proves it, leaves no superseded code behind, and reads as if it were designed that way from the start.
 
 Holding that standard is automatic, not something the user asks for each time:
