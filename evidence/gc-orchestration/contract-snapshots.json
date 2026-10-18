@@ -1,0 +1,4213 @@
+{
+  "candidate": "8c9bf81eaa6876b5dc34766574ebb1eece2a5851",
+  "tree": "0491a3ce9f3d0814c835de60f6070211ccf9dd57",
+  "kind": "Read-only post-test public Store snapshots",
+  "cases": [
+    {
+      "test": "test_workflow_revision_preserves_frozen_history_variables_and_return_route",
+      "assignments": [],
+      "changes": [],
+      "role_requests": [],
+      "transitions": [],
+      "runs": [
+        {
+          "run_id": "23d9cf44d0524e8ebf554b6b249718c6",
+          "kind": "call",
+          "state": "running",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "ed1603473c544cb1804f904345dba7f6",
+                  "name": "outer",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            },
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "outer",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "caller_progress": "retained",
+                  "ok": true
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+              },
+              "returned": true
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": null,
+          "created": "2026-10-18T07:27:33Z",
+          "closed": null,
+          "seq": 1792308453393294036,
+          "message": null,
+          "updated": "2026-10-18T07:27:33Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "34ed824c22fd44e1ba838308fe91cdd9",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": "23d9cf44d0524e8ebf554b6b249718c6",
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "8512f94ca4994af096d05724c4e1d42e",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            },
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "outer",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7,
+                  "steps_completed": 2
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+              }
+            }
+          ],
+          "caller": null,
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "ef1609c0da7c59cda3e23248f9df9ed8",
+            "change_id": "change-workflow"
+          },
+          "created": "2026-10-18T07:27:33Z",
+          "closed": "2026-10-18T07:27:33Z",
+          "seq": 1792308453425573796,
+          "message": "Superseded by ef1609c0da7c59cda3e23248f9df9ed8 for specification change change-workflow.",
+          "updated": "2026-10-18T07:27:33Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "ef1609c0da7c59cda3e23248f9df9ed8",
+          "kind": "call",
+          "state": "completed",
+          "parent": "23d9cf44d0524e8ebf554b6b249718c6",
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "8512f94ca4994af096d05724c4e1d42e",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN FALSE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            },
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "outer",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7,
+                  "steps_completed": 2
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_revision_preserv0/proj"
+              }
+            }
+          ],
+          "caller": null,
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": true
+          },
+          "created": "2026-10-18T07:27:33Z",
+          "closed": "2026-10-18T07:27:33Z",
+          "seq": 1792308453471747534,
+          "message": null,
+          "updated": "2026-10-18T07:27:33Z",
+          "ticket": null,
+          "session": null
+        }
+      ],
+      "workflow_revisions": [
+        {
+          "change_id": "change-workflow",
+          "previous_run": "34ed824c22fd44e1ba838308fe91cdd9",
+          "successor_run": "ef1609c0da7c59cda3e23248f9df9ed8",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "2",
+          "created": "2026-10-18T07:27:33Z"
+        }
+      ]
+    },
+    {
+      "test": "test_workflow_adaptation_keeps_user_pause_and_binds_operative_successor",
+      "assignments": [
+        {
+          "assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "work_id": "b8b1f1f8511b461e8cbc625e566f005d",
+          "root_work_id": "b8b1f1f8511b461e8cbc625e566f005d",
+          "team_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "gc_assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "owner_session_id": "gc-one",
+          "authored_role_uri": "metaform://role/gc",
+          "state": "running",
+          "return_to": {
+            "session_id": null,
+            "kind": "pm"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "2",
+            "run": "8bc0761d67cc5990a1939464d0c10353",
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "b3862fa91ae5447b81708b232776fee8",
+            "continuation_state": "successor"
+          },
+          "pending_direction": [
+            {
+              "kind": "change_order",
+              "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3",
+              "specification": {
+                "kind": "workflow",
+                "address": "code.timer.kitchen",
+                "name": "inspect",
+                "layer": "procedures",
+                "revision": "2",
+                "run": "8bc0761d67cc5990a1939464d0c10353",
+                "uri": "workflow:code.timer.kitchen:procedures:inspect",
+                "previous_run": "b3862fa91ae5447b81708b232776fee8",
+                "continuation_state": "successor"
+              },
+              "previous_revision": "1",
+              "current_revision": "2",
+              "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n\nReason in terms of the functionality and C(T): Retain the receiving user's selection.\nAffected work: b8b1f1f8511b461e8cbc625e566f005d",
+              "reason": "Retain the receiving user's selection.",
+              "published_revision": "2",
+              "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n",
+              "source": "agent",
+              "superseded": false,
+              "operative_revision": "2",
+              "sender_assignment_id": "ce8de35b91425fe494a32ad406589355",
+              "sender_session_id": "fqc",
+              "origin_assessment_id": "ce8de35b91425fe494a32ad406589355"
+            }
+          ],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        },
+        {
+          "assignment_id": "ce8de35b91425fe494a32ad406589355",
+          "work_id": "a77fb18697354142a97a4d1b326ea7b2",
+          "root_work_id": "a77fb18697354142a97a4d1b326ea7b2",
+          "team_id": "ce8de35b91425fe494a32ad406589355",
+          "gc_assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "owner_session_id": "fqc",
+          "authored_role_uri": "metaform://role/functionality",
+          "state": "running",
+          "return_to": {
+            "assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+            "kind": "assessment"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "2",
+            "run": "8bc0761d67cc5990a1939464d0c10353",
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "b3862fa91ae5447b81708b232776fee8",
+            "continuation_state": "successor"
+          },
+          "pending_direction": [],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        }
+      ],
+      "changes": [
+        {
+          "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3",
+          "assessment_assignment_id": "ce8de35b91425fe494a32ad406589355",
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "2",
+            "run": "8bc0761d67cc5990a1939464d0c10353",
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "b3862fa91ae5447b81708b232776fee8",
+            "continuation_state": "successor"
+          },
+          "previous_revision": "1",
+          "current_revision": "2",
+          "before_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+          "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n",
+          "reason": "Retain the receiving user's selection.",
+          "observed_limitation": "",
+          "affected_work_ids": [
+            "b8b1f1f8511b461e8cbc625e566f005d"
+          ],
+          "mode_at_publication": "adaptive",
+          "source": "agent",
+          "user_instruction": null,
+          "state": "published",
+          "user_message_state": "pending",
+          "created": "2026-10-18T07:27:35Z",
+          "updated": "2026-10-18T07:27:35Z"
+        }
+      ],
+      "role_requests": [],
+      "transitions": [
+        {
+          "transition_id": "504fc651cfd253b39c0828fcf053f224",
+          "assignment_id": "ce8de35b91425fe494a32ad406589355",
+          "kind": "user_message",
+          "state": "pending",
+          "payload": {
+            "kind": "specification_adaptation",
+            "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "2",
+              "run": "8bc0761d67cc5990a1939464d0c10353",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "b3862fa91ae5447b81708b232776fee8",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "2",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n\nReason in terms of the functionality and C(T): Retain the receiving user's selection.\nAffected work: b8b1f1f8511b461e8cbc625e566f005d",
+            "reason": "Retain the receiving user's selection.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "2",
+            "sender_assignment_id": "ce8de35b91425fe494a32ad406589355",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "ce8de35b91425fe494a32ad406589355"
+          }
+        },
+        {
+          "transition_id": "555f689ea005501cbc298d038150e1f5",
+          "assignment_id": "c46af4f483795e2e87eb4882d97b02d0",
+          "kind": "send",
+          "state": "pending",
+          "payload": {
+            "kind": "change_order",
+            "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "2",
+              "run": "8bc0761d67cc5990a1939464d0c10353",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "b3862fa91ae5447b81708b232776fee8",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "2",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n\nReason in terms of the functionality and C(T): Retain the receiving user's selection.\nAffected work: b8b1f1f8511b461e8cbc625e566f005d",
+            "reason": "Retain the receiving user's selection.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "2",
+            "sender_assignment_id": "ce8de35b91425fe494a32ad406589355",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "ce8de35b91425fe494a32ad406589355"
+          }
+        },
+        {
+          "transition_id": "e8cf0bc01358555084a39c82a34fcb5f",
+          "assignment_id": "ce8de35b91425fe494a32ad406589355",
+          "kind": "publish",
+          "state": "delivered",
+          "payload": {
+            "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3"
+          }
+        }
+      ],
+      "runs": [
+        {
+          "run_id": "8bc0761d67cc5990a1939464d0c10353",
+          "kind": "call",
+          "state": "input_required",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_adaptation_keeps0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "420f55f653594f0bb1a14e2747077c78",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve the current selection.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_adaptation_keeps0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": null,
+          "created": "2026-10-18T07:27:35Z",
+          "closed": null,
+          "seq": 1792308455555280568,
+          "message": "Which duration did you request?",
+          "updated": "2026-10-18T07:27:35Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "b3862fa91ae5447b81708b232776fee8",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_adaptation_keeps0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "420f55f653594f0bb1a14e2747077c78",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_adaptation_keeps0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "8bc0761d67cc5990a1939464d0c10353",
+            "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3"
+          },
+          "created": "2026-10-18T07:27:35Z",
+          "closed": "2026-10-18T07:27:35Z",
+          "seq": 1792308455294598822,
+          "message": "Superseded by 8bc0761d67cc5990a1939464d0c10353 for specification change 36e6da7f3ae2577fa1936e28ba5f5cb3.",
+          "updated": "2026-10-18T07:27:35Z",
+          "ticket": null,
+          "session": null
+        }
+      ],
+      "workflow_revisions": [
+        {
+          "change_id": "36e6da7f3ae2577fa1936e28ba5f5cb3",
+          "previous_run": "b3862fa91ae5447b81708b232776fee8",
+          "successor_run": "8bc0761d67cc5990a1939464d0c10353",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "2",
+          "created": "2026-10-18T07:27:35Z"
+        }
+      ]
+    },
+    {
+      "test": "test_workflow_recovery_follows_successor_and_newer_source_without_reopening_completed_run[False]",
+      "assignments": [
+        {
+          "assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "work_id": "2521144ca02e4b1197d78aad62bf6920",
+          "root_work_id": "2521144ca02e4b1197d78aad62bf6920",
+          "team_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "gc_assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "owner_session_id": "fqc",
+          "authored_role_uri": "metaform://role/functionality",
+          "state": "running",
+          "return_to": {
+            "assignment_id": "c02bb41079f0504dbcde395768d618ae",
+            "kind": "assessment"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "091caa3e738759808b9ad001c42754fa",
+            "continuation_state": "closed"
+          },
+          "pending_direction": [],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        },
+        {
+          "assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "work_id": "92e524db5c9b4f97b6703346d5a1c026",
+          "root_work_id": "92e524db5c9b4f97b6703346d5a1c026",
+          "team_id": "c02bb41079f0504dbcde395768d618ae",
+          "gc_assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "owner_session_id": "gc-one",
+          "authored_role_uri": "metaform://role/gc",
+          "state": "running",
+          "return_to": {
+            "session_id": null,
+            "kind": "pm"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "091caa3e738759808b9ad001c42754fa",
+            "continuation_state": "closed"
+          },
+          "pending_direction": [
+            {
+              "kind": "change_order",
+              "change_id": "e726f301bc15561fb7176a1b17ee8ab0",
+              "specification": {
+                "kind": "workflow",
+                "address": "code.timer.kitchen",
+                "name": "inspect",
+                "layer": "procedures",
+                "revision": "3",
+                "run": "091caa3e738759808b9ad001c42754fa",
+                "uri": "workflow:code.timer.kitchen:procedures:inspect",
+                "previous_run": "6fafed3c58af529fac0813337d40661a",
+                "continuation_state": "successor"
+              },
+              "previous_revision": "1",
+              "current_revision": "3",
+              "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+              "reason": "Preserve the receiving interaction.",
+              "published_revision": "2",
+              "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+              "source": "agent",
+              "superseded": true,
+              "operative_revision": "3",
+              "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+              "sender_session_id": "fqc",
+              "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+            },
+            {
+              "kind": "change_order",
+              "change_id": "643726b49d315e2283fe658937522ab3",
+              "specification": {
+                "kind": "workflow",
+                "address": "code.timer.kitchen",
+                "name": "inspect",
+                "layer": "procedures",
+                "revision": "4",
+                "run": null,
+                "uri": "workflow:code.timer.kitchen:procedures:inspect",
+                "previous_run": "091caa3e738759808b9ad001c42754fa",
+                "continuation_state": "closed"
+              },
+              "previous_revision": "3",
+              "current_revision": "4",
+              "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026",
+              "reason": "Retain the delivered interaction in later uses.",
+              "published_revision": "4",
+              "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+              "source": "agent",
+              "superseded": false,
+              "operative_revision": "4",
+              "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+              "sender_session_id": "fqc",
+              "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+            }
+          ],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        }
+      ],
+      "changes": [
+        {
+          "change_id": "643726b49d315e2283fe658937522ab3",
+          "assessment_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "091caa3e738759808b9ad001c42754fa",
+            "continuation_state": "closed"
+          },
+          "previous_revision": "3",
+          "current_revision": "4",
+          "before_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+          "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+          "reason": "Retain the delivered interaction in later uses.",
+          "observed_limitation": "",
+          "affected_work_ids": [
+            "92e524db5c9b4f97b6703346d5a1c026"
+          ],
+          "mode_at_publication": "adaptive",
+          "source": "agent",
+          "user_instruction": null,
+          "state": "published",
+          "user_message_state": "pending",
+          "created": "2026-10-18T07:27:37Z",
+          "updated": "2026-10-18T07:27:37Z"
+        },
+        {
+          "change_id": "e726f301bc15561fb7176a1b17ee8ab0",
+          "assessment_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "3",
+            "run": "091caa3e738759808b9ad001c42754fa",
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "6fafed3c58af529fac0813337d40661a",
+            "continuation_state": "successor"
+          },
+          "previous_revision": "1",
+          "current_revision": "2",
+          "before_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+          "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n",
+          "reason": "Preserve the receiving interaction.",
+          "observed_limitation": "",
+          "affected_work_ids": [
+            "92e524db5c9b4f97b6703346d5a1c026"
+          ],
+          "mode_at_publication": "adaptive",
+          "source": "agent",
+          "user_instruction": null,
+          "state": "published",
+          "user_message_state": "pending",
+          "created": "2026-10-18T07:27:37Z",
+          "updated": "2026-10-18T07:27:37Z"
+        }
+      ],
+      "role_requests": [],
+      "transitions": [
+        {
+          "transition_id": "17e7a6c375c75627ae1a75c281356275",
+          "assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "kind": "user_message",
+          "state": "pending",
+          "payload": {
+            "kind": "specification_adaptation",
+            "change_id": "e726f301bc15561fb7176a1b17ee8ab0",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "3",
+              "run": "091caa3e738759808b9ad001c42754fa",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "6fafed3c58af529fac0813337d40661a",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "3",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "reason": "Preserve the receiving interaction.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "source": "agent",
+            "superseded": true,
+            "operative_revision": "3",
+            "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+          }
+        },
+        {
+          "transition_id": "2128eed593bd5b35b1040e4af4ea075b",
+          "assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "kind": "send",
+          "state": "pending",
+          "payload": {
+            "kind": "change_order",
+            "change_id": "e726f301bc15561fb7176a1b17ee8ab0",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "3",
+              "run": "091caa3e738759808b9ad001c42754fa",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "6fafed3c58af529fac0813337d40661a",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "3",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "reason": "Preserve the receiving interaction.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "source": "agent",
+            "superseded": true,
+            "operative_revision": "3",
+            "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+          }
+        },
+        {
+          "transition_id": "7c58c8c81d155ba7892f66137f4fd481",
+          "assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "kind": "publish",
+          "state": "delivered",
+          "payload": {
+            "change_id": "643726b49d315e2283fe658937522ab3"
+          }
+        },
+        {
+          "transition_id": "8c1b2b150842547287c08023c572b063",
+          "assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "kind": "publish",
+          "state": "delivered",
+          "payload": {
+            "change_id": "e726f301bc15561fb7176a1b17ee8ab0"
+          }
+        },
+        {
+          "transition_id": "cef5c12010f15ea3968e536343c4df6f",
+          "assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+          "kind": "user_message",
+          "state": "pending",
+          "payload": {
+            "kind": "specification_adaptation",
+            "change_id": "643726b49d315e2283fe658937522ab3",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "4",
+              "run": null,
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "091caa3e738759808b9ad001c42754fa",
+              "continuation_state": "closed"
+            },
+            "previous_revision": "3",
+            "current_revision": "4",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026",
+            "reason": "Retain the delivered interaction in later uses.",
+            "published_revision": "4",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "4",
+            "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+          }
+        },
+        {
+          "transition_id": "fab5821259405d999fcbeeeaab1b7d9e",
+          "assignment_id": "c02bb41079f0504dbcde395768d618ae",
+          "kind": "send",
+          "state": "pending",
+          "payload": {
+            "kind": "change_order",
+            "change_id": "643726b49d315e2283fe658937522ab3",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "4",
+              "run": null,
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "091caa3e738759808b9ad001c42754fa",
+              "continuation_state": "closed"
+            },
+            "previous_revision": "3",
+            "current_revision": "4",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 92e524db5c9b4f97b6703346d5a1c026",
+            "reason": "Retain the delivered interaction in later uses.",
+            "published_revision": "4",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "4",
+            "sender_assignment_id": "0ae719e8964a534b9b6abb19dfd87823",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "0ae719e8964a534b9b6abb19dfd87823"
+          }
+        }
+      ],
+      "runs": [
+        {
+          "run_id": "091caa3e738759808b9ad001c42754fa",
+          "kind": "call",
+          "state": "completed",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "e130916f213e455c943e7a6893d516fe",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": true,
+            "variables": {
+              "kind": "dict",
+              "value": {
+                "ok": true
+              }
+            }
+          },
+          "created": "2026-10-18T07:27:37Z",
+          "closed": "2026-10-18T07:27:37Z",
+          "seq": 1792308457694836530,
+          "message": null,
+          "updated": "2026-10-18T07:27:37Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "47665066abda487bb00677583fdeea8a",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "e130916f213e455c943e7a6893d516fe",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "6fafed3c58af529fac0813337d40661a",
+            "change_id": "e726f301bc15561fb7176a1b17ee8ab0"
+          },
+          "created": "2026-10-18T07:27:37Z",
+          "closed": "2026-10-18T07:27:37Z",
+          "seq": 1792308457391218844,
+          "message": "Superseded by 6fafed3c58af529fac0813337d40661a for specification change e726f301bc15561fb7176a1b17ee8ab0.",
+          "updated": "2026-10-18T07:27:37Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "6fafed3c58af529fac0813337d40661a",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "e130916f213e455c943e7a6893d516fe",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "091caa3e738759808b9ad001c42754fa",
+            "change_id": "fba11ab4632e54d392abdb058d14e321"
+          },
+          "created": "2026-10-18T07:27:37Z",
+          "closed": "2026-10-18T07:27:37Z",
+          "seq": 1792308457634519857,
+          "message": "Superseded by 091caa3e738759808b9ad001c42754fa for specification change fba11ab4632e54d392abdb058d14e321.",
+          "updated": "2026-10-18T07:27:37Z",
+          "ticket": null,
+          "session": null
+        }
+      ],
+      "workflow_revisions": [
+        {
+          "change_id": "e726f301bc15561fb7176a1b17ee8ab0",
+          "previous_run": "47665066abda487bb00677583fdeea8a",
+          "successor_run": "6fafed3c58af529fac0813337d40661a",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "2",
+          "created": "2026-10-18T07:27:37Z"
+        },
+        {
+          "change_id": "fba11ab4632e54d392abdb058d14e321",
+          "previous_run": "6fafed3c58af529fac0813337d40661a",
+          "successor_run": "091caa3e738759808b9ad001c42754fa",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "3",
+          "created": "2026-10-18T07:27:37Z"
+        }
+      ]
+    },
+    {
+      "test": "test_workflow_recovery_follows_successor_and_newer_source_without_reopening_completed_run[True]",
+      "assignments": [
+        {
+          "assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "work_id": "52ce0092b3a54542ac57b67182c57cf0",
+          "root_work_id": "52ce0092b3a54542ac57b67182c57cf0",
+          "team_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "gc_assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "owner_session_id": "gc-one",
+          "authored_role_uri": "metaform://role/gc",
+          "state": "running",
+          "return_to": {
+            "session_id": null,
+            "kind": "pm"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+            "continuation_state": "closed"
+          },
+          "pending_direction": [
+            {
+              "kind": "change_order",
+              "change_id": "c39db2c57c1a5856a1e99c04c3b903a6",
+              "specification": {
+                "kind": "workflow",
+                "address": "code.timer.kitchen",
+                "name": "inspect",
+                "layer": "procedures",
+                "revision": "3",
+                "run": "3724f754fce2519c9cf24626537cfe1f",
+                "uri": "workflow:code.timer.kitchen:procedures:inspect",
+                "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+                "continuation_state": "successor"
+              },
+              "previous_revision": "1",
+              "current_revision": "3",
+              "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+              "reason": "Preserve the receiving interaction.",
+              "published_revision": "2",
+              "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+              "source": "agent",
+              "superseded": true,
+              "operative_revision": "3",
+              "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+              "sender_session_id": "fqc",
+              "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+            },
+            {
+              "kind": "change_order",
+              "change_id": "4f41beb1599b5052a192c056f8226b49",
+              "specification": {
+                "kind": "workflow",
+                "address": "code.timer.kitchen",
+                "name": "inspect",
+                "layer": "procedures",
+                "revision": "4",
+                "run": null,
+                "uri": "workflow:code.timer.kitchen:procedures:inspect",
+                "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+                "continuation_state": "closed"
+              },
+              "previous_revision": "3",
+              "current_revision": "4",
+              "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0",
+              "reason": "Retain the delivered interaction in later uses.",
+              "published_revision": "4",
+              "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+              "source": "agent",
+              "superseded": false,
+              "operative_revision": "4",
+              "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+              "sender_session_id": "fqc",
+              "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+            }
+          ],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        },
+        {
+          "assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "work_id": "8531b9b79279484493dc0f328b87fac5",
+          "root_work_id": "8531b9b79279484493dc0f328b87fac5",
+          "team_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "gc_assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "owner_session_id": "fqc",
+          "authored_role_uri": "metaform://role/functionality",
+          "state": "running",
+          "return_to": {
+            "assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+            "kind": "assessment"
+          },
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+            "continuation_state": "closed"
+          },
+          "pending_direction": [],
+          "result": null,
+          "evidence": [],
+          "stop": null
+        }
+      ],
+      "changes": [
+        {
+          "change_id": "4f41beb1599b5052a192c056f8226b49",
+          "assessment_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "4",
+            "run": null,
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+            "continuation_state": "closed"
+          },
+          "previous_revision": "3",
+          "current_revision": "4",
+          "before_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+          "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+          "reason": "Retain the delivered interaction in later uses.",
+          "observed_limitation": "",
+          "affected_work_ids": [
+            "52ce0092b3a54542ac57b67182c57cf0"
+          ],
+          "mode_at_publication": "adaptive",
+          "source": "agent",
+          "user_instruction": null,
+          "state": "published",
+          "user_message_state": "pending",
+          "created": "2026-10-18T07:27:40Z",
+          "updated": "2026-10-18T07:27:40Z"
+        },
+        {
+          "change_id": "c39db2c57c1a5856a1e99c04c3b903a6",
+          "assessment_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "specification": {
+            "kind": "workflow",
+            "address": "code.timer.kitchen",
+            "name": "inspect",
+            "layer": "procedures",
+            "revision": "3",
+            "run": "3724f754fce2519c9cf24626537cfe1f",
+            "uri": "workflow:code.timer.kitchen:procedures:inspect",
+            "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+            "continuation_state": "successor"
+          },
+          "previous_revision": "1",
+          "current_revision": "2",
+          "before_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+          "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n",
+          "reason": "Preserve the receiving interaction.",
+          "observed_limitation": "",
+          "affected_work_ids": [
+            "52ce0092b3a54542ac57b67182c57cf0"
+          ],
+          "mode_at_publication": "adaptive",
+          "source": "agent",
+          "user_instruction": null,
+          "state": "published",
+          "user_message_state": "pending",
+          "created": "2026-10-18T07:27:39Z",
+          "updated": "2026-10-18T07:27:39Z"
+        }
+      ],
+      "role_requests": [],
+      "transitions": [
+        {
+          "transition_id": "0a9191a7d9935d619e08e398c1c567be",
+          "assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "kind": "publish",
+          "state": "delivered",
+          "payload": {
+            "change_id": "4f41beb1599b5052a192c056f8226b49"
+          }
+        },
+        {
+          "transition_id": "19d7321879255e39ac9e0b648b430150",
+          "assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "kind": "send",
+          "state": "pending",
+          "payload": {
+            "kind": "change_order",
+            "change_id": "4f41beb1599b5052a192c056f8226b49",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "4",
+              "run": null,
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+              "continuation_state": "closed"
+            },
+            "previous_revision": "3",
+            "current_revision": "4",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0",
+            "reason": "Retain the delivered interaction in later uses.",
+            "published_revision": "4",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "4",
+            "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+          }
+        },
+        {
+          "transition_id": "559e608eba6852568f5e40ad22ed9227",
+          "assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "kind": "user_message",
+          "state": "pending",
+          "payload": {
+            "kind": "specification_adaptation",
+            "change_id": "c39db2c57c1a5856a1e99c04c3b903a6",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "3",
+              "run": "3724f754fce2519c9cf24626537cfe1f",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "3",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "reason": "Preserve the receiving interaction.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "source": "agent",
+            "superseded": true,
+            "operative_revision": "3",
+            "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+          }
+        },
+        {
+          "transition_id": "a3007ee118705b59bf1ee870fb555dd4",
+          "assignment_id": "0b1d528a6c9854f884cb4656c2b3acdd",
+          "kind": "send",
+          "state": "pending",
+          "payload": {
+            "kind": "change_order",
+            "change_id": "c39db2c57c1a5856a1e99c04c3b903a6",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "3",
+              "run": "3724f754fce2519c9cf24626537cfe1f",
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+              "continuation_state": "successor"
+            },
+            "previous_revision": "1",
+            "current_revision": "3",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 2\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n\nReason in terms of the functionality and C(T): Preserve the receiving interaction.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0\nThe specification has since advanced to operative revision 3. The current assignment uses this later content:\n@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "reason": "Preserve the receiving interaction.",
+            "published_revision": "2",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n",
+            "source": "agent",
+            "superseded": true,
+            "operative_revision": "3",
+            "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+          }
+        },
+        {
+          "transition_id": "d63067870f4c503d9ba16273b030611d",
+          "assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "kind": "publish",
+          "state": "delivered",
+          "payload": {
+            "change_id": "c39db2c57c1a5856a1e99c04c3b903a6"
+          }
+        },
+        {
+          "transition_id": "fd154d840a2259dc8d3723e254f82fe4",
+          "assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+          "kind": "user_message",
+          "state": "pending",
+          "payload": {
+            "kind": "specification_adaptation",
+            "change_id": "4f41beb1599b5052a192c056f8226b49",
+            "specification": {
+              "kind": "workflow",
+              "address": "code.timer.kitchen",
+              "name": "inspect",
+              "layer": "procedures",
+              "revision": "4",
+              "run": null,
+              "uri": "workflow:code.timer.kitchen:procedures:inspect",
+              "previous_run": "3724f754fce2519c9cf24626537cfe1f",
+              "continuation_state": "closed"
+            },
+            "previous_revision": "3",
+            "current_revision": "4",
+            "body": "Specification updated: workflow:code.timer.kitchen:procedures:inspect revision 4\nChanged: @STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n\nReason in terms of the functionality and C(T): Retain the delivered interaction in later uses.\nAffected work: 52ce0092b3a54542ac57b67182c57cf0",
+            "reason": "Retain the delivered interaction in later uses.",
+            "published_revision": "4",
+            "operative_content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n# Future adjustments retain focus too.\n",
+            "source": "agent",
+            "superseded": false,
+            "operative_revision": "4",
+            "sender_assignment_id": "241e800bb0db5f9d89c734dcfb56c0ee",
+            "sender_session_id": "fqc",
+            "origin_assessment_id": "241e800bb0db5f9d89c734dcfb56c0ee"
+          }
+        }
+      ],
+      "runs": [
+        {
+          "run_id": "3724f754fce2519c9cf24626537cfe1f",
+          "kind": "call",
+          "state": "completed",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "c238e04dd0ef4ed996b2fb421958738e",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Newer direction: preserve selection and keyboard focus.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": true,
+            "variables": {
+              "kind": "dict",
+              "value": {
+                "ok": true
+              }
+            }
+          },
+          "created": "2026-10-18T07:27:39Z",
+          "closed": "2026-10-18T07:27:39Z",
+          "seq": 1792308459932005708,
+          "message": null,
+          "updated": "2026-10-18T07:27:39Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "3d545ae9c4b5443ba3cccc84a86296b1",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "c238e04dd0ef4ed996b2fb421958738e",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "7c39fc77010c5bccb833c4e1dd437fce",
+            "change_id": "c39db2c57c1a5856a1e99c04c3b903a6"
+          },
+          "created": "2026-10-18T07:27:39Z",
+          "closed": "2026-10-18T07:27:39Z",
+          "seq": 1792308459596995408,
+          "message": "Superseded by 7c39fc77010c5bccb833c4e1dd437fce for specification change c39db2c57c1a5856a1e99c04c3b903a6.",
+          "updated": "2026-10-18T07:27:39Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "7c39fc77010c5bccb833c4e1dd437fce",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "c238e04dd0ef4ed996b2fb421958738e",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Preserve selection during duration adjustment.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_recovery_follows1/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "successor": "3724f754fce2519c9cf24626537cfe1f",
+            "change_id": "29267d8631a451509aa27ecd4f0cd0d4"
+          },
+          "created": "2026-10-18T07:27:39Z",
+          "closed": "2026-10-18T07:27:39Z",
+          "seq": 1792308459881295811,
+          "message": "Superseded by 3724f754fce2519c9cf24626537cfe1f for specification change 29267d8631a451509aa27ecd4f0cd0d4.",
+          "updated": "2026-10-18T07:27:39Z",
+          "ticket": null,
+          "session": null
+        }
+      ],
+      "workflow_revisions": [
+        {
+          "change_id": "29267d8631a451509aa27ecd4f0cd0d4",
+          "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+          "successor_run": "3724f754fce2519c9cf24626537cfe1f",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "3",
+          "created": "2026-10-18T07:27:39Z"
+        },
+        {
+          "change_id": "c39db2c57c1a5856a1e99c04c3b903a6",
+          "previous_run": "3d545ae9c4b5443ba3cccc84a86296b1",
+          "successor_run": "7c39fc77010c5bccb833c4e1dd437fce",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "2",
+          "created": "2026-10-18T07:27:39Z"
+        }
+      ]
+    },
+    {
+      "test": "test_workflow_successor_retains_completed_branch_and_active_child_returns",
+      "assignments": [],
+      "changes": [],
+      "role_requests": [],
+      "transitions": [],
+      "runs": [
+        {
+          "run_id": "8579cf5de7195e6394e7a12b9cb25bb1",
+          "kind": "call",
+          "state": "completed",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n# Keep the selected duration.\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7,
+                  "progress": "kept",
+                  "first": true,
+                  "second": false
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+              },
+              "returned": false,
+              "branches": [
+                {
+                  "run": "903fe09d0e7a4848bb12468d0f924b52",
+                  "value": true,
+                  "error": null
+                },
+                {
+                  "run": "d46b8ee17341452cb5e3ece7d896adab",
+                  "value": false,
+                  "error": null
+                }
+              ]
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": true,
+            "variables": {
+              "kind": "dict",
+              "value": {
+                "ok": true
+              }
+            }
+          },
+          "created": "2026-10-18T07:27:43Z",
+          "closed": "2026-10-18T07:27:43Z",
+          "seq": 1792308463074927196,
+          "message": null,
+          "updated": "2026-10-18T07:27:43Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "903fe09d0e7a4848bb12468d0f924b52",
+          "kind": "call",
+          "state": "completed",
+          "parent": "f08ec1f564e4490b82f1d22851d0c867",
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 1
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "first"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 1
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+              }
+            }
+          ],
+          "caller": null,
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": true
+          },
+          "created": "2026-10-18T07:27:43Z",
+          "closed": "2026-10-18T07:27:43Z",
+          "seq": 1792308463020042825,
+          "message": null,
+          "updated": "2026-10-18T07:27:43Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "d46b8ee17341452cb5e3ece7d896adab",
+          "kind": "call",
+          "state": "completed",
+          "parent": "8579cf5de7195e6394e7a12b9cb25bb1",
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 2
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "second"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 2
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+              }
+            }
+          ],
+          "caller": null,
+          "waiting": null,
+          "branches": null,
+          "assignment": null,
+          "result": {
+            "value": false
+          },
+          "created": "2026-10-18T07:27:43Z",
+          "closed": "2026-10-18T07:27:43Z",
+          "seq": 1792308463024322447,
+          "message": null,
+          "updated": "2026-10-18T07:27:43Z",
+          "ticket": null,
+          "session": null
+        },
+        {
+          "run_id": "f08ec1f564e4490b82f1d22851d0c867",
+          "kind": "call",
+          "state": "cancelled",
+          "parent": null,
+          "context": {
+            "project": "proj",
+            "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+          },
+          "frames": [
+            {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 7
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "ok"
+                ],
+                "unpack": false
+              },
+              "variables": {
+                "kind": "dict",
+                "value": {
+                  "target": 7,
+                  "progress": "kept"
+                }
+              },
+              "context": {
+                "project": "proj",
+                "folder": "/tmp/pytest-of-root/pytest-89/test_workflow_successor_retain0/proj"
+              }
+            }
+          ],
+          "caller": {
+            "kind": "dict",
+            "value": {}
+          },
+          "waiting": [
+            "903fe09d0e7a4848bb12468d0f924b52",
+            "d46b8ee17341452cb5e3ece7d896adab"
+          ],
+          "branches": {
+            "903fe09d0e7a4848bb12468d0f924b52": {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 1
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "first"
+                ],
+                "unpack": false
+              },
+              "value": true,
+              "error": null
+            },
+            "d46b8ee17341452cb5e3ece7d896adab": {
+              "call": {
+                "address": "code.timer.kitchen",
+                "logic": {
+                  "type": "logic",
+                  "logic_id": "3e078b6aa0f849ad9934a365b9a9a098",
+                  "name": "inspect",
+                  "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n"
+                },
+                "arguments": {
+                  "kind": "dict",
+                  "value": {
+                    "target": 2
+                  }
+                },
+                "this": {
+                  "kind": "element",
+                  "value": {
+                    "address": "code.timer.kitchen",
+                    "name": "kitchen timer",
+                    "name_length": 2,
+                    "short_name": "kitchen timer",
+                    "role": "DE",
+                    "layer": "intake-1",
+                    "parent": "code.timer",
+                    "refs": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "require": {
+                      "kind": "value",
+                      "value": {
+                        "code.alarm.audible": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Get attention when a countdown ends.",
+                            "ef": "Plays a tone.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.alarm.audible"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "provides": {
+                      "kind": "value",
+                      "value": {
+                        "stakeholder.cook.home": {
+                          "kind": "value",
+                          "value": {
+                            "purpose": "Know when each dish is done.",
+                            "ef": "Counts down and rings.",
+                            "ifd": null,
+                            "elements": {
+                              "kind": "list",
+                              "value": [
+                                "code.timer.kitchen",
+                                "code.loop.tick"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "items": {
+                      "kind": "value",
+                      "value": {
+                        "procedures": {
+                          "kind": "list",
+                          "value": [
+                            {
+                              "kind": "value",
+                              "value": {
+                                "value": {
+                                  "kind": "value",
+                                  "value": {
+                                    "content": "@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n",
+                                    "name": "inspect",
+                                    "type": "logic"
+                                  }
+                                },
+                                "read_first": false,
+                                "always_show": false
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "properties": {
+                      "kind": "value",
+                      "value": {}
+                    },
+                    "context": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "note": null,
+                    "memories": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "work": {
+                      "kind": "list",
+                      "value": []
+                    },
+                    "messages": {
+                      "kind": "list",
+                      "value": []
+                    }
+                  }
+                },
+                "targets": [
+                  "second"
+                ],
+                "unpack": false
+              }
+            }
+          },
+          "assignment": null,
+          "result": {
+            "successor": "8579cf5de7195e6394e7a12b9cb25bb1",
+            "change_id": "parallel-revision"
+          },
+          "created": "2026-10-18T07:27:42Z",
+          "closed": "2026-10-18T07:27:43Z",
+          "seq": 1792308462962596014,
+          "message": "Superseded by 8579cf5de7195e6394e7a12b9cb25bb1 for specification change parallel-revision.",
+          "updated": "2026-10-18T07:27:43Z",
+          "ticket": null,
+          "session": null
+        }
+      ],
+      "workflow_revisions": [
+        {
+          "change_id": "parallel-revision",
+          "previous_run": "f08ec1f564e4490b82f1d22851d0c867",
+          "successor_run": "8579cf5de7195e6394e7a12b9cb25bb1",
+          "address": "code.timer.kitchen",
+          "name": "inspect",
+          "revision": "2",
+          "created": "2026-10-18T07:27:43Z"
+        }
+      ]
+    },
+    {
+      "test": "test_post_delivery_fqc_missing_role_gets_commission_gc_and_retains_original_return",
+      "assignments": [
+        {
+          "assignment_id": "2e10d64300534bdc9467cf51196f9dd7",
+          "work_id": "ca6c102974074403866db1031729f306",
+          "root_work_id": "aac88bc362b44bb980105195a71e31a4",
+          "team_id": "7bcbae912679544a856937812b57d235",
+          "gc_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "parent_assignment_id": "7bcbae912679544a856937812b57d235",
+          "reviewed_assignment_id": null,
+          "owner_session_id": "focus-specialist",
+          "authored_role_uri": "metaform://role/focus_observer",
+          "state": "returned",
+          "return_to": {
+            "assignment_id": "7bcbae912679544a856937812b57d235",
+            "role_request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+          },
+          "specification": null,
+          "pending_direction": [],
+          "result": "Keyboard focus remains on duration.",
+          "evidence": [
+            "Tab position stayed on the selected duration control."
+          ],
+          "stop": {
+            "by": "user",
+            "direction": "Stop the remaining review.",
+            "at": "2026-10-18T07:27:22Z"
+          }
+        },
+        {
+          "assignment_id": "7bcbae912679544a856937812b57d235",
+          "work_id": "aac88bc362b44bb980105195a71e31a4",
+          "root_work_id": "aac88bc362b44bb980105195a71e31a4",
+          "team_id": "7bcbae912679544a856937812b57d235",
+          "gc_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "owner_session_id": "fqc",
+          "authored_role_uri": "metaform://role/functionality",
+          "state": "stopped",
+          "return_to": {
+            "assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+            "kind": "assessment"
+          },
+          "specification": null,
+          "pending_direction": [],
+          "result": null,
+          "evidence": [],
+          "stop": {
+            "by": "user",
+            "direction": "Stop the remaining review.",
+            "at": "2026-10-18T07:27:22Z"
+          }
+        },
+        {
+          "assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "work_id": "3ad1479b92064ac1818996b42cc0b236",
+          "root_work_id": "98d61b692b12454c8c02d01d1fc98a31",
+          "team_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "parent_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "reviewed_assignment_id": null,
+          "owner_session_id": "commission-gc",
+          "authored_role_uri": "metaform://role/gc",
+          "state": "stopped",
+          "return_to": {
+            "assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+            "assessment_assignment_id": "7bcbae912679544a856937812b57d235"
+          },
+          "specification": null,
+          "pending_direction": [],
+          "result": null,
+          "evidence": [],
+          "stop": {
+            "by": "user",
+            "direction": "Stop the remaining review.",
+            "at": "2026-10-18T07:27:22Z"
+          }
+        },
+        {
+          "assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+          "work_id": "dd6a839bc57347f4a88d01877e2173bb",
+          "root_work_id": "98d61b692b12454c8c02d01d1fc98a31",
+          "team_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "parent_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "reviewed_assignment_id": null,
+          "owner_session_id": "creator",
+          "authored_role_uri": "metaform://role/role_creator",
+          "state": "returned",
+          "return_to": {
+            "assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+            "role_request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+          },
+          "specification": null,
+          "pending_direction": [],
+          "result": {
+            "published_role": {
+              "uri": "metaform://role/focus_observer",
+              "name": "focus_observer",
+              "provider": "agents",
+              "purpose": "Observe keyboard focus while changing duration.",
+              "components": [
+                {
+                  "name": "orchestration:common",
+                  "actual_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                  "selected_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                  "number": 1,
+                  "origin": "shipped",
+                  "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                },
+                {
+                  "name": "agents:generated_proj_focus_observer",
+                  "actual_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                  "selected_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                  "number": 1,
+                  "origin": "edited",
+                  "rendered_fingerprint": "e9339c95b332b3e8f238c0ee4d5fd955d3bb1885756422dabfa648b2d1c367ac",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                }
+              ],
+              "problems": [],
+              "missing": false,
+              "notices": [],
+              "version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+              "source": {
+                "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+                "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+                "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+                "creator_session_id": "creator",
+                "creator_caller_id": "creator-runner"
+              }
+            },
+            "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+          },
+          "evidence": [
+            {
+              "uri": "metaform://role/focus_observer",
+              "name": "focus_observer",
+              "provider": "agents",
+              "purpose": "Observe keyboard focus while changing duration.",
+              "components": [
+                {
+                  "name": "orchestration:common",
+                  "actual_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                  "selected_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                  "number": 1,
+                  "origin": "shipped",
+                  "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                },
+                {
+                  "name": "agents:generated_proj_focus_observer",
+                  "actual_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                  "selected_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                  "number": 1,
+                  "origin": "edited",
+                  "rendered_fingerprint": "e9339c95b332b3e8f238c0ee4d5fd955d3bb1885756422dabfa648b2d1c367ac",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                }
+              ],
+              "problems": [],
+              "missing": false,
+              "notices": [],
+              "version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+              "source": {
+                "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+                "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+                "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+                "creator_session_id": "creator",
+                "creator_caller_id": "creator-runner"
+              }
+            }
+          ],
+          "stop": {
+            "by": "user",
+            "direction": "Stop the remaining review.",
+            "at": "2026-10-18T07:27:22Z"
+          }
+        },
+        {
+          "assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "work_id": "98d61b692b12454c8c02d01d1fc98a31",
+          "root_work_id": "98d61b692b12454c8c02d01d1fc98a31",
+          "team_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "gc_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "parent_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "owner_session_id": "gc-one",
+          "authored_role_uri": "metaform://role/gc",
+          "state": "delivered",
+          "return_to": {
+            "session_id": null,
+            "kind": "pm"
+          },
+          "specification": null,
+          "pending_direction": [],
+          "result": "Timer outcome delivered.",
+          "evidence": [],
+          "stop": {
+            "by": "user",
+            "direction": "Stop the remaining review.",
+            "at": "2026-10-18T07:27:22Z"
+          }
+        }
+      ],
+      "changes": [],
+      "role_requests": [
+        {
+          "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+          "caller_assignment_id": "7bcbae912679544a856937812b57d235",
+          "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "role": "focus_observer",
+          "purpose": "Observe keyboard focus while changing duration.",
+          "task": "Observe keyboard focus while changing duration.\n\nSupplied caller context:\n{\"interaction\": \"duration control with keyboard\"}",
+          "requested_result": "Observe keyboard focus while changing duration.",
+          "context": {
+            "contribution": null,
+            "context": {
+              "interaction": "duration control with keyboard"
+            },
+            "candidate": {
+              "revision": "delivered-timer"
+            },
+            "specification": null,
+            "responsible_gc_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+            "handoff": false
+          },
+          "functional_locations": [
+            {
+              "kind": "element",
+              "id": "code.timer.kitchen",
+              "address": "code.timer.kitchen"
+            }
+          ],
+          "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+          "child_assignment_id": "2e10d64300534bdc9467cf51196f9dd7",
+          "state": "published",
+          "created": "2026-10-18T07:27:21Z",
+          "publication": {
+            "uri": "metaform://role/focus_observer",
+            "version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+            "source": {
+              "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+              "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+              "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+              "creator_session_id": "creator",
+              "creator_caller_id": "creator-runner"
+            }
+          },
+          "prompt_versions": [
+            {
+              "name": "orchestration:common",
+              "actual_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+              "selected_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+              "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b"
+            },
+            {
+              "name": "agents:generated_proj_focus_observer",
+              "actual_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+              "selected_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+              "rendered_fingerprint": "e9339c95b332b3e8f238c0ee4d5fd955d3bb1885756422dabfa648b2d1c367ac"
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "transition_id": "144d4fa0024e561289a9fdd67f2f6ef8",
+          "assignment_id": "7bcbae912679544a856937812b57d235",
+          "kind": "send",
+          "state": "cancelled",
+          "payload": {
+            "kind": "result",
+            "state": "returned",
+            "result": "Keyboard focus remains on duration.",
+            "body": "Keyboard focus remains on duration.",
+            "evidence": [
+              "Tab position stayed on the selected duration control."
+            ],
+            "candidate": {
+              "revision": "delivered-timer"
+            },
+            "findings": null,
+            "corrective_assignments": [],
+            "sender_assignment_id": "2e10d64300534bdc9467cf51196f9dd7",
+            "sender_session_id": "focus-specialist",
+            "work_id": "ca6c102974074403866db1031729f306",
+            "return_to": {
+              "assignment_id": "7bcbae912679544a856937812b57d235",
+              "role_request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+            }
+          }
+        },
+        {
+          "transition_id": "2a0f301b692b50818a7295d2984bff3d",
+          "assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "kind": "send",
+          "state": "cancelled",
+          "payload": {
+            "kind": "result",
+            "state": "returned",
+            "result": {
+              "published_role": {
+                "uri": "metaform://role/focus_observer",
+                "name": "focus_observer",
+                "provider": "agents",
+                "purpose": "Observe keyboard focus while changing duration.",
+                "components": [
+                  {
+                    "name": "orchestration:common",
+                    "actual_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                    "selected_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                    "number": 1,
+                    "origin": "shipped",
+                    "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                    "bindings": {},
+                    "problems": [],
+                    "notices": []
+                  },
+                  {
+                    "name": "agents:generated_proj_focus_observer",
+                    "actual_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                    "selected_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                    "number": 1,
+                    "origin": "edited",
+                    "rendered_fingerprint": "e9339c95b332b3e8f238c0ee4d5fd955d3bb1885756422dabfa648b2d1c367ac",
+                    "bindings": {},
+                    "problems": [],
+                    "notices": []
+                  }
+                ],
+                "problems": [],
+                "missing": false,
+                "notices": [],
+                "version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                "source": {
+                  "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+                  "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+                  "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+                  "creator_session_id": "creator",
+                  "creator_caller_id": "creator-runner"
+                }
+              },
+              "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+            },
+            "evidence": [
+              {
+                "uri": "metaform://role/focus_observer",
+                "name": "focus_observer",
+                "provider": "agents",
+                "purpose": "Observe keyboard focus while changing duration.",
+                "components": [
+                  {
+                    "name": "orchestration:common",
+                    "actual_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                    "selected_version_id": "6764260f192f4fa0ac5dfcca3819fa86",
+                    "number": 1,
+                    "origin": "shipped",
+                    "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                    "bindings": {},
+                    "problems": [],
+                    "notices": []
+                  },
+                  {
+                    "name": "agents:generated_proj_focus_observer",
+                    "actual_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                    "selected_version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                    "number": 1,
+                    "origin": "edited",
+                    "rendered_fingerprint": "e9339c95b332b3e8f238c0ee4d5fd955d3bb1885756422dabfa648b2d1c367ac",
+                    "bindings": {},
+                    "problems": [],
+                    "notices": []
+                  }
+                ],
+                "problems": [],
+                "missing": false,
+                "notices": [],
+                "version_id": "31ff781f7b3247d892a09bfe478c9dc9",
+                "source": {
+                  "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+                  "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+                  "creator_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+                  "creator_session_id": "creator",
+                  "creator_caller_id": "creator-runner"
+                }
+              }
+            ],
+            "candidate": null,
+            "findings": null,
+            "corrective_assignments": [],
+            "sender_assignment_id": "cc764f5d8ef144f8969b7e645dc7f17c",
+            "sender_session_id": "creator",
+            "work_id": "dd6a839bc57347f4a88d01877e2173bb",
+            "return_to": {
+              "assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+              "role_request_id": "c5b574aa817b5f4ea2f164f42fee7ee8"
+            },
+            "body_sha256": "f3f17136013eaa429ebc07d79ef6fff0043ed39feb9ef81480d31e93433d047f",
+            "body_omitted": "Repeated serialized role definition; publication identity, versions and source are retained."
+          }
+        },
+        {
+          "transition_id": "7aca27cbf5c25263848b8d15342d05e7",
+          "assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+          "kind": "user_message",
+          "state": "cancelled",
+          "payload": {
+            "kind": "result",
+            "state": "delivered",
+            "result": "Timer outcome delivered.",
+            "body": "Timer outcome delivered.\n\nCandidate: {\"revision\": \"delivered-timer\"}",
+            "evidence": [],
+            "candidate": {
+              "revision": "delivered-timer"
+            },
+            "findings": null,
+            "corrective_assignments": [],
+            "sender_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+            "sender_session_id": "gc-one",
+            "work_id": "98d61b692b12454c8c02d01d1fc98a31",
+            "return_to": {
+              "session_id": null,
+              "kind": "pm"
+            }
+          }
+        },
+        {
+          "transition_id": "890f44fa24ce5554b5e5ebcb2b70dbb7",
+          "assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+          "kind": "send",
+          "state": "cancelled",
+          "payload": {
+            "kind": "role_request",
+            "request": {
+              "request_id": "c5b574aa817b5f4ea2f164f42fee7ee8",
+              "caller_assignment_id": "7bcbae912679544a856937812b57d235",
+              "gc_assignment_id": "c3f9da7e838652eb8df36c858f9848d8",
+              "role": "focus_observer",
+              "purpose": "Observe keyboard focus while changing duration.",
+              "task": "Observe keyboard focus while changing duration.\n\nSupplied caller context:\n{\"interaction\": \"duration control with keyboard\"}",
+              "requested_result": "Observe keyboard focus while changing duration.",
+              "context": {
+                "contribution": null,
+                "context": {
+                  "interaction": "duration control with keyboard"
+                },
+                "candidate": {
+                  "revision": "delivered-timer"
+                },
+                "specification": null,
+                "responsible_gc_assignment_id": "d0ac0facbb7c5b4888b973417e111f3b",
+                "handoff": false
+              },
+              "functional_locations": [
+                {
+                  "kind": "element",
+                  "id": "code.timer.kitchen",
+                  "address": "code.timer.kitchen"
+                }
+              ],
+              "creator_assignment_id": null,
+              "child_assignment_id": null,
+              "state": "requested",
+              "source": null,
+              "created": "2026-10-18T07:27:21Z"
+            },
+            "sender_assignment_id": "7bcbae912679544a856937812b57d235",
+            "sender_session_id": "fqc"
+          }
+        }
+      ]
+    }
+  ],
+  "snapshot_note": "Read-only selected post-test records. Repeated prompt text inside published-role result envelopes is omitted; body hashes, prompt version identities and source provenance are retained."
+}

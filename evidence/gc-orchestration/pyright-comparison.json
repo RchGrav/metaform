@@ -1,0 +1,8 @@
+{
+  "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+  "candidate": "8c9bf81eaa6876b5dc34766574ebb1eece2a5851",
+  "identical_after_normalizing_checkout_path": true,
+  "errors": 15,
+  "unchanged_file": "src/metaform/modules/voice/engine.py",
+  "changed_python_implementation_files": "0 errors, 0 warnings"
+}

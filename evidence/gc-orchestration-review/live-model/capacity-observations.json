@@ -1,0 +1,68 @@
+[
+  {
+    "snapshot": "20261018T085415",
+    "limit": 1,
+    "used": 1,
+    "workers": 1,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 1,
+    "machine_free": 0,
+    "projects": 1
+  },
+  {
+    "snapshot": "20261018T085612",
+    "limit": 1,
+    "used": 1,
+    "workers": 1,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 1,
+    "machine_free": 0,
+    "projects": 1
+  },
+  {
+    "snapshot": "20261018T085842",
+    "limit": 1,
+    "used": 1,
+    "workers": 1,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 1,
+    "machine_free": 0,
+    "projects": 1
+  },
+  {
+    "snapshot": "20261018T090136",
+    "limit": 1,
+    "used": 1,
+    "workers": 1,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 1,
+    "machine_free": 0,
+    "projects": 1
+  },
+  {
+    "snapshot": "20261018T090601",
+    "limit": 1,
+    "used": 0,
+    "workers": 0,
+    "summoned": 1,
+    "machine_limit": 1,
+    "machine_used": 1,
+    "machine_free": 0,
+    "projects": 1
+  },
+  {
+    "snapshot": "20261018T090905",
+    "limit": 1,
+    "used": 0,
+    "workers": 0,
+    "summoned": 0,
+    "machine_limit": 1,
+    "machine_used": 0,
+    "machine_free": 1,
+    "projects": 0
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "previous_delivery_commit": "de9ce05bd055bb60d349c2af1a1e05b2744d9f19",
+  "tested_candidate": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "tested_tree": "f8dbc2419e340f98f951fbe1aef57f24975ace71",
+  "branch": "implement/gc-led-orchestration",
+  "production_files_changed": [
+    "src/metaform/modules/orchestration/state.py"
+  ],
+  "state_before_sha256": "a621c900f13d90cff03305e9ed57173a9f05d0bf908e0592bb920d74281833f7",
+  "state_after_sha256": "bd256bd781ff4fd28ab86bc01a9eaa29ac2f04cbc5b74a16fe002b2f63d51763",
+  "fixes": [
+    {
+      "issue": "GC requests a missing specialist role for itself and deadlocks before commissioning",
+      "cause": "request_role queued suspension of the caller even when caller and commissioning GC were the same assignment. wake then saw the pre-update running GC record and queued no launch.",
+      "change": "Suspend the requesting assignment only when it differs from the commissioning GC. The self-requesting GC stays active to commission; commission(wait=True) uses the existing suspension and capacity flow."
+    },
+    {
+      "issue": "Role commissioning bypasses the configured dynamic blacklist",
+      "cause": "delegate invoked held_role(ctx); commission created work without that existing configured check.",
+      "change": "Use the same held_role(ctx) check and refusal before commission resolves or creates work. No new role policy or fixed list."
+    }
+  ],
+  "regression_source": "The reported test_review_regressions.py was absent from this checkout and the current main tree. Two equivalent behavioral reproductions were added under that name, and both failures were captured before the fix.",
+  "baseline_regressions": "regressions-before.xml",
+  "precommit_fixed_regressions": "regressions-after.xml",
+  "runtime_scope": "Actual runner/ACP/MCP fixtures and a separate real model/harness journey are recorded separately."
+}

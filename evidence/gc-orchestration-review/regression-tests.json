@@ -1,0 +1,52 @@
+{
+  "baseline_commit": "de9ce05bd055bb60d349c2af1a1e05b2744d9f19",
+  "candidate_commit": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "candidate_tree": "f8dbc2419e340f98f951fbe1aef57f24975ace71",
+  "source_sha256": {
+    "src/metaform/modules/orchestration/state.py": "bd256bd781ff4fd28ab86bc01a9eaa29ac2f04cbc5b74a16fe002b2f63d51763",
+    "src/metaform/modules/orchestration/tests/test_review_regressions.py": "86392c59f278da97b7136f25ceb3f5b593cebc5d31df7e69a106d27a20d23bce"
+  },
+  "baseline": {
+    "tests": 2,
+    "failures": 2,
+    "seconds": 1.66,
+    "report": "regressions-before.xml"
+  },
+  "initial_fixed_run": {
+    "tests": 2,
+    "failures": 0,
+    "seconds": 1.97,
+    "report": "regressions-after.xml"
+  },
+  "regressions": [
+    {
+      "test": "test_gc_missing_specialist_request_can_reach_its_own_commission",
+      "baseline_observed": "A GC calling a missing role suspended its only running session. Draining left no running agent, with the role request still queued to that GC and no launch continuation.",
+      "fixed_assertions": [
+        "The same request retry retains its recorded request identity.",
+        "The GC receives the role request and can commission its Role Creator.",
+        "The creator is a member of the GC team and can launch at configured capacity one."
+      ]
+    },
+    {
+      "test": "test_role_commission_obeys_current_blacklist_without_mutating_work",
+      "baseline_observed": "With worker configured in roles_without_authority, ordinary delegation raised Stop but role commissioning succeeded.",
+      "fixed_assertions": [
+        "Both CLI and MCP commission paths refuse the currently blacklisted worker role.",
+        "Assignments, requests, transitions and work records stay unchanged after refusal.",
+        "Removing worker from the configured blacklist allows that same request to be commissioned."
+      ]
+    }
+  ],
+  "scope": "Public orchestration verbs and real isolated work/prompt stores, using the existing deterministic Transport. These are state/continuation contract tests; process-level and real-model evidence is reported separately.",
+  "committed_candidate_run": {
+    "command": ".venv/bin/python -m pytest -n 0 -q src/metaform/modules/orchestration/tests --basetemp=/tmp/metaform-review-0376697-contracts --junitxml=evidence/gc-orchestration-review/orchestration-contracts.xml",
+    "report": "orchestration-contracts.xml",
+    "tests": 29,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "pytest_seconds": 34.56,
+    "junit_seconds": 34.651
+  }
+}

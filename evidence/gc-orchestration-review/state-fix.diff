@@ -1,0 +1,27 @@
+diff --git a/src/metaform/modules/orchestration/state.py b/src/metaform/modules/orchestration/state.py
+index afbd4fe8f05b7b6abc80d737e5848dfcc5fc7c06..b2ea977071605c0256dc2b398b5b4f5a3effc10b 100644
+--- a/src/metaform/modules/orchestration/state.py
++++ b/src/metaform/modules/orchestration/state.py
+@@ -622,8 +622,9 @@ class Orchestration:
+                             'handoff': handoff},
+                 'functional_locations': places, 'creator_assignment_id': None,
+                 'child_assignment_id': None, 'state': 'requested', 'source': None, 'created': now()})
+-            update(tx, parent, state='waiting')
+-            transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
++            if parent['assignment_id'] != gc['assignment_id']:
++                update(tx, parent, state='waiting')
++                transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
+             transition(tx, gc, 'send', {'kind': 'role_request', 'request': made,
+                 'sender_assignment_id': parent['assignment_id'], 'sender_session_id': parent.get('owner_session_id')},
+                 request_id)
+@@ -632,6 +633,10 @@ class Orchestration:
+ 
+     def commission(self, ctx: Context) -> dict[str, Any]:
+         gc = requested(ctx, ctx.nouns.get('assignment'))
++        blocked = held_role(ctx)
++        if blocked:
++            raise Stop(f'The configured roles_without_authority excludes {blocked} from creating work.',
++                       'metaform config --show')
+         store = own(ctx)
+         request_id = str(ctx.nouns['request'])
+         resolved_role(ctx, 'role_creator')

@@ -1,0 +1,1754 @@
+{
+  "candidate": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "tree": "f8dbc2419e340f98f951fbe1aef57f24975ace71",
+  "command": "METAFORM_CANDIDATE_LABEL=03766976928aae6139563cdd9ec7075dd3541d7d METAFORM_IDLE_EVIDENCE=/workspace/scratch/243b683ad142/metaform/evidence/gc-orchestration-review/idle-candidate.json .venv/bin/python -m pytest -n 2 -q src/metaform/modules/dispatch/tests/test_orchestration_runtime.py src/metaform/modules/dispatch/tests/test_orchestration_transport.py src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py --basetemp=/tmp/metaform-gc-review-037669-process --junitxml=evidence/gc-orchestration-review/process-runtime.xml --maxfail=2",
+  "scope": "Actual Metaform runner and ACP adapter subprocesses; worker/GC stdio MCP. Scripted fake models.",
+  "counts": {
+    "passed": 15,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0
+  },
+  "cases": [
+    {
+      "name": "test_worker_missing_role_returns_through_gc_creator_published_duty_and_registered_reuse",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 80.214,
+      "status": "passed"
+    },
+    {
+      "name": "test_capacity_one_gc_worker_specialist_return_and_independent_fqc",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 56.004,
+      "status": "passed"
+    },
+    {
+      "name": "test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives_specialist_and_fqc",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 54.649,
+      "status": "passed"
+    },
+    {
+      "name": "test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_gc",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 29.936,
+      "status": "passed"
+    },
+    {
+      "name": "test_user_stops_a_suspended_gc_and_its_live_child_without_restarting_pending_work",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 17.486,
+      "status": "passed"
+    },
+    {
+      "name": "test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_memory",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 20.687,
+      "status": "passed"
+    },
+    {
+      "name": "test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[adaptive]",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 88.722,
+      "status": "passed"
+    },
+    {
+      "name": "test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[strict]",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 73.262,
+      "status": "passed"
+    },
+    {
+      "name": "test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[True]",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 48.263,
+      "status": "passed"
+    },
+    {
+      "name": "test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[False]",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_runtime",
+      "seconds": 43.447,
+      "status": "passed"
+    },
+    {
+      "name": "test_orchestration_and_memory_event_filters_read_nothing_for_unrelated_bursts",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_transport",
+      "seconds": 3.338,
+      "status": "passed"
+    },
+    {
+      "name": "test_peer_identity_distinguishes_shared_ticket_sessions_and_follows_the_same_restarted_owner",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_transport",
+      "seconds": 2.279,
+      "status": "passed"
+    },
+    {
+      "name": "test_idle_cpu_evidence",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_transport",
+      "seconds": 64.85,
+      "status": "passed"
+    },
+    {
+      "name": "test_fork_creation_and_later_turns_use_configured_capacity",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_transport",
+      "seconds": 4.76,
+      "status": "passed"
+    },
+    {
+      "name": "test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_ownership",
+      "class": "src.metaform.modules.dispatch.tests.test_orchestration_peer_teams",
+      "seconds": 11.932,
+      "status": "passed"
+    }
+  ],
+  "scenarios": [
+    {
+      "test": "test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_memory",
+      "status": "passed",
+      "root_work_id": "14da9388f36544be88d21f9cfff52213",
+      "assignments": [
+        {
+          "assignment_id": "0175b51a63b85be08106b8cb576742a1",
+          "work_id": "c01b6ee849c84a428441f3213ee69e84",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "0175b51a63b85be08106b8cb576742a1",
+          "gc_assignment_id": "caf305c903225432a3371cf785ef3c3d",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "caf305c903225432a3371cf785ef3c3d",
+          "return_to": {
+            "assignment_id": "caf305c903225432a3371cf785ef3c3d",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-c52afb4a6cf64f24",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "caf305c903225432a3371cf785ef3c3d",
+          "work_id": "14da9388f36544be88d21f9cfff52213",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "caf305c903225432a3371cf785ef3c3d",
+          "gc_assignment_id": "caf305c903225432a3371cf785ef3c3d",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-daf90096fc1e44ae",
+          "result": "GC_VALIDATED: functional grounding and retained assignment survived compaction.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        }
+      ],
+      "capacity_samples": 3,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 43442,
+          "role": "gc",
+          "work": "14da9388f36544be88d21f9cfff52213"
+        },
+        {
+          "pid": 43517,
+          "role": "functionality",
+          "work": "c01b6ee849c84a428441f3213ee69e84"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw0/test_actual_acp_compaction_red0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw0/test_actual_acp_compaction_red0/fake.jsonl",
+      "raw_event_log": "popen-gw0/test_actual_acp_compaction_red0/map-events.jsonl"
+    },
+    {
+      "test": "test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives_specialist_and_fqc",
+      "status": "passed",
+      "root_work_id": "e3ff2c36d84346c4869d4144e5a97fa7",
+      "assignments": [
+        {
+          "assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "work_id": "e3ff2c36d84346c4869d4144e5a97fa7",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "gc_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-3b680f22fba946b3",
+          "result": "GC_VALIDATED: generated specialist returned to its commissioning GC.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "a1c5a84809204d2f928fd8f36ba49f31",
+          "work_id": "b2fe8f011374469bbc5c287275ba5abd",
+          "authored_role_uri": "metaform://role/route_specialist",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "team_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "gc_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+            "role_request_id": "4f6e39c9cd52580a9e5d6facb65be7d4"
+          },
+          "owner_session_id": "swarm-2dd2b8a865384b37",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "a36b65e4e4df585e8bd54ec32b490cb3",
+          "work_id": "531443892400488399e1ec20d04be7a0",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "a36b65e4e4df585e8bd54ec32b490cb3",
+          "gc_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "return_to": {
+            "assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-fb199ff5f8a646f8",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "eb221f90875d4b1e81a6510e467eb127",
+          "work_id": "89f478148f054e5e9fb5a7a110e7e733",
+          "authored_role_uri": "metaform://role/role_creator",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "team_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "gc_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+            "role_request_id": "4f6e39c9cd52580a9e5d6facb65be7d4"
+          },
+          "owner_session_id": "swarm-8159848b064c4177",
+          "result": {
+            "published_role": {
+              "uri": "metaform://role/route_specialist",
+              "name": "route_specialist",
+              "provider": "agents",
+              "purpose": "Establish the route behavior needed by this GC.",
+              "components": [
+                {
+                  "name": "orchestration:common",
+                  "text": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.",
+                  "actual_version_id": "b49b88c8016f4e2a9d8670b7633e24d7",
+                  "selected_version_id": "b49b88c8016f4e2a9d8670b7633e24d7",
+                  "number": 1,
+                  "origin": "shipped",
+                  "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                },
+                {
+                  "name": "agents:generated_proj_route_specialist",
+                  "text": "You are the Route Specialist. Independently establish route behavior for your immediate caller. Preserve its functional result across suspension and return candidate-specific evidence. Your delivery GC retains swarm ownership. Use the public module action bindings you receive.",
+                  "actual_version_id": "5d24a641e5b54762a8a8ebb2a7cf5209",
+                  "selected_version_id": "5d24a641e5b54762a8a8ebb2a7cf5209",
+                  "number": 1,
+                  "origin": "edited",
+                  "rendered_fingerprint": "313c0c536f08fcd7b330899a7ce6aaa3e7e1cd9456e933fc9d2dc9478ae7d7e3",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                }
+              ],
+              "problems": [],
+              "missing": false,
+              "notices": [],
+              "text": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.\n\nYou are the Route Specialist. Independently establish route behavior for your immediate caller. Preserve its functional result across suspension and return candidate-specific evidence. Your delivery GC retains swarm ownership. Use the public module action bindings you receive.",
+              "version_id": "5d24a641e5b54762a8a8ebb2a7cf5209",
+              "source": {
+                "request_id": "4f6e39c9cd52580a9e5d6facb65be7d4",
+                "gc_assignment_id": "4b418924126d574ab3d994c87c4ee0a2",
+                "creator_assignment_id": "eb221f90875d4b1e81a6510e467eb127",
+                "creator_session_id": "swarm-8159848b064c4177",
+                "creator_caller_id": "442384b24c2ef162"
+              }
+            },
+            "request_id": "4f6e39c9cd52580a9e5d6facb65be7d4"
+          },
+          "candidate": null
+        }
+      ],
+      "capacity_samples": 11,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 42982,
+          "role": "gc",
+          "work": "e3ff2c36d84346c4869d4144e5a97fa7"
+        },
+        {
+          "pid": 43114,
+          "role": "role_creator",
+          "work": "89f478148f054e5e9fb5a7a110e7e733"
+        },
+        {
+          "pid": 43138,
+          "role": "route_specialist",
+          "work": "b2fe8f011374469bbc5c287275ba5abd"
+        },
+        {
+          "pid": 43219,
+          "role": "gc",
+          "work": "e3ff2c36d84346c4869d4144e5a97fa7"
+        },
+        {
+          "pid": 43346,
+          "role": "functionality",
+          "work": "531443892400488399e1ec20d04be7a0"
+        },
+        {
+          "pid": 43376,
+          "role": "triage",
+          "work": "conversation-system"
+        },
+        {
+          "pid": 43401,
+          "role": "triage",
+          "work": "conversation-system"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw0/test_capacity_one_gc_requests_0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw0/test_capacity_one_gc_requests_0/fake.jsonl",
+      "raw_event_log": "popen-gw0/test_capacity_one_gc_requests_0/map-events.jsonl"
+    },
+    {
+      "test": "test_capacity_one_gc_worker_specialist_return_and_independent_fqc",
+      "status": "passed",
+      "root_work_id": "7ab471e85f2445aea0acb653a0613f60",
+      "assignments": [
+        {
+          "assignment_id": "1bf151eeffc0509994457c777a842072",
+          "work_id": "7ab471e85f2445aea0acb653a0613f60",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "1bf151eeffc0509994457c777a842072",
+          "gc_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-d43fab49bdc94dfb",
+          "result": "GC_VALIDATED: requested candidate delivered with specialist evidence.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "541306a478c15828a747816116ec54a0",
+          "work_id": "5a75602f20e84bc39efd033206abd051",
+          "authored_role_uri": "metaform://role/investigator",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "d1953bae2c6c561085c9457e558575f2",
+          "team_id": "1bf151eeffc0509994457c777a842072",
+          "gc_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "d1953bae2c6c561085c9457e558575f2",
+            "continuation_id": "541306a478c15828a747816116ec54a0"
+          },
+          "owner_session_id": "swarm-fb45eca1f57340a1",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "883960e656d65444a5159dde014a091d",
+          "work_id": "34421e7081d8471fa8dcc0528879d1aa",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "883960e656d65444a5159dde014a091d",
+          "gc_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "return_to": {
+            "assignment_id": "1bf151eeffc0509994457c777a842072",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-e5d77a0682d04f30",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "d1953bae2c6c561085c9457e558575f2",
+          "work_id": "a40ced0f614a421d9d98cf035b986b5d",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "team_id": "1bf151eeffc0509994457c777a842072",
+          "gc_assignment_id": "1bf151eeffc0509994457c777a842072",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "1bf151eeffc0509994457c777a842072",
+            "continuation_id": "d1953bae2c6c561085c9457e558575f2"
+          },
+          "owner_session_id": "swarm-cc5a2958373a41e7",
+          "result": "WORKER_INTEGRATED: SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        }
+      ],
+      "capacity_samples": 13,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 42529,
+          "role": "gc",
+          "work": "7ab471e85f2445aea0acb653a0613f60"
+        },
+        {
+          "pid": 42567,
+          "role": "implementer",
+          "work": "a40ced0f614a421d9d98cf035b986b5d"
+        },
+        {
+          "pid": 42638,
+          "role": "investigator",
+          "work": "5a75602f20e84bc39efd033206abd051"
+        },
+        {
+          "pid": 42705,
+          "role": "implementer",
+          "work": "a40ced0f614a421d9d98cf035b986b5d"
+        },
+        {
+          "pid": 42761,
+          "role": "gc",
+          "work": "7ab471e85f2445aea0acb653a0613f60"
+        },
+        {
+          "pid": 42856,
+          "role": "functionality",
+          "work": "34421e7081d8471fa8dcc0528879d1aa"
+        },
+        {
+          "pid": 42885,
+          "role": "triage",
+          "work": "conversation-system"
+        },
+        {
+          "pid": 42907,
+          "role": "triage",
+          "work": "conversation-system"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw0/test_capacity_one_gc_worker_sp0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw0/test_capacity_one_gc_worker_sp0/fake.jsonl",
+      "raw_event_log": "popen-gw0/test_capacity_one_gc_worker_sp0/map-events.jsonl"
+    },
+    {
+      "test": "test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[True]",
+      "status": "passed",
+      "root_work_id": "27c3ff365d4e45c3a3cffa4309c9c8f8",
+      "assignments": [
+        {
+          "assignment_id": "16fb9355ba205fdb844cd72184102679",
+          "work_id": "04479609638c47028db45727e9b07f82",
+          "authored_role_uri": "metaform://role/investigator",
+          "execution_role": "worker",
+          "state": "running",
+          "parent_assignment_id": "2f364629d9ca50bc804baa89bef2c2ab",
+          "team_id": "5e2b85e77bc05574b7da8d582069062f",
+          "gc_assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "2f364629d9ca50bc804baa89bef2c2ab",
+            "continuation_id": "16fb9355ba205fdb844cd72184102679"
+          },
+          "owner_session_id": "swarm-517bfa3787184562",
+          "result": null,
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "2f364629d9ca50bc804baa89bef2c2ab",
+          "work_id": "b054c7ad31d144e19f2975a8acdb4a84",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "running",
+          "parent_assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+          "team_id": "5e2b85e77bc05574b7da8d582069062f",
+          "gc_assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+            "continuation_id": "2f364629d9ca50bc804baa89bef2c2ab"
+          },
+          "owner_session_id": "swarm-a950e9d320144baa",
+          "result": null,
+          "candidate": null
+        },
+        {
+          "assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+          "work_id": "27c3ff365d4e45c3a3cffa4309c9c8f8",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "running",
+          "parent_assignment_id": null,
+          "team_id": "5e2b85e77bc05574b7da8d582069062f",
+          "gc_assignment_id": "5e2b85e77bc05574b7da8d582069062f",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-54c759cf29dc4a8a",
+          "result": null,
+          "candidate": null
+        }
+      ],
+      "capacity_samples": 10,
+      "machine_limit": [
+        3
+      ],
+      "max_machine_used": 3,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 44059,
+          "role": "gc",
+          "work": "27c3ff365d4e45c3a3cffa4309c9c8f8"
+        },
+        {
+          "pid": 44078,
+          "role": "implementer",
+          "work": "b054c7ad31d144e19f2975a8acdb4a84"
+        },
+        {
+          "pid": 44099,
+          "role": "investigator",
+          "work": "04479609638c47028db45727e9b07f82"
+        },
+        {
+          "pid": 44282,
+          "role": "investigator",
+          "work": "04479609638c47028db45727e9b07f82"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw0/test_discovery_threaded_peer_d0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw0/test_discovery_threaded_peer_d0/fake.jsonl",
+      "raw_event_log": "popen-gw0/test_discovery_threaded_peer_d0/map-events.jsonl"
+    },
+    {
+      "test": "test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[strict]",
+      "status": "passed",
+      "root_work_id": "41444cca61b140808e60546901af88b4",
+      "assignments": [
+        {
+          "assignment_id": "10b155c518985a259d8da2bcabc219d9",
+          "work_id": "6ff26bf2be804a02a4492da56158c7e6",
+          "authored_role_uri": "metaform://role/investigator",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "5436e5a0dce2531a9eb3131462785e5a",
+          "team_id": "24f227ed7581593c84bb383c43a94c64",
+          "gc_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "5436e5a0dce2531a9eb3131462785e5a",
+            "continuation_id": "10b155c518985a259d8da2bcabc219d9"
+          },
+          "owner_session_id": "swarm-71d519bfd6f14983",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "work_id": "41444cca61b140808e60546901af88b4",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "24f227ed7581593c84bb383c43a94c64",
+          "gc_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-140647765f884a8c",
+          "result": "GC_VALIDATED: requested candidate delivered with specialist evidence.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "5436e5a0dce2531a9eb3131462785e5a",
+          "work_id": "2e89ac3e8f5945c994e4cdaaed0ae516",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "team_id": "24f227ed7581593c84bb383c43a94c64",
+          "gc_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "24f227ed7581593c84bb383c43a94c64",
+            "continuation_id": "5436e5a0dce2531a9eb3131462785e5a"
+          },
+          "owner_session_id": "swarm-196820ff47b54833",
+          "result": "WORKER_INTEGRATED: SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "5e736f16036450bf949ec2a5551783c2",
+          "work_id": "e8a3c272b94f429384ee2f33ad4f1458",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "5e736f16036450bf949ec2a5551783c2",
+          "gc_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "return_to": {
+            "assignment_id": "24f227ed7581593c84bb383c43a94c64",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-d01620b3cda742fe",
+          "result": "FQC_FINDING: restoration order affects functional continuity.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "70a92da7af9d5030983ed33aaf2c47a5",
+          "work_id": "ae19187bd63e4b9da8c9644ef55a8a7e",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "70a92da7af9d5030983ed33aaf2c47a5",
+          "gc_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "24f227ed7581593c84bb383c43a94c64",
+          "return_to": {
+            "assignment_id": "24f227ed7581593c84bb383c43a94c64",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-b451709b38134683",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        }
+      ],
+      "capacity_samples": 17,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 43558,
+          "role": "gc",
+          "work": "41444cca61b140808e60546901af88b4"
+        },
+        {
+          "pid": 43584,
+          "role": "implementer",
+          "work": "2e89ac3e8f5945c994e4cdaaed0ae516"
+        },
+        {
+          "pid": 43660,
+          "role": "investigator",
+          "work": "6ff26bf2be804a02a4492da56158c7e6"
+        },
+        {
+          "pid": 43700,
+          "role": "implementer",
+          "work": "2e89ac3e8f5945c994e4cdaaed0ae516"
+        },
+        {
+          "pid": 43747,
+          "role": "gc",
+          "work": "41444cca61b140808e60546901af88b4"
+        },
+        {
+          "pid": 43787,
+          "role": "functionality",
+          "work": "e8a3c272b94f429384ee2f33ad4f1458"
+        },
+        {
+          "pid": 43824,
+          "role": "gc",
+          "work": "41444cca61b140808e60546901af88b4"
+        },
+        {
+          "pid": 43957,
+          "role": "functionality",
+          "work": "ae19187bd63e4b9da8c9644ef55a8a7e"
+        },
+        {
+          "pid": 43988,
+          "role": "triage",
+          "work": "conversation-system"
+        },
+        {
+          "pid": 44019,
+          "role": "triage",
+          "work": "conversation-system"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw0/test_independent_fqc_change_or0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw0/test_independent_fqc_change_or0/fake.jsonl",
+      "raw_event_log": "popen-gw0/test_independent_fqc_change_or0/map-events.jsonl"
+    },
+    {
+      "test": "test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interruption[False]",
+      "status": "passed",
+      "root_work_id": "ca3f2ac1686a478495e0c5b137e60f6c",
+      "assignments": [
+        {
+          "assignment_id": "615533f6f5965220afebbbfa3de8ab81",
+          "work_id": "46d9cff68701411c9d33a0f3fd8f9f7b",
+          "authored_role_uri": "metaform://role/investigator",
+          "execution_role": "worker",
+          "state": "interrupted",
+          "parent_assignment_id": "7e6811c13f6f527b929ef4cddf49022f",
+          "team_id": "c810ad94865c53e2ae214949e4254883",
+          "gc_assignment_id": "c810ad94865c53e2ae214949e4254883",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "7e6811c13f6f527b929ef4cddf49022f",
+            "continuation_id": "615533f6f5965220afebbbfa3de8ab81"
+          },
+          "owner_session_id": "swarm-8099ec200c924f06",
+          "result": null,
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "7e6811c13f6f527b929ef4cddf49022f",
+          "work_id": "1314659237934855a16a004c984ec361",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "running",
+          "parent_assignment_id": "c810ad94865c53e2ae214949e4254883",
+          "team_id": "c810ad94865c53e2ae214949e4254883",
+          "gc_assignment_id": "c810ad94865c53e2ae214949e4254883",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "c810ad94865c53e2ae214949e4254883",
+            "continuation_id": "7e6811c13f6f527b929ef4cddf49022f"
+          },
+          "owner_session_id": "swarm-efb59d735144410a",
+          "result": null,
+          "candidate": null
+        },
+        {
+          "assignment_id": "c810ad94865c53e2ae214949e4254883",
+          "work_id": "ca3f2ac1686a478495e0c5b137e60f6c",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "running",
+          "parent_assignment_id": null,
+          "team_id": "c810ad94865c53e2ae214949e4254883",
+          "gc_assignment_id": "c810ad94865c53e2ae214949e4254883",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-01f82c7e60f34891",
+          "result": null,
+          "candidate": null
+        }
+      ],
+      "capacity_samples": 9,
+      "machine_limit": [
+        3
+      ],
+      "max_machine_used": 3,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 44113,
+          "role": "gc",
+          "work": "ca3f2ac1686a478495e0c5b137e60f6c"
+        },
+        {
+          "pid": 44139,
+          "role": "implementer",
+          "work": "1314659237934855a16a004c984ec361"
+        },
+        {
+          "pid": 44170,
+          "role": "investigator",
+          "work": "46d9cff68701411c9d33a0f3fd8f9f7b"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw1/test_discovery_threaded_peer_d0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw1/test_discovery_threaded_peer_d0/fake.jsonl",
+      "raw_event_log": "popen-gw1/test_discovery_threaded_peer_d0/map-events.jsonl"
+    },
+    {
+      "test": "test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected[adaptive]",
+      "status": "passed",
+      "root_work_id": "e9ca12910ee8434a9f3c5e2ff3675678",
+      "assignments": [
+        {
+          "assignment_id": "2a5c6d6629ce52868d200f0f37e9d7cf",
+          "work_id": "854af32759394cf092fac83f43ee18a8",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "2a5c6d6629ce52868d200f0f37e9d7cf",
+          "gc_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "return_to": {
+            "assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-ce3288e35ece45c6",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "981e5d6d5676c2d4c8686c1b0ee128e3c03a3fce4812f53baac911e66816081f"
+          }
+        },
+        {
+          "assignment_id": "315052e5bce550fd999191f96e9fea06",
+          "work_id": "058f8a4b99204b78b5c1d4ed0f51e414",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "315052e5bce550fd999191f96e9fea06",
+          "gc_assignment_id": "8d260a39377f58489c4c16fbd17712da",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "8d260a39377f58489c4c16fbd17712da",
+          "return_to": {
+            "assignment_id": "8d260a39377f58489c4c16fbd17712da",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-e1ac4237b0cf4c61",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "981e5d6d5676c2d4c8686c1b0ee128e3c03a3fce4812f53baac911e66816081f"
+          }
+        },
+        {
+          "assignment_id": "6a1e03f5ae915308b84db32867085585",
+          "work_id": "6e0e1046ff2a46939ba68fa43113c125",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "6a1e03f5ae915308b84db32867085585",
+          "gc_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "return_to": {
+            "assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-38cd681e0e47475d",
+          "result": "FQC_FINDING: restoration order affects functional continuity.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "8327de7f71ae5264ada453e125339a0a",
+          "work_id": "7ecd488dc580402c84ecb12901114504",
+          "authored_role_uri": "metaform://role/investigator",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "9bcf6c33c1045618b118ec42df3b86ef",
+          "team_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "gc_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "9bcf6c33c1045618b118ec42df3b86ef",
+            "continuation_id": "8327de7f71ae5264ada453e125339a0a"
+          },
+          "owner_session_id": "swarm-70cafcac8bf84870",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "8d260a39377f58489c4c16fbd17712da",
+          "work_id": "2c3aaf2697f042309e29be1be986b111",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "team_id": "8d260a39377f58489c4c16fbd17712da",
+          "gc_assignment_id": "8d260a39377f58489c4c16fbd17712da",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+            "assessment_assignment_id": "6a1e03f5ae915308b84db32867085585"
+          },
+          "owner_session_id": "swarm-e243ac3eaa344899",
+          "result": "CORRECTIVE_GC_DELIVERED: restored retained work and verified the functional result.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "981e5d6d5676c2d4c8686c1b0ee128e3c03a3fce4812f53baac911e66816081f"
+          }
+        },
+        {
+          "assignment_id": "9bcf6c33c1045618b118ec42df3b86ef",
+          "work_id": "86c60d55d7d8486798fb3ebde5cb2e70",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "team_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "gc_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+            "continuation_id": "9bcf6c33c1045618b118ec42df3b86ef"
+          },
+          "owner_session_id": "swarm-b782098b368646ec",
+          "result": "WORKER_INTEGRATED: SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "547a0c32c4fbf349e8924a4c763d473cbca6b3130470e6343d39ec726a36c4b2"
+          }
+        },
+        {
+          "assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "work_id": "e9ca12910ee8434a9f3c5e2ff3675678",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "gc_assignment_id": "bc0bda0e0db45f18a4ac8d32a7d02d9e",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-8cdad211ba8f467c",
+          "result": "GC_VALIDATED: requested candidate delivered with specialist evidence.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "981e5d6d5676c2d4c8686c1b0ee128e3c03a3fce4812f53baac911e66816081f"
+          }
+        }
+      ],
+      "capacity_samples": 21,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 43545,
+          "role": "gc",
+          "work": "e9ca12910ee8434a9f3c5e2ff3675678"
+        },
+        {
+          "pid": 43569,
+          "role": "implementer",
+          "work": "86c60d55d7d8486798fb3ebde5cb2e70"
+        },
+        {
+          "pid": 43647,
+          "role": "investigator",
+          "work": "7ecd488dc580402c84ecb12901114504"
+        },
+        {
+          "pid": 43669,
+          "role": "implementer",
+          "work": "86c60d55d7d8486798fb3ebde5cb2e70"
+        },
+        {
+          "pid": 43725,
+          "role": "gc",
+          "work": "e9ca12910ee8434a9f3c5e2ff3675678"
+        },
+        {
+          "pid": 43764,
+          "role": "functionality",
+          "work": "6e0e1046ff2a46939ba68fa43113c125"
+        },
+        {
+          "pid": 43798,
+          "role": "gc",
+          "work": "e9ca12910ee8434a9f3c5e2ff3675678"
+        },
+        {
+          "pid": 43834,
+          "role": "gc",
+          "work": "2c3aaf2697f042309e29be1be986b111"
+        },
+        {
+          "pid": 43904,
+          "role": "functionality",
+          "work": "058f8a4b99204b78b5c1d4ed0f51e414"
+        },
+        {
+          "pid": 43935,
+          "role": "gc",
+          "work": "e9ca12910ee8434a9f3c5e2ff3675678"
+        },
+        {
+          "pid": 44029,
+          "role": "functionality",
+          "work": "854af32759394cf092fac83f43ee18a8"
+        },
+        {
+          "pid": 44050,
+          "role": "triage",
+          "work": "conversation-system"
+        },
+        {
+          "pid": 44072,
+          "role": "triage",
+          "work": "conversation-system"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw1/test_independent_fqc_change_or0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw1/test_independent_fqc_change_or0/fake.jsonl",
+      "raw_event_log": "popen-gw1/test_independent_fqc_change_or0/map-events.jsonl"
+    },
+    {
+      "test": "test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_gc",
+      "status": "passed",
+      "root_work_id": "e0910d397ba4417fa01da429bf5d3c0a",
+      "assignments": [
+        {
+          "assignment_id": "3178777b14ff56ce861a0c8ccdecb80d",
+          "work_id": "575fda93e6cb42f5b35300525cb3a37b",
+          "authored_role_uri": "metaform://role/bmad.bmm.dev",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "team_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "gc_assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+            "continuation_id": "3178777b14ff56ce861a0c8ccdecb80d"
+          },
+          "owner_session_id": "swarm-7004b79896ad4089",
+          "result": "BMAD_INSTALLED_REVIEW: SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "work_id": "e0910d397ba4417fa01da429bf5d3c0a",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "gc_assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-d190d1c4be274c36",
+          "result": "GC_VALIDATED: installed BMAD menu contribution reached its immediate caller.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "5bbb6b4d4c16a9eb536ad92c6238b60583eb7eb573c981e34c7b2e86e7cedd78"
+          }
+        },
+        {
+          "assignment_id": "679a8f85dfb4548fb559649edf4ebbaf",
+          "work_id": "ce3112d0d5b44c8caf64ec971ef307e6",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "679a8f85dfb4548fb559649edf4ebbaf",
+          "gc_assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+          "return_to": {
+            "assignment_id": "4adb45beb8f5582cbf1e8397ae984caf",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-4f800dd9e5384bfd",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "5bbb6b4d4c16a9eb536ad92c6238b60583eb7eb573c981e34c7b2e86e7cedd78"
+          }
+        }
+      ],
+      "capacity_samples": 6,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 43217,
+          "role": "gc",
+          "work": "e0910d397ba4417fa01da429bf5d3c0a"
+        },
+        {
+          "pid": 43250,
+          "role": "bmad.bmm.dev",
+          "work": "575fda93e6cb42f5b35300525cb3a37b"
+        },
+        {
+          "pid": 43275,
+          "role": "gc",
+          "work": "e0910d397ba4417fa01da429bf5d3c0a"
+        },
+        {
+          "pid": 43393,
+          "role": "functionality",
+          "work": "ce3112d0d5b44c8caf64ec971ef307e6"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw1/test_installed_bmad_menu_and_s0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw1/test_installed_bmad_menu_and_s0/fake.jsonl",
+      "raw_event_log": "popen-gw1/test_installed_bmad_menu_and_s0/map-events.jsonl"
+    },
+    {
+      "test": "test_user_stops_a_suspended_gc_and_its_live_child_without_restarting_pending_work",
+      "status": "passed",
+      "root_work_id": "538da7cd03364296aebc88ecd8d842c8",
+      "assignments": [
+        {
+          "assignment_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "work_id": "538da7cd03364296aebc88ecd8d842c8",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "stopped",
+          "parent_assignment_id": null,
+          "team_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "gc_assignment_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-55f1702d8a924f0b",
+          "result": null,
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "7389ee001df05f2b9d19f84af1fa6b5a",
+          "work_id": "7dac6f9b5ed748d086331f74b093497c",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "stopped",
+          "parent_assignment_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "team_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "gc_assignment_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "41ea0a2ff5665aa88440a0f13f7a93ca",
+            "continuation_id": "7389ee001df05f2b9d19f84af1fa6b5a"
+          },
+          "owner_session_id": "swarm-973dc12f5b904eb2",
+          "result": null,
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        }
+      ],
+      "capacity_samples": 2,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 43434,
+          "role": "gc",
+          "work": "538da7cd03364296aebc88ecd8d842c8"
+        },
+        {
+          "pid": 43474,
+          "role": "implementer",
+          "work": "7dac6f9b5ed748d086331f74b093497c"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw1/test_user_stops_a_suspended_gc0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw1/test_user_stops_a_suspended_gc0/fake.jsonl",
+      "raw_event_log": "popen-gw1/test_user_stops_a_suspended_gc0/map-events.jsonl"
+    },
+    {
+      "test": "test_worker_missing_role_returns_through_gc_creator_published_duty_and_registered_reuse",
+      "status": "passed",
+      "root_work_id": "257f1139fa1043b88439f89ee8d4a9f3",
+      "assignments": [
+        {
+          "assignment_id": "3677940a96be48d6a094c50bbd7ee962",
+          "work_id": "1920a6a2e65140c2a1f8a4654489cc20",
+          "authored_role_uri": "metaform://role/route_specialist",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "3d8c9a54657c5f3f974883e09f476609",
+          "team_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "3d8c9a54657c5f3f974883e09f476609",
+            "role_request_id": "051990b541e15b9486e3870709795af3"
+          },
+          "owner_session_id": "swarm-ecc32e8e91b74943",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        },
+        {
+          "assignment_id": "3d8c9a54657c5f3f974883e09f476609",
+          "work_id": "e6036147b7cd47f0a87944ef9d16f953",
+          "authored_role_uri": "metaform://role/implementer",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "team_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+            "continuation_id": "3d8c9a54657c5f3f974883e09f476609"
+          },
+          "owner_session_id": "swarm-3a729dd46390422c",
+          "result": "WORKER_INTEGRATED: SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "4da04f5a90d6a4171bfb65da5f30b1e8d9cb7224870185b871571722556bb020"
+          }
+        },
+        {
+          "assignment_id": "7f745c3ae26e59b7a09e2df7240358b7",
+          "work_id": "70f0ed6dfbb04aaa8a640998e5e2476e",
+          "authored_role_uri": "metaform://role/functionality",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": null,
+          "team_id": "7f745c3ae26e59b7a09e2df7240358b7",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "return_to": {
+            "assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+            "kind": "assessment"
+          },
+          "owner_session_id": "swarm-cab5f14f7a3948b3",
+          "result": "FQC_ACCEPTED: independently observed candidate preserves requested behavior.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "4da04f5a90d6a4171bfb65da5f30b1e8d9cb7224870185b871571722556bb020"
+          }
+        },
+        {
+          "assignment_id": "a58e1ec09d8b4496a6df24055f49aae4",
+          "work_id": "d2ef0b0973d4419eb82419c7d76aa59a",
+          "authored_role_uri": "metaform://role/role_creator",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "team_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+            "role_request_id": "051990b541e15b9486e3870709795af3"
+          },
+          "owner_session_id": "swarm-51b2280e9e004ce7",
+          "result": {
+            "published_role": {
+              "uri": "metaform://role/route_specialist",
+              "name": "route_specialist",
+              "provider": "agents",
+              "purpose": "Establish the route behavior needed by this worker.",
+              "components": [
+                {
+                  "name": "orchestration:common",
+                  "text": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.",
+                  "actual_version_id": "886563da1c2741d082e0b1b9b942246f",
+                  "selected_version_id": "886563da1c2741d082e0b1b9b942246f",
+                  "number": 1,
+                  "origin": "shipped",
+                  "rendered_fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                },
+                {
+                  "name": "agents:generated_proj_route_specialist",
+                  "text": "You are the Route Specialist. Independently establish route behavior for your immediate caller. Preserve its functional result across suspension and return candidate-specific evidence. Your delivery GC retains swarm ownership. Use the public module action bindings you receive.",
+                  "actual_version_id": "5279d2572e2b49e29401bab4395f5abf",
+                  "selected_version_id": "5279d2572e2b49e29401bab4395f5abf",
+                  "number": 1,
+                  "origin": "edited",
+                  "rendered_fingerprint": "313c0c536f08fcd7b330899a7ce6aaa3e7e1cd9456e933fc9d2dc9478ae7d7e3",
+                  "bindings": {},
+                  "problems": [],
+                  "notices": []
+                }
+              ],
+              "problems": [],
+              "missing": false,
+              "notices": [],
+              "text": "Work through the project's functional namespace. Use the receiving elements, operative purposes, encounter functions and their relationships to understand the assignment in the full design.\nC(T) = { (r_i ∧ p_i ∧ e) }: Formula for frozen core allowing mutation, not transformation.\nC(T) preserves the functional core; it is not a snapshot of context at a moment in time. Adapt approaches without transforming that core.\nC(T) is the system-wide goal and higher-order priority than a specification. In adaptive mode, follow the specification while adapting it when a better approach serves C(T) and fits the full design. Update the operative specification and surface the adaptation as a message to the user. These messages provide visibility, not approval gates. In strict mode, follow the current specification and return proposed adaptations as recommendations. New user instructions revise operative requirements in either mode.\nRead the current assignment, its mode, operative specification and applicable functional grounding. Read unread memories through their functional entry points and maintain them according to the shared memory instructions. Apply relevant changes delivered during the work.\nEnumerate other agents and use direct messages for useful coordination. Ordinary peer messages arrive on a normal turn without interrupting the recipient. A peer discovery supplies information; a parent assignment or GC change order directs the work it owns. Read the message's supplied sender/assignment context and current specification rather than inferring its authority from its wording.\nCall existing specialists directly through the bound operations. When a new role is needed, record its requested contribution and context for the GC, which commissions the Role Creator. The published role continues the original specialist call and returns to its immediate caller. Retain responsibility for your assignment and integrate child results. Return results to the recorded destination. Use the check-in/continuation path for blockers, completion and waiting rather than leaving the next action only in prose.\nUse the current action bindings and tool help supplied by the system. Configured dynamic blacklists and harness permissions govern execution independently of role text.\nReturn the requested result with its candidate or artifact identity, supporting evidence and remaining work as applicable. Keep ticket progress and return state accurate.\n\nYou are the Route Specialist. Independently establish route behavior for your immediate caller. Preserve its functional result across suspension and return candidate-specific evidence. Your delivery GC retains swarm ownership. Use the public module action bindings you receive.",
+              "version_id": "5279d2572e2b49e29401bab4395f5abf",
+              "source": {
+                "request_id": "051990b541e15b9486e3870709795af3",
+                "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+                "creator_assignment_id": "a58e1ec09d8b4496a6df24055f49aae4",
+                "creator_session_id": "swarm-51b2280e9e004ce7",
+                "creator_caller_id": "20901337269e4704"
+              }
+            },
+            "request_id": "051990b541e15b9486e3870709795af3"
+          },
+          "candidate": null
+        },
+        {
+          "assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "work_id": "257f1139fa1043b88439f89ee8d4a9f3",
+          "authored_role_uri": "metaform://role/gc",
+          "execution_role": "worker",
+          "state": "delivered",
+          "parent_assignment_id": null,
+          "team_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "kind": "pm"
+          },
+          "owner_session_id": "swarm-28450bb4d2704a12",
+          "result": "GC_VALIDATED: requested candidate delivered with specialist evidence.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt",
+            "sha256": "4da04f5a90d6a4171bfb65da5f30b1e8d9cb7224870185b871571722556bb020"
+          }
+        },
+        {
+          "assignment_id": "e2f25bcf1b62540184a1daf671e48b4a",
+          "work_id": "6f51f312b1bc4bafbe95c66b90e14f7e",
+          "authored_role_uri": "metaform://role/route_specialist",
+          "execution_role": "worker",
+          "state": "returned",
+          "parent_assignment_id": "3d8c9a54657c5f3f974883e09f476609",
+          "team_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "gc_assignment_id": "e22ae4e24f545c0799a063b88ed59b00",
+          "root_assignment_id": null,
+          "reviewed_assignment_id": null,
+          "return_to": {
+            "assignment_id": "3d8c9a54657c5f3f974883e09f476609",
+            "continuation_id": "e2f25bcf1b62540184a1daf671e48b4a"
+          },
+          "owner_session_id": "swarm-a183ddca3f7a4b4e",
+          "result": "SPECIALIST_RESULT: the route preserves its functional result after resumption.",
+          "candidate": {
+            "revision": "fake-swarm-candidate-1",
+            "path": "candidate.txt"
+          }
+        }
+      ],
+      "capacity_samples": 19,
+      "machine_limit": [
+        1
+      ],
+      "max_machine_used": 1,
+      "all_capacity_samples_within_limit": true,
+      "actual_processes": [
+        {
+          "pid": 42531,
+          "role": "gc",
+          "work": "257f1139fa1043b88439f89ee8d4a9f3"
+        },
+        {
+          "pid": 42569,
+          "role": "implementer",
+          "work": "e6036147b7cd47f0a87944ef9d16f953"
+        },
+        {
+          "pid": 42646,
+          "role": "gc",
+          "work": "257f1139fa1043b88439f89ee8d4a9f3"
+        },
+        {
+          "pid": 42715,
+          "role": "role_creator",
+          "work": "d2ef0b0973d4419eb82419c7d76aa59a"
+        },
+        {
+          "pid": 42741,
+          "role": "gc",
+          "work": "257f1139fa1043b88439f89ee8d4a9f3"
+        },
+        {
+          "pid": 42804,
+          "role": "route_specialist",
+          "work": "1920a6a2e65140c2a1f8a4654489cc20"
+        },
+        {
+          "pid": 42831,
+          "role": "implementer",
+          "work": "e6036147b7cd47f0a87944ef9d16f953"
+        },
+        {
+          "pid": 42868,
+          "role": "route_specialist",
+          "work": "6f51f312b1bc4bafbe95c66b90e14f7e"
+        },
+        {
+          "pid": 42896,
+          "role": "implementer",
+          "work": "e6036147b7cd47f0a87944ef9d16f953"
+        },
+        {
+          "pid": 42989,
+          "role": "gc",
+          "work": "257f1139fa1043b88439f89ee8d4a9f3"
+        },
+        {
+          "pid": 43125,
+          "role": "functionality",
+          "work": "70f0ed6dfbb04aaa8a640998e5e2476e"
+        }
+      ],
+      "fixture_errors": [],
+      "raw_snapshot": "popen-gw1/test_worker_missing_role_retur0/runtime-evidence.json",
+      "raw_recipient_log": "popen-gw1/test_worker_missing_role_retur0/fake.jsonl",
+      "raw_event_log": "popen-gw1/test_worker_missing_role_retur0/map-events.jsonl"
+    }
+  ],
+  "idle": {
+    "label": "03766976928aae6139563cdd9ec7075dd3541d7d",
+    "source": "/workspace/scratch/243b683ad142/metaform/src/metaform",
+    "interval_seconds": 60.0001334539993,
+    "cpu_seconds": {
+      "runner": 0.020000000000000018,
+      "adapter": 0.0
+    },
+    "cpu_percent_of_one_core": {
+      "runner": 0.033333259192387554,
+      "adapter": 0.0
+    },
+    "native_orchestration": true
+  },
+  "runtime_scenarios": 10,
+  "cross_team_evidence": "cross-team-recipients.json",
+  "gc_self_request_journey": "gc-self-role-journey.json",
+  "trace_archive": {
+    "file": "process-traces.tar.gz",
+    "bytes": 523619,
+    "sha256": "9f611015f0e217afe7eaca9eeb08bd90362f2aee033ad7638a8f93d64115d41f",
+    "files": [
+      {
+        "path": "popen-gw0/test_actual_acp_compaction_red0/fake.jsonl",
+        "bytes": 249137,
+        "sha256": "9842cbc4c7fd6ce6f45dd5978dba212515bd2d90d6539546011f1e4bdcfbf40e"
+      },
+      {
+        "path": "popen-gw0/test_actual_acp_compaction_red0/map-events.jsonl",
+        "bytes": 11085,
+        "sha256": "9c020208b24aa47a853aa446f52eda2c379c6a956ba56569eb272353549a00f4"
+      },
+      {
+        "path": "popen-gw0/test_actual_acp_compaction_red0/runtime-evidence.json",
+        "bytes": 28826,
+        "sha256": "ce382f4e519cf3b8d3656c05fec99563970c0dee68f411020cb97b53520ff43a"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_requests_0/fake.jsonl",
+        "bytes": 716855,
+        "sha256": "1c7daccdffdb5d3ef9b19018fb645912b6324c07e71016d9aff8d99f4a499e6a"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_requests_0/map-events.jsonl",
+        "bytes": 31004,
+        "sha256": "5e4ad918611ea472ad68827cbff8bedbdcf2952dec8c580c507c868bbea063e2"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_requests_0/runtime-evidence.json",
+        "bytes": 96101,
+        "sha256": "64e0939fa11e761e8254cac98913012755153a549fb92cff9980a2211a8a2a06"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_worker_sp0/fake.jsonl",
+        "bytes": 515617,
+        "sha256": "dc01fb770fca5dd10a21a911e2d22dc9a66c951e74342a326f009ccc73b4d6ce"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_worker_sp0/map-events.jsonl",
+        "bytes": 35990,
+        "sha256": "f49d20eb8dfe2779550d9c043e70cbc79e1339a922559b5ab1d50964aa29ae2b"
+      },
+      {
+        "path": "popen-gw0/test_capacity_one_gc_worker_sp0/runtime-evidence.json",
+        "bytes": 53780,
+        "sha256": "bdfb60499f6ce5e607141d0ee1dc41afd4fc95e6f0b617aed8fbe7d21da06702"
+      },
+      {
+        "path": "popen-gw0/test_discovery_threaded_peer_d0/fake.jsonl",
+        "bytes": 325158,
+        "sha256": "c1d78deaae3e63d82b42196a2061f9b58326ebba7e5b992a009a17d56ccb9c7e"
+      },
+      {
+        "path": "popen-gw0/test_discovery_threaded_peer_d0/map-events.jsonl",
+        "bytes": 26930,
+        "sha256": "84c404fb7c757e47490dd55d0bbcb1127cf4cae109c721b37a72a0781b26a660"
+      },
+      {
+        "path": "popen-gw0/test_discovery_threaded_peer_d0/runtime-evidence.json",
+        "bytes": 29789,
+        "sha256": "4d60edeb4057f09008f9aa9b651afd53e8ef21834f5ce509ca8dd5c6b5de5690"
+      },
+      {
+        "path": "popen-gw0/test_idle_cpu_evidence0/fake.jsonl",
+        "bytes": 31392,
+        "sha256": "f59c10fe2a8da96538051b3e798970a0956540443b7a6cee17e3773941fd1575"
+      },
+      {
+        "path": "popen-gw0/test_independent_fqc_change_or0/fake.jsonl",
+        "bytes": 674768,
+        "sha256": "50283f748acfb8518c7ce509137ff0cf195de5d44b7a0d589375c919163c2fc8"
+      },
+      {
+        "path": "popen-gw0/test_independent_fqc_change_or0/map-events.jsonl",
+        "bytes": 48101,
+        "sha256": "a8c9665f1a2f9326cdf21732a8b9c71eea0d91ca564be5fcc16203e9cf78d7b0"
+      },
+      {
+        "path": "popen-gw0/test_independent_fqc_change_or0/runtime-evidence.json",
+        "bytes": 76984,
+        "sha256": "519983f14a6544e043d29b80e62b11cce199fb1790bb30496c0d06af7ef75045"
+      },
+      {
+        "path": "popen-gw0/test_two_gc_teams_exchange_thr0/cross-team-evidence.json",
+        "bytes": 111956,
+        "sha256": "d4870ac8e1ea18ae07c09e1131af63e87e8097ba155c482ac5976f0f9e13536b"
+      },
+      {
+        "path": "popen-gw0/test_two_gc_teams_exchange_thr0/fake.jsonl",
+        "bytes": 103231,
+        "sha256": "9af978eb18453a9367bb87accf9937c23d47155305de6ef2d49d899b5184a7cd"
+      },
+      {
+        "path": "popen-gw1/test_discovery_threaded_peer_d0/fake.jsonl",
+        "bytes": 301433,
+        "sha256": "d97e6e9f3ba4ad23e0fbcc4010bdbbba26148fb78f415413ea9717ccee2f3f30"
+      },
+      {
+        "path": "popen-gw1/test_discovery_threaded_peer_d0/map-events.jsonl",
+        "bytes": 24621,
+        "sha256": "5d6fd9afbba6a69233e3d61e36d5d97964ee6ab2b93aefd1df1587910abe6540"
+      },
+      {
+        "path": "popen-gw1/test_discovery_threaded_peer_d0/runtime-evidence.json",
+        "bytes": 27620,
+        "sha256": "49f6771ccdcc8b28235713f2bc9bafa1af352f8e387f5984ef08223a149aa57e"
+      },
+      {
+        "path": "popen-gw1/test_fork_creation_and_later_t0/fake.jsonl",
+        "bytes": 6799,
+        "sha256": "1cc509b5f5ae831dab25f66e1cd50310187021be77e31bff6af5b704fe379f6e"
+      },
+      {
+        "path": "popen-gw1/test_independent_fqc_change_or0/fake.jsonl",
+        "bytes": 1013599,
+        "sha256": "107e0ae334c4f359597fe4d954287945743caee881533a70665cc4872a468f93"
+      },
+      {
+        "path": "popen-gw1/test_independent_fqc_change_or0/map-events.jsonl",
+        "bytes": 63744,
+        "sha256": "62502fc74a060a5861d00401fb5a230117c3c9b4f13bf82d38b244a4ad282b95"
+      },
+      {
+        "path": "popen-gw1/test_independent_fqc_change_or0/runtime-evidence.json",
+        "bytes": 121200,
+        "sha256": "f5cf0e339d1af5e0fb074d23eb95bc62f45fcd1dade4683289761f4a66a7405f"
+      },
+      {
+        "path": "popen-gw1/test_installed_bmad_menu_and_s0/fake.jsonl",
+        "bytes": 329487,
+        "sha256": "41444280521469b8df6399963e09c078f763b541d2577fe65ad8b9bebe8a0591"
+      },
+      {
+        "path": "popen-gw1/test_installed_bmad_menu_and_s0/map-events.jsonl",
+        "bytes": 19446,
+        "sha256": "70265d5e11fcb6fbc844b8f619b060e379912048b7967cd96a230f78a528af99"
+      },
+      {
+        "path": "popen-gw1/test_installed_bmad_menu_and_s0/runtime-evidence.json",
+        "bytes": 36186,
+        "sha256": "e000afad66c7e1b2931afaa8b811f1cbd0970e51239821f6df1d6d7080d4a08c"
+      },
+      {
+        "path": "popen-gw1/test_user_stops_a_suspended_gc0/fake.jsonl",
+        "bytes": 135788,
+        "sha256": "0048be7514fe53f585bc5c6680c834f698b56efe498982e3e98de5f960848a7d"
+      },
+      {
+        "path": "popen-gw1/test_user_stops_a_suspended_gc0/map-events.jsonl",
+        "bytes": 7207,
+        "sha256": "35175e58eabbe573573774aa1383e53a5ec96822ed8563527b3972604480560c"
+      },
+      {
+        "path": "popen-gw1/test_user_stops_a_suspended_gc0/runtime-evidence.json",
+        "bytes": 14882,
+        "sha256": "0b4594d79a63cf7064bab616b988b90409aa0481ae719fd91cb23a44f0f61260"
+      },
+      {
+        "path": "popen-gw1/test_worker_missing_role_retur0/fake.jsonl",
+        "bytes": 950979,
+        "sha256": "1e025529401b4b8c612f7841cd647be2c9935b275cd71afc3d4a602c8c2ae5c5"
+      },
+      {
+        "path": "popen-gw1/test_worker_missing_role_retur0/map-events.jsonl",
+        "bytes": 54520,
+        "sha256": "6483047b709327c613f4757ab235e38e756f99f0fa4810f242bdabbc51c1c246"
+      },
+      {
+        "path": "popen-gw1/test_worker_missing_role_retur0/runtime-evidence.json",
+        "bytes": 120854,
+        "sha256": "8a18110d4e58e94c20f3ca98816c2d8e38241ec423625d39f9a5c21630fb26b1"
+      }
+    ]
+  }
+}

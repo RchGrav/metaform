@@ -1,0 +1,17 @@
+/workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:196:12 - error: Return type, "Unknown | Any", is partially unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:230:5 - error: Type of "resampler" is unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:230:17 - error: Type of "AudioResampler" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:232:10 - error: Type of "open" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:232:42 - error: Type of "container" is unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:233:13 - error: Type of "frame" is unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:233:22 - error: Type of "decode" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:235:17 - error: Type of "out" is unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:235:24 - error: Type of "resample" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:236:31 - error: Type of "to_ndarray" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:236:31 - error: Type of "reshape" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:237:13 - error: Type of "out" is unknown (reportUnknownVariableType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:237:20 - error: Type of "resample" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:238:27 - error: Type of "to_ndarray" is unknown (reportUnknownMemberType)
+  /workspace/scratch/243b683ad142/metaform/src/metaform/modules/voice/engine.py:238:27 - error: Type of "reshape" is unknown (reportUnknownMemberType)
+15 errors, 0 warnings, 0 informations

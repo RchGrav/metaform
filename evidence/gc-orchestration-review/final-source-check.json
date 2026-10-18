@@ -1,0 +1,23 @@
+{
+  "verified_utc": "2026-10-18T09:16:14.587188+00:00",
+  "tested_source_commit": "03766976928aae6139563cdd9ec7075dd3541d7d",
+  "tested_source_tree": "f8dbc2419e340f98f951fbe1aef57f24975ace71",
+  "tracked_source_and_prompt_changes_after_testing": [],
+  "evidence_only_followup": true,
+  "state_sha256": "bd256bd781ff4fd28ab86bc01a9eaa29ac2f04cbc5b74a16fe002b2f63d51763",
+  "contract_tests": {
+    "passed": 29,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "process_tests": {
+    "passed": 15,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "live_model_status": "completed through actual PM response; all managed sessions ended",
+  "live_model_evidence": "live-model/live-journey.json",
+  "limitations": "README.md and live-model/README.md"
+}

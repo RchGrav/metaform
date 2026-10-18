@@ -1,0 +1,101 @@
+{
+  "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+  "operative_base": "10e2984ea36231b474b197e30661712ff45e3765",
+  "remote_main_verified": "10e2984ea36231b474b197e30661712ff45e3765",
+  "commits_since_review": [
+    {
+      "sha": "2d7ed336f5645a064a536da195f08a302283d76a",
+      "subject": "Turning the 3D map is smooth again: a label repainted as its size crosses a sharpness step is sent to the graphics card alone, into its slot of the atlas page, where the whole 2048 by 2048 page was sent again each time, 16 MB a frame while the map turned, so frames came every sixth to eighth refresh (from 0019ec90, map-speed; traced 2026-10-17)"
+    },
+    {
+      "sha": "e8564d946795d0fb1af2b5f2e822b92ad1ed4545",
+      "subject": "A repainted label is sent to the graphics card by WebGL itself with the rest of its slot cleared, and many repainted in one frame go with their page sent whole: three.js's copy asked the card for five settings per copy, 17 ms a frame while the map turned, and sent the label alone, leaving earlier pixels beside it that showed as slivers at its edge (independent check of 2d7ed336, 2026-10-17)"
+    },
+    {
+      "sha": "1bc4aad8d98cb5f475aa629d4e276b7a82450f1f",
+      "subject": "The roundtable forensics of 2026-10-16 with its raw data: the reconstruction, the runaway-and-load review, and what the 66 Start-all agents completed, with every session and ticket of the night (artifacts/ stays ignored; these files are added by name)"
+    },
+    {
+      "sha": "939a3cc7abb9bf5c9aba6b796a5e61046e7ddfb4",
+      "subject": "Agents are asked to link the files that are entry points of the functionality they work on, and no write is refused for want of a link: the write lock, with its Codex asking mode, command sandbox, confined terminal and read-only ignore list, is deleted, not switched off, after its drawbacks were weighed; a ticket worker's first prompt carries the work_link request once, so linked entry points still put the work on the map for later agents (CTX-060 amended, CTX-061, CTX-062 and CTX-064 withdrawn, 2026-10-18)"
+    },
+    {
+      "sha": "4cc6b95b07268562bf7a906e54866ef048ba08a7",
+      "subject": "The fake agent loses what only the write lock's tests drove: codex-acp's asking mode and requests, the write gate and the permission request's path"
+    },
+    {
+      "sha": "10e2984ea36231b474b197e30661712ff45e3765",
+      "subject": "The skills and evidence agents recorded during the UX review of 2026-10-17 and 18"
+    }
+  ],
+  "operative_source_changes": [
+    {
+      "path": "docs/reference/metaform-mcp-server.md",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "specifications/11-context.md",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 6
+    },
+    {
+      "path": "src/metaform/modules/dispatch/CHANGELOG.md",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0
+    },
+    {
+      "path": "src/metaform/modules/dispatch/README.md",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 4
+    },
+    {
+      "path": "src/metaform/modules/dispatch/__init__.py",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 7
+    },
+    {
+      "path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 41
+    },
+    {
+      "path": "src/metaform/modules/dispatch/runner.py",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 327
+    },
+    {
+      "path": "src/metaform/modules/dispatch/tests/fake_agent.py",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 54
+    },
+    {
+      "path": "src/metaform/modules/dispatch/tests/test_dispatch.py",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 193
+    },
+    {
+      "path": "src/metaform/modules/web/page/app/map3d/nodes3d.js",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 4
+    }
+  ],
+  "decisions": [
+    "The latest main checkout is authoritative. The reverted requirement that a file be linked before writing, asking mode, command sandbox, confined terminal and read-only ignore controls are not restored.",
+    "Existing work claim conflict checks, configured controls and dynamic blacklist remain operative.",
+    "The archive physically declares 16 native roles. The user's operative request adds GC-owned Role Creator; the implementation registers 17 including role_creator and retains functionality for independent FQC.",
+    "Existing prompt identity dispatch:system, the selected version's source/parent history, and user-authored register are preserved by targeted migration.",
+    "No live user prompt store or memory graph was inspected, reset or changed. Selected-version reconciliation and receipts are demonstrated in isolated actual prompt-store/MCP/ACP fixtures.",
+    "The packet VALIDATION.md is artifact-only evidence. Runtime verification is recorded independently against the committed code candidate."
+  ]
+}

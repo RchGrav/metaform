@@ -1,0 +1,10 @@
+{
+  "runtime_candidate": "8c9bf81eaa6876b5dc34766574ebb1eece2a5851",
+  "runtime_and_prompt_files_unchanged": true,
+  "post_candidate_tracked_changes": [
+    "src/metaform/modules/dispatch/tests/test_orchestration_runtime.py",
+    "src/metaform/modules/mcp/tests/test_mcp.py"
+  ],
+  "new_test": "src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py",
+  "post_candidate_scope": "Recorded evidence, public resource inventory expectations, waiting for actual capacity release in the PM fixture, and additional concurrent-team acceptance coverage."
+}

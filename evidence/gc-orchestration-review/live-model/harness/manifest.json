@@ -1,0 +1,74 @@
+{
+  "method": "thread/read",
+  "includeTurns": true,
+  "scope": "Only Codex thread IDs recorded by the isolated Metaform live-smoke sessions.",
+  "threads": [
+    {
+      "thread_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+      "turns": 11,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 3
+    },
+    {
+      "thread_id": "01a14e37-0196-78f3-a7b8-6dbf4542fc8b",
+      "turns": 3,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 2
+    },
+    {
+      "thread_id": "01a14e38-d216-7e83-88fb-8d66fbfc37cf",
+      "turns": 3,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "fileChange",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 2
+    },
+    {
+      "thread_id": "01a14e3c-38f2-7e81-8029-22d1bfbca421",
+      "turns": 3,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 8
+    },
+    {
+      "thread_id": "01a14e3e-79fb-7fd2-ad9c-5c741f6211ba",
+      "turns": 3,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 3
+    },
+    {
+      "thread_id": "01a14e41-01da-7c92-86f8-0584d4d92209",
+      "turns": 2,
+      "item_types": [
+        "agentMessage",
+        "commandExecution",
+        "mcpToolCall",
+        "userMessage"
+      ],
+      "reasoning_items_omitted": 2
+    }
+  ]
+}

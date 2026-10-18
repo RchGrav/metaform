@@ -1,0 +1,2 @@
+Command: .venv/bin/ruff check src/metaform/modules/dispatch/tests/fake_swarm_agent.py src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py src/metaform/modules/dispatch/tests/test_orchestration_runtime.py src/metaform/modules/orchestration/state.py src/metaform/modules/orchestration/tests/test_review_regressions.py
+All checks passed!

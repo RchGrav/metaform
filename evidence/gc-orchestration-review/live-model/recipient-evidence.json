@@ -1,0 +1,225 @@
+[
+  {
+    "session_id": "01a14e36-7ea1-7882-8b8c-3bf1ebd347a8",
+    "runner": "32759d77fe5a644a",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 11,
+    "turn_statuses": {
+      "interrupted": 2,
+      "completed": 9
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:52:37Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:gc",
+        "epoch": 0,
+        "actual_version_id": "a4dfbd1a820144e8ba314a1c9c89aabe",
+        "selected_version_id": "a4dfbd1a820144e8ba314a1c9c89aabe",
+        "fingerprint": "73722e28dda966c7def58f11db1414a356d8efe2a7436236de272b01f155dbef",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:52:37Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  },
+  {
+    "session_id": "01a14e37-0196-78f3-a7b8-6dbf4542fc8b",
+    "runner": "93ed5e3148fbb235",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 3,
+    "turn_statuses": {
+      "completed": 3
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:53:10Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:role_creator",
+        "epoch": 0,
+        "actual_version_id": "74cf4631638a4735bbd042e2bb2429d7",
+        "selected_version_id": "74cf4631638a4735bbd042e2bb2429d7",
+        "fingerprint": "bbda223f15964cabd451997e60e0d7308fbe00973eeeb312698cdd6a5fc011dc",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:53:10Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  },
+  {
+    "session_id": "01a14e38-d216-7e83-88fb-8d66fbfc37cf",
+    "runner": "b6700b823b00159e",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 3,
+    "turn_statuses": {
+      "completed": 3
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "agents:generated_review_live_label_normalizer",
+        "epoch": 0,
+        "actual_version_id": "27355977ddd54ff4b210b9aac6ca367e",
+        "selected_version_id": "27355977ddd54ff4b210b9aac6ca367e",
+        "fingerprint": "ff2e82c49e4e81da2de0164a97a000ee252d6441730ee7cf4dd6408659a33230",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:55:09Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:55:09Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  },
+  {
+    "session_id": "01a14e3c-38f2-7e81-8029-22d1bfbca421",
+    "runner": "d28eb607d7f825b9",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 3,
+    "turn_statuses": {
+      "completed": 3
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:58:52Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:functionality",
+        "epoch": 0,
+        "actual_version_id": "fe6a4bea8ac2477c8931057a8f9bf616",
+        "selected_version_id": "fe6a4bea8ac2477c8931057a8f9bf616",
+        "fingerprint": "5d5bf74f7e6591021efac321a0316a0618f5a164d003b84992dbf5be888b072f",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T08:58:52Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  },
+  {
+    "session_id": "01a14e3e-79fb-7fd2-ad9c-5c741f6211ba",
+    "runner": "3be5a164107ec572",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 3,
+    "turn_statuses": {
+      "completed": 3
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:01:20Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:functionality",
+        "epoch": 0,
+        "actual_version_id": "fe6a4bea8ac2477c8931057a8f9bf616",
+        "selected_version_id": "fe6a4bea8ac2477c8931057a8f9bf616",
+        "fingerprint": "5d5bf74f7e6591021efac321a0316a0618f5a164d003b84992dbf5be888b072f",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:01:20Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  },
+  {
+    "session_id": "01a14e41-01da-7c92-86f8-0584d4d92209",
+    "runner": "bd7c23d7095dce93",
+    "model": "gpt-6.1-sol",
+    "model_provider": "openai",
+    "turn_count": 2,
+    "turn_statuses": {
+      "completed": 2
+    },
+    "components_observed_in_user_inputs": [
+      {
+        "name": "dispatch:system",
+        "epoch": 0,
+        "actual_version_id": "b9311d50d0ca4acfbf56083169c4a6da",
+        "selected_version_id": "b9311d50d0ca4acfbf56083169c4a6da",
+        "fingerprint": "f3ac86fd2aa097c286ecd36c925111962ad31a0d4c5cd14efc592d9e514b40e6",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:04:06Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "dispatch:user-update:18fcd92b6b2e5741aaa6383cffee8113",
+        "epoch": 0,
+        "actual_version_id": null,
+        "selected_version_id": null,
+        "fingerprint": "31a567099c1da8bc53f5218d5af66cc0a0f8eeb9521061553ac56d03e2185ad4",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:04:06Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "dispatch:user-update:5a09566188015cf2b8cd53f9192a6932",
+        "epoch": 0,
+        "actual_version_id": null,
+        "selected_version_id": null,
+        "fingerprint": "1ccdcda1cc0ef0fdeb95d3c86c105989e0ced3e2a55d2b7e7ec40d81c8d8aa27",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:04:06Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "dispatch:user-update:d162dfab3c9c5e81985743e98ec14332",
+        "epoch": 0,
+        "actual_version_id": null,
+        "selected_version_id": null,
+        "fingerprint": "e081c77950e999052c93b241a5409719880eed27d36ffdb0fc4a55bf2d53dec0",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:04:06Z",
+        "exact_text_occurrences": 1
+      },
+      {
+        "name": "orchestration:common",
+        "epoch": 0,
+        "actual_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "selected_version_id": "0e79ab0a4d0c4ee0bca266983751dfa1",
+        "fingerprint": "5f42fc546dbcb61e597580b7532e2a128b5a458920ce825f179635553752730b",
+        "channel": "acp_prompt",
+        "received_at": "2026-10-18T09:04:06Z",
+        "exact_text_occurrences": 1
+      }
+    ]
+  }
+]

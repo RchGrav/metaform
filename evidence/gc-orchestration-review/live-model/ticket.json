@@ -1,0 +1,37 @@
+{
+  "id": "fcc7915d466e450eac7a45284cf63ddd",
+  "node_kind": "element",
+  "node_id": "3c7784d1ab364a3b84207626b82a2969",
+  "address": "code.label.normalizer",
+  "receiver_address": null,
+  "provider_address": null,
+  "condition": "unbuilt",
+  "note": null,
+  "task": "Build label_tools.py with normalize_label(text: str) -> str for callers matching configuration labels.\n\nFunctional outcome: trim surrounding whitespace, collapse each internal run of whitespace to one underscore,\nlowercase the label, and preserve punctuation. Empty or whitespace-only input raises ValueError.\nAcceptance examples: \"  Core Switch  \" becomes \"core_switch\"; \"WAN\\t\\tUplink\" becomes \"wan_uplink\";\n\"Core-Switch\" becomes \"core-switch\"; \"\" and \"   \" each raise ValueError.\nCreate test_label_tools.py using Python's standard unittest module, and run python -m unittest -v.\n\nExercise the native GC role-creation journey on this ticket: as the GC, request the new label_normalizer\nspecialist yourself through orchestration_call, with its purpose, requested contribution and this context.\nWhen that returns the missing-role request, commission that request through orchestration_commission.\nThe Role Creator authors and publishes the reusable duty; the original requested specialist call then\ncontinues and its result returns to you. Use the generated specialist to implement and test the function.\nOn its return, independently validate the requested outcome and deliver the root with the exact candidate\nfiles, hashes and verification evidence. The normal independent functionality assessment and user/PM\nnotification should follow the existing runtime continuations.\n\nThe isolated project already contains the functional location for this task: code.label.normalizer.\nAll work for this smoke journey belongs in this project folder.\n",
+  "held": false,
+  "reviewed": false,
+  "created": "2026-10-18T08:51:57Z",
+  "done": null,
+  "resolution": null,
+  "notices": [],
+  "steps": null,
+  "steps_done": 0,
+  "said": [],
+  "taken": null,
+  "taken_by": null,
+  "position": 0,
+  "links": [],
+  "kind": "",
+  "outcome": null,
+  "age_seconds": null,
+  "is_work": true,
+  "map": {
+    "agent": "codex",
+    "hold": false,
+    "eligible": [
+      "codex"
+    ],
+    "item": "code.label.normalizer#1",
+    "title": "Normalize labels through a GC-created specialist"
+  }
+}
