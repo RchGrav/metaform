@@ -252,7 +252,7 @@ export function takeContext(scope) {
   if (!kept?.size) return null;
   MODEL_CONTEXT.delete(thread);
   for (const one of APPFRAMES.values()) if (threadOf(one) === thread && one.said === CONTEXT_SAID) appNote(one, '');
-  return {thread, views: kept, at: CONTEXT.at};
+  return {thread, views: kept, at: CONTEXT.at, project: S.project};
 }
 /* The person's message with what `takeContext` took before it, a line for each view. */
 export function withContext(taken, text) {
@@ -262,7 +262,7 @@ export function withContext(taken, text) {
 /* A message that did not go gives back what it took, kept for the next; a view that told something new, or took
  * back what it told, since then keeps its own. */
 export function contextBack(taken) {
-  if (!taken) return;
+  if (!taken || taken.project !== S.project) return;  // a project left meanwhile keeps none of what it took
   const kept = MODEL_CONTEXT.get(taken.thread) || new Map();
   for (const [view, said] of taken.views) {
     if ((CONTEXT.told.get(`${taken.thread}\n${view}`) || 0) <= taken.at) kept.set(view, said);

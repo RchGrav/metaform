@@ -179,12 +179,13 @@ async function sendMessage(event) {
         + 'remove it to send your words alone.' : null;
   if (refused) { box.value = text; growSay(); return toast(refused); }
   const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
-  // told as it is taken, so a follow-up, or a click made while this one goes, is never counted as this one's
-  if (told) CLICKED.told = true;
+  // a message going since the click tells it, whichever way it goes, as eyes.js's CLICKED says; set as it is taken,
+  // so a follow-up, or a click made while this one goes, is never counted as this one's, and put back if it fails
+  const before = CLICKED.told;
+  CLICKED.told = true;
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
     DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
       at: Date.now()});
-    CLICKED.told = true;
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
     drawHelpdesk();
@@ -201,7 +202,7 @@ async function sendMessage(event) {
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else {  // the views' context and the click are kept for the resend
     contextBack(taken);
-    if (told) CLICKED.told = false;
+    CLICKED.told = before;
     box.value = text; growSay();
   }
 }
