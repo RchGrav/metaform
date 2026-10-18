@@ -473,7 +473,9 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
     takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again. `kept` leaves
     every place as it is, the ticket's own too: a reservation given back to To do and taken at once, in one atomic
-    block, changes no other ticket, so its event names it alone (UX recheck 2026-10-17, b410f6a5)."""
+    block, changes no other ticket, so its event names it alone (UX recheck 2026-10-17, b410f6a5); a ticket given
+    back where it waited keeps its own stored place, which `position`, a place counted from the top, is not once the
+    column has a gap."""
     row = _work_row(tx, work_id)
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")

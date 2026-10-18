@@ -276,7 +276,7 @@ def recover(ctx: Context) -> dict[str, Any]:
                     continue
                 from .progress import finish
                 finish(own, work_id, str(row.get('runner') or ''), 'its verified dead runner was recovered automatically')
-                own.move_work(work_id, 'todo', fresh.position, 'dispatch recovery')
+                own.move_work(work_id, 'todo', kept=True)
                 with own.tables() as tx:
                     tx.update('agent_sessions', {'session_id': row['session_id']},
                               {'state': 'ended', 'how': 'its verified dead runner was recovered automatically'})

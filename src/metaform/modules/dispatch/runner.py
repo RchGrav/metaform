@@ -1080,7 +1080,7 @@ def given_back(store: Store, work_id: str, reservation: Any) -> None:
     with store.atomic():
         record = ticket(store, work_id)
         if record.taken_by == reservation:
-            store.move_work(work_id, 'backlog' if record.held else 'todo', record.position)
+            store.move_work(work_id, 'backlog' if record.held else 'todo', kept=True)
 
 
 def worked_in(store: Store, work_id: str, session_id: str) -> str | None:

@@ -2353,7 +2353,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         stale = [record for record in taken if record.id not in busy and record.id not in launching
                  and time.time() - _seconds(record.taken) > STALE_START]
         for record in stale:
-            store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+            store.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
         taken = [record for record in taken if record not in stale]
         occupied.update(glyph.get(record.id) for record in taken)
         # The slots as the gate counts them, the runners that run now in the project and on the machine, less the
@@ -2835,7 +2835,7 @@ def reset(ctx: Context) -> dict[str, Any]:
         for record in opened:
             if record.taken and record.id not in alive and record.id not in yours and record.id not in unswept \
                     and record.id not in launching:
-                at.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+                at.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
                 released.append(record.id)
                 from .signals import publish
                 publish(ctx, 'requeue', work_id=record.id, key=record.taken_by or '', reason='dispatch reset')
@@ -3592,7 +3592,7 @@ def given_back_reservation(store: Store, work_id: str, reservation: str) -> None
     with store.atomic():
         record = ticket(store, work_id)
         if record.taken_by == reservation:
-            store.move_work(work_id, 'backlog' if record.held else 'todo', record.position)
+            store.move_work(work_id, 'backlog' if record.held else 'todo', kept=True)
 
 
 # ------------------------------------------------------------------ the gate's memory
