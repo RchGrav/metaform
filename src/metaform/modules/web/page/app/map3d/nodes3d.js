@@ -256,8 +256,8 @@ function atlasPage(index) {
       .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.a *= vLabelOpacity;');
   };
   material.customProgramCacheKey = () => 'label-atlas';
-  const page = {index, texture, pen: canvas.getContext('2d'), mesh: null, room: 0, dirty: false, sent: false,
-    rows: [], top: 0, n: 0};
+  const page = {index, texture, pen: canvas.getContext('2d'), mesh: null, room: 0, dirty: false, spent: 0, rows: [],
+    top: 0, n: 0};
   page.mesh = pageMesh(new THREE.PlaneGeometry(1, 1), material, 256, null);
   page.room = 256;
   ATLAS.scene.add(page.mesh);
@@ -322,7 +322,30 @@ function freeSlot(slot) {
     if (free[at - 1].x + free[at - 1].wide === free[at].x) { free[at - 1].wide += free[at].wide; free.splice(at, 1); }
   }
 }
-const AT_SLOT = new THREE.Vector2();  // where a repainted label goes on its page's texture
+/* A repainted label sent alone into its slot of a page the graphics card holds: the label's picture, and nothing
+ * over the rest of the slot, as the page holds after `clearRect`, so no part of the label that was there before is
+ * drawn beside it. Sent by WebGL itself: three.js's copyTextureToTexture asks the card for five of its settings on
+ * every copy, and each ask waits for the card, 17 ms a frame while the map turned (UX 2026-10-17). Its rows count up
+ * from the page's foot on the card, where the picture is turned. False when the card holds no copy of the page yet. */
+let NOTHING = new Uint8Array(0);  // zeros, grown as a wider strip needs and never shrunk, so a send allocates nothing
+function sendSlot(page, slot, canvas, w, h) {
+  const renderer = G.renderer(), held = renderer.properties.get(page.texture);
+  if (!held.__webglTexture || held.__version !== page.texture.version) return false;
+  const gl = renderer.getContext(), state = renderer.state, foot = PAGE - slot.y - slot.tall;
+  state.bindTexture(gl.TEXTURE_2D, held.__webglTexture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, page.texture.flipY);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, page.texture.premultiplyAlpha);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, page.texture.unpackAlignment);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, slot.x, PAGE - slot.y - h, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  const right = slot.wide - w, under = slot.tall - h;
+  const need = 4 * Math.max(right * slot.tall, w * under);
+  if (NOTHING.length < need) NOTHING = new Uint8Array(need);
+  const RGBA = gl.RGBA, BYTE = gl.UNSIGNED_BYTE;
+  if (right > 0) gl.texSubImage2D(gl.TEXTURE_2D, 0, slot.x + w, foot, right, slot.tall, RGBA, BYTE, NOTHING);
+  if (under > 0) gl.texSubImage2D(gl.TEXTURE_2D, 0, slot.x, foot, w, under, RGBA, BYTE, NOTHING);
+  state.unbindTexture();
+  return true;
+}
 /* A label's canvas, just painted, copied into its slot: a new slot when it no longer fits, or fits loosely. */
 export function atlasPaint(tag) {
   if (!G) return;
@@ -339,13 +362,14 @@ export function atlasPaint(tag) {
   const page = slot.page;
   page.pen.clearRect(slot.x, slot.y, slot.wide, slot.tall);
   page.pen.drawImage(canvas, slot.x, slot.y);
-  // A page the graphics card holds is sent only the label repainted, into its slot: the whole 2048 by 2048 page sent
-  // again for each repaint was 16 MB a frame while the map turned, since labels repaint as their size crosses a
-  // sharpness step, and frames came every sixth to eighth refresh (UX 2026-10-17, from 0019ec90). The page's rows
-  // count up from its foot on the card, where the picture is turned, so the label's foot row is its place there.
-  if (page.sent) {
-    G.renderer().copyTextureToTexture(tag.texture, page.texture, null, AT_SLOT.set(slot.x, PAGE - slot.y - h));
-  } else page.dirty = true;  // sent whole once, `atlasDraw`, however many labels it holds by then
+  // A page the graphics card holds is sent only the label repainted, into its slot, `sendSlot`: the whole 2048 by 2048
+  // page sent again for each repaint was 16 MB a frame while the map turned, since labels repaint as their size
+  // crosses a sharpness step, and frames came every sixth to eighth refresh (UX 2026-10-17, from 0019ec90). A page the
+  // card holds no copy of yet is sent whole once, `atlasDraw`, however many labels it holds by then.
+  // Many repainted at once, a branch opened or the names shown again, go with the page sent whole once, as before: an
+  // eighth of a page's slots sent one by one in a frame costs more than the page.
+  page.spent += slot.wide * slot.tall;
+  if (page.dirty || page.spent > PAGE * PAGE / 8 || !sendSlot(page, slot, canvas, w, h)) page.dirty = true;
   // the label's part of its page, half a texel in from each side, so nothing beside it is sampled; the page's rows
   // count down from its top, and up from its foot on the graphics card, where the picture is turned
   tag.uv0 = (slot.x + 0.5) / PAGE; tag.uv1 = (PAGE - slot.y - h + 0.5) / PAGE;
@@ -366,7 +390,8 @@ export function atlasDraw(order, count, on) {
     const page = pages[p];
     page.n = 0;
     page.mesh.visible = on;
-    if (page.dirty) { page.texture.needsUpdate = true; page.dirty = false; page.sent = true; }
+    if (page.dirty) { page.texture.needsUpdate = true; page.dirty = false; }
+    page.spent = 0;
   }
   for (let i = count - 1; i >= 0; i--) {
     const tag = order[i], sprite = tag.sprite, slot = tag.slot;
