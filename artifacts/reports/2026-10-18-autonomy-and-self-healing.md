@@ -41,6 +41,9 @@ sections below say why, part by part.
   serves it, C(T) overrides the specification: the trouble is fixed, and the specification is adapted to match. The user
   is notified when a specification adapts, with what changed and why; no approval is needed, because the fix serves
   what the project is for. What does need the user is a change to C(T) itself: a purpose added, removed or changed.
+  Specifications are short-sighted by design: they are written before the thing is built, so they cannot foresee all of
+  what building it will show. A specification turning out wrong is expected, not a failure, and it is why C(T), not the
+  specification, has the last word.
 - **The loop, in any project:** problems are seen; agents file a ticket; tickets start automatically; the problem is
   fixed against C(T); where a specification had to adapt, the user is told.
 - **Agents report trouble, in any project.** Trouble is trouble and a problem is a problem, wherever an agent meets it:
