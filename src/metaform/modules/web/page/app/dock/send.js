@@ -184,7 +184,6 @@ async function sendMessage(event) {
   // the click is told when its line goes to the system agent, whichever way the message goes; a message to another
   // agent tells the system agent nothing, so it leaves the click untold. Set as it is taken, so a follow-up, or a click
   // made while this one goes, is never counted as this one's, and put back if the message fails
-  const before = CLICKED.told;
   if (told) CLICKED.told = true;
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
     DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
@@ -205,7 +204,7 @@ async function sendMessage(event) {
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else {  // the views' context and the click are kept for the resend
     contextBack(taken);
-    CLICKED.told = before;
+    if (told) CLICKED.told = false;  // only a click this message told: a click made while it went stays as it is
     box.value = text; growSay();
   }
 }

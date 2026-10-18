@@ -31,8 +31,9 @@ const APP_PROTOCOL = '2026-01-26';
 // view, sent with the person's next message to that session and never on its own, since it starts no turn.
 export const MODEL_CONTEXT = new Map();  // `${work}:${session}` -> Map(view name -> text)
 // when each view of a thread last told its context, `${thread}\n${view}` -> a count, so a failed message gives back
-// only what no view has told anew since
-const CONTEXT = {at: 0, told: new Map()};
+// only what no view has told anew since, and the count at which the project was last left, before which nothing
+// taken comes back
+const CONTEXT = {at: 0, told: new Map(), cut: 0};
 const ANSWERS = new Map();  // the id of a request the host sent a view -> what is done with its answer
 function readApps(force = false) {
   if (!S.project) return Promise.resolve(APPS);
@@ -252,7 +253,7 @@ export function takeContext(scope) {
   if (!kept?.size) return null;
   MODEL_CONTEXT.delete(thread);
   for (const one of APPFRAMES.values()) if (threadOf(one) === thread && one.said === CONTEXT_SAID) appNote(one, '');
-  return {thread, views: kept, at: CONTEXT.at, project: S.project};
+  return {thread, views: kept, at: CONTEXT.at};
 }
 /* The person's message with what `takeContext` took before it, a line for each view. */
 export function withContext(taken, text) {
@@ -262,7 +263,7 @@ export function withContext(taken, text) {
 /* A message that did not go gives back what it took, kept for the next; a view that told something new, or took
  * back what it told, since then keeps its own. */
 export function contextBack(taken) {
-  if (!taken || taken.project !== S.project) return;  // a project left meanwhile keeps none of what it took
+  if (!taken || taken.at < CONTEXT.cut) return;  // a project left meanwhile keeps none of what it took, even on return
   const kept = MODEL_CONTEXT.get(taken.thread) || new Map();
   for (const [view, said] of taken.views) {
     if ((CONTEXT.told.get(`${taken.thread}\n${view}`) || 0) <= taken.at) kept.set(view, said);
@@ -370,6 +371,7 @@ export function leaveApps() {
   }
   MODEL_CONTEXT.clear();
   CONTEXT.told.clear();
+  CONTEXT.cut = ++CONTEXT.at;
   Object.assign(APPS, {project: null, at: 0, tools: {}, views: [], gallery: false});
 }
 /* The gallery, /apps or the head's menu: every view the enabled modules offer, each opened in a panel of its own,

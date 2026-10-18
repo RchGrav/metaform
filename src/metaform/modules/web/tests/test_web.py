@@ -6609,7 +6609,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
     agent within two minutes starts with one line naming it, and their bubble shows it as a chip; a second message, or
     one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded, nor a
     click on the mascot, and a question asked through the mascot carries the line as the chat does, the click as it
-    was when the person asked even while their system agent starts."""
+    was when the person asked even while their system agent starts; two asked while it is called go together, once."""
     from metaform.data import Store
     from metaform.modules.dispatch import end_group
     from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
@@ -6753,6 +6753,34 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         asked_waiting = eventually(lambda: next((one for one in prompts() if 'Why is that red?' in one), None))
         assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is that red\\?$', asked_waiting), \
             asked_waiting
+        # two questions to the mascot while the person's system agent is still being called: the agent is called
+        # once, and both go in one prompt, in order, under the click line once
+        map_key(page, 's')                                             # the 2D map in the large area, for the join
+        click_join()
+        map_key(page, 's')
+        page.evaluate("async () => { (await import('/page/app/dock/embody.js')).DOCK.mine = null; }")  # none yet
+        calls = []
+
+        def hold_call(route):                                          # held until both are asked
+            calls.append(route)
+        page.route('**/api/system-chat', hold_call)
+        for question in ('Is the alarm late?', 'Or is the timer slow?'):
+            page.wait_for_function(clear, timeout=15000)
+            page.mouse.click(*page.evaluate(clear))
+            page.wait_for_selector('input.reply')
+            page.fill('input.reply', question)
+            page.press('input.reply', 'Enter')
+            page.wait_for_function('q => window.__ask.ASKING.pending?.endsWith(q)', arg=question)
+        page.evaluate('''async () => { const {BUBBLE} = await import('/page/app/figures/cut.js'); window.__said = [];
+            new MutationObserver(() => window.__said.push(BUBBLE.text)).observe(BUBBLE.el, {childList: true}); }''')
+        page.unroute('**/api/system-chat', hold_call)
+        for call in calls:  # answered here: a handler in Python runs only while the test waits on the page
+            call.fulfill(json={'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})
+        both = eventually(lambda: next((one for one in prompts() if 'timer slow' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+')
+                        + '\n\nIs the alarm late\\?\n\nOr is the timer slow\\?$', both), both
+        assert len(calls) == 1 and sum('alarm late' in one for one in prompts()) == 1, (calls, prompts())
+        assert 'I could not reach your system agent.' not in page.evaluate('window.__said')
         # a message written while the system agent starts, whose send then fails: the person's words come back in the
         # box without the line, and the resend carries the line once, as the click was never told
         map_key(page, 's')                                             # the 2D map in the large area, for the join
@@ -6783,7 +6811,18 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.press('#helpdesk .say', 'Enter')
         after = eventually(lambda: next((one for one in prompts() if 'And now?' in one), None))
         assert after == 'And now?', after
-        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'], problems
+        # a send that carried no line fails after the person clicked something new: the new click stays untold
+        held = []
+        page.route('**/api/dispatch-message', lambda route: held.append(route), times=1)
+        page.fill('#helpdesk .say', 'Still there?')
+        page.press('#helpdesk .say', 'Enter')
+        eventually(lambda: held)
+        click_join()                                                   # a new click while the send goes
+        held[0].fulfill(status=409, json={'error': 'The session is busy.'})
+        page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Still there?'")
+        assert clicked()['told'] is False, clicked()
+        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'] * 2, \
+            problems
     finally:
         agent.close()
         for pid in agent.logged('pid'):
@@ -8344,6 +8383,26 @@ def test_a_queued_message_that_fails_puts_back_only_the_persons_words_and_keeps_
         agent.close()
         for pid in agent.logged('pid'):
             end_group(pid)
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_message_that_fails_after_its_project_was_left_gives_back_none_of_the_views_context(
+        run, web, mapped, browser):
+    """code.interface.graphical#137: a message taken a view's context, then the project left while it went, and then
+    refused. Leaving tore those views down, so what they told is given back to no thread, even one the person returns
+    to in the same project."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    assert page.evaluate('''async () => {
+        const apps = await import('/page/app/session/apps.js');
+        apps.MODEL_CONTEXT.set('w1:s1', new Map([['Node view', 'The person selected code.alarm.audible.']]));
+        const taken = apps.takeContext({work: 'w1', session: 's1'});
+        apps.leaveApps();
+        apps.contextBack(taken);
+        return [taken !== null, apps.MODEL_CONTEXT.size];
+    }''') == [True, 0]
+    assert problems == []
 
 
 @pytest.mark.req('VIEW-018')
