@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Metaform's dispatch sandbox for Claude Code sessions was built on a wrong assumption (allowWrite '/') and a denyWrite model that could not carve exceptions. Both were found only by live runs; the rules belong in one place a builder reads before touching the settings.", "evidence": "references/evidence-9f3a1def.md"}

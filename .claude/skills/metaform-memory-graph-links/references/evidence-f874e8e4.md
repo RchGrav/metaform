@@ -1,0 +1,1 @@
+Layers come from the user saying add a layer or from one of the predefined ones like sources or logic or base.

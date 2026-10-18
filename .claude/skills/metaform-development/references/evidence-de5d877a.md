@@ -1,0 +1,1 @@
+metaform-shared-tree-test-runs [project]: Before a pytest run in /home/rich/metaform, list the running web servers (ps -ef | grep metaform.modules.web.server). The test setup treats a web server it does not own as a leftover of an earlier run and kills it.

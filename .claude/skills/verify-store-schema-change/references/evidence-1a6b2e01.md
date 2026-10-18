@@ -1,0 +1,1 @@
+Work resolution recorded in the episode: "The live store is at v8; ... (memory tables v8, compatible_from 7; v7 code proven to read and write a v8 store)." And the live step: "copy of the live memory store upgraded 7 to 8 with every row kept (749 citations)".

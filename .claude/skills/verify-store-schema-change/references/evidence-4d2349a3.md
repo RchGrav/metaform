@@ -1,0 +1,1 @@
+Session.table()'s non-fatal branch: "its thread-line writes are non-fatal (table(fatal=False)) so each NewerStore was only logged, and its control-port message path never ended it." Recorded as memory on code.dispatcher.agent#49, citing the 2026-10-15 22:05Z layout 21 to 22 bump; the runner kept running about 50 minutes.

@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Probe harness pitfall that cost a debugging loop: V silently refuses in the small area unless metaform.swapped is cleared. No existing skill covers probe setup for the 3D map.", "evidence": "references/evidence-053f66e4.md"}

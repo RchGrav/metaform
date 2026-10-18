@@ -1,0 +1,5 @@
+{"op":"done","id":"c0766851a9c04ae7b05c0432964d61b7","resolution":"checks.yml has had the step \"Browser tests, VIEW-012\" running `uv run pytest -q -m browser` since fa98afe (2026-10-14); the -m on the command line replaces addopts' -m \"not browser\". It runs when the path filter matches and on every push to main. Not yet seen green in CI: GitHub Actions refuses every job over billing, tracked on code.suite.test#6.","why":"The config gap it names is closed in checks.yml; the CI proof is #6's."}
+
+Assistant: "If you say so, I'll close #2 as fixed by `fa98afe`, and the light stops. #6 stays open until billing is back."
+
+Ticket #1d note: "Not checked: move, turn, point, emote, push, drag, drop, or two agents at once. Next: run the two-agent check in the task, then close it or narrow it to what still fails."

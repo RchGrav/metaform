@@ -1,0 +1,1 @@
+"with an id, a change naming that ticket or not saying which; with no id, a change naming some ticket or not saying (an empty work_ids list concerns no ticket and is dropped)" — the knowledge entry as corrected from "naming none" during the same session.

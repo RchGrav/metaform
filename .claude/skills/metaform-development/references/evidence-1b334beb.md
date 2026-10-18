@@ -1,0 +1,1 @@
+"Rebuilt the map view with the new bridge." and "I rebuilt map.html, the built map view. If the page agent edits page files again, it needs another rebuild."

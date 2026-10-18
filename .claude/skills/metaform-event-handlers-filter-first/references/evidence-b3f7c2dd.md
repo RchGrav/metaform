@@ -1,0 +1,1 @@
+"With no id, the first read is of every ticket and later reads cover only the tickets the changes named, merged between reads (`awaited` named=, `named_tickets`); one change without work_ids makes the next read full again."

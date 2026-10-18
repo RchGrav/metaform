@@ -1,0 +1,1 @@
+Acceptance proven in /tmp/acc48 with a copy of src/metaform on PYTHONPATH (scripts/accept.py): the old runner exited 1.9 s after the message, session fake-session-1 resumed by session/load, one restart line, and the message was delivered in 3.9 s.

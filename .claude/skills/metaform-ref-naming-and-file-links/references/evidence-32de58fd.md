@@ -1,0 +1,2 @@
+{"file":"artifacts/specs-draft/2026-10-15-store-029-runner-hand-over.md","node":"code.dispatcher.agent","ref":null,"id":null,"linked":false,"made":false,"said":"'STORE-029 runner hand-over draft' cannot be a ref_id: it is a proper noun of segments of letters, digits and underscores, joined by periods, such as metaform.data.refs, and not a 32-character id. Nothing was linked."}
+{"ref":"specs_draft.store_029.runner_hand_over","linked":true,"said":"artifacts/specs-draft/2026-10-15-store-029-runner-hand-over.md is linked as [REDACTED:pii:email]; writes to it go through."}

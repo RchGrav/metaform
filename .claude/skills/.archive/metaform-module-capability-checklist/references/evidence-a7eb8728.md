@@ -1,0 +1,1 @@
+Documented web_restart in the web README, in docs/reference/metaform-mcp-server.md and in the prompts.xml tools comment, and recorded memory code.interface.graphical#8e

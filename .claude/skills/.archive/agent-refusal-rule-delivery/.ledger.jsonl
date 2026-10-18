@@ -1,0 +1,1 @@
+{"action": "create", "reason": "A lock that refuses an agent before the agent has been told the rule behind it leaves the agent refused and uninformed. The episode found resumed, system, intake and talk sessions never received the rule. This is the class rule for any refusal the dispatch layer enforces.", "evidence": "references/evidence-4e60530a.md"}

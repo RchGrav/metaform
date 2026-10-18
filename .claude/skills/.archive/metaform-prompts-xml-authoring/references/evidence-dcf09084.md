@@ -1,0 +1,1 @@
+Why, Rich, 2026-10-16: "this isnt my design to have this check." The Axiom module names are contextual, not literal headers, so his own complete system prompt, written without them, was flagged on the first turn of every system session.

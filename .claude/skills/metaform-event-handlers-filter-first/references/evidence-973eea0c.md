@@ -1,0 +1,1 @@
+`holding(store, work_id, rows)` returns the latest non-foreign row a live runner holds, checking only rows whose how is in SILENT ('the runner is no longer listening', 'its port answers for another session') or that a resuming- start file names, so a pass over many old conversations costs no store read each.

@@ -1,0 +1,1 @@
+{"type":"memory","observations":"Harness lesson: a probe that opens the page must set localStorage metaform.swapped='' or the 3D map may be in the small area, where agentView() refuses V and EYE.saved stays null. pkill -f with a pattern that appears in its own bash command line kills that shell (exit 144)."}

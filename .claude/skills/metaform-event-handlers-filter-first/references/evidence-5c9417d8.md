@@ -1,0 +1,1 @@
+"seed_thread in test_mcp.py wrote dispatch lines with no map.changed; the trace view only showed them because it re-read every 2 s. It now calls events.announce from a thread of its own, as the runner announces lines. events.announce raises inside a running event loop (BASE-009); Playwright's sync API runs one, so a browser test must announce from another thread."

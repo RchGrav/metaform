@@ -1,0 +1,1 @@
+"Tried held reads first and dropped them: the check host carries a view's calls one at a time, so a held read froze every other read of the view (4 browser tests failed). Instead the trace read skips the store unless a change concerning the ticket came after the view's mark (views.Traces); focus was already in-process."

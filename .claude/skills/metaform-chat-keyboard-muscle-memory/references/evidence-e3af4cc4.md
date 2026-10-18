@@ -1,0 +1,1 @@
+newConversation in app/dock/commands.js calls callSystem({fresh: true}) for My agent whenever there is no target, no chat, a system chat, or My agent's thread that is not a summoned conversation.

@@ -1,0 +1,1 @@
+Session.ruled: the runner appends prompt work_link to the first prompt each runner process sends a session (hand-off, resumed or loaded session's next message, system, talk, sentinel, intake, prep), in prompted() at the moment the turn is sent, never as a turn of its own. locked() and unsandboxed() refuse nothing until ruled. work_line no longer carries the rule.

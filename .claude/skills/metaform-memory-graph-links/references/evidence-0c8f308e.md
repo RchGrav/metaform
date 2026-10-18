@@ -1,0 +1,1 @@
+No verb links a memory to a knowledge layer, so each memory goes at the same node as the knowledge item it concerns. Writing change 1 now: the structural prompt check.

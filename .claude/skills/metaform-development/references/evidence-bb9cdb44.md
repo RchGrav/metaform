@@ -1,0 +1,1 @@
+metaform-module-capability-checklist [project]: Use when adding or removing a module verb, command, prompt, setting, store table or dependency. / Any capability a module can use goes into src/metaform/modules/template ... and into its CHANGELOG.md, in the same change.

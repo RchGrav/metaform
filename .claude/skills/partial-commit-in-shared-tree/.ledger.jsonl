@@ -1,0 +1,1 @@
+{"action": "create", "reason": "The shared checkout held other agents' uncommitted edits and a staged deletion. Committing this task's work required a temporary index so only its hunks went into the commit, leaving the others untouched. The technique repeats whenever several agents share one tree.", "evidence": "references/evidence-ffed907f.md"}

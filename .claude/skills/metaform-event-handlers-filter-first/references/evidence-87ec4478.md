@@ -1,0 +1,1 @@
+"Shown to fail on the pre-fix copy (watcher burst read both nodes; A2A read nothing without its 20 s clock; tasks/Traces handlers absent) and by mutating each new filter to always answer concerned (all 5 failed on the burst); files restored and compared."

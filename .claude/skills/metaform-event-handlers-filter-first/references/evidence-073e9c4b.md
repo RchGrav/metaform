@@ -1,0 +1,1 @@
+"CPU (utime+stime, s) and voluntary context switches of four waiting processes: dispatch wait with no id and the launch wait, each on the code before and after the fix, over 60 s quiet and 60 s of changes not theirs at RATE/s." with trees = {'before': '/tmp/mf-before/src', 'after': '/home/rich/metaform/src'} and env PYTHONPATH set per tree.

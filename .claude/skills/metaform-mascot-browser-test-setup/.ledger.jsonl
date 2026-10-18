@@ -1,0 +1,1 @@
+{"action": "create", "reason": "A browser test that waits for the seahorse to be shown timed out because the mascot only draws once the system agent has been given a body. The fix is to embody it first. This is a repeatable setup step for any browser test that needs the mascot visible.", "evidence": "references/evidence-c72c1b82.md"}

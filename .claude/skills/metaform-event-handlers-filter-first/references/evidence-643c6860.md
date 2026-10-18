@@ -1,0 +1,1 @@
+"The runner's own session-row insert goes through Session.write → changed() with no tables, so it reads as 'does not say' and always wakes the launch wait. START_LIMIT (300 s) is the launch wait's deadline; dispatch_wait_seconds is wait's."

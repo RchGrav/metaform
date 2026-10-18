@@ -1,0 +1,1 @@
+any memories that are not atomic facts get purged

@@ -1,0 +1,1 @@
+metaform-prompts-xml-authoring [project]: Use when editing a module's prompts.xml system prompt.

@@ -1,0 +1,3 @@
+{"type":"tool_result","content":"src/metaform/modules/web/page/app/figures/agents.js:305:    preferred: name === preferredGlyph(),  // web_mascot: the person's own character, suggested first\nsrc/metaform/modules/web/page/app/dock/embody.js:66:  // the person's own character, web_mascot, first for their system agent; with none set, none is put first"}
+{"type":"tool_result","content":"* web_mascot: crystal  (glued)"}
+{"type":"text","text":"- **So three things disagree:** your setting says crystal, the seahorse was a body for one chat, and this chat shows an owl. Nothing ties them together."}

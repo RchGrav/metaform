@@ -1,0 +1,1 @@
+"curl: (7) Failed to connect to metaform.ing port 443 after 54 ms: Connection refused" ... "settings.text('cloud_url', 'https://metaform.ing', scope=G, person_only=True, label='Cloud broker'" ... "With `node_role` at `broker` the same Node is metaform.ing's broker" ... "a public page is a release: once it's up, people can read it, and it may get cached"

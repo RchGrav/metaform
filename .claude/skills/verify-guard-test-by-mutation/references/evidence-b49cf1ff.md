@@ -1,0 +1,2 @@
+E       AssertionError: dispatch_wait declared read, writes: metaform_module_system_dispatch.wait > metaform_module_system_dispatch.note > metaform_module_system_dispatch.peering.note > own_store(store).tables()
+E         dispatch_spend declared read, writes: metaform_module_system_dispatch.spend_read > metaform_module_system_dispatch.spend_rows > metaform_module_system_dispatch.carry_spend > own_store(store).tables()

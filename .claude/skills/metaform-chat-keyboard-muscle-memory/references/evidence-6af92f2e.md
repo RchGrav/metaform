@@ -1,0 +1,1 @@
+Up in an empty box brings back the last message sent in that thread from this page, again goes further back, and Down comes forward; past the newest it empties the box. The history is SENT, a Map of messages per DOCK.target, kept by remember in sendMessage. Once a recalled message is edited, Up and Down move the caret again.

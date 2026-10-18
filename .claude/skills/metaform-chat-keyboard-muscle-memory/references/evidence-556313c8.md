@@ -1,0 +1,1 @@
+Before 2026-10-16: /new on My agent called dispatch system, which reuses a running system agent, so the person got the same agent back with its old context instead of a new conversation.

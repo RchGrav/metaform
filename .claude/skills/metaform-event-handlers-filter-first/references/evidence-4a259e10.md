@@ -1,0 +1,1 @@
+"Not done here, chassis scope: map.changed fields task_ids, exchange_ids and addresses. Without them the task owner reads its own running rows on any change naming mcp.tool_tasks, the followers read one project's open exchanges, and the watcher re-reads every watched node for a change that can number an item."

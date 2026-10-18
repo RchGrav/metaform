@@ -1,0 +1,1 @@
+Knowledge record written in the episode: "Importing watch.py's SUPPORTED_OS into memory/__init__.py made module_metadata.read fail with '__init__.py: SUPPORTED_OS must be one top-level literal', which broke uv's build of pyright and ruff runs. Name a helper's OS tuple something else (memory's is WATCH_OS) and pass it to Verb(supported_os=...)."
