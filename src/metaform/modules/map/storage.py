@@ -178,9 +178,17 @@ def add_work(
     target_kind, thing = work_target(tx, node, notices)
     _backfill(tx)
     work_id = new_id()
+    # a new ticket is placed last in its column, so the first move in a column of new tickets has no places to write
+    # but its own; a column holding tickets with no place leaves it unplaced, last in the order made, as they are
+    # (independent check of the UX recheck fix, 2026-10-17: the first drop into a new To do named every card)
+    last = tx.execute(
+        "SELECT CASE WHEN COUNT(*) > COUNT(position) THEN NULL ELSE COALESCE(MAX(position) + 1, 0) END FROM work "
+        "WHERE done IS NULL AND taken IS NULL AND held=?",
+        (int(bool(held)),),
+    ).fetchone()[0]
     tx.execute(
-        "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind, "
+        "position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             work_id,
             target_kind,
@@ -192,6 +200,7 @@ def add_work(
             int(bool(reviewed)),
             now(),
             ticket_kind,
+            last,
         ),
     )
     _link(tx, work_id, links, notices)
@@ -460,9 +469,13 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
+def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None, kept: bool = False) -> WorkRecord:
     """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
-    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again."""
+    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again. `kept` leaves
+    every place as it is, the ticket's own too: a reservation given back to To do and taken at once, in one atomic
+    block, changes no other ticket, so its event names it alone (UX recheck 2026-10-17, b410f6a5); a ticket given
+    back where it waited keeps its own stored place, which `position`, a place counted from the top, is not once the
+    column has a gap."""
     row = _work_row(tx, work_id)
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
@@ -485,6 +498,8 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
             (int(column == "backlog"), work_id),
         )
     del row
+    if kept:
+        return work_record(tx, _work_row(tx, work_id), tuple(notices))
     moved = work_record(tx, _work_row(tx, work_id))
     # the tickets of the same column, by id only: the column is a condition on three columns, WorkRecord.column,
     # so the whole table need not be rebuilt as records to find them. Found by review, 2026-10-06.
@@ -495,16 +510,31 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         "todo": "done IS NULL AND taken IS NULL AND held=0",
     }[moved.column]
     others = [
-        str(other["work_id"])
+        (str(other["work_id"]), other["position"])
         for other in tx.execute(
-            f"SELECT work_id FROM work WHERE work_id<>? AND {same} ORDER BY position IS NULL, position, row",
+            f"SELECT work_id, position FROM work WHERE work_id<>? AND {same} ORDER BY position IS NULL, position, row",
             (work_id,),
         )
     ]
     at = len(others) if position is None else max(0, min(len(others), int(position)))
-    _ticket_changed(tx, *others)  # their places in the column
-    for place, ident in enumerate([*others[:at], work_id, *others[at:]]):
+    # Only the places that change are written and said: a ticket taken back to its own place in a column whose order
+    # holds changes no other, so its event names it alone and a page reads one ticket (UX recheck 2026-10-17, b410f6a5)
+    # A place is an order, not a count: a ticket keeps its place while it still sorts below the one above it, so a
+    # drop at the end, or above a gap an agent's take left, writes the moved ticket alone; unplaced tickets below it
+    # sort after every placed one, in the order made, and keep no place (independent check, 2026-10-17)
+    placed = [*others[:at], (work_id, None), *others[at:]]
+    above: int | None = None  # the place of the ticket above, None at the top
+    for index, (ident, held) in enumerate(placed):
+        if ident != work_id:
+            if held is not None and (above is None or held > above):
+                above = held
+                continue
+            if held is None and index > at:
+                break
+            _ticket_changed(tx, ident)  # its place in the column
+        place = 0 if above is None else above + 1
         tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, ident))
+        above = place
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 

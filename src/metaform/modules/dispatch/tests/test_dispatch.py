@@ -1518,8 +1518,9 @@ def test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order(dis
     dispatch.store.move_work(top, 'todo', 0)
     dispatch.store.move_work(held, 'backlog', 0)  # placed first in Backlog: held, so never the agent's next
     dispatch.store.take_work(busy, by='someone')
-    [unplaced] = glyphed(dispatch, run, ('Unplaced', 'kite', False))  # in To do with no place: after those placed
-    assert dispatch.store.ticket(unplaced).work.position is None and dispatch.store.ticket(held).work.position == 0
+    [unplaced] = glyphed(dispatch, run, ('Unplaced', 'kite', False))  # made last, so placed after those placed
+    places = [dispatch.store.ticket(work_id).work.position for work_id in (dispatch.id, top, later)]
+    assert dispatch.store.ticket(unplaced).work.position > max(places) and dispatch.store.ticket(held).work.position == 0
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 5) == 0, dispatch.process.stderr.read().decode()
     worked = [dispatch.id, top, later, unplaced]

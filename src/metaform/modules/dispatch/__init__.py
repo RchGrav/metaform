@@ -1769,6 +1769,7 @@ def launch_permissions(ctx: Context, store: Store, agent: str) -> tuple[dict[str
 def keep_launch(store: Store, work_id: str, given: dict[str, str | None]) -> None:
     """Write a launch's permissions over the previous launch's, keeping the ticket's own model and effort."""
     with own_store(store).tables() as tx:
+        tx.concern(work_id=work_id, kind='ticket')  # its event names the ticket, BASE-053
         held = tx.get('ticket_options', {'work_id': work_id})
         kept = {**{field: (held[field] if held else None) for field in ('model', 'effort')}, **given}
         tx.delete('ticket_options', {'work_id': work_id})
@@ -2352,7 +2353,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         stale = [record for record in taken if record.id not in busy and record.id not in launching
                  and time.time() - _seconds(record.taken) > STALE_START]
         for record in stale:
-            store.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+            store.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
         taken = [record for record in taken if record not in stale]
         occupied.update(glyph.get(record.id) for record in taken)
         # The slots as the gate counts them, the runners that run now in the project and on the machine, less the
@@ -2834,7 +2835,7 @@ def reset(ctx: Context) -> dict[str, Any]:
         for record in opened:
             if record.taken and record.id not in alive and record.id not in yours and record.id not in unswept \
                     and record.id not in launching:
-                at.move_work(record.id, 'backlog' if record.held else 'todo', record.position)
+                at.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
                 released.append(record.id)
                 from .signals import publish
                 publish(ctx, 'requeue', work_id=record.id, key=record.taken_by or '', reason='dispatch reset')
@@ -3591,7 +3592,7 @@ def given_back_reservation(store: Store, work_id: str, reservation: str) -> None
     with store.atomic():
         record = ticket(store, work_id)
         if record.taken_by == reservation:
-            store.move_work(work_id, 'backlog' if record.held else 'todo', record.position)
+            store.move_work(work_id, 'backlog' if record.held else 'todo', kept=True)
 
 
 # ------------------------------------------------------------------ the gate's memory
@@ -5054,7 +5055,7 @@ def new(ctx: Context) -> dict[str, Any]:
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():  # the ticket the ended session held is taken again at once, so no other start takes it between
         if ticket(store, work_id).taken_by == f'{agent} {session_id}':
-            store.move_work(work_id, 'todo')
+            store.move_work(work_id, 'todo', kept=True)  # taken again at once: no place changes
         startable(ctx, store, ticket(store, work_id), agent)
         store.take_work(work_id, by=reservation)
     ctx.nouns['agent'] = agent
@@ -6085,6 +6086,7 @@ def tune(ctx: Context) -> dict[str, Any]:
             raise Stop(f'{agent_label(agent)} offers {field} {", ".join(offered) or "none"} at its last session here, '
                        f'not {said}.', f'metaform dispatch options agent={agent}')
     with own_store(store).tables() as tx:
+        tx.concern(work_id=record.id, kind='ticket')  # its event names the ticket, BASE-053
         held = tx.get('ticket_options', {'work_id': record.id})
         kept = {field: (held[field] if held else None) for field in ('model', 'effort', 'prompts', 'mode')}
         kept.update({field: None if str(value).strip() in ('', 'none') else str(value).strip()

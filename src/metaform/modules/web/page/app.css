@@ -625,7 +625,11 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .small #big3d .legend,.small #big3d .count{display:none}
 .map2d .viewport{position:absolute;inset:0}
 .map2d svg{position:absolute;inset:0;width:100%;height:100%;max-width:none!important;cursor:grab}
-.map2d:focus-visible{outline:2px solid var(--signal);outline-offset:-2px}
+/* The ring of the map holding the keys is a box of its own over the map, not the map's outline: an outline is painted
+ * with the map, so any change inside it, a figure's step or its glyph's beat, painted the whole map again each frame
+ * (UX recheck 2026-10-17: 83 ms frames with four agents and the ring shown, 16.7 ms with the ring drawn over it). */
+.map2d:focus-visible{outline:none}
+.map2d:focus-visible::after{content:"";position:absolute;inset:0;border:2px solid var(--signal);pointer-events:none}
 .map2d .node rect,.map2d .node polygon{fill:var(--node)!important;stroke:var(--node-line)!important;transition:stroke .3s,fill .3s,opacity .3s}
 .map2d .node text,.map2d .node .nodeLabel{fill:var(--text)!important;font:500 12px var(--sans)!important}
 .map2d .node{cursor:pointer}
@@ -872,7 +876,10 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .agents .agent:hover{border-color:var(--signal)}
 .agents .agent img{grid-row:1 / span 2;width:32px;height:32px}
 .agents .agent b{font:600 var(--t-md) var(--sans)}
-.agents .agent small{font:var(--t-sm) var(--sans);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* its words clipped in their box, `contain` saying so to the browser, so the list stays one layer: the clip alone cut it
+ * into three, and the glyphs' beat painted all three again each frame (UX recheck 2026-10-17) */
+.agents .agent small{font:var(--t-sm) var(--sans);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  contain:paint}
 #agents .agent-row{display:flex;align-items:center;gap:var(--s1)}
 #agents .agent-row>.agent{flex:1;min-width:0}
 #agents .agent-row input.inuse{margin:0 var(--s1) 0 0;accent-color:var(--in-use);cursor:pointer}
@@ -1598,6 +1605,9 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .map2d .flows2d .asks{filter:drop-shadow(0 0 1.5px var(--spark));will-change:filter}
 /* the records and rings a layer of their own too, so a moving card paints its layer again, not the map's boxes */
 .map2d .flows2d .marks{will-change:filter}
+/* the agents' figures a layer of their own, kept one size by its `extent2d` rect, so a figure's step and its glyph's
+ * beat paint that layer again, never the map's boxes (UX recheck 2026-10-17) */
+.map2d g.agents2d{will-change:filter}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
 /* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way

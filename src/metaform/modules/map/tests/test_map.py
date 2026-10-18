@@ -1247,6 +1247,48 @@ def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(
     assert done['done'] and done['condition'] == 'broken'
 
 
+@pytest.mark.req('BASE-053')
+def test_a_ticket_taken_back_to_its_place_names_itself_alone_and_a_move_names_only_the_places_it_changes(mapped):
+    """UX recheck 2026-10-17 at b410f6a5: a runner's take, a move back to To do then a take, named every open ticket,
+    since the move wrote every place in the column. The take keeps every place; a move says only those it changes."""
+    from metaform import changes
+    store = Store('proj')
+    ids = [store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task=f'task {n}').id for n in range(6)]
+    taken = ids[2]
+    for unplaced in (True, False):  # tickets as they are made, placed last in turn, then in an order the board gave
+        if not unplaced:
+            for place, work_id in enumerate(ids):
+                store.move_work(work_id, 'todo', place)
+        store.take_work(taken, by='dispatch starting r')
+        changes.take()
+        with store.atomic():  # the runner's take of its reservation
+            store.move_work(taken, 'todo', kept=True)
+            store.take_work(taken, None, 'claude')
+        base = next(iter(changes.take()['proj']))
+        assert changes.concerns('proj', base)['work_ids'] == [taken]
+        if unplaced:
+            assert sorted(record.position for record in store.work(Node('element', 'code.timer.kitchen'),
+                                                                    limit=0).results) == [0, 1, 2, 3, 4, 5]
+            changes.take()
+            store.move_work(taken, 'todo')  # dropped at the end of a new To do: its place is the only one written
+            assert changes.concerns('proj', next(iter(changes.take()['proj'])))['work_ids'] == [taken]
+    store.move_work(taken, 'todo', 2)
+    store.take_work(taken, by='dispatch starting r')
+    changes.take()
+    store.move_work(taken, 'todo', 2)  # given back to its own place, as a start that fails gives it back
+    assert changes.concerns('proj', next(iter(changes.take()['proj'])))['work_ids'] == [taken]
+    store.take_work(taken, by='dispatch starting r')
+    changes.take()
+    # to the top: the column holds places 0, 1, 3, 4 and 5 now, so the two above the taken one move down a place,
+    # and the two below it, already at 3 and 4, keep theirs
+    store.move_work(ids[5], 'todo', 0)
+    assert changes.take()['proj'] and changes.concerns('proj', base)['work_ids'] == sorted([ids[5], *ids[:2]])
+    todo = [record for record in store.work(Node('element', 'code.timer.kitchen'), limit=0).results
+            if record.id != taken]
+    assert [record.id for record in sorted(todo, key=lambda record: record.position)] == [ids[5], *ids[:2],
+                                                                                          *ids[3:5]]
+
+
 def glyph_of(record):
     """The glyph the map module keeps on a work record, shown under its own id, BASE-035; None when it keeps none."""
     return (record.get('map') or {}).get('glyph')
