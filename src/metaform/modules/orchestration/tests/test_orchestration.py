@@ -772,27 +772,21 @@ def test_result_sent_twice_reaches_its_recipient_once(project, monkeypatch):
     for key in ('first', 'second'):
         SERVICE.queue_message(ctx(project), gc['assignment_id'], {'kind': 'result', 'body': 'Alarm rings at zero.',
                               'sender_assignment_id': 'worker'}, key=key)
+    # dispatch envelopes carry no sender assignment: each note, reply or broadcast arrives by its own id, even when
+    # one peer says the same words twice
+    for key, envelope in (('n1', {'id': 'n1', 'kind': 'peer', 'text': 'yes', 'from': {'session': 'peer-a'}}),
+                          ('n2', {'id': 'n2', 'kind': 'peer', 'text': 'yes', 'from': {'session': 'peer-a'},
+                                  'reply_to': 'q2'}),
+                          ('b1', {'id': 'b1', 'kind': 'gc_broadcast', 'text': 'yes', 'from': {'session': 'peer-b'}})):
+        SERVICE.queue_message(ctx(project), gc['assignment_id'], envelope, key=key)
     other = root(project, session='gc-two')
     for held in (gc, other):
         SERVICE.returned(ctx(project), held['work_id'], 'Timer outcome delivered.', state='delivered')
     SERVICE.drain(ctx(project))
-    assert [envelope['body'] for _, envelope in actual.messages] == ['Alarm rings at zero.']
+    assert sorted(envelope.get('body') or envelope['id'] for _, envelope in actual.messages) == [
+        'Alarm rings at zero.', 'b1', 'n1', 'n2']
     # one work's result once, but two works' alike results both reach the person
     assert [message['body'] for _, message in actual.chat] == ['Timer outcome delivered.'] * 2
-
-
-def test_alike_words_from_different_senders_all_arrive(project, monkeypatch):
-    gc = root(project)
-    actual = transport(monkeypatch, project)
-    actual.running.add('gc-one')
-    for key, envelope in (('n1', {'id': 'n1', 'kind': 'peer', 'text': 'yes', 'from': {'session': 'peer-a'}}),
-                          ('n2', {'id': 'n2', 'kind': 'peer', 'text': 'yes', 'from': {'session': 'peer-b'}}),
-                          ('b1', {'id': 'b1', 'kind': 'gc_broadcast', 'text': 'yes', 'from': {'session': 'peer-a'}}),
-                          ('n3', {'id': 'n3', 'kind': 'peer', 'text': 'yes', 'from': {'session': 'peer-a'}})):
-        SERVICE.queue_message(ctx(project), gc['assignment_id'], envelope, key=key)
-    SERVICE.drain(ctx(project))
-    # peer-a's note, peer-b's alike note and peer-a's broadcast all arrive; peer-a's repeat of its own note does not
-    assert sorted(envelope['id'] for _, envelope in actual.messages) == ['b1', 'n1', 'n2']
 
 
 def test_review_superseded_by_persons_decision_closes_without_filing_work(project):

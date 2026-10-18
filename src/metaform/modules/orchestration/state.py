@@ -217,15 +217,14 @@ def transition(tx: TableTx, assignment: Mapping[str, Any], kind: str, payload: M
     if prior:
         return prior
     text = message_text(kind, payload)
-    if text is not None:
-        # The same text from the same sender reaches its recipient once, whatever key, path or process queued it
-        # again. The sender is told apart by its assignment, else by a note's or broadcast's own `from`, and the
-        # message by its kind, so two peers saying the same words, or a broadcast matching an earlier note, both arrive;
-        # a user message is told apart by the assignment returning it, so two works' alike results both reach the person.
+    sender = str(payload.get('sender_assignment_id') or '')
+    if text is not None and (kind == 'user_message' or sender):
+        # The same result from the same assignment reaches its recipient once, whatever key, path or process queued it
+        # again, told apart by its kind; a user message is told apart by the assignment returning it, so two works'
+        # alike results both reach the person. A dispatch note, reply or broadcast carries no sender assignment and is
+        # keyed by its own id alone, so the same words said again, by anyone, arrive again.
         route = cast(Mapping[str, Any], payload.get('return_to') or {})
-        sender = payload.get('sender_assignment_id') or payload.get('from') or ''
-        said_by = sender if isinstance(sender, str) else json.dumps(sender, sort_keys=True, default=str)
-        recipient = (str(assignment['assignment_id']), said_by, str(payload.get('kind') or '')) \
+        recipient = (str(assignment['assignment_id']), sender, str(payload.get('kind') or '')) \
             if kind == 'send' else ('user', str(route.get('session_id') or ''), str(assignment['assignment_id']))
         ident = identity(*recipient, kind, 'text', fingerprint(text))
         prior = tx.get('transitions', {'transition_id': ident})
