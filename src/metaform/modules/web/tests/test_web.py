@@ -6607,7 +6607,8 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
     keeps the last thing they clicked, a node in the 3D map, a join in the 2D map, a banner's button, and web_viewing
     gives it as `clicked`, with the state a part shows and the ticket behind it. Their next message to the system
     agent within two minutes starts with one line naming it, and their bubble shows it as a chip; a second message, or
-    one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded, nor a
+    one sent three minutes after the click, carries none, and a message to another agent carries none and leaves the
+    click untold. The chat's own box and buttons are never recorded, nor a
     click on the mascot, and a question asked through the mascot carries the line as the chat does, the click as it
     was when the person asked even while their system agent starts; two asked while it is called go together, once."""
     from metaform.data import Store
@@ -6821,6 +6822,33 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         held[0].fulfill(status=409, json={'error': 'The session is busy.'})
         page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Still there?'")
         assert clicked()['told'] is False, clicked()
+        # a message to another agent tells the system agent nothing: it carries no line and leaves the click untold,
+        # and the next message to the system agent carries it once
+        other = agent.store.add_work(agent.node, None, task='Another agent at work', held=True).id
+        sent_other = []
+
+        def to_other(route):
+            sent_other.append(route.request.post_data_json)
+            route.fulfill(json={'ok': True})
+        page.route('**/api/dispatch-message', to_other, times=1)
+        click_join()
+        page.evaluate('''async other => { const {DOCK} = await import('/page/app/dock/embody.js');
+            window.__system = [DOCK.target, DOCK.session, DOCK.chat];
+            // the other agent's thread on view and running, set with the send so no redraw comes between
+            Object.assign(DOCK, {target: other, session: null, chat: null, live: true});
+            document.querySelector('#helpdesk .say').value = 'Are you on the alarm?';
+            document.querySelector('#helpdesk .compose').requestSubmit(); }''', other)
+        eventually(lambda: page.evaluate('() => 0') or sent_other)     # the route runs inside a Playwright call
+        assert sent_other[0]['work_id'] == other and 'The person clicked' not in sent_other[0]['text'], sent_other
+        assert clicked()['told'] is False, clicked()
+        page.evaluate('''async () => { const {DOCK} = await import('/page/app/dock/embody.js');
+            [DOCK.target, DOCK.session, DOCK.chat] = window.__system;
+            await (await import('/page/app/dock/helpdesk.js')).drawHelpdesk(); }''')
+        page.fill('#helpdesk .say', 'Back to the join.')
+        page.press('#helpdesk .say', 'Enter')
+        back = eventually(lambda: next((one for one in prompts() if 'Back to the join.' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nBack to the join\\.$', back), back
+        assert back.count('The person clicked') == 1, back
         assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'] * 2, \
             problems
     finally:
