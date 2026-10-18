@@ -31,6 +31,23 @@ sections below say why, part by part.
   only a lot of things broken; getting it to keep itself clean comes before adding more.
 - **The agent the user talks to is their advisor.** It notices what is not working and says so, with a fix, unasked.
 
+### The quality standard
+
+The software that comes out of Metaform, Metaform itself and every project it runs, is to be built to a high quality
+standard. Working is not enough: a part is done when it does its purpose fully, has no known errors, carries a check
+that proves it, leaves no superseded code behind, and reads as if it were designed that way from the start.
+
+Holding that standard is automatic, not something the user asks for each time:
+- **An automatic critic pass.** When a change lands, a critic checks the parts it touched against their purpose on the
+  map and against this standard, the way a merge like 4f2966c8 should have been checked (section 3). Unlike the review
+  flood of 2026-10-18, the critic fixes what falls short, or files one ticket per real gap with its remediation and the
+  check that proves it; it never files the same finding twice and never re-reviews work nothing changed. Metaform
+  already has the pieces (the critic agent, `map_critic`, the orchestration FQC); they need to be pointed at quality,
+  bounded by the guardrails below, and run by events, not timers.
+- **Existing work is brought up to the standard too.** What has been built is reviewed part by part against its
+  purpose and fixed where it falls short, without the user's permission, starting with the parts the user depends on
+  most.
+
 ### Is this realistic
 
 Yes, with three conditions, all within reach:
