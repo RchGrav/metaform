@@ -6756,7 +6756,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         map_key(page, 's')                                             # the 2D map in the large area, for the join
         click_join()
         page.route('**/api/dispatch-sessions*', not_running)
-        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")
+        page.evaluate("async () => (await import('/page/app/dock/helpdesk.js')).drawHelpdesk()")
         eventually(lambda: page.evaluate("async () => !(await import('/page/app/dock/embody.js')).DOCK.live"))
         refused = []
 
@@ -6766,8 +6766,10 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.route('**/api/dispatch-message', refuse_once, times=1)
         page.fill('#helpdesk .say', 'Is it still red?')
         page.press('#helpdesk .say', 'Enter')
-        page.unroute('**/api/dispatch-sessions*', not_running)
-        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")
+        dock = "async () => (await import('/page/app/dock/embody.js')).DOCK"
+        assert eventually(lambda: page.evaluate(f"{dock}.queue.some(one => one.state === 'waiting')"))  # queued
+        page.unroute('**/api/dispatch-sessions*', not_running)                # live now: the queued send fails
+        page.evaluate("async () => (await import('/page/app/dock/helpdesk.js')).drawHelpdesk()")
         page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Is it still red?'")
         assert refused and refused[0].startswith('The person clicked'), refused  # the queued send carried the line
         assert page.input_value('#helpdesk .say') == 'Is it still red?'
@@ -6775,8 +6777,6 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         resent = eventually(lambda: next((one for one in prompts() if 'Is it still red?' in one), None))
         assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs it still red\\?$', resent), resent
         assert resent.count('The person clicked') == 1, resent
-        # the click counts as told once the send has answered, which comes after the agent has the prompt
-        eventually(lambda: page.evaluate("async () => (await import('/page/app/figures/eyes.js')).CLICKED.told"))
         page.fill('#helpdesk .say', 'And now?')
         page.press('#helpdesk .say', 'Enter')
         after = eventually(lambda: next((one for one in prompts() if 'And now?' in one), None))
