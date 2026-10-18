@@ -99,6 +99,8 @@ export function startFailed(reason, next = null) {
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
   dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
+  // a question asked of the mascot that waited on this start is answered too
+  import('/page/app/figures/ask.js').then(part => part.askFailed());
 }
 export const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
   onclick: event => { event.stopPropagation(); talkAbout(given, label); }}, 'Chat');

@@ -90,6 +90,14 @@ async function mascotAsk(text) {
   }
   await flushAsk();
 }
+/* The system agent could not be reached for a question asked of the mascot that waited on another start, the
+ * chat's: the person is told, and their click is theirs to ask about again, as when the mascot's own start fails. */
+export function askFailed() {
+  if (!ASKING.pending) return;
+  if (ASKING.told) CLICKED.told = false;
+  Object.assign(ASKING, {pending: null, told: ''});
+  say('I could not reach your system agent.', 4);
+}
 /* The person's words to the system agent go once its session is up: at once when it is, or when the agents are next
  * read, `noticeAttention`, after the Call that starts it. */
 export async function flushAsk() {
