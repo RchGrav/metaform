@@ -51,14 +51,7 @@ and session/delete and takes them; FAKE_ACP_FORK=1 advertises session/fork and a
 FAKE_ACP_CLIENT=1 makes its first turn use the client's own files and terminals, ACP's fs/* and terminal/*: it writes and
 reads fake-client/note.txt in its folder, reads a file outside it, runs one command in a terminal, waits for it, reads
 its output and releases it, and logs every answer as `client`. FAKE_ACP_WRITES=<a,b,...> makes its first turn read and
-then write each of those files, from its folder, through fs/*, logging the answers as `writes`, and with
-FAKE_ACP_WRITE_GATE naming a file, write each again once that file exists, logged as `writes_again`.
-FAKE_ACP_ASK_PATH names a file its permission request's tool call locates.
-FAKE_ACP_CODEX=1 makes it codex-acp as code.dispatcher.agent#43 found it: it names itself codex-acp, offers its four
-modes as a config option, in mode agent, logs each mode it is set to as `mode`, and its first turn starts a file
-change of FAKE_ACP_CODEX_PATH and asks for it naming only the path, asks to run a command outside its sandbox, asks
-write access for its working folder, asks to edit FAKE_ACP_CODEX_IGNORED and then FAKE_ACP_CODEX_LINKED, and asks to
-approve a call of an MCP tool, logging the answers as `codex`.
+then write each of those files, from its folder, through fs/*, logging the answers as `writes`.
 FAKE_ACP_INTAKE=1 makes its first turn read a review file and call a memory tool, wait up to 30 s for a steer, then
 call intake_element and log `intake_recorded`.
 FAKE_ACP_INFO=1 writes, in one write with its session/new answer and after it, a session_info_update giving the
@@ -103,8 +96,6 @@ V2 = os.environ.get('FAKE_ACP_V2') == '1'
 MODES = {'currentModeId': 'default', 'availableModes': [{'id': 'default', 'name': 'Default'},
                                                          {'id': 'plan', 'name': 'Plan', 'description': 'Plans only'}]}
 MODEL = ['small']
-CODEX = os.environ.get('FAKE_ACP_CODEX') == '1'
-CODEX_MODE = ['agent']
 
 
 EFFORT = ['low']
@@ -119,11 +110,6 @@ def options():
 
 def made():
     """What session/new and session/load answer with: the modes and the options of a rich agent."""
-    if CODEX:
-        return {'configOptions': [{'id': 'mode', 'name': 'Mode', 'type': 'select', 'category': 'mode',
-                                   'currentValue': CODEX_MODE[0], 'options': [
-                                       {'value': one, 'name': one} for one in
-                                       ('read-only', 'workspace-write', 'agent', 'agent-full-access')]}]}
     return {'modes': MODES, 'configOptions': options()} if RICH else {}
 
 
@@ -202,43 +188,14 @@ def first_turn(prompt_id, text):
                     output=request(805, 'terminal/output', own), release=request(806, 'terminal/release', own),
                     gone=request(807, 'terminal/output', own))
         log({'client': done})
-    if CODEX:  # codex-acp's requests: a started file change asked by its path, an escalation, a grant, an edit
-        choices = [{'optionId': 'approved', 'name': 'Yes, proceed', 'kind': 'allow_once'},
-                   {'optionId': 'approved-for-session', 'name': 'Yes, for these files', 'kind': 'allow_always'},
-                   {'optionId': 'cancel', 'name': 'No', 'kind': 'reject_once'}]
-        path, linked = os.environ['FAKE_ACP_CODEX_PATH'], os.environ['FAKE_ACP_CODEX_LINKED']
-        update({'sessionUpdate': 'tool_call', 'toolCallId': 'c1', 'title': 'Edit files', 'kind': 'edit',
-                'status': 'pending', 'content': [{'type': 'diff', 'path': path, 'oldText': 'old', 'newText': 'new'}]})
-        asked = {'unlinked': {'toolCallId': 'c1', 'title': 'Edit files', 'locations': [{'path': path}]},
-                 'escalation': {'toolCallId': 'c2', 'kind': 'execute', 'title': 'Run sed', 'status': 'pending',
-                                'rawInput': {'command': f'sed -i s/a/b/ {path}', 'cwd': os.getcwd()}},
-                 'grant': {'toolCallId': 'c3', 'kind': 'execute', 'title': 'Run with more access', 'status': 'pending',
-                           'rawInput': {'command': 'make', 'additionalPermissions': {
-                               'fileSystem': {'write': [os.getcwd()]}}}},
-                 'ignored': {'toolCallId': 'c5', 'kind': 'edit', 'title': 'Edit files', 'status': 'pending',
-                             'locations': [{'path': os.environ['FAKE_ACP_CODEX_IGNORED']}]},
-                 'linked': {'toolCallId': 'c4', 'kind': 'edit', 'title': 'Edit files', 'status': 'pending',
-                            'locations': [{'path': linked}]},
-                 'mcp': {'toolCallId': 'c6', 'kind': 'execute', 'title': 'MCP tool call approval', 'status': 'pending',
-                         'rawInput': {'serverName': 'metaform', 'description': 'Run map_knowledge?'}}}
-        log({'codex': {name: ask(700 + at, {'sessionId': SESSION, 'toolCall': call, 'options': choices,
-                                            **({'_meta': {'is_mcp_tool_approval': True}} if name == 'mcp' else {})})
-                       for at, (name, call) in enumerate(asked.items())}})
     writes = [one for one in os.environ.get('FAKE_ACP_WRITES', '').split(',') if one]
-    if writes:  # each file read then written through the client; once FAKE_ACP_WRITE_GATE exists, written again
+    if writes:  # each file read then written through the client
         paths = [os.path.join(os.getcwd(), one) for one in writes]
         log({'writes': {'read': [request(810 + at, 'fs/read_text_file', {'sessionId': SESSION, 'path': path})
                                  for at, path in enumerate(paths)],
                         'write': [request(820 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
                                                                             'content': 'written\n'})
                                   for at, path in enumerate(paths)]}})
-        gate = os.environ.get('FAKE_ACP_WRITE_GATE')
-        while gate and not os.path.exists(gate) and not CANCELLED.wait(0.05):
-            pass
-        if gate and not CANCELLED.is_set():
-            log({'writes_again': [request(830 + at, 'fs/write_text_file', {'sessionId': SESSION, 'path': path,
-                                                                            'content': 'written\n'})
-                                  for at, path in enumerate(paths)]})
     if os.environ.get('FAKE_ACP_INTAKE') == '1':  # an intake that reaches for earlier conclusions, then is steered
         for ident, title, raw in (('i1', 'Read artifacts/review-notes.md', {'path': 'artifacts/review-notes.md'}),
                                   ('i2', 'mcp__metaform__memory_read_graph', {})):
@@ -344,9 +301,7 @@ def first_turn(prompt_id, text):
         outcome = ask(900, {'sessionId': SESSION,
                             'toolCall': {'toolCallId': 't2', 'title': os.environ.get('FAKE_ACP_ASK_TITLE', 'Write notes.txt'),
                                          'kind': os.environ.get('FAKE_ACP_ASK_KIND', 'edit'),
-                                         'status': 'pending',
-                                         **({'locations': [{'path': os.environ['FAKE_ACP_ASK_PATH']}]}
-                                            if os.environ.get('FAKE_ACP_ASK_PATH') else {})},
+                                         'status': 'pending'},
                             'options': [{'optionId': 'allow', 'name': 'Allow once', 'kind': 'allow_once'},
                                         {'optionId': 'reject', 'name': 'Reject', 'kind': 'reject_once'}]})
         log({'permission': outcome})
@@ -510,8 +465,6 @@ def main():
                                                    **({'sessionCapabilities': sessions} if sessions else {}),
                                                    **({'_meta': {'authStatus': {}}} if auth else {})},
                              **({'agentInfo': {'name': 'fake-agent', 'version': '1.0'}} if RICH else {}),
-                             **({'agentInfo': {'name': '@agentclientprotocol/codex-acp', 'version': '2.2.2'}}
-                                if CODEX else {}),
                              **({'_meta': {'steering': {'supported': True}}} if os.environ.get('FAKE_ACP_STEER') == '1'
                                 else {})}})
             if auth:
@@ -557,10 +510,6 @@ def main():
             MODES['currentModeId'] = message['params']['modeId']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
             update({'sessionUpdate': 'current_mode_update', 'currentModeId': MODES['currentModeId']})
-        elif method == 'session/set_config_option' and CODEX:
-            CODEX_MODE[0] = message['params']['value']
-            log({'mode': CODEX_MODE[0]})
-            send({'jsonrpc': '2.0', 'id': ident, 'result': made()})
         elif method == 'session/set_config_option' and RICH:
             (MODEL if message['params']['configId'] == 'model' else EFFORT)[0] = message['params']['value']
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': options()}})
