@@ -81,7 +81,12 @@ export async function flushAsk() {
   if (!text || !session) return;
   ASKING.pending = null;
   Object.assign(ASKING, {sent: Date.now(), heard: null, base: null});
-  const sent = await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id, text});
+  // asked through the mascot, the question names what the person clicked just before, as the chat's send does
+  const {clickedLine} = await import('/page/app/dock/send.js');
+  const told = clickedLine();
+  const sent = await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id,
+    text: told ? `${told}\n\n${text}` : text});
+  if (sent && told) (await import('/page/app/figures/eyes.js')).CLICKED.told = true;
   if (!sent) say('That did not go through.', 4);
 }
 /* The system agent's answer, the newest of its words after the person asked, said in the bubble in short; the chat

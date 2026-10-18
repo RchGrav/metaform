@@ -34,6 +34,12 @@ sections below say why, part by part.
 - **Every project keeps itself clean while it is built.** Not Metaform alone: any project built with it. Errors become tickets, tickets get fixed, fixes are proven, the board stays
   workable, and old code is removed when a design changes, all without the user watching. Until it does, the user sees
   only a lot of things broken; getting it to keep itself clean comes before adding more.
+- **Agents report trouble, in any project.** Trouble is trouble and a problem is a problem, wherever an agent meets it:
+  a failing test outside its ticket, an error in a log, a part that does not do its purpose, a broken page, a confusing
+  control, a slow path. Every agent files what it sees as one trouble ticket at the part concerned, with its evidence,
+  and the ticket is fixed like any error. An agent never walks past trouble because it is not its ticket. (On
+  2026-10-18 six failing tests were found, confirmed as failing before that day's changes, and noted, but no ticket
+  was filed for any of them; section 8.)
 - **The agent the user talks to is their advisor.** It notices what is not working and says so, with a fix, unasked.
 
 ### The quality standard

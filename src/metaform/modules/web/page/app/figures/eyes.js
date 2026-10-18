@@ -354,12 +354,9 @@ function ticketClicked(kind, workId, glyph) {
 function clicked3dAt(x, y) {
   if (!G) return false;
   const node = nodeAt3d(x, y);
-  if (!node && mascotAt(x, y)) {
-    heard('mascot');
-    CLICKED.name = "the person's mascot";
-    CLICKED.label = MASCOT.glyph || null;
-    return true;
-  }
+  // a click on the mascot opens its ask field: it is how the person asks about what they clicked before, so it never
+  // takes that click's place, as the chat's own controls do not
+  if (!node && mascotAt(x, y)) return true;
   const work = figureAt(x, y);
   if (work) return ticketClicked('agent figure', work, ROAM.figures.get(work)?.glyph);
   if (node?.t === 'el') return elementClicked(node.id);

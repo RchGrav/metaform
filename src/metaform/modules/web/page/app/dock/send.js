@@ -85,8 +85,10 @@ export async function deliverQueued(session) {
  * written is lost. */
 export function startFailed(reason, next = null) {
   // what the person wrote, without the line about their click, which was never theirs to see in the box
-  const waiting = DOCK.queue.filter(item => item.state !== 'sent')
-    .map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
+  const left = DOCK.queue.filter(item => item.state !== 'sent');
+  const waiting = left.map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
+  // the message never went, so the click it named is still untold: the resend carries it while it is fresh
+  if (left.some(item => item.clicked)) CLICKED.told = false;
   DOCK.queue = DOCK.queue.filter(item => item.state === 'sent');
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
@@ -147,7 +149,7 @@ export function queuePaused(stopped) {
  * CLICK_FRESH of the click, and only with the first message sent since it, so "this" in what they write names it.
  * Ticket code.interface.graphical#124, 2026-10-18. */
 const CLICK_FRESH = 120000;
-function clickedLine() {
+export function clickedLine() {
   const ago = Date.now() - CLICKED.at;
   if (!CLICKED.at || CLICKED.told || CLICKED.project !== S.project || ago > CLICK_FRESH) return '';
   return `${CLICK_LEAD}${Math.round(ago / 1000)} s before: ${clickedWords()}.`;
