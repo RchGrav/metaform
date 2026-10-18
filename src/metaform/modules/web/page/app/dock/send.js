@@ -179,10 +179,11 @@ async function sendMessage(event) {
         + 'remove it to send your words alone.' : null;
   if (refused) { box.value = text; growSay(); return toast(refused); }
   const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
-  // a message going since the click tells it, whichever way it goes, as eyes.js's CLICKED says; set as it is taken,
-  // so a follow-up, or a click made while this one goes, is never counted as this one's, and put back if it fails
+  // the click is told when its line goes to the system agent, whichever way the message goes; a message to another
+  // agent tells the system agent nothing, so it leaves the click untold. Set as it is taken, so a follow-up, or a click
+  // made while this one goes, is never counted as this one's, and put back if the message fails
   const before = CLICKED.told;
-  CLICKED.told = true;
+  if (told) CLICKED.told = true;
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
     DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
       at: Date.now()});

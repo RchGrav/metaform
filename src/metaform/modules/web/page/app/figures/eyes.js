@@ -281,7 +281,7 @@ export function viewing() {
  * nothing the click does. The chat's own head, tabs, buttons and message box are not recorded, nor a Chat button or
  * the mascot's ask field, since the person goes there to ask, and a click that opens the chat must not replace what
  * they ask about; the chat's conversation is. Nothing typed is read. On the maps a press that moved is a drag of the
- * view, not a click. `told` is set once a message has been sent since the click, dock/send.js or ask.js. Ticket
+ * view, not a click. `told` is set once the click's line has gone to the system agent, from the chat (dock/send.js) or the mascot (ask.js). Ticket
  * code.interface.graphical#124, 2026-10-18. */
 export const CLICKED = {at: 0, project: null, kind: null, address: null, name: null, item: null, agent: null,
   label: null, control: null, state: null, record: null, told: false, downX: 0, downY: 0};
