@@ -6751,7 +6751,37 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         asked_waiting = eventually(lambda: next((one for one in prompts() if 'Why is that red?' in one), None))
         assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is that red\\?$', asked_waiting), \
             asked_waiting
-        assert problems == []
+        # a message written while the system agent starts, whose send then fails: the person's words come back in the
+        # box without the line, and the resend carries the line once, as the click was never told
+        map_key(page, 's')                                             # the 2D map in the large area, for the join
+        click_join()
+        page.route('**/api/dispatch-sessions*', not_running)
+        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")
+        eventually(lambda: page.evaluate("async () => !(await import('/page/app/dock/embody.js')).DOCK.live"))
+        refused = []
+
+        def refuse_once(route):
+            refused.append(route.request.post_data_json['text'])
+            route.fulfill(status=409, json={'error': 'The session is busy.'})
+        page.route('**/api/dispatch-message', refuse_once, times=1)
+        page.fill('#helpdesk .say', 'Is it still red?')
+        page.press('#helpdesk .say', 'Enter')
+        page.unroute('**/api/dispatch-sessions*', not_running)
+        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")
+        page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Is it still red?'")
+        assert refused and refused[0].startswith('The person clicked'), refused  # the queued send carried the line
+        assert page.input_value('#helpdesk .say') == 'Is it still red?'
+        page.press('#helpdesk .say', 'Enter')                          # the resend, the session live
+        resent = eventually(lambda: next((one for one in prompts() if 'Is it still red?' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs it still red\\?$', resent), resent
+        assert resent.count('The person clicked') == 1, resent
+        # the click counts as told once the send has answered, which comes after the agent has the prompt
+        eventually(lambda: page.evaluate("async () => (await import('/page/app/figures/eyes.js')).CLICKED.told"))
+        page.fill('#helpdesk .say', 'And now?')
+        page.press('#helpdesk .say', 'Enter')
+        after = eventually(lambda: next((one for one in prompts() if 'And now?' in one), None))
+        assert after == 'And now?', after
+        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'], problems
     finally:
         agent.close()
         for pid in agent.logged('pid'):

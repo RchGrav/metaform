@@ -29,7 +29,10 @@ const APPFRAMES = new Map();  // key -> {key, app, scope, frame, holder, panel, 
 const APP_PROTOCOL = '2026-01-26';
 // What a view asked the agent be told, ui/update-model-context, by the thread's work and session: the last one of each
 // view, sent with the person's next message to that session and never on its own, since it starts no turn.
-const MODEL_CONTEXT = new Map();  // `${work}:${session}` -> Map(view name -> text)
+export const MODEL_CONTEXT = new Map();  // `${work}:${session}` -> Map(view name -> text)
+// when each view of a thread last told its context, `${thread}\n${view}` -> a count, so a failed message gives back
+// only what no view has told anew since
+const CONTEXT = {at: 0, told: new Map()};
 const ANSWERS = new Map();  // the id of a request the host sent a view -> what is done with its answer
 function readApps(force = false) {
   if (!S.project) return Promise.resolve(APPS);
@@ -213,9 +216,11 @@ async function appSays(entry, params, reply, fail) {
   const sure = await confirmAct({title: `Send this to ${agent}?`, verb: 'Send it', cancel: 'Do not send', danger: false,
     text: [`${appName(entry.app.uri)} asks to send this as your message:`, h('blockquote', {}, text)]});
   if (!sure) return reply({isError: true});
+  const taken = takeContext(entry.scope);
   const done = await posted('/api/dispatch-message', {work_id: entry.scope.work,
-    ...(entry.scope.session ? {session: entry.scope.session} : {}), text: withContext(entry.scope, text)});
+    ...(entry.scope.session ? {session: entry.scope.session} : {}), text: withContext(taken, text)});
   if (!done.ok) {
+    contextBack(taken);
     appNote(entry, `Its message was not sent: ${done.body?.error || 'the agent did not take it'}.`);
     return fail(-32000, done.body?.error || 'The message was not sent.');
   }
@@ -235,17 +240,38 @@ function keepContext(entry, params, reply) {
   const kept = MODEL_CONTEXT.get(thread) || new Map();
   if (text) kept.set(appName(entry.app.uri), text); else kept.delete(appName(entry.app.uri));
   MODEL_CONTEXT.set(thread, kept);
+  CONTEXT.told.set(`${thread}\n${appName(entry.app.uri)}`, ++CONTEXT.at);
   appNote(entry, text ? CONTEXT_SAID : '');
   return reply({});
 }
-/* The person's message to a thread with what its views asked the agent be told before it, each said once. */
-export function withContext(scope, text) {
-  const thread = scope?.work ? `${scope.work}:${scope.session || ''}` : null;
-  const kept = thread && MODEL_CONTEXT.get(thread);
-  if (!kept?.size) return text;
+const threadAt = scope => (scope?.work ? `${scope.work}:${scope.session || ''}` : null);
+/* What the views of a thread kept, taken for the one message about to go to it: each view's context goes with one
+ * message, so another written while this one goes carries none. Null when nothing is kept. */
+export function takeContext(scope) {
+  const thread = threadAt(scope), kept = thread && MODEL_CONTEXT.get(thread);
+  if (!kept?.size) return null;
   MODEL_CONTEXT.delete(thread);
   for (const one of APPFRAMES.values()) if (threadOf(one) === thread && one.said === CONTEXT_SAID) appNote(one, '');
-  return `${[...kept].map(([view, said]) => `[From the ${view}: ${said}]`).join('\n')}\n\n${text}`;
+  return {thread, views: kept, at: CONTEXT.at};
+}
+/* The person's message with what `takeContext` took before it, a line for each view. */
+export function withContext(taken, text) {
+  if (!taken) return text;
+  return `${[...taken.views].map(([view, said]) => `[From the ${view}: ${said}]`).join('\n')}\n\n${text}`;
+}
+/* A message that did not go gives back what it took, kept for the next; a view that told something new, or took
+ * back what it told, since then keeps its own. */
+export function contextBack(taken) {
+  if (!taken) return;
+  const kept = MODEL_CONTEXT.get(taken.thread) || new Map();
+  for (const [view, said] of taken.views) {
+    if ((CONTEXT.told.get(`${taken.thread}\n${view}`) || 0) <= taken.at) kept.set(view, said);
+  }
+  if (!kept.size) return;
+  MODEL_CONTEXT.set(taken.thread, kept);
+  for (const one of APPFRAMES.values()) {
+    if (threadOf(one) === taken.thread && kept.has(appName(one.app.uri))) appNote(one, CONTEXT_SAID);
+  }
 }
 /* A view's tools/call, taken to the folder's MCP server as the thread's agent session. */
 async function callTool(entry, params, reply, fail) {
@@ -343,6 +369,7 @@ export function leaveApps() {
     if (entry.panel) entry.panel.hidden = true;
   }
   MODEL_CONTEXT.clear();
+  CONTEXT.told.clear();
   Object.assign(APPS, {project: null, at: 0, tools: {}, views: [], gallery: false});
 }
 /* The gallery, /apps or the head's menu: every view the enabled modules offer, each opened in a panel of its own,

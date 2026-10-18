@@ -17,7 +17,7 @@ import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
 import {narrowPage, resetDock} from '/page/app/dock/place.js';
 import {wrote} from '/page/app/board/history.js';
 import {isIntake} from '/page/app/session/tools.js';
-import {showGallery, withContext} from '/page/app/session/apps.js';
+import {showGallery, takeContext, withContext, contextBack} from '/page/app/session/apps.js';
 import {messageRow} from '/page/app/session/text.js';
 import {notificationState} from '/page/app/session/orchestration.js';
 import {sessionPop} from '/page/app/session/settings.js';
@@ -52,7 +52,8 @@ function ensureAgent() {
 }
 export function queuedRows() {
   // a message sent is let go once the agent has it, or half a minute on
-  const settled = item => item.state === 'sent' && (DOCK.heard.has((item.sent || item.text).trim()) || Date.now() - item.at > 30000);
+  const settled = item => item.state === 'sent'
+    && (DOCK.heard.has((item.sent || item.text).trim()) || Date.now() - item.at > 30000);
   DOCK.queue = DOCK.queue.filter(item => !settled(item));
   return DOCK.queue.map((item, index) => ({key: `queued:${item.id}`, text: `${item.state}:${index}`,
     make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0, at: item.at,
@@ -71,10 +72,12 @@ export async function deliverQueued(session) {
       const lead = item.clicked ? `${item.clicked}\n\n` : '';  // what the person clicked stays first
       // the view's context goes to the agent only; the item keeps the person's own words, so a failed send puts back
       // what they wrote and nothing more
-      const said = lead + withContext({work, session: session.session_id}, item.text.slice(lead.length));
+      const taken = takeContext({work, session: session.session_id});
+      const said = lead + withContext(taken, item.text.slice(lead.length));
       item.sent = said;  // as the agent got it, which its thread echoes back
       const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: said});
       if (!done.ok) {
+        contextBack(taken);  // kept for the resend
         item.state = 'waiting';
         startFailed(done.body?.error || 'The message was not sent.', done.body?.next);
         return;
@@ -176,6 +179,8 @@ async function sendMessage(event) {
         + 'remove it to send your words alone.' : null;
   if (refused) { box.value = text; growSay(); return toast(refused); }
   const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
+  // told as it is taken, so a follow-up, or a click made while this one goes, is never counted as this one's
+  if (told) CLICKED.told = true;
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
     DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
       at: Date.now()});
@@ -187,15 +192,18 @@ async function sendMessage(event) {
   }
   // a spoken message's recording goes with it, where the agent takes audio
   const audio = await voiceAudio(text, !fork && DOCK.state?.capabilities?.audio === true);
-  const said = fork ? text + attached
-    : lead + withContext({work: DOCK.target, session: DOCK.session}, text + attached);
+  const taken = fork ? null : takeContext({work: DOCK.target, session: DOCK.session});
+  const said = fork ? text + attached : lead + withContext(taken, text + attached);
   const sent = await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: said,
     ...(fork ? {fork} : {}), ...audio, ...(frame ? {image: frame.jpeg} : {})});
   if (sent) {
-    CLICKED.told = true;  // a message has gone since the click
     DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
-  } else { box.value = text; growSay(); }
+  } else {  // the views' context and the click are kept for the resend
+    contextBack(taken);
+    if (told) CLICKED.told = false;
+    box.value = text; growSay();
+  }
 }
 $('#helpdesk .compose').onsubmit = sendMessage;
 /* What the person sent in each thread from this page, as typed, newest last, as a Claude Code prompt history: Up in
