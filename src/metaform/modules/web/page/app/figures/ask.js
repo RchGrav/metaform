@@ -36,11 +36,14 @@ export function mascotScreen() {  // where the 3D mascot is on the page, for a c
   const {x, y} = mascotOnPage();
   return {sx: x, sy: y};
 }
-export function mascotAt(x, y) {
+function mascotAt(x, y) {
   if (!G || !MASCOT.mesh) return false;
   const at = mascotOnPage();
   return Math.abs(at.z) < 1 && Math.hypot(at.x - x, at.y - y) < Math.max(18, onScreen(MASCOT.mesh) * 0.6);
 }
+// a click the mascot takes for its ask field: on it, with no node hovered and no cut on; the click record skips the
+// same clicks, figures/eyes.js, so what the person asks about is the click before
+export const mascotTakes = (x, y) => !CUT.on && !hovered && mascotAt(x, y);
 function replyField() {
   const el = bubble(), field = h('input', {class: 'reply', type: 'text', placeholder: 'Ask your system agent…',
     'aria-label': 'Ask your system agent through the mascot'});
@@ -71,7 +74,9 @@ async function mascotAsk(text) {
   const live = DOCK.mine && D.sessions.some(one => one.work_id === DOCK.mine && one.state === 'running'
     && one.session_id);
   ASKING.pending = text;
-  ASKING.told = clickedLine();  // what "this" is, as the person asks, as the chat's send fixes it when it queues
+  // what "this" is, as the person asks, as the chat's send fixes it when it queues; a second ask while the first
+  // waits keeps the first one's line unless a click came between
+  ASKING.told = clickedLine() || ASKING.told;
   if (ASKING.told) CLICKED.told = true;
   if (!live) await callSystem();
   if (!DOCK.mine) {
@@ -118,7 +123,7 @@ export function mascotHeard(target, lines) {
   say(short, readFor(short), () => agentAt(DOCK.mine), own);
 }
 function clickMascot(event) {  // a click on the mascot where no node takes it: a word with it
-  if (CUT.on || hovered || !mascotAt(event.clientX, event.clientY)) return;
+  if (!mascotTakes(event.clientX, event.clientY)) return;
   event.stopPropagation();
   replyField();
 }

@@ -6608,7 +6608,8 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
     gives it as `clicked`, with the state a part shows and the ticket behind it. Their next message to the system
     agent within two minutes starts with one line naming it, and their bubble shows it as a chip; a second message, or
     one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded, nor a
-    click on the mascot, and a question asked through the mascot carries the line as the chat does."""
+    click on the mascot, and a question asked through the mascot carries the line as the chat does, the click as it
+    was when the person asked even while their system agent starts."""
     from metaform.data import Store
     from metaform.modules.dispatch import end_group
     from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
@@ -6640,12 +6641,12 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.wait_for_selector('#helpdesk .threadbar .stop:not([hidden])')
         assert clicked() is None
         map_key(page, 'p')                                             # the layout holds still under the pointer
-        at = page.evaluate('''async id => { const {G} = await import('/page/app/map3d/graph3d.js');
+        node_at = '''async id => { const {G} = await import('/page/app/map3d/graph3d.js');
             const THREE = await import('three'); const node = G.graphData().nodes.find(one => one.id === id);
             const v = new THREE.Vector3(node.x, node.y, node.z).project(G.camera());
             const box = document.querySelector('#stage').getBoundingClientRect();
-            return [box.left + (v.x + 1) / 2 * box.width, box.top + (1 - v.y) / 2 * box.height]; }''', alarm)
-        page.mouse.click(*at)                                          # a node in the 3D map
+            return [box.left + (v.x + 1) / 2 * box.width, box.top + (1 - v.y) / 2 * box.height]; }'''
+        page.mouse.click(*page.evaluate(node_at, alarm))               # a node in the 3D map
         node = clicked()
         assert (node['kind'], node['address']) == ('element', 'code.alarm.audible'), node
         to_large_area(page)
@@ -6719,6 +6720,37 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         pattern = re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this red\\?$'
         assert re.match(pattern, asked_mascot), asked_mascot
         page.wait_for_selector('#helpdesk .msg.mine .bubble:has-text("Why is this red?") .clickedchip')
+        # asked through the mascot while the system agent is not running: the line is the click as the person asked,
+        # not a click made while the agent starts
+        map_key(page, 's')                                             # the 2D map in the large area, for the join
+        click_join()
+        assert clicked()['kind'] == 'join'
+        map_key(page, 's')
+
+        def not_running(route):
+            response = route.fetch()
+            body = response.json()
+            for one in body.get('sessions', []):
+                if one.get('work_id') == agent.id:
+                    one['state'] = 'starting'
+            route.fulfill(response=response, json=body)
+        page.route('**/api/dispatch-sessions*', not_running)
+        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")
+        page.wait_for_function(clear, timeout=15000)
+        page.mouse.click(*page.evaluate(clear))
+        page.wait_for_selector('input.reply')
+        assert clicked()['kind'] == 'join', clicked()
+        page.fill('input.reply', 'Why is that red?')
+        page.press('input.reply', 'Enter')
+        page.wait_for_function("async () => (await import('/page/app/figures/ask.js')).ASKING.pending")
+        page.mouse.click(*page.evaluate(node_at, alarm))               # another node, before the session is live
+        assert clicked()['address'] == 'code.alarm.audible'
+        assert not any('Why is that red?' in one for one in prompts())
+        page.unroute('**/api/dispatch-sessions*', not_running)
+        page.evaluate("async () => (await import('/page/app/agents/dispatch.js')).renderAgents()")  # now it is live
+        asked_waiting = eventually(lambda: next((one for one in prompts() if 'Why is that red?' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is that red\\?$', asked_waiting), \
+            asked_waiting
         assert problems == []
     finally:
         agent.close()
@@ -8218,6 +8250,68 @@ def test_a_metaform_calls_view_runs_in_the_chat_as_its_sessions_and_goes_with_it
     page.wait_for_function('() => !document.querySelector("iframe.appframe") && !document.querySelector(".mcpwin")',
                            timeout=10000)
     assert problems == []
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_queued_message_that_fails_puts_back_only_the_persons_words_and_keeps_the_views_context(
+        run, home, web, mapped, browser, tmp_path):
+    """code.interface.graphical#12e: what a view asked the agent be told goes with the person's next message, after
+    the line naming their click. A queued message that the server refuses comes back to the box as the person typed
+    it, with neither line, and the view's context is kept, so the resend carries it once and the message after none."""
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
+
+    agent = Dispatch(run, home, mapped, tmp_path)
+    agent.id = agent.store.add_work(agent.node, None, task='Conversation with the system agent', held=True).id
+    agent.start('plain', 'system=true')
+    try:
+        session = agent.session().extra['session_id']
+        eventually(lambda: agent.received('session/prompt'))
+        started(run)
+        page, problems, _ = opened(browser, web)
+        page.route('**/api/system-chat', lambda route: route.fulfill(
+            status=200, content_type='application/json', body=json.dumps(
+                {'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})))
+        refused = []
+
+        def refuse_once(route):
+            if refused:
+                return route.continue_()
+            refused.append(json.loads(route.request.post_data)['text'])
+            route.fulfill(status=409, content_type='application/json',
+                          body=json.dumps({'error': 'The agent did not take it.'}))
+        page.route('**/api/dispatch-message', refuse_once)
+        page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+        page.evaluate('''async thread => (await import('/page/app/session/apps.js')).MODEL_CONTEXT.set(thread,
+            new Map([['Node view', 'The person selected code.alarm.audible.']]))''', f'{agent.id}:{session}')
+        page.click('#dockTab')
+        page.evaluate('''async () => (await import('/page/app/core/banner.js')).banner('test-retry',
+            {tone: 'warn', title: 'The map was not read', actions: [{label: 'Read again', run: () => {}}]})''')
+        page.click('.banner[data-key="test-retry"] .acts button')     # the click the line names
+        asked = len(agent.received('session/prompt'))
+
+        def prompts():
+            return [' '.join(part.get('text', '') for part in one['params']['prompt'])
+                    for one in agent.received('session/prompt')[asked:]]
+        page.fill('#helpdesk .say', 'Is that the one?')
+        page.press('#helpdesk .say', 'Enter')                         # no agent there yet: it waits, then is refused
+        page.wait_for_function('() => document.querySelector("#helpdesk .say").value', timeout=20000)
+        assert page.input_value('#helpdesk .say') == 'Is that the one?'
+        told = (r'The person clicked, \d+ s before: [^\n]+\n\n'
+                r'\[From the Node view: The person selected code\.alarm\.audible\.\]\n\nIs that the one\?$')
+        assert len(refused) == 1 and re.match(told, refused[0]), refused
+        page.press('#helpdesk .say', 'Enter')                         # sent again
+        resent = eventually(lambda: next((one for one in prompts() if 'Is that the one?' in one), None))
+        assert re.match(told, resent) and resent.count('[From the ') == 1, resent
+        page.fill('#helpdesk .say', 'And the next?')                  # while the resend may still be going
+        page.press('#helpdesk .say', 'Enter')
+        after = eventually(lambda: next((one for one in prompts() if 'And the next?' in one), None))
+        assert '[From the ' not in after and after.endswith('And the next?'), after   # the context was said once
+        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)']
+    finally:
+        agent.close()
+        for pid in agent.logged('pid'):
+            end_group(pid)
 
 
 @pytest.mark.req('VIEW-018')

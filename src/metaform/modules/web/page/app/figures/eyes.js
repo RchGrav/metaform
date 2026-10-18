@@ -28,7 +28,7 @@ import {D, ticketOf, showFollowed} from '/page/app/agents/dispatch.js';
 import {tabNow} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
 import {toast} from '/page/app/core/controls.js';
-import {figureAt, mascotAt} from '/page/app/figures/ask.js';
+import {figureAt, mascotTakes} from '/page/app/figures/ask.js';
 import {WATCHED} from '/page/app/figures/bubble3d.js';
 import {nodeAt3d, linkAt3d, purposeOf} from '/page/app/map3d/pick3d.js';
 import {CLICK_LEAD} from '/page/app/session/text.js';
@@ -350,14 +350,14 @@ function ticketClicked(kind, workId, glyph) {
   }
   return true;
 }
-/* What a click on the 3D map takes, in the order its own handlers take it: the mascot where no node is, an agent's
- * figure, the node within reach, the nearest join edge, `clickMascot`, `clickFigure` and `clickedAt3d`. */
+/* What a click on the 3D map takes, in the order its own handlers take it: the mascot where no node is hovered, an
+ * agent's figure, the node within reach, the nearest join edge, `clickMascot`, `clickFigure` and `clickedAt3d`. */
 function clicked3dAt(x, y) {
   if (!G) return false;
-  const node = nodeAt3d(x, y);
   // a click on the mascot opens its ask field: it is how the person asks about what they clicked before, so it never
   // takes that click's place, as the chat's own controls do not
-  if (!node && mascotAt(x, y)) return true;
+  if (mascotTakes(x, y)) return true;
+  const node = nodeAt3d(x, y);
   const work = figureAt(x, y);
   if (work) return ticketClicked('agent figure', work, ROAM.figures.get(work)?.glyph);
   if (node?.t === 'el') return elementClicked(node.id);
