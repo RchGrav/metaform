@@ -52,7 +52,7 @@ function ensureAgent() {
 }
 export function queuedRows() {
   // a message sent is let go once the agent has it, or half a minute on
-  const settled = item => item.state === 'sent' && (DOCK.heard.has(item.text.trim()) || Date.now() - item.at > 30000);
+  const settled = item => item.state === 'sent' && (DOCK.heard.has((item.sent || item.text).trim()) || Date.now() - item.at > 30000);
   DOCK.queue = DOCK.queue.filter(item => !settled(item));
   return DOCK.queue.map((item, index) => ({key: `queued:${item.id}`, text: `${item.state}:${index}`,
     make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0, at: item.at,
@@ -69,8 +69,11 @@ export async function deliverQueued(session) {
       if (DOCK.target !== work) return;
       item.state = 'sending';
       const lead = item.clicked ? `${item.clicked}\n\n` : '';  // what the person clicked stays first
-      item.text = lead + withContext({work, session: session.session_id}, item.text.slice(lead.length));
-      const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: item.text});
+      // the view's context goes to the agent only; the item keeps the person's own words, so a failed send puts back
+      // what they wrote and nothing more
+      const said = lead + withContext({work, session: session.session_id}, item.text.slice(lead.length));
+      item.sent = said;  // as the agent got it, which its thread echoes back
+      const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: said});
       if (!done.ok) {
         item.state = 'waiting';
         startFailed(done.body?.error || 'The message was not sent.', done.body?.next);
@@ -174,7 +177,8 @@ async function sendMessage(event) {
   if (refused) { box.value = text; growSay(); return toast(refused); }
   const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
-    DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, clicked: told, state: 'waiting', at: Date.now()});
+    DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
+      at: Date.now()});
     CLICKED.told = true;
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
