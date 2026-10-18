@@ -6742,7 +6742,9 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         assert clicked()['kind'] == 'join', clicked()
         page.fill('input.reply', 'Why is that red?')
         page.press('input.reply', 'Enter')
-        page.wait_for_function("async () => (await import('/page/app/figures/ask.js')).ASKING.pending")
+        # a predicate must be synchronous to be waited on: an async one is a promise, truthy at once
+        page.evaluate("async () => { window.__ask = await import('/page/app/figures/ask.js'); }")
+        page.wait_for_function("() => window.__ask.ASKING.pending")
         page.mouse.click(*page.evaluate(node_at, alarm))               # another node, before the session is live
         assert clicked()['address'] == 'code.alarm.audible'
         assert not any('Why is that red?' in one for one in prompts())
