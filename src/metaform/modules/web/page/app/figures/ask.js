@@ -18,6 +18,7 @@ import {D, agentAt} from '/page/app/agents/dispatch.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {bubbleAt} from '/page/app/figures/bubble3d.js';
 import {spokenOf, sameWords} from '/page/app/session/apps.js';
+import {CLICKED, clickedLine} from '/page/app/figures/eyes.js';
 
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble.
  * What the person writes goes to their system agent, the one the chat dock's Call starts, and the answer comes back
@@ -82,11 +83,10 @@ export async function flushAsk() {
   ASKING.pending = null;
   Object.assign(ASKING, {sent: Date.now(), heard: null, base: null});
   // asked through the mascot, the question names what the person clicked just before, as the chat's send does
-  const {clickedLine} = await import('/page/app/dock/send.js');
   const told = clickedLine();
   const sent = await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id,
     text: told ? `${told}\n\n${text}` : text});
-  if (sent && told) (await import('/page/app/figures/eyes.js')).CLICKED.told = true;
+  if (sent && told) CLICKED.told = true;
   if (!sent) say('That did not go through.', 4);
 }
 /* The system agent's answer, the newest of its words after the person asked, said in the bubble in short; the chat

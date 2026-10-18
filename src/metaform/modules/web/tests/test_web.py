@@ -6607,7 +6607,8 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
     keeps the last thing they clicked, a node in the 3D map, a join in the 2D map, a banner's button, and web_viewing
     gives it as `clicked`, with the state a part shows and the ticket behind it. Their next message to the system
     agent within two minutes starts with one line naming it, and their bubble shows it as a chip; a second message, or
-    one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded."""
+    one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded, nor a
+    click on the mascot, and a question asked through the mascot carries the line as the chat does."""
     from metaform.data import Store
     from metaform.modules.dispatch import end_group
     from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
@@ -6619,6 +6620,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
                              cwd=mapped).stdout)
     item, join = trouble['map']['item'], trouble['node_id']             # the ticket's join, kitchen timer > alarm
     alarm = Store('proj').element('code.alarm.audible').id
+    run('set', '--web-mascot=owl')                                     # the person's mascot, to ask through
     agent.start('plain', 'system=true')
     try:
         session = agent.session().extra['session_id']
@@ -6703,6 +6705,20 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         late = eventually(lambda: next((one for one in prompts() if 'Still there?' in one), None))
         assert late == 'Still there?', late
         assert page.locator('#helpdesk .clickedchip').count() == 1
+        click_join()                                                   # the join, then the mascot to ask about it
+        map_key(page, 's')                                             # the 3D map back in the large area
+        clear = '''() => { const m = window.metaform.mascot(); if (m.sx === undefined) return null;
+            const e = document.elementFromPoint(m.sx, m.sy); return e?.closest('#stage') ? [m.sx, m.sy] : null; }'''
+        page.wait_for_function(clear, timeout=15000)                   # the mascot where no chat covers it
+        page.mouse.click(*page.evaluate(clear))
+        page.wait_for_selector('input.reply')
+        assert clicked()['kind'] == 'join'                             # the mascot's ask field never takes the click
+        page.fill('input.reply', 'Why is this red?')
+        page.press('input.reply', 'Enter')
+        asked_mascot = eventually(lambda: next((one for one in prompts() if 'Why is this red?' in one), None))
+        pattern = re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this red\\?$'
+        assert re.match(pattern, asked_mascot), asked_mascot
+        page.wait_for_selector('#helpdesk .msg.mine .bubble:has-text("Why is this red?") .clickedchip')
         assert problems == []
     finally:
         agent.close()

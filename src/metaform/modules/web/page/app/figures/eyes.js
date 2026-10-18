@@ -31,6 +31,7 @@ import {toast} from '/page/app/core/controls.js';
 import {figureAt, mascotAt} from '/page/app/figures/ask.js';
 import {WATCHED} from '/page/app/figures/bubble3d.js';
 import {nodeAt3d, linkAt3d, purposeOf} from '/page/app/map3d/pick3d.js';
+import {CLICK_LEAD} from '/page/app/session/text.js';
 
 /* Who sees: the calling agent's own figure, by the work its runner gave it, or else the person's mascot, which is the
  * system agent's figure and the person's. A refusal says why. */
@@ -280,7 +281,7 @@ export function viewing() {
  * nothing the click does. The chat's own head, tabs, buttons and message box are not recorded, nor a Chat button or
  * the mascot's ask field, since the person goes there to ask, and a click that opens the chat must not replace what
  * they ask about; the chat's conversation is. Nothing typed is read. On the maps a press that moved is a drag of the
- * view, not a click. `told` is set once a message has been sent since the click, dock/send.js. Ticket
+ * view, not a click. `told` is set once a message has been sent since the click, dock/send.js or ask.js. Ticket
  * code.interface.graphical#124, 2026-10-18. */
 export const CLICKED = {at: 0, project: null, kind: null, address: null, name: null, item: null, agent: null,
   label: null, control: null, state: null, record: null, told: false, downX: 0, downY: 0};
@@ -462,10 +463,18 @@ export function clickedWords() {
       : c.kind === 'agent figure' || c.kind === 'board card'
         ? `${c.kind}${c.agent ? ` of ${c.agent}` : ''} on ${c.item || 'a ticket'}${c.address ? ` at ${c.address}` : ''}`
           + quoted(c.name)
-        : c.kind === 'mascot' ? "the person's mascot"
-          : `${c.kind}${quoted(c.label)}${c.control ? `, its button "${c.control}"` : ''}`
-            + (c.name ? ` in ${c.name}` : '');
+        : `${c.kind}${quoted(c.label)}${c.control ? `, its button "${c.control}"` : ''}`
+          + (c.name ? ` in ${c.name}` : '');
   return `${what}${c.state ? `, ${c.state}` : ''}${c.record ? ` (${c.record})` : ''}`;
+}
+/* The one line that tells the person's system agent what they last clicked: given within CLICK_FRESH of the click,
+ * and only with the first message sent since it, by the chat, dock/send.js, or the mascot's ask field, ask.js, so
+ * "this" in what they write names it. Ticket code.interface.graphical#124, 2026-10-18. */
+const CLICK_FRESH = 120000;
+export function clickedLine() {
+  const ago = Date.now() - CLICKED.at;
+  if (!CLICKED.at || CLICKED.told || CLICKED.project !== S.project || ago > CLICK_FRESH) return '';
+  return `${CLICK_LEAD}${Math.round(ago / 1000)} s before: ${clickedWords()}.`;
 }
 /* How the mascot moved on this page over its last seconds, for an agent reading what the person sees, VIEW-005: each
  * frame's body on the screen, its facing and size, its own animation, the point it steers to, the camera and the

@@ -18,11 +18,11 @@ import {narrowPage, resetDock} from '/page/app/dock/place.js';
 import {wrote} from '/page/app/board/history.js';
 import {isIntake} from '/page/app/session/tools.js';
 import {showGallery, withContext} from '/page/app/session/apps.js';
-import {messageRow, CLICK_LEAD} from '/page/app/session/text.js';
+import {messageRow} from '/page/app/session/text.js';
 import {notificationState} from '/page/app/session/orchestration.js';
 import {sessionPop} from '/page/app/session/settings.js';
 import {posted} from '/page/app/intake/intake.js';
-import {sharing, startShare, shareFrame, CLICKED, clickedWords} from '/page/app/figures/eyes.js';
+import {sharing, startShare, shareFrame, CLICKED, clickedLine} from '/page/app/figures/eyes.js';
 
 /* A start that answered before its session runs: a resume names its session at once, though the session is live only
  * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
@@ -144,15 +144,6 @@ export function queuePaused(stopped) {
   if (stopped?.autostart !== false) return '';
   $('#autostartAgents').checked = false;
   return ` ${stopped.notice || 'Full Auto is now off for this project.'}`;
-}
-/* The one line that tells the person's system agent what they last clicked, the page's `CLICKED`: given within
- * CLICK_FRESH of the click, and only with the first message sent since it, so "this" in what they write names it.
- * Ticket code.interface.graphical#124, 2026-10-18. */
-const CLICK_FRESH = 120000;
-export function clickedLine() {
-  const ago = Date.now() - CLICKED.at;
-  if (!CLICKED.at || CLICKED.told || CLICKED.project !== S.project || ago > CLICK_FRESH) return '';
-  return `${CLICK_LEAD}${Math.round(ago / 1000)} s before: ${clickedWords()}.`;
 }
 const toSystem = () => !DOCK.target || DOCK.target === DOCK.mine || DOCK.chat?.source === 'system';
 /* What the person writes goes to the agent on view, with the files attached; a /command is the chat's or the
