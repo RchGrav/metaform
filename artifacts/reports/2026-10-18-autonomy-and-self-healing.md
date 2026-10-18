@@ -34,6 +34,15 @@ sections below say why, part by part.
 - **Every project keeps itself clean while it is built.** Not Metaform alone: any project built with it. Errors become tickets, tickets get fixed, fixes are proven, the board stays
   workable, and old code is removed when a design changes, all without the user watching. Until it does, the user sees
   only a lot of things broken; getting it to keep itself clean comes before adding more.
+- **C(T) comes first, and it is why trouble can always be fixed.** C(T) = { (r_i ∧ p_i ∧ e) }: the project's functional
+  core, each receiving element with the purpose it holds and the element that serves it. It is the frozen core that
+  allows mutation, not transformation. A specification describes how C(T) is delivered; it is subordinate to C(T). When
+  a specification is what causes the trouble, because it blocks a part from serving its purpose or no longer matches what
+  serves it, C(T) overrides the specification: the trouble is fixed, and the specification is adapted to match. The user
+  is notified when a specification adapts, with what changed and why; no approval is needed, because the fix serves
+  what the project is for. What does need the user is a change to C(T) itself: a purpose added, removed or changed.
+- **The loop, in any project:** problems are seen; agents file a ticket; tickets start automatically; the problem is
+  fixed against C(T); where a specification had to adapt, the user is told.
 - **Agents report trouble, in any project.** Trouble is trouble and a problem is a problem, wherever an agent meets it:
   a failing test outside its ticket, an error in a log, a part that does not do its purpose, a broken page, a confusing
   control, a slow path. Every agent files what it sees as one trouble ticket at the part concerned, with its evidence,
