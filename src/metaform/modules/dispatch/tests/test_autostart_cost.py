@@ -1,4 +1,4 @@
-"""Autostart reads selection inputs once and preserves ticket selection rules."""
+"""Full Auto reads selection inputs once and preserves ticket selection rules."""
 import json
 import re
 from collections import Counter
@@ -168,7 +168,7 @@ def test_autostart_without_page_twice_at_once_fills_one_slot_once(dispatch, monk
 
 @pytest.mark.req('BASE-052')
 def test_autostart_without_page_off_starts_nothing_when_a_runner_finishes(dispatch, run):  # noqa: F811
-    """Autostart agents unchecked: a runner that finishes leaves the waiting ticket waiting."""
+    """Full Auto unchecked: a runner that finishes leaves the waiting ticket waiting."""
     from metaform.modules.dispatch.tests.test_dispatch import LIMIT
 
     second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Second ticket').id
@@ -225,7 +225,12 @@ def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run,
 
 @pytest.mark.req('VIEW-045')
 def test_a_ticket_an_agent_writes_is_held_so_no_work_starts_its_own_successor(dispatch, run):  # noqa: F811
-    """UX review round 1, runaway F5: a ticket written by an agent of Metaform waits in Backlog for the person."""
+    """UX review round 1, runaway F5: with hold_agent_tickets on, a ticket written by an agent of Metaform waits in
+    Backlog for the person; off, the default since 2026-10-18, it goes on the board ready, so a project heals itself."""
+    ready = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Fix it', 'title=Fix it',
+                           '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'}).stdout)
+    assert ready['held'] is False, ready
+    run('set', '--hold-agent-tickets', cwd=dispatch.folder)
     said = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Follow up',
                           'title=Follow up', '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'}).stdout)
     assert said['held'] is True, said
@@ -240,7 +245,9 @@ def test_a_held_ticket_is_released_only_by_the_person_whatever_path_an_agent_tak
     """UX review round 2, held-and-signals F3 and F4: a sentinel moved its own held proposal to To do and autostart
     started it, an intake agent started one with dispatch start, a system agent edited held=false, and an agent with
     METAFORM_ROLE cleared wrote an unheld ticket. Releasing is the person's decision: their terminal, or the page."""
+    run('set', '--agents-ask-first', cwd=dispatch.folder)  # these check asking, off by default since 2026-10-18
     folder = dispatch.folder
+    run('set', '--hold-agent-tickets', cwd=folder)  # the person asks to approve what agents write
     # every identity name the runner sets says an agent writes, not the role alone
     cleared = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Proposal',
                              'title=Proposal', '--json', cwd=folder,

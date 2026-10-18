@@ -90,6 +90,13 @@ settings.boolean('critic', False, per_call=True, help='map critic: the critic al
                  'fast mode, blind to the code, when off.')
 settings.boolean('tasks', True, help='Assign and track work on the map like a kanban. Turn it off when the project '
                  'keeps its own board.')
+# Whether a ticket an agent writes waits for the person: off by default, so work a project's own agents find, an
+# error raised or a fix's follow-up, goes on the board ready and Full Auto starts it, and the project heals itself
+# (the person's decision, 2026-10-18); on, each waits in Backlog, held, until the person releases it.
+settings.boolean('hold_agent_tickets', False, person_only=True, label='Hold tickets agents write',
+                 help="Hold every ticket an agent writes in Backlog until you release it.",
+                 details='Off, the default, an agent\'s ticket goes on the board ready, and Full Auto starts it like any '
+                         'other. On, it waits, held, until you release it or start it.')
 settings.number('node_summary_bytes', 2048, min=512,
                 help='The bytes an agent is given about the node it works on, in map where, a ticket read and the '
                      'hand-off. What does not fit, code paths first, is counted with the call that reads it.')
@@ -1425,7 +1432,8 @@ def work(ctx: Context) -> Any:
         titled(ctx, 'The ticket', nouns.get('title'))  # it takes the next number at its node, MCP-037
         _numbering(store)
         writer = _agent_writing(ctx)
-        if writer and not nouns.get('held'):  # work never writes its own successor work and starts it
+        # with hold_agent_tickets on, work never writes its own successor work and starts it
+        if writer and not nouns.get('held') and ctx.setting('hold_agent_tickets'):
             nouns['held'] = True
             notices.append(Notice('held', f'A ticket {_article(writer)} {writer} agent writes waits in Backlog, held, '
                                           'until the person releases it or starts it: no agent starts it by itself.'))
@@ -1675,6 +1683,8 @@ def releases(ctx: Context) -> str | None:
     hold=false, taken or moved to Doing. Releasing lets an agent starter start it, so it is the person's decision on
     every surface; None for any other call, which reads nothing (UX review round 2, held-and-signals: a sentinel's
     proposal released by the sentinel in its next call was started)."""
+    if not ctx.setting('agents_ask_first'):
+        return None  # the person lets their agents release work without asking
     nouns = ctx.nouns
     op = str(nouns.get('op', 'read' if 'id' in nouns else 'list'))
     column = nouns.get('column') if op == 'move' else None
@@ -1971,7 +1981,7 @@ WORK_NOUNS = (
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
     _noun('task', 'add and edit: what it needs.'),
-    _noun('held', 'add and edit: put it in Backlog, where it waits: no agent starter starts it, Autostart, Start '
+    _noun('held', 'add and edit: put it in Backlog, where it waits: no agent starter starts it, Full Auto, Start '
                   'all, Distribute and an agent\'s glyph among them; the person releases it to To do or starts it '
                   'on its own. A ticket an agent of Metaform writes is always held, and releasing one is the '
                   'person\'s decision.', 'bool'),

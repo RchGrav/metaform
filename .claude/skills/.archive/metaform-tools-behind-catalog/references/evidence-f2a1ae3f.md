@@ -1,0 +1,1 @@
+"Error: No record here holds name; they hold from, to, relationType.\nNext: call memory_open_nodes without it, or with view=full" and "Error: No record here holds name, entityType; they hold join_id, entity, address, by, shows.\nNext: call memory_graph without it, or with view=full" and for search "mutation-proven" the result was "{}".

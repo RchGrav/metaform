@@ -79,8 +79,9 @@ ROLES = (
         Sends('intake:schema_pointer', "added to the first turn when the intake does not name its schema's URI"),
         Sends('dispatch:intake_first_record', 'once, when the agent makes no Metaform call in time'),
     )),
-    Role('system', "The person's own agent in the project's folder: talks with them and acts for them, speaking as "
-                   'their mascot when they chose one.', True, (
+    Role('system', "The person's own agent in the project's folder: talks with them and acts for them, owns the "
+                   'board so every ticket moves, waits on a decision put to them, or is closed, and speaks as their '
+                   'mascot when they chose one.', True, (
         Sends('dispatch:system', 'first turn, and again ahead of the next turn once an edit of it is saved'),
         Sends('dispatch:mascot', 'filled into the first turn while the person has a mascot and the web module is on, '
                                  'and again with dispatch:system once an edit of either is saved'),

@@ -148,6 +148,7 @@ def audio(handler: Handler, name: str, given: dict[str, str]) -> None:
         return handler.send(413, {'error': f'The utterance is longer than voice_max_seconds, {seconds} s.',
                                   'next': f'metaform set --voice-max-seconds {seconds * 2}'})
     body = handler.rfile.read(length)
+    handler.body_read = True
     place = run_folder() / ('clips' if name == 'clip' else 'heard')
     home.mkdir_private(place)
     if name == 'clip':

@@ -56,7 +56,7 @@ const KEYS = [
     run: () => { if (G && !small3d()) { fit3d(); peek('key'); } }},
   {group: 'Zoom', keys: ['5'], what: 'Speech bubble size: smallest, then larger in four steps',
     match: ['5'], run: () => note2d(`Bubble size: ${stepBubbleSize() + 1} of ${BUBBLE_SIZES.length}`)},
-  {group: 'Zoom', keys: ['6'], what: 'Limit agent size',
+  {group: 'Zoom', keys: ['6'], what: 'Agent size: limited or let grow',
     match: ['6'], run: holdAgentSize},
   {group: 'Zoom', keys: ['7'], what: 'Lens: natural, wide, fisheye', match: ['7'], run: stepLens},
   {group: 'Looks', keys: ['2'], what: 'Flow: off, hover, selection, all, live, then each with edges hidden',
@@ -83,7 +83,7 @@ const KEYS = [
  * is, or let grow as near things do; kept in this browser. */
 function holdAgentSize() {
   ROAM.held = !ROAM.held;
-  try { localStorage.setItem('metaform.agentSizeHeld', ROAM.held ? '1' : '0'); } catch { /* storage can be blocked */ }
+  try { localStorage.setItem('metaform.agentSizeFree', ROAM.held ? '0' : '1'); } catch { /* storage can be blocked */ }
   wake3d();
   note2d(ROAM.held ? 'Agent size: limited' : 'Agent size: not limited');
 }

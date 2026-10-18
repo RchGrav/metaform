@@ -61,8 +61,12 @@ export function setCam(cam) {
   again2d();  // a figure keeps its least size on the screen as the zoom changes
   hover2d(wide ? wide / cam.w : 0);
 }
-const near = (a, b) => Boolean(a && b)
-  && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) <= Math.max(a.w, b.w) * 1e-4);
+function near(a, b) {  // compared part by part, so a followed frame that asks allocates nothing
+  if (!a || !b) return false;
+  const tol = Math.max(a.w, b.w) * 1e-4;
+  return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol && Math.abs(a.w - b.w) <= tol
+    && Math.abs(a.h - b.h) <= tol;
+}
 export function stopCam() { cancelAnimationFrame(M.frame); M.to = null; }
 /* Every move of the 2D camera eases in and out and is never set at once, VIEW-041; with reduced motion it moves at
  * once, VIEW-016. A move to where the camera is already going goes on as it is. The middle of the view moves in a
@@ -263,13 +267,15 @@ export function followPassed(key) {
 }
 /* A camera going with a followed figure eases, VIEW-041: a critically damped spring, which sets off from rest, eases
  * in, and comes to rest at the figure without passing it, eases out, and follows a figure that moves without a jolt.
- * One part of it, `at` going at `speed` toward `goal`, after `passed` seconds, worked out exactly, so a slow frame
- * never throws it: where it is then and how fast it goes. FOLLOW_PACE is the spring's own rate, a second's worth. */
+ * One part of it, `at[i]` going at `speed[i]` toward `goal`, after `passed` seconds, worked out exactly, so a slow
+ * frame never throws it: where it is then and how fast it goes, written back in place, so a frame allocates nothing.
+ * FOLLOW_PACE is the spring's own rate, a second's worth. */
 export const FOLLOW_PACE = 8;
-export function spring(at, speed, goal, passed) {
-  if (reduced()) return [goal, 0];  // with reduced motion it goes with the figure at once, VIEW-016
-  const off = at - goal, push = speed + FOLLOW_PACE * off, fade = Math.exp(-FOLLOW_PACE * passed);
-  return [goal + (off + push * passed) * fade, (speed - FOLLOW_PACE * push * passed) * fade];
+export function spring(at, speed, i, goal, passed) {
+  if (reduced()) { at[i] = goal; speed[i] = 0; return; }  // with reduced motion it goes with the figure at once, VIEW-016
+  const off = at[i] - goal, push = speed[i] + FOLLOW_PACE * off, fade = Math.exp(-FOLLOW_PACE * passed);
+  at[i] = goal + (off + push * passed) * fade;
+  speed[i] = (speed[i] - FOLLOW_PACE * push * passed) * fade;
 }
 /* The 2D map is fit-all, except while the person follows an agent: then its zoom is the one that frames the agent's
  * node with its neighbours, and the view is held there, while `follow2d` keeps the agent's figure in its middle. A
@@ -295,28 +301,36 @@ export function follow2d(x, y, at = false) {
   const area = area2d();
   if (!area.width || !area.height) return;
   if (M.to) stopCam();
+  // the spring keeps where it is itself, so a step too small to draw is not lost; a camera another hand moved since,
+  // the wheel's, is where it goes on from
+  // `at` and `speed` hold the middle's x and y and the zoom's log, in that order; `around` is the place framed about,
+  // and `views` the two views the camera is set to in turn, written in place, so a frame allocates nothing and a view
+  // another hand set is still told from follow2d's own
+  const go = FOLLOW.go2d ||= {cam: null, at: new Float64Array(3), speed: new Float64Array(3), around: {x: 0, y: 0},
+    views: [{x: 0, y: 0, w: 0, h: 0}, {x: 0, y: 0, w: 0, h: 0}]};
   // framed again only when the place has moved by more than a little of the view: the figure's least size on the
   // screen moves its place as the zoom changes, so framing at each step of that would chase it
   const around = FOLLOW.around, moved = !around || Math.hypot(x - around.x, y - around.y) > M.cam.w * 0.02;
   if (at && FOLLOW.scale && FOLLOW.node && moved) {
-    Object.assign(FOLLOW, {scale: framing2d(FOLLOW.node, {x, y}, area), around: {x, y}});
+    go.around.x = x; go.around.y = y;
+    FOLLOW.scale = framing2d(FOLLOW.node, go.around, area);
+    FOLLOW.around = go.around;
   }
-  // the spring keeps where it is itself, so a step too small to draw is not lost; a camera another hand moved since,
-  // the wheel's, is where it goes on from
-  const go = FOLLOW.go2d ||= {cam: null, x: 0, y: 0, zoom: 0, vx: 0, vy: 0, vzoom: 0};
+  const place = go.at, speed = go.speed;
   if (go.cam !== M.cam) {
-    Object.assign(go, {x: M.cam.x + M.cam.w / 2, y: M.cam.y + M.cam.h / 2, zoom: Math.log(area.width / M.cam.w)});
+    place[0] = M.cam.x + M.cam.w / 2; place[1] = M.cam.y + M.cam.h / 2; place[2] = Math.log(area.width / M.cam.w);
   }
-  [go.x, go.vx] = spring(go.x, go.vx, x, passed);
-  [go.y, go.vy] = spring(go.y, go.vy, y, passed);
+  spring(place, speed, 0, x, passed);
+  spring(place, speed, 1, y, passed);
   // the zoom goes in only as far as keeps the figure within a fifth of the view of its middle, so a figure the middle
   // has not reached yet is never zoomed out of sight
-  const keep = Math.min(area.width / Math.max(1e-6, Math.abs(x - go.x)),
-    area.height / Math.max(1e-6, Math.abs(y - go.y)));
-  const goal = FOLLOW.scale && Math.min(FOLLOW.scale, Math.max(keep * 0.2, Math.exp(go.zoom)));
-  [go.zoom, go.vzoom] = goal ? spring(go.zoom, go.vzoom, Math.log(goal), passed) : [go.zoom, 0];
-  const w = area.width / Math.exp(go.zoom), height = area.height / Math.exp(go.zoom);
-  const cam = {x: go.x - w / 2, y: go.y - height / 2, w, h: height};
+  const keep = Math.min(area.width / Math.max(1e-6, Math.abs(x - place[0])),
+    area.height / Math.max(1e-6, Math.abs(y - place[1])));
+  const goal = FOLLOW.scale && Math.min(FOLLOW.scale, Math.max(keep * 0.2, Math.exp(place[2])));
+  if (goal) spring(place, speed, 2, Math.log(goal), passed); else speed[2] = 0;
+  const w = area.width / Math.exp(place[2]), height = area.height / Math.exp(place[2]);
+  const cam = M.cam === go.views[0] ? go.views[1] : go.views[0];
+  cam.x = place[0] - w / 2; cam.y = place[1] - height / 2; cam.w = w; cam.h = height;
   if (!near(cam, M.cam)) setCam(cam);
   go.cam = M.cam;
 }

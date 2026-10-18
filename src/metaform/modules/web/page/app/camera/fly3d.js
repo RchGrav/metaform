@@ -66,7 +66,11 @@ export function fly3d(id, close = true) {
   const view = framed([ball(node), ...around.map(ball)], {room: 70, on: node, toward: 1, facing});
   const whole = framed(fitBalls(data), {facing, mass: fitTrim()}).far;
   // `close` 'whole': turned to the node at the whole map's distance, the map around it, `follow3d`
-  if (close === 'whole') { view.far = whole; V3.auto = false; flyTo(view); V3.focus = null; return true; }
+  if (close === 'whole') {
+    view.far = whole; V3.auto = false; flyTo(view, {done: () => pivotOn(node.id)}); V3.focus = null;
+    if (FLIGHT.on) PIVOT.pending = node.id;  // taken up by a hand that cuts the flight short
+    return true;
+  }
   // a selection keeps the zoom the person has
   view.far = close ? Math.min(Math.max(view.far, Math.log(ballOf(node) * 7)), whole + Math.log(0.4))
     : (FLIGHT.on ? FLIGHT.to.far : cameraNow().far);
@@ -78,7 +82,8 @@ export function fly3d(id, close = true) {
   V3.auto = false;
   const sign = close ? tags.get(node.id)?.sprite : null;  // a join's, its receiver's, which bears its title
   if (sign?.scale.x && !MEM.key && flyToSign(sign, node, view, data)) return true;
-  flyTo(view);
+  flyTo(view, {done: () => pivotOn(node.id)});
+  if (FLIGHT.on) PIVOT.pending = node.id;  // taken up by a hand that cuts the flight short
   return true;
 }
 /* The three nearest of a node's neighbours drawn, its own links' ends and, selected, its neighbours in the map. */
@@ -103,15 +108,17 @@ function flyToSign(sign, node, view, data) {
   const out = face.length();
   if (out <= 1e-6) return false;
   face.divideScalar(out);
-  const reach = Math.max(Math.exp(view.far) - out, 1e-3);
-  // How near the agents circling the node come to the eye: their orbit, its rise and fall, and a figure's size.
-  const size = ROAM.drawn || sizeOf(data), ring = (ballOf(node) + size * ROAM.orbit) * 1.05 + size * 1.3;
-  MEET.back = {id: node.id, far: view.far};
   // in Flat the sign stands above its node and faces the eye, so the camera meets it facing the plane
   const square = flatNow() ? flatFacing()
     : {turn: Math.atan2(face.x, face.z), tilt: Math.acos(Math.max(-1, Math.min(1, face.y)))};
-  flyTo({x: sign.position.x, y: sign.position.y, z: sign.position.z, ...square, far: Math.log(reach)},
-    {done: () => meetBegins(reach, reach + out - ring)});
+  const end = {x: sign.position.x, y: sign.position.y, z: sign.position.z, ...square,
+    far: Math.log(Math.max(Math.exp(view.far) - out, 1e-3))};
+  const reach = Math.exp(end.far);
+  // How near the agents circling the node come to the eye: their orbit, its rise and fall, and a figure's size.
+  const size = ROAM.drawn || sizeOf(data), ring = (ballOf(node) + size * ROAM.orbit) * 1.05 + size * 1.3;
+  MEET.back = {id: node.id, far: view.far};
+  flyTo(end, {done: () => { meetBegins(reach, reach + out - ring); pivotOn(node.id); }});
+  if (FLIGHT.on) PIVOT.pending = node.id;  // taken up by a hand that cuts the flight short
   V3.focus = node.id;
   if (small3d() && node.id === selectedNode()) {  // the selection's node, a join's receiver
     V3.hold = {id: node.id, node, data, x: node.x, y: node.y, z: node.z, shape: null, out: null};
@@ -168,6 +175,61 @@ export function holdMet(data) {
 }
 const HELD = {from: new THREE.Vector3(), to: new THREE.Vector3(), out: new THREE.Vector3(),
   turn: new THREE.Quaternion()};
+/* While a node is selected the map turns about it: once a flight has brought the camera to the selection's node,
+ * `fly3d`, the point the camera turns about, the orbit controls' target, eases from where the flight left it, the met
+ * sign, to the node's centre, the camera held where it stands; meeting the sign square on, the camera, the sign and the
+ * node stand on one line, so the eye does not turn at all, and in Flat a little. The point then goes with the node as
+ * the layout moves it, and the camera by the same step, so a drag swings the map round the node and the node stays
+ * where it is on the screen; the small area's hold moves both itself, `holdMet`. The wheel zooms along the line to the
+ * node rather than toward the pointer, which slid the point off the node into space. A hand's pan moves the point,
+ * and the node is followed from where the hand left it. It lets go at another flight, another selection or none, a
+ * memory network, an agent's eyes or an agent followed, whose figure the camera goes with, `followIn3d`. A hand that
+ * takes the camera during the flight, which then never arrives, takes the pivot up at once, `pending`, `steer3d`. */
+export const PIVOT = {id: null, node: null, data: null, x: 0, y: 0, z: 0, start: -1, from: new THREE.Vector3(),
+  pending: null};
+const PIVOT_EASE = 0.35;
+export function pivotOn(id) {
+  PIVOT.pending = null;
+  if (!G || id !== selectedNode() || MEM.key || V3.eyes || FOLLOW.work) return;
+  const data = G.graphData(), node = nodeIn(data, id);
+  if (!node || node.x === undefined) return;
+  Object.assign(PIVOT, {id, node, data, x: node.x, y: node.y, z: node.z, start: performance.now()});
+  PIVOT.from.copy(G.controls().target).sub(NODE_AT.set(node.x, node.y, node.z));
+  G.controls().zoomToCursor = false;
+  wake3d();
+}
+export function pivotEnds() {
+  PIVOT.pending = null;
+  if (PIVOT.id === null) return;
+  PIVOT.id = PIVOT.node = PIVOT.data = null;
+  PIVOT.start = -1;
+  G.controls().zoomToCursor = true;
+}
+export function pivot3d(now, data) {
+  if (PIVOT.id === null) return;
+  if (PIVOT.id !== selectedNode() || MEM.key || V3.eyes || FOLLOW.work) { pivotEnds(); return; }
+  if (PIVOT.data !== data) {
+    PIVOT.data = data;
+    PIVOT.node = nodeIn(data, PIVOT.id);
+    if (!PIVOT.node) { pivotEnds(); return; }
+  }
+  const node = PIVOT.node;
+  if (node.x === undefined) return;
+  const dx = node.x - PIVOT.x, dy = node.y - PIVOT.y, dz = node.z - PIVOT.z;
+  PIVOT.x = node.x; PIVOT.y = node.y; PIVOT.z = node.z;
+  const camera = G.camera(), target = G.controls().target;
+  if (!V3.hold && (dx !== 0 || dy !== 0 || dz !== 0)) {
+    target.x += dx; target.y += dy; target.z += dz;
+    camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
+    FRAMES.moved = true;
+  }
+  if (PIVOT.start < 0) return;
+  const s = reduced() ? 1 : Math.min(1, (now - PIVOT.start) / (PIVOT_EASE * 1000)), e = 1 - s * s * (3 - 2 * s);
+  target.set(node.x + PIVOT.from.x * e, node.y + PIVOT.from.y * e, node.z + PIVOT.from.z * e);
+  camera.lookAt(target);
+  FRAMES.moved = true;
+  if (s === 1) PIVOT.start = -1;
+}
 /* Meeting a sign, VIEW-005: the camera's near plane is moved out to just short of the sign, so the nodes, signs and
  * edges between the eye and it are not drawn and it is read whole; it eases there and back. The plane is the camera's
  * own, set back to its value when the meeting ends. */

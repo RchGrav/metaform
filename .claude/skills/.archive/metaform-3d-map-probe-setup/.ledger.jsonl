@@ -1,0 +1,3 @@
+{"action": "create", "reason": "Probe harness pitfall that cost a debugging loop: V silently refuses in the small area unless metaform.swapped is cleared. No existing skill covers probe setup for the 3D map.", "evidence": "references/evidence-053f66e4.md"}
+{"action": "patch", "reason": "The 3D pivot probe and its browser test showed that async wait predicates end immediately and that before/after needs HEAD copies; both are probe-setup pitfalls this skill is the home for.", "evidence": "references/evidence-28fec5b4.md"}
+{"action": "delete", "reason": "Absorbed into the metaform-3d-map umbrella as its probe-setup subsection; the content is carried in full.", "evidence": "references/evidence-37241b4f.md", "absorbed_into": "metaform-3d-map"}

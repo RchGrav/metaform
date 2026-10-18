@@ -40,7 +40,7 @@ CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
                'map_challenges'),
     'ticket': ('map_work', 'map_where', 'dispatch_handoff', 'dispatch_link', 'map_messages', 'map_reply',
                'map_answer', 'dispatch_attach', 'dispatch_timer'),
-    'remember': ('memory_read_graph', 'memory_search_nodes', 'memory_open_nodes', 'memory_create_entities',
+    'memory': ('memory_read_graph', 'memory_search_nodes', 'memory_open_nodes', 'memory_create_entities',
                  'memory_add_observations', 'memory_create_relations', 'memory_joins', 'memory_note', 'memory_graph',
                  'memory_orphaned', 'memory_rekey', 'memory_unjoin', 'memory_delete_entities',
                  'memory_delete_observations', 'memory_delete_relations'),
@@ -69,7 +69,7 @@ CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
 }
 # The category of a module's tools that no category above names and whose verb names none.
 MODULE_CATEGORY: dict[str, str] = {
-    'map': 'orient', 'memory': 'remember', 'dispatch': 'steer', 'intake': 'intake', 'web': 'show',
+    'map': 'orient', 'memory': 'memory', 'dispatch': 'steer', 'intake': 'intake', 'web': 'show',
     'workflow': 'workflow', 'mcp': 'coordinate', 'agents': 'steer', 'orchestration': 'coordinate',
     'fork': 'setup', 'twilio': 'setup',
     'paperclip': 'coordinate', 'metaform': 'setup'}
@@ -91,6 +91,10 @@ HELD_ARGUMENTS: dict[str, tuple[str, ...]] = {
     'dispatch_handoff': ('full',)}  # the full brief, no longer sent to agents, is the person's to read
 STEER = 'steer'  # what a role the person holds back, roles_without_authority, never opens
 ALWAYS = ('metaform_feedback',)  # runs for every role, so a fault can always be reported, MCP-006
+# The categories listed beside whichever one is open: the memory prompt asks every agent to read the memories where it
+# works and keep them current as it works, removing what is outdated, so those tools are never a category away
+# (2026-10-18, the person's decision after agents left memories stale).
+BESIDE = ('memory',)
 
 assert set(CATEGORY_TOOLS) == set(CATEGORY_NAMES), 'one entry for each category the chassis names'
 

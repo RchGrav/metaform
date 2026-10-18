@@ -1,0 +1,1 @@
+live-only-visual-defect-probe [project]: Use when a live page shakes but headless tests pass.

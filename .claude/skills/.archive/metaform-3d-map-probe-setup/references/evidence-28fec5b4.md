@@ -1,0 +1,1 @@
+The first version waited on async predicates, which Playwright ends at once, so it now waits on synchronous ones.

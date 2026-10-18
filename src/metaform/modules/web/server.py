@@ -783,7 +783,14 @@ class Handler(BaseHTTPRequestHandler):
         self.answer('GET')
 
     def do_POST(self) -> None:
-        self.answer('POST')
+        self.body_read = False
+        try:
+            self.answer('POST')
+        finally:
+            # a POST answered without its body read, a refusal among them, leaves the body on the connection, where it
+            # would be taken for the start of the next request: such a connection is closed instead
+            if not self.body_read and int(self.headers.get('Content-Length') or 0) > 0:
+                self.close_connection = True
 
     def answer(self, method: str) -> None:
         self.begun = False  # one connection carries many requests; each starts unanswered
@@ -2587,6 +2594,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length') or 0)
         if length < 0:
             raise ValueError(length)
+        self.body_read = True
         return json.loads(self.rfile.read(length) or b'null')
 
     def page_key_given(self) -> str | None:

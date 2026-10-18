@@ -13,6 +13,8 @@ import {FRAMED, S, reach, read, viewLayers} from '/page/app/core/reads.js';
 import {readFailed, pageFailed} from '/page/app/core/errors.js';
 import {sideAt} from '/page/app/header/layers.js';
 import {ROAM} from '/page/app/figures/agents.js';
+import {BUBBLE} from '/page/app/figures/cut.js';
+import {NOTICES} from '/page/app/core/banner.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
 import {VIEW_SETTINGS, shapes3d} from '/page/app/map3d/light.js';
 import {G, start3D, FRAMES} from '/page/app/map3d/graph3d.js';
@@ -261,6 +263,13 @@ function applyView(view) {
   if (shapes !== VIEW_SETTINGS.shapes) { VIEW_SETTINGS.shapes = shapes; shapes3d(); if (M.base) build2D(); }
   Object.assign(FRAMES, {idle: 1000 * Number(view.flow_seconds ?? 30), rest: view.idle_flow ? null : 0});
   fitDirection2d(view.map_direction);  // web_map_direction, the 2D map's way, `fitPin2d`
+  BUBBLE.seconds = view.bubble_seconds ?? 'auto';  // web_bubble_seconds, for the mascot's bubble
+  NOTICES.on = view.notices === true;  // web_notices, whether a notice raises a banner
+}
+/* web_bubble_seconds changed on this page, from the Agents menu: every bubble takes it at once. */
+export function takeBubbleSeconds(seconds) {
+  WS.view().bubble_seconds = seconds;
+  BUBBLE.seconds = seconds;
 }
 // Where a node's sign is on the screen, its four corners projected as the scene draws them, for a check of its framing.
 window.metaform.signRect = id => {

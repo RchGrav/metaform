@@ -130,10 +130,18 @@ settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                 details='Each join waits (random + random) times this after each cycle, a fresh wait every time, so '
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.',
                 label='Pulse length', category='advanced', heading='Flow')
-settings.number('web_bubble_seconds', 5, min=1, max=120, scope='global',
-                help="How long, in seconds, an agent's speech bubble stays up after each new line it says.",
-                details='The next line the agent says brings the bubble back; between lines it fades out.',
+settings.choice('web_bubble_seconds', ['auto', '3', '5', '10', '15', '20', '30', '60'], 'auto', scope='global',
+                help="How long a word bubble stays up after each new line: auto, by its words, or seconds.",
+                details='Auto shows a line 3 s and half a second for each wait in it: each vowel, y, digit and stop or '
+                        'pause mark, a vowel pair said as one sound counted once. The next line brings the bubble '
+                        'back; between lines it fades out. Also in the Agents menu.',
                 label='Word bubble shown for', category='advanced')
+settings.boolean('web_notices', False, scope='global',
+                 help='Show notices, such as Metaform was updated, as banners at the top of the page that you close.',
+                 details='Off, the default, a notice raises no banner: what it says reaches you in the chat, and an '
+                         'updated page reloads itself when you leave it. Problems, such as a read that failed or a '
+                         'server that does not answer, are always shown.',
+                 label='Pop-up notices', category='advanced')
 settings.boolean('web_idle_flow', True, scope='global',
                  help='Keep the dots flowing for as long as the page is open, past web_flow_seconds.',
                  details='On, an idle map is still drawn at the full frame rate so the flow never stops and stays '

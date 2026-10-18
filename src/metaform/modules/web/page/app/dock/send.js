@@ -18,11 +18,11 @@ import {narrowPage, resetDock} from '/page/app/dock/place.js';
 import {wrote} from '/page/app/board/history.js';
 import {isIntake} from '/page/app/session/tools.js';
 import {showGallery, withContext} from '/page/app/session/apps.js';
-import {messageRow} from '/page/app/session/text.js';
+import {messageRow, CLICK_LEAD} from '/page/app/session/text.js';
 import {notificationState} from '/page/app/session/orchestration.js';
 import {sessionPop} from '/page/app/session/settings.js';
 import {posted} from '/page/app/intake/intake.js';
-import {sharing, startShare, shareFrame} from '/page/app/figures/eyes.js';
+import {sharing, startShare, shareFrame, CLICKED, clickedWords} from '/page/app/figures/eyes.js';
 
 /* A start that answered before its session runs: a resume names its session at once, though the session is live only
  * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
@@ -68,7 +68,8 @@ export async function deliverQueued(session) {
     for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
       if (DOCK.target !== work) return;
       item.state = 'sending';
-      item.text = withContext({work, session: session.session_id}, item.text);  // what its views kept for the agent
+      const lead = item.clicked ? `${item.clicked}\n\n` : '';  // what the person clicked stays first
+      item.text = lead + withContext({work, session: session.session_id}, item.text.slice(lead.length));
       const done = await posted('/api/dispatch-message', {work_id: work, session: session.session_id, text: item.text});
       if (!done.ok) {
         item.state = 'waiting';
@@ -83,7 +84,9 @@ export async function deliverQueued(session) {
 /* A start or a send that failed: why, in the chat, and every message still waiting back in the box, so nothing
  * written is lost. */
 export function startFailed(reason, next = null) {
-  const waiting = DOCK.queue.filter(item => item.state !== 'sent').map(item => item.text);
+  // what the person wrote, without the line about their click, which was never theirs to see in the box
+  const waiting = DOCK.queue.filter(item => item.state !== 'sent')
+    .map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
   DOCK.queue = DOCK.queue.filter(item => item.state === 'sent');
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
@@ -133,13 +136,23 @@ export function stayedOff(stopped) {
   return (stopped?.stay_connected === false ? (($('#helpdesk .stay input').checked = false),
     ' Stay connected is off for this project until you check it again.') : '') + queuePaused(stopped);
 }
-/* The person's stop of an agent while Autostart is on turns Autostart off, dispatch's `paused`, so no waiting ticket
+/* The person's stop of an agent while Full Auto is on turns Full Auto off, dispatch's `paused`, so no waiting ticket
  * starts in its place: the switch follows, and the toast says so. UX review round 1, 2026-10-17. */
 export function queuePaused(stopped) {
   if (stopped?.autostart !== false) return '';
   $('#autostartAgents').checked = false;
-  return ` ${stopped.notice || 'Autostart agents is now off for this project.'}`;
+  return ` ${stopped.notice || 'Full Auto is now off for this project.'}`;
 }
+/* The one line that tells the person's system agent what they last clicked, the page's `CLICKED`: given within
+ * CLICK_FRESH of the click, and only with the first message sent since it, so "this" in what they write names it.
+ * Ticket code.interface.graphical#124, 2026-10-18. */
+const CLICK_FRESH = 120000;
+function clickedLine() {
+  const ago = Date.now() - CLICKED.at;
+  if (!CLICKED.at || CLICKED.told || CLICKED.project !== S.project || ago > CLICK_FRESH) return '';
+  return `${CLICK_LEAD}${Math.round(ago / 1000)} s before: ${clickedWords()}.`;
+}
+const toSystem = () => !DOCK.target || DOCK.target === DOCK.mine || DOCK.chat?.source === 'system';
 /* What the person writes goes to the agent on view, with the files attached; a /command is the chat's or the
  * agent's; with no agent there yet it waits in the thread, and one is reached. */
 async function sendMessage(event) {
@@ -166,8 +179,10 @@ async function sendMessage(event) {
       : DOCK.state?.capabilities?.image !== true ? 'This agent does not take pictures, so the frame was not sent; '
         + 'remove it to send your words alone.' : null;
   if (refused) { box.value = text; growSay(); return toast(refused); }
+  const told = !fork && toSystem() ? clickedLine() : '', lead = told ? `${told}\n\n` : '';
   if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
-    DOCK.queue.push({id: ++QUEUE_ID, text: text + attached, state: 'waiting', at: Date.now()});
+    DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, clicked: told, state: 'waiting', at: Date.now()});
+    CLICKED.told = true;
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
     drawHelpdesk();
@@ -175,10 +190,12 @@ async function sendMessage(event) {
   }
   // a spoken message's recording goes with it, where the agent takes audio
   const audio = await voiceAudio(text, !fork && DOCK.state?.capabilities?.audio === true);
-  const said = fork ? text + attached : withContext({work: DOCK.target, session: DOCK.session}, text + attached);
+  const said = fork ? text + attached
+    : lead + withContext({work: DOCK.target, session: DOCK.session}, text + attached);
   const sent = await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: said,
     ...(fork ? {fork} : {}), ...audio, ...(frame ? {image: frame.jpeg} : {})});
   if (sent) {
+    CLICKED.told = true;  // a message has gone since the click
     DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else { box.value = text; growSay(); }

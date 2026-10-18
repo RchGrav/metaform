@@ -1,7 +1,7 @@
 /* Live: what modules publish pushed to the page, VIEW-018, the intake followed as it is recorded, and changes
  * applied as they come. */
 import '/page/app/build/build.js';  // the part before runs first, so the parts run in the page's order
-import {$, h, fill} from '/page/app/core/dom.js';
+import {$, h, fill, writingInPanel} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {renderChips} from '/page/app/header/layers.js';
@@ -45,7 +45,7 @@ export async function loadLive() {
   if (!following()) return;
   const keep = S.selected && (S.elements.has(S.selected) || joinOf(S.selected)) ? S.selected : null;
   const start = keep || (S.cleared ? null : entryOf());  // a selection let go of stays let go, VIEW-008
-  if (start) select(start, false, false, false, true);
+  if (start && !(keep && writingInPanel())) select(start, false, false, false, true);  // their words stay
   else if (S.cleared && S.elements.size) noneSelected();
   else fill($('#p-object'), h('p', {class: 'empty'}, 'Nothing to show in these layers yet.'));
 }

@@ -71,12 +71,15 @@ Understand the goal through the project before acting. Use project evidence and 
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
 </glossary>
-<!-- The heading of metaform://tools: every tool on the folder's surface, one line each, generated from the tools'
-     declarations so it never drifts: under the prefix of the module that serves it, the tool's name after the prefix
-     and the head of its description's first sentence. An agent whose AI tool lists tools by name only reads it once
-     and knows what each is for; a tool's arguments come with it when the agent loads it. Empty leaves the heading
-     out. -->
-<tool_index>Metaform's tools by module, one line each: map_ then where is map_where. A tool's arguments come with it when you load it.</tool_index>
+<!-- The heading of metaform://tools, which every agent's connect message links to: every tool the agent's role is
+     given, one line each, generated from the tools' declarations so it never drifts, under the category it is found
+     by with what the category is for. An agent reads it when it needs a tool it is not listed; a tool's arguments come
+     with it when the agent loads it. Wording revised by the system agent on 2026-10-18 for the grouping by category,
+     awaiting the owner's approval. Empty leaves the heading out. -->
+<tool_index>Every Metaform tool you can use, by category: what each category is for, then its tools by name. Open a category with metaform_catalog category=&lt;name&gt; to list its tools, or run one with metaform_catalog tool=&lt;name&gt;. A tool's description and arguments come with it when you load it.</tool_index>
+<!-- The line that ends metaform://tools when the list passes its strict limit, TOOLS_MOST characters in the mcp server, in
+     place of what is cut. A draft by the system agent, 2026-10-18. Empty uses the server's own short line. -->
+<tool_index_more>… more tools: find them with metaform_catalog search=&lt;words&gt;.</tool_index_more>
 <!-- The heading of the rules block that follows the tool index in metaform://tools. The block gathers the <rules>
      of every enabled module on the folder's surface, one line each, written "[module] <rule> Why: <why>", so an agent
      reads them once with the tools. A module writes its rules in its own prompts.xml as
@@ -257,7 +260,7 @@ Understand the goal through the project before acting. Use project evidence and 
      The element is category_<name>, - written _. Empty shows the category by its name alone. -->
 <category_orient>Find and read the part of the project you work on: an Address's element, what it receives and provides, its layers, items and history, and the project's terms.</category_orient>
 <category_ticket>Work a ticket: read it, plan it, report each step, close it, link the files you change, and answer the questions left at nodes.</category_ticket>
-<category_remember>Read and record what happened in the work at a node, as memory on its receiving element.</category_remember>
+<category_memory>Read and record what happened in the work at a node, as memory on its receiving element.</category_memory>
 <category_coordinate>Reach the other agents: see who is at work where, send a note to an agent, a part of the map or a file, and send work to A2A peers.</category_coordinate>
 <category_change_map>Change the map: refine an element or join, build knowledge layers and add terms, promote a join, show or hide layers, or open a verification pass that adds a part the map lacks.</category_change_map>
 <category_intake>Map the AUE into its elements and purpose records: the intake procedure, its schema, and the calls that record and finish it.</category_intake>

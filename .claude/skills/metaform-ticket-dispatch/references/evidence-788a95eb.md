@@ -1,0 +1,1 @@
+Task failed: Error: Every agent slot is in use: dispatch_agents allows 5 agents at once, held by code.interface.graphical#cc "An eased clearance cannot keep the camera out of the figure", code.interface.graphical#d5 ... It stays in To do and starts by itself when a slot frees.

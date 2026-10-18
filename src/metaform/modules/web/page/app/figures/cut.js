@@ -13,12 +13,13 @@ import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT} from '/page/app/map3d/labels.js';
 import {tintOf, fxLine} from '/page/app/flow/fx3d.js';
 import {V3} from '/page/app/camera/flight.js';
-import {speechBubble} from '/page/app/figures/bubble.js';
+import {speechBubble, bubbleSeconds} from '/page/app/figures/bubble.js';
 
 /* A word bubble over the mascot, in 3D and 2D: a short line in its voice, eased in and out, placed over the figure
  * each frame so it reads at any angle; one at a time, never piled up. `say` shows one for a while; a click on it does
  * what `onClick` says. */
-export const BUBBLE = {el: null, text: '', until: 0, click: null};
+// `seconds`: web_bubble_seconds, auto or a number, set from the view as the page reads it
+export const BUBBLE = {el: null, text: '', until: 0, click: null, seconds: 'auto'};
 export function bubble() {
   if (BUBBLE.el) return BUBBLE.el;
   BUBBLE.el = h('div', {class: 'mascot-bubble', role: 'status', 'aria-live': 'polite'});
@@ -48,13 +49,8 @@ export function say(text, seconds = 4, onClick = null, who = null, name = '') {
   el.classList.add('on');
   wake3d(seconds * 1000);
 }
-/* How long a line stays up: time to read it, 3 s and a second for each 15 letters, at most 30 s. A Chinese, Japanese
- * or Korean character holds as much as a word's worth of letters, so it counts as 3. */
-const WIDE = /[ᄀ-ᇿ⺀-鿿가-힯豈-﫿＀-￯]/g;
-export function readFor(text) {
-  const words = String(text || '');
-  return Math.min(30, 3 + (words.length + 2 * (words.match(WIDE)?.length || 0)) / 15);
-}
+/* How long a line stays up, by web_bubble_seconds, `bubbleSeconds`. */
+export const readFor = text => bubbleSeconds(text, BUBBLE.seconds);
 export function hush() { BUBBLE.until = 0; BUBBLE.el?.classList.remove('on'); }
 export function placeBubble() {  // over the mascot as it is drawn: the large map's figure, else the 2D one
   if (!BUBBLE.el) return;

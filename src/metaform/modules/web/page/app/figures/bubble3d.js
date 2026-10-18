@@ -5,8 +5,8 @@
  * keep their size. The drawing becomes the texture of a plane in the scene, not a layer over the map: it faces the
  * camera, is the same readable size on the screen at any distance, and is drawn over the map so its words can be read; a
  * nearer bubble covers a farther one, and an agent farther than the nearest one talking is drawn dimmer, still solid.
- * Every bubble stays inside the view and apart from the others, `apart`. A new line shows for web_bubble_seconds (5 by
- * default) and goes, fading in and out by the clock, so at any frame rate; the pointer on an agent brings its last line
+ * Every bubble stays inside the view and apart from the others, `apart`. A new line shows for web_bubble_seconds (auto by
+ * default, by its words, `bubbleSeconds`) and goes, fading in and out by the clock, so at any frame rate; the pointer on an agent brings its last line
  * back. In the agent view, V, the agent seen through has no body on the screen, so its words are at the bottom of the
  * view for as long as it says them, `atBottom`. It is drawn again only when its words change, never each frame. The
  * words are the newest line the agent said in its thread, `said` on its session from the server, never its tool calls
@@ -18,6 +18,7 @@ import {ROAM} from '/page/app/figures/agents.js';
 import {D} from '/page/app/agents/dispatch.js';
 import {G, STAGE, wake3d} from '/page/app/map3d/graph3d.js';
 import {WS} from '/page/app/workspace/workspace.js';
+import {bubbleSeconds} from '/page/app/figures/bubble.js';
 
 const LOOK = {
   most: 140,  // the most characters shown; a longer line is cut at a word with an ellipsis
@@ -131,15 +132,16 @@ function made(id) {
   mesh.raycast = () => {};  // never in the way of a click
   G.scene().add(mesh);
   // at: when its fade last stepped; head: how far its agent's head is; far: what `layer` sorts by; seen: the frame it
-  // was last on; fixed: at the bottom of the agent view
+  // was last on; fixed: at the bottom of the agent view; lasts: how long its line shows, in ms, set as it is drawn
   const bubble = {id, mesh, canvas, texture, text: '', drawn: null, born: 0, shown: 0, line: '', lineAt: 0,
-    at: performance.now(), head: 0, far: 0, seen: 0, fixed: false};
+    at: performance.now(), head: 0, far: 0, seen: 0, fixed: false, lasts: 0};
   BUBBLES.set(id, bubble);
   return bubble;
 }
 /* Draw new words into the bubble's texture: the SVG is made an image, and the image is painted once. */
 function draw(bubble, text) {
   bubble.text = text;
+  bubble.lasts = 1000 * bubbleSeconds(text, WS.view()?.bubble_seconds ?? 'auto');
   const {svg, width, height, tip} = bubbleSVG(text);
   const image = new Image();
   image.onload = () => {
@@ -305,7 +307,6 @@ export function bubbles3d() {
   // a world unit per screen pixel, at a distance of one: the bubbles are the same size on the screen at any distance
   const perPixel = BUBBLE_SIZES[SIZE.at] * 2 * Math.tan(camera.fov * Math.PI / 360)
     / (STAGE.height || 1);
-  const shows = 1000 * (Number(WS.view()?.bubble_seconds) || 5);
   SHOWN.length = 0;
   for (const [id, figure] of ROAM.figures) {
     const said = figure.stage === 'leaving' || figure.done ? null : saying(figure), text = said?.text || '';
@@ -313,14 +314,14 @@ export function bubbles3d() {
     if (!text && !bubble) continue;
     bubble ||= made(id);
     bubble.seen = frame;
-    // a new line starts its time; the same line growing as it streams is drawn again but keeps its time, so no
-    // bubble stays up past web_bubble_seconds however long its agent talks
+    // a new line starts its time; the same line growing as it streams is drawn again and keeps its start, its time
+    // set again by its words, `lasts`
     if (said && said.line !== bubble.line) { bubble.line = said.line; bubble.lineAt = now; }
     if (text && text !== bubble.text) draw(bubble, text);
     // a new line shows for web_bubble_seconds and goes; the pointer on the agent brings its last line back; the agent
     // seen through in the agent view shows what it says for as long as it says it
     const watched = figure.mesh === WATCHED.mesh;
-    const fresh = text && (watched || now - bubble.lineAt < shows), hovered = under === id && bubble.text;
+    const fresh = text && (watched || now - bubble.lineAt < bubble.lasts), hovered = under === id && bubble.text;
     const want = bubble.drawn && (fresh || hovered) ? 1 : 0;
     // by the clock, not by the frame, so it comes and goes in the same time at any frame rate
     bubble.shown += (want - bubble.shown) * (reduced() ? 1 : 1 - Math.exp(-(now - bubble.at) / LOOK.fade));

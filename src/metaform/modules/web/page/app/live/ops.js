@@ -1,7 +1,7 @@
 /* The ops since the drawn sequence applied to what is drawn, STORE-046, reads spaced while agents write, tickets and
  * agents changed, and the stream. */
 import '/page/app/live/stream.js';  // the part before runs first, so the parts run in the page's order
-import {$, h} from '/page/app/core/dom.js';
+import {$, h, writingInPanel} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, MEM, FRAMED, read} from '/page/app/core/reads.js';
 import {moduleNotices, readFailed} from '/page/app/core/errors.js';
@@ -83,6 +83,7 @@ export async function appliedOps() {
     if ($('#p-prov').hidden === false) import('/page/app/panel/agentview.js').then(part => part.renderProv());
     return true;
   }
+  let mine = false;  // whether an op concerns the selected node, whose panel is then drawn again
   for (const op of ops) {
     if (noted(op) && noteLayer(op)) continue;
     if (op.kind === 'layer' || op.kind === 'selection') return false;  // what is in view may have changed
@@ -91,6 +92,7 @@ export async function appliedOps() {
     if (layer === null && op.op !== 'remove') return false;  // a layer this page has not read yet
     if (layer === false) continue;  // not in view: nothing to draw
     if (!applyOp(op, layer)) return false;
+    mine ||= concernsSelected(op);
   }
   const byAddress = addressesNow();
   for (const entry of S.elements.values()) entry.parent = holderOf(entry.element, byAddress);
@@ -100,8 +102,27 @@ export async function appliedOps() {
   draw3D();
   renderLegend();
   await build2DSoon();
-  await reselect();
+  // the Object tab is drawn again only for a change to its node, or when its node is gone; agents writing elsewhere
+  // leave it as it is, so it neither flickers nor loses the person's place (2026-10-18)
+  if (mine || !(S.selected && (S.elements.has(S.selected) || joinOf(S.selected)))) await reselect();
   return true;
+}
+/* Whether an applied op concerns the selected node: the element itself, the join selected, a join it receives or
+ * holds, or an item or property on either. A removed item cannot be placed any more, so it is taken as concerning. */
+function concernsSelected(op) {
+  const id = S.selected;
+  if (!id) return false;
+  if (op.kind === 'element') return op.id === id;
+  if (op.kind === 'join') {
+    if ('p:' + op.id === id) return true;
+    const join = S.joins.find(one => one.id === op.id);
+    return Boolean(join) && (join.receiver === id || join.elements.some(one => one.element_id === id));
+  }
+  if (op.kind !== 'item' && op.kind !== 'property') return false;
+  const item = S.items.get((op.kind === 'item' ? 'i:' : 'r:') + op.id)?.item;
+  if (!item) return true;
+  if (op.kind === 'property') return item.element_id === id;
+  return Boolean(item.target) && (item.target.kind === 'join' ? 'p:' + item.target.id : item.target.id) === id;
 }
 /* A layer's tags and the pairs it holds for re-examination are what is said of the layer, shown on its chip and in its
  * provenance, never what the map draws from it, so a change to them alone reads no map again. */
@@ -178,6 +199,7 @@ function propertyOf(common, data, kept) {
 /* The selection kept when its node still stands; else the map's DE, or its first node, is selected in its place. */
 async function reselect() {
   if (S.selected && (S.elements.has(S.selected) || joinOf(S.selected))) {
+    if (writingInPanel()) return;  // the person is writing there: their words stay, the panel catches up after
     await select(S.selected, false, false, false, true);
   } else if (S.selected) {
     const start = [...S.elements.values()].find(entry => entry.element.role === 'DE')?.element.id
@@ -330,6 +352,7 @@ function atSelected(ticket) {
 }
 /* The selected node's open work pills and its Work box drawn again, the rest of its panel kept as it is. */
 function workInPanel() {
+  if (writingInPanel()) return;  // an issue being raised is never redrawn away
   const id = S.selected, join = id && !MEM.key && id.startsWith('p:') ? joinOf(id) : null;
   const element = id && !MEM.key && !join ? S.elements.get(id)?.element : null;
   const pane = $('#p-object');

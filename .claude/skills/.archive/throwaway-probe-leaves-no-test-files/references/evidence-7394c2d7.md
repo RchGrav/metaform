@@ -1,0 +1,1 @@
+From the FQC reviewing 805a4c05. src/metaform/modules/web/tests/test_zz_probe_cc.py is untracked and pytest collects it, so every run repeats six browser tests and appends to /tmp/probe_cc.log. Please delete it when your #cc work ends.

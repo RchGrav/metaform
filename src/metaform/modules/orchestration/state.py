@@ -53,6 +53,52 @@ def delivery_report(body: str, candidate: Any, evidence: Any) -> str:
     return '\n\n'.join(parts)
 
 
+def prose(value: Any) -> str:
+    """Structured finding parts written out as text: lists and objects become clauses, never their JSON."""
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        fields = cast(Mapping[str, Any], value)
+        return '; '.join(f'{name}: {said}' for name, one in fields.items() if (said := prose(one)))
+    if isinstance(value, (list, tuple)):
+        return '; '.join(said for one in cast(Sequence[Any], value) if (said := prose(one)))
+    return str(value)
+
+
+HEADLINES = ('summary', 'finding', 'task', 'failure', 'detail', 'title')
+TITLES = ('title', 'summary', 'finding', 'failure', 'detail', 'task')
+STEPS = ('remediation', 'fix', 'steps')
+DETAILS = ('where', 'file', 'line', 'why', 'detail', 'failure', 'severity', 'evidence')
+
+
+def finding_text(fields: Mapping[str, Any]) -> tuple[str, str]:
+    """A finding's ticket title, its summary in one line, and its task: the summary, details, remediation steps and
+    verify check written out as prose."""
+    head = next((name for name in HEADLINES if prose(fields.get(name))), None)
+    named = next((name for name in TITLES if prose(fields.get(name))), None)
+    title = ' '.join(prose(fields.get(named)).split()) if named else 'Functional finding'
+    parts = [prose(fields.get(head))] if head else []
+    for name in DETAILS:
+        if name != head and prose(fields.get(name)):
+            parts.append(f'{name.capitalize()}: {prose(fields.get(name))}')
+    steps = next((fields.get(name) for name in STEPS if prose(fields.get(name))), None)
+    if isinstance(steps, (list, tuple)):
+        listed = [said for one in cast(Sequence[Any], steps) if (said := prose(one))]
+        parts.append('Remediation:\n' + '\n'.join(f'{number}. {one}' for number, one in enumerate(listed, 1)))
+    elif steps is not None:
+        parts.append(f'Remediation: {prose(steps)}')
+    if prose(fields.get('verify')):
+        parts.append(f'Verify: {prose(fields.get("verify"))}')
+    return title, '\n\n'.join(parts) or title
+
+
+def signature(title: str) -> str:
+    """A finding's normalised signature: its summary's words, lower case, without punctuation or spacing."""
+    return fingerprint(' '.join(''.join(one if one.isalnum() else ' ' for one in title.lower()).split()))[:16]
+
+
 def own(ctx: Context) -> Store:
     store = ctx.require_store()
     if store.module == 'orchestration':
@@ -156,12 +202,31 @@ def update(tx: TableTx, assignment: Mapping[str, Any], **fields: Any) -> dict[st
     return row
 
 
+def message_text(kind: str, payload: Mapping[str, Any]) -> str | None:
+    """The text a send or user message delivers, as dispatch's transport reads it; None for structured envelopes."""
+    if kind not in ('send', 'user_message'):
+        return None
+    text = payload.get('text') or payload.get('body') or payload.get('summary')
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def transition(tx: TableTx, assignment: Mapping[str, Any], kind: str, payload: Mapping[str, Any],
                key: str) -> dict[str, Any]:
     ident = identity(str(assignment['assignment_id']), kind, key)
     prior = tx.get('transitions', {'transition_id': ident})
     if prior:
         return prior
+    text = message_text(kind, payload)
+    if text is not None:
+        # The same text reaches its recipient once, whatever key, path or process queued it again: a send by its
+        # recipient assignment and sender, a user message by the person's route.
+        route = cast(Mapping[str, Any], payload.get('return_to') or {})
+        recipient = (str(assignment['assignment_id']), str(payload.get('sender_assignment_id') or '')) \
+            if kind == 'send' else ('user', str(route.get('session_id') or ''))
+        ident = identity(*recipient, kind, 'text', fingerprint(text))
+        prior = tx.get('transitions', {'transition_id': ident})
+        if prior:
+            return prior
     row = tx.insert('transitions', {'transition_id': ident, 'assignment_id': assignment['assignment_id'],
                     'work_id': assignment['work_id'], 'kind': kind, 'state': 'pending',
                     'payload': dict(payload), 'delivery': None, 'created': now(), 'updated': now()})
@@ -788,12 +853,14 @@ class Orchestration:
             returned = update(tx, held, state=state, result=result, evidence=evidence or held['evidence'],
                               candidate=candidate or held['candidate'])
             reviewed_gc = row_for(tx, assignment_id=held.get('reviewed_assignment_id'))
-            corrections = [self._correction(tx, store, reviewed_gc, held, finding, str(number))
-                           for number, finding in enumerate(findings or [])] if reviewed_gc else []
+            superseded = reviewed_gc is not None and self._decided(tx, reviewed_gc, held)
+            found = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
+                     for number, finding in enumerate(findings or [])] if reviewed_gc and not superseded else []
+            corrections = list({one['assignment_id']: one for one in found if one}.values())
             body = str(result) if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
             packet = {'kind': 'result', 'state': state, 'result': result, 'body': body,
                       'evidence': returned['evidence'],
-                      'candidate': returned['candidate'], 'findings': findings,
+                      'candidate': returned['candidate'], 'findings': findings, 'superseded': superseded,
                       'corrective_assignments': [{name: correction[name] for name in
                           ('assignment_id', 'work_id', 'team_id', 'state', 'parent_assignment_id')}
                           for correction in corrections],
@@ -836,17 +903,58 @@ class Orchestration:
             return returned
 
     @staticmethod
-    def _correction(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
-                    finding: Any, key: str) -> dict[str, Any]:
+    def _decided(tx: TableTx, gc: Mapping[str, Any], review: Mapping[str, Any]) -> bool:
+        """The person's decision superseded what a review examined: a direction of theirs reached the reviewed GC or
+        the review, or a specification change of theirs touched the reviewed ticket, since the review began."""
+        since = str(review['created'])
+        directions = cast(list[Mapping[str, Any]], [*(gc.get('pending_direction') or []),
+                                                    *(review.get('pending_direction') or [])])
+        if any(one.get('kind') == 'user_direction' and str(one.get('at') or '') >= since for one in directions):
+            return True
+        tickets = {gc['work_id'], gc['root_work_id']}
+        return any(one['source'] == 'user' and str(one['created']) >= since and tickets & set(one['affected_work_ids'])
+                   for one in tx.rows('changes', limit=0).results)
+
+    @staticmethod
+    def _finding(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
+                 finding: Any, key: str, evidence: Any) -> dict[str, Any] | None:
+        """A finding becomes corrective work only when no open ticket at its node covers it; a ticket that does
+        takes the new evidence in its note, and no second ticket or GC is made."""
         ident = identity(assessment['assignment_id'], 'correction', key)
         existing = row_for(tx, assignment_id=ident)
         if existing:
             return existing
         fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
             'task': str(finding)}
-        task = str(fields.get('task') or fields.get('finding') or fields)
+        title, task = finding_text(fields)
+        mark = f'Finding {signature(title)}'
+        source = f'review {assessment["work_id"]}'
+        observed = prose([evidence, fields.get('evidence')])
+        said = f'{mark}, from {source}.' + (f' Evidence: {observed}' if observed else '')
+        node, _ = location(store, None, gc)
+        for record in store.work(node=node, open=True, limit=0).results:
+            first = (record.task or '').strip().split('\n')[0]
+            if mark not in (record.note or '') and signature(first) != signature(title):
+                continue
+            if source not in (record.note or ''):
+                store.edit_work(record.id, {'note': f'{record.note}\n\n{said}' if record.note else said})
+            return row_for(tx, work_id=record.id)
+        return Orchestration._correction(tx, store, gc, assessment, fields, key, title=title, task=task, note=said)
+
+    @staticmethod
+    def _correction(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
+                    finding: Any, key: str, *, title: str | None = None, task: str | None = None,
+                    note: str | None = None) -> dict[str, Any]:
+        ident = identity(assessment['assignment_id'], 'correction', key)
+        existing = row_for(tx, assignment_id=ident)
+        if existing:
+            return existing
+        fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
+            'task': str(finding)}
+        if title is None or task is None:
+            title, task = finding_text(fields)
         node, places = location(store, None, gc)
-        work = store.add_work(node, None, task=task, title=fields.get('title') or task.split('\n')[0])
+        work = store.add_work(node, None, task=task, title=title, note=note)
         made = new_assignment(tx, work, 'gc', ident=ident, parent=gc, task=task, result=task,
             locations=places, mode=current_mode(tx, gc), specification=gc['specification'], candidate=gc['candidate'],
             return_to={'assignment_id': gc['assignment_id'], 'assessment_assignment_id': assessment['assignment_id']})

@@ -56,7 +56,7 @@ async function saveAutostart() {
   const project = S.project, control = $('#autostartAgents');
   control.disabled = true;
   try {
-    // the switch alone: Autostart starts each ticket with the agent its card prefers, and the default agent is the
+    // the switch alone: Full Auto starts each ticket with the agent its card prefers, and the default agent is the
     // person's own choice, made in a picker, never taken from whatever a window last showed
     const saved = await wrote('/api/dispatch-autostart', {value: control.checked});
     if (S.project !== project) return;
@@ -255,8 +255,8 @@ async function startAllTickets(tickets, pick, startAll) {
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (failed ? ` ${failed} could not start; retry their tickets.` : '')
     + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
-      ? 'with Autostart agents checked they start as agents finish.'
-      : 'they wait until you start them or check Autostart agents.') : ''));
+      ? 'with Full Auto checked they start as agents finish.'
+      : 'they wait until you start them or check Full Auto.') : ''));
   await renderBoard();
 }
 /* One ticket's Start, for the agent chosen above, unless the ticket's eligible agents leave it out. */
@@ -308,7 +308,6 @@ export async function renderAgents(only = null) {
   }
   followStart(D.sessions);
   setupNotice();
-  projectUpdates();
   drawAgentSessions();
   drawAgentList();  // the full-size dock's agents, each with its state
   for (const draw of SESSIONS_DRAWN) draw();
@@ -337,34 +336,6 @@ export async function renderAgents(only = null) {
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
-}
-/* An actual project message arrives through the existing session stream. The notice exposes its words immediately,
- * and its Chat action opens the durable thread. Dismissal belongs to that message, never to later updates. */
-const UPDATES = {project: null, seen: null, drawn: null};
-function projectUpdates() {
-  const key = `metaform.project-updates.${S.project}`;
-  if (UPDATES.project !== S.project) {
-    UPDATES.project = S.project;
-    UPDATES.drawn = null;
-    try { UPDATES.seen = localStorage.getItem(key); } catch { UPDATES.seen = null; }
-  }
-  const session = D.sessions.find(one => notificationState(D.states?.[one.session_id]));
-  const state = D.states?.[session?.session_id];
-  const message = state?.latest_message_id;
-  if (!message || !state.latest_message_text || message === UPDATES.seen) {
-    if (bannered('project-updates')) unbanner('project-updates');
-    return;
-  }
-  if (UPDATES.drawn === message && bannered('project-updates')) return;
-  UPDATES.drawn = message;
-  const seen = () => {
-    UPDATES.seen = message;
-    try { localStorage.setItem(key, message); } catch { /* the thread stays in the Agents menu */ }
-  };
-  banner('project-updates', {tone: 'info', title: state.title || 'Project updates', text: state.latest_message_text,
-    actions: [{label: 'Open chat', primary: true, run: () => {
-      seen(); unbanner('project-updates'); agentAt(session.work_id, session.session_id);
-    }}], onClose: by => { if (by === 'person') seen(); }});
 }
 /* A feature the person set up that a module says is not working, dispatch's setup-not-working signal, is the person's
  * system agent's to bring up with them; it takes the signal as its turn. While no system agent runs, one small notice

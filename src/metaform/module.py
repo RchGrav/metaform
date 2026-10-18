@@ -119,7 +119,7 @@ Effect = Literal['read', 'write', 'remove']
 EFFECTS: tuple[Effect, ...] = ('read', 'write', 'remove')
 # The purposes an agent finds tools by over MCP, MCP-003: each a category of the mcp module's catalog, which says what
 # each is for in its prompts.xml and which tools each holds. A verb's `category` is one of them.
-CATEGORY_NAMES = ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'intake', 'steer', 'show', 'workflow',
+CATEGORY_NAMES = ('orient', 'ticket', 'memory', 'coordinate', 'change-map', 'intake', 'steer', 'show', 'workflow',
                   'setup', 'report')
 
 # The module contract's callables, BASE-035. Each may be a plain function or a coroutine function, BASE-009.
@@ -199,7 +199,7 @@ class Verb:
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
 
     `category` names the purpose an agent finds the verb's tool under over MCP, one of `CATEGORY_NAMES`, such as
-    `orient` or `remember`, each said in the mcp module's catalog: an agent opens the category its task
+    `orient` or `memory`, each said in the mcp module's catalog: an agent opens the category its task
     needs and is listed only its tools, MCP-003. None takes the category the mcp module gives the tool, or else the
     one it gives the module; a name no category holds stops the module loading.
 
@@ -1051,6 +1051,8 @@ def on_persons_word(ctx: Context, what: str, tickets: Sequence[str] = ()) -> dic
     from . import caller, settings
     if caller.dispatched() is None:
         return None  # the person's own AI tool, run outside dispatch
+    if not settings.value('agents_ask_first', ctx.folder):
+        return None  # the person lets their agents act without asking, agents_ask_first off
     if ctx.consented:
         return None  # the person's yes on this call's card is their word for it
     word, stopped = _word(ctx.folder, what, ctx.project, tickets)

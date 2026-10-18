@@ -1,0 +1,2 @@
+-  held: (() => { try { return localStorage.getItem('metaform.agentSizeHeld') === '1'; } catch { return false; } })(),
++  held: (() => { try { return localStorage.getItem('metaform.agentSizeHeld') !== '0'; } catch { return true; } })(),

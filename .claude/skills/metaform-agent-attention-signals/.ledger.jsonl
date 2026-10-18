@@ -1,1 +1,0 @@
-{"action": "create", "reason": "The person asked why the agent kept saying an agent \"seems stuck\". The answer needed tracing through attention.js, walk.js RESTLESS and the dispatch signal list. No skill records that mapping, and the CLI JSON pitfall cost several tool calls.", "evidence": "references/evidence-7dd75939.md"}

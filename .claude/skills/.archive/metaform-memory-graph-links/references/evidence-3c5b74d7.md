@@ -1,0 +1,1 @@
+The code still shows `eyes.js:756` skipping `clearWatched` while `ROAM.held` is set, and the probe file no longer exists, so my earlier memory update was wrong. I'll fix that memory and merge the duplicate notes about check-ins.

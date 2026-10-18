@@ -22,7 +22,8 @@ const box = $('#broadcast'), say = $('#broadcast textarea'), send = $('#broadcas
 const mineOnly = $('#broadcast .system');
 const running = () => D.sessions.filter(one => one.state === 'running');
 const isMine = session => isSystemSession(session, D.states);
-/* The sessions a broadcast reaches now: every running one, the person's own chat agent only when ticked. */
+/* The sessions a broadcast reaches now: every running one, the person's own chat agent too unless unticked, as it
+ * is by default. */
 const reached = () => running().filter(one => mineOnly.checked || !isMine(one));
 function drawBroadcast() {
   if (box.hidden) return;

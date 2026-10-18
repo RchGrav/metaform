@@ -15,10 +15,13 @@ import {h, fill} from '/page/app/core/dom.js';
  *   onClose   called once as it goes, with who closed it: 'person', 'code' or 'time'
  * unbanner(key) closes it; bannered(key) says whether it shows. */
 const SHOWN = new Map();  // key -> {box, spec, timer}
+// web_notices: whether a notice, an 'info' banner, is shown; off, it raises nothing, as the chat holds it
+export const NOTICES = {on: false};
 const STRIP = h('div', {id: 'banners', role: 'region', 'aria-label': 'Problems and notices'});
 document.body.append(STRIP);
 
 export function banner(key, spec) {
+  if (spec.tone === 'info' && !NOTICES.on) return;
   const had = SHOWN.get(key);
   const box = had?.box || h('div', {class: 'banner', 'data-key': key});
   const tone = spec.tone || 'error';

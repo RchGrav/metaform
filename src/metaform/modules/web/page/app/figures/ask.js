@@ -34,7 +34,7 @@ export function mascotScreen() {  // where the 3D mascot is on the page, for a c
   const {x, y} = mascotOnPage();
   return {sx: x, sy: y};
 }
-function mascotAt(x, y) {
+export function mascotAt(x, y) {
   if (!G || !MASCOT.mesh) return false;
   const at = mascotOnPage();
   return Math.abs(at.z) < 1 && Math.hypot(at.x - x, at.y - y) < Math.max(18, onScreen(MASCOT.mesh) * 0.6);

@@ -2,7 +2,7 @@
  * chooser's Activate and Remove. */
 import '/page/app/live/ops.js';  // the part before runs first, so the parts run in the page's order
 import {releaseGlyph} from '/page/agents3d.js';
-import {$, h, fill} from '/page/app/core/dom.js';
+import {$, h, fill, writingInPanel} from '/page/app/core/dom.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
 import {getJson} from '/page/app/panel/prompts.js';
@@ -167,7 +167,7 @@ async function selectLoaded() {
     || MEM.network?.entities.includes(S.selected) || memoryThing(S.selected)) ? S.selected : null;
   const start = keep || MEM.key || (S.cleared ? null : entryOf());  // a selection let go of stays let go, VIEW-008
   if (!start) S.cleared && S.elements.size ? noneSelected() : fill($('#p-object'), emptyPanel());
-  else {
+  else if (!(keep && writingInPanel())) {  // the person writing in the panel keeps their words
     // the whole map fitted once it has spread, unless a selection has flown the camera to its node meanwhile
     if (!keep) setTimeout(() => { if (G && !V3.focus && S.selected === start) fit3d(800, 60); }, 2200);
     await select(start, false, false, false, true);

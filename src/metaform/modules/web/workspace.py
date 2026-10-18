@@ -374,6 +374,14 @@ def state(folder: Path, who: str = views.OWNER) -> dict[str, Any]:
     }
 
 
+def bubble_seconds(value: Any) -> str | int:
+    """web_bubble_seconds for the page: 'auto', or its seconds, a value kept when it was a number read as one."""
+    try:
+        return int(value) if value not in (None, 'auto') else 'auto'
+    except (TypeError, ValueError):
+        return 'auto'
+
+
 def view(who: str = views.OWNER) -> dict[str, Any]:
     """How the page draws, from the web module's global settings: node shapes, how long the 3D map's flow lasts once
     nothing moves, whether it keeps flowing slowly, whether agents' real activity is drawn in the flow, and the
@@ -385,7 +393,8 @@ def view(who: str = views.OWNER) -> dict[str, Any]:
             'pulse_ms': int(settings.value('web_pulse_ms', where) or 1500),
             'flow_mode': views.value('web_flow_mode', who),
             'idle_flow': bool(settings.value('web_idle_flow', where)),
-            'bubble_seconds': int(settings.value('web_bubble_seconds', where) or 5),
+            'notices': bool(settings.value('web_notices', where)),
+            'bubble_seconds': bubble_seconds(settings.value('web_bubble_seconds', where)),
             'live_flow': bool(settings.value('web_live_flow', where)),
             'mascot_mischief': settings.value('web_mascot_mischief', where),
             'agent_glyphs': list(settings.value('web_agent_glyphs', where) or []),

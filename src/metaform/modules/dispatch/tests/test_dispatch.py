@@ -630,7 +630,7 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     eventually(lambda: dispatch.received('session/prompt'))
     runner = next(one for one in dispatch.logged('runner') if one)
     shown.swap(runner, 'guide:tool:map_work', 'given')
-    shown.swap(runner, 'catalog:open', 'remember')
+    shown.swap(runner, 'catalog:open', 'memory')
     (gates / '1').touch()
     completed = statuses.endswith('completed')
     if completed:
@@ -642,7 +642,7 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     said = eventually(lambda: dispatch.received('session/prompt')[1:])[0]['params']['prompt'][0]['text']
     assert said.startswith(opening) is completed
     assert said.endswith('go on') and (f'ticket {dispatch.id} at ' in said) is completed
-    assert shown.peek(runner, 'catalog:open') == 'remember'
+    assert shown.peek(runner, 'catalog:open') == 'memory'
     assert (shown.peek(runner, 'guide:tool:map_work') is None) is completed
     assert shown.peek(runner, COMPACTED_KEY) == ('' if completed else None)  # said by the turn, so no call says it
     (gates / '2').touch()
@@ -983,7 +983,7 @@ def test_a_runner_reserved_past_the_agent_slots_gives_its_ticket_back(dispatch, 
 def test_summoned_agents_started_at_once_never_pass_the_slots_and_stop_all_ends_every_one(dispatch, run):
     """UX review round 1, 2026-10-17 (dispatch-concurrency F3 and F5, forensic cause 3): eight chats summoned at once
     with two slots all started, since each checked the room and then started, and nothing stopped every agent at once.
-    The one gate admits the person's one plus the two slots; Stop all ends them and turns Autostart off, so nothing
+    The one gate admits the person's one plus the two slots; Stop all ends them and turns Full Auto off, so nothing
     starts in their place. Round 2 (spawn-gate F2): eight talks at once about one ticket started three agents writing
     one log; one chat per subject is started, and the other seven are told of it."""
     from metaform.modules import dispatch as module
@@ -1065,7 +1065,7 @@ def test_the_days_budget_stops_a_summoned_agent_at_the_gate(dispatch, run):
 
 @pytest.mark.req('VIEW-042')
 def test_the_persons_stop_turns_autostart_off_and_reset_leaves_the_ticket_they_stopped(dispatch, run):
-    """UX review round 1, 2026-10-17: each stop with Autostart on started the next waiting ticket in its place
+    """UX review round 1, 2026-10-17: each stop with Full Auto on started the next waiting ticket in its place
     (interrupt-failure-recovery F6), and Reset agents put the tickets the person stopped back in To do, where
     autostart started them again (web-gui-controls F7). An agent's stop over MCP changes no setting."""
     from metaform.module import context
@@ -1076,7 +1076,7 @@ def test_the_persons_stop_turns_autostart_off_and_reset_leaves_the_ticket_they_s
     agent = context('dispatch', dispatch.folder, project='proj', surface='mcp')
     assert module.paused(agent, dispatch.store, None) is False, 'an agent changes no setting of the person'
     stopped = json.loads(dispatch.stop().stdout)
-    assert stopped['stopped'] is True and stopped['autostart'] is False and 'Autostart agents is now off' in \
+    assert stopped['stopped'] is True and stopped['autostart'] is False and 'Full Auto is now off' in \
         stopped['notice']
     assert context('dispatch', dispatch.folder, project='proj').setting('dispatch_autostart') is False
     eventually(lambda: dispatch.session().extra['state'] == 'ended' or None)
@@ -1371,7 +1371,7 @@ def test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete(disp
 @pytest.mark.req('VIEW-035')
 def test_a_session_that_ends_without_finishing_its_ticket_leaves_it_taken_for_the_person(dispatch):
     """Change order of 2026-10-07: a ticket an agent stopped on stays taken, with what the agent wrote on it, until
-    the person puts it back. Autostart restarted such tickets without limit, 981 sessions in a day on one ticket."""
+    the person puts it back. Full Auto restarted such tickets without limit, 981 sessions in a day on one ticket."""
     dispatch.start('hold')
     eventually(lambda: dispatch.logged('grandchild'))
     assert dispatch.ticket().taken
@@ -2861,6 +2861,7 @@ def test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_an
     and turns Autostart on with no card, and each is written in its chat with that message. A turn its own timer woke
     carries none: the same calls are refused and change nothing. What cannot be undone is the person's decision in
     either turn. Every agent here is the fake agent."""
+    run('set', '--agents-ask-first', cwd=dispatch.folder)  # these check asking, off by default since 2026-10-18
     from metaform.data import Node
     gates = tmp_path / 'turns'
     gates.mkdir()
@@ -2950,6 +2951,8 @@ def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_s
     ticket waiting on B and Y, which joins nothing. The cover is kept in the project's store, so a runner restarted on
     the session holds it. When B is done, S3 is woken and started with no ask. Once the person stops S2, the refusal
     says the person stopped that work, and A, B and S3 stay covered. Every agent here is the fake agent."""
+    run('set', '--agents-ask-first', cwd=dispatch.folder)  # these check asking, off by default since 2026-10-18
+    run('set', '--hold-agent-tickets', cwd=dispatch.folder)  # and the tickets an agent writes are held
     from metaform.data import Store
     from metaform.module import context
     from metaform.modules.dispatch import plan_of, runner
@@ -3318,6 +3321,7 @@ def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offe
     a value the ticket's agent did not offer at its last session, and the ticket read shows what it keeps; each of an
     agent's options is its own setting, so setting one leaves the others, and a value it never offered is refused
     with the list."""
+    run('set', '--agents-ask-first', cwd=dispatch.folder)  # these check asking, off by default since 2026-10-18
     from metaform.data import Store
     from metaform.module import Stop, context
     from metaform.modules import dispatch as module
@@ -3459,7 +3463,7 @@ def test_the_system_agent_kept_connected_is_resumed_in_place_with_backoff_then_w
     module, ctx, held, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
     first = module.stay_connected(ctx, dispatch.store)
     assert started == [] and first['retry_due'] > time.time(), 'the first resume waits dispatch_retry_seconds'
-    assert module.autostart(ctx)['retry_due'] == first['retry_due'], 'the agent starter says when, with Autostart off'
+    assert module.autostart(ctx)['retry_due'] == first['retry_due'], 'the agent starter says when, with Full Auto off'
     due(held)
     resumed = module.stay_connected(ctx, dispatch.store)['connected']
     assert started == [['resume=s1', 'system=true']] and resumed['retry'] == 1, 'in place, never as a worker retry'
@@ -5076,7 +5080,7 @@ def test_the_runner_taking_a_session_over_says_so_once_and_sends_what_the_old_ru
 @pytest.mark.req('CLI-011')
 def test_an_agent_stops_only_the_agents_it_started_and_its_stop_names_it(dispatch, run):
     """UX review round 2, 2026-10-17 (ux-verify-combined F5, spawn-gate F1): any agent could stop every agent on the
-    machine with stop-all home=true, turn the person's Autostart off, and each stop read "stopped by the person". An
+    machine with stop-all home=true, turn the person's Full Auto off, and each stop read "stopped by the person". An
     agent stops only the agents it started, changes no setting, never home-wide, and its stop names it."""
     dispatch.start('hold')  # the person's agent
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')

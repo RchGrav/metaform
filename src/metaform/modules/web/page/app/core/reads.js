@@ -23,6 +23,8 @@ export const S = {
   at: -1, loading: 0, opening: 0, shown: false,
   cleared: false,  // the person let go of the selection, VIEW-008, so a map read again selects nothing in its place
   whole: null,  // the last map read whole, {elements, joins}, put back when a read of it fails
+  // the node the Object tab shows, and a print of what it was drawn from, `panelPrint`
+  panelFor: null, panelPrint: null,
   // LAYER-013
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},
 };

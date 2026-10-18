@@ -1,0 +1,1 @@
+verify-install-steps-in-scratch-home [project]: Use when testing install steps or a tester README.

@@ -248,10 +248,10 @@ AGENTS = {
 # 0.89.1 needs node >=22, gemini-cli 0.63.0 >=20, codex-acp 2.2.2 names none. A build's README asks testers for it.
 NODE = '22'
 # A setting that decides which agents run, how they start, what they are permitted, how they are watched or when
-# their work lands is person_only: written by the person, never by an agent over MCP, CLI-011; Autostart agents is
+# their work lands is person_only: written by the person, never by an agent over MCP, CLI-011; Full Auto is
 # also set by the person's own system agent on their word, `on_persons_word`. How long one wait blocks only paces the
 # agent that calls it, so it is not.
-settings.boolean('dispatch_autostart', False, label='Start agents on their own', person_only=True, on_persons_word=True,
+settings.boolean('dispatch_autostart', False, label='Full Auto', person_only=True, on_persons_word=True,
                  help='Start agents on tickets that have not been tried, and resume a worker\'s session that ended '
                       'without your stop, up to dispatch_retries; a ticket whose agent stopped with it open waits for '
                       'you.',
@@ -318,11 +318,17 @@ settings.choice('dispatch_agent', agent_choices, 'claude', person_only=True,
                 details='A ticket whose card names an agent starts with that one; every other start uses this. The '
                         'person sets it here or from the page.',
                 label='Default agent', category='agents', heading='Starting work', essential=10)
+# Whether each agent working a ticket is told to take out the code its change makes obsolete: on by default, so a
+# design that changes leaves no dead code beside the new (the person's decision, 2026-10-18).
+settings.boolean('dispatch_remove_superseded', True, label='Agents remove superseded code', category='agents',
+                 help='Tell each agent working a ticket to delete the code, tests and text its change replaces.',
+                 details='On, the default: an agent working a ticket is sent dispatch\'s remove_superseded prompt in '
+                         'its first turn. Off: nothing is said, and old code is removed only when a ticket asks.')
 settings.choice('dispatch_recovery', ['manual', 'automatic'], 'manual', label='Dead runner recovery', person_only=True,
                 help='What happens to a ticket whose runner died: manual keeps it with its session, which the '
-                     'supervisor resumes in place up to dispatch_retries while Autostart agents is checked; automatic '
+                     'supervisor resumes in place up to dispatch_retries while Full Auto is checked; automatic '
                      'returns it to To do once its processes are verified stopped.',
-                details='Applies before Autostart selection or with dispatch recover. Neither starts more agents than '
+                details='Applies before Full Auto selection or with dispatch recover. Neither starts more agents than '
                         'dispatch_agents and dispatch_machine_agents allow: a resume waits for a free slot. Older '
                         'sessions or uncertain cleanup still require manual recovery. Session reads never change '
                         'ownership.',
@@ -1568,6 +1574,8 @@ def starts_held(ctx: Context) -> str | None:
     intake agent started a held ticket in one call). A conversation, a merge's preparation, a resume, a retry or a
     launch `start` reserved already starts nothing held."""
     nouns = ctx.nouns
+    if not ctx.setting('agents_ask_first'):
+        return None  # the person lets their agents start and release work without asking
     if any(nouns.get(word) for word in ('reservation', 'system', 'talk', 'sentinel', 'intake', 'prep', 'resume',
                                         'retry')):
         return None
@@ -2232,8 +2240,8 @@ def autostart(ctx: Context) -> dict[str, Any]:
     settle(ctx)  # after recover, which under automatic recovery returns such a ticket to the queue instead
     from .orchestration import drain
     continued = drain(ctx)  # restart/reconnect reconciliation of explicitly recorded continuations
-    start_raised(ctx, store, asked)  # the person raised these, so they start whether Autostart agents is checked or not
-    connected = stay_connected(ctx, store, asked)  # the person's own, whether Autostart agents is checked or not
+    start_raised(ctx, store, asked)  # the person raised these, so they start whether Full Auto is checked or not
+    connected = stay_connected(ctx, store, asked)  # the person's own, whether Full Auto is checked or not
     started = start_work(ctx, store, recovered, asked)
     due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None)) if one is not None]
     return {**started, **connected, **({'continuations': continued} if continued else {}),
@@ -2285,7 +2293,7 @@ def may_start(ctx: Context, store: Store, opened: Sequence[WorkRecord],
 
 def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int | None = None) -> dict[str, Any]:
     """The tickets the agent starter starts and the workers' sessions the supervisor resumes, `autostart`, only while
-    Autostart agents is checked. `asked` is when the pass began: a halt written since refuses its starts. A ticket
+    Full Auto is checked. `asked` is when the pass began: a halt written since refuses its starts. A ticket
     whose starts failed waits RETRY_SECONDS doubled for each failure, and is left to the person past dispatch_retries,
     `start_failed`; an agent that keeps failing starts no ticket by itself, `failing_agent`. The earliest wait's end is
     returned as `retry_due`, so the one timer that waits for it brings the next pass."""
@@ -3381,13 +3389,13 @@ def _agents(count: int) -> str:
 
 def what_follows(ctx: Context, kind: str) -> str:
     """What happens next to a start the slots refused, as the settings make it: a summoned agent is asked for again, a
-    worker starts by itself only while Autostart agents is checked. UX review round 1 (spawn-gate F4): every refusal
+    worker starts by itself only while Full Auto is checked. UX review round 1 (spawn-gate F4): every refusal
     promised a start that never came."""
     if kind != 'worker':
         return 'Ask again when one is free.'
     if ctx.setting('dispatch_autostart'):
         return 'It stays in To do and starts by itself when a slot frees.'
-    return 'It stays in To do until you start it, or check Autostart agents.'
+    return 'It stays in To do until you start it, or check Full Auto.'
 
 
 def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
@@ -3655,7 +3663,7 @@ def given_back_reservation(store: Store, work_id: str, reservation: str) -> None
 # signals. A runner's lease, a lock its process holds for as long as it lives, makes its death an event: a waiter
 # blocked on the lease, `RunnerWatch`, is woken by the system when the runner ends, however it ends. UX review round 2,
 # 2026-10-17 (ux-verify-combined F1 F2 F5, held-sweeps F1, spawn-gate F1 F2 F3 F4, intake-single-flight F1 F3):
-# Stop all during Start all left three agents running, a clear with Autostart on started four on the map it deleted,
+# Stop all during Start all left three agents running, a clear with Full Auto on started four on the map it deleted,
 # and a runner failing before its session was started again about once a second, 111 runners in 100 s, unsaid.
 START_ATTEMPT = 'start'  # the session id of a ticket's count of failed starts in `session_attempts`
 BATCH_WORD = re.compile(r'[A-Za-z0-9-]{8,64}')  # a Start all run's token, as the page makes it
@@ -4823,7 +4831,7 @@ def stop(ctx: Context) -> dict[str, Any]:
     """Stop the agent working a ticket: session/cancel, then its process group ends. A runner that holds the session
     and does not answer, such as one under load, has its process group ended here and its session recorded as stopped,
     so the next Call or resume starts it once. The person stopping their system agent turns dispatch_stay_connected
-    off for the project, `disconnect`, and the result says so; the person stopping any other agent while Autostart
+    off for the project, `disconnect`, and the result says so; the person stopping any other agent while Full Auto
     agents is checked turns that off, `paused`, so no waiting ticket starts in its place, and the result says so. A
     dispatched agent stops one only on the person's word, as `start`."""
     may_steer(ctx)
@@ -4882,16 +4890,16 @@ def stop(ctx: Context) -> dict[str, Any]:
                       [str(row['work_id'])], widen=False)}
 
 
-# What a stop by the person that turned Autostart agents off says. UX review round 1, 2026-10-17
-# (interrupt-failure-recovery F6): each stop with Autostart on started the next waiting ticket in its place, so a
+# What a stop by the person that turned Full Auto off says. UX review round 1, 2026-10-17
+# (interrupt-failure-recovery F6): each stop with Full Auto on started the next waiting ticket in its place, so a
 # person stopping agents on a machine at its limit was refilled as fast as they stopped.
 QUEUE_PAUSED = {'autostart': False,
-                'notice': 'Autostart agents is now off for this project, so no waiting ticket starts in the place of '
+                'notice': 'Full Auto is now off for this project, so no waiting ticket starts in the place of '
                           'what you stopped; check it to start the queue again.'}
 
 
 def paused(ctx: Context, store: Store, row: dict[str, Any] | None) -> bool:
-    """The person's own stop of an agent, on the page or the command line, turns Autostart agents off for the project
+    """The person's own stop of an agent, on the page or the command line, turns Full Auto off for the project
     before the stop, so no pass of the agent starter in between starts another, as `disconnect` does for the system
     agent, which takes no slot and is left to it. An agent's stop changes no setting of the person's. Returns whether
     it was turned off."""
@@ -4934,7 +4942,7 @@ def may_stop(ctx: Context, row: dict[str, Any]) -> None:
 
 
 def stop_all(ctx: Context) -> dict[str, Any]:
-    """Stop every agent of the project, or with home=true of every project of this Metaform home: Autostart agents
+    """Stop every agent of the project, or with home=true of every project of this Metaform home: Full Auto
     is turned off first, and Stay connected too at the person's own call, so nothing starts in their place; then each
     running session ends as the person's stop ends it, all at once, so none is retried; then each runner still starting
     is ended, and the ticket it was reserved goes back to To do. A session the person's editor runs is left to the
@@ -4947,7 +4955,7 @@ def stop_all(ctx: Context) -> dict[str, Any]:
     is refused, a Start all half done or an autostart pass that reserved its tickets a moment before among them. An
     agent's call stops only the agents it started, in its own project, changes no setting and halts nothing; home=true
     is the person's alone (UX review round 2: ux-verify-combined F1 and F5, spawn-gate F1). A dispatched agent stops
-    them all only on the person's word, as `start`, and then stops as the person does, turning Autostart agents off."""
+    them all only on the person's word, as `start`, and then stops as the person does, turning Full Auto off."""
     may_steer(ctx)
     word = on_persons_word(ctx, 'Stopping every agent')
     person = person_asks(ctx)
@@ -4982,7 +4990,7 @@ def stop_all(ctx: Context) -> dict[str, Any]:
 def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None,
                 word: dict[str, Any] | None = None) -> dict[str, Any]:
     """`stop_all`'s stops, under its halt. On the person's word, `word`, their system agent stops every agent but
-    itself and turns Autostart agents off, as their own Stop all does."""
+    itself and turns Full Auto off, as their own Stop all does."""
     acting = person or word is not None
     me = os.environ.get('METAFORM_SESSION') if not person else None
     own_work = os.environ.get('METAFORM_WORK') if not person else None
@@ -4993,7 +5001,7 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
         folder = Path(project.path)
         try:
             held = Store(project.project_id)
-            # Autostart off and Stay connected off at the person's own call alone, as their stop of the system agent
+            # Full Auto off and Stay connected off at the person's own call alone, as their stop of the system agent
             # does, `disconnect`: an agent's stop changes no setting of the person's, VIEW-042 (spawn-gate F1)
             for key in (('dispatch_autostart', 'dispatch_stay_connected') if person
                         else ('dispatch_autostart',) if acting else ()):
@@ -5057,9 +5065,9 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                                                              or str(row.get('how') or '') in DIED):
                         ended_gone(held, row, by)
     return {'stopped': stopped, 'failed': failed, 'turned_off': turned_off,
-            **({'notice': 'Autostart agents is off, so nothing starts again until you check it.'}
+            **({'notice': 'Full Auto is off, so nothing starts again until you check it.'}
                if turned_off else {}),
-            **(on_word(ctx, word, f'stopped every agent ({len(stopped)}) and turned Autostart agents off')
+            **(on_word(ctx, word, f'stopped every agent ({len(stopped)}) and turned Full Auto off')
                if word is not None else {})}
 
 
@@ -6404,7 +6412,7 @@ MODULE = Module(
              examples=(('metaform dispatch wait until=done id=198452e1...', 'Answers done once the ticket is done.'),
                        ('metaform dispatch wait until=stopped', 'Names the first tickets whose agents stop.')), effect='read'),
         Verb('autostart', autostart, 'Start agents on the waiting tickets in board order, while the person has '
-                                     'Autostart agents checked. Held tickets are left out, and at most dispatch_agents '
+                                     'Full Auto checked. Held tickets are left out, and at most dispatch_agents '
                                      'run at once.',
              switches=('dispatch_autostart', 'dispatch_agent', 'dispatch_agents', 'dispatch_recovery',
                        'dispatch_rework_limit'), open_world=True),
@@ -6697,11 +6705,11 @@ MODULE = Module(
                     Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
                          required=False)), open_world=True, listed=session_live),
         Verb('stop-all', stop_all, 'Stop every agent of the project, or of every project with home=true, and turn '
-                                   'Autostart agents off, so nothing starts in their place; an agent stops only the '
+                                   'Full Auto off, so nothing starts in their place; an agent stops only the '
                                    'agents it started.',
              nouns=(Noun('home', 'true: every project of this Metaform home, not only this one.', kind='bool',
                          required=False),),
-             examples=(('metaform dispatch stop-all', 'Stops every agent of this project and turns Autostart off.'),
+             examples=(('metaform dispatch stop-all', 'Stops every agent of this project and turns Full Auto off.'),
                        ('metaform dispatch stop-all home=true', 'Stops every agent on this machine.')),
              open_world=True, needs_project=False),
         Verb('new', new, 'End the conversation of the agent on a ticket and start a new one in the same role, '

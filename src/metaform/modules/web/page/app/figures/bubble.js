@@ -15,6 +15,26 @@ const BUBBLE = {
   tail: {at: 0.14, base: 30, length: 30, lean: -14},  // where on the bottom edge, its width, how far down and left
 };
 
+/* The waits in a line: each vowel, y, digit 1 to 9 and stop or pause mark is a wait; each vowel pair said as one
+ * sound takes one back (the list as given, "ai" in it twice); never fewer than one when they come to none. A word
+ * bubble on auto stays up 3 s and half a second for each, `bubbleSeconds`. */
+const WAITS = 'aeiouy123456789.,;:!?';
+const PAIRS = ['ai', 'ee', 'ea', 'ai', 'oa', 'oi', 'oo', 'ou'];
+const count = (text, part) => text.split(part).length - 1;
+export function waits(text) {
+  const lower = String(text || '').toLowerCase();
+  let found = 0;
+  for (const one of WAITS) found += count(lower, one);
+  for (const pair of PAIRS) found -= count(lower, pair);
+  return found === 0 ? 1 : found;
+}
+/* How long a word bubble stays up for `text`, in seconds, by web_bubble_seconds: auto, the default, by its waits;
+ * else the seconds chosen. */
+export function bubbleSeconds(text, setting) {
+  const seconds = Number(setting);
+  return setting === 'auto' || !(seconds > 0) ? 3 + 0.5 * waits(text) : seconds;
+}
+
 export function speechBubble(text, options = {}) {
   const o = {...BUBBLE, ...options, tail: {...BUBBLE.tail, ...options.tail}};
   const family = o.font || getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || 'sans-serif';

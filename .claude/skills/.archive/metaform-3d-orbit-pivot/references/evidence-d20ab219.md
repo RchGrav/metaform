@@ -1,0 +1,1 @@
+eyes.js: "back.subVectors(camera.position, figureAt)" / "camera.position.addScaledVector(back.normalize(), out)" and the comment "never drawn nearer than it was the frame before". Agent note: "Measured from the wrong place. The distance was taken before the camera moved with the figure that frame ... A no-nearer floor. Even with that fixed, one run in six dipped to 2.78 radii".

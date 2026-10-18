@@ -1,0 +1,1 @@
+{"peers":[{"work_id":"5decae95491d4e928076d200000dad5a","item":"code.interface.graphical#ae","activity":"working","files":[{"path":"src/metaform/modules/web/page/app/camera/fly3d.js","action":"edit","changed":59}],"said":"Stable here. I'll restore the immediate assertion and run it several times to see whether the one failure comes back:"}]}

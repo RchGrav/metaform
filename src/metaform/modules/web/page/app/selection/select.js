@@ -86,8 +86,28 @@ function selectNow(id, fly, keepTrail, stepping, again) {
     if (!again) showTab(briefing ? 'brief' : 'object');
     else if (briefing) renderBrief();
   }
+  // A map read again leaves the Object tab as it is while nothing it was drawn from changed, so agents writing
+  // elsewhere neither make it flicker nor take the person's place in it (2026-10-18).
+  const print = MEM.key ? null : panelPrint(id);
+  if (again && print !== null && print === S.panelPrint && S.panelFor === id) return undefined;
+  S.panelPrint = print;
   // The panel's reads are returned, so a load waits for them before it says it is loaded.
   return MEM.key ? renderMemories(id) : join ? renderJoin(join) : renderObject(id);
+}
+/* What the Object tab of node `id` is drawn from on the page: its element or join, the joins it receives or holds,
+ * the items and properties on any of them, and their open work, as one string to compare. */
+function panelPrint(id) {
+  const joins = S.joins.filter(one => 'p:' + one.id === id || one.receiver === id
+    || one.elements.some(held => held.element_id === id));
+  const on = new Set([id, ...joins.map(one => 'p:' + one.id)]);
+  const items = [];
+  for (const entry of S.items.values()) {
+    const item = entry.item, target = item.target;
+    if (on.has(item.element_id) || (target && on.has(target.kind === 'join' ? 'p:' + target.id : target.id))) {
+      items.push([entry.key, entry.value, item.refs, item.extra]);
+    }
+  }
+  return JSON.stringify([S.elements.get(id)?.element ?? null, joins, items]);
 }
 /* A selection becomes a step of the history Back and Forward walk, unless it is the step it is on: the steps forward
  * are dropped, as a browser drops them. */

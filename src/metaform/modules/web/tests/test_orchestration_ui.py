@@ -123,10 +123,16 @@ def test_project_update_opens_its_actual_chat_without_start_resume_or_send_contr
     notify(mapped, 'change-1', body)
     started(run)
     page, problems, _ = opened(browser, web, plain=True)
-    banner = page.locator('#banners [data-key="project-updates"]')
-    banner.wait_for(state='visible')
-    assert body in banner.inner_text()
-    banner.get_by_role('button', name='Open chat').click()
+    # an update raises no banner the person has to close: it is in the chat, 2026-10-18
+    page.evaluate('''async () => {
+        const {D, agentAt} = await import('/page/app/agents/dispatch.js');
+        const {notificationState} = await import('/page/app/session/orchestration.js');
+        for (let n = 0; n < 100 && !D.sessions.some(one => notificationState(D.states?.[one.session_id])); n++)
+            await new Promise(done => setTimeout(done, 100));
+        const session = D.sessions.find(one => notificationState(D.states?.[one.session_id]));
+        agentAt(session.work_id, session.session_id);
+    }''')
+    assert page.locator('#banners [data-key="project-updates"]').count() == 0
     page.wait_for_selector('#helpdesk .log .bubble')
     assert body in page.locator('#helpdesk .log').inner_text()
     assert page.locator('#helpdesk .compose').is_hidden()
@@ -136,8 +142,8 @@ def test_project_update_opens_its_actual_chat_without_start_resume_or_send_contr
     assert page.locator('#helpdesk .sessionbar').is_hidden()
     assert page.locator('#helpdesk .who .title').inner_text() == 'Project updates'
     notify(mapped, 'change-2', 'The GC received the new direction; the ticket continues without an approval wait.')
-    banner.wait_for(state='visible')
-    assert 'without an approval wait' in banner.inner_text()
+    page.wait_for_function('() => document.querySelector("#helpdesk .log").innerText.includes("without an approval wait")')
+    assert page.locator('#banners [data-key="project-updates"]').count() == 0
     assert problems == []
 
 

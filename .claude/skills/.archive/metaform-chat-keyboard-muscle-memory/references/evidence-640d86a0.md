@@ -1,0 +1,1 @@
+metaform-chat-keyboard-muscle-memory [project]: Use when changing chat Escape, Up arrow, close keys, or the /new and /clear chat commands.

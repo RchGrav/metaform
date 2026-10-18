@@ -1,0 +1,1 @@
+Repeated user-turn notice: "62 memories; 17 unread, including 17 updated. Read applicable unread contents with metaform memory read_unread node=element:code.interface.graphical." followed by assistant replies such as "Same notice, same counts, nothing new." and "Nothing new: same counts, already read."

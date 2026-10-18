@@ -14,7 +14,8 @@ import {wrote} from '/page/app/board/history.js';
 import {AUTO, PROMPT_WORDS, readAutostart, renderAgents, cancelStarting} from '/page/app/agents/dispatch.js';
 import {HARNESS, readHarnesses, paintPickers, makeDefault, agentPicker, PICKERS} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
-import {WS} from '/page/app/workspace/workspace.js';
+import {NOTICES} from '/page/app/core/banner.js';
+import {WS, takeBubbleSeconds} from '/page/app/workspace/workspace.js';
 import {VIEW} from '/page/app/views/settings.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {CHATWORK} from '/page/app/session/apps.js';
@@ -89,6 +90,7 @@ async function openAgentMenu() {
   await readAutostart();
   $('#agentCount').value = AUTO.agents ?? 5;  // the saved setting, as it is now
   if (AUTO.most) $('#agentCount').max = AUTO.most;  // the server's own maximum, so the page refuses what it refuses
+  $('#bubbleSeconds').value = String(WS.view().bubble_seconds ?? 'auto');
 }
 toggler($('#agentsMenuBtn'), $('#agentbox'), openAgentMenu);
 /* The default as dispatch has it, and while one chosen is being made the default, that one. */
@@ -99,7 +101,7 @@ function defaultPicker() {
   const choose = async agent => { await makeDefault(agent); holder.asked = null; paintPickers(); };
   return agentPicker({label: 'Default agent', star: false, kept: true, exact: true, holder, onchange: choose});
 }
-/* How many agents a new count starts at once while Autostart is on: the tickets waiting, up to the slots the new
+/* How many agents a new count starts at once while Full Auto is on: the tickets waiting, up to the slots the new
  * count leaves free and the machine's room, as dispatch's gate counts them; null when the slots cannot be read. UX
  * review round 1, 2026-10-17 (web-gui-controls F4): raising the count started every newly allowed agent in the same
  * second, unsaid. */
@@ -120,8 +122,8 @@ async function saveAgentCount(event) {
   }
   const more = count > was ? await startsNow(count) : 0;
   if (more === null || more > 0) {
-    const said = more === null ? 'Autostart agents is on and the agent slots could not be read, so this may start '
-      + 'agents on waiting tickets at once.' : `Autostart agents is on, so this starts ${more} more agent`
+    const said = more === null ? 'Full Auto is on and the agent slots could not be read, so this may start '
+      + 'agents on waiting tickets at once.' : `Full Auto is on, so this starts ${more} more agent`
       + `${more === 1 ? '' : 's'} now, one for each waiting ticket the new slots allow.`;
     if (!await confirmAct({title: `Allow ${count} agents at once?`, text: said, verb: 'Yes, allow them',
       cancel: 'Keep it as it is'})) { control.value = was; return; }
@@ -138,8 +140,16 @@ async function saveAgentCount(event) {
   } finally { control.disabled = false; }
 }
 $('#agentCount').onchange = saveAgentCount;
+/* How long a word bubble stays up, web_bubble_seconds: saved, and taken by the page at once. */
+$('#bubbleSeconds').onchange = async event => {
+  const control = event.target, chosen = control.value, was = String(WS.view().bubble_seconds ?? 'auto');
+  const done = await posted('/api/settings', {key: 'web_bubble_seconds', value: chosen});
+  if (!done.ok) { control.value = was; toast(done.body.error || 'That was not kept.'); return; }
+  takeBubbleSeconds(chosen === 'auto' ? chosen : Number(chosen));
+  toast(chosen === 'auto' ? 'Word bubbles stay up by their words.' : `Word bubbles stay up ${chosen} s.`);
+};
 /* Stop all agents: every agent of the project, or of every project on this machine, ends as the person's stop ends
- * it, and Autostart agents is turned off first, so nothing starts in their place. Asked first, with the count.
+ * it, and Full Auto is turned off first, so nothing starts in their place. Asked first, with the count.
  * UX review round 1, 2026-10-17 (dispatch-concurrency F5, web-gui-controls F5). */
 async function stopAll(event, every) {
   const control = event.currentTarget;  // kept before the first await, which clears currentTarget
@@ -151,7 +161,7 @@ async function stopAll(event, every) {
     text: `${count === null ? 'Every agent' : `${count} agent${count === 1 ? '' : 's'}`} running `
       + (every ? 'across every project' : 'on this project') + ' will be stopped.',
     lost: ['Each agent stops where it is, as your Stop stops it',
-      `Autostart agents is turned off${every ? ' in each project' : ''}`,
+      `Full Auto is turned off${every ? ' in each project' : ''}`,
       'Your system agent stops too, and Stay connected is turned off'],
     kept: ['Every ticket stays taken by its agent, with its steps and its thread', 'Each one can be resumed'],
     verb: 'Stop them'})) return;
@@ -722,7 +732,7 @@ function settingControl(row, id, label) {
       onkeydown: event => arrowSelect(event, select, risky)},
       listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
         disabled: !choices.includes(choice)}, choiceWords(choice, worded)
-        + (risky.includes(choice) ? ' (risky: asks first)' : ''))));
+        + (risky.includes(choice) ? ' (risky)' : ''))));
     // while it offers no more than its default, the command that reads its choices from their source, such as an
     // agent's models, is a button beside it
     const reads = row.choices_from ? h('button', {type: 'button', class: 'btn sm quiet',
@@ -841,10 +851,11 @@ async function resetSetting(row, {quiet = false} = {}) {
     () => restoreSetting(now || row, before, {glue: glued}));
   return true;
 }
-/* What the rest of the page shows from a setting follows it: the Autostart switch, the agent pickers, Agent prompts,
+/* What the rest of the page shows from a setting follows it: the Full Auto switch, the agent pickers, Agent prompts,
  * and the folder's layers. */
 function afterSetting(key) {
   if (key.startsWith('dispatch_')) readAutostart();
+  if (key === 'web_notices') NOTICES.on = CONFIG.data?.settings?.find(one => one.key === key)?.value === true;
   if (key === 'dispatch_agent') readHarnesses().then(paintPickers);  // every picker's default follows
   if (key === 'dispatch_prompts') readPrompts();
   if (key === 'layers' && S.view === null) {

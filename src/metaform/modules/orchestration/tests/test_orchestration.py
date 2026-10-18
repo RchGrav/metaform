@@ -718,3 +718,77 @@ def test_sessionless_agent_is_not_classified_as_new_user_instruction(project, mo
         reason='An agent proposal.', user_instruction='An agent supplied this noun without a session.'), SERVICE)
     assert proposal['source'] == 'agent' and proposal['state'] == 'recommendation'
     assert spec.read_text(encoding='utf-8') == 'Keep the requested timer behavior.'
+
+
+def test_same_finding_from_two_reviews_at_one_node_gives_one_open_ticket_with_both_evidence(project):
+    gc = root(project)
+    SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+    for name, summary in (('a', 'Selection resets while duration changes.'),
+                          ('b', '  selection RESETS while duration changes ')):
+        review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, name)
+        SERVICE.returned(ctx(project), review['work_id'], 'The selection resets.', evidence=[f'Observed in {name}.'],
+                         findings=[{'summary': summary, 'remediation': ['Keep the selection.']}])
+    covering = [one for one in project[0].work(node=Node('element', NODE), open=True, limit=0).results
+                if 'Selection resets' in (one.task or '')]
+    assert len(covering) == 1
+    assert 'Observed in a.' in covering[0].note and 'Observed in b.' in covering[0].note
+
+
+def test_finding_given_as_dict_yields_prose_title_and_task(project):
+    gc = root(project)
+    SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'prose')
+    SERVICE.returned(ctx(project), review['work_id'], 'One finding.', findings=[{
+        'id': 'F1', 'severity': 'medium', 'summary': 'The alarm stays silent\nat zero.',
+        'remediation': ['Ring the alarm at zero.', {'file': 'alarm.js', 'step': 'Call ring().'}],
+        'verify': 'Count down to zero and hear the alarm.'}])
+    launch = next(one for one in SERVICE.pending(ctx(project)) if one['payload'].get('kind') == 'functional_correction')
+    work_id = SERVICE.assignment(ctx(project), assignment_id=launch['assignment_id'])['work_id']
+    title, task = project[0].numbers_of('work', [work_id])[work_id][1], project[0].ticket(work_id).work.task
+    assert title == 'The alarm stays silent at zero.'
+    assert '1. Ring the alarm at zero.' in task and 'Verify: Count down to zero' in task
+    assert not set('{}') & set(title + task)
+
+
+def test_assessment_calling_assess_on_its_own_work_queues_nothing(project):
+    gc = root(project)
+    SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'delivered')
+    SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
+    before = SERVICE.pending(ctx(project))
+    for session in ('fqc', 'gc-one'):
+        again = assess(ctx(project, session, summary='Assess my own review of this work.'))
+        assert again['queued'] is False and again['assignment_id'] == review['assignment_id']
+    with implementation.own(ctx(project)).tables(write=False) as tx:
+        reviews = tx.rows('assignments', {'reviewed_assignment_id': gc['assignment_id']}, limit=0).results
+    assert [one['assignment_id'] for one in reviews] == [review['assignment_id']]
+    assert SERVICE.pending(ctx(project)) == before
+
+
+def test_result_sent_twice_reaches_its_recipient_once(project, monkeypatch):
+    gc = root(project)
+    actual = transport(monkeypatch, project)
+    actual.running.add('gc-one')
+    for key in ('first', 'second'):
+        SERVICE.queue_message(ctx(project), gc['assignment_id'], {'kind': 'result', 'body': 'Alarm rings at zero.',
+                              'sender_assignment_id': 'worker'}, key=key)
+    other = root(project, session='gc-two')
+    for held in (gc, other):
+        SERVICE.returned(ctx(project), held['work_id'], 'Timer outcome delivered.', state='delivered')
+    SERVICE.drain(ctx(project))
+    assert [envelope['body'] for _, envelope in actual.messages] == ['Alarm rings at zero.']
+    assert [message['body'] for _, message in actual.chat] == ['Timer outcome delivered.']
+
+
+def test_review_superseded_by_persons_decision_closes_without_filing_work(project):
+    gc = root(project)
+    SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'decided')
+    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'decision', 'at': implementation.now(),
+                                              'text': 'Keep the alarm as it is.', 'from': {'kind': 'user'}})
+    returned = SERVICE.returned(ctx(project), review['work_id'], 'The alarm could be louder.',
+                                findings=[{'summary': 'Make the alarm louder.'}])
+    assert returned['state'] == 'returned' and project[0].ticket(review['work_id']).work.done
+    assert not [one for one in project[0].work(node=Node('element', NODE), open=True, limit=0).results
+                if 'louder' in (one.task or '')]
+    assert not [one for one in SERVICE.pending(ctx(project)) if one['payload'].get('kind') == 'functional_correction']

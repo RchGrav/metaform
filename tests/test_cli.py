@@ -942,6 +942,7 @@ def test_the_command_a_refusal_gives_the_person_runs_when_pasted(run, project, h
     """UX review round 2, person-consent F4: the command the person is given is quoted for a shell, so a JSON
     argument pastes as it was given and deletes the memory; the caution counts what the graph holds and names what
     it does not."""
+    run('set', '--agents-ask-first', cwd=project)  # these check asking, off by default since 2026-10-18
     run('enable', 'memory')
     noted(run, project, 'Counts down.')
     run('memory', 'create_entities', json.dumps([{'name': 'k3', 'entityType': 'part', 'observations': ['Old.'],

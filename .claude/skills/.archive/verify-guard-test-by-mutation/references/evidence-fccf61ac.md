@@ -1,0 +1,1 @@
+verify-guard-test-by-mutation [project]: Use when a guard test scans source or declarations, or a regression test must be shown to fail without its fix.

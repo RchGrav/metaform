@@ -822,6 +822,15 @@ agents_may_set_control = boolean(
             'the person holds and can change, never a rule the person cannot get past, CLI-011.',
                                  label='Agents may change agent control', category='agents', heading='Permissions')
 
+agents_ask_first = boolean(
+    'agents_ask_first', False, person_only=True,
+    help='Ask me before an agent starts, stops, releases or orders work.',
+    details='Off, the default: the person\'s agents start, stop, release and order tickets without asking, so work found '
+            'gets done and a project heals itself (the person\'s decision, 2026-10-18). On: each such act waits on the '
+            'person\'s word in the chat or their answer on its card. Acts that cannot be undone, such as clearing or '
+            'deleting, ask either way.',
+    label='Ask me before agents act', category='agents', heading='Permissions')
+
 # The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
 # preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
 AGENT_ROLES = ('intake', 'system', 'sentinel', 'talk', 'prep', 'worker')

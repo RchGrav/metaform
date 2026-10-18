@@ -965,18 +965,26 @@ def short_line(description: str) -> str:
 
 
 def tools_text(folder: Path) -> str:
-    """metaform://tools: every tool on the folder's surface in one line, grouped under the prefix of the module that
-    serves it (`map_`, then `  where: ...` for map_where), for a host that lists tools by name only; then the rules of
-    the modules on the surface, MCP-031. Read once, when the agent needs it; nothing here is pushed."""
-    named = tools(folder)
-    groups: dict[str, list[str]] = {}
-    for name, one in listing(folder).items():
-        module = named[name][0].id if name in named else OWN
-        groups.setdefault(module, []).append(f'  {name.removeprefix(module + "_")}: {short_line(one.description)}')
+    """metaform://tools: every tool the agent's role is given, one line each, under the category it is found by, with
+    what the category is for, so an agent knows every tool it can reach and where; then the rules of the modules on
+    the surface, MCP-031; at most TOOLS_MOST characters. Linked from every connect message and read when the agent
+    needs it; nothing here is pushed. A tool in two categories is under each."""
+    groups = catalog.grouped(given_tools(folder), tools(folder))
     heading = prompt_files.module('mcp', 'tool_index')
-    index = '\n'.join(f'{module}_\n' + '\n'.join(lines) for module, lines in groups.items())
-    parts = [part for part in ((heading + '\n' if heading else '') + index, rules(folder)) if part]
-    return '\n\n'.join(parts) + '\n'
+    index = '\n'.join(
+        f'{category}{" (always listed)" if category in catalog.BESIDE else ""} — '
+        f'{catalog.purpose(category).split(":", 1)[0].split(", and ", 1)[0].rstrip(".")}: {", ".join(names)}'
+        for category, names in groups.items() if names)
+    listed = (heading + '\n' if heading else '') + index
+    kept = rules(folder)  # the rules are never cut: past the limit, category lines go, the rules stay whole
+    tail = '\n\n' + kept + '\n' if kept else '\n'
+    if len(listed) + len(tail) > TOOLS_MOST:
+        # the whole lines that fit beside the pointer and the rules; rules longer than TOOLS_MOST on their own are
+        # still given whole, past the limit, since a cut tool line is found again by search and a lost rule is not
+        more = prompt_files.module('mcp', 'tool_index_more') or f'… more: {catalog.CATALOG} search'
+        cut = listed[:max(0, TOOLS_MOST - len(tail) - len(more))]
+        listed = (cut.rsplit('\n', 1)[0] + '\n' if '\n' in cut else '') + more
+    return listed + tail
 
 
 def rules(folder: Path) -> str:
@@ -1324,15 +1332,18 @@ PURPOSES_KEY = 'announce:purposes'
 
 def listed_names(folder: Path, session: str | None) -> tuple[str, ...]:
     """The names a session is listed now, MCP-003: metaform_catalog and the tools of the category it has open, or the
-    tools its role starts with while none is; for a listing that names no session, every tool its role is given, since
-    no category it opens could change what it is listed."""
+    tools its role starts with while none is, and beside either the memory category's tools, `catalog.BESIDE`; for a
+    listing that names no session, every tool its role is given, since no category it opens could change what it is
+    listed."""
     given = given_tools(folder)
     if session is None:
         return (catalog.CATALOG, *given)
     opened = open_category(folder, session)
-    held = catalog.grouped(given, tools(folder)).get(opened, []) if opened else \
-        [name for name in catalog.first() if name in given]
-    return (catalog.CATALOG, *held)
+    groups = catalog.grouped(given, tools(folder))
+    held = groups.get(opened, []) if opened else [name for name in catalog.first() if name in given]
+    beside = [name for category in catalog.BESIDE if category != opened for name in groups.get(category, [])
+              if name not in held]
+    return (catalog.CATALOG, *held, *beside)
 
 
 def relisted(session: str | None, opened: str | None) -> None:
@@ -1385,7 +1396,10 @@ def run_catalog(folder: Path, given: dict[str, Any], session: str | None, follow
         return False, ['\n'.join(f'{catalog_line(tools_given[name])} [{homes[name]}]' for name in found)]
     opened = open_category(folder, session) if follows else None
     record_shown(session, PURPOSES_KEY, 1)
-    lines = [f'{name}{" (open)" if name == opened else ""}: {catalog.purpose(name)} ({len(grouped[name])} tools)'
+    marks = {name: ' (always listed)' for name in catalog.BESIDE} if follows else {}
+    if opened:
+        marks[opened] = ' (open)'
+    lines = [f'{name}{marks.get(name, "")}: {catalog.purpose(name)} ({len(grouped[name])} tools)'
              for name in allowed if grouped[name]]
     return False, ['\n'.join(lines)]
 
@@ -1822,6 +1836,7 @@ INSTRUCTIONS_URI = 'metaform://instructions'
 # The system glossary, the mcp module's glossary prompt, which the connect instructions tell every agent to read first.
 # It replaced metaform://glossary, with no alias kept (Phase 1c, item 8).
 GLOSSARY_URI = 'metaform://metaform'
+TOOLS_MOST = 4500  # the most characters metaform://tools gives, a strict limit, the person's 2026-10-18; past it, a pointer
 TOOLS_URI = 'metaform://tools'  # each tool in one line and the modules' rules, for a host that defers tool descriptions
 # What a session reads once its agent's context was compacted, as metaform_catalog compacted=true answers: the record of
 # what it was given is forgotten, so each piece comes again at its next use, CTX-045. Read, it forgets.
@@ -2006,6 +2021,8 @@ BLOCKS: tuple[Block, ...] = (
           else None),
     Block('memory', lambda agent: MEMORY_URI if 'memory' in agent.modules else None,
           lambda reading, uri: memory_text(reading.folder) if uri == MEMORY_URI else None),
+    # every tool the agent can reach, by category, so none is unknown to it and none is pushed into its context
+    Block('tools', lambda _: TOOLS_URI, lambda reading, uri: tools_text(reading.folder) if uri == TOOLS_URI else None),
     Block('firstrun', lambda agent: FIRSTRUN_URI if agent.role is None and first_run_text(agent.folder) else None,
           lambda reading, uri: first_run_text(reading.folder) if uri == FIRSTRUN_URI else None),
     Block('role', lambda agent: ROLE_URI + (agent.role or PERSON), _role_read),

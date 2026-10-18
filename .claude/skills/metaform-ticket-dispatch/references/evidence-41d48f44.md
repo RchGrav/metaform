@@ -1,0 +1,1 @@
+{"entities":[{"name":"Agent size held by default (key 6)","entityType":"behaviour" — identical memory_read_unread results returned on repeated calls to node element:code.interface.graphical across 17:13 to 17:18 in the episode window; the worker's own note: "No new findings: the memory read came back empty."

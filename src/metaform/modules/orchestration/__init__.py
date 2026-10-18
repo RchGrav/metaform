@@ -1,7 +1,7 @@
 """GC-led delivery using native roles, work records and durable continuations."""
 from __future__ import annotations
 
-import uuid
+import json
 from typing import Any
 
 from metaform import settings
@@ -11,7 +11,7 @@ from .bmad import definitions as bmad_definitions
 from .bmad import inspect as bmad_inspect
 from .specifications import change as publish_change
 from .specifications import inspect_change
-from .state import SERVICE, TABLES, identity, own, requested, row_for, work_changed, work_read
+from .state import ENDED, SERVICE, TABLES, fingerprint, identity, own, requested, row_for, work_changed, work_read
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -78,9 +78,22 @@ def team(ctx: Context) -> Any:
 def assess(ctx: Context) -> Any:
     assignment = requested(ctx, ctx.nouns.get('assignment'))
     with own(ctx).tables(write=False) as tx:
+        team = row_for(tx, assignment_id=assignment['team_id']) or assignment
+        if team.get('reviewed_assignment_id'):
+            # An assessment, or a specialist it called, is already the assessment of that work; it returns its
+            # findings through check-in, so it never queues another assessment of the same work.
+            return {**team, 'queued': False, 'said': 'This is the assessment of that work; nothing was queued. '
+                    'Return its result and findings with orchestration_check-in state=returned.'}
         gc = row_for(tx, assignment_id=assignment.get('gc_assignment_id')) or assignment
+        if gc['state'] in ENDED:
+            # A delivered result was queued its assessment once, at delivery.
+            prior = tx.rows('assignments', {'reviewed_assignment_id': gc['assignment_id']}, limit=0).results
+            if prior:
+                return {**max(prior, key=lambda one: str(one['created'])), 'queued': False,
+                        'said': 'The delivered result already has its assessment; nothing was queued.'}
     report = {name: ctx.nouns.get(name) for name in ('summary', 'candidate', 'evidence')}
-    key = identity(assignment['assignment_id'], 'assessment_request', str(ctx.nouns.get('key') or uuid.uuid4().hex))
+    asked = ctx.nouns.get('key') or fingerprint(json.dumps(report, sort_keys=True, default=str))
+    key = identity(assignment['assignment_id'], 'assessment_request', str(asked))
     return SERVICE.assessment(ctx, gc, report, key)
 
 

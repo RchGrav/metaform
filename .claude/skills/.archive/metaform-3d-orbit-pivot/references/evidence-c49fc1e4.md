@@ -1,0 +1,1 @@
+Extend test_the_3d_map_turns_and_zooms_about_the_selected_node: click3d, drag on empty stage while FLIGHT.on; after release zoomToCursor is false and off < 1e-3 after the ease; fails without the 'start' change.

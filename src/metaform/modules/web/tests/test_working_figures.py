@@ -91,7 +91,7 @@ def test_working_figures_hold_separate_places_face_the_label_and_resume_after_an
         const session = D.sessions.find(one => one.work_id === f.id);
         session.activity = 'waiting'; step(200); const waiting = f.mood;
         session.activity = 'working';
-        D.signals = [{session_id: session.session_id, signal: 'spinning-time', active: true}];
+        D.signals = [{session_id: session.session_id, signal: 'spinning-calls', active: true}];
         step(200); const restless = f.mood, restlessAt = f.mesh.position.clone(); step(40);
         const restlessMoved = f.mesh.position.distanceTo(restlessAt);
         D.signals = []; step(200);
@@ -223,7 +223,7 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
     from metaform.data import Node, Store
 
     run('enable', 'dispatch')
-    run('set', '--web-bubble-seconds=120')
+    run('set', '--web-bubble-seconds=60')
     store = Store('proj')
     places = ['code.alarm.audible', 'code.alarm.audible', 'code.loop.tick']
     tickets = [store.add_work(Node('element', address), 'broken', task='Check it') for address in places]
@@ -246,7 +246,7 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
         const {bubbles3d} = await import('/page/app/figures/bubble3d.js');
         const {eyeOf} = await import('/page/agents3d.js');
         const {EYE} = await import('/page/app/figures/eyes.js');
-        const camera = G.camera(), at = new THREE.Vector3(), gaze = new THREE.Vector3();
+        const camera = G.camera(), at = new THREE.Vector3(), gaze = new THREE.Vector3(), side = new THREE.Vector3();
         bubbles3d();
         const shown = [];
         G.scene().traverse(o => { if (o.isMesh && o.renderOrder >= 1000 && o.material.map && o.visible) {
@@ -255,8 +255,12 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
             const b = new THREE.Vector3(0.5, 0.5, 0).applyMatrix4(o.matrixWorld).project(camera);
             shown.push({box: [a.x, a.y, b.x, b.y], bright: o.material.color.r});
         }});
+        // where the tail's point sits, as bubbles3d measures it: up and to the right of the head, LOOK.lift and aside
         const heads = [...ROAM.figures.values()].filter(f => f.mesh !== EYE.mesh).map(f => {
-            eyeOf(f.mesh, at, gaze); return at.distanceTo(camera.position); });
+            eyeOf(f.mesh, at, gaze);
+            at.y += 0.6 * f.mesh.scale.x;
+            at.addScaledVector(side.set(1, 0, 0).applyQuaternion(camera.quaternion), 0.4 * f.mesh.scale.x);
+            return at.distanceTo(camera.position); });
         return {shown, heads, walking: [...ROAM.figures.values()].some(f => ['arriving', 'going'].includes(f.stage))};
     }"""
     end = time.monotonic() + 30

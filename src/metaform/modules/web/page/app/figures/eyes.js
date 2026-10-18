@@ -20,13 +20,15 @@ import {MODE, V3, FLIGHT} from '/page/app/camera/flight.js';
 import {small3d, meetEnds, MEET} from '/page/app/camera/fly3d.js';
 import {PHYS} from '/page/app/views/bar.js';
 import {labelOf} from '/page/app/map2d/inside.js';
-import {FOLLOW, autoZoom2d, fullFit2d, follow2d, followPassed, spring} from '/page/app/map2d/camera.js';
-import {note2d} from '/page/app/map2d/hover.js';
-import {ticketOf, showFollowed} from '/page/app/agents/dispatch.js';
+import {FOLLOW, FOLLOW_PACE, autoZoom2d, fullFit2d, follow2d, followPassed} from '/page/app/map2d/camera.js';
+import {note2d, nodeAt2d, edgeAt2d} from '/page/app/map2d/hover.js';
+import {M} from '/page/app/map2d/build.js';
+import {ROAM2D} from '/page/app/figures/roam2d.js';
+import {D, ticketOf, showFollowed} from '/page/app/agents/dispatch.js';
 import {tabNow} from '/page/app/panel/prompts.js';
 import {WS} from '/page/app/workspace/workspace.js';
 import {toast} from '/page/app/core/controls.js';
-import {figureAt} from '/page/app/figures/ask.js';
+import {figureAt, mascotAt} from '/page/app/figures/ask.js';
 import {WATCHED} from '/page/app/figures/bubble3d.js';
 import {nodeAt3d, linkAt3d, purposeOf} from '/page/app/map3d/pick3d.js';
 
@@ -269,7 +271,204 @@ export function viewing() {
     zoom2d: MODE.free ? 'free' : 'full fit', tab: tabNow(), flow: flowModeNow(), physics: PHYS.name,
     board: !$('#board').hidden, chat: !$('#helpdesk').hidden, panes: WS.on ? WS.layout() : null, in_view_3d: inView,
     view_3d: view3d(), pointer: pointerNow(), mascot_eyes: EYE.view && !EYE.agent, following: FOLLOW.work,
-    agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null, mascot_motion: mascotMotion()};
+    agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null, mascot_motion: mascotMotion(),
+    clicked: clickedSaid()};
+}
+/* The last thing the person clicked, which their system agent reads to know what "this" is: its kind, what names it,
+ * the state it showed and the record behind that, and when. One object, written in place on every click. A listener
+ * on the document in the capture phase reads what the pointer takes before the click's own handlers act, and changes
+ * nothing the click does. The chat's own head, tabs, buttons and message box are not recorded, nor a Chat button or
+ * the mascot's ask field, since the person goes there to ask, and a click that opens the chat must not replace what
+ * they ask about; the chat's conversation is. Nothing typed is read. On the maps a press that moved is a drag of the
+ * view, not a click. `told` is set once a message has been sent since the click, dock/send.js. Ticket
+ * code.interface.graphical#124, 2026-10-18. */
+export const CLICKED = {at: 0, project: null, kind: null, address: null, name: null, item: null, agent: null,
+  label: null, control: null, state: null, record: null, told: false, downX: 0, downY: 0};
+const STATE_WORDS = {broken: 'flashing red', trouble: 'flashing red', question: 'glowing, a question waits',
+  message: 'glowing, a message waits', missing: 'missing', 'under-construction': 'under construction',
+  unbuilt: 'not built yet'};
+// the state said where a part shows several: its fault, then what waits on the person, then its stage
+const STATE_ORDER = ['broken', 'trouble', 'question', 'message', 'missing', 'under-construction', 'unbuilt'];
+const TONE_WORDS = {error: 'an error', warn: 'a warning'};
+const clip = text => {
+  const one = String(text || '').replace(/\s+/g, ' ').trim();
+  return one.length > 80 ? `${one.slice(0, 79)}…` : one || null;
+};
+function heard(kind) {
+  const c = CLICKED;
+  c.at = Date.now(); c.project = S.project; c.kind = kind; c.address = null; c.name = null; c.item = null;
+  c.agent = null; c.label = null; c.control = null; c.state = null; c.record = null; c.told = false;
+}
+/* The state a map part shows, and the open ticket behind it: an element shows its own work and that of the joins it
+ * receives, which have no node of their own; a join its own. */
+function partState(element, join) {
+  const shown = join ? join.open_work || []
+    : [...(element.open_work || []), ...S.joins.filter(one => one.receiver === element.id)
+      .flatMap(one => one.open_work || [])];
+  const condition = STATE_ORDER.find(one => shown.includes(one));
+  if (!condition) return;
+  CLICKED.state = STATE_WORDS[condition];
+  const behind = (S.tickets || []).find(ticket => !ticket.done && ticket.condition === condition && (join
+    ? ticket.node_kind === 'join' && ticket.node_id === join.id
+    : ticket.node_kind === 'element' ? ticket.node_id === element.id
+      : ticket.node_kind === 'join' && ticket.receiver_address === element.address));
+  const item = behind?.map?.item;
+  CLICKED.record = item ? `#${item.split('#').pop()} ${condition}` : null;
+}
+function elementClicked(id) {
+  const element = S.elements.get(id)?.element;
+  if (!element) return false;
+  heard('element');
+  CLICKED.address = element.address;
+  CLICKED.name = clip(labelOf(element));
+  partState(element, null);
+  return true;
+}
+function joinClicked(joinId, provider) {
+  const join = joinOf('p:' + joinId);
+  if (!join) return false;
+  heard('join');
+  CLICKED.address = `${join.receiver_address} > ${partAddress(provider) || partAddress(join.providers[0])}`;
+  CLICKED.name = clip(join.purpose);
+  partState(null, join);
+  return true;
+}
+/* An agent's figure or a board card: the ticket it stands for, its agent and the ticket's condition. */
+function ticketClicked(kind, workId, glyph) {
+  const ticket = ticketOf(workId);
+  heard(kind);
+  CLICKED.label = glyph || null;
+  CLICKED.item = ticket?.map?.item || null;
+  CLICKED.name = clip(ticket?.map?.title || ticket?.task);
+  CLICKED.address = !ticket ? null : ticket.node_kind === 'join'
+    ? `${ticket.receiver_address} > ${ticket.provider_address}` : ticket.address || null;
+  CLICKED.agent = D.sessions.filter(one => one.work_id === workId).at(-1)?.agent || ticket?.map?.agent || null;
+  if (ticket?.condition && STATE_WORDS[ticket.condition]) {
+    CLICKED.state = STATE_WORDS[ticket.condition];
+    CLICKED.record = CLICKED.item ? `#${CLICKED.item.split('#').pop()} ${ticket.condition}` : null;
+  }
+  return true;
+}
+/* What a click on the 3D map takes, in the order its own handlers take it: the mascot where no node is, an agent's
+ * figure, the node within reach, the nearest join edge, `clickMascot`, `clickFigure` and `clickedAt3d`. */
+function clicked3dAt(x, y) {
+  if (!G) return false;
+  const node = nodeAt3d(x, y);
+  if (!node && mascotAt(x, y)) {
+    heard('mascot');
+    CLICKED.name = "the person's mascot";
+    CLICKED.label = MASCOT.glyph || null;
+    return true;
+  }
+  const work = figureAt(x, y);
+  if (work) return ticketClicked('agent figure', work, ROAM.figures.get(work)?.glyph);
+  if (node?.t === 'el') return elementClicked(node.id);
+  if (node) {
+    heard(node.t || 'node');
+    CLICKED.label = clip(node.name);
+    return true;
+  }
+  const link = linkAt3d(x, y);
+  return link ? joinClicked(link.join, link.target.id) : false;
+}
+/* And on the 2D map: an agent's figure, the node within reach, the nearest join edge, as `clickPicked` takes them. */
+function clicked2dAt(target, x, y) {
+  const g = target.closest('g.agent2d');
+  if (g) {
+    const figure = [...ROAM2D.figures.values()].find(one => one.g === g);
+    return figure ? ticketClicked('agent figure', figure.id, g.dataset.glyph) : false;
+  }
+  const key = nodeAt2d(x, y);
+  if (key) return key.startsWith('p:') ? joinClicked(key.slice(2), null) : elementClicked(key);
+  const edge = edgeAt2d(x, y);
+  return edge ? joinClicked(edge.join.id, edge.provider) : false;
+}
+const CONTROLS = 'button, a[href], summary, select, input, label, [role="tab"], [role="menuitem"], [role="button"], '
+  + '[role="switch"], [role="checkbox"]';
+/* A control's visible label: never what is typed in a field, only what names it. */
+function controlWords(control) {
+  const field = /^(INPUT|TEXTAREA|SELECT)$/.test(control.tagName);
+  const own = control.getAttribute('aria-label') || (field ? control.labels?.[0]?.textContent : control.textContent);
+  return clip(own || control.getAttribute('title') || (field ? control.getAttribute('placeholder') : ''));
+}
+/* Where a control is: the window by its title, or the side panel's tab and the heading over it. */
+function placeOf(target) {
+  const box = target.closest('.window');
+  if (box) return clip(box.querySelector('.bar .title')?.textContent);
+  const pane = target.closest('.pane[role="tabpanel"]');
+  if (!pane) return null;
+  const tab = clip(document.getElementById(pane.getAttribute('aria-labelledby'))?.textContent);
+  for (let at = target; at && at !== pane; at = at.parentElement) {
+    const head = at.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > summary');
+    if (head && head !== target) return [tab, clip(head.textContent)].filter(Boolean).join(' · ');
+  }
+  return tab;
+}
+function clickedOn(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!event.isTrusted || !target) return;
+  if ((target.closest('#dock') && !target.closest('#helpdesk .log')) || target.closest('input.reply, button.chat')) {
+    return;
+  }
+  const x = event.clientX, y = event.clientY, moved = Math.hypot(x - CLICKED.downX, y - CLICKED.downY) > 4;
+  const control = target.closest(CONTROLS);
+  if (target.closest('#stage') && !control) { if (!moved) clicked3dAt(x, y); return; }
+  if (target.closest('#viewport') && M.svg && !target.closest('.crumbs, button, a')) {
+    if (!moved) clicked2dAt(target, x, y);
+    return;
+  }
+  const card = target.closest('#board .card'), banner = target.closest('.banner');
+  if (card) {
+    ticketClicked('board card', card.dataset.id, null);
+  } else if (banner) {
+    heard('banner');
+    CLICKED.label = clip(banner.querySelector('.title')?.textContent || banner.querySelector('.text')?.textContent);
+    CLICKED.state = TONE_WORDS[[...banner.classList].find(one => TONE_WORDS[one])] || null;
+  } else if (target.closest('#toast')) {
+    heard('notice');
+    CLICKED.label = clip(target.closest('#toast').textContent);
+  } else if (target.closest('#helpdesk .log')) {
+    let row = target;
+    while (row.parentElement && !row.parentElement.matches('#helpdesk .log')) row = row.parentElement;
+    if (!row.parentElement) return;  // the conversation's own space, between its cards
+    heard('chat card');
+    CLICKED.label = clip(row.querySelector('.bubble, .title, .head, summary')?.textContent || row.textContent);
+  } else if (control) {
+    heard('control');
+    CLICKED.label = controlWords(control);
+    CLICKED.name = placeOf(control);
+    return;
+  } else if (target.closest('.pane[role="tabpanel"]')) {
+    heard('panel section');
+    CLICKED.label = placeOf(target);
+    return;
+  } else return;
+  if (control) CLICKED.control = controlWords(control);  // the button of a card, a banner or a notice
+}
+document.addEventListener('pointerdown', event => { CLICKED.downX = event.clientX; CLICKED.downY = event.clientY; },
+  {capture: true, passive: true});
+document.addEventListener('click', clickedOn, {capture: true, passive: true});
+/* The click as web_viewing gives it: null before any, and on another project than the one shown. */
+function clickedSaid() {
+  const c = CLICKED;
+  if (!c.at || c.project !== S.project) return null;
+  return {kind: c.kind, address: c.address, name: c.name, item: c.item, agent: c.agent, label: c.label,
+    control: c.control, state: c.state, record: c.record, at: new Date(c.at).toISOString(),
+    seconds_ago: Math.round((Date.now() - c.at) / 1000), told: c.told, said: clickedWords()};
+}
+/* What the person clicked, in the words their system agent is told: what it is and what names it, then the state it
+ * showed and the record behind that. */
+export function clickedWords() {
+  const c = CLICKED, quoted = text => text ? ` "${text}"` : '';
+  const what = c.kind === 'element' ? `element ${c.address}${c.name ? ` (${c.name})` : ''}`
+    : c.kind === 'join' ? `join ${c.address}`
+      : c.kind === 'agent figure' || c.kind === 'board card'
+        ? `${c.kind}${c.agent ? ` of ${c.agent}` : ''} on ${c.item || 'a ticket'}${c.address ? ` at ${c.address}` : ''}`
+          + quoted(c.name)
+        : c.kind === 'mascot' ? "the person's mascot"
+          : `${c.kind}${quoted(c.label)}${c.control ? `, its button "${c.control}"` : ''}`
+            + (c.name ? ` in ${c.name}` : '');
+  return `${what}${c.state ? `, ${c.state}` : ''}${c.record ? ` (${c.record})` : ''}`;
 }
 /* How the mascot moved on this page over its last seconds, for an agent reading what the person sees, VIEW-005: each
  * frame's body on the screen, its facing and size, its own animation, the point it steers to, the camera and the
@@ -693,8 +892,14 @@ function followIn3d(figureAt) {
   const camera = G.camera(), target = G.controls().target, by = FOLLOW3D.by;
   const go = FOLLOW.go3d ||= {at: target.clone(), speed: new THREE.Vector3(), drawn: target.clone()};
   if (!go.drawn.equals(target)) go.at.copy(target);
-  for (const axis of ['x', 'y', 'z']) {
-    [go.at[axis], go.speed[axis]] = spring(go.at[axis], go.speed[axis], figureAt[axis], passed);
+  // `spring`'s step on each axis, worked out in numbers so the follow allocates nothing, CLAUDE.md 4.1
+  const fade = Math.exp(-FOLLOW_PACE * passed), still = reduced();
+  for (let axis = 0; axis < 3; axis++) {
+    const goal = figureAt.getComponent(axis);
+    if (still) { go.at.setComponent(axis, goal); go.speed.setComponent(axis, 0); continue; }
+    const off = go.at.getComponent(axis) - goal, speed = go.speed.getComponent(axis), push = speed + FOLLOW_PACE * off;
+    go.at.setComponent(axis, goal + (off + push * passed) * fade);
+    go.speed.setComponent(axis, (speed - FOLLOW_PACE * push * passed) * fade);
   }
   by.subVectors(go.at, target);
   if (by.length() < camera.position.distanceTo(target) * 1e-5) return;

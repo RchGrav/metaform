@@ -23,6 +23,16 @@ export const css = name => {
 // asked once; the list answers for the person's setting as it is now, whenever it changes
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 export const reduced = () => REDUCED.matches;
+/* Whether the person is writing in the Object tab: an issue being raised, or the focus in one of its fields. Its panel
+ * is then left as it is when the map changes, so what they write is never wiped (2026-10-18: the issue form was
+ * redrawn, and closed, every few seconds while agents wrote). */
+export function writingInPanel() {
+  const pane = document.querySelector('#p-object');
+  if (!pane) return false;
+  const active = document.activeElement;
+  if (active && pane.contains(active) && active.matches('textarea, input, select, [contenteditable]')) return true;
+  return [...pane.querySelectorAll('.issue')].some(issue => !issue.hidden);
+}
 export const SVG = 'http://www.w3.org/2000/svg';
 
 /* A DOM node from a tag, its properties and its children; strings become text nodes, never markup. */

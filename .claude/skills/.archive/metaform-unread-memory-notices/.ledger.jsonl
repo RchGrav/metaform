@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Stop-hook notices re-announced the same unread memories every turn, and the agent re-read the same node six times with different filters, replying \"nothing new\" each time. A class-level rule for handling unread-memory notices stops that waste and is reusable across every Metaform node.", "evidence": "references/evidence-ab5bebb9.md"}

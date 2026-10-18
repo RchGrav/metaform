@@ -1,0 +1,1 @@
+The notice comes back unchanged after every read, which makes agents spend turns for nothing. I'll check whether that's already ticketed, and file it once if not.

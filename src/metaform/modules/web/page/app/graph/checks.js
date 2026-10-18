@@ -300,7 +300,7 @@ function mascotState() {
     px: MASCOT.mesh ? onScreen(MASCOT.mesh) : 0,
     shown2d: Boolean(MASCOT2D.g?.isConnected), x2d: MASCOT2D.x, y2d: MASCOT2D.y, ...mascotScreen(),
     bubble: BUBBLE.el?.classList.contains('on') ? BUBBLE.el.textContent : null,
-    cards: [...document.querySelectorAll('.mascot-card')].map(card => card.textContent), told: [...ATTN.seen]};
+    told: [...ATTN.seen]};
 }
 function at3d(id) {
   const node = G ? node3d(id) : null;

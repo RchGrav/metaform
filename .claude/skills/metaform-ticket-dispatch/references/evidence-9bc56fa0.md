@@ -1,0 +1,1 @@
+ToolSearch "orchestration check-in memory" → matches CronDelete, EnterPlanMode, EnterWorktree, ExitWorktree. Bash: "uv run metaform orchestration inspect assignment=... fields='[...]'" → "Error: inspect does not take 'fields=...'. Next: metaform orchestration inspect --help".

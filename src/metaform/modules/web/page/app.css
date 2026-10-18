@@ -1643,18 +1643,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .mascot-bubble.drawn .said{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .mascot-bubble.asking{pointer-events:auto;display:flex;flex-direction:column;gap:6px;max-width:300px}
 .mascot-bubble .reply{width:240px;min-height:28px;padding:0 8px;font:inherit}
-/* The note card the mascot brings when something needs the person, set down near the pointer: a click on its words
- * goes there, its × puts it away. Eased in and out. */
-.mascot-card{position:fixed;z-index:41;display:flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:10px;
-  background:var(--panel-2);border:1px solid var(--record);box-shadow:var(--lift-2);
-  opacity:0;transform:translate(-50%,-50%) scale(.6) rotate(-4deg);
-  transition:left .7s var(--ease),top .7s var(--ease),opacity .3s var(--ease),transform .5s var(--ease)}
-.mascot-card.on{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-1.5deg)}
-.mascot-card .go{all:unset;cursor:pointer;color:var(--text);font:500 var(--t-sm,13px)/1.3 var(--sans);max-width:240px}
-.mascot-card .go:hover,.mascot-card .go:focus-visible{text-decoration:underline}
-.mascot-card .x{all:unset;cursor:pointer;width:22px;height:22px;text-align:center;border-radius:6px;color:var(--muted)}
-.mascot-card .x:hover{background:var(--control);color:var(--text)}
-@media (prefers-reduced-motion: reduce){.mascot-bubble,.mascot-card{transition:none}}
+@media (prefers-reduced-motion: reduce){.mascot-bubble{transition:none}}
 /* The next step once an intake the page followed finishes, intake.js `offerNext`: one card near the top of the map,
  * below the intake's bar and the agents list, so neither is covered. */
 .nextcard{position:fixed;z-index:40;left:50%;top:196px;transform:translateX(-50%);display:grid;gap:var(--s2);
@@ -2380,6 +2369,9 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 #helpdesk .msg.mine .bubble{max-width:min(85%,64ch);background:color-mix(in srgb,var(--signal) 16%,var(--panel));color:var(--text);
   border:1px solid color-mix(in srgb,var(--signal) 38%,transparent)}
 #helpdesk .msg .bubble.pending{border-style:dashed;opacity:.8}
+/* What the person clicked, as their system agent was told it with this message, dock/send.js. */
+#helpdesk .msg .bubble .clickedchip{display:block;max-width:100%;height:auto;margin-bottom:var(--s1);
+  padding:3px var(--s2);overflow:hidden;text-overflow:ellipsis;line-height:1.3}
 #helpdesk .msg .mark{font:600 var(--t-xs)/1.4 var(--sans);color:var(--signal);margin:0 var(--s1) 2px}
 #helpdesk .msg .tools{display:flex;align-items:center;gap:2px;flex:none;opacity:0;transition:opacity var(--dur-1,.18s) var(--ease-arrive);
   font:var(--t-xs)/1 var(--sans);color:var(--faint);white-space:nowrap;padding-bottom:4px}
@@ -2494,6 +2486,10 @@ body:has(.window.mcpwin > .bar:active) .appframe{pointer-events:none}  /* a pane
 #dock.measure #dockTab{display:flex!important;visibility:hidden}
 #dock.open #dockTab.launch{display:flex;animation:tab-leave var(--dur-2,.32s) var(--ease-leave) forwards}
 @keyframes tab-leave{to{opacity:0;scale:.94}}
+/* A message arrived while the chat is put away: the tab flashes once, `flashDockTab`. */
+#dockTab.flash{animation:tab-flash .9s ease-in-out}
+@keyframes tab-flash{0%,100%{filter:none}35%{filter:brightness(1.7)}}
+@media (prefers-reduced-motion:reduce){#dockTab.flash{animation:none}}
 #dockTab .newdot{width:7px;height:7px;margin:5px 0 0 6px;border-radius:50%;background:var(--ground);opacity:.85}
 @media (prefers-reduced-motion: reduce){
   #helpdesk .head[data-state] .dot,#helpdesk .latest,#helpdesk .log > .embody,#dock.open #dockTab.launch{animation:none}
@@ -2559,14 +2555,14 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
  * light inside its top edge, a shade along its foot where the thick pane turns away, and its elevation. It gives up the
  * border it was given, which between its lines and its hairline showed as a second ring; a colored edge that says
  * something, a toast's or a notice's, stays. */
-:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,.mascot-bubble,
-  .mascot-card,.wsghost,.voice-ask,.voice-note,.voice-wake,.hovercard,.tip3d,#helpdesk .latest,
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,.mascot-bubble:not(.drawn:not(.asking)),
+  .wsghost,.voice-ask,.voice-note,.voice-wake,.hovercard,.tip3d,#helpdesk .latest,
   .window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
   background:var(--glass-pop);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
   box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-2)}
 :root[data-theme$="glass"] :is(.window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
   box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-3)}
-:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble,.wsghost,.voice-ask,.voice-note,
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble:not(.drawn:not(.asking)),.wsghost,.voice-ask,.voice-note,
   .voice-wake,.hovercard,.tip3d,.window,#board,#helpdesk,.emptystage .card,.nextcard,.sessionpop,.dockmenu){border-color:transparent}
 /* A pane docked into the workspace lies in it as a layout pane does. */
 :root[data-theme$="glass"] :is(.wsbody > .window.docked,.wsbody > #helpdesk){background:transparent;box-shadow:none}

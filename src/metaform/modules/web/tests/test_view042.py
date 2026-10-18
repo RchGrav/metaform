@@ -103,7 +103,7 @@ def test_the_agents_menu_says_what_a_higher_count_starts_and_stops_every_agent_o
     """UX review round 1, 2026-10-17 (web-gui-controls F4 and F5, dispatch-concurrency F5): raising Agents at once with
     Autostart on started every newly allowed agent in the same second, unsaid, and nothing stopped every agent at once.
     The count's change asks first with how many it starts, keeping the old count on Keep; Stop all agents asks with the
-    count and posts the stop-all. Autostart reads as on to the page alone, so no agent starts here."""
+    count and posts the stop-all. Full Auto reads as on to the page alone, so no agent starts here."""
     from metaform.data import Node, Store
     store = Store('proj')
     node = Node('element', store.element('code.alarm.audible').id)
@@ -118,7 +118,7 @@ def test_the_agents_menu_says_what_a_higher_count_starts_and_stops_every_agent_o
     page.route('**/api/dispatch-autostart*', lambda route: route.fulfill(json=shown) if route.request.method == 'GET'
                else (sent.append(route.request.post_data_json), route.fulfill(json=shown)))
     page.route('**/api/dispatch-stop-all', lambda route: (sent.append('stop-all'), route.fulfill(
-        json={'stopped': [], 'failed': [], 'turned_off': ['proj:dispatch_autostart'], 'notice': 'Autostart is off.'})))
+        json={'stopped': [], 'failed': [], 'turned_off': ['proj:dispatch_autostart'], 'notice': 'Full Auto is off.'})))
     page.click('#agentsMenuBtn')
     page.wait_for_function('() => document.querySelector("#agentCount").value === "1"')
     assert page.get_attribute('#agentCount', 'max') == '17', 'the server\'s own maximum'
@@ -132,7 +132,7 @@ def test_the_agents_menu_says_what_a_higher_count_starts_and_stops_every_agent_o
     page.click('#agentsMenuBtn')
     page.click('#stopAllBtn')
     page.wait_for_selector('#confirm:not([hidden])')
-    assert 'Autostart agents is turned off' in page.inner_text('#confirm')
+    assert 'Full Auto is turned off' in page.inner_text('#confirm')
     page.click('#confirm button.confirm')
     page.wait_for_function('() => !document.querySelector("#stopAllBtn").disabled')
     assert sent == ['stop-all']
@@ -165,7 +165,7 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
     page.route('**/api/dispatch-autostart*', setting)
     page.goto(f'http://127.0.0.1:{web}/#p=proj')
     page.wait_for_function('() => window.metaform.loaded()')
-    control = page.get_by_role('switch', name='Autostart')  # a checkbox shown as a switch, role="switch"
+    control = page.get_by_role('switch', name='Full Auto')  # a checkbox shown as a switch, role="switch"
     assert control.is_visible() and not control.is_checked()
     assert writes == []
     control.check()
@@ -186,8 +186,8 @@ def test_autostart_checkbox_reads_each_project_and_only_changes_on_a_click(run, 
 def test_stop_all_from_the_page_turns_autostart_off_and_every_stop_reads_as_the_persons(
         run, web, mapped, browser, tmp_path, dispatch_runners):  # noqa: F811  imported fixtures keep their names for pytest discovery
     """UX combined replay, 2026-10-17: the page's Stop all, run by a server with no terminal as `metaform web start`
-    runs it, carried no consent of the person's, so Autostart stayed on, agents started again seconds later, and every
-    stop read as a runner that died. Stop all from the page is the person's: Autostart turns off, nothing runs after
+    runs it, carried no consent of the person's, so Full Auto stayed on, agents started again seconds later, and every
+    stop read as a runner that died. Stop all from the page is the person's: Full Auto turns off, nothing runs after
     it, and each session reads stopped by the person, with no hand-over raised."""
     import time
 
@@ -213,7 +213,7 @@ def test_stop_all_from_the_page_turns_autostart_off_and_every_stop_reads_as_the_
         page, problems, _ = opened(browser, web)
         page.wait_for_function('() => window.metaform.loaded()')
         page.wait_for_function('() => !document.querySelector("#autostartAgents").disabled')
-        page.get_by_role('switch', name='Autostart').check()
+        page.get_by_role('switch', name='Full Auto').check()
         eventually(lambda: len([one for one in sessions() if one['state'] == 'running']) == 2, limit=60)
         page.click('#agentsMenuBtn')
         page.click('#stopAllBtn')

@@ -83,7 +83,7 @@ def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_moti
             session.activity = 'waiting'; step(30); const waiting = {x: f.x, y: f.y}; step(20);
             const waitingDrift = Math.hypot(f.x - waiting.x, f.y - waiting.y);
             session.activity = 'working';
-            D.signals = [{session_id: session.session_id, signal: 'spinning-time', active: true}];
+            D.signals = [{session_id: session.session_id, signal: 'spinning-calls', active: true}];
             step(30); const restless = {x: f.x, y: f.y}; step(20);
             const restlessMoved = Math.hypot(f.x - restless.x, f.y - restless.y);
             D.signals = []; step(40);

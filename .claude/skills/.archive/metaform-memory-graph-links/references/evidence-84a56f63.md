@@ -1,0 +1,3 @@
+user: listen we were supposed to have cleared all of the old memories because the old memories were not following the memory prompt..
+assistant: Checking where that stands: whether the old memories were cleared, and whether a ticket exists for it. My own MCP server is stale for memory, so I'll read through the CLI.
+user: No it wouldnt have been I did a lot of work outside of the system  developed the gc system etc

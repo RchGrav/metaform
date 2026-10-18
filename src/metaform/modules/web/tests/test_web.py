@@ -605,6 +605,7 @@ def test_a_page_open_through_a_restart_reconnects_to_the_new_server_and_is_told_
     import importlib
 
     restarter = importlib.import_module('metaform.modules.web.restart')  # the package's restart() hides the module
+    run('set', '--web-notices')  # the notice is a banner only while web_notices is on
     started(run)
     page = opened(browser, web)[0]
     page.wait_for_function('() => window.metaform.loaded()')
@@ -2974,6 +2975,79 @@ def test_selecting_a_node_turns_the_3d_map_to_it_and_comes_in_close(run, web, ma
     assert mode3d(page) == 'whole'
     assert page.is_hidden('#stage .metsign')
     assert page.evaluate('window.metaform.selected()') == cook
+    assert problems == []
+
+
+# The modules are loaded once, `PIVOT_PARTS`, so a wait reads them in a plain function: a wait on a promise ends as soon as
+# it settles, even to false, `still`.
+PIVOT_PARTS = '''async () => { window.pivotParts = {G: (await import('/page/app/map3d/graph3d.js')).G,
+    FLIGHT: (await import('/page/app/camera/flight.js')).FLIGHT}; }'''
+PIVOT_STATE = '''id => { const {G, FLIGHT} = window.pivotParts;
+    const t = G.controls().target, c = G.camera().position, n = G.graphData().nodes.find(node => node.id === id);
+    return {off: Math.hypot(t.x - n.x, t.y - n.y, t.z - n.z) / c.distanceTo(t), target: [t.x, t.y, t.z],
+        away: c.distanceTo(t), turn: Math.atan2(c.x - t.x, c.z - t.z), cursor: G.controls().zoomToCursor,
+        flying: FLIGHT.on}; }'''
+
+
+@pytest.mark.req('VIEW-005')
+def test_the_3d_map_turns_and_zooms_about_the_selected_node(run, web, mapped, browser):
+    """After a selection's flight the point the camera turns about is the node's centre, not its sign: the wheel with
+    the pointer off the node zooms along the line to it, a drag turns the map round it with the node held still on the
+    screen, and the layout moving the node takes the point with it. With nothing selected the wheel zooms toward the
+    pointer again."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at = keys_of(web)
+    cook = at['exterior.cook']
+    still3d(page, 1)
+    map_key(page, 'p')  # the layout held, so the name is read where the camera put it; `pin3d` moves the node below
+    observe_met_sign(page)
+    page.evaluate(PIVOT_PARTS)
+    page.evaluate(f'window.metaform.click3d("{cook}")')
+    page.wait_for_function(f'() => window.metaform.selected() === "{cook}"')
+    assert_met_sign_share(page, 0.5)  # the name framed as before, VIEW-005
+    page.wait_for_function(f'() => (({PIVOT_STATE})("{cook}")).off < 1e-3 && !window.pivotParts.FLIGHT.on')
+    assert page.evaluate(PIVOT_STATE, cook)['cursor'] is False
+    stage = page.locator('#stage').bounding_box()
+    aside = stage['x'] + stage['width'] * 0.2, stage['y'] + stage['height'] * 0.25  # off the node
+    page.mouse.move(*aside)
+    for delta in (-300, 300, 300):
+        page.mouse.wheel(0, delta)
+        still(page, '() => window.metaform.away3d()')
+        assert page.evaluate(PIVOT_STATE, cook)['off'] < 1e-3
+    seen, turn = page.evaluate(f'window.metaform.screen3d("{cook}")'), page.evaluate(PIVOT_STATE, cook)['turn']
+    corner = stage['x'] + stage['width'] * 0.92, stage['y'] + stage['height'] * 0.12  # empty, so no node is dragged
+    page.mouse.move(*corner)
+    page.mouse.down()
+    page.mouse.move(corner[0] - 150, corner[1] + 20, steps=10)
+    page.mouse.up()
+    still(page, '() => window.metaform.away3d() + window.metaform.cameraAt().turn')
+    turned = page.evaluate(PIVOT_STATE, cook)
+    assert abs(turned['turn'] - turn) > 0.1 and turned['off'] < 1e-3, turned  # the map turned, round the node
+    now = page.evaluate(f'window.metaform.screen3d("{cook}")')
+    assert math.hypot(now['x'] - seen['x'], now['y'] - seen['y']) < 2, (seen, now)
+    page.evaluate(f'window.metaform.pin3d("{cook}", 40, -30, 20)')  # the layout moves the node
+    page.wait_for_function('() => Math.abs(window.pivotParts.G.controls().target.x - 40) < 1e-3')
+    assert page.evaluate(PIVOT_STATE, cook)['off'] < 1e-3
+    page.keyboard.press('Escape')
+    page.wait_for_function('() => window.metaform.selected() === null')
+    page.wait_for_function('() => window.pivotParts.G.controls().zoomToCursor')
+    left = page.evaluate(PIVOT_STATE, cook)
+    page.mouse.move(*aside)
+    page.mouse.wheel(0, -300)
+    still(page, '() => window.metaform.away3d()')
+    after = page.evaluate(PIVOT_STATE, cook)
+    assert math.dist(after['target'], left['target']) > 0.01 * left['away'], (left, after)  # toward the pointer
+    # a hand that takes the camera during the selection's flight: the flight never arrives, and the map turns about
+    # the node from where the hand took it
+    page.evaluate(f'window.metaform.click3d("{cook}")')
+    page.wait_for_function('() => window.pivotParts.FLIGHT.on')
+    page.mouse.move(*corner)
+    page.mouse.down()
+    page.mouse.move(corner[0] - 60, corner[1] + 10, steps=4)
+    page.mouse.up()
+    page.wait_for_function(f'() => (({PIVOT_STATE})("{cook}")).off < 1e-3')
+    assert page.evaluate(PIVOT_STATE, cook)['cursor'] is False
     assert problems == []
 
 
@@ -6524,6 +6598,116 @@ def test_an_agent_reads_the_pointers_ray_and_what_it_takes_and_captures_the_view
     refused = run('web', 'capture', 'source=screen', cwd=folder, ok=False)
     assert 'Nothing is shared with agents' in refused.stderr + refused.stdout
     assert problems == []
+
+
+@pytest.mark.req('VIEW-005')
+def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_next_message(
+        run, home, web, mapped, browser, tmp_path):
+    """code.interface.graphical#124: the person points at something and asks their system agent about it. The page
+    keeps the last thing they clicked, a node in the 3D map, a join in the 2D map, a banner's button, and web_viewing
+    gives it as `clicked`, with the state a part shows and the ticket behind it. Their next message to the system
+    agent within two minutes starts with one line naming it, and their bubble shows it as a chip; a second message, or
+    one sent three minutes after the click, carries none. The chat's own box and buttons are never recorded."""
+    from metaform.data import Store
+    from metaform.modules.dispatch import end_group
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
+
+    agent = Dispatch(run, home, mapped, tmp_path)
+    agent.id = agent.store.add_work(agent.node, None, task='Conversation with the system agent', held=True).id
+    trouble = json.loads(run('map', 'work', 'op=add', 'receiver=code.timer.kitchen', 'provider=code.alarm.audible',
+                             'condition=trouble', 'task=It rings late.', 'title=The alarm rings late', '--json',
+                             cwd=mapped).stdout)
+    item, join = trouble['map']['item'], trouble['node_id']             # the ticket's join, kitchen timer > alarm
+    alarm = Store('proj').element('code.alarm.audible').id
+    agent.start('plain', 'system=true')
+    try:
+        session = agent.session().extra['session_id']
+        eventually(lambda: agent.received('session/prompt'))
+        started(run)
+        page, problems, _ = opened(browser, web)
+        page.route('**/api/system-chat', lambda route: route.fulfill(
+            status=200, content_type='application/json', body=json.dumps(
+                {'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})))
+        page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+
+        def clicked():
+            return json.loads(run('web', 'viewing', '--json', cwd=mapped).stdout)['clicked']
+
+        page.click('#dockTab')                                         # the chat's own controls are not recorded
+        page.click('#helpdesk .call')
+        page.wait_for_selector('#helpdesk .threadbar .stop:not([hidden])')
+        assert clicked() is None
+        map_key(page, 'p')                                             # the layout holds still under the pointer
+        at = page.evaluate('''async id => { const {G} = await import('/page/app/map3d/graph3d.js');
+            const THREE = await import('three'); const node = G.graphData().nodes.find(one => one.id === id);
+            const v = new THREE.Vector3(node.x, node.y, node.z).project(G.camera());
+            const box = document.querySelector('#stage').getBoundingClientRect();
+            return [box.left + (v.x + 1) / 2 * box.width, box.top + (1 - v.y) / 2 * box.height]; }''', alarm)
+        page.mouse.click(*at)                                          # a node in the 3D map
+        node = clicked()
+        assert (node['kind'], node['address']) == ('element', 'code.alarm.audible'), node
+        to_large_area(page)
+        on_edge = '''async id => { const {M} = await import('/page/app/map2d/build.js');
+            const {nodeAt2d, edgeAt2d} = await import('/page/app/map2d/hover.js');
+            const edge = M.edges.find(one => one.join?.id === id), path = edge.path, length = path.getTotalLength();
+            for (let share = 0.5, step = 0; step < 40; step++, share = 0.5 + (step % 2 ? 1 : -1) * Math.ceil(step / 2) / 50) {
+                const on = path.getPointAtLength(length * share);
+                const at = new DOMPoint(on.x, on.y).matrixTransform(path.getScreenCTM());
+                if (!nodeAt2d(at.x, at.y) && edgeAt2d(at.x, at.y) === edge) return [at.x, at.y];
+            }
+            return null; }'''
+
+        def click_join():
+            map_key(page, 'Escape')                                    # a selection let go, the map drawn whole
+            page.wait_for_function('''async id => (await import('/page/app/map2d/build.js')).M.edges
+                .some(one => one.join?.id === id && one.path?.isConnected)''', arg=join)
+            still2d(page)
+            point = page.evaluate(on_edge, join)
+            assert point
+            page.mouse.click(*point)
+        click_join()                                                   # a join in the 2D map, its ticket in trouble
+        joined = clicked()
+        assert (joined['kind'], joined['address']) == ('join', 'code.timer.kitchen > code.alarm.audible'), joined
+        assert joined['state'] == 'flashing red' and joined['record'] == f'#{item.split("#")[-1]} trouble', joined
+        page.evaluate('''async () => (await import('/page/app/core/banner.js')).banner('test-retry',
+            {tone: 'warn', title: 'The map was not read', actions: [{label: 'Read again', run: () => {}}]})''')
+        page.click('.banner[data-key="test-retry"] .acts button')     # a banner's button
+        told = clicked()
+        assert (told['kind'], told['label'], told['control'], told['state']) == (
+            'banner', 'The map was not read', 'Read again', 'a warning'), told
+        click_join()                                                   # the join again, then the chat
+        page.click('#helpdesk .say')
+        page.keyboard.type('Why is this flashing red?')
+        assert clicked()['kind'] == 'join'                             # the box and what is typed are never recorded
+        asked = len(agent.received('session/prompt'))
+
+        def prompts():
+            return [' '.join(part.get('text', '') for part in one['params']['prompt'])
+                    for one in agent.received('session/prompt')[asked:]]
+        page.keyboard.press('Enter')
+        first = eventually(lambda: next((one for one in prompts() if 'Why is this flashing red?' in one), None))
+        line = (f'The person clicked, {{}} s before: join code.timer.kitchen > code.alarm.audible, flashing red '
+                f'(#{item.split("#")[-1]} trouble).')
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nWhy is this flashing red\\?$', first), first
+        chip = page.wait_for_selector('#helpdesk .msg.mine .bubble:has-text("Why is this flashing red?") .clickedchip')
+        assert chip.inner_text().startswith('Clicked: join code.timer.kitchen > code.alarm.audible, flashing red')
+        assert 'The person clicked' not in page.inner_text('#helpdesk .msg.mine .bubble:has-text("flashing red?")')
+        page.fill('#helpdesk .say', 'And what is this one?')        # no click since the last message
+        page.press('#helpdesk .say', 'Enter')
+        second = eventually(lambda: next((one for one in prompts() if 'what is this one' in one), None))
+        assert second == 'And what is this one?', second
+        click_join()
+        page.evaluate("async () => { (await import('/page/app/figures/eyes.js')).CLICKED.at -= 180000; }")  # 3 min on
+        page.fill('#helpdesk .say', 'Still there?')
+        page.press('#helpdesk .say', 'Enter')
+        late = eventually(lambda: next((one for one in prompts() if 'Still there?' in one), None))
+        assert late == 'Still there?', late
+        assert page.locator('#helpdesk .clickedchip').count() == 1
+        assert problems == []
+    finally:
+        agent.close()
+        for pid in agent.logged('pid'):
+            end_group(pid)
 
 
 @pytest.mark.req('VIEW-005')

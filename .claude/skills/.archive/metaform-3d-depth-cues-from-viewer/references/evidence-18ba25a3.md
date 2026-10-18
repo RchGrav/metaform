@@ -1,0 +1,1 @@
+Right now you have the haze pinned to the map and not the users camera viewpoint.

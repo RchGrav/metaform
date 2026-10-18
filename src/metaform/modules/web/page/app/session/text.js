@@ -15,16 +15,28 @@ import {SESSIONPOP, sessionSummary, preCallSettings} from '/page/app/session/set
 import {notificationState} from '/page/app/session/orchestration.js';
 
 /* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
- * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. */
+ * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. The
+ * person's message that told their system agent what they clicked shows that as a chip over their words. */
 export function messageRow(text, {mine, who, first, at, pending = null}) {
+  const [told, words] = mine ? clickedOf(text) : [null, text];
   const bubble = h('div', {class: `bubble ${mine ? 'mine' : 'theirs'}${pending ? ' pending' : ''}`},
-    h('span', {class: 'visually-hidden'}, `${who}: `), ...richText(text));
+    h('span', {class: 'visually-hidden'}, `${who}: `),
+    told ? h('span', {class: 'chip clickedchip', title: `Your agent was told: ${told}`},
+      told.slice(CLICK_LEAD.length).replace(/^\d+ s before: /, 'Clicked: ').replace(/\.$/, '')) : null,
+    ...richText(words));
   const time = at
     ? h('time', {datetime: new Date(at).toISOString(), title: new Date(at).toLocaleString()}, clockOf(at)) : null;
   const tools = h('div', {class: 'tools'}, pending ? h('small', {class: 'pendingnote'}, pending) : time,
     mine ? null : copyButton(() => String(text), 'Copy the message'));
   return h('div', {class: `msg ${mine ? 'mine' : 'theirs'}${first ? ' first' : ''}`},
     first ? h('div', {class: 'who', 'aria-hidden': 'true'}, who) : null, h('div', {class: 'row'}, bubble, tools));
+}
+/* The line that tells the person's system agent what they last clicked, first in their message, dock/send.js; split
+ * from the words they wrote: [the line or null, the words]. */
+export const CLICK_LEAD = 'The person clicked, ';
+function clickedOf(text) {
+  const said = String(text ?? ''), end = said.indexOf('\n\n');
+  return said.startsWith(CLICK_LEAD) && end > 0 ? [said.slice(0, end), said.slice(end + 2)] : [null, said];
 }
 /* A small Copy button: the text given goes to the clipboard, and the button says Copied for a moment. */
 function copyButton(text, label = 'Copy') {

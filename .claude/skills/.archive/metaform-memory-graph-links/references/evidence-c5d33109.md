@@ -1,0 +1,3 @@
+{"entities":[{"name":"Agent size held by default (key 6)","entityType":"behaviour","observations":["Before 2026-10-18 ROAM.held was true only when metaform.agentSizeHeld was '1'."]}]}
+The next identical notice in that FQC session, at about 17:35Z, was real, as memory_read_unread returned a new observation another FQC had added to 'Agent size held by default (key 6)'.
+Because another agent's write can raise a new notice with the same wording, a repeated notice is a defect only when read_unread returns nothing for it.

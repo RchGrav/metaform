@@ -1,0 +1,1 @@
+HEAD's figures/agents.js holds agent size only when metaform.agentSizeHeld is '1', so the default was 'not limited'. Your uncommitted edit (held unless '0') is what makes it the default.

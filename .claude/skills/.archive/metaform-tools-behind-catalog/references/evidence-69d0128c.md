@@ -1,0 +1,1 @@
+{"tool":"memory_read_unread","arguments":{"node":"element:code.interface.graphical"}}  ...  "Error: The agent that sent note 46675d7928889bbc is no longer at work in a running session, so the reply would reach no one.\nNext: call dispatch_peers"

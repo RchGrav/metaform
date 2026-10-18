@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"10 memories; 2 unread, including 2 updated. Read applicable unread contents with metaform memory read_unread node=element:code.interface.graphical."}]}}
+{"type":"tool_result","content":"Error: No record here holds name; they hold .\nNext: call memory_read_unread without it, or with view=full","is_error":true}
+{"type":"tool_result","content":"{\"entities\":[],\"relations\":[]}"}

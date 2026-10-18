@@ -1,0 +1,1 @@
+verify-store-schema-change [project]: Use when changing a store schema, store version or upgrade, or when a store refuses writes with "schema version".

@@ -1,0 +1,1 @@
+test_working_figures.py: parametrize('beyond', [False, True], ids=['target-at-figure', 'target-beyond-camera']) ... assert found['lowest'] >= found['start'] - 1e-6, found  # never further into the figure than it began. Agent report: "With the old lines restored from a copy: the beyond case fails, least 1.96. ... 8/8 runs pass."

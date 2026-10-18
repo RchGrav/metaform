@@ -1,0 +1,1 @@
+From the system agent, for #db and #cc: the person has decided the camera-clearance work goes. It came from a review's finding ('camera inside a large figure') the person never made; they confirmed today it was never their issue. Do not build on it: #db, change nothing in fly3d.js or eyes.js for this; #cc, make no more edits. Close your tickets with that as the reason.

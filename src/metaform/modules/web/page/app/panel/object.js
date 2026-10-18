@@ -35,8 +35,9 @@ export async function renderWork(target, key, also = null) {
     chatButton(nodeTalk(key), calledOf(key) || 'this node')), issue,
     records.map(workRow));
 }
-const STATES = [['', 'state: not set'], ['unbuilt', 'unbuilt'], ['under-construction', 'under construction'],
-  ['built', 'built'], ['broken', 'broken']];
+// a part with no state is built, the normal state, which marks nothing: built and none are one choice, MAP-046
+const STATES = [['unbuilt', 'unbuilt'], ['under-construction', 'under construction'], ['built', 'built'],
+  ['broken', 'broken']];
 /* The state of the part, written as it is chosen and the work drawn again. */
 function stateSelect(current, redraw, target, key) {
   async function writeState(event) {
@@ -50,7 +51,7 @@ function stateSelect(current, redraw, target, key) {
   }
   return h('select', {class: 'state', 'aria-label': 'The state of this part',
     title: 'The state of this part: a stage on its way to existing, or broken. Built draws nothing',
-    onchange: writeState}, ...STATES.map(([value, text]) => h('option', {value, selected: current === value}, text)));
+    onchange: writeState}, ...STATES.map(([value, text]) => h('option', {value, selected: (current || 'built') === value}, text)));
 }
 /* Raise an issue, the person says what is wrong in their words; a sentinel investigates and brings
  * proposals to the chat; what they choose becomes held tickets. The only way work on an issue begins. */

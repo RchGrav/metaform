@@ -1,0 +1,1 @@
+Found the real culprit: leftover damping in the orbit controls drifts the camera to 0.63–0.72 radii before `followIn3d` runs, not a flight or growth effect as I'd guessed. I'll remove my earlier "by chance" note since it's now incorrect.

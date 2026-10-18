@@ -1,1 +1,0 @@
-{"action": "create", "reason": "The 2D map flow work fixed a per-frame DOM write storm by moving dots to shared per-edge paths. It also set rules a future editor of flow2d.js needs: sampled-polyline dot placement, state-change-only writes, the checks.js child list, and masking the Tests and CI flash in diffs.", "evidence": "references/evidence-97ea3194.md"}

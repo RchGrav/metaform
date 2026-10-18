@@ -1,0 +1,1 @@
+"The margin is thin (least 3.00 and 3.04), so I'm rerunning three times to check it isn't flaky." and memory: "test_following_a_large_figure_eases_the_camera_out_of_it_and_keeps_it_out failed about 1 run in 6 before the no-nearer floor, so a change to the clearance step is rerun several times." and "Without the fix the beyond case fails (1.96 radii). With it, 8 of 8 runs pass."

@@ -8,7 +8,7 @@ import {banner, unbanner, bannered} from '/page/app/core/banner.js';
 /* What each read is, said to a person; a read not named here is said by its name. */
 const READS = {projects: 'The project list', bases: "The project's bases", graph: 'The map', sequence: 'The map',
   layers: 'The layers', work: 'The tickets', node: 'The selected part', 'dispatch-sessions': 'The agents',
-  'dispatch-claims': "The agents' claims", 'dispatch-autostart': 'Autostart', 'dispatch-agents': 'The agent list',
+  'dispatch-claims': "The agents' claims", 'dispatch-autostart': 'Full Auto', 'dispatch-agents': 'The agent list',
   notices: "The modules' notices"};
 const MAP_READS = new Set(['projects', 'bases', 'graph', 'sequence']);
 const FAILING = new Set();  // the reads whose last answer was a failure

@@ -1,0 +1,2 @@
+{"action": "create", "reason": "A reviewer found an untracked probe test file that pytest collected and repeated six browser tests; the rule prevents this in future probe work.", "evidence": "references/evidence-7394c2d7.md"}
+{"action": "delete", "reason": "Absorbed into metaform-process-lifecycle as its throwaway-probe subsection.", "evidence": "references/evidence-39977abf.md", "absorbed_into": "metaform-process-lifecycle"}

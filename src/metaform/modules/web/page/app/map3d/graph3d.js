@@ -21,7 +21,7 @@ import {prepare3d} from '/page/app/map3d/labels.js';
 import {fibers3d} from '/page/app/map3d/fibers3d.js';
 import {nodes3d} from '/page/app/map3d/nodes3d.js';
 import {swap, V3, FLIGHT} from '/page/app/camera/flight.js';
-import {MEET, meetEnds, settled3d} from '/page/app/camera/fly3d.js';
+import {MEET, meetEnds, settled3d, PIVOT, pivotOn} from '/page/app/camera/fly3d.js';
 import {VIEW} from '/page/app/views/settings.js';
 import {PHYS, applyPhysics} from '/page/app/views/bar.js';
 import {resize} from '/page/app/views/lens.js';
@@ -446,13 +446,16 @@ function dragNode(node) {
   if (MASCOT.holding === node) { MASCOT.holding = null; MASCOT.job = null; }
   G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION);
 }
-/* The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer. A hand on the
- * camera releases a meeting: the sign goes back into the scene, the map behind comes back into focus, and the camera
- * stays where the hand leaves it, so the small area is a map to look around, until the next selection meets a sign
- * again; the camera no longer follows the met node as the layout moves, `holdMet`. */
+/* The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer, or, while the
+ * camera turns about the selected node, along the line to it, `PIVOT`. A hand on the camera releases a meeting: the
+ * sign goes back into the scene, the map behind comes back into focus, and the camera stays where the hand leaves it,
+ * so the small area is a map to look around, until the next selection meets a sign again; the met name is no longer
+ * held where it was met, `holdMet`, though the camera still turns about the selected node and goes with it. */
 function steer3d(controls) {
   Object.assign(controls, {enableDamping: true, dampingFactor: DAMPING, zoomToCursor: true});
   controls.addEventListener('start', () => {
+    // a flight to the selection cut short by the hand never arrives: the camera turns about the node from here
+    if (FLIGHT.on && PIVOT.pending !== null) pivotOn(PIVOT.pending);
     FLIGHT.on = false; V3.auto = false; V3.focus = V3.hold = null; hover3d(null);
     if (MEET.on) meetEnds();
   });

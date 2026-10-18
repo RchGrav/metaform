@@ -1,0 +1,1 @@
+dispatch_note to 35485bd5-b560-4b48-b27c-a5c71ac2c42f returned: "Error: No agent is at work on 35485bd5-b560-4b48-b27c-a5c71ac2c42f now: its agent is not running, so the note would reach no one." The next note to 78e865be reached "claude on code.interface.graphical#ae now".

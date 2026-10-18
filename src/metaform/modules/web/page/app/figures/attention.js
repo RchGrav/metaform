@@ -3,12 +3,12 @@
 import '/page/app/figures/cut.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
-import {$, reduced, h} from '/page/app/core/dom.js';
+import {reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph, mascotDriven, driveMascot, releaseMascot, dropHeld} from '/page/app/figures/mascot.js';
-import {BUBBLE, say, readFor} from '/page/app/figures/cut.js';
+import {say, readFor} from '/page/app/figures/cut.js';
 import {sight, viewing, approachPoint, capture} from '/page/app/figures/eyes.js';
 import {mayAnnounce, speakReply} from '/page/voice.js';
 import {ASKING, flushAsk} from '/page/app/figures/ask.js';
@@ -28,11 +28,11 @@ import {agentName} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
 /* The mascot calls the person's attention, VIEW-005: when something needs them, an agent waiting for an answer, a
- * ticket done, a spinning or stuck agent, an intake finished or a merge to review, it goes there, says so in its
- * bubble, and brings a small note card into view, set down near the pointer, that takes the person to it on a click
- * and goes on its ×. Driven by what the page already reads as it happens, never by a model. It speaks rarely and
+ * ticket done, a spinning or stuck agent, an intake finished or a merge to review, it goes there and says so in its
+ * bubble, which a click on takes the person to it; nothing waits on the person to close it, as the chat holds it too
+ * and its tab flashes, `flashDockTab`. Driven by what the page already reads as it happens, never by a model. It speaks rarely and
  * briefly: one call at a time, ATTN.gap apart, each thing once, at most ATTN.most waiting, the oldest dropped. */
-export const ATTN = {seen: new Set(), queue: [], last: 0, timer: 0, card: null, gap: 6000, most: 3, held: 25000};
+export const ATTN = {seen: new Set(), queue: [], last: 0, timer: 0, gap: 6000, most: 3};
 export function attend(key, text, node, open) {
   if (!mascotGlyph() || ATTN.seen.has(key)) return;
   ATTN.seen.add(key);
@@ -43,7 +43,6 @@ function pumpAttention() {
   clearTimeout(ATTN.timer);
   const wait = ATTN.last + ATTN.gap - Date.now();
   if (!ATTN.queue.length) return;
-  if (ATTN.card) return;  // the shown card's done() calls this again when it closes
   if (wait > 0) { ATTN.timer = setTimeout(pumpAttention, wait); return; }  // the gap's deadline, once
   const call = ATTN.queue.shift();
   ATTN.last = Date.now();
@@ -51,34 +50,7 @@ function pumpAttention() {
   if (!mascotDriven()) MASCOT.call = call.node ? {node: call.node, until: performance.now() + 9000} : null;
   wake3d(9000);
   say(call.text, 6, call.open);
-  bringCard(call);
-}
-/* Where a card is set down: near the pointer if it moved in the last half minute, else at the lower right. */
-function cardSpot() {
-  if (performance.now() - MASCOT.pointer.at >= 30000) return {x: innerWidth - 200, y: innerHeight - 140};
-  return {x: Math.min(innerWidth - 160, Math.max(160, MASCOT.pointer.x + 24)),
-    y: Math.min(innerHeight - 60, Math.max(80, MASCOT.pointer.y + 28))};
-}
-function bringCard(call) {  // a note card, carried from the mascot to near the pointer, eased in and out
-  const card = ATTN.card = h('div', {class: 'mascot-card', role: 'alert'},
-    h('button', {class: 'go', type: 'button', onclick: () => { done(); call.open?.(); }}, call.text),
-    h('button', {class: 'x', type: 'button', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: () => done()}, '×'));
-  const from = BUBBLE.at || {x: innerWidth - 120, y: innerHeight - 80}, to = cardSpot();
-  Object.assign(card.style, {left: `${from.x}px`, top: `${from.y}px`});
-  document.body.append(card);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    card.classList.add('on');
-    Object.assign(card.style, {left: `${to.x}px`, top: `${to.y}px`});
-  }));
-  const timer = setTimeout(() => done(), ATTN.held);
-  function done() {
-    clearTimeout(timer);
-    card.classList.remove('on');
-    setTimeout(() => card.remove(), 400);
-    if (ATTN.card === card) ATTN.card = null;
-    if (MASCOT.call?.node === call.node) MASCOT.call = null;
-    pumpAttention();
-  }
+  pumpAttention();  // the next waits out the gap
 }
 /* What needs the person now, read from what the page has just read: an agent waiting for them, one spinning or stuck,
  * and a merge waiting for review. A ticket done is told by `flowTickets`, an intake finished where the page learns

@@ -1,0 +1,1 @@
+metaform-spec-amendments [project]: Use when amending a spec record after a code fix, before editing specifications/*.md (MAP-, VIEW-, LAYER- records, Amendment bullets), or before proposing a spec round for a memory, layer or delivery design.

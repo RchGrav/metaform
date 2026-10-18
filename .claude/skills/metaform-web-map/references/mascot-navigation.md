@@ -1,0 +1,22 @@
+# Mascot and agent figures: navigation details
+
+- Read `web_embody` first. `figure: true` means you have your own body. `figure: false` means every move drives the person's mascot: stop and report.
+- Treat `address=` moves as approximate; they can land short or overshoot. Confirm with one `web_look`, then correct with a small step.
+- Let a turn finish before judging facing. A look straight after `web_turn` can report the old facing.
+- Forward steps travel further than their number suggests (forward 200 went about 250 units) and head toward wherever you face, not toward a target. Labels are readable at roughly 50 to 250 units.
+- `web_look` lists 60 to 90 entries, including `visible: false` ones up to about 960 units away. Read the nearest readable ones; do not paste the whole list into a reply.
+- Labels are mirrored when seen from behind. Check orientation before reading text.
+- When the person asks whether you can see the map, answer from a `web_look` picture. Without a look, say that you have only the act replies.
+- Narrate only what the `web_look` picture shows (colour, state, what is in frame), never what a ticket or tool result says the place holds. A ticket's marker is evidence to check, not a description of the view.
+- A defect you hit is a ticket (`metaform map work op=add`), not a silent workaround.
+- Send one act at a time and wait for its `done`. Acts sent together cut each other off: a reply with `stopped_by` = `a later act` means the act was interrupted, not finished. Two turns sent together landed at 134 and 147 degrees; a hop asked for 20 units rose 12.5.
+- If a web tool answers that the web GUI is not running, call `web_start`, open the page, then retry the act. An emote not in the list is not available; say so instead of substituting one silently. The emotes are wave, think, celebrate, shrug and sleep. A dance is a timed sequence of `web_move` and `web_turn` acts, each awaited to `done`.
+- `web_come` with `to: view` can land far from the person's camera when they are zoomed out (it landed about 890 units in front of the camera). Before bringing the mascot in, read `web_viewing` (`view_3d.at` and `gaze`), bring it close with `web_move` to a point near the camera, and confirm with `web_look`.
+- `web_come` with `follow` keeps the mascot trailing the view. Send `seconds: 0` to end it before moving the mascot by hand.
+- If an act fails because the web server restarted, retry that act once.
+- The mascot's character is one record, the `web_mascot` setting. The page draws the system agent as it in every conversation and on every page. Giving the system agent a body in the chat writes `web_mascot`; `metaform set --web-mascot=<character>` changes it on every open page. Bodies of other chat agents are kept per conversation in localStorage `metaform.bodies`.
+- When the person says the page shows the character they picked and the stored `web_mascot` row names another, their pick is the answer: do not ask which one. Set the row to the glyph they chose, read the row back, and say it is a stopgap for this person. The fix stays the open `code.interface.graphical` ticket on the mascot record.
+- Only the person's mascot pushes, drags, drops or carries elements. An embodied agent's figure is refused those acts by design. Report the refusal; do not treat it as a routing bug, and do not move the mascot to do it.
+- Do not drive the person's mascot (`web_go`, `web_move`, `web_come`) or speak in its bubble (`web_say`) to report status on a turn that did not ask for it. Answer in chat instead.
+- Agent figures are size-limited by default. While `ROAM.held` (figures/agents.js) is on, a figure stands at most `ROAM.most` (110) pixels on screen however near the camera is. Key 6 toggles the limit and stores the choice in this browser.
+- Reading a figure's acts is not testing them: a browser test covering move, turn, look and see does not show point, emote, the push refusal, or two agents acting at once.

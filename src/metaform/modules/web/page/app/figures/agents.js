@@ -45,10 +45,13 @@ export const ROAM = {figures: new Map(), seen: new Set(), last: 0, speed: 70, si
   accel: 70, corner: 0.6, settle: 1.1, grow: 10, drawn: 0, sized: 0,
   // the work whose thread the person chose in the chat dock: its figure is drawn this much larger, moving as if busy
   focus: null, focused: 1.4,
-  // the most pixels a figure stands on the screen, however near the camera is, while `held`; key 6 lets figures grow
-  // as near things do and holds them again, kept in this browser, `holdAgentSize`
+  // the most pixels a figure stands on the screen, however near the camera is, while `held`, as it is unless the
+  // person let them grow: a camera watching a large figure otherwise stands inside it; key 6 lets figures grow as near
+  // things do and holds them again, kept in this browser, `holdAgentSize`. The choice is kept under its own key since
+  // 2026-10-18, when held became the default: the old key, metaform.agentSizeHeld, kept a choice made when figures
+  // grew by default, and is no longer read.
   most: 110,
-  held: (() => { try { return localStorage.getItem('metaform.agentSizeHeld') === '1'; } catch { return false; } })(),
+  held: (() => { try { return localStorage.getItem('metaform.agentSizeFree') !== '1'; } catch { return true; } })(),
   // told the node when a figure starts or ends its time at work there, the work camera's `workChanged`
   onWork: null};
 // a join's key names its receiving element's node, as a join has no node of its own, `nodeIn`

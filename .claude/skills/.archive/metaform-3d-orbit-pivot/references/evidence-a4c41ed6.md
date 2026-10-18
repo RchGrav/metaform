@@ -1,0 +1,4 @@
+PIVOT in camera/fly3d.js keeps the orbit target on the selected node. A flight to the node (sign meeting, plain fly3d, Whole's turn) eases the target from where it was left to the node centre over 0.35 s with the camera held. pivot3d then moves the target and the camera by the node's layout step each frame, allocation-free and 7 us a frame. zoomToCursor is off while a node is selected and back on when the selection clears.
+
++/* The camera coasts after a hand lets it go, and the wheel zooms toward the point under the pointer, or, while the
++ * camera turns about the selected node, along the line to it, `PIVOT`.

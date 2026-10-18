@@ -1,0 +1,1 @@
+metaform-3d-map-probe-setup [project]: Use when a probe opens the 3D map, agent view V or E.

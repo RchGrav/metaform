@@ -1,0 +1,1 @@
+metaform-agent-attention-signals [project]: Use when the page says an agent seems stuck or spinning.

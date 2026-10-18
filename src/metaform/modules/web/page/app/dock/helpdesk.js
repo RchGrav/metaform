@@ -211,7 +211,20 @@ $('#helpdesk .latest').onclick = () => { followLog(true); $('#helpdesk .say').fo
 // a tool call's title cut short opens in place at a click, or shows whole while a call with more to show is open
 expandCut($('#helpdesk .log'), {row: '.tool', text: '.toolhead .title'});
 /* What came while the chat was put away: a dot on its tab, cleared as it opens. */
-function markUnread() { DOCK.unread = true; drawDockTab(); }
+function markUnread() {
+  const fresh = !DOCK.unread;
+  DOCK.unread = true;
+  drawDockTab();
+  if (fresh) flashDockTab();
+}
+/* The chat's tab flashes once for a message that came while the chat is put away, not again until it is read. */
+function flashDockTab() {
+  const tab = $('#dockTab');
+  tab.classList.remove('flash');
+  void tab.offsetWidth;  // a flash already running starts again
+  tab.classList.add('flash');
+  tab.addEventListener('animationend', () => tab.classList.remove('flash'), {once: true});
+}
 /* The chat puts itself away 15 seconds after its agent is gone or its session has ended:
  * it eases away and leaves no gap, and its threads are kept, so opening it again shows the conversation. The count
  * waits while the person types in it, has the focus in it or the pointer over it; a line arriving or the agent back,

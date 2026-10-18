@@ -4077,7 +4077,10 @@ class Session:
                                         if field in ('type', 'enum', 'default')}
                                   for key, spec in one['arguments'].get('properties', {}).items()},
                     'effect': one['effect'], 'person_decides': one['person_decides']}
-                    for name, one in bound['tools'].items() if name.startswith('orchestration_') or name in relevant}
+                    # every memory tool: the memory prompt asks each agent to read and keep memories current, removing
+                    # what is outdated, which takes all of them (2026-10-18)
+                    for name, one in bound['tools'].items()
+                    if name.startswith(('orchestration_', 'memory_')) or name in relevant}
                 components.append(prompt_files.component('orchestration:actions',
                     json.dumps(bound, ensure_ascii=False, indent=2)))
         if not self.probe and (self.authored_role or self.role == 'worker'):
@@ -4092,6 +4095,12 @@ class Session:
                                         rendered_fingerprint=memory_component['rendered_fingerprint'],
                                         bindings=memory_component['bindings']) if one.name == 'memory:instructions'
                                 else one for one in self.sent]
+        # an agent that changes a design takes out the code the change leaves behind, dispatch_remove_superseded
+        if not self.probe and (self.authored_role or self.role == 'worker') \
+                and self.option('dispatch_remove_superseded', True):
+            said = prompt_files.module('dispatch', 'remove_superseded') or ''
+            if said:
+                components.append(prompt_files.component('dispatch:remove_superseded', said))
         prepared = prepare_agent_context(Path(self.root), self.runner, [*components, *supplied],
                                          project=self.store.project_id)
         due = list(prepared['components'])

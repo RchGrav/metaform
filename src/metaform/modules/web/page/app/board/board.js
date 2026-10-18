@@ -11,7 +11,7 @@ import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/do
 import {chatButton} from '/page/app/dock/send.js';
 import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords} from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, history, ageOf, wrote, takenWords} from '/page/app/board/history.js';
-import {D, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
+import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
@@ -93,7 +93,7 @@ function recallButton(ticket) {
       ...(session ? {session: session.session_id} : {})});
     if (stopped) {
       if (session) rememberStop(session.session_id, new Date().toISOString());
-      if (stopped.autostart === false) {  // dispatch's `paused`: the person's stop turned Autostart off
+      if (stopped.autostart === false) {  // dispatch's `paused`: the person's stop turned Full Auto off
         $('#autostartAgents').checked = false;
         toast(stopped.notice);
       } else toast(`${agentName(session?.agent)} recalled. Its ticket stays on the board; Back to To do on its card gives it to another agent.`);
@@ -295,6 +295,9 @@ export function boardTickets(records) {
 }
 export async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
+  // Distribute's count starts at Agents at once, dispatch_agents, until the person changes it here
+  const count = $('#board .distribute input');
+  if (!count.dataset.chosen && AUTO.agents) count.value = String(AUTO.agents);
   const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
   let tickets;
   try { tickets = boardTickets((await read('work', {limit: 0})).results || []); }
@@ -338,6 +341,7 @@ async function distribute() {
   if (changed.length) undoable(said, putBack);
 }
 $('#board .distribute button').onclick = distribute;
+$('#board .distribute input').addEventListener('input', event => { event.target.dataset.chosen = '1'; });
 $('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
 $('#board .add').onclick = () => {
   const first = S.selected && S.elements.has(S.selected) ? S.selected : [...S.elements.keys()][0];

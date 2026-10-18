@@ -1,0 +1,1 @@
+metaform-web-map-navigation [project]: Use when the seahorse or mascot must move, come, dance, wave, turn, ride a tour or talk on the Metaform web map or 3D view, or when its character or body is set, kept or lost.
