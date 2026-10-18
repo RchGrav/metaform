@@ -241,7 +241,8 @@ export const ATLAS = {pages: [], scene: null};
 const LABEL_VERTEX = ['#include <uv_vertex>', '#include <uv_vertex>\nvMapUv = labelUv.xy + vMapUv * labelUv.zw;\n'
   + 'vLabelOpacity = labelOpacity;'];
 function atlasPage(index) {
-  // a page is a canvas the labels are copied into, sent to the graphics card whole once in a frame where any changed
+  // a page is a canvas the labels are copied into, sent to the graphics card whole the first time, then each label
+  // repainted on it sent alone into its slot, `atlasPaint`
   const canvas = Object.assign(document.createElement('canvas'), {width: PAGE, height: PAGE});
   const texture = new THREE.CanvasTexture(canvas);
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter,
@@ -255,8 +256,8 @@ function atlasPage(index) {
       .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.a *= vLabelOpacity;');
   };
   material.customProgramCacheKey = () => 'label-atlas';
-  const page = {index, texture, pen: canvas.getContext('2d'), mesh: null, room: 0, dirty: false, rows: [], top: 0,
-    n: 0};
+  const page = {index, texture, pen: canvas.getContext('2d'), mesh: null, room: 0, dirty: false, sent: false,
+    rows: [], top: 0, n: 0};
   page.mesh = pageMesh(new THREE.PlaneGeometry(1, 1), material, 256, null);
   page.room = 256;
   ATLAS.scene.add(page.mesh);
@@ -321,6 +322,7 @@ function freeSlot(slot) {
     if (free[at - 1].x + free[at - 1].wide === free[at].x) { free[at - 1].wide += free[at].wide; free.splice(at, 1); }
   }
 }
+const AT_SLOT = new THREE.Vector2();  // where a repainted label goes on its page's texture
 /* A label's canvas, just painted, copied into its slot: a new slot when it no longer fits, or fits loosely. */
 export function atlasPaint(tag) {
   if (!G) return;
@@ -337,7 +339,13 @@ export function atlasPaint(tag) {
   const page = slot.page;
   page.pen.clearRect(slot.x, slot.y, slot.wide, slot.tall);
   page.pen.drawImage(canvas, slot.x, slot.y);
-  page.dirty = true;  // sent once this frame, `atlasDraw`, however many labels changed
+  // A page the graphics card holds is sent only the label repainted, into its slot: the whole 2048 by 2048 page sent
+  // again for each repaint was 16 MB a frame while the map turned, since labels repaint as their size crosses a
+  // sharpness step, and frames came every sixth to eighth refresh (UX 2026-10-17, from 0019ec90). The page's rows
+  // count up from its foot on the card, where the picture is turned, so the label's foot row is its place there.
+  if (page.sent) {
+    G.renderer().copyTextureToTexture(tag.texture, page.texture, null, AT_SLOT.set(slot.x, PAGE - slot.y - h));
+  } else page.dirty = true;  // sent whole once, `atlasDraw`, however many labels it holds by then
   // the label's part of its page, half a texel in from each side, so nothing beside it is sampled; the page's rows
   // count down from its top, and up from its foot on the graphics card, where the picture is turned
   tag.uv0 = (slot.x + 0.5) / PAGE; tag.uv1 = (PAGE - slot.y - h + 0.5) / PAGE;
@@ -358,7 +366,7 @@ export function atlasDraw(order, count, on) {
     const page = pages[p];
     page.n = 0;
     page.mesh.visible = on;
-    if (page.dirty) { page.texture.needsUpdate = true; page.dirty = false; }
+    if (page.dirty) { page.texture.needsUpdate = true; page.dirty = false; page.sent = true; }
   }
   for (let i = count - 1; i >= 0; i--) {
     const tag = order[i], sprite = tag.sprite, slot = tag.slot;
