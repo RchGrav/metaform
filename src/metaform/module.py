@@ -19,6 +19,7 @@ import re
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from .relay import Listener
 
 __all__ = [
+    'AgentRoleDefinition',
     'Context',
     'Count',
     'Effect',
@@ -55,11 +57,16 @@ __all__ = [
     'Verb',
     'VerbFunction',
     'WorkReadHook',
+    'advance_agent_context',
+    'agent_context_collecting',
+    'agent_context_epoch',
+    'agent_context_session',
     'aliases',
     'call',
     'chassis_version',
     'child_environment',
     'code_print',
+    'collecting_agent_context',
     'command_summary',
     'context',
     'contributions',
@@ -81,12 +88,15 @@ __all__ = [
     'node_reads',
     'on_surface',
     'on_this_system',
+    'prepare_agent_context',
     'problem_report',
     'project_for',
     'project_glossary',
     'read_report',
+    'record_agent_context',
     'refresh_modules',
     'request_scope',
+    'resolve_agent_role',
     'result_json',
     'save_report',
     'serve_session',
@@ -522,6 +532,8 @@ class Count:
     many: str
     at: dict[str, tuple[int, int, int]] = field(default_factory=dict[str, tuple[int, int, int]])
     legend: str = ''
+    revisions: dict[str, str] = field(default_factory=dict[str, str])
+    updated: dict[str, int] = field(default_factory=dict[str, int])
 
     def said(self, count: int) -> str:
         return f'{count} {self.one if count == 1 else self.many}'
@@ -535,6 +547,18 @@ class Provides:
     `value` is what the contract says it is. `provided(folder, kind)` finds every enabled module's."""
     kind: str
     value: Any
+
+
+@dataclass(frozen=True)
+class AgentRoleDefinition:
+    """Authored responsibility contributed as `Provides('agent.roles', definitions)`.
+
+    Ordered prompt-store identities belong to their owning modules. This name is independent of the execution
+    role in METAFORM_ROLE; declaring a responsibility changes no tool permissions or functional namespace.
+    """
+    name: str
+    purpose: str
+    prompts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -606,6 +630,33 @@ class Module:
         check_workspace(self.id, self.verbs, self.toolbar, self.panes)
 
 
+_CONTEXT_RECEIPTS: ContextVar[list[dict[str, Any]] | None] = ContextVar('metaform_context_receipts', default=None)
+_CONTEXT_SESSION: ContextVar[str | None] = ContextVar('metaform_context_session', default=None)
+
+
+def agent_context_collecting() -> bool:
+    """Whether an enclosing transport owns acknowledgment of the current response's context bodies."""
+    return _CONTEXT_RECEIPTS.get() is not None
+
+
+def agent_context_session() -> str | None:
+    """The transport's current caller, inherited by independently built module hook contexts."""
+    return _CONTEXT_SESSION.get()
+
+
+@contextmanager
+def collecting_agent_context(session: str | None = None) -> Generator[list[dict[str, Any]], None, None]:
+    """Collect nested producers' exact response snapshots across async calls and their worker threads."""
+    receipts: list[dict[str, Any]] = []
+    token = _CONTEXT_RECEIPTS.set(receipts)
+    identity = _CONTEXT_SESSION.set(session or _CONTEXT_SESSION.get())
+    try:
+        yield receipts
+    finally:
+        _CONTEXT_RECEIPTS.reset(token)
+        _CONTEXT_SESSION.reset(identity)
+
+
 @dataclass
 class Context:
     """What one verb call, event delivery or tool call receives. Nothing else carries context, BASE-028."""
@@ -621,6 +672,20 @@ class Context:
     session: str | None = None  # the agent session the call is made in, MCP-039; None for a person's command line
     identity: dict[str, str] = field(default_factory=dict[str, str])  # transport-supplied IDs, never tool arguments
     consented: bool = False  # the person said yes to this one call, on its card or their AI tool's form
+    context_receipts: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+
+    def queue_context(self, components: Sequence[dict[str, Any]], epoch: int) -> None:
+        """Queue exact bodies for receipt at the response boundary; listing or computing them delivers nothing.
+
+        A producer supplies `delivered_value` for a structured response body. The transport acknowledges it only
+        when that complete value survives response shaping, so an omitted body stays unread.
+        """
+        snapshots = [{'epoch': epoch, 'component': dict(one), 'session': self.session or _CONTEXT_SESSION.get(),
+                      'folder': self.folder, 'project': self.project} for one in components]
+        self.context_receipts.extend(snapshots)
+        ambient = _CONTEXT_RECEIPTS.get()
+        if ambient is not None:
+            ambient.extend(snapshots)
 
     def seen(self, key: str, value: Any) -> Any:
         """What this call's session was last shown under `key`, or None the first time, recording `value` as shown
@@ -1180,13 +1245,67 @@ def context(module: str, folder: Path, *, project: str | None = None, nouns: dic
     session the call is made for when it is not this process's own, MCP-039."""
     from . import context as contexts
     return contexts.build(module, folder, project=project, nouns=nouns, switches=switches, sink=sink, surface=surface,
-                          client=client, session=session, identity=identity)
+                          client=client, session=session or _CONTEXT_SESSION.get(), identity=identity)
 
 
 def provided(folder: Path, kind: str) -> list[tuple[str, Any]]:
     """What the modules on this folder's surface provide of `kind`, as `(module id, value)` in module id order; a
     disabled module provides nothing, so turning it off withdraws what it offered."""
     return [(module.id, one.value) for module in surface(folder) for one in module.provides if one.kind == kind]
+
+
+def _agent_context_service(folder: Path, project: str | None = None) -> tuple[Context, Any] | None:
+    found = provided(folder, 'agent.role')
+    if len(found) > 1:
+        raise Stop(f'Multiple agent.role services: {", ".join(owner for owner, _ in found)}.',
+                   'select the intended module provider')
+    return (context(found[0][0], folder, project=project), found[0][1]) if found else None
+
+
+def resolve_agent_role(folder: Path, name: str, *, project: str | None = None,
+                       bindings: dict[str, str] | None = None) -> dict[str, Any]:
+    """Resolve an authored role through the enabled provider, without binding an agent or recording delivery."""
+    service = _agent_context_service(folder, project)
+    if service is None:
+        return {'name': name, 'provider': None, 'components': [], 'missing': False,
+                'problems': ['No enabled agent.role resolution service.']}
+    ctx, given = service
+    return cast(dict[str, Any], given.resolve(ctx, name, bindings=bindings))
+
+
+def prepare_agent_context(folder: Path, session: str | None, components: Sequence[dict[str, Any]], *,
+                          project: str | None = None) -> dict[str, Any]:
+    """Select components still due in this recipient's epoch, without acknowledging their delivery."""
+    service = _agent_context_service(folder, project)
+    if service is None:
+        return {'epoch': 0, 'components': list(components), 'previous': {},
+                'text': '\n\n'.join(str(one.get('text') or '') for one in components)}
+    ctx, given = service
+    return cast(dict[str, Any], given.prepare(ctx, session, components))
+
+
+def record_agent_context(folder: Path, session: str | None, components: Sequence[dict[str, Any]], *,
+                         project: str | None = None, epoch: int | None = None,
+                         channel: str = 'turn') -> dict[str, Any]:
+    """Acknowledge the exact snapshots handed to the harness, using their prepared epoch and actual versions."""
+    service = _agent_context_service(folder, project)
+    if service is None:
+        return {'recorded': 0, 'epoch': epoch or 0}
+    ctx, given = service
+    return cast(dict[str, Any], given.record(ctx, session, components, epoch=epoch, channel=channel))
+
+
+def agent_context_epoch(folder: Path, session: str | None, *, project: str | None = None) -> int:
+    """The shared, persistent context epoch of one agent, also used by its separate MCP and CLI processes."""
+    service = _agent_context_service(folder, project)
+    return int(service[1].epoch(service[0], session)) if service is not None else 0
+
+
+def advance_agent_context(folder: Path, session: str | None, *, project: str | None = None,
+                          reason: str = 'compaction') -> int:
+    """Start the recipient's next epoch after completed compaction or recovery without established retention."""
+    service = _agent_context_service(folder, project)
+    return int(service[1].advance(service[0], session, reason=reason)) if service is not None else 0
 
 
 def node_counts(folder: Path, addresses: tuple[str, ...], *, project: str | None = None,

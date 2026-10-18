@@ -55,6 +55,7 @@ from metaform.module import (
     titled,
 )
 
+from . import delivery
 from .citations import Checker, root_of, stamp
 from .watch import WATCH_OS, watch, web_started
 
@@ -87,7 +88,9 @@ NOTE_LIMIT = 2048
 # Version 8 adds a citation's `stale`, `checked_size` and `checked_mtime`: whether it holds, worked out by the citation
 # watcher each time its file changes, and the file's size and time it was worked out against, so a read looks it up.
 # All may be empty, a citation is then as it was cited, so version 7 still reads and writes the tables.
-TABLES_VERSION = 8
+# Version 9 adds functional-entry revisions/encounters and withdrawn identities. Earlier writers do not maintain
+# those revisions, so they must not write past the new unread-delivery contract.
+TABLES_VERSION = 9
 
 
 def _upgrade(tx: TableTx, found: int) -> None:
@@ -112,7 +115,7 @@ def _upgrade(tx: TableTx, found: int) -> None:
         tx.update('joins', {'join_id': row['join_id']}, {'number': tx.number(row['receiver'])})
 
 
-TABLES = Tables(version=TABLES_VERSION, compatible_from=7, upgrade=_upgrade, tables=(
+TABLES = Tables(version=TABLES_VERSION, compatible_from=9, upgrade=_upgrade, tables=(
     Table('entities', place='project', key=('name',),
           columns=(Column('name', required=True), Column('entity_type', required=True),
                    Column('seq', 'int', required=True, default=0), Column('title'), Column('why'),
@@ -143,6 +146,7 @@ TABLES = Tables(version=TABLES_VERSION, compatible_from=7, upgrade=_upgrade, tab
                    Column('size', 'int'), Column('mtime', 'int'), Column('at'), Column('stale'),
                    Column('checked_size', 'int'), Column('checked_mtime', 'int')),
           indexes=(Index(('entity',)),)),
+    *delivery.TABLES,
 ))
 
 Row = dict[str, Any]
@@ -368,6 +372,13 @@ class View:
 
 def _joined(tx: TableTx, key: Key) -> list[Row]:
     return list(tx.rows('joins', {'receiver': key.receiver, 'provider': key.provider}, limit=0).results)
+
+
+def _changed(tx: TableTx, names: list[str], removed: list[Row] | None = None) -> None:
+    """A graph mutation reaches every functional index of its affected memories, including incident relations."""
+    keys = {(str(row['receiver']), str(row['provider'])) for name in dict.fromkeys(names)
+            for row in tx.rows('joins', {'entity': name}, limit=0).results}
+    delivery.changed(tx, keys, removed)
 
 
 def _view(tx: TableTx, key: Key | None, checker: Checker | None = None) -> View:
@@ -681,7 +692,6 @@ def create_entities(ctx: Context) -> Any:
     entities = [(one, given.text(one['name'], 'name'), given.text(one['entityType'], 'entityType'),
                  given.texts(one['observations'], 'observations'))
                 for one in given.objects('entities', ('name', 'entityType', 'observations'))]
-    cited = {name: _cites(ctx, one) for one, name, _, _ in entities}  # checked before anything is written
     made: list[dict[str, Any]] = []
     written: list[str] = []
     numbered: list[str] = []
@@ -690,26 +700,20 @@ def create_entities(ctx: Context) -> Any:
         graph = Graph.read(tx)
         # Every new memory's title and why are checked before anything is written, so a refusal writes nothing.
         fresh: dict[str, tuple[str | None, str | None]] = {}
+        cited: dict[str, list[Row]] = {}
         for one, name, _, observations in entities:
             if name not in graph.entities and name not in fresh:
                 fresh[name] = _titles(ctx, given, one, name, observations)
-        _one_fact_each(ctx, [(name, observations) for _, name, _, observations in entities])
+                cited[name] = _cites(ctx, one)
+                _one_fact_each(ctx, [(name, observations)])
         seen: set[str] = set()
         locked = _locked(graph, [name for _, name, _, _ in entities])
         for _, name, kind, observations in entities:
             if name in locked:  # its observations, citations and joins stay as they are, CTX-023
                 continue
             if name in graph.entities or name in seen:
-                # An existing name is not made again, but what was learned is never dropped: its new observations
-                # are added to it, and the agent is told where they went, BASE-040 and BASE-044.
-                added = _observe(tx, graph, name, observations, by)
-                graph.cite(tx, name, cited[name], by)
-                if added:
-                    given.notices.append({'where': 'entities', 'message': (
-                        f'{name} already exists; {len(added)} new observation(s) were added to it.')})
-                    written.append(name)
-                if key is not None and (number := _join(tx, name, key, by)) is not None:
-                    numbered.append(f'{reference(key.address, number)}  {graph.title(name)}')
+                # Canonical create_entities skips existing names. Content extension and functional indexing have
+                # their own operations, so a create cannot silently modify existing knowledge.
                 continue
             seen.add(name)
             graph.made(tx, name, kind, *fresh[name])
@@ -719,6 +723,8 @@ def create_entities(ctx: Context) -> Any:
                 numbered.append(f'{reference(key.address, number)}  {graph.title(name)}')
             made.append({'name': name, 'entityType': kind, 'observations': observations})
             written.append(name)
+        if written:
+            _changed(tx, written)
     _lock_notice(given, locked, 'entities')
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line: what it just sent is not handed back, MCP-037
@@ -775,6 +781,8 @@ def create_relations(ctx: Context) -> Any:
             held.add(triple)
             graph.related(tx, *triple)
             made.append({'from': triple[0], 'to': triple[1], 'relationType': triple[2]})
+        if made:
+            _changed(tx, [str(one[end]) for one in made for end in ('from', 'to')])
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
         return _line(_prompt('related', count=str(len(made))), given.notices)
@@ -790,6 +798,7 @@ def add_observations(ctx: Context) -> Any:
     observations = [(given.text(one['entityName'], 'entityName'), given.texts(one['contents'], 'contents'),
                      _cites(ctx, one)) for one in members]
     results: list[dict[str, Any]] = []
+    changed: list[str] = []
     by = _written(ctx)
     with store.tables() as tx:
         graph = Graph.read(tx)
@@ -802,8 +811,14 @@ def add_observations(ctx: Context) -> Any:
             if name in locked:
                 results.append({'entityName': name, 'addedObservations': []})
                 continue
-            results.append({'entityName': name, 'addedObservations': _observe(tx, graph, name, contents, by)})
+            added = _observe(tx, graph, name, contents, by)
+            results.append({'entityName': name, 'addedObservations': added})
+            before = len(graph.citations.get(name, []))
             graph.cite(tx, name, cited, by)
+            if added or len(graph.citations.get(name, [])) != before:
+                changed.append(name)
+        if changed:
+            _changed(tx, changed)
     _lock_notice(given, locked, 'observations')
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
@@ -814,65 +829,6 @@ def add_observations(ctx: Context) -> Any:
 
 def _locked_said(locked: list[str]) -> str:
     return f' Locked: {", ".join(locked)}' if locked else ''
-
-
-# Deleting memories is the person's decision: what an agent recorded is how the next agent learns, and nothing keeps a
-# copy, so a delete is never undone. CLI-011.
-FORGET = 'Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone.'
-
-
-def _forget_caution(ctx: Context) -> str:
-    """What one delete call would remove, read from the memory graph, named and counted, said before it does: only
-    what is there and unlocked counts, and a name the graph lacks or a locked memory is named apart (UX review,
-    person-consent F6)."""
-    given = _Given(ctx)
-    with ctx.require_store().tables() as tx:
-        graph = Graph.read(tx)
-    missing: list[str] = []
-    locked: list[str] = []
-    what = ''
-    if 'entityNames' in ctx.nouns:
-        names = list(dict.fromkeys(given.texts(ctx.nouns.get('entityNames'), 'entityNames')))
-        missing = [name for name in names if name not in graph.entities]
-        locked = [name for name in names if name in graph.entities and graph.locked(name)]
-        found = [name for name in names if name in graph.entities and name not in locked]
-        held = sum(len(graph.observations.get(name, [])) for name in found)
-        ties = sum(1 for row in graph.relations if row['source'] in found or row['target'] in found)
-        if found:
-            what = (f'{len(found)} {"memory" if len(found) == 1 else "memories"}, {", ".join(found)}, with {held} '
-                    f'{"observation" if held == 1 else "observations"} and {ties} '
-                    f'{"relation" if ties == 1 else "relations"}')
-    elif 'deletions' in ctx.nouns:
-        deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
-                     for one in given.objects('deletions', ('entityName', 'observations'))]
-        missing = list(dict.fromkeys(name for name, _ in deletions if name not in graph.entities))
-        locked = list(dict.fromkeys(name for name, _ in deletions if name in graph.entities and graph.locked(name)))
-        count = 0
-        named: list[str] = []
-        for name, contents in deletions:
-            if name in graph.entities and name not in locked:
-                kept = {row['content'] for row in graph.observations.get(name, [])}
-                hits = sum(1 for content in dict.fromkeys(contents) if content in kept)
-                count += hits
-                if hits and name not in named:
-                    named.append(name)
-        if count:
-            what = f'{count} {"observation" if count == 1 else "observations"} of {", ".join(named)}'
-    else:
-        asked = list(dict.fromkeys(_relations(given)))
-        locked = list(dict.fromkeys(end for source, target, _ in asked for end in (source, target)
-                                    if graph.locked(end)))
-        rows = {(row['source'], row['target'], row['relation_type']) for row in graph.relations}
-        count = sum(1 for one in asked if one in rows and one[0] not in locked and one[1] not in locked)
-        if count:
-            what = f'{count} {"relation" if count == 1 else "relations"} between memories'
-    apart = (f' {", ".join(missing)} {"is" if len(missing) == 1 else "are"} not in the memory graph.' if missing
-             else '') + (f' {", ".join(locked)} {"is" if len(locked) == 1 else "are"} locked and kept.' if locked
-                         else '')
-    if not what:
-        return f'Nothing would be deleted: none of it is in the memory graph, unlocked.{apart}'
-    return (f'Deleting {what} removes them from the memory graph for every agent; no copy is kept and it is not '
-            f'undone.{apart}')
 
 
 def delete_entities(ctx: Context) -> Any:
@@ -886,6 +842,14 @@ def delete_entities(ctx: Context) -> Any:
         locked = _locked(graph, names)
         deleted = [name for name in names if name in graph.entities and name not in locked]
         not_found = [name for name in names if name not in graph.entities]
+        incident = [Graph.relation(row) for row in graph.relations
+                    if row['source'] in deleted or row['target'] in deleted]
+        if deleted:
+            removed = [delivery.component('deleted_entities', name, name=delivery.entity_name(name),
+                                          requires=delivery.entity_name(name)) for name in dict.fromkeys(deleted)]
+            removed += [delivery.component('deleted_relations', row, name=delivery.relation_name(row),
+                                           requires=delivery.relation_name(row)) for row in incident]
+            _changed(tx, [*deleted, *(str(row[end]) for row in incident for end in ('from', 'to'))], removed)
         for name in dict.fromkeys(deleted):
             _forget(tx, graph, name)
     message = ('Entities deleted successfully' if not not_found and not locked else
@@ -901,6 +865,7 @@ def delete_observations(ctx: Context) -> Any:
     deletions = [(given.text(one['entityName'], 'entityName'), given.texts(one['observations'], 'observations'))
                  for one in given.objects('deletions', ('entityName', 'observations'))]
     deleted, requested, missing = 0, 0, list[str]()
+    changed: list[str] = []
     with store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, [name for name, _ in deletions])
@@ -912,7 +877,12 @@ def delete_observations(ctx: Context) -> Any:
             if name in locked:
                 continue
             for content in dict.fromkeys(contents):
-                deleted += tx.delete('observations', {'entity': name, 'content': content})
+                count = tx.delete('observations', {'entity': name, 'content': content})
+                deleted += count
+                if count:
+                    changed.append(name)
+        if changed:
+            _changed(tx, changed)
     message = ('Observations deleted successfully' if deleted == requested else
                f'Deleted {deleted} of {requested} observations.' +
                (f' Entities not found: {", ".join(missing)}' if missing else '') + _locked_said(locked))
@@ -925,12 +895,20 @@ def delete_relations(ctx: Context) -> Any:
     store, _ = _scope(ctx, given.notices)
     relations = _relations(given)
     deleted = 0
+    removed: list[Row] = []
     with store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, [end for source, target, _ in relations for end in (source, target)])
         for source, target, kind in relations:
             if source not in locked and target not in locked:
-                deleted += tx.delete('relations', {'source': source, 'target': target, 'relation_type': kind})
+                count = tx.delete('relations', {'source': source, 'target': target, 'relation_type': kind})
+                deleted += count
+                if count:
+                    row = {'from': source, 'to': target, 'relationType': kind}
+                    removed.append(delivery.component('deleted_relations', row, name=delivery.relation_name(row),
+                                                       requires=delivery.relation_name(row)))
+        if removed:
+            _changed(tx, [str(one['value'][end]) for one in removed for end in ('from', 'to')], removed)
     message = ('Relations deleted successfully' if deleted == len(relations) else
                f'Deleted {deleted} of {len(relations)} relations.' +
                (_locked_said(locked) if locked else ' The rest matched nothing.'))
@@ -968,10 +946,39 @@ def _read(ctx: Context, notices: list[dict[str, str]]) -> View | None:
 EMPTY: dict[str, list[Any]] = {'entities': [], 'relations': []}
 
 
+def _delivered(ctx: Context, whole: Row, key: Key | None = None, *, unread: bool = False) -> Row:
+    """A graph body read records that exact snapshot; an unread read selects only due canonical bodies."""
+    if ctx.session is None:
+        return whole
+    if key is None:
+        key = _named(ctx.require_store(), ctx.nouns, [])
+    prepared = delivery.prepare(ctx, whole, (key.receiver, key.provider) if key else None)
+    if key is None:
+        # An inspection by identity still encounters the returned memories through their functional indexes.
+        # Keeping those entry points lets a later correction reach this reader without a global memory inbox.
+        names = {str(one['name']) for one in whole.get('entities', [])}
+        store = ctx.require_store()
+        with store.tables(write=False) as tx:
+            keys = {(str(row['receiver']), str(row['provider'])) for row in tx.rows('joins', limit=0).results
+                    if row['entity'] in names}
+        for entry in sorted(keys):
+            if _reaches(store, entry[0]):
+                delivery.encounter(ctx, entry, epoch=int(prepared['epoch']))
+    delivery.queue(ctx, prepared, all_current=not unread)
+    return cast(Row, prepared['whole']) if unread else whole
+
+
 def read_graph(ctx: Context) -> Any:
     given = _Given(ctx)
     view = _read(ctx, given.notices)
-    return given.said(dict(EMPTY) if view is None else view.whole())
+    return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole()))
+
+
+def read_unread(ctx: Context) -> Any:
+    """Unread canonical entities/relations and applicable withdrawals through the requested functional entry."""
+    given = _Given(ctx)
+    view = _read(ctx, given.notices)
+    return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole(), unread=True))
 
 
 def search_nodes(ctx: Context) -> Any:
@@ -983,7 +990,7 @@ def search_nodes(ctx: Context) -> Any:
     chosen = [name for name in view.names
               if wanted in name.lower() or wanted in view.graph.entities[name]['entity_type'].lower()
               or any(wanted in one['content'].lower() for one in view.graph.observations.get(name, []))]
-    return given.said(view.around(chosen))
+    return given.said(_delivered(ctx, view.around(chosen)))
 
 
 def open_nodes(ctx: Context) -> Any:
@@ -992,7 +999,7 @@ def open_nodes(ctx: Context) -> Any:
     view = _read(ctx, given.notices)
     if view is None:
         return given.said(dict(EMPTY))
-    return given.said(view.around([name for name in view.names if name in names]))
+    return given.said(_delivered(ctx, view.around([name for name in view.names if name in names])))
 
 
 # ------------------------------------------------------------------------------------------------ joins and notes
@@ -1024,6 +1031,30 @@ def joins(ctx: Context) -> Any:
     return said
 
 
+def join(ctx: Context) -> Any:
+    """Index existing knowledge at another functional entry without duplicating or changing its entity."""
+    given = _Given(ctx)
+    store = ctx.require_store()
+    key = _named(store, ctx.nouns, given.notices)
+    if key is None:
+        raise Stop('A memory index association names its functional element or join.',
+                   'metaform memory join <entity> node=element:<address>')
+    name = given.text(ctx.nouns.get('entity'), 'entity')
+    with store.tables() as tx:
+        graph = Graph.read(tx)
+        if name not in graph.entities:
+            raise _not_found(name)
+        if graph.locked(name):
+            raise Stop(f'Locked: {name}. Its functional indexes stay as they are.',
+                       f'ask the person to unlock it: metaform memory unlock {json.dumps(name)}')
+        number = _join(tx, name, key, _written(ctx))
+        if number is not None:
+            delivery.changed(tx, {(key.receiver, key.provider)})
+    _layered(store)
+    return given.said({'entity': name, **key.said(), 'joined': number is not None,
+                       **({'item': reference(key.address, number)} if number is not None else {})})
+
+
 def orphaned(ctx: Context) -> Any:
     """The memory joins whose address the active map does not hold, with what each was attached to, for the orphaned
     menu; they are kept, and a new intake that holds the address reconnects them."""
@@ -1045,6 +1076,11 @@ def unjoin(ctx: Context) -> Any:
         if entity is not None and entity.get('locked_at'):  # a locked memory keeps its joins, CTX-023
             raise Stop(f'Locked: {name}. A locked memory is read by every agent and changed by none; its join stays.',
                        f'ask the person to unlock it: metaform memory unlock {json.dumps(name)}')
+        if held is not None:
+            withdrawal = delivery.component('withdrawn', {'name': name, **Key(held['receiver'], held['provider']).said()},
+                                             name=f'memory:index:{held["join_id"]}',
+                                             requires=delivery.entity_name(name))
+            delivery.changed(tx, {(held['receiver'], held['provider'])}, [withdrawal])
         deleted = tx.delete('joins', {'join_id': ctx.nouns['id']})
     return {'deleted': deleted}
 
@@ -1279,6 +1315,7 @@ def node_read(ctx: Context, node: Node) -> Any:
         return None
     found: dict[str, Any] = {}
     shows = _reaches(store, key.address)
+    around: dict[tuple[str, str], list[str]] = {}
     with store.tables(write=False) as tx:
         held = _note_said(tx.get('notes', {'receiver': key.receiver, 'provider': key.provider}))
         if held is not None:
@@ -1286,57 +1323,73 @@ def node_read(ctx: Context, node: Node) -> Any:
         if not shows:
             return found or None
         view = _view(tx, key, Checker(ctx))
-        if view.names:
-            found.update(view.whole())
         if node.kind == 'element':
-            around: dict[tuple[str, str], list[str]] = {}
             for row in [*tx.rows('joins', {'receiver': key.receiver}, by=('receiver', 'provider'), limit=0).results,
                         *tx.rows('joins', {'provider': key.receiver}, limit=0).results]:
                 if row['provider'] and row['entity'] in view.graph.entities:
                     around.setdefault((row['receiver'], row['provider']), []).append(row['entity'])
-            if around:
-                found['joins'] = [{'receiver': receiver, 'provider': provider,
-                                   'entities': [view.graph.entity(name) for name in names]}
-                                  for (receiver, provider), names in around.items()]
+    shown = _delivered(ctx, view.whole(), key, unread=ctx.session is not None)
+    if any(shown.values()):
+        found.update(shown)
+    sent: set[str] = {str(one['name']) for one in shown.get('entities', [])} if ctx.session is not None else set()
+    joined: list[Row] = []
+    for (receiver, provider), names in around.items():
+        whole = {'entities': [view.graph.entity(name) for name in names if name not in sent], 'relations': []}
+        bodies = _delivered(ctx, whole, Key(receiver, provider), unread=ctx.session is not None)
+        if bodies.get('entities'):
+            sent.update(one['name'] for one in bodies['entities'])
+            joined.append({'receiver': receiver, 'provider': provider, 'entities': bodies['entities']})
+    if joined:
+        found['joins'] = joined
     return found or None
 
 
 def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | None:
-    """How many memories are joined at each element address while memory shows there, and whether the person left a
-    note there, MCP-039, never what they say. `new` are the memories the last session that wrote there wrote, a join or
-    an observation of one, other than this call's own session; `mine` are those this session wrote. A row written
-    before sessions were kept names none, so with none known no memory is new."""
+    """Count applicable memories by shared identity and actual unread revision, without acknowledging bodies."""
     store = ctx.store
     if store is None or store.active_base() is None:
         return None
     at: dict[str, tuple[int, int, int]] = {}
     notes: dict[str, tuple[int, int, int]] = {}
     stale: dict[str, tuple[int, int, int]] = {}
+    revisions: dict[str, str] = {}
+    updates: dict[str, int] = {}
+    snapshots: dict[str, Row] = {}
     checker = Checker(ctx)
     with store.tables(write=False) as tx:
+        graph = Graph.read(tx, checker)
         for address in dict.fromkeys(addresses):
             if tx.get('notes', {'receiver': address, 'provider': ''}) is not None:
                 notes[address] = (1, 0, 0)
             joins = list(tx.rows('joins', {'receiver': address, 'provider': ''}, limit=0).results)
-            if not joins or not _reaches(store, address):
+            if not _reaches(store, address):
                 continue
-            names = {row['entity'] for row in joins}
+            names = {row['entity'] for row in joins if row['entity'] in graph.entities}
             # A memory whose cited evidence no longer holds is counted as stale, never passed on as sound.
             flagged = sum(1 for name in names if any(checker.held(row) for row in tx.rows(
                 'citations', {'entity': name}, limit=0).results))
             if flagged:
                 stale[address] = (flagged, 0, 0)
-            writes = [(row['at'], row['session'], row['entity']) for row in joins if row['session'] and row['at']]
-            for name in names:
-                writes += [(row['at'], row['session'], name)
-                           for row in tx.rows('observations', {'entity': name}, limit=0).results
-                           if row['session'] and row['at']]
-            others = [one for one in writes if one[1] != ctx.session]
-            last = max(others)[1] if others else None
-            new = {entity for _, session, entity in writes if last is not None and session == last}
-            mine = {entity for _, session, entity in writes if ctx.session is not None and session == ctx.session}
-            at[address] = (len(names), len(new), len(mine))
-    return (Count('memory', 'memories', at, legend=prompt_files.module('memory', 'counts') or ''),
+            snapshots[address] = View(graph, [name for name in graph.entities if name in names]).whole()
+            revision = tx.get('entry_revisions', {'receiver': address, 'provider': ''})
+            revisions[address] = str(revision['revision']) if revision else ''
+    total_names: set[str] = set()
+    unread_names: set[str] = set()
+    updated_names: set[str] = set()
+    for address, whole in snapshots.items():
+        prepared = delivery.prepare(ctx, whole, (address, ''))
+        total, unread, updated = delivery.counts(prepared)
+        if ctx.session is None:
+            unread.clear()
+            updated.clear()
+        at[address] = (len(total), len(unread), 0)
+        updates[address] = len(updated)
+        total_names.update(total)
+        unread_names.update(unread)
+        updated_names.update(updated)
+    legend = _prompt('counts', total=str(len(total_names)), unread=str(len(unread_names)),
+                     updated=str(len(updated_names)), read_unread='metaform memory read_unread node=element:<address>')
+    return (Count('memory', 'memories', at, legend=legend, revisions=revisions, updated=updates),
             Count('note', 'notes', notes, legend=prompt_files.module('memory', 'note_counts') or ''),
             Count(_prompt('stale_one'), _prompt('stale_many'), stale, legend=_prompt('stale_counts')))
 
@@ -1379,6 +1432,12 @@ def item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
                       *([_prompt('cites', cites=', '.join(cites))] if cites else []),
                       *(_prompt('stale', stale=one) for one in stale),
                       *([_prompt('locked_read')] if locked else [])])
+    if ctx.session is not None:
+        prepared = delivery.prepare(ctx, {'entities': [graph.entity(name)], 'relations': []},
+                                    (address, str(found[0]['provider'])))
+        for one in prepared['current']:
+            one['delivered_value'] = body
+        delivery.queue(ctx, prepared, all_current=True)
     return {'kind': 'memory', 'title': graph.title(name), 'why': row.get('why'), 'body': body, 'links': links,
             'name': name, 'entityType': row['entity_type'], 'observations': observations,
             **({'cites': cites} if cites else {}), **({'stale': stale} if stale else {}),
@@ -1461,12 +1520,10 @@ def _at(*nouns: Noun) -> tuple[Noun, ...]:
 MODULE = Module(
     id='memory',
     summary='A memory graph, presented at each node of the map as the MCP reference memory server.',
-    # Draft wording, CTX-029, awaiting the owner's approval: what happened in the work goes to memory, what is true of
-    # the project to the knowledge layers, as steps 5 and 6 of the memory prompt say.
     purpose='A graph of entities, observations and relations, the MCP reference memory server\'s, kept apart from the '
-            'map and tied to its nodes: what happened in the work at each node. Give node to work with the memories '
-            'at a node of the map; leave it out for the whole graph. Record there what happened in the work; what is '
-            'now known to be true of the project goes to the map\'s knowledge layers, as the memory prompt says. '
+            'map and indexed at functional entry points. Give node to maintain applicable project knowledge '
+            'at a node of the map; leave it out to inspect the whole graph. Read unread contents through those '
+            'functional entry points and maintain entities, atomic observations and directed relations. '
             'Details: metaform help memory.',
     details='The nine commands take the reference memory server\'s arguments and return its results. With node, the '
             'reads act on the entities joined to that node and every relation with an end among them; create_entities '
@@ -1478,10 +1535,10 @@ MODULE = Module(
             'a node show nothing while the layer named memory is turned off there, with select, mask or --layers. Each '
             'node also holds one note of at most 2048 characters.',
     verbs=(
-        Verb('create_entities', create_entities, 'Record what happened in the work at a node of the map: new memory '
-                                                 'entities, each observation one fact in one sentence. What is true of '
-                                                 'the project goes to the knowledge layers. Without node, they go in '
-                                                 'the memory graph joined to no node.',
+        Verb('create_entities', create_entities, 'Create new memory entities, one fact per observation, indexed at '
+                                                 'the given functional node. Existing names are skipped; extend them '
+                                                 'with add_observations and index them with join. Without node, new '
+                                                 'entities have no functional index association.',
              nouns=_at(Noun('entities', 'The entities to create; each observation is one fact.', kind='json',
                             schema={'type': 'array', 'items': ENTITY})),
              examples=((EXAMPLE, 'Create an entity in the memories of the route manager.'),)),
@@ -1497,18 +1554,20 @@ MODULE = Module(
                             schema=OBSERVATIONS))),
         Verb('delete_entities', delete_entities,
              'Delete memory entities and their relations, at a node or in the whole memory graph.',
-             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
+             nouns=_at(Noun('entityNames', 'An array of entity names to delete', kind='json', schema=NAMES)),
+             effect='remove'),
         Verb('delete_observations', delete_observations,
              'Delete observations from memory entities, at a node or in the whole memory graph.',
-             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
+             nouns=_at(Noun('deletions', 'The observations to delete, by entity.', kind='json', schema=DELETIONS)),
+             effect='remove'),
         Verb('delete_relations', delete_relations, 'Delete relations between memory entities, at a node or in the '
                                                    'whole memory graph.',
              nouns=_at(Noun('relations', 'An array of relations to delete', kind='json',
-                            schema={'type': 'array', 'items': RELATION})), effect='remove',
-             caution=FORGET, person_says=True, cautioned=_forget_caution, page='the memory panel'),
+                            schema={'type': 'array', 'items': RELATION})), effect='remove'),
         Verb('read_graph', read_graph, 'Read the memories at a node of the map, or the whole memory graph without one.',
+             nouns=_at(), effect='read'),
+        Verb('read_unread', read_unread, 'Read applicable unread memory entities, relations and withdrawals through '
+                                       'a functional entry point in this agent\'s current context epoch.',
              nouns=_at(), effect='read'),
         Verb('search_nodes', search_nodes, 'Search memory entities by name, type and observation text, at a node or in '
                                            'the whole memory graph.',
@@ -1528,6 +1587,8 @@ MODULE = Module(
                              'Each comes with who made it and whether it is orphaned.',
              nouns=(Noun('node', 'element:<address>.', required=False), *NAMED,
                     Noun('entity', 'An entity name.', required=False)), effect='read'),
+        Verb('join', join, 'Index an existing memory entity at a functional element or join without copying it.',
+             nouns=_at(Noun('entity', 'An existing memory entity name.'))),
         Verb('orphaned', orphaned, 'List the memory joins whose address the active map no longer holds, with what each '
                                    'was attached to.', effect='read'),
         Verb('unjoin', unjoin, 'Detach one memory join from its node by its id; the entity stays in the memory graph.',
@@ -1558,7 +1619,8 @@ MODULE = Module(
     subscriptions=(Subscription('web.started', web_started), Subscription('map.moved', map_moved)),
     node_read=node_read,
     node_count=node_count,
-    provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt)),
+    provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt),
+              Provides('memory.revision', delivery.revision), Provides('memory.notices', delivery.notices)),
     item_read=item_read,
     items_at=items_at,
     item_kinds=('memory',),

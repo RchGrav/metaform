@@ -1,0 +1,535 @@
+"""Deterministic ACP swarm, using real public Metaform CLI calls and no model or network.
+
+Each launched adapter receives its real runner identity and authored role. Progress is kept per work id outside the
+adapter process, so a suspension or session/load cannot accidentally restart a contribution. The log contains exact
+ACP recipient prompts, tool inputs/results, candidate observations and the public admission ledger at each turn.
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from pathlib import Path
+
+LOG = Path(os.environ['FAKE_ACP_LOG'])
+STATE = Path(os.environ['FAKE_SWARM_STATE'])
+STATE.mkdir(parents=True, exist_ok=True)
+SCENARIO = os.environ.get('FAKE_SWARM_SCENARIO', 'nested')
+WORK = os.environ['METAFORM_WORK']
+ROLE = os.environ.get('METAFORM_AUTHORED_ROLE', '').removeprefix('metaform://role/')
+SESSION = ''
+MCP_SERVER = None
+WRITING = threading.Lock()
+CANCELLED = threading.Event()
+PROGRESS = STATE / f'{WORK}.json'
+CANDIDATE = {'revision': 'fake-swarm-candidate-1', 'path': 'candidate.txt'}
+SPECIALIST_RESULT = 'SPECIALIST_RESULT: the route preserves its functional result after resumption.'
+OPERATIVE = 'Preserve the functional return; restore retained work before continuing.\n'
+CORRECTION = 'CORRECTIVE_RESULT: restored retained work before continuing.\n'
+
+
+def log(**entry):
+    record = {'pid': os.getpid(), 'role': ROLE, 'work': WORK, 'session': SESSION, 'scenario': SCENARIO,
+              'runner_identity': os.environ.get('METAFORM_SESSION'), 'time_ns': time.time_ns(), **entry}
+    data = (json.dumps(record, ensure_ascii=False) + '\n').encode()
+    with WRITING:
+        descriptor = os.open(LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(descriptor, data)
+        finally:
+            os.close(descriptor)
+
+
+def send(message):
+    with WRITING:
+        sys.stdout.buffer.write(json.dumps(message).encode() + b'\n')
+        sys.stdout.buffer.flush()
+
+
+def update(body):
+    send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {'sessionId': SESSION, 'update': body}})
+
+
+def cli(module, verb, *, expect_error=False, **nouns):
+    rendered = {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list, bool)) else str(value)
+                for key, value in nouns.items()}
+    words = [module, verb, *(f'{key}={value}' for key, value in rendered.items()), '--json']
+    ident = uuid.uuid4().hex[:12]
+    update({'sessionUpdate': 'tool_call', 'toolCallId': ident, 'title': f'metaform {module} {verb}',
+            'kind': 'execute', 'status': 'in_progress', 'rawInput': {'arguments': words}})
+    result = subprocess.run([sys.executable, '-m', 'metaform', *words], capture_output=True, text=True,
+                            check=False, timeout=45)
+    try:
+        value = json.loads(result.stdout)
+    except ValueError:
+        value = result.stdout
+    log(tool={'module': module, 'verb': verb, 'nouns': nouns, 'code': result.returncode,
+              'result': value, 'stderr': result.stderr})
+    update({'sessionUpdate': 'tool_call_update', 'toolCallId': ident,
+            'status': 'failed' if result.returncode else 'completed', 'rawOutput': value,
+            'content': [{'type': 'content', 'content': {'type': 'text', 'text': result.stdout}}]})
+    if expect_error:
+        assert result.returncode, f'The expected refusal succeeded: {words}'
+        return {'code': result.returncode, 'error': value, 'stderr': result.stderr}
+    if result.returncode:
+        raise RuntimeError(f'{words}: {result.stdout}{result.stderr}')
+    return value
+
+
+def mcp_call(name, arguments):
+    """Use the stdio server and identity supplied by the actual runner, not an in-process tool invocation."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    assert MCP_SERVER is not None
+    environment = {one['name']: one['value'] for one in MCP_SERVER.get('env', [])}
+    assert environment['METAFORM_SESSION'] == os.environ['METAFORM_SESSION']
+    parameters = StdioServerParameters(command=MCP_SERVER['command'], args=MCP_SERVER.get('args', []),
+        cwd=str(Path.cwd()), env={**os.environ, **environment})
+    ident = uuid.uuid4().hex[:12]
+    update({'sessionUpdate': 'tool_call', 'toolCallId': ident, 'title': name, 'kind': 'other',
+            'status': 'in_progress', 'rawInput': arguments})
+
+    async def invoke():
+        async with stdio_client(parameters) as (read, write), ClientSession(read, write) as client:
+            await client.initialize()
+            return await client.call_tool(name, arguments)
+
+    result = asyncio.run(invoke())
+    value = result.structured_content
+    if value is None:
+        text = '\n'.join(one.text for one in result.content if one.type == 'text')
+        try:
+            value = json.loads(text)
+        except ValueError:
+            value = text
+    log(mcp_tool={'name': name, 'arguments': arguments, 'result': value, 'is_error': result.is_error,
+                  'runner_identity': environment['METAFORM_SESSION'],
+                  'server_command': parameters.command, 'server_args': parameters.args})
+    update({'sessionUpdate': 'tool_call_update', 'toolCallId': ident,
+            'status': 'failed' if result.is_error else 'completed', 'rawOutput': value})
+    if result.is_error:
+        raise RuntimeError(f'{name}: {value}')
+    return value
+
+
+def progress(**changes):
+    held = json.loads(PROGRESS.read_text()) if PROGRESS.exists() else {'stage': 0}
+    if changes:
+        held.update(changes)
+        temporary = PROGRESS.with_suffix('.new')
+        temporary.write_text(json.dumps(held))
+        os.replace(temporary, PROGRESS)
+    return held
+
+
+def check(state, summary, **nouns):
+    candidate = current_candidate()
+    return cli('orchestration', 'check-in', state=state, summary=summary, candidate=candidate,
+               evidence=[{'candidate': candidate, 'observation': summary}], **nouns)
+
+
+def current_candidate():
+    path = Path('candidate.txt')
+    return {**CANDIDATE, **({'sha256': hashlib.sha256(path.read_bytes()).hexdigest()} if path.exists() else {})}
+
+
+def suspend():
+    log(awaiting_suspension=True)
+    if not CANCELLED.wait(50):
+        raise RuntimeError('The recorded suspension did not cancel its actual adapter turn.')
+
+
+def original_gc(assignment, stage):
+    if stage == 0:
+        progress(stage=1)
+        check('running', 'GC_OWNERSHIP: functional delivery claimed.', work_so_far='GC retained delivery plan.')
+        cli('orchestration', 'call', role='implementer', task='Produce candidate.txt using a specialist contribution.',
+            result='A candidate validated by its worker.', key='worker')
+        suspend()
+        return
+    team = cli('orchestration', 'team')
+    members = team['members']
+    if SCENARIO == 'generated':
+        requests = cli('orchestration', 'role_requests')
+        requested = next((one for one in requests if one['gc_assignment_id'] == assignment['assignment_id']
+                          and one['state'] == 'requested'), None)
+        if requested:
+            log(gc_commission=requested)
+            cli('orchestration', 'commission', request=requested['request_id'], wait=True)
+            suspend()
+            return
+    worker = next(one for one in members if one['parent_assignment_id'] == assignment['assignment_id']
+                  and one['authored_role_uri'] == 'metaform://role/implementer')
+    if worker['state'] not in ('returned', 'delivered'):
+        check('waiting', 'GC follows the pending requested worker contribution.')
+        suspend()
+        return
+    actual = Path('candidate.txt').read_text()
+    log(gc_validation={'candidate': current_candidate(), 'actual': actual, 'worker_result': worker['result']})
+    assert SPECIALIST_RESULT in actual
+    if SCENARIO in ('adaptive', 'strict'):
+        if stage == 1:
+            progress(stage=2)
+            cli('orchestration', 'assess', summary='GC_VALIDATED: candidate behavior and evidence for independent FQC.',
+                candidate=current_candidate(), evidence=[{'observation': actual}], key='pre-delivery-assessment')
+            check('waiting', 'Waiting for independent functional findings before integration.')
+            suspend()
+            return
+        corrections = [one for one in team['related_corrections']
+                       if one['parent_assignment_id'] == assignment['assignment_id']]
+        if any(one['state'] not in ('returned', 'delivered') for one in corrections):
+            check('waiting', 'Tracking the recorded functional correction to delivery.')
+            suspend()
+            return
+        operative = Path('OPERATIVE.md').read_text()
+        assert operative == (OPERATIVE if SCENARIO == 'adaptive' else 'Use the original restoration sequence.\n')
+        if SCENARIO == 'adaptive':
+            assert corrections and CORRECTION in actual
+        log(gc_change_received={'operative': operative, 'pending_direction': assignment['pending_direction'],
+                                'corrections': corrections})
+    progress(stage=99)
+    check('delivered', 'GC_VALIDATED: requested candidate delivered with specialist evidence.',
+          key='gc-delivery')
+
+
+def worker(stage):
+    if stage == 0:
+        progress(stage=1)
+        check('running', 'WORKER_PROGRESS: contribution underway.', work_so_far='RETAINED_WORKER_DRAFT')
+        if SCENARIO == 'stopped':
+            log(stoppable_worker=True)
+            gate('finish-stopped-worker')
+            return
+        mcp_call('orchestration_call', {
+            'role': 'route_specialist' if SCENARIO == 'generated' else 'investigator',
+            'task': 'Establish the route behavior needed by this worker.', 'key': 'specialist-first',
+            'contribution': 'Verify functional return behavior.', 'context': {'worker_draft': 'RETAINED_WORKER_DRAFT'}})
+        suspend()
+        return
+    members = cli('orchestration', 'team')['members']
+    returned = [one for one in members if one['work_id'] != WORK and
+                one['authored_role_uri'] in ('metaform://role/investigator', 'metaform://role/route_specialist')
+                and one['state'] in ('returned', 'delivered')]
+    assert returned and all(SPECIALIST_RESULT in str(one['result']) for one in returned)
+    log(worker_received={'stage': stage, 'results': returned})
+    if SCENARIO == 'generated' and stage == 1:
+        progress(stage=2)
+        cli('orchestration', 'call', role='route_specialist', task='Reuse the registered duty for a second check.',
+            key='specialist-reuse')
+        suspend()
+        return
+    Path('candidate.txt').write_text('\n'.join(str(one['result']) for one in returned) + '\n')
+    progress(stage=99)
+    check('returned', 'WORKER_INTEGRATED: ' + SPECIALIST_RESULT, key='worker-result')
+
+
+def specialist():
+    # This is actual context delivery through the functional entry, rather than a fixture reading receipt rows.
+    memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
+    log(specialist_grounding=memory)
+    progress(stage=99)
+    check('returned', SPECIALIST_RESULT, key='specialist-result')
+
+
+def creator(assignment):
+    request = json.loads(assignment['task'])['request']
+    duty = ('You are the Route Specialist. Independently establish route behavior for your immediate caller. '
+            'Preserve its functional result across suspension and return candidate-specific evidence. '
+            'Your delivery GC retains swarm ownership. Use the public module action bindings you receive.')
+    progress(stage=99)
+    cli('orchestration', 'publish_role', request=request['request_id'], duty=duty)
+
+
+def gc_requests_role(assignment, stage, text):
+    if stage == 0:
+        progress(stage=1)
+        check('running', 'GC_SELF_REQUEST: delivery needs a new specialist contribution.',
+              work_so_far='RETAINED_GC_SPECIALIST_PLAN')
+        mcp_call('orchestration_call', {
+            'role': 'route_specialist', 'task': 'Establish the route behavior needed by this GC.',
+            'key': 'gc-specialist', 'contribution': 'Verify functional return behavior.',
+            'context': {'gc_plan': 'RETAINED_GC_SPECIALIST_PLAN'}})
+        request = next(one for one in cli('orchestration', 'role_requests')
+                       if one['caller_assignment_id'] == assignment['assignment_id'])
+        actual = cli('orchestration', 'inspect')
+        log(gc_self_request={'request': request, 'assignment': actual, 'cancelled': CANCELLED.is_set()})
+        assert actual['state'] == 'running' and not CANCELLED.is_set(), (
+            'A GC must remain able to commission the role it has just requested.')
+        commissioned = mcp_call('orchestration_commission', {'request': request['request_id'], 'wait': True})
+        log(gc_self_commission=commissioned)
+        suspend()
+        return
+    specialist = next(one for one in cli('orchestration', 'team')['members']
+                      if one['authored_role_uri'] == 'metaform://role/route_specialist')
+    if specialist['state'] not in ('returned', 'delivered'):
+        check('waiting', 'GC follows the pending generated specialist contribution.',
+              work_so_far='RETAINED_GC_SPECIALIST_PLAN')
+        suspend()
+        return
+    assert SPECIALIST_RESULT in str(specialist['result']) and SPECIALIST_RESULT in text
+    assert 'RETAINED_GC_SPECIALIST_PLAN' in text
+    Path('candidate.txt').write_text(str(specialist['result']) + '\n')
+    log(gc_self_received={'result': specialist['result'], 'assignment': assignment, 'text': text,
+                          'candidate': current_candidate()})
+    progress(stage=99)
+    check('delivered', 'GC_VALIDATED: generated specialist returned to its commissioning GC.',
+          key='gc-self-delivery')
+
+
+def assessment(assignment):
+    reviewed = json.loads(assignment['task'])
+    actual = Path('candidate.txt').read_text()
+    assert SPECIALIST_RESULT in actual
+    log(fqc_observation={'reviewed': reviewed, 'actual': actual,
+                         'reviewed_assignment_id': assignment['reviewed_assignment_id'],
+                         'team_id': assignment['team_id']})
+    if SCENARIO in ('adaptive', 'strict') and not (STATE / 'adapted').exists():
+        (STATE / 'adapted').write_text(WORK)
+        specification = Path('OPERATIVE.md')
+        cli('orchestration', 'change', content=OPERATIVE,
+            reason='C(T) requires the caller to retain its functional result; restoring retained work first serves '
+                   'that core across interruptions.', specification={'uri': 'file:OPERATIVE.md'},
+            base=hashlib.sha256(specification.read_bytes()).hexdigest(),
+            observed_limitation='The original sequence resumes before '
+                   'restoring the retained work.', key='restoration-order')
+        progress(stage=99)
+        findings = [{'task': 'Correct the candidate to restore retained work before continuing.',
+                     'title': 'Functional restoration correction'}] if SCENARIO == 'adaptive' else []
+        check('returned', 'FQC_FINDING: restoration order affects functional continuity.',
+              findings=findings, key='fqc-finding')
+        return
+    progress(stage=99)
+    check('returned', 'FQC_ACCEPTED: independently observed candidate preserves requested behavior.',
+          key='fqc-result')
+
+
+def corrective_gc(assignment):
+    before = Path('candidate.txt').read_text()
+    assert SPECIALIST_RESULT in before
+    Path('candidate.txt').write_text(before + CORRECTION)
+    log(correction_delivered={'parent_assignment_id': assignment['parent_assignment_id'],
+                              'actual': Path('candidate.txt').read_text(), 'candidate': current_candidate()})
+    progress(stage=99)
+    check('delivered', 'CORRECTIVE_GC_DELIVERED: restored retained work and verified the functional result.',
+          key='corrective-delivery')
+
+
+def installed_bmad(assignment, stage, text):
+    if ROLE == 'gc':
+        if stage == 0:
+            progress(stage=1)
+            log(bmad_discovery=cli('orchestration', 'bmad'))
+            cli('orchestration', 'call', role='bmad.bmm.dev', task='CR: review timer controls',
+                context={'interaction': 'Preserve the functional return after resumption.'}, key='installed-review')
+            suspend()
+            return
+        child = next(one for one in cli('orchestration', 'team')['members']
+                     if one['authored_role_uri'] == 'metaform://role/bmad.bmm.dev')
+        assert child['state'] == 'returned' and 'BMAD_INSTALLED_REVIEW' in str(child['result'])
+        Path('candidate.txt').write_text(str(child['result']) + '\n')
+        log(bmad_caller_received={'result': child['result'], 'text': text})
+        progress(stage=99)
+        check('delivered', 'GC_VALIDATED: installed BMAD menu contribution reached its immediate caller.',
+              key='bmad-delivery')
+    elif ROLE == 'bmad.bmm.dev':
+        source = Path('_bmad/bmm/agents/dev.md').read_text()
+        assert source in text and 'This assignment uses an installed BMAD specialty.' in text
+        assert 'CR: review timer controls' in text and 'fixture-installed-version' in text
+        assert hashlib.sha256(source.encode()).hexdigest() in text
+        log(bmad_installed_observation={'source': source, 'task': assignment['task'], 'text': text})
+        progress(stage=99)
+        check('returned', 'BMAD_INSTALLED_REVIEW: ' + SPECIALIST_RESULT, key='installed-review-result')
+    else:
+        assessment(assignment)
+
+
+def compacted_gc(stage, text):
+    if stage == 0:
+        progress(stage=1)
+        check('running', 'GC retains delivery through context compaction.', work_so_far='RETAINED_COMPACTION_PLAN')
+        log(compaction_grounding=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
+        log(compaction_ready=True)
+        gate('compact')
+        update({'sessionUpdate': 'compaction_update', 'status': 'in_progress'})
+        update({'sessionUpdate': 'compaction_update', 'status': 'completed'})
+        log(compaction_completed=True)
+        gate('compaction-release')
+        return
+    memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
+    log(compaction_restored={'text': text, 'memory': memory})
+    assert 'RETAINED_COMPACTION_PLAN' in text and 'Your context was compacted' in text
+    assert memory['entities']
+    Path('candidate.txt').write_text(SPECIALIST_RESULT + '\n')
+    progress(stage=99)
+    check('delivered', 'GC_VALIDATED: functional grounding and retained assignment survived compaction.',
+          key='compacted-delivery')
+
+
+def gate(name):
+    """The test releases a specific actor transition; this is fixture control, never a runtime polling loop."""
+    deadline = time.monotonic() + 90
+    while not (STATE / name).exists() and not CANCELLED.wait(0.05):
+        if time.monotonic() > deadline:
+            raise RuntimeError(f'Test did not release {name}.')
+
+
+def communications(assignment, stage, text):
+    if ROLE == 'gc':
+        if stage:
+            log(gc_peer_turn=text)
+            return
+        progress(stage=1)
+        cli('orchestration', 'delegate', role='implementer', task='Coordinate the worker-called specialist.',
+            key='communicating-worker')
+        log(gc_ready=True)
+        gate('broadcast')
+        if CANCELLED.is_set():
+            return
+        discovery = cli('dispatch', 'peers')
+        sent = cli('dispatch', 'broadcast', text='GC_SWARM_BROADCAST: preserve the requested functional result.')
+        log(gc_broadcast=sent, all_agent_discovery=discovery)
+        gate('interrupt')
+        if CANCELLED.is_set():
+            return
+        member = next(one for one in cli('orchestration', 'team')['members']
+                      if one['authored_role_uri'] == 'metaform://role/investigator')
+        sent = cli('dispatch', 'interrupt', id=member['work_id'], session=member['owner_session_id'],
+                   direction='NEW_GC_DIRECTION: keep RETAINED_SPECIALIST_STATE and validate the restored result.')
+        log(gc_owned_interruption=sent)
+        gate('finish-gc')
+    elif ROLE == 'implementer':
+        if stage:
+            log(worker_peer_turn=text)
+            return
+        progress(stage=1)
+        cli('orchestration', 'delegate', role='investigator', task='Retain the specialist result while peers coordinate.',
+            key='communicating-specialist')
+        log(worker_ready=True)
+        gate('peer-note')
+        if CANCELLED.is_set():
+            return
+        member = next(one for one in cli('orchestration', 'team')['members']
+                      if one['authored_role_uri'] == 'metaform://role/investigator')
+        discovery = cli('dispatch', 'peers')
+        note = cli('dispatch', 'note', to=member['owner_session_id'], text='PEER_NOTE: report the retained result.')
+        (STATE / 'peer-note-id').write_text(str(note['note']))
+        refused = cli('dispatch', 'interrupt', id=member['work_id'], direction='An ordinary peer must not interrupt.',
+                      expect_error=True)
+        broadcast = cli('dispatch', 'broadcast', text='An ordinary worker must not broadcast.', expect_error=True)
+        log(peer_note_sent=note, peer_interrupt_refused=refused, worker_broadcast_refused=broadcast,
+            all_agent_discovery=discovery)
+        gate('worker-release')
+    elif ROLE == 'investigator':
+        if stage == 0:
+            progress(stage=1)
+            log(specialist_grounding=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
+            check('running', 'Specialist retains work while coordinating.', work_so_far='RETAINED_SPECIALIST_STATE')
+            log(specialist_ready=True, all_agent_discovery=cli('dispatch', 'peers'))
+            gate('specialist-release')
+        elif stage == 1 and 'PEER_NOTE:' in text:
+            assert (STATE / 'peer-note-id').exists()
+            reply = cli('dispatch', 'note', reply=(STATE / 'peer-note-id').read_text(),
+                        text='PEER_REPLY: the retained result is available.')
+            progress(stage=2)
+            log(specialist_reply=reply, peer_context=text)
+            gate('finish-specialist')
+        elif stage >= 2 and 'NEW_GC_DIRECTION:' in text:
+            assert 'RETAINED_SPECIALIST_STATE' in text
+            log(interrupted_recipient={'assignment': assignment, 'text': text})
+            check('running', 'Following NEW_GC_DIRECTION with retained specialist work.',
+                  work_so_far='RETAINED_SPECIALIST_STATE')
+            gate('finish-directed-specialist')
+        else:
+            log(specialist_peer_turn=text)
+    else:
+        raise RuntimeError(f'Unexpected communicating role {ROLE!r}.')
+
+
+def turn(ident, text):
+    try:
+        log(recipient_context=text)
+        capacity = cli('dispatch', 'agents')['slots']
+        if ROLE == 'triage':
+            # The Liaison observes actual recipient context. It neither replays fixture work nor edits the graph.
+            log(pm_observation=text, capacity=capacity, all_agent_discovery=cli('dispatch', 'peers'))
+            return
+        assignment = cli('orchestration', 'inspect')
+        log(assignment_context=assignment, capacity=capacity)
+        held = progress()
+        if SCENARIO == 'bmad':
+            installed_bmad(assignment, held['stage'], text)
+        elif SCENARIO == 'compaction' and ROLE == 'gc':
+            compacted_gc(held['stage'], text)
+        elif SCENARIO == 'communications':
+            if held['stage'] and 'Read applicable unread contents with' in text:
+                log(memory_update_read=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
+            communications(assignment, held['stage'], text)
+        elif held['stage'] == 99 or assignment['state'] in ('waiting', 'suspended', 'queued'):
+            log(maintenance_turn=True)
+        elif ROLE == 'gc':
+            if SCENARIO == 'gc-generated':
+                gc_requests_role(assignment, held['stage'], text)
+            elif assignment['parent_assignment_id']:
+                corrective_gc(assignment)
+            else:
+                original_gc(assignment, held['stage'])
+        elif ROLE == 'implementer':
+            worker(held['stage'])
+        elif ROLE in ('investigator', 'route_specialist'):
+            specialist()
+        elif ROLE == 'role_creator':
+            creator(assignment)
+        elif ROLE == 'functionality':
+            assessment(assignment)
+        else:
+            raise RuntimeError(f'Unexpected authored role {ROLE!r}.')
+        update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': f'{ROLE} turn complete.'}})
+    except Exception as error:  # noqa: BLE001  fixture errors become visible assertions in the parent test
+        log(fixture_error=f'{type(error).__name__}: {error}')
+        update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': str(error)}})
+    finally:
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {
+            'stopReason': 'cancelled' if CANCELLED.is_set() else 'end_turn'}})
+
+
+def terminated(signum, frame):
+    log(terminated=signum)
+    os._exit(0)
+
+
+signal.signal(signal.SIGTERM, terminated)
+log(boot=True)
+for raw in sys.stdin.buffer:
+    message = json.loads(raw)
+    log(message=message)
+    method, ident = message.get('method'), message.get('id')
+    if method == 'initialize':
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {
+            'protocolVersion': 1, 'agentCapabilities': {'loadSession': True},
+            'agentInfo': {'name': 'fake-swarm-agent', 'version': '1'}, 'authMethods': []}})
+    elif method == 'session/new':
+        MCP_SERVER = next((one for one in message['params'].get('mcpServers', []) if one['name'] == 'metaform'), None)
+        SESSION = 'swarm-' + uuid.uuid4().hex[:16]
+        log(session_created=SESSION)
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION}})
+    elif method == 'session/load':
+        MCP_SERVER = next((one for one in message['params'].get('mcpServers', []) if one['name'] == 'metaform'), None)
+        SESSION = message['params']['sessionId']
+        log(session_loaded=SESSION)
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
+    elif method == 'session/prompt':
+        CANCELLED.clear()
+        text = '\n'.join(block.get('text', '') for block in message['params']['prompt'])
+        threading.Thread(target=turn, args=(ident, text), daemon=True).start()
+    elif method == 'session/cancel':
+        CANCELLED.set()
+    elif ident is not None:
+        send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32601, 'message': 'Method not found'}})

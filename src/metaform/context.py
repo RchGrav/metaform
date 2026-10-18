@@ -15,7 +15,7 @@ from typing import Any
 from . import settings, shown
 from .data import Store
 from .errors import Stop
-from .module import Context, Surface
+from .module import Context, Surface, agent_context_session
 
 
 def project_for(folder: Path, named: str | None = None) -> str | None:
@@ -41,5 +41,5 @@ def build(module: str, folder: Path, *, project: str | None = None, nouns: dict[
     store = Store(chosen, toggled=toggled, module=module, write_layer=writes_to) if chosen else None
     return Context(module=module, folder=folder, project=chosen, store=store, nouns=dict(nouns or {}),
                    switches=dict(switches or {}), sink=sink, surface=surface, client=client,
-                   session=session or (shown.session(client) if surface in ('cli', 'mcp') else None),
+                   session=session or agent_context_session() or (shown.session(client) if surface in ('cli', 'mcp') else None),
                    identity=dict(identity or {}))

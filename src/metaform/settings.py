@@ -163,7 +163,7 @@ TERMINAL = 'their own terminal window (an AI tool runs commands without the cons
 
 def asking(folder: Path | None = None) -> tuple[str, str]:
     """How a refused agent gets the person's decision, and how the next step it is given begins: an agent asks the
-    person in its chat with them; one whose role the person holds back (roles_without_authority, a worker by default)
+    person in its chat with them; one whose role the person holds back (roles_without_authority)
     asks no one and says it in its ticket's note, for the person's own agent to ask (UX review, person-consent F2)."""
     role = os.environ.get('METAFORM_ROLE')
     if role and role in (value('roles_without_authority', folder or Path.cwd()) or ()):
@@ -840,12 +840,11 @@ def _check_roles(names: Any, folder: Path) -> list[str] | None:
 
 
 roles_without_authority = items(
-    'roles_without_authority', ('worker', 'prep'), person_only=True, check=_check_roles,
+    'roles_without_authority', (), person_only=True, check=_check_roles,
     choices=['none', *AGENT_ROLES], beyond_choices=True,  # _check_roles refuses another, in its own words
     help='The roles of the agents Metaform starts that may not write tickets or start, stop or message agents.',
-    details='The default holds back a worker on its ticket and a merge preparation, so an agent at work does not '
-            'assign itself or others work; the person, the agents that serve them (intake, system, sentinel, talk) '
-            'and a session the person runs outside dispatch keep it. The page is the person\'s and is never held. '
+    details='No role is held back by default. Configured entries retain their existing restriction on writing tickets '
+            'and steering agents. The page is the person\'s and is never held. '
             'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
             'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
                                 label='Roles without authority', category='agents', heading='Permissions')

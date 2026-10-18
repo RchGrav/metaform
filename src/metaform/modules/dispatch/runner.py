@@ -92,7 +92,11 @@ from metaform.module import (
     context,
     forget_shown,
     mcp_server,
+    prepare_agent_context,
+    provided,
+    record_agent_context,
     record_shown,
+    resolve_agent_role,
     shown_before,
     surface,
 )
@@ -113,6 +117,7 @@ from . import (
     claimed,
     end_group,
     eyes_line,
+    fork_capacity,
     glyph_of,
     group_options,
     handed_path,
@@ -862,6 +867,9 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
                                                     'base_id': active.id if active else None,
                                                     **concerning(record.id, ended.get('session_id'),
                                                                  ['dispatch.merges'])})
+        from .orchestration import assignment
+        if await asyncio.to_thread(assignment, ctx, record.id):
+            return await moved_on(store, ended)
         glyph = await asyncio.to_thread(glyph_of, ctx, record)  # read again, so a glyph given while it ran counts
         if glyph is not None and await asyncio.to_thread(over_budget, ctx, store, run=run_id) is not None:
             glyph = None  # past this run's or today's token budget, the glyph's next ticket waits, M01
@@ -893,6 +901,8 @@ async def moved_on(store: Store, ended: dict[str, Any]) -> dict[str, Any]:
         project = await asyncio.to_thread(store.project)
         ctx = context('dispatch', Path(project.path), project=store.project_id)
         try:
+            from .orchestration import drain
+            await asyncio.to_thread(drain, ctx)  # the adapter has ended and its counted lease was released above
             started = await asyncio.to_thread(autostart, ctx)
             # A session that stopped without the person's stop is retried after a wait, P012: this runner, which saw
             # it stop, comes back once the retry is due, so no timer runs anywhere else.
@@ -1178,6 +1188,8 @@ class Session:
         self.at = (record.address or '|'.join(end for end in (record.receiver_address, record.provider_address) if end)
                    if record is not None else '')
         self.runner: str | None = None
+        self.assignment: dict[str, Any] | None = None
+        self.authored_role: str | None = None
         self.root = store.project().path
         self.folder = str(folder) if folder is not None else self.root  # its worktree, VIEW-044
         self.name = agent_label(agent)
@@ -1252,6 +1264,18 @@ class Session:
         self.opening = False
         self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
+        self.prompt_versions: deque[list[prompt_files.Sent]] = deque()
+        self.prompt_contexts: deque[list[dict[str, Any]]] = deque()
+        self.inflight_versions: list[prompt_files.Sent] = []
+        self.inflight_context: dict[str, Any] | None = None
+        self.inflight_peers: list[tuple[str, str]] = []
+        self.queued_peer_ids: set[str] = set()
+        self.orchestration_reading = False
+        self.orchestration_again = False
+        self.memory_reading = False
+        self.memory_again = False
+        self.memory_queued: set[str] = set()
+        self.memory_epoch: int | None = None
         # beside each, the ACP blocks of the person's recording and the frame they sent, the ones its agent takes
         self.voiced: deque[list[Any]] = deque()
         self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
@@ -1303,6 +1327,7 @@ class Session:
         # Subagent sessions the agent started, P016, by their session id: name, task, state and their own thread's
         # line count and names, since each child's thread is kept under its own session id.
         self.children: dict[str, dict[str, Any]] = {}
+        self.fork_active: set[str] = set()
         # Questions the agent put to the person through ACP's elicitation, by request: the person's answer resolves
         # each as an action and its content, ACP's accept, decline or cancel.
         self.elicited: dict[str, dict[str, Any]] = {}
@@ -1849,6 +1874,11 @@ class Session:
         noted, and the agent's `$/cancel_request` for one withdraws it. The rest is the SDK's to handle."""
         method = event.message.get('method')
         if event.direction == StreamDirection.OUTGOING:
+            if method == 'session/prompt' and cast(dict[str, Any], event.message.get('params') or {}).get(
+                    'sessionId') == self.session_id:
+                # Connection observers run after transport.send succeeds, before any returned MCP call can read.
+                # Queuing, resolving a resource or merely constructing a prompt never acknowledges delivery.
+                self.context_delivered()
             if method == '_session/steering' and 'id' in event.message:
                 self.steering.append(event.message['id'])
             return
@@ -2508,22 +2538,48 @@ class Session:
             return {'error': f'{self.name} does not offer session/fork.'}
         if self.ending or self.session_id is None or self.conn is None:
             return {'error': 'The session has not started or is ending.'}
-        made = await asyncio.wait_for(self.conn.fork_session(session_id=self.session_id, cwd=self.folder,
-                                                             mcp_servers=self.servers), START_LIMIT)
+        try:
+            capacity = await asyncio.to_thread(fork_capacity, self.ctx, self.store, self.work_id, self.agent)
+        except Stop as error:
+            return {'error': str(error), 'state': 'queued'}
+        try:
+            made = await asyncio.wait_for(self.conn.fork_session(session_id=self.session_id, cwd=self.folder,
+                                                                 mcp_servers=self.servers), START_LIMIT)
+        except BaseException:
+            capacity.unlink(missing_ok=True)
+            raise
         child = str(made.session_id)
         self.children[child] = {'session_id': child, 'name': 'fork', 'task': text or None, 'state': 'running',
                                 'started': stamp(), 'lines': 0, 'named': set(), 'flow': None, 'fork': True}
         await self.child_line(child)
         if text:
-            self.spawn(self.fork_turn(child, text))
+            self.fork_active.add(child)
+            self.spawn(self.fork_turn(child, text, capacity))
+        else:
+            capacity.unlink(missing_ok=True)
         identity = {one.name: one.value for server in self.servers for one in server.env
                     if one.name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
         return {'fork': child, 'from': self.session_id, 'identity': identity}
 
-    async def fork_turn(self, child: str, text: str) -> None:
+    async def fork_message(self, child: str, text: str) -> dict[str, Any]:
+        """Admit a later fork turn before acknowledging it to the caller."""
+        if self.ending or child in self.fork_active:
+            return {'sent': False, 'error': 'The fork is already working or its parent is ending.'}
+        self.fork_active.add(child)
+        try:
+            capacity = await asyncio.to_thread(fork_capacity, self.ctx, self.store, self.work_id, self.agent)
+        except Stop as error:
+            self.fork_active.discard(child)
+            return {'sent': False, 'error': str(error), 'state': 'queued'}
+        self.spawn(self.fork_turn(child, text, capacity))
+        return {'sent': True, 'fork': child}
+
+    async def fork_turn(self, child: str, text: str, capacity: Path) -> None:
         """One turn of a fork, its words in its own thread."""
         held = self.children.get(child)
         if held is None:
+            capacity.unlink(missing_ok=True)
+            self.fork_active.discard(child)
             return
         async with self.lock:
             await self.child_note(child, None, 'person', text)
@@ -2533,6 +2589,10 @@ class Session:
             reason = str(answer.stop_reason)
         except Exception as error:  # noqa: BLE001  the fork's turn ends whatever ended it
             reason = f'error: {error}'
+        finally:
+            capacity.unlink(missing_ok=True)
+            self.fork_active.discard(child)
+            self.spawn(self.orchestration_changes())
         held['state'] = 'idle'
         async with self.lock:
             await self.child_note(child, None, 'turn', f'The turn ended: {reason}.')
@@ -3477,9 +3537,17 @@ class Session:
         # The server the agent is asked to start is the one AI tools are registered with, chosen at the project's root
         # and not in a worktree, run by this interpreter; none is asked for when no module provides one, MCP-010.
         server = await asyncio.to_thread(mcp_server, Path(self.root))
-        self.runner = secrets.token_hex(8)
+        self.runner = self.runner or secrets.token_hex(8)
+        from .orchestration import assignment, service
+        self.assignment = await asyncio.to_thread(assignment, self.ctx, self.work_id)
+        native = service(self.ctx) is not None
+        self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
+            'metaform://role/triage' if self.role in ('system', 'intake') and native else
+            'metaform://role/gc' if self.role == 'worker' and native else None)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
+                    **({'METAFORM_AUTHORED_ROLE': self.authored_role} if self.authored_role else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
+        self.ctx = replace(self.ctx, session=self.runner, identity=identity)
         await self.open_agent(identity)
         if self.ending or self.process is None:
             return
@@ -3573,6 +3641,15 @@ class Session:
             self.took = not self.prep
             self.recorded = True
         await self.write(take)
+        owner = service(self.ctx)
+        if owner is not None and not self.prep:
+            self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id,
+                role=(self.authored_role or 'gc').removeprefix('metaform://role/'),
+                session_id=str(self.session_id), runner=self.runner)
+            self.authored_role = str(cast(dict[str, Any], self.assignment)['authored_role_uri'])
+        self.acp.update(authored_role_uri=self.authored_role,
+                        assignment_id=(self.assignment or {}).get('assignment_id'),
+                        team_id=(self.assignment or {}).get('team_id'), runner=self.runner)
         # a start that made its session ends the count of failed starts on its ticket and its agent, P012
         with contextlib.suppress(Exception):
             await asyncio.to_thread(started_well, self.store, self.work_id, self.agent)
@@ -3587,8 +3664,16 @@ class Session:
             return
         if self.resume:  # a resumed session waits for the person's next message, or goes on when the supervisor retries
             await self.taken_over()
-            if self.retrying and self.node is not None and not self.budget:
+            if (self.retrying or self.assignment) and self.node is not None and not self.budget:
                 self.turn(prompt('retry', work_id=self.work_id))
+            await self.replay_peers()
+            if self.role == 'system':
+                from .orchestration import user_updates
+                updates = await asyncio.to_thread(user_updates, self.ctx)
+                if updates['text']:
+                    self.turn(updates['text'], components=updates['components'])
+            await self.memory_changes()
+            self.spawn(self.orchestration_changes())
             await self.troubles()
             return
         if self.node is None and self.ctx.nouns.get('intake'):  # the intake, served as it is, VIEW-045 and BASE-039
@@ -3614,7 +3699,13 @@ class Session:
             text = await asyncio.to_thread(self.handed)
         if not self.ending:
             self.opening = self.system
-            self.turn(text)
+            if self.role == 'system':
+                from .orchestration import user_updates
+                updates = await asyncio.to_thread(user_updates, self.ctx)
+                self.turn(text, components=updates['components'])
+            else:
+                self.turn(text)
+            self.spawn(self.orchestration_changes())
             await self.troubles()
 
     def system_prompt(self) -> str:
@@ -3698,12 +3789,7 @@ class Session:
             text, self.attached = handoff_parts(self.ctx, self.work_id, session=self.runner)
         except Stop:
             text = work_line(self.work_id, Path(self.folder), self.at)
-        try:
-            memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
-        except Exception as error:  # noqa: BLE001  a prompt that cannot be read never keeps the work from starting
-            sys.stderr.write(f'Could not read the memory prompt for work {self.work_id}: {error}\n')
-            memory = ''
-        return f'{memory}\n\n{text}' if memory else text
+        return text
 
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
@@ -3803,6 +3889,10 @@ class Session:
         not carried: the agent gives them afresh when it starts and resumes."""
         with self.store.tables(write=False) as tx:
             rows = tx.rows('session_lines', {'session_id': self.session_id}, by=('session_id', 'seq'), limit=0).results
+            old = tx.get('agent_sessions', {'session_id': self.session_id})
+        if old is not None:
+            # A successful ACP load/resume retains the same context identity across processes and MCP servers.
+            self.runner = str(old['runner']) if old.get('runner') else None
         self.named = {str(row['name']) for row in rows}
         self.lines = max((int(row['seq']) for row in rows), default=0)
         self.flows = max((int(name[5:]) for name in self.named if name.startswith('flow:') and name[5:].isdigit()),
@@ -3899,6 +3989,8 @@ class Session:
             return {'noted': False, 'error': 'The session has not started or is ending.'}
         held, busy = cast(dict[str, Any], line), bool(self.turns)
         note_id = str(held.get('id'))
+        if asked.get('deliver') and note_id in self.queued_peer_ids:
+            return {'noted': True, 'queued': True, 'reused': True}
         sender: dict[str, Any] = held.get('from') or {}
         if asked.get('deliver') and sender.get('node') and self.node is not None and not self.probe:
             # the pulse between the two figures, riding the event the note's line fires
@@ -3914,15 +4006,15 @@ class Session:
                                           'held': []}
             return {'noted': True}
         reply_to = str(held.get('reply_to') or '')
-        what = 'question' if held.get('ask') else f'reply to your note {reply_to}' if reply_to else 'note'
-        text = prompt('peer_note', what=what, agent=str(sender.get('agent') or ''), item=str(sender.get('item') or ''),
-                      title=str(sender.get('title') or ''), note=str(held.get('text') or ''), id=note_id)
+        from .orchestration import note_context
+        text = prompt('peer_note', message_context=note_context(held), note=str(held.get('text') or ''))
+        self.queued_peer_ids.add(note_id)
         marks = [(note_id, str(sender.get('session_id') or ''))]
         waiting = self.awaiting.get(reply_to)
         if waiting is not None and time.monotonic() < float(waiting['until']):
             cast(list[Any], waiting['held']).append((note_id, text, marks))  # the waiting call returns it
             return {'noted': True, 'queued': False, 'awaited': True}
-        self.turn(text, peers=marks)
+        self.turn(text, peers=marks, components=list(held.get('context_components') or []))
         return {'noted': True, 'queued': True, 'busy': busy}
 
     def unawait(self, asked: dict[str, Any]) -> dict[str, Any]:
@@ -3946,33 +4038,176 @@ class Session:
         def marked(tx: Any) -> None:
             for note_id, sender in marks:
                 for session_id in {own, sender} - {''}:
-                    mark_peer(tx, session_id, note_id, self.work_id, state)
+                    mark_peer(tx, session_id, note_id, self.work_id, state, recipient_session=own)
         await self.table(marked, fatal=False)
 
-    def carried(self) -> None:
+    def guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
+        """Resolve authored duty, current assignment and actual actions at the recipient's next turn boundary."""
+        with home.registry_scope(fresh=True):
+            return self.current_guidance(text, supplied)
+
+    def current_guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
+        from .orchestration import resume_context, snapshots
+        components: list[dict[str, Any]] = []
+        if self.authored_role and not self.probe:
+            role = resolve_agent_role(Path(self.root), self.authored_role, project=self.store.project_id,
+                                      bindings={'project': self.store.project_id})
+            if role.get('missing') or role.get('problems'):
+                raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
+                           'metaform agents roles')
+            components += list(role.get('components') or [])
+            held = resume_context(self.ctx, self.work_id, self.session_id)
+            if held:
+                self.assignment = held
+                keys = ('assignment_id', 'work_id', 'root_work_id', 'team_id', 'gc_assignment_id',
+                        'parent_assignment_id', 'reviewed_assignment_id', 'authored_role_uri', 'execution_role',
+                        'functional_locations', 'task', 'requested_result', 'candidate', 'specification', 'mode',
+                        'state', 'return_to', 'pending_direction', 'result', 'evidence', 'last_check_in',
+                        'returned_children', 'continuations', 'related_corrections', 'independent_assessments')
+                body = json.dumps({key: held.get(key) for key in keys}, ensure_ascii=False, indent=2)
+                components.append(prompt_files.component('orchestration:assignment', body))
+            for _, actions in provided(Path(self.root), 'agent.actions'):
+                bound = actions(self.ctx, capabilities={**(self.acp.get('capabilities') or {}),
+                                                        'execution_role': self.role})
+                relevant = ('dispatch_peers', 'dispatch_note', 'dispatch_notes', 'dispatch_broadcast',
+                            'dispatch_broadcasts', 'dispatch_interrupt', 'memory_read_unread', 'memory_join',
+                            'workflow_run', 'workflow_resume', 'workflow_handoff', 'metaform_catalog', 'map_work')
+                bound['tools'] = {name: {'required': one['arguments'].get('required', []),
+                    'arguments': {key: {field: value for field, value in spec.items()
+                                        if field in ('type', 'enum', 'default')}
+                                  for key, spec in one['arguments'].get('properties', {}).items()},
+                    'effect': one['effect'], 'person_decides': one['person_decides']}
+                    for name, one in bound['tools'].items() if name.startswith('orchestration_') or name in relevant}
+                components.append(prompt_files.component('orchestration:actions',
+                    json.dumps(bound, ensure_ascii=False, indent=2)))
+        if not self.probe and (self.authored_role or self.role == 'worker'):
+            memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
+            if memory:
+                memory_component = prompt_files.resolve('memory:instructions')
+                memory_component.update(text=memory, bindings={'project': self.store.project_id,
+                                                               'element': self.at.partition('|')[0]})
+                memory_component['rendered_fingerprint'] = hashlib.sha256(memory.encode()).hexdigest()
+                components.append(memory_component)
+                self.sent[:] = [replace(one, rendered_text=memory,
+                                        rendered_fingerprint=memory_component['rendered_fingerprint'],
+                                        bindings=memory_component['bindings']) if one.name == 'memory:instructions'
+                                else one for one in self.sent]
+        prepared = prepare_agent_context(Path(self.root), self.runner, [*components, *supplied],
+                                         project=self.store.project_id)
+        due = list(prepared['components'])
+        extra = [str(one['text']) for one in due if one.get('text') and str(one['text']) not in text]
+        if extra:
+            text = '\n\n'.join([*extra, text])
+        # Incidental rendering (a lookup/help or an intermediate fill) is not evidence of recipient delivery.
+        captured = [one for one in snapshots([*self.inflight_versions, *self.sent])
+                    if one.get('text') and str(one['text']) in text]
+        by_name = {str(one['name']): one for one in [*captured, *due]}
+        self.inflight_context = {'epoch': prepared['epoch'], 'components': list(by_name.values())}
+        return text
+
+    def context_delivered(self) -> None:
+        """Record only after ACP accepted the outgoing bytes; the body snapshots cannot race a later prompt edit."""
+        prepared, self.inflight_context = self.inflight_context, None
+        if prepared is not None and not self.probe:
+            record_agent_context(Path(self.root), self.runner, prepared['components'],
+                                 project=self.store.project_id, epoch=int(prepared['epoch']), channel='acp_prompt')
+            delivered = [prompt_files.Sent(str(one['name']), one.get('number'), str(one.get('origin') or 'generated'),
+                one.get('actual_version_id'), one.get('selected_version_id'),
+                str(one.get('rendered_fingerprint') or ''), dict(one.get('bindings') or {}),
+                tuple(one.get('problems') or []), str(one.get('text') or '')) for one in prepared['components']]
+            self.carried(delivered)
+        self.inflight_versions = []
+        marks, self.inflight_peers = self.inflight_peers, []
+        if marks:
+            self.spawn(self.peer_marked(marks, 'delivered'))
+
+    async def replay_peers(self) -> None:
+        """A restart requeues retained, unacknowledged recipient messages before draining new continuations."""
+        def pending() -> list[dict[str, Any]]:
+            with self.store.tables(write=False) as tx:
+                rows = tx.rows('session_lines', {'session_id': self.session_id}, by=('session_id', 'seq'),
+                               limit=0).results
+            found: list[dict[str, Any]] = []
+            for row in rows:
+                if row['kind'] != 'peer':
+                    continue
+                with contextlib.suppress(ValueError, TypeError):
+                    held = json.loads(row['text'])
+                    state = held.get('session_states', {}).get(self.session_id) or held.get('states', {}).get(self.work_id)
+                    if state not in ('read', 'replied', 'failed') and any(one.get('work_id') == self.work_id
+                           for one in held.get('to', [])):
+                        found.append(held)
+            return found
+        for held in await asyncio.to_thread(pending):
+            await self.peer_note({'line': held, 'deliver': True})
+
+    async def orchestration_changes(self) -> None:
+        """Coalesce relevant changes; there is no orchestration polling timer."""
+        if self.orchestration_reading:
+            self.orchestration_again = True
+            return
+        self.orchestration_reading = True
+        try:
+            from .orchestration import drain
+            while not self.ending:
+                self.orchestration_again = False
+                await asyncio.to_thread(drain, self.ctx)
+                if not self.orchestration_again:
+                    break
+        finally:
+            self.orchestration_reading = False
+
+    async def memory_changes(self, payload: dict[str, Any] | None = None) -> None:
+        """Queue changed functional-memory notices as ordinary turns; bodies remain unread until fetched."""
+        if self.memory_reading:
+            self.memory_again = True
+            return
+        self.memory_reading = True
+        try:
+            while not self.ending:
+                self.memory_again = False
+                for _, notices in provided(Path(self.root), 'memory.notices'):
+                    pending = await asyncio.to_thread(notices, self.ctx, payload)
+                    if self.memory_epoch != pending.get('epoch'):
+                        self.memory_epoch = pending.get('epoch')
+                        self.memory_queued.clear()
+                    due = [one for one in pending.get('components', []) if one['name'] not in self.memory_queued]
+                    if due:
+                        self.memory_queued.update(str(one['name']) for one in due)
+                        self.turn('\n\n'.join(str(one['text']) for one in due), components=due)
+                if not self.memory_again:
+                    break
+                payload = None
+        finally:
+            self.memory_reading = False
+
+    def carried(self, taken: list[prompt_files.Sent] | None = None) -> None:
         """The prompt versions served since the last turn went out, told on `prompt.sent` with this session's ids and
         role as that turn goes, so a module that keeps what each session was sent records it, ticket 3a1306bd. Nothing
         is told for a turn that carried no prompt, such as the person's own message, or for an agent started only to
         be asked something."""
-        taken = [self.sent.pop(0) for _ in range(len(self.sent))]
+        taken = [self.sent.pop(0) for _ in range(len(self.sent))] if taken is None else taken
         if not taken or self.session_id is None or self.probe:
             return
         payload = {'project': self.store.project_id, 'work_id': self.work_id, 'session_id': self.session_id,
                    'runner': self.runner, 'role': self.role, 'agent': self.agent, 'at': stamp(),
                    'prompts': [{'name': one.name, 'number': one.number, 'origin': one.origin,
-                                'version_id': one.version_id} for one in taken]}
+                                'version_id': one.version_id, 'selected_version_id': one.selected_version_id,
+                                'rendered_fingerprint': one.rendered_fingerprint,
+                                'bindings': one.bindings} for one in taken]}
         # what a subscriber keeps of it, the agents module's record, changes no map and is announced by no event
         from metaform import events
         self.spawn(asyncio.to_thread(events.quietly, events.publish, 'prompt.sent', payload, self.ctx))
 
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None,
-             word: dict[str, Any] | None = None) -> None:
+             word: dict[str, Any] | None = None, components: list[dict[str, Any]] | None = None) -> None:
         if self.handing:  # the runner taking the session over sends it
             self.handed_on.append({'text': text, 'by': None})
             return
         if self.ending:
             return
-        self.carried()
+        self.prompt_versions.append([self.sent.pop(0) for _ in range(len(self.sent))])
+        self.prompt_contexts.append(list(components or []))
         self.replaying = False  # what comes from here on is the session's own, never a replay
         self.pending.append(text)
         self.voiced.append([block for block in (audio, image) if block is not None])
@@ -3999,6 +4234,8 @@ class Session:
                     current = self.active_turn or ActiveTurn()
                     self.active_turn = current
                     text = self.pending.popleft()
+                    self.inflight_versions = self.prompt_versions.popleft() if self.prompt_versions else []
+                    supplied = self.prompt_contexts.popleft() if self.prompt_contexts else []
                     beside = self.voiced.popleft() if self.voiced else []
                     marks = self.peered.popleft() if self.peered else []
                     current.word = self.worded.popleft() if self.worded else None
@@ -4023,7 +4260,6 @@ class Session:
                             renewed = await asyncio.to_thread(self.reopened)
                             if renewed:
                                 text = f'{renewed}\n\n{text}'
-                                self.carried()  # the versions this turn carries, told with it
                                 await self.save_state()
                         if self.recompacted:  # the first turn after a compaction says what the agent works on,
                             self.recompacted = False  # unless a tool call in between gave it already
@@ -4032,7 +4268,9 @@ class Session:
                             if line and await asyncio.to_thread(shown_before, self.runner, COMPACTED_KEY) != '':
                                 await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, '')
                                 text = f'{line}\n\n{text}'  # said once, by whichever comes first
-                        await self.peer_marked(marks, 'delivered')
+                        text = await asyncio.to_thread(self.guidance, text, supplied)
+                        self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
+                        self.inflight_peers = marks
                         self.cost_open, self.provisional = False, 0
                         self.arm()  # the turn's silence clock, P040
                         self.intake_clock()  # an intake's first-record clock starts with its first turn, M04
@@ -4226,9 +4464,22 @@ class Session:
         next needed. This process's own writes never come back here."""
         if payload.get('project') != self.store.project_id or self.ending:
             return
+        kinds = cast(list[Any], payload.get('kinds') or [])
+        pertinent = self.work_id in (payload.get('work_ids') or []) or any(
+            one in (payload.get('session_ids') or []) for one in (self.session_id, self.runner))
+        from .orchestration import transitions_changed
+        if transitions_changed(payload) and (pertinent or not any(
+                payload.get(key) for key in ('work_ids', 'session_ids'))):
+            self.spawn(self.orchestration_changes())
         given: Any = payload.get('tables')
         tables = None if given is None else [given] if isinstance(given, str) else \
             [str(one) for one in cast(list[Any], given)] if isinstance(given, list) else []
+        if 'memory.changed' in kinds and self.runner in (payload.get('session_ids') or []):
+            self.spawn(self.memory_changes(payload))
+        elif not kinds and 'memory.entry_revisions' in (tables or []):
+            # A command with an unspecified write loses the aggregate's concerns. The memory owner still filters
+            # its content revisions by this recipient's actual functional encounters and context epoch.
+            self.spawn(self.memory_changes())
         if tables is None or any(not table.startswith('dispatch') for table in tables):
             self.sources = None
         if concerns(payload, self.work_id, self.session_id, tables):
@@ -4317,8 +4568,8 @@ class Session:
                                           **({'phase': self.intake.get('phase')} if live and self.intake else {}),
                                           'how': None if live else self.how or 'the agent is no longer running'})
             elif op == 'message' and asked.get('fork') in self.children and self.children[asked['fork']].get('fork'):
-                self.spawn(self.fork_turn(str(asked['fork']), str(asked.get('text', ''))))  # a turn of a fork, P030
-                await self.reply(writer, {**said, 'sent': True, 'fork': asked['fork']})
+                answer = await self.fork_message(str(asked['fork']), str(asked.get('text', '')))
+                await self.reply(writer, {**said, **answer})
             elif op == 'message':
                 if self.ending or self.session_id is None:
                     await self.reply(writer, {**said, 'sent': False, 'error': 'The session has not started or is ending.'})
@@ -4394,9 +4645,22 @@ class Session:
             elif op == 'interrupt':
                 try:
                     requested = await self.interrupt()
+                    direction = cast(dict[str, Any] | None, asked.get('direction'))
+                    if direction and direction.get('body'):
+                        from .orchestration import note_context
+                        text = prompt('peer_note', message_context=note_context(direction), note=str(direction['body']))
+                        self.turn(text)
                     await self.reply(writer, {**said, 'requested': requested})
                 except Exception as error:  # noqa: BLE001  a failed cancel is reported without destroying the session
                     await self.reply(writer, {**said, 'error': f'Could not interrupt the turn: {error}'})
+            elif op == 'suspend':
+                    # The transport request is acknowledged before its adapter is cancelled. State is durable first;
+                # end() terminates the actual adapter, and moved_on() releases the lease before any child launches.
+                if not self.assignment or asked.get('assignment') != self.assignment['assignment_id']:
+                    await self.reply(writer, {**said, 'accepted': False, 'error': 'Assignment does not own this session.'})
+                else:
+                    await self.reply(writer, {**said, 'accepted': True})
+                    self.spawn(self.suspend_assignment(str(asked.get('reason') or 'Waiting for a child.')))
             elif op == 'permit':
                 await self.reply(writer, {**said, **await self.permit(str(asked.get('request', '')),
                                                                       str(asked.get('option', '')))})
@@ -4435,6 +4699,12 @@ class Session:
     async def reply(writer: asyncio.StreamWriter, answer: dict[str, Any]) -> None:
         writer.write(json.dumps(answer).encode('utf-8') + b'\n')
         await writer.drain()
+
+    async def suspend_assignment(self, reason: str) -> None:
+        from .orchestration import SUSPENDED
+        async with self.lock:
+            await self.note(None, 'notice', reason)
+        await self.end(SUSPENDED)
 
     async def end(self, how: str, release: bool = True) -> None:
         """End the session once: cancel a running turn, answer every waiting request as cancelled, close the agent's

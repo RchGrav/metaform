@@ -13,4 +13,6 @@
      metaform help agents hello and by the full form of the command-line guide. Empty sends nothing. The module
      ships disabled: nothing here is sent until it is enabled. -->
 <instructions>hello is active.</instructions>
+<!-- An authored responsibility resolved through the public agent.roles provider while hello is enabled. -->
+<role_greeter>Welcome the assigned visitor using the hello greeting operations and return the result to the recorded caller.</role_greeter>
 </prompts>

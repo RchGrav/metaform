@@ -177,7 +177,7 @@ def test_a_prompt_store_at_layout_2_is_upgraded_in_place_and_keeps_its_versions(
     prompts.shipped('practices', 'markdown', 'shipped')
     db = sqlite3.connect(home / 'prompts.sqlite3')
     try:
-        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('3',)
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('4',)
         assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('2',)
         assert db.execute('SELECT COUNT(*) FROM prompt_shipped').fetchone() == (1,)
     finally:

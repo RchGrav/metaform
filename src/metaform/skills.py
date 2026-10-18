@@ -74,9 +74,18 @@ def procedure(name: str) -> str:
     return (get(name).folder / 'references' / 'procedure.axiom').read_text(encoding='utf-8').strip()
 
 
+def selected_procedure(name: str) -> str:
+    """The selected procedure for a read or deployment; resolving an artifact is not an agent delivery receipt."""
+    one = get(name)
+    return str(prompt_files.resolve_text(f'skill:{one.name}', procedure(one.name))['text'])
+
+
 def seed() -> None:
     for section in SECTIONS:
         prompts.shipped(section, 'text', prompt_files.required(PACKAGE, section))
+        # These established, unprefixed store identities are the versions libraries actually read. A source
+        # update therefore merges here as well as at skills:<section>, retaining each selection and its history.
+        prompt_files.merge_selected_updates(section)
 
 
 def library(name: str) -> str:
@@ -111,7 +120,8 @@ def _files(folder: Traversable, prefix: str = '') -> dict[str, bytes]:
 
 
 def deployment_files(one: Skill) -> dict[str, bytes]:
-    return {**_files(one.folder), **{f'references/{name}.md': (text + '\n').encode('utf-8')
+    return {**_files(one.folder), 'references/procedure.axiom': (selected_procedure(one.name) + '\n').encode('utf-8'),
+            **{f'references/{name}.md': (text + '\n').encode('utf-8')
                                    for name, text in libraries(one).items()}}
 
 
@@ -119,7 +129,7 @@ def load(name: str) -> dict[str, Any]:
     one = get(name)
     libs = libraries(one)
     files = [*_files(one.folder), *(f'references/{name}.md' for name in libs)]
-    return {**one.metadata(), 'files': files, 'procedure': procedure(one.name), 'libs': libs}
+    return {**one.metadata(), 'files': files, 'procedure': selected_procedure(one.name), 'libs': libs}
 
 
 def bound(given: str) -> str:

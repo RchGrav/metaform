@@ -66,9 +66,11 @@ from metaform.data import (
     query_reads,
 )
 from metaform.module import (
+    AgentRoleDefinition,
     Context,
     Module,
     Noun,
+    Provides,
     Status,
     Stop,
     Subscription,
@@ -477,4 +479,8 @@ MODULE = Module(
     data=Data(operations={'count_visit': Operation(count_visit, write=True)}),
     node_read=node_read,
     work_read=work_read,
+    provides=(Provides('agent.roles', (
+        AgentRoleDefinition('hello.greeter', 'Welcome an assigned visitor and return the greeting.',
+                            ('hello:role_greeter',)),
+    )),),
 )

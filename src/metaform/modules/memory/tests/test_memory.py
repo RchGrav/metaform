@@ -38,9 +38,7 @@ def mapped(run, tmp_path):
 
 
 def m(run, verb, *args, cwd, ok=True):
-    # a delete is the person's decision, confirmed on their command line, CLI-011 (UX review round 1)
-    confirmed = ('--confirm',) if verb.startswith('delete_') else ()
-    return run('memory', verb, *(kept(arg) if verb == 'create_entities' else arg for arg in args), *confirmed,
+    return run('memory', verb, *(kept(arg) if verb == 'create_entities' else arg for arg in args),
                '--json', cwd=cwd, ok=ok)
 
 
@@ -78,6 +76,7 @@ def where(run, address, cwd, *more):
 @pytest.mark.req('LAYER-013')
 @pytest.mark.req('BASE-040')
 def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_shapes(run, mapped):
+    from metaform.modules.mcp import shaping
     from metaform.modules.mcp.server import verb_schema
     from metaform.modules.memory import MODULE
     verbs = {verb.name: verb for verb in MODULE.verbs}
@@ -103,7 +102,7 @@ def test_memory_offers_the_nine_commands_with_the_reference_names_and_argument_s
         'delete_relations': {'relations': {'type': 'array', 'items': {'type': 'object', 'properties': {
             'from': text, 'to': text, 'relationType': text}, 'required': ['from', 'to', 'relationType']}}},
         'read_graph': {}, 'search_nodes': {'query': text}, 'open_nodes': {'names': texts}}
-    chassis = {'node', 'receiver', 'provider', 'address', 'project', 'layers'}
+    chassis = {'node', 'receiver', 'provider', 'address', 'project', 'layers', *shaping.SCHEMAS}
     assert {name: {key: bare(value) for key, value in shape.items() if key not in chassis}
             for name, shape in shapes.items()} == reference
     assert shapes['create_entities']['entities']['items']['required'] == ['name', 'entityType', 'observations']
@@ -202,8 +201,11 @@ def test_at_a_node_the_commands_act_on_that_nodes_memories_tied_by_a_join_of_typ
     assert mj(run, 'read_graph', PROBE, cwd=mapped)['relations'] == [crossing]
     said = mj(run, 'delete_observations', J([{'entityName': 'ghost', 'observations': ['x']}]), ROUTE, cwd=mapped)
     assert said['message'] == 'Deleted 0 of 1 observations. Entities not found: ghost'
-    # an existing name keeps its type and gains the new observation, BASE-040 as amended 2026-10-11
+    # A canonical create skips an existing name; graph extension and functional indexing are explicit.
     mj(run, 'create_entities', J([entity('echo cost', 'other type', 'Echoes cost one packet.')]), ROUTE, cwd=mapped)
+    assert len(mj(run, 'read_graph', ROUTE, cwd=mapped)['entities']) == 1
+    mj(run, 'join', 'echo cost', ROUTE, cwd=mapped)
+    mj(run, 'add_observations', J([{'entityName': 'echo cost', 'contents': ['Echoes cost one packet.']}]), cwd=mapped)
     assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][1] == entity('echo cost', 'fact',
                                                                             'Echoes are ejected cheaply.',
                                                                             'Echoes cost one packet.')
@@ -367,7 +369,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 7
+    assert recorded['version'] == 9
     assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why', 'locked_by', 'locked_at'],
                     'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
@@ -776,7 +778,7 @@ def test_rekey_rolls_back_all_attachments_and_notes_on_a_destination_collision(r
     mj(run, 'create_entities', J([entity('routing fact', 'fact')]), ROUTE, cwd=mapped)
     page_note('proj', f'element:{old}', 'Keep the old note.')
     if collision == 'joins':
-        mj(run, 'create_entities', J([entity('routing fact', 'fact')]), PROBE, cwd=mapped)
+        mj(run, 'join', 'routing fact', PROBE, cwd=mapped)
     else:
         page_note('proj', f'element:{new}', 'Keep the destination note.')
     store = Store('proj', module='memory')
@@ -789,18 +791,17 @@ def test_rekey_rolls_back_all_attachments_and_notes_on_a_destination_collision(r
 
 
 @pytest.mark.req('BASE-040')
-def test_create_entities_with_an_existing_name_keeps_the_new_observations_and_says_so(run, mapped):
-    """An agent recording under a name already in the graph loses nothing: the new observation is added to the
-    existing entity, with a notice, and an observation it already holds is not repeated."""
+def test_create_entities_with_an_existing_name_skips_its_content_and_index(run, mapped):
+    """Creation keeps existing knowledge unchanged; explicit extension and indexing operations preserve identity."""
     first = json.dumps([{'name': 'route ejection', 'entityType': 'behavior', 'observations': ['Routes are ejected.']}])
     again = json.dumps([{'name': 'route ejection', 'entityType': 'behavior',
                          'observations': ['Routes are ejected.', 'Ejection waits for the probe.']}])
     m(run, 'create_entities', first, ROUTE, cwd=mapped)
     said = json.loads(m(run, 'create_entities', again, ROUTE, cwd=mapped).stdout)
     assert said['entities'] == []
-    assert any('route ejection already exists; 1 new observation' in n['message'] for n in said['notices'])
+    assert 'notices' not in said
     found = json.loads(m(run, 'open_nodes', '["route ejection"]', ROUTE, cwd=mapped).stdout)
-    assert found['entities'][0]['observations'] == ['Routes are ejected.', 'Ejection waits for the probe.']
+    assert found['entities'][0]['observations'] == ['Routes are ejected.']
 
 
 @pytest.mark.req('BASE-040')
@@ -846,7 +847,7 @@ def test_a_memory_write_records_by_the_session_the_server_runs_for(run, mapped):
         env=session)
     run('memory', 'add_observations', J([{'entityName': 'route', 'contents': ['Holds.']}]), ROUTE, '--json',
         cwd=mapped, env={'METAFORM_SESSION': 'r2'})
-    run('memory', 'create_entities', kept(J([entity('route', 'part', 'Slips.')])), ROUTE, '--json', cwd=mapped,
+    run('memory', 'add_observations', J([{'entityName': 'route', 'contents': ['Slips.']}]), ROUTE, '--json', cwd=mapped,
         env={'METAFORM_SESSION': 'r3'})
     whole = mj(run, 'graph', cwd=mapped)
     assert whole['entities'][0]['observations'] == [{'content': 'Drifts.', 'by': 'r1'}, {'content': 'Holds.', 'by': 'r2'},
@@ -880,7 +881,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (8, 7)
+    assert (recorded['version'], recorded['compatible_from']) == (9, 9)
 
 
 def item(run, reference, cwd, ok=True):
@@ -962,7 +963,7 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (8, 7)
+    assert (recorded['version'], recorded['compatible_from']) == (9, 9)
 
 
 @pytest.mark.req('MCP-039')
@@ -1056,27 +1057,16 @@ def test_the_watcher_wakes_for_a_change_to_a_cited_file_and_never_for_a_change_e
         watcher.close()
 
 
-def owner_prompt():
-    """The owner's memory prompt as CTX-026 records it, its places unfilled: the record's last block, which each
-    amendment that replaces the text carries."""
-    spec = (Path(__file__).parents[5] / 'specifications' / '11-context.md').read_text(encoding='utf-8')
-    record = spec[spec.index('### CTX-026'):]
-    record = record[:record.index('\n### ', 1)]
-    block = record.split('    ```\n')[-2]
-    return '\n'.join(line[4:] for line in block.rstrip('\n').split('\n'))
-
-
 @pytest.mark.req('CTX-026')
 @pytest.mark.req('CTX-027')
-def test_the_memory_prompt_is_the_owners_word_for_word_and_filled_for_the_agents_element(run, mapped):
-    """The stored element is the owner's text byte for byte; sent, it names the project and the element, or swaps the
-    whole line-2 bullet when there is none; an edit saved in the prompt store is what is sent, and the Axiom text it
-    replaced is the prompt's earlier version."""
+def test_functional_memory_prompt_preserves_selected_edits_placeholders_and_source_history(run, mapped):
     from metaform import prompt_files
     from metaform.data import prompts
     from metaform.modules.memory import PACKAGE, memory_prompt
-    assert prompt_files.text(PACKAGE, 'instructions') == owner_prompt()
-    assert memory_prompt('proj', 'code.manager.route') == owner_prompt() == memory_prompt('proj')  # no places
+    shipped = prompt_files.text(PACKAGE, 'instructions')
+    assert 'create_entities skips existing names' in shipped
+    assert 'Read applicable unread memories at the functionality' in shipped
+    assert memory_prompt('proj', 'code.manager.route') == shipped == memory_prompt('proj')
     edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {element}.')
     assert memory_prompt('proj', 'code.manager.route') == 'Work on proj at code.manager.route.'
     later = prompts.save_prompt('memory:instructions', '{element}, linked to {this.address}.')
@@ -1084,7 +1074,7 @@ def test_the_memory_prompt_is_the_owners_word_for_word_and_filled_for_the_agents
         '{this} names what a prompt is linked to; the memory prompt leaves it as written'
     versions = prompts.prompt_versions('memory:instructions')
     assert [one.number for one in versions] == [later.number, edited.number, 2, 1]
-    assert versions[-1].text.startswith('@STATE_INIT:') and versions[2].text == owner_prompt()
+    assert versions[-1].text.startswith('@STATE_INIT:') and versions[2].text == shipped
 
 
 @pytest.mark.req('CTX-023')

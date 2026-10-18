@@ -40,3 +40,7 @@ Each change to the module contract, newest first, so a module copied from the te
 - A module declares `SHIPS_DISABLED` and `DEPENDENCIES` as literals, read before import, BASE-015 and BASE-017.
 - A verb may declare `supported_os` and `surfaces`, BASE-016 and BASE-035.
 - A verb returns its result; the CLI and MCP show the same data, BASE-036.
+
+## 2026-10-18
+
+Added authored role providers, owning prompt rendering, generated duty versions and persistent per-agent context epoch receipts. Documented response-boundary acknowledgements and count revisions.

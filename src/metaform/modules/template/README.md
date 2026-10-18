@@ -111,3 +111,38 @@ How the module behaves in an installed Metaform and in a directly run wheel.
 ## Demonstration
 
 A short command sequence that shows the module working.
+
+## Authored roles and delivered context
+
+Contribute `AgentRoleDefinition(name, purpose, prompts)` values as `Provides('agent.roles', definitions)`.
+Each prompt is its existing prompt-store identity, in delivery order. `metaform agents resolve name=<name>`
+and `metaform://role/<name>` resolve the definition through the enabled provider and its owning renderer.
+An authored role is a responsibility separate from the operational `METAFORM_ROLE`; inspection changes no binding.
+The hello module contributes `hello.greeter`; the template keeps an empty declaration.
+
+`Provides('prompt.render', renderer)` supplies owning-module bindings as `renderer(ctx, component, bindings)`.
+The resolver then renders the actual selected prompt-store version and reports a fallback separately. Generated
+duties may be stored without an XML element through the `agent.role` service used by the GC's Role Creator.
+
+`prepare_agent_context(folder, session, components)` selects exact component bodies still due in the current
+epoch. `record_agent_context` acknowledges only bodies handed to the harness; rendering and queuing do not
+acknowledge them. `advance_agent_context` is for completed compaction or recovery without retained context.
+Both inline turns and a worker's separate MCP process use the same recipient identity and persistent ledger.
+A module returning knowledge can use `ctx.queue_context(components, epoch)`, with each component's exact
+`delivered_value`; MCP records only complete bodies that survive response shaping.
+`Count.revisions` identifies changed entries whose totals stayed the same, and `Count.updated` counts updated
+unread bodies without changing the existing total/new/mine tuple.
+
+`collecting_agent_context(session)` establishes the transport's shared receipt collector and recipient identity.
+Nested node and item hooks inherit it even when their own context has a default CLI surface;
+`agent_context_collecting()` tells a producer to defer acknowledgment to that transport. A shaped response commits
+only its exact surviving `delivered_value`, and a receipt prepared before an epoch advance cannot acknowledge the
+replacement context. `prompt_files.resolve` and `resolve_text` inspect the actual selected text and version without
+recording delivery; `Sent.rendered_text` retains the exact body for a later transport handoff.
+
+Requested source changes are listed by existing identity in the shipped `resources/prompt_updates.json` manifest.
+`prompt_files.merge_selected_updates(name)` applies each unique old anchor to the selected version atomically,
+appending a version with that selection as its parent. An ambiguous or unmatched edit remains selected and reports
+a nonfatal conflict; later explicit user edits remain authoritative. `metaform agents updates` reads the source,
+before/after versions and outcome. Whole skill procedures and legacy library sections retain their existing prompt
+identities, and skill reads and deployment use the selected procedure and library versions.

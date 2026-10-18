@@ -175,8 +175,10 @@ def test_a_served_prompt_comes_from_the_prompt_store_and_an_edit_there_is_sent_i
     finally:
         prompt_files.release(sent)
     assert [(one.name, one.number, one.origin) for one in sent] == [
-        ('mine:greet', 1, 'shipped'), ('mine:greet', 2, 'edited'), ('mine:greet', 3, 'edited'),
+        ('mine:greet', 1, 'shipped'), ('mine:greet', 2, 'edited'), ('mine:greet', 1, 'shipped'),
         ('mine:greet', None, 'trial')]
+    assert sent[2].selected_version_id != sent[2].version_id
+    assert sent[2].problems and sent[2].rendered_fingerprint == sent[0].rendered_fingerprint
     assert prompts.prompt_version('mine:greet').number == 3
     with pytest.raises(LookupError):
         prompt_files.served(folder, 'nothing')

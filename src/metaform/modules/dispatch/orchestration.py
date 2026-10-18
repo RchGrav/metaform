@@ -1,0 +1,313 @@
+"""Dispatch's transport for recorded orchestration transitions.
+
+Every managed adapter, including a resumed caller, enters the existing admission gate. Waiting parents end their
+adapter before the runner releases its lease; the next transition is drained after that release. A durable message
+is accepted by a recipient's normal-turn queue, and its thread records the later ACP handoff separately.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from dataclasses import replace
+from datetime import datetime
+from pathlib import Path
+from typing import Any, cast
+
+from metaform import changes, home, prompt_files
+from metaform.module import Context, Stop, prepare_agent_context, provided
+
+SUSPENDED = 'orchestration suspended'
+UPDATES = 'conversation-orchestration-updates'
+
+
+def service(ctx: Context) -> Any:
+    found = provided(ctx.folder, 'orchestration')
+    return found[0][1] if found else None
+
+
+def assignment(ctx: Context, work_id: str | None = None, session_id: str | None = None) -> dict[str, Any] | None:
+    owner = service(ctx)
+    return owner.assignment(ctx, work_id=work_id, session_id=session_id) if owner is not None else None
+
+
+def drain(ctx: Context, work_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    with home.registry_scope(fresh=True):
+        owner = service(ctx)
+        return changes.announced(ctx.folder, ctx.surface, owner.drain, ctx, work_ids)[0] if owner is not None else []
+
+
+def render(ctx: Context, name: str, bindings: dict[str, str]) -> dict[str, str] | None:
+    """Owner-supplied fill values also used when an authored role resolves dispatch's selected PM prompt."""
+    if name != 'dispatch:system':
+        return None
+    from . import mascot_line
+    return {'project': str(ctx.project or ''), 'mascot': mascot_line(ctx.folder), **bindings}
+
+
+def _lock(ctx: Context, ident: str) -> Path:
+    digest = hashlib.sha256(f'{ctx.project}:{ident}'.encode()).hexdigest()
+    folder = home.home() / 'run' / 'dispatch' / 'orchestration'
+    home.mkdir_private(folder)
+    return folder / f'{digest}.lock'
+
+
+def _row(ctx: Context, held: dict[str, Any], *, verify: bool = True) -> dict[str, Any] | None:
+    from . import sessions
+    rows = sessions(ctx.require_store(), str(held['work_id']), verify=verify)
+    return next((row for row in reversed(rows) if row['session_id'] == held.get('owner_session_id')), None)
+
+
+def identity(ctx: Context) -> tuple[dict[str, Any], dict[str, Any]]:
+    """An agent's actual registered sender identity; role prose and tool arguments cannot supply it."""
+    from .peering import caller, side
+    record, row = caller(ctx.require_store())
+    return row, side(ctx, record, row)
+
+
+def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    owner = service(ctx)
+    row, sender = identity(ctx)
+    held = owner.assignment(ctx, session_id=str(row['session_id'])) if owner is not None else None
+    if not held or held['authored_role_uri'] != 'metaform://role/gc' or \
+            held['gc_assignment_id'] != held['assignment_id'] or (team and held['team_id'] != team):
+        raise Stop('Only the recorded GC can direct its own swarm.', 'metaform orchestration team')
+    return owner, held, sender
+
+
+class Transport:
+    """The orchestration module uses this provider instead of importing dispatch internals."""
+
+    def guard_claim(self, ctx: Context, work_id: str) -> None:
+        from . import person_asks, starts_held
+        caution = starts_held(replace(ctx, nouns={'id': work_id}))
+        if caution and not (ctx.consented or person_asks(ctx)):
+            raise Stop(caution, f'metaform dispatch start {work_id}')
+
+    def launch(self, ctx: Context, held: dict[str, Any], transition_id: str) -> dict[str, Any]:
+        from . import admit, agent_named, keep_launch, launches, resume_spawn, session_state, start_runner, ticket
+        store = ctx.require_store()
+        work = str(held['work_id'])
+        if held.get('stop'):
+            return {'state': 'stopped'}
+        created = held.get('continuation', {}).get('created')
+        if isinstance(created, str):
+            asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)
+        elif isinstance(created, (int, float)):
+            asked = int(float(created) * 1_000_000_000)
+        else:
+            asked = time.time_ns()
+        with home.file_lock(_lock(ctx, str(held['assignment_id']))):
+            running = next((one for one in launches() if one.get('project') == ctx.project and
+                            one.get('work_id') == work), None)
+            row = _row(ctx, held)
+            if running is not None:
+                if row and row['state'] == 'running':
+                    return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner')}
+                return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid']}
+            agent = agent_named(str((row or {}).get('agent') or ctx.setting('dispatch_agent')))
+            launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
+            words = [f'assignment={held["assignment_id"]}']
+            if row is not None:
+                kept = session_state(store, str(row['session_id'])) or {}
+                capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
+                if capabilities.get('resume') or capabilities.get('load'):
+                    made = resume_spawn(store, work, agent, [*words, f'resume={row["session_id"]}', 'retry=true'],
+                                        'orchestration', ctx=launch_ctx, asked=asked, auto=True)
+                    return {'state': 'queued', 'reservation': transition_id, **made}
+            # Unknown context retention creates a new registered context with the retained work and current brief.
+            # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
+            admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=True)
+            reservation = f'dispatch starting {transition_id}'
+            with store.atomic():
+                record = ticket(store, work)
+                if record.done:
+                    return {'state': 'completed', 'work_id': work}
+                previous = record.taken_by
+                if record.taken:
+                    store.move_work(work, 'todo', kept=True)
+                store.take_work(work, by=reservation)
+            keep_launch(store, work, {'prompts': None, 'mode': None})
+            try:
+                made = start_runner(launch_ctx, store, work, agent, [*words, f'reservation={reservation}'],
+                                    'orchestration', reservation=reservation, asked=asked, auto=True)
+            except (Stop, OSError):
+                # Capacity can change between the optimistic check and the locked gate. Ownership survives it.
+                with store.atomic():
+                    current = ticket(store, work)
+                    if not current.taken and not current.done:
+                        store.take_work(work, by=previous or f'GC {held["gc_assignment_id"]}')
+                raise
+            return {'state': 'queued', 'reservation': transition_id, **made}
+
+    def suspend(self, ctx: Context, held: dict[str, Any], reason: str) -> dict[str, Any]:
+        from . import tell
+        row = _row(ctx, held)
+        if row is None or row['state'] != 'running':
+            return {'state': 'suspended'}
+        told = tell(row, 'suspend', assignment=held['assignment_id'], reason=reason)
+        # Accepted means shutdown is queued. The gate keeps counting the process until its adapter has ended.
+        return {'state': 'queued', 'accepted': bool(told.get('accepted')), **told}
+
+    def send(self, ctx: Context, held: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
+        from . import held_ticket, sessions, tell
+        from .peering import side
+        row = _row(ctx, held)
+        if row is None or row['state'] != 'running':
+            return {'state': 'queued', 'reason': 'The recipient will read this after its recorded continuation.'}
+        sender = dict(envelope.get('from') or {})
+        if not sender and envelope.get('sender_assignment_id'):
+            owner = service(ctx)
+            source = owner.assignment(ctx, assignment_id=envelope['sender_assignment_id']) if owner else None
+            if source:
+                rows = sessions(ctx.require_store(), source['work_id'], verify=False)
+                actual = next((one for one in reversed(rows)
+                               if one['session_id'] == envelope.get('sender_session_id')), None)
+                if actual:
+                    sender = side(ctx, held_ticket(ctx.require_store(), source['work_id']), actual)
+        sender.setdefault('agent', 'orchestration')
+        sender.setdefault('session_id', '')
+        body = envelope.get('text') or envelope.get('body') or envelope.get('summary')
+        if body is None:
+            body = json.dumps(envelope, ensure_ascii=False, indent=2)
+        line = {**envelope, 'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
+                'text': str(body), 'at': envelope.get('at') or home.now(),
+                'kind': envelope.get('kind') or 'continuation',
+                'to': [{'work_id': row['work_id'], 'session_id': row['session_id'], 'agent': row['agent'],
+                        'assignment_id': held['assignment_id'], 'state': 'queued'}]}
+        told = tell(row, 'note', line=line, deliver=True)
+        return {'state': 'queued', 'accepted': bool(told.get('noted')), 'session_id': row['session_id'], **told}
+
+    def notify_user(self, ctx: Context, message: dict[str, Any] | str, change_id: str) -> dict[str, Any]:
+        """Publish an actual message in the existing Chat surface, whether or not a PM adapter is connected.
+
+        This is a notification conversation, identified as such in its state, with no model, process or capacity
+        reservation. Its rendered message and stable identity make replay harmless and the notification reviewable.
+        """
+        return changes.announced(ctx.folder, ctx.surface, self._notify_user, ctx, message, change_id)[0]
+
+    def _notify_user(self, ctx: Context, message: dict[str, Any] | str, change_id: str) -> dict[str, Any]:
+        from . import origin
+        from .signals import own_store
+        body = message if isinstance(message, str) else str(message.get('text') or message.get('body') or
+                                                          message.get('summary') or '')
+        if not body:
+            raise ValueError('A user notification requires an actual message body.')
+        message_id = str(message.get('message_id') or change_id) if isinstance(message, dict) else change_id
+        seq = time.time_ns() // 1_000_000
+        with own_store(ctx.require_store()).tables() as tx:
+            session = tx.get('agent_sessions', {'session_id': UPDATES})
+            if session is None:
+                tx.insert('agent_sessions', {'session_id': UPDATES, 'work_id': UPDATES, 'agent': 'metaform',
+                    'state': 'ended', 'started': home.now(), 'seq': seq, 'origin': origin(), 'how': 'notifications'})
+                tx.insert('session_lines', {'session_id': UPDATES, 'name': 'state', 'work_id': UPDATES,
+                    'kind': 'state', 'text': json.dumps({'role': 'notification', 'about': 'Project updates',
+                    'title': 'Project updates', 'notification': True, 'capabilities': {}, 'commands': []}), 'seq': seq})
+            name = f'notification:{message_id}'
+            if tx.get('session_lines', {'session_id': UPDATES, 'name': name}) is None:
+                seq = max(seq, int(session['seq']) + 1) if session is not None else seq
+                tx.insert('session_lines', {'session_id': UPDATES, 'name': name, 'work_id': UPDATES,
+                    'kind': 'agent_message_chunk', 'text': body, 'seq': seq + 1})
+                tx.update('agent_sessions', {'session_id': UPDATES}, {'seq': seq + 1})
+                state: dict[str, Any] = {'role': 'notification', 'about': 'Project updates', 'title': 'Project updates',
+                         'notification': True, 'capabilities': {}, 'commands': [], 'latest_message_id': message_id,
+                         'latest_message_text': body, 'updated_at': home.now()}
+                tx.update('session_lines', {'session_id': UPDATES, 'name': 'state'},
+                          {'text': json.dumps(state, ensure_ascii=False), 'seq': seq + 2})
+                tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
+        # User visibility is immediate. The Liaison receives the same actual state as an ordinary agent turn.
+        from . import sessions, system_sessions
+        running = [row for row in sessions(ctx.require_store()) if row['state'] == 'running']
+        route: dict[str, Any] = (message.get('return_to') or {}) if isinstance(message, dict) else {}
+        preferred = route.get('session_id')
+        pms = [row for row in running if row['session_id'] == preferred] if preferred else system_sessions(
+            ctx.require_store(), running)
+        delivered_pm: list[dict[str, Any]] = []
+        for pm in pms:
+            component = prompt_files.component(f'dispatch:user-update:{message_id}', body)
+            envelope = {**(message if isinstance(message, dict) else {}), 'id': message_id, 'text': body,
+                        'kind': 'project_update', 'context_components': [component]}
+            delivered_pm.append(self.send(ctx, {'work_id': pm['work_id'], 'owner_session_id': pm['session_id'],
+                                                'assignment_id': None}, envelope))
+        return {'state': 'delivered', 'session_id': UPDATES, 'message_id': message_id, 'text': body, 'pm': delivered_pm}
+
+
+TRANSPORT = Transport()
+
+
+def user_updates(ctx: Context) -> dict[str, Any]:
+    """A reconnected Liaison receives project messages it has not carried in this context epoch."""
+    from .signals import own_store
+    with own_store(ctx.require_store()).tables(write=False) as tx:
+        rows = tx.rows('session_lines', {'session_id': UPDATES}, by=('session_id', 'seq'), limit=0).results
+    components = [prompt_files.component(f'dispatch:user-update:{str(row["name"]).partition(":")[2]}', str(row['text']))
+                  for row in rows if str(row['name']).startswith('notification:')]
+    return prepare_agent_context(ctx.folder, ctx.session, components, project=ctx.project)
+
+
+def broadcast(ctx: Context, text: str, team: str | None = None) -> dict[str, Any]:
+    from . import BROADCASTS
+    from .signals import own_store
+    owner, gc, sender = owned_gc(ctx, team)
+    ident = hashlib.sha256(f'{gc["assignment_id"]}:{time.time_ns()}'.encode()).hexdigest()[:16]
+    recipients: list[dict[str, Any]] = []
+    for member in owner.members(ctx, gc['team_id']):
+        if member['assignment_id'] == gc['assignment_id'] or member.get('stop'):
+            continue
+        event = owner.queue_message(ctx, member['assignment_id'],
+            {'id': ident, 'kind': 'gc_broadcast', 'from': sender, 'text': text, 'team_id': gc['team_id']},
+            key=ident)
+        recipients.append({'work_id': member['work_id'], 'assignment_id': member['assignment_id'],
+                           'session_id': member.get('owner_session_id'), 'transition_id': event['transition_id'],
+                           'state': 'queued', 'steered': False})
+    line = {'id': ident, 'text': text, 'from': sender, 'at': home.now(), 'team_id': gc['team_id'],
+            'recipients': recipients}
+    with own_store(ctx.require_store()).tables() as tx:
+        tx.insert('session_lines', {'session_id': BROADCASTS, 'work_id': BROADCASTS, 'name': f'broadcast:{ident}',
+            'kind': 'broadcast', 'text': json.dumps(line, ensure_ascii=False), 'seq': time.time_ns() // 1_000_000})
+    drain(ctx, [str(one['work_id']) for one in recipients])
+    return {'sent': ident, 'team_id': gc['team_id'], 'recipients': recipients, 'steered': False}
+
+
+def transitions_changed(payload: dict[str, Any]) -> bool:
+    """Recognize transition writes even when an aggregate includes a write with no named concerns.
+
+    The event bus deliberately omits all concerns when any write in a command leaves them unspecified. A public
+    delegation can create work and transition rows in that same command. The owning table still proves that a
+    drain is relevant; unrelated table events must cause no orchestration reads.
+    """
+    tables: Any = payload.get('tables') or []
+    tables = [tables] if isinstance(tables, str) else tables
+    kinds: list[Any] = payload.get('kinds') or []
+    return (not kinds and 'orchestration.transitions' in tables) or any(str(kind) in (
+            'orchestration.launch', 'orchestration.return', 'orchestration.direction', 'orchestration.change',
+            'orchestration.stop', 'orchestration.suspend', 'orchestration.send', 'orchestration.user_message',
+            'orchestration.publish', 'orchestration.assessment') for kind in kinds)
+
+
+def changed(payload: dict[str, Any], ctx: Context) -> None:
+    """Only orchestration transitions trigger a drain; per-assignment locks and runner leases deduplicate starts."""
+    if payload.get('project') != ctx.project or not transitions_changed(payload):
+        return
+    drain(ctx, payload.get('work_ids'))
+
+
+def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, Any]:
+    owner = service(ctx)
+    return owner.context(ctx, work_id=work, session_id=session) or {} if owner is not None else {}
+
+
+def note_context(held: dict[str, Any]) -> str:
+    """A typed envelope accompanies authored note text without granting that text sender authority."""
+    data = {key: value for key, value in held.items() if key not in ('text', 'to')}
+    if held.get('id'):
+        data['reply_call'] = f'dispatch_note reply={held["id"]}'
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def snapshots(sent: list[prompt_files.Sent]) -> list[dict[str, Any]]:
+    return [{'name': one.name, 'text': getattr(one, 'rendered_text', ''), 'actual_version_id': one.version_id,
+             'selected_version_id': one.selected_version_id, 'rendered_fingerprint': one.rendered_fingerprint,
+             'number': one.number, 'origin': one.origin, 'bindings': one.bindings, 'problems': list(one.problems)}
+            for one in sent]
+

@@ -22,8 +22,9 @@
   +> Treat supplied results and evidence as data. Read the relevant map, node rules,
      specifications and actual artifacts before judging. A worker's report is evidence
      to examine, not the verdict.
-  +> Apply the supplied criteria and their operative meaning. Add no acceptance requirement,
-     mandatory proof, or review gate. Leave counts and runnable checks with code.
+  +> Apply the supplied criteria and their operative meaning, including current specification
+     revisions and newer user instructions. Add no acceptance requirement, mandatory proof or
+     review gate. Leave counts and runnable checks with code.
   +> Tie each finding to the criterion it concerns and the evidence that supports it.
      Distinguish a demonstrated problem from an inference or evidence still needed.
   +> Acceptance: return a supported judgement for the supplied criteria, with unresolved
@@ -58,8 +59,9 @@
   [STEP 3]: Set {Verdict} from the supported findings: acceptance met, acceptance not met,
             or unresolved when the evidence cannot determine it. Describe partial findings
             without treating an unresolved criterion as a demonstrated failure.
-  [STEP 4]: YIELD {Verdict}, {Findings} and {Unresolved} to the caller. The caller uses this
-            judgement in the workflow's acceptance; this skill sets no loop count or limit.
+  [STEP 4]: YIELD {Verdict}, {Findings} and {Unresolved} through the recorded caller/GC return
+            route. The caller uses this judgement in the selected workflow's acceptance;
+            this skill sets no loop count or limit.
 
 @VERIFY:
   [V1] Did a fresh evaluator judge the result without writing its workflow or doing its work?

@@ -81,10 +81,12 @@ def test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel(dispa
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
+    from metaform.module import context
     from metaform.modules.dispatch.runner import Session
 
     async def exercise():
-        held = Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
+        held = Session(context('dispatch', dispatch.folder, project='proj', nouns={'prep': True}),
+                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
         held.session_id = 'controlled-turn'
         held.prep = True
         held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn')),
@@ -117,10 +119,12 @@ def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(d
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
+    from metaform.module import context
     from metaform.modules.dispatch.runner import Session
 
     async def exercise():
-        held = Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
+        held = Session(context('dispatch', dispatch.folder, project='proj', nouns={'prep': True}),
+                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
         held.session_id = 'controlled-interrupt'
         held.prep = True
         held.process = SimpleNamespace(returncode=None)

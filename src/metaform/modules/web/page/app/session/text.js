@@ -12,6 +12,7 @@ import {renderAgents} from '/page/app/agents/dispatch.js';
 import {agentName, summonAgent} from '/page/app/agents/pickers.js';
 import {skipsPrompts, STATUS_WORDS, countOf} from '/page/app/session/tools.js';
 import {SESSIONPOP, sessionSummary, preCallSettings} from '/page/app/session/settings.js';
+import {notificationState} from '/page/app/session/orchestration.js';
 
 /* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
  * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. */
@@ -298,6 +299,12 @@ const planStep = entry => h('li', {class: entry.status || 'pending'},
  * said as such, its usage, and Resume for a session that ended when its agent can resume it. Drawn again only when
  * what it shows changed, and never while one of its selects is in the person's hand. */
 export function drawSession(box, {work, session, state}) {
+  if (notificationState(state)) {
+    box.hidden = true;
+    box.dataset.drawn = '';
+    if (SESSIONPOP.el) SESSIONPOP.el.hidden = true;
+    return;
+  }
   const settings = state?.settings || [];
   const usage = state?.usage || null;
   const caps = state?.capabilities || {};

@@ -20,6 +20,7 @@ import {agentName, summonAgent, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemState} from '/page/app/session/tools.js';
 import {galleryRows, threadRows} from '/page/app/session/apps.js';
 import {drawPlan, drawSession} from '/page/app/session/text.js';
+import {notificationState, drawAssignment} from '/page/app/session/orchestration.js';
 import {SESSIONPOP} from '/page/app/session/settings.js';
 import {openIntakeChat} from '/page/app/intake/intake.js';
 import {chatDocked} from '/page/app/workspace/workspace.js';
@@ -45,11 +46,15 @@ export async function drawHelpdesk(trouble) {
   DOCK.live = session?.state === 'running';
   drawThreadBar(session);
   drawAgentSessions();
-  $('#helpdesk .call').hidden = Boolean(DOCK.live || DOCK.calling);
+  const notification = notificationState(state);
+  $('#helpdesk .call').hidden = notification || Boolean(DOCK.live || DOCK.calling);
+  $('#helpdesk .compose').hidden = notification;
+  $('#helpdesk .calls').hidden = notification;
   drawAsked(target, session, lines);
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
   drawProposals();
   drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
+  drawAssignment($('#helpdesk .assignmentbox'), state, agentAt);
   drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;
@@ -120,6 +125,11 @@ async function readThread(target, openedSession, chat) {
 /* The system agent is known by what its session is about, however it was started: by the page, the phone or the
  * command line. A conversation about a node hangs on the same held ticket and stays the person's chat. */
 function knownAsSystem(chat, state) {
+  if (chat && notificationState(state)) {
+    Object.assign(chat, {source: 'notification', label: state.title || state.about || 'Project updates'});
+    DOCK.label = chat.label;
+    return;
+  }
   if (!chat || !isSystemState(state, chat.target) || chat.source === 'system') return;
   Object.assign(chat, {source: 'system', label: 'your system agent'});
   DOCK.label = chat.label;
@@ -129,18 +139,19 @@ function knownAsSystem(chat, state) {
  * runner said as such, else what the agent is doing; its dot takes the state's color. Whom the chat is with is its
  * title; the line under it then says only what it is doing. */
 function chatHead(session, activity, busy, connecting) {
+  const notification = notificationState(DOCK.state);
   const told = session ? sessionStatus(session) : null;
   const special = told && ['login', 'dead', 'restarting'].includes(told.reason);
   const status = $('#helpdesk .status');
-  status.textContent = special ? told.words : session ? activity.label : connecting ? 'Connecting' : '';
+  status.textContent = notification ? 'Updates' : special ? told.words : session ? activity.label : connecting ? 'Connecting' : '';
   status.title = special ? told.why : session ? activity.note || activity.label
     : connecting ? DOCK.waiting || STANDBY : '';
   status.hidden = !status.textContent;
   $('#helpdesk .head').dataset.state = special ? told.reason : connecting ? 'connecting' : !session ? 'none'
     : session.state !== 'running' ? 'ended' : session.activity === 'waiting' ? 'asks' : busy ? 'working' : 'ready';
   $('#helpdesk').classList.toggle('asks', Boolean(session && session.activity === 'waiting'));
-  $('#helpdesk .interrupt').disabled = !DOCK.target || !activity.interruptible;
-  $('#helpdesk .interrupt').hidden = !DOCK.target || !(activity.interruptible || session?.interrupting);
+  $('#helpdesk .interrupt').disabled = notification || !DOCK.target || !activity.interruptible;
+  $('#helpdesk .interrupt').hidden = notification || !DOCK.target || !(activity.interruptible || session?.interrupting);
   $('#helpdesk .with').textContent = DOCK.target ? `With ${DOCK.label}` : 'Online';
   const named = DOCK.target ? String(DOCK.label || 'an agent').replace(/^the /, '') : '';
   $('#helpdesk .who .title').textContent = named ? named[0].toUpperCase() + named.slice(1) : 'Metaform Support';

@@ -339,8 +339,9 @@ Element logic
 +&gt; Each subroutine holds the conditions for the function it works on: its acceptance, its Retry, its Catch.
 
 # --- Handoffs ---
-+&gt; A call that needs a fresh agent runs as a handoff by run id (the task token): directly where the host
-   supports agent -&gt; agent, otherwise through the orchestrator.
++&gt; A call that needs another agent runs as a handoff by run id, bound to the assignment's
+   parent/team and return destination. The native continuation starts its recipient through
+   dispatch and returns results to its caller/GC.
 +&gt; A handed-off subroutine carries complete instructions. The fresh agent has no prior context.
 +&gt; A handed-off subroutine states the data it accepts and the data it returns, and ends in RETURN.
    Its RETURN comes back with the run id.
@@ -377,7 +378,8 @@ stop that step, record it in the ticket's note, carry on with what does not depe
   run                    metaform workflow run "&lt;entry call&gt;" element=&lt;caller element address&gt; variables='{"name":"value"}'
   call                   metaform workflow call "&lt;call&gt;" run=&lt;caller run id&gt; variables='{"name":"value"}'
   handoff                metaform workflow handoff "&lt;call&gt;" run=&lt;caller run id&gt; variables='{"name":"value"}'
-                         Give the returned run id to a fresh agent, directly or through the orchestrator.
+                         Bind the returned run id to the selected recipient and recorded continuation;
+                         dispatch starts the agent and routes its return to the caller/GC.
                          Return with metaform workflow complete "RETURN {value}" run=&lt;run id&gt; variables='{"value":"result"}'.
   parallel               metaform workflow parallel '&lt;JSON list of independent calls&gt;' run=&lt;caller run id&gt; variables='{"name":"value"}'
   complete               metaform workflow complete "RETURN {value}" run=&lt;run id&gt; variables='{"value":"result"}'
@@ -487,12 +489,10 @@ INTERPRETER CONTRACT (prepended by `/export --standalone`):
 
 ## Host honesty and tagging
 === HOST HONESTY CLAUSE (HIGHEST PRIORITY) ===
- You are a language model. You have no clock, no threads, and no execution between user turns. Therefore:
- !&gt; NEVER claim work occurred that did not occur inside a turn.
- !&gt; NEVER display wall-clock time, CPU%, latency, or fake ETAs. Use the {Turn} counter (T#) and step counters only.
- !&gt; NEVER fabricate tool output, file writes, or job results.
- +&gt; Background = cooperative scheduling: jobs advance only during turns, in bounded slices.
- +&gt; At boot, detect host capabilities (subagents, scheduler, file tools). If present, bind jobs to them and tag [REAL]. Otherwise simulate and tag [SIM].
+ Report execution and measurements from the actual host capabilities and observed results.
+ !&gt; NEVER fabricate tool output, file writes, job results, measurements or ETAs.
+ +&gt; Use available host tools, scheduling and agent operations for real work. Describe their observed results accurately.
+ +&gt; Identify an illustrative or simulated trace as such. A text-only simulation is not execution.
  +&gt; When {Strict} &gt;= 2, tag analytic claims [KNOWN] (given or verifiable), [INFERRED] (reasoned), or [UNKNOWN] (cannot determine). Never present [INFERRED] as [KNOWN].
  +&gt; If a command cannot be honored on this host, say so in one line and offer the nearest alternative.
 

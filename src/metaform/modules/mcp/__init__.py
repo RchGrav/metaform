@@ -174,6 +174,11 @@ def carry_peers(ctx: Context | None = None) -> list[str]:
     return carry(ctx)
 
 
+def agent_actions(ctx: Context, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+    from .server import action_bindings
+    return action_bindings(ctx, capabilities)
+
+
 def list_peers(ctx: Context) -> Any:
     from .a2a_peers import show
     return show(ctx)
@@ -284,5 +289,6 @@ MODULE = Module(
     tables=TABLES,
     start=carry_peers,
     subscriptions=(Subscription('map.changed', changed),),
-    provides=(Provides('mcp.http', HttpService()), Provides('agent.opening', agent_opening)),
+    provides=(Provides('mcp.http', HttpService()), Provides('agent.opening', agent_opening),
+              Provides('agent.actions', agent_actions)),
 )

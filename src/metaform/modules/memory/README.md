@@ -12,7 +12,7 @@ Started from template 0.2.0.
 
 ## Declaration
 
-`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares the nine commands of the reference memory server, `note`, `joins`, `orphaned`, `unjoin`, `rekey`, `graph`, `lock`, `unlock` and `watch`, its `node_read`, its `tables`, and `provides` `memory.note`: `person_note(project, node)`, the person's note at a node whole or None, which dispatch's hand-off carries; and `memory.prompt`: `memory_prompt(project, address=None)`, the owner's memory prompt filled for an element, which dispatch sends in a worker's first turn, CTX-028.
+`SUPPORTED_OS = ('linux', 'macos', 'windows')`, `DEPENDENCIES = ()`, `SHIPS_DISABLED = False`. `MODULE` declares the nine canonical graph commands plus `read_unread`, `join`, `note`, `joins`, `orphaned`, `unjoin`, `rekey`, `graph`, `lock`, `unlock` and `watch`. It contributes node reads/counts, item reads and tables. Its public providers are `memory.note(project, node)`, `memory.prompt(project, address=None)`, `memory.revision(project, address, provider='')` and `memory.notices(ctx, payload=None)`.
 
 ## Common base used
 
@@ -20,7 +20,7 @@ Started from template 0.2.0.
 
 ## Prompts
 
-`resources/prompts.xml` holds `instructions`, the owner's memory prompt word for word (CTX-026), at the address `prompt.memory:instructions`, served through the prompt store so an edit saved there is what agents receive, and `instructions_unassigned`, line 2's bullet for an agent with no element (CTX-027). `memory_prompt` fills `{project}`, `{this.address}` and `{this.name}`. The Axiom text the element held until 2026-10-15 is in `resources/instructions-2026-10-11.axiom`, never sent: a home that never served the element keeps it as the prompt's version 1, so it stays readable as the earlier version. `metaform_instructions module=memory` still returns the element unfilled, since the chassis reads module instructions outside the prompt store. The recording lines (`orient`, `connect`, the verb descriptions) split memory, what happened in the work, from knowledge, what is true of the project: drafts awaiting the owner's approval, CTX-029.
+`resources/prompts.xml` holds `memory:instructions`, the authored functional memory maintenance instructions, served through the prompt store while preserving selected edits and source history. `memory_prompt` fills `{project}` and `{element}` if a selected version uses them; `{this}` retains its existing linked-subject meaning. The earlier Axiom text remains readable in prompt history. Shared context receipts suppress unchanged memory instructions across inline startup and resource reads. `memory:counts` receives actual `total`, `unread`, `updated` and `read_unread` bindings; counts never acknowledge a memory body.
 
 ## Verbs
 
@@ -32,7 +32,9 @@ When a correction replaces an address, `metaform memory rekey <old-address> <new
 
 `lock <name>` and `unlock <name>`, CTX-023: a locked memory is read by every agent and changed by none. `add_observations`, `delete_observations`, `delete_entities` and `create_entities` of its name leave it as it is and name it (`Deleted 0 of 1 entities. Locked: <name>`); `unjoin` of its join is refused with the reason; a relation may be made to it, and one that touches it is not deleted by `delete_relations`. `graph` and the read at `metaform://<address>#<n>` mark it `locked`. Only the person locks and unlocks: the verbs are on the command line and the page's memory panel, never MCP tools, and refused to a command an agent runs (`metaform.module.agent_caller`).
 
-`delete_entities`, `delete_observations` and `delete_relations` are the person's decision (`person_says`, CLI-011, UX review round 1): no copy is kept, so each runs only with the person's `--confirm` on their command line, their yes to their AI tool's form, or from the page's memory panel. Its caution names what it would delete; an agent's `confirm` is refused with the command the person runs.
+`create_entities` skips existing names, including their observations, citations and index associations. `add_observations` extends existing knowledge. `join entity=<name> node=element:<address>` associates an existing entity with another functional entry without copying it. The three canonical delete operations maintain unlocked knowledge directly under the configured controls. Deleting an entity removes its observations, citations, incident relations and functional index associations. Locks continue to protect their entities and associations.
+
+`read_unread` returns only entities, relations and withdrawals not yet received in the actual agent's current context epoch. `read_graph`, `search_nodes`, `open_nodes` and item reads remain available for inspection and record the exact bodies they return. One entity indexed at two functional entries shares a receipt; different names remain distinct even with identical observations. MCP response shaping acknowledges only complete bodies that survived shaping. A later concurrent revision stays unread. Completed compaction advances the shared epoch and makes current grounding eligible again.
 
 ## Settings
 
@@ -40,7 +42,7 @@ None.
 
 ## Events
 
-None of its own. A write to its tables is noted by the chassis as any project-level table's write is, so `map.changed` is fired when the command ends and open pages are told, VIEW-018.
+A graph mutation uses the existing `map.changed` relay with `memory.changed`, affected `memory:<address>` kinds and the session IDs that already encountered those functional entries. Notices are delivered on the recipient's normal turn and point back to `read_unread`; receiving a notice does not clear body unread state. Entry revisions also drive MCP resource updates and map summaries when an edit or deletion leaves item numbers and totals unchanged. Unrelated events are filtered before reads.
 
 ## Sync and async
 
@@ -52,11 +54,13 @@ Every verb is a plain function.
 
 ## Tables
 
-Project-level, in `projects/<project>/modules/memory.sqlite3`, STORE-020: `entities`, `observations`, `relations`, `joins`, `notes`, `carried` and `citations`, at version 8, readable by code from version 7, which knows the lock: `entities` keeps `locked_by` and `locked_at`, empty while unlocked, CTX-023. A memory may cite its evidence with `cite` on `create_entities` or `add_observations`, `path:line`, `path:start-end`, `path:symbol` or a path, relative to the project's folder; the write refuses a citation that names nothing there. `citations` keeps what the cited lines read as, hashed, with the file's size and time, and, from version 8, `stale`, `checked_size` and `checked_mtime`: whether the citation holds as last worked out, and the file's size and time it was worked out against. A memory whose evidence no longer matches is said to be stale, with why, in the read, at `metaform://<address>#<n>` and in the node's counts. Over MCP a write answers one line with each memory's `<address>#<n>`, not the reference's result. Observations and joins keep `by`, who wrote them, and `session` and `at`, the agent session that wrote them and when, so the counts can say which memories the last session at a node wrote, MCP-039. Entities, observations and relations are kept as the reference server keeps them, in the order they were made, with no time on them or on the joins; version 1's times are dropped by the chassis's upgrade, which keeps every row. A join of type memory is keyed by the node's namespace address, so a new intake with the same address reconnects it; one whose address the map no longer holds is orphaned and listed by `orphaned`.
+Project-level tables are `entities`, `observations`, `relations`, `joins`, `notes`, `carried`, `citations`, `encounters`, `entry_revisions` and `withdrawals`. Version 9 requires version 9 writers because earlier code does not maintain content-change delivery. Existing graph, note, citation and lock records migrate intact. `encounters` keeps functional entry registrations per actual session and shared epoch; `entry_revisions` identifies content changes; `withdrawals` retains removed identities, not copied memory bodies. Authoritative delivery receipts live in the agents module's shared ledger.
+
+Citation evidence and stale checks keep their existing behavior. A citation may name `path:line`, `path:start-end`, `path:symbol` or a path relative to the project. Observation and association author/session fields remain available for provenance. Associations stay keyed by functional addresses, so an intake at the same address reconnects them and `orphaned` lists absent entry points.
 
 ## Node read
 
-`node_read` adds under `memory` in `map node` and in `map where` with `contents=true`: the node's `note`, and while memory shows there, its `entities` and `relations`, and for an element the `joins` it receives and provides that carry memories. `node_count` tells an agent orienting on a node, in `map where`, the ticket read and dispatch's hand-off, how many memories are joined at the node and at each direct neighbour, how many of them the last session there wrote, and whether the person left a note, with the `counts` and `note_counts` prompts naming the calls that read them, MCP-039; never what they say.
+`node_read` adds the person's note and applicable memory bodies to `map node` and `map where contents=true`; agent contexts receive only unread bodies. Join entry points retain their receiver/provider identity. `node_count` reports totals, actual unread and updated identities, stale evidence and notes, without acknowledging body receipt. The existing memory-layer visibility, selection and masking rules determine what applies.
 
 ## Lifecycle and cleanup
 
@@ -64,7 +68,7 @@ No `start` or `stop`, and no tasks.
 
 ## Modules relied on
 
-None.
+The agents module supplies the public shared epoch and context-receipt service. Dispatch and MCP consume memory providers through the module surface.
 
 ## Systems supported
 

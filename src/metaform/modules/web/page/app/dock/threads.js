@@ -20,6 +20,7 @@ import {narrowPage} from '/page/app/dock/place.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
+import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
@@ -210,7 +211,8 @@ function runningRow(session) {
   const chat = DOCK.chats.find(one => one.session === session.session_id), work = session.work_id;
   return listRow(`s:${session.session_id}`, {on: Boolean(DOCK.chat) && DOCK.chat === chat,
     source: chat?.source || sourceOf(work), glyph: ticketOf(work) && !isIntake(work) ? glyphOf(work) : null,
-    name: agentName(session.agent), status: listState(session), ...taskOf(work, session), session: session.session_id,
+    name: [agentName(session.agent), assignmentSummary(D.states?.[session.session_id])].filter(Boolean).join(' · '),
+    status: listState(session), ...taskOf(work, session), session: session.session_id,
     open: () => {  // the thread open at the click, which a row kept since it was drawn may not know of
       const open = DOCK.chats.find(one => one.session === session.session_id);
       if (open) showChat(open, {focus: true}); else agentAt(work, session.session_id);
@@ -249,6 +251,7 @@ function endWord(session) {
     : how === 'cancelled by the person' ? 'Cancelled' : 'Ended';
 }
 export function sessionTask(session, state = D.states?.[session.session_id]) {
+  if (notificationState(state)) return state.title || state.about || 'Project updates';
   const ticket = ticketOf(session.work_id);
   const conversation = isSystemState(state, session.work_id) ? 'Conversation with your system agent'
     : isIntake(session.work_id) ? 'The intake'
@@ -268,12 +271,14 @@ export function drawAgentSessions() {
   menu.hidden = !D.sessions.length;
   const row = forget => session => ({key: session.session_id,
     text: JSON.stringify([session.state, session.how, agentName(session.agent), glyphOf(session.work_id), sessionTask(session),
-      times[session.session_id], D.signals?.filter(one => one.session_id === session.session_id)]),
+      assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
+      D.signals?.filter(one => one.session_id === session.session_id)]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
   keyedFill(menu, D.sessions.map(row(false)));
 }
 function sessionRow(session, forget = false) {
+  const state = D.states?.[session.session_id], notification = notificationState(state);
   const stopped = stoppedByPerson(session), name = agentName(session.agent), task = sessionTask(session);
   const ended = session.state !== 'running', word = endWord(session);
   const signals = (D.signals || []).filter(one => one.session_id === session.session_id
@@ -282,7 +287,8 @@ function sessionRow(session, forget = false) {
   const open = () => {
     $('#agentbox').hidden = true;
     openHelpdesk(session.work_id, `${name} on ${task}`, '', session.session_id,
-      isSystemSession(session, D.states) ? 'system' : isIntake(session.work_id) ? 'intake' : null, {focus: true});
+      notification ? 'notification' : isSystemSession(session, D.states) ? 'system' : isIntake(session.work_id)
+        ? 'intake' : null, {focus: true});
   };
   const resume = async event => {
     const button = event.currentTarget;
@@ -302,11 +308,12 @@ function sessionRow(session, forget = false) {
   return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
     h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
     h('div', {class: 'details'}, h('b', {}, name), h('span', {class: 'task'}, task),
-      !ended ? h('span', {class: 'meta'}, 'Running')
+      assignmentSummary(state) ? h('span', {class: 'meta responsibility'}, assignmentSummary(state)) : null,
+      notification ? h('span', {class: 'meta'}, 'Project messages') : !ended ? h('span', {class: 'meta'}, 'Running')
         : at ? h('time', {datetime: at, title: `${how} ${new Date(at).toLocaleString()}`}, `${word} ${clockOf(at, true)}`)
         : h('span', {class: 'meta', title: how}, stopped ? 'Stopped · time unavailable' : word)),
     h('button', {type: 'button', class: 'btn sm open-chat', onclick: open}, 'Chat'),
-    stopped ? h('button', {type: 'button', class: 'btn sm resume', onclick: resume}, 'Resume') : null,
+    stopped && !notification ? h('button', {type: 'button', class: 'btn sm resume', onclick: resume}, 'Resume') : null,
     forget ? h('button', {type: 'button', class: 'btn sm quiet forget', 'aria-label': 'Forget this line',
       title: 'Forget this line; the session stays in the Agents menu',
       onclick: () => { forgetStops(session.session_id); drawAgentSessions(); }}, '×') : null);
@@ -317,6 +324,7 @@ export function drawThreadBar(session) {
   const bar = $('#helpdesk .threadbar'), chat = DOCK.chat, target = DOCK.target;
   bar.hidden = !target || !chat;
   if (bar.hidden) return;
+  const notification = notificationState(DOCK.state);
   const ticket = isIntake(target) || chat.source === 'system' ? null : ticketOf(target);
   const icon = bar.querySelector('.icon'), withGlyph = chat.source === 'agent' && Boolean(ticket);
   icon.hidden = !withGlyph;
@@ -338,11 +346,11 @@ export function drawThreadBar(session) {
   // a session an editor runs through metaform dispatch serve ends in that editor, BASE-062: no Stop, where it runs
   const inEditor = running && DOCK.state?.editor === true;
   (bar.querySelector('.where') || editorNote(bar)).hidden = !inEditor;
-  bar.querySelector('.stop').hidden = !running || inEditor;
+  bar.querySelector('.stop').hidden = notification || !running || inEditor;
   bar.querySelector('.stop').disabled = STOPPING.has(session?.session_id);
-  bar.querySelector('.again').hidden = !ended || stoppedByPerson(session) || isIntake(target);
+  bar.querySelector('.again').hidden = notification || !ended || stoppedByPerson(session) || isIntake(target);
   const cancel = bar.querySelector('.cancel') || cancelButton(bar);
-  cancel.hidden = !ticket || Boolean(ticket.done) || chat.source !== 'agent';
+  cancel.hidden = notification || !ticket || Boolean(ticket.done) || chat.source !== 'agent';
   // The person's own chat names its agent in the head. Stop agent remains a separate explicit action.
   const own = ['system', 'conversation'].includes(chat.source);
   bar.querySelector('.source').hidden = own;
@@ -450,7 +458,9 @@ const SPEND = {work: null, at: 0, data: null};
 export async function drawSpend(work) {
   const box = underBar('.spend', () => h('div', {class: 'spend', role: 'status'}));
   // a ticket's agent only: the person's own chat holds a ticket of its own that nobody reads as work
-  if (!work || isIntake(work) || ['system', 'conversation'].includes(DOCK.chat?.source)) { box.hidden = true; return; }
+  if (!work || isIntake(work) || ['system', 'conversation', 'notification'].includes(DOCK.chat?.source)) {
+    box.hidden = true; return;
+  }
   if (SPEND.work !== work || Date.now() - SPEND.at > 5000) {
     SPEND.work = work; SPEND.at = Date.now();
     try { SPEND.data = await read('dispatch-spend', {id: work}); } catch { SPEND.data = null; }

@@ -19,6 +19,7 @@ import {wrote} from '/page/app/board/history.js';
 import {isIntake} from '/page/app/session/tools.js';
 import {showGallery, withContext} from '/page/app/session/apps.js';
 import {messageRow} from '/page/app/session/text.js';
+import {notificationState} from '/page/app/session/orchestration.js';
 import {sessionPop} from '/page/app/session/settings.js';
 import {posted} from '/page/app/intake/intake.js';
 import {sharing, startShare, shareFrame} from '/page/app/figures/eyes.js';
@@ -36,6 +37,7 @@ const beingReached = chat => Boolean(chat?.starting) && Date.now() - chat.starti
  * message waits in the thread, marked as waiting, and goes as the first message once the session is there, after a
  * resume has finished. What is written meanwhile waits behind it, in order. */
 function ensureAgent() {
+  if (notificationState(DOCK.state)) return;
   // being reached already
   if (DOCK.calling || DOCK.talking || (DOCK.target && !DOCK.session) || beingReached(DOCK.chat)) return;
   if (!DOCK.target) { callSystem(); return; }
@@ -142,6 +144,7 @@ export function queuePaused(stopped) {
  * agent's; with no agent there yet it waits in the thread, and one is reached. */
 async function sendMessage(event) {
   event.preventDefault();
+  if (notificationState(DOCK.state)) return;
   if (DOCK.attaching) await DOCK.attaching;  // files still being saved go with the message
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;

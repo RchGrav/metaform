@@ -28,6 +28,7 @@ import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
+import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 import {nodeIn} from '/page/app/graph/data.js';
 
@@ -307,6 +308,7 @@ export async function renderAgents(only = null) {
   }
   followStart(D.sessions);
   setupNotice();
+  projectUpdates();
   drawAgentSessions();
   drawAgentList();  // the full-size dock's agents, each with its state
   for (const draw of SESSIONS_DRAWN) draw();
@@ -329,12 +331,40 @@ export async function renderAgents(only = null) {
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
     text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent),
-      onOtherBase(one)].join('\n'),
+      onOtherBase(one), assignmentSummary(D.states?.[one.session_id])].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
+}
+/* An actual project message arrives through the existing session stream. The notice exposes its words immediately,
+ * and its Chat action opens the durable thread. Dismissal belongs to that message, never to later updates. */
+const UPDATES = {project: null, seen: null, drawn: null};
+function projectUpdates() {
+  const key = `metaform.project-updates.${S.project}`;
+  if (UPDATES.project !== S.project) {
+    UPDATES.project = S.project;
+    UPDATES.drawn = null;
+    try { UPDATES.seen = localStorage.getItem(key); } catch { UPDATES.seen = null; }
+  }
+  const session = D.sessions.find(one => notificationState(D.states?.[one.session_id]));
+  const state = D.states?.[session?.session_id];
+  const message = state?.latest_message_id;
+  if (!message || !state.latest_message_text || message === UPDATES.seen) {
+    if (bannered('project-updates')) unbanner('project-updates');
+    return;
+  }
+  if (UPDATES.drawn === message && bannered('project-updates')) return;
+  UPDATES.drawn = message;
+  const seen = () => {
+    UPDATES.seen = message;
+    try { localStorage.setItem(key, message); } catch { /* the thread stays in the Agents menu */ }
+  };
+  banner('project-updates', {tone: 'info', title: state.title || 'Project updates', text: state.latest_message_text,
+    actions: [{label: 'Open chat', primary: true, run: () => {
+      seen(); unbanner('project-updates'); agentAt(session.work_id, session.session_id);
+    }}], onClose: by => { if (by === 'person') seen(); }});
 }
 /* A feature the person set up that a module says is not working, dispatch's setup-not-working signal, is the person's
  * system agent's to bring up with them; it takes the signal as its turn. While no system agent runs, one small notice
@@ -423,6 +453,7 @@ export function onOtherBase(one) {
 }
 function agentRow(one) {
   const name = agentName(one.agent), elsewhere = onOtherBase(one);
+  const responsibility = assignmentSummary(D.states?.[one.session_id]);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
     h('input', {type: 'checkbox', class: 'inuse', checked: !INUSE.off.has(one.work_id),
@@ -431,7 +462,8 @@ function agentRow(one) {
     h('button', {class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
       title: `${name} on work ${one.work_id}: working`, onclick: () => agentAt(one.work_id, one.session_id)},
     h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, name),
-    h('small', {}, `on ${workPart(one.work_id)} · working${elsewhere ? ` · on ${elsewhere}` : ''}`)),
+    h('small', {}, [responsibility, `on ${workPart(one.work_id)} · working${elsewhere ? ` · on ${elsewhere}` : ''}`]
+      .filter(Boolean).join(' · '))),
     chatButton({id: one.work_id}, `${name} on ${workPart(one.work_id)}`));
 }
 // what an agent works on, cut short, is its button's tooltip, `expandCut`: the button's click is its own
@@ -464,6 +496,9 @@ export function agentAt(workId, sessionId = null) {
   const session = sessionId ? sessions.find(one => one.session_id === sessionId) || {session_id: sessionId}
     : sessions.filter(one => one.state === 'running').at(-1) || sessions.at(-1) || null;
   if (isIntake(workId)) return openIntakeChat(workId, session?.session_id || null, {focus: true});
+  const state = D.states?.[session?.session_id];
+  if (notificationState(state)) return openHelpdesk(workId, state.title || state.about || 'Project updates', '',
+    session?.session_id, 'notification');
   // a thread already open keeps its name and where it comes from: the person's chat about a node and the system agent
   // hang on the same held ticket, and the thread read tells them apart
   const open = session && DOCK.chats.find(one => one.session === session.session_id);

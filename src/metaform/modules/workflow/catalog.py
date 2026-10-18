@@ -9,6 +9,7 @@ from metaform.module import Context
 
 from .binding import Logic
 from .element import ElementValue, element_value
+from .revisions import TABLE as REVISIONS
 from .runs import TABLE as RUNS
 from .runs import upgrade as upgrade_runs
 
@@ -21,12 +22,14 @@ FORMAT = 'metaform-workflow:1'  # the portable document `export` writes and `imp
 # existing row. Version 4 adds `ticket` and `session`, who paused a run, both may be empty. Version 1's code, which has
 # no runs, still reads the tables, and version 2's takes a run in either new state as ended and refuses it, which is
 # safe.
-TABLES = Tables(version=4, compatible_from=1, upgrade=upgrade_runs, tables=(
+# Version 5 adds replayable frozen-run revision links. Existing layouts remain readable.
+TABLES = Tables(version=5, compatible_from=1, upgrade=upgrade_runs, tables=(
     Table('logic_versions', key=('logic_id', 'number'), columns=(
         Column('logic_id', required=True), Column('number', 'int', required=True),
         Column('name', required=True), Column('content', required=True)),
         on_remove=(('item', 'logic_id', 'delete'),)),
     RUNS,
+    REVISIONS,
 ))
 
 
@@ -162,6 +165,22 @@ def history(store: Store, address: str, name: str, layer: str) -> list[dict[str,
     if not found:
         raise KeyError(f'{address}.{name}')
     return _saved(_owned(store), found[-1].id)
+
+
+def at_revision(store: Store, address: str, name: str, number: str, layer: str | None = None) -> Logic:
+    """Freeze exactly the named saved source and version, even if its selection has since advanced."""
+    if layer is None:
+        selected, _ = lookup(store, address, name)
+    else:
+        found = _typed(_items(store, address, layer=layer), 'logic', name)
+        if not found:
+            raise KeyError(f'{address}.{name} in layer {layer}')
+        selected = _logic(found[-1])
+    saved = next((one for one in _versions(_owned(store), selected.logic_id)
+                  if str(one['number']) == str(number)), None)
+    if saved is None:
+        raise StoreError(f'No saved revision {number} of {address}.{name}.', 'metaform workflow history')
+    return Logic('logic', selected.logic_id, saved['name'], saved['content'])
 
 
 def _saved(store: Store, logic_id: str) -> list[dict[str, Any]]:

@@ -136,3 +136,24 @@ Each public import a module can use, and the command that shows it:
 `store.count_visit(name)`; the handler gets `DataTx` and reaches `visits`
 through `tx.tables()` on the same transaction. A call inside `Store.atomic()`
 commits or rolls back with the native map writes in that block.
+
+## Authored roles and delivered context
+
+Contribute `AgentRoleDefinition(name, purpose, prompts)` values as `Provides('agent.roles', definitions)`.
+Each prompt is its existing prompt-store identity, in delivery order. `metaform agents resolve name=<name>`
+and `metaform://role/<name>` resolve the definition through the enabled provider and its owning renderer.
+An authored role is a responsibility separate from the operational `METAFORM_ROLE`; inspection changes no binding.
+The hello module contributes `hello.greeter`; the template keeps an empty declaration.
+
+`Provides('prompt.render', renderer)` supplies owning-module bindings as `renderer(ctx, component, bindings)`.
+The resolver then renders the actual selected prompt-store version and reports a fallback separately. Generated
+duties may be stored without an XML element through the `agent.role` service used by the GC's Role Creator.
+
+`prepare_agent_context(folder, session, components)` selects exact component bodies still due in the current
+epoch. `record_agent_context` acknowledges only bodies handed to the harness; rendering and queuing do not
+acknowledge them. `advance_agent_context` is for completed compaction or recovery without retained context.
+Both inline turns and a worker's separate MCP process use the same recipient identity and persistent ledger.
+A module returning knowledge can use `ctx.queue_context(components, epoch)`, with each component's exact
+`delivered_value`; MCP records only complete bodies that survive response shaping.
+`Count.revisions` identifies changed entries whose totals stayed the same, and `Count.updated` counts updated
+unread bodies without changing the existing total/new/mine tuple.

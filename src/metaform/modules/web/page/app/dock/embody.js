@@ -199,7 +199,7 @@ function drawEmbody() { if ($('#helpdesk') && !$('#helpdesk').hidden) drawHelpde
 /* Where a thread comes from, said on its chip. The system agent and a chat the person started are the person's own;
  * a session the page did not start is known only as an agent at work, an intake or a sentinel. */
 export const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Your system agent',
-  conversation: 'Your chat', sentinel: 'Sentinel', merge: 'Merge help'};
+  conversation: 'Your chat', sentinel: 'Sentinel', merge: 'Merge help', notification: 'Project updates'};
 export const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DOCK.mine ? 'system'
   : (D.proposals || {})[workId] ? 'sentinel' : 'agent';
 export const sourceChip = source => h('span', {class: 'src', 'data-source': source}, SOURCES[source] || SOURCES.agent);

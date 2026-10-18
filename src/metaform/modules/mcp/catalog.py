@@ -10,10 +10,9 @@ keeps the list it was first given. A connection whose listing names no session, 
 2026 wire, which has no session header, is listed every tool its role is given, since no category it opens could
 change what it is listed.
 
-The role of the agent, the one its runner names in METAFORM_ROLE, decides which categories it may open at all, so a
-tool its role is refused is never listed to it and never runs for it: a worker on a ticket opens no category that
-starts or steers agents unless the person lifts roles_without_authority, and only the person's own agent and a session
-the person runs outside dispatch open every category. A role starts with the category its first task needs open, so the
+Every execution role may discover each category unless the person's configured roles_without_authority holds it
+back from steering. Authored responsibility does not grant or remove tool authority. A role starts with the category
+its first task needs open, so the
 tool its first message names is listed at once: a worker's ticket category, an intake's intake category; a role whose
 first task needs one tool alone, a talk or a sentinel reading its node, starts with that tool and no category open.
 """
@@ -45,7 +44,8 @@ CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
                  'memory_add_observations', 'memory_create_relations', 'memory_joins', 'memory_note', 'memory_graph',
                  'memory_orphaned', 'memory_rekey', 'memory_unjoin', 'memory_delete_entities',
                  'memory_delete_observations', 'memory_delete_relations'),
-    'coordinate': ('dispatch_peers', 'dispatch_note', 'dispatch_notes', 'mcp_a2a_peers', 'mcp_a2a_send',
+    'coordinate': ('dispatch_peers', 'dispatch_note', 'dispatch_notes', 'agents_resolve', 'agents_roles',
+                   'agents_receipts', 'mcp_a2a_peers', 'mcp_a2a_send',
                    'mcp_a2a_exchanges', 'mcp_a2a_cancel'),
     'change-map': ('map_refine', 'map_knowledge', 'map_term', 'map_promote', 'intake_start', 'map_tag', 'map_untag',
                    'map_select', 'map_mask', 'map_clear', 'map_hide', 'map_unhide', 'map_reexamined', 'map_critic'),
@@ -70,20 +70,12 @@ CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
 # The category of a module's tools that no category above names and whose verb names none.
 MODULE_CATEGORY: dict[str, str] = {
     'map': 'orient', 'memory': 'remember', 'dispatch': 'steer', 'intake': 'intake', 'web': 'show',
-    'workflow': 'workflow', 'mcp': 'coordinate', 'agents': 'steer', 'fork': 'setup', 'twilio': 'setup',
+    'workflow': 'workflow', 'mcp': 'coordinate', 'agents': 'steer', 'orchestration': 'coordinate',
+    'fork': 'setup', 'twilio': 'setup',
     'paperclip': 'coordinate', 'metaform': 'setup'}
 FALLBACK = 'setup'  # a module this table does not know, whose verbs name no category
 
-# The categories each role may open, and the one open when its session starts, the one its first message's tool is in.
-# A role not named here, the person's own sessions among them, opens every category and starts with none open.
-WORKER = ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'report')
-ROLE_CATEGORIES: dict[str, tuple[str, ...]] = {
-    'worker': WORKER,
-    'prep': ('orient', 'ticket', 'remember', 'coordinate', 'report'),
-    'intake': ('intake', 'change-map', 'orient', 'report'),
-    'sentinel': ('orient', 'ticket', 'remember', 'coordinate', 'change-map', 'steer', 'workflow', 'report'),
-    'talk': ('orient', 'ticket', 'remember', 'coordinate', 'steer', 'show', 'report'),
-}
+# The category open when an execution role starts, containing the first message's named tool.
 ROLE_OPENS: dict[str, str] = {'worker': 'ticket', 'prep': 'ticket', 'intake': 'intake'}
 # The tools listed beside the catalog to a role that starts with no category open, the one its first message names:
 # a talk and a sentinel read the node they were given before anything else, and the 20 other orient tools would come
@@ -121,15 +113,11 @@ def held(folder: Path, named: str | None) -> bool:
 
 
 def allowed(folder: Path, named: str | None = None) -> tuple[str, ...]:
-    """The categories the role may open, in CATEGORY_NAMES order: its own, less steering while the person holds it
-    back, plus steering for a worker or merge preparation the person lets steer; every one for no role or the system
-    agent."""
+    """All categories, in chassis order, except steering when the person's configuration holds the role back."""
     named = role() if named is None else named
-    found = set(ROLE_CATEGORIES.get(named or '', CATEGORY_NAMES))
+    found = set(CATEGORY_NAMES)
     if held(folder, named):
         found.discard(STEER)
-    elif named in ('worker', 'prep'):  # the person lifted roles_without_authority for it
-        found.add(STEER)
     return tuple(one for one in CATEGORY_NAMES if one in found)
 
 
