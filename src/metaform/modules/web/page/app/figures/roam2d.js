@@ -160,7 +160,30 @@ function layer2d(base) {  // the figures are drawn over the boxes, in the boxes'
   holder.append(base.agents);
   const heights = [...base.nodes.values()].map(node => node.h).sort((one, two) => one - two);
   base.agentSize = ROAM2D.size * (heights[Math.floor(heights.length / 2)] || 40);
+  extent2d(base);
   return base.agents;
+}
+/* The figures are a layer of their own, `.agents2d` in the page's CSS, and that layer keeps one size, the box of all
+ * the map's boxes with room for a figure arriving from above them: a rect that draws nothing. A layer sized by its
+ * moving figures changed size every frame, so the browser cut the map after it into new layers and painted the boxes
+ * again each frame; with no flow shown, each figure's step and each beat of its glyph painted the whole map (UX recheck
+ * 2026-10-17, b410f6a5: 66 ms frames with four agents and no flow, 16.7 ms with none). */
+function extent2d(base) {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const node of base.nodes.values()) {
+    left = Math.min(left, node.x - node.w / 2); top = Math.min(top, node.y - node.h / 2);
+    right = Math.max(right, node.x + node.w / 2); bottom = Math.max(bottom, node.y + node.h / 2);
+  }
+  if (!Number.isFinite(left)) return;
+  const pad = base.agentSize * 4, rect = document.createElementNS(SVG, 'rect');
+  rect.setAttribute('x', (left - pad).toFixed(1));
+  rect.setAttribute('y', (top - pad).toFixed(1));
+  rect.setAttribute('width', (right - left + 2 * pad).toFixed(1));
+  rect.setAttribute('height', (bottom - top + 2 * pad).toFixed(1));
+  rect.setAttribute('fill', 'none');
+  rect.setAttribute('stroke', 'none');
+  rect.setAttribute('class', 'extent2d');
+  base.agents.prepend(rect);
 }
 /* A point of the curve through a 2D figure's places at `u`, its leg and how far along it, a Catmull-Rom curve, which
  * passes through every place and turns smoothly at each. */
