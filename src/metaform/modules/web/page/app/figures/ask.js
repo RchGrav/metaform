@@ -23,7 +23,8 @@ import {CLICKED, clickedLine} from '/page/app/figures/eyes.js';
 /* Chat with the mascot: a click on it, where no node takes the click, opens a small reply field under its bubble.
  * What the person writes goes to their system agent, the one the chat dock's Call starts, and the answer comes back
  * in the bubble, in full in the chat dock's thread. */
-export const ASKING = {open: false, sent: 0, heard: null, base: null, pending: null};
+// `told`: the line naming the person's last click, fixed when they ask, so a click while the agent starts never changes it
+export const ASKING = {open: false, sent: 0, heard: null, base: null, pending: null, told: ''};
 /* Where the 3D mascot is on the page, and its depth in the view, which is outside -1 to 1 behind the eye. */
 function mascotOnPage() {
   const area = G.renderer().domElement.getBoundingClientRect();
@@ -70,8 +71,15 @@ async function mascotAsk(text) {
   const live = DOCK.mine && D.sessions.some(one => one.work_id === DOCK.mine && one.state === 'running'
     && one.session_id);
   ASKING.pending = text;
+  ASKING.told = clickedLine();  // what "this" is, as the person asks, as the chat's send fixes it when it queues
+  if (ASKING.told) CLICKED.told = true;
   if (!live) await callSystem();
-  if (!DOCK.mine) { ASKING.pending = null; say('I could not reach your system agent.', 4); return; }
+  if (!DOCK.mine) {
+    if (ASKING.told) CLICKED.told = false;  // never told: the click is the person's to ask about again
+    Object.assign(ASKING, {pending: null, told: ''});
+    say('I could not reach your system agent.', 4);
+    return;
+  }
   await flushAsk();
 }
 /* The person's words to the system agent go once its session is up: at once when it is, or when the agents are next
@@ -82,12 +90,15 @@ export async function flushAsk() {
   if (!text || !session) return;
   ASKING.pending = null;
   Object.assign(ASKING, {sent: Date.now(), heard: null, base: null});
-  // asked through the mascot, the question names what the person clicked just before, as the chat's send does
-  const told = clickedLine();
+  // the line fixed when the person asked, `mascotAsk`
+  const told = ASKING.told;
+  ASKING.told = '';
   const sent = await wrote('/api/dispatch-message', {work_id: DOCK.mine, session: session.session_id,
     text: told ? `${told}\n\n${text}` : text});
-  if (sent && told) CLICKED.told = true;
-  if (!sent) say('That did not go through.', 4);
+  if (!sent) {
+    if (told) CLICKED.told = false;  // not delivered: the click goes with the next message while it is fresh
+    say('That did not go through.', 4);
+  }
 }
 /* The system agent's answer, the newest of its words after the person asked, said in the bubble in short; the chat
  * dock's thread, where it is read in full, calls this as it draws. */
