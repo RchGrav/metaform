@@ -15,7 +15,6 @@ import time
 import tomllib
 from pathlib import Path
 
-import acp
 import pytest
 
 pytestmark = pytest.mark.kind('simulation')
@@ -31,20 +30,6 @@ LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
 
 
-def skip_while_unlocked():
-    """A test of the lock on unlinked files is skipped while Rich has it off, code#1e."""
-    from metaform.modules.dispatch.runner import LINK_LOCK
-    if not LINK_LOCK:
-        pytest.skip('the lock on unlinked files is off until the rules and prompts for linking are in place, code#1e')
-
-
-def skip_while_unsandboxed():
-    """A test of the command sandbox is skipped while it is off, kept apart from the lock after the 2026-10-15
-    crash."""
-    from metaform.modules.dispatch.runner import SHELL_SANDBOX
-    skip_while_unlocked()
-    if not SHELL_SANDBOX:
-        pytest.skip('the command sandbox is off until the person turns it on after one agent has run with it')
 LIMIT = 60
 
 
@@ -2466,7 +2451,6 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     read them, and the metaform:// links of the node and the ticket, never the JSON of what is held. The full
     worker's brief is no longer sent; full=true reads it on demand."""
     from metaform.modules.dispatch import handoff_prompt, prompt
-    from metaform.modules.dispatch.runner import LINK_LOCK
     dispatch.start('hold')
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
     memory, _, text = sent['params']['prompt'][0]['text'].partition('\n\n')
@@ -2475,8 +2459,7 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     assert first == (f'Work ticket {dispatch.id} with the map_work tool. Record what happened in the work at {NODE} as '
                      f'memory with memory_create_entities node={NODE}, so the next agent at this part reads it, and '
                      "what is now known to be true of the project in the map's knowledge layers.")
-    assert text.endswith(f'\n\n{prompt("work_link")}') is LINK_LOCK, \
-        'the rule on writing files ends the first prompt, and is left out while the lock is off, #47 and code#1e'
+    assert text.endswith(f'\n\n{prompt("work_link")}'), 'the request to link entry points ends the first prompt'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
         'the reads are named as the MCP calls the agent makes'
@@ -4539,7 +4522,6 @@ def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(di
     """P019: the runner offers ACP's fs and terminal methods; a file inside the session's folder is written and read
     by line, one outside it is refused and said in the thread, and a terminal runs, exits, gives its output and is
     released, its line kept in the thread."""
-    run('dispatch', 'link', 'file=fake-client/note.txt', f'node={NODE}', cwd=dispatch.folder)  # unlocked, #3d
     dispatch.start('ask', FAKE_ACP_CLIENT='1')
     [client] = eventually(lambda: dispatch.logged('client'))
     offered = dispatch.received('initialize')[0]['params']['clientCapabilities']
@@ -4560,42 +4542,22 @@ def test_the_runner_serves_files_and_terminals_confined_to_the_session_folder(di
     dispatch.stop()
 
 
-def test_a_write_to_an_unlinked_file_is_refused_with_the_link_call_and_goes_through_once_linked(dispatch, run,
-                                                                                               tmp_path):
-    """code.dispatcher.agent#3d: a file no element's ref names exactly is locked for writing, the refusal naming the
-    call that links it; a read of it is not refused; once dispatch link adds its ref the same write goes through and
-    the file is placed exactly. A path .metaform/ignore.txt holds stays read-only, linked or not."""
-    skip_while_unlocked()
+@pytest.mark.req('CTX-060')
+def test_a_worker_is_asked_once_to_link_entry_points_and_a_write_to_an_unlinked_file_goes_through(dispatch):
+    """CTX-060: a ticket worker's first prompt ends with work_link, the request to link the files that are entry points
+    of its functionality, said once; it is asked, not forced, so a write to a file no ref names is not refused."""
+    from metaform.modules.dispatch import prompt
     (dispatch.folder / 'src').mkdir(exist_ok=True)
     (dispatch.folder / 'src' / 'fresh.py').write_text('old\n', encoding='utf-8')
-    (dispatch.folder / 'rich').mkdir(exist_ok=True)
-    (dispatch.folder / 'rich' / 'notes.md').write_text('mine\n', encoding='utf-8')
-    (dispatch.folder / '.metaform').mkdir(exist_ok=True)
-    (dispatch.folder / '.metaform' / 'ignore.txt').write_text('rich/\n', encoding='utf-8')
-    run('dispatch', 'link', 'file=rich/notes.md', f'node={NODE}', cwd=dispatch.folder)
-    gate = tmp_path / 'linked'
-    dispatch.start('hold', FAKE_ACP_WRITES='src/fresh.py,rich/notes.md', FAKE_ACP_WRITE_GATE=str(gate))
-    [first] = eventually(lambda: dispatch.logged('writes'))
-    assert [one.get('content') for one in first['read']] == ['old\n', 'mine\n'], 'reads are never refused'
-    unlinked, ignored = (json.dumps(one) for one in first['write'])
-    assert 'To unlock access to this file, please first link it to its functionality in the map.' in unlinked
-    assert 'dispatch_link file=src/fresh.py node=' in unlinked
-    assert 'error' in json.loads(ignored) and 'read-only to agents' in ignored
-    assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'old\n'
-    linked = json.loads(run('dispatch', 'link', 'file=src/fresh.py', f'node={NODE}', '--json',
-                            cwd=dispatch.folder).stdout)
-    assert (linked['file'], linked['linked']) == ('src/fresh.py', True)
-    gate.write_text('', encoding='utf-8')
-    [again] = eventually(lambda: dispatch.logged('writes_again'))
-    assert 'error' not in again[0], again[0]
-    assert 'read-only to agents' in json.dumps(again[1]), 'the ignore list holds it whatever its link'
+    dispatch.start('hold', FAKE_ACP_WRITES='src/fresh.py')
+    [sent] = eventually(lambda: dispatch.received('session/prompt'))
+    text = sent['params']['prompt'][0]['text']
+    asked = prompt('work_link')
+    assert asked and 'dispatch_link file=' in asked and 'lock' not in asked
+    assert text.endswith(f'\n\n{asked}') and text.count(asked) == 1
+    [writes] = eventually(lambda: dispatch.logged('writes'))
+    assert 'error' not in writes['write'][0], writes['write'][0]
     assert (dispatch.folder / 'src' / 'fresh.py').read_text(encoding='utf-8') == 'written\n'
-    assert (dispatch.folder / 'rich' / 'notes.md').read_text(encoding='utf-8') == 'mine\n'
-    state = eventually(lambda: next((json.loads(one.value) for one in dispatch.items('note')
-                                     if one.extra['name'] == 'state'
-                                     and {'path': 'src/fresh.py', 'action': 'edit'} in json.loads(one.value)['files']),
-                                    None))
-    assert (NODE, 'edit') in [(one['address'], one['action']) for one in state['touched']]
     dispatch.stop()
 
 
@@ -4644,149 +4606,8 @@ def test_a_burst_of_reads_of_linked_files_reads_the_sources_layer_once(dispatch,
         for _ in range(10):
             for name in ('a', 'b', 'c'):
                 await session.read_text_file('unit-session', str(dispatch.folder / 'src' / f'{name}.py'))
-        assert await session.locked('src/a.py') is None
     asyncio.run(burst())
     assert len(reads) == 1, 'thirty reads, one read of the sources layer'
-
-
-@pytest.mark.req('BASE-052')
-def test_an_edit_permission_for_an_unlinked_file_is_refused_over_approve_all_and_the_agent_is_told(dispatch, run):
-    skip_while_unlocked()
-    run('set','--dispatch-prompts=approve-all', '--confirm', cwd=dispatch.folder)
-    dispatch.start('ask', FAKE_ACP_ASK_PATH=str(dispatch.folder / 'src' / 'fresh.py'))
-    [outcome] = eventually(lambda: dispatch.logged('permission'))
-    assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
-    told = eventually(lambda: [one for one in dispatch.received('session/prompt')
-                               if 'To unlock access to this file' in json.dumps(one)])
-    assert 'dispatch_link file=src/fresh.py' in json.dumps(told[0])
-    assert not dispatch.questions(), 'the person is not asked'
-    dispatch.stop()
-
-
-@pytest.mark.req('BASE-052')
-def test_codex_is_kept_asking_and_cannot_write_an_unlinked_or_ignored_file_or_lift_its_sandbox(dispatch, run):
-    """code.dispatcher.agent#43, CTX-061 and CTX-062: Codex is set to read-only, the mode in which it asks before every
-    file change and its commands cannot write, while the mode it began in, agent, approves its edit of a linked file
-    without asking the person. A file change asked by its path alone, of an unlinked file or an ignore-listed one, a
-    command outside the sandbox, and write access for the project folder are each refused and the agent told why; an
-    MCP tool's approval, which Codex also asks as execute, is not a command and goes through.
-    Claude Code is sent a sandbox in which the project folder is read-only to every command."""
-    skip_while_unsandboxed()
-    (dispatch.folder / 'src').mkdir(exist_ok=True)
-    (dispatch.folder / 'rich').mkdir(exist_ok=True)
-    (dispatch.folder / '.metaform').mkdir(exist_ok=True)
-    (dispatch.folder / '.metaform' / 'ignore.txt').write_text('rich/\n', encoding='utf-8')
-    run('dispatch', 'link', 'file=src/kept.py', f'node={NODE}', cwd=dispatch.folder)
-    run('dispatch', 'link', 'file=rich/notes.md', f'node={NODE}', cwd=dispatch.folder)
-    dispatch.start('hold', FAKE_ACP_CODEX='1', FAKE_ACP_STEER='1',
-                   FAKE_ACP_CODEX_PATH=str(dispatch.folder / 'src' / 'fresh.py'),
-                   FAKE_ACP_CODEX_IGNORED=str(dispatch.folder / 'rich' / 'notes.md'),
-                   FAKE_ACP_CODEX_LINKED=str(dispatch.folder / 'src' / 'kept.py'))
-    [answers] = eventually(lambda: dispatch.logged('codex'))
-    assert dispatch.logged('mode') == ['read-only']
-    assert {name: one['outcome']['optionId'] for name, one in answers.items()} == {
-        'unlinked': 'cancel', 'escalation': 'cancel', 'grant': 'cancel', 'ignored': 'cancel', 'linked': 'approved',
-        'mcp': 'approved'}
-    parts = ('dispatch_link file=src/fresh.py', 'rich/notes.md is read-only to agents', 'Commands run in a sandbox')
-
-    def told() -> str | None:
-        said = ' '.join(dispatch.logged('steered'))
-        return said if all(part in said for part in parts) else None
-    eventually(told)
-    assert not dispatch.questions(), 'the person is not asked'
-    meta = dispatch.received('session/new')[0]['params']['_meta']['claudeCode']['options']['settings']['sandbox']
-    denied = meta['filesystem']['denyWrite']
-    assert str(dispatch.folder.resolve() / 'rich') in denied and str(dispatch.folder.resolve()) not in denied, \
-        'the sandbox denies what the lock denies, never the whole project, #47'
-    assert (meta['enabled'], meta['allowUnsandboxedCommands']) == (True, False)
-    dispatch.stop()
-
-
-def test_a_command_in_the_runners_terminal_cannot_write_the_project(dispatch):
-    """code.dispatcher.agent#43, CTX-062: the runner's own terminal runs a command with the project folder read-only,
-    so a shell write to a file of the project leaves it unchanged; where no sandbox can do that, it runs none."""
-    skip_while_unlocked()
-    from metaform.data import Store
-    from metaform.module import context
-    from metaform.modules.dispatch import runner
-    (dispatch.folder / 'src').mkdir(exist_ok=True)
-    target = dispatch.folder / 'src' / 'fresh.py'
-    target.write_text('old\n', encoding='utf-8')
-    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
-                             dispatch.ticket(), 'claude', [])
-    session.session_id = 'unit-session'
-
-    async def shell() -> int | None:
-        try:
-            made = await session.create_terminal('unit-session', sys.executable,
-                                                 ['-c', f'open({str(target)!r}, "w").write("new")'])
-        except acp.RequestError:
-            return None
-        held = session.terminals[made.terminal_id]
-        code = await held.process.wait()
-        if held.reader is not None:
-            await held.reader
-        return code
-    code = asyncio.run(shell())
-    assert target.read_text(encoding='utf-8') == 'old\n'
-    assert code != 0 if code is not None else runner.confined_command([], 'x', []) is None
-
-
-def test_commands_may_write_linked_files_and_tool_folders_and_nothing_else_of_the_project(tmp_path):
-    """code.dispatcher.agent#47: the command sandbox denies what the lock denies and no more: an unlinked file, a
-    folder holding no linked file, whole, and a path the ignore list holds, linked or not; a linked file and the
-    tools' own folders stay writable, and the project folder itself is never denied, since Claude Code lets a denied
-    folder win over anything allowed inside it."""
-    from metaform.modules.dispatch.runner import denied_writes
-    for name in ('src/kept.py', 'src/fresh.py', 'docs/a.md', 'rich/notes.md', '.venv/lib/x.py', '.git/index',
-                 '.git/hooks/pre-commit', 'src/__pycache__/kept.pyc', 'pyproject.toml'):
-        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_text('', encoding='utf-8')
-    place = [{'kind': 'element', 'id': 'e', 'address': NODE}]
-    denied = denied_writes(str(tmp_path), str(tmp_path), {'src/kept.py': place, 'rich/notes.md': place}, ['rich/'])
-    root = tmp_path.resolve()
-    assert sorted(denied) == sorted(str(root / name) for name in ('.git/hooks', 'docs', 'pyproject.toml', 'rich',
-                                                                  'src/fresh.py'))
-
-
-def test_the_lock_holds_for_a_session_only_once_its_rule_has_gone_to_it(dispatch, monkeypatch):
-    """code.dispatcher.agent#47: a session never told the rule on writing files is refused nothing; once the rule has
-    gone with a prompt, the same write is refused with the owner's sentence."""
-    from metaform.data import Store
-    from metaform.module import context
-    from metaform.modules.dispatch import runner
-    monkeypatch.setattr(runner, 'LINK_LOCK', True)
-    session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
-                             dispatch.ticket(), 'claude', [])
-
-    async def asked() -> tuple[str | None, str | None]:
-        before = await session.locked('src/fresh.py')
-        session.ruled = True
-        return before, await session.locked('src/fresh.py')
-    before, after = asyncio.run(asked())
-    assert before is None and after is not None and 'please first link it' in after
-
-
-def test_a_resumed_session_is_told_the_rule_with_its_next_prompt(dispatch, run, dispatch_runners):
-    """code.dispatcher.agent#47, CTX-060: a session resumed in a new runner gets the rule on writing files at the end
-    of the next prompt it is sent, never as a turn of its own, so no refusal reaches it before the rule does."""
-    skip_while_unlocked()
-    from metaform.modules.dispatch import prompt
-    rule = prompt('work_link')
-    dispatch.start('hold', FAKE_ACP_LOAD='1')
-    [first] = eventually(lambda: dispatch.received('session/prompt'))
-    assert first['params']['prompt'][0]['text'].endswith(f'\n\n{rule}')
-    dispatch.stop()
-    assert dispatch.process.wait(30) == 0
-    started = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
-                             env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
-    dispatch_runners.append((started, dispatch.folder, dispatch.log))
-    eventually(lambda: dispatch.session().extra['state'] == 'running')
-    assert len(dispatch.received('session/prompt')) == 1, 'the rule is no turn of its own'
-    run('dispatch', 'message', dispatch.id, 'Carry on', cwd=dispatch.folder)
-    resumed = eventually(lambda: dispatch.received('session/prompt')[1:])[0]
-    assert resumed['params']['prompt'][0]['text'] == f'Carry on\n\n{rule}'
-    run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder)
 
 
 @pytest.mark.req('BASE-052')

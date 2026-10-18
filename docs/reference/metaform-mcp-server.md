@@ -126,7 +126,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_handoff` | Read a ticket handed to you by its id: the ticket, the node it is at and the counts there with the calls that read them, and one line saying to work it with map_work. Its reads are named as tool calls, with metaform:// links to the node and the ticket. | read |
 | `dispatch_intake` | Start an agent on this project's intake, recording the map as it follows the intake prompt. An open page follows it. It counts as a summoned agent; one intake runs at a time. | write, open world |
 | `dispatch_interrupt` | Interrupt the turn of the agent working a ticket, keeping its conversation open. | write, open world |
-| `dispatch_link` | Link a file to the element whose functionality it realizes: its path added to the element's refs in the sources layer, which unlocks writing it and places it on the map. Optional `ref`, the ref's name, and `why`. | write |
+| `dispatch_link` | Link a file to the element whose functionality it realizes: its path added to the element's refs in the sources layer, which places it on the map. Optional `ref`, the ref's name, and `why`. | write |
 | `dispatch_merges` | List the agents' merges waiting for the person's review, the soonest first. | read |
 | `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_<agent>_<option> gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
 | `dispatch_message` | Send a person's message to the agent working a ticket. | write, open world |

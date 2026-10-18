@@ -184,47 +184,14 @@
      alone. -->
 <work_record>Record what happened in the work at <node/> as memory with <call/>, so the next agent at this part reads it, and what is now known to be true of the project in the map's knowledge layers.</work_record>
 
-<!-- The rule on writing files, code.dispatcher.agent#3d: a file no element's ref names is locked for writing until
-     it is linked, and the paths .metaform/ignore.txt holds are read-only; code.dispatcher.agent#43 and #47, the
-     commands an agent runs cannot write those files either, while its tools' own folders (.venv, .git, caches) and
-     the files linked when the session began stay writable to them. Sent once in every session dispatch runs, on a
-     ticket or not, the system agent's and the intake's included: at the end of the first prompt the session is sent
-     after it starts, resumes or loads, never as a turn of its own. The lock holds for a session only once this has
-     gone to it, code.dispatcher.agent#47. Rewritten 2026-10-15 at the owner's request so an agent knows how to
-     unlock a file: the whole call with ref= and why= (dispatch link, CTX-063), where to find the node, and that the
-     write goes through at once; DRAFT, awaiting the owner's approval of its wording. Empty sends nothing, and the
-     lock holds from the session's first prompt all the same. -->
-<work_link>Files of the project that no ref on the map names are locked for writing. To unlock one, link it to its functionality in the map: dispatch_link file=&lt;path&gt; node=&lt;the Address of the element the file realizes&gt; ref=&lt;a proper noun for what the file is; for code, its qualified name&gt; why=&lt;what the file does for that element&gt;. The node is usually your ticket's node or one under it; map_where shows the refs a node already holds. Linking never makes an element: if the functionality has no element yet, add it to a knowledge layer first with map_knowledge op=add-element. The write goes through as soon as the link is made, with your edit tools; commands you run cannot write files you have not linked. Paths .metaform/ignore.txt holds are read-only to agents, linked or not.</work_link>
-
-<!-- The owner's sentence, Rich 2026-10-15, code.dispatcher.agent#3d: the answer to an agent's write of a file no
-     element's ref names exactly, by ACP's fs/write_text_file or a permission request for an edit, in any permission
-     mode, full access included. It is followed by <link_call>, the call that links the file. Sent as the refusal's
-     reason, and to the agent as its next words where a permission answer carries no text. Empty, the refusal carries
-     the call alone; the write is refused either way. -->
-<write_unlinked>To unlock access to this file, please first link it to its functionality in the map.</write_unlinked>
-
-<!-- The call that links a file to its element, after <write_unlinked>. <file/> is the file, from the project folder.
-     Rewritten 2026-10-15 at the owner's request with ref= and why= and the retry (CTX-063); a draft of the call's
-     wording, awaiting the owner's approval. -->
-<link_call>Call dispatch_link file=<file/> node=&lt;the Address of the element it realizes, already on the map&gt; ref=&lt;a proper noun for what the file is; for code, its qualified name&gt; why=&lt;what the file does for that element&gt;, then make the same edit again: it goes through at once.</link_call>
-
-<!-- The answer to an agent's write of a path .metaform/ignore.txt holds, code.dispatcher.agent#3d: read-only to
-     agents always, linked or not. <file/> is the path, from the project folder. A draft, awaiting the owner's approval
-     of its wording. Empty, a plain sentence of the runner's own is sent; the write is refused either way. -->
-<write_ignored><file/> is read-only to agents: .metaform/ignore.txt holds it.</write_ignored>
-
-<!-- The answer to a request to widen the sandbox an agent's commands run in, code.dispatcher.agent#43: Codex asking
-     to run a command outside its read-only sandbox, or any agent asking write access for a folder of the project or a
-     file it has not linked. Commands never write the project, in every permission mode, so a shell write is
-     prevented before it lands (CTX-062). A draft, awaiting the owner's approval of its wording. Sent as the refusal's
-     reason, and to the agent as its next words. Empty, a plain sentence of the runner's own is sent; the request is
-     refused either way. -->
-<command_unsandboxed>Commands run in a sandbox where files of the project you have not linked, and paths .metaform/ignore.txt holds, are read-only, and that is not lifted. Link the file with dispatch_link file=&lt;path&gt; node=&lt;Address&gt; ref=&lt;name&gt; why=&lt;why&gt;, then change it with your edit tools; write access may be asked only for paths outside the project.</command_unsandboxed>
-
-<!-- The refusal of the runner's own terminal, ACP's terminal/create, on a machine with no sandbox that can keep the
-     project folder read-only to the command: bubblewrap on Linux, sandbox-exec on macOS, code.dispatcher.agent#43.
-     A draft, awaiting the owner's approval of its wording. Empty, a plain sentence of the runner's own is sent. -->
-<terminal_unconfined>no sandbox here can keep the project read-only to a command, so the runner runs none</terminal_unconfined>
+<!-- The request to link entry-point files, sent to every ticket worker once: at the end of the first prompt its
+     runner sends it (the ticket's hand-off), never as a turn of its own, and not again when the session is resumed,
+     since its conversation already holds it. Not sent to the system agent, the intake, prep or probe sessions. It
+     asks, never forces: no write is refused for want of a link. A linked file is placed on the map, so a later agent
+     that touches it is given that node's context; linking every file was the cost of the lock, and entry points
+     carry most of the placement value. Change the wording here; keep it to a line or two, since what agents are told is
+     delivered tight and once. Empty sends nothing. Replaced the lock on writing unlinked files, withdrawn 2026-10-18. -->
+<work_link>Link the files that are entry points of the functionality you work on: dispatch_link file=&lt;path&gt; node=&lt;the element's Address&gt;. A linked entry point puts your work on the map, so later agents get that node's context.</work_link>
 
 <!-- The message a worker's session is resumed with when the supervisor retries it, after it stopped without the
      person's stop and before its ticket was done: go on where it left off. <work_id/> is the ticket's id.

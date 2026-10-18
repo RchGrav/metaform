@@ -26,17 +26,14 @@ import base64
 import contextlib
 import contextvars
 import difflib
-import fnmatch
 import hashlib
 import json
 import os
 import re
 import secrets
-import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import traceback
 import uuid
@@ -164,142 +161,8 @@ START_LIMIT = 300.0  # the one wait for the agent to start and make its session;
 END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent to end once its input is closed
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
-WRITES = ('edit', 'delete', 'move')  # the tool kinds of ACP that change files, each file under `locked`
 # The prompts the person's system agent's conversation opens with that an edit reaches while it runs, `reopened`.
 REOPENED = ('dispatch:system', 'dispatch:mascot')
-# Rich, 2026-10-15, code#1e: no permission on files is locked until the rules and prompts are in place. Off, nothing
-# below locks a file: no link is required, the ignore list is not read-only, Claude Code gets no ask rules or
-# sandbox, Codex keeps the person's mode, the runner's terminal is unconfined and no sandbox request is refused. True
-# brings back code.dispatcher.agent#3d's and #43's lock together, with the rule line that tells agents of it.
-LINK_LOCK = False
-# The sandbox half of the lock, kept apart from it after the 2026-10-15 crash, when every dispatched agent's commands
-# ran sandboxed at once: True sends Claude Code its command sandbox (held_settings), runs the runner's own terminal
-# under bubblewrap or sandbox-exec (confined_command) and refuses requests to widen the sandbox (unsandboxed). With
-# it False the lock still refuses edits of unlinked and ignore-listed files through the edit tools, the ask rules and
-# fs/write_text_file, and a command run in a shell is not confined. Turned on only by the person, after one agent has
-# been run with it.
-SHELL_SANDBOX = False
-# The mode in which an agent asks before every change of a file and runs its commands in a sandbox that cannot write,
-# by the name in its agentInfo: codex-acp writes files, and runs commands that write the workspace, without asking in
-# every other mode, so it is kept in read-only whatever mode the person chose, code.dispatcher.agent#43, CTX-061.
-ASKING_MODES = {'codex-acp': 'read-only'}
-# What the mode the person chose for such an agent approves without asking, by tool kind, once the lock has passed:
-# what the agent would have done unasked in that mode, `mcp` an MCP tool's approval, which Codex's auto review
-# answered itself. Any other mode approves only what dispatch_prompts does.
-MODE_APPROVES = {'workspace-write': WRITES, 'agent': (*WRITES, 'mcp'),
-                 'agent-full-access': (*WRITES, 'execute', 'fetch', 'other', 'mcp')}
-
-
-# The folders tools write as they run, left writable to commands wherever the walk of denied_writes meets them: git's
-# index, the project's environment, bytecode and the caches of the test runner, the linter and the type checker,
-# code.dispatcher.agent#47. They hold no file of the map's.
-TOOL_FOLDERS = frozenset({'.git', '.venv', '__pycache__', '.pytest_cache', '.ruff_cache', '.mypy_cache',
-                          'node_modules'})
-GIT_HELD = ('hooks', 'config')  # what of .git a command may not write: a hook it wrote would run unconfined later
-# The most characters of paths the command sandbox denies one by one. claude-agent-sdk passes the settings to Claude
-# Code as one command-line argument, which Linux caps at 128 KiB; past this, folders are denied whole, the largest
-# lists first, which only ever denies more.
-DENIED_CHARS = 96 * 1024
-
-
-def denied_writes(root: str, folder: str, index: dict[str, list[dict[str, str]]], patterns: Sequence[str]) -> list[str]:
-    """The paths of the project a command may not write, absolute, code.dispatcher.agent#47: what `locked` refuses,
-    and no more. Each path .metaform/ignore.txt holds; each existing file no ref names exactly; each folder holding no
-    such file, whole, so nothing can be made in it. A folder that holds a linked file is walked instead, and the
-    folders of TOOL_FOLDERS stay writable. Claude Code's sandbox lets a denied folder win over any path allowed inside
-    it, so the list names what is denied and never the project folder itself. Not covered: a new file made in a
-    folder that holds a linked file, under a name no list could know. The session's own worktree is walked with the
-    names it gives its files; symbolic links are left out, a write through one landing on the path it names."""
-    base, own = Path(root).resolve(), Path(folder).resolve()
-    hides = ignored(patterns) if patterns else None
-    holding = {'/'.join(parts[:end]) for parts in (key.split('/') for key in index) for end in range(1, len(parts))}
-    kept: dict[str, list[str]] = {}  # each walked folder's own denied paths, to deny it whole if the list is too long
-
-    def walk(directory: Path) -> list[str]:
-        denied: list[str] = []
-        try:
-            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
-        except OSError:
-            return denied
-        for entry in entries:
-            if entry.is_symlink():
-                continue
-            named = relative(entry.path, [str(own), str(base)])
-            if named is None:
-                continue
-            inside = entry.is_dir()
-            if hides is not None and (hides(named) or inside and hides(f'{named}/\0')):
-                denied.append(entry.path)
-            elif not inside:
-                if folded(named) not in index:
-                    denied.append(entry.path)
-            elif entry.name in TOOL_FOLDERS:
-                if entry.name == '.git':
-                    denied += [path for name in GIT_HELD if os.path.exists(path := os.path.join(entry.path, name))]
-            elif folded(named) in holding or own == Path(entry.path) or Path(entry.path) in own.parents:
-                kept[entry.path] = walk(Path(entry.path))
-                denied += kept[entry.path]
-            else:
-                denied.append(entry.path)
-        return denied
-    denied = walk(base)
-    whole: list[str] = []
-    for path, inner in sorted(kept.items(), key=lambda one: -len(one[1])):
-        if sum(map(len, denied)) <= DENIED_CHARS:
-            break
-        if own == Path(path) or Path(path) in own.parents or not inner \
-                or any(path.startswith(one + os.sep) for one in whole):
-            continue  # the session's own folder stays open to its tools; one inside a folder denied whole is gone
-        whole.append(path)
-        denied = [one for one in denied if not one.startswith(path + os.sep)] + [path]
-    return denied
-
-
-def writable_roots() -> list[str]:
-    """Where an agent's commands may write outside what denied_writes denies: the person's home, which holds the
-    project as a rule and the tools' caches (~/.cache/uv), and the temporary folders, code.dispatcher.agent#47. Never
-    the file system's root: Claude Code 2.1.293, the build claude-agent-acp 0.89.1 bundles, then makes a mount point
-    for its managed settings, /etc/claude-code, which it cannot, and every command fails. A project outside these
-    stays writable as the session's folder, which Claude Code's sandbox allows by default."""
-    found = (str(Path.home()), tempfile.gettempdir(), '/tmp', '/var/tmp')
-    return list(dict.fromkeys(str(Path(one).resolve()) for one in found if os.path.isdir(one)))
-
-
-def held_settings(denied: Sequence[str] | None) -> dict[str, Any]:
-    """The `_meta` every session/new, load and resume sends: claude-agent-acp hands `claudeCode.options.settings` to
-    Claude Code as its settings. An explicit ask rule reaches the permission request, session/request_permission, in
-    every permission mode, bypassPermissions and acceptEdits included, so each edit of its own tools, which write to
-    disk themselves, is decided by the runner first, code.dispatcher.agent#3d. Its sandbox runs every command with the
-    paths of `denied`, denied_writes', read-only and no way out, so a shell write to an unlinked or ignore-listed file
-    is prevented, code.dispatcher.agent#43 and #47, CTX-062, while the tools' folders and the files linked when the
-    session starts stay writable; a session cannot start where the sandbox cannot. Paths outside the project stay
-    writable, CTX-060. With LINK_LOCK off, `denied` None, neither the ask rules nor the sandbox is sent, so an edit is
-    asked about only as the person's mode and dispatch_prompts would ask, Rich 2026-10-15. Other agents ignore the
-    key."""
-    if denied is None:
-        return {}
-    if not SHELL_SANDBOX:
-        return {'claudeCode': {'options': {'settings': {
-            'permissions': {'ask': ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']}}}}}
-    sandbox = {'sandbox': {'enabled': True, 'failIfUnavailable': True, 'allowUnsandboxedCommands': False,
-                           'filesystem': {'allowWrite': writable_roots(), 'denyWrite': list(denied)}}}
-    return {'claudeCode': {'options': {'settings': {
-        'permissions': {'ask': ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']}, **sandbox}}}}
-
-
-def confined_command(denied: Sequence[str], command: str, args: Sequence[str]) -> list[str] | None:
-    """A command of the runner's own terminal, ACP's terminal/create, run with the paths of `denied`, denied_writes',
-    read-only, as the agents' own commands are, code.dispatcher.agent#43 and #47: bubblewrap on Linux, sandbox-exec on
-    macOS; None where neither is found, and the terminal is refused."""
-    if sys.platform.startswith('linux') and (found := shutil.which('bwrap')):
-        return [found, '--dev-bind', '/', '/', *(part for path in denied for part in ('--ro-bind', path, path)), '--',
-                command, *args]
-    if sys.platform == 'darwin' and (found := shutil.which('sandbox-exec')):
-        rules = ''.join(f'({"subpath" if os.path.isdir(path) else "literal"} "{quoted}")' for path in denied
-                        if (quoted := path.replace('\\', '\\\\').replace('"', '\\"')))
-        return [found, '-p', f'(version 1)(allow default){f"(deny file-write* {rules})" if rules else ""}', command,
-                *args]
-    return None
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
@@ -486,34 +349,6 @@ def placed(index: dict[str, list[dict[str, str]]], path: str | None) -> tuple[li
         if found:
             return found, end == len(parts)
     return [], False
-
-
-def ignored(patterns: Sequence[str]) -> Callable[[str], bool]:
-    """Whether a project-relative path falls under the project's `.metaform/ignore.txt`, BASE-058, read with
-    gitignore's common forms: `dir/` a folder anywhere, `/dir` from the root, a pattern without a slash a name
-    anywhere, `*` and `**` wildcards. Negations are not read; they would only let more be written."""
-    compiled: list[Callable[[str], bool]] = []
-    for raw in patterns:
-        pattern = raw.strip().strip('"').strip("'")
-        if not pattern or pattern.startswith('!'):
-            continue
-        folder = pattern.endswith('/')
-        pattern = pattern.strip('/')
-        if not pattern:
-            continue
-        rooted = raw.strip().startswith('/') or '/' in pattern
-
-        def match(path: str, pattern: str = pattern, folder: bool = folder, rooted: bool = rooted) -> bool:
-            parts = path.split('/')
-            if rooted:
-                depth = pattern.count('/') + 1
-                heads = ['/'.join(parts[:index]) for index in range(depth, len(parts) + 1)]
-                return any(fnmatch.fnmatchcase(head, pattern) and (not folder or head != path)
-                           for head in heads) or fnmatch.fnmatchcase(path, pattern + '/**')
-            names = parts[:-1] if folder else parts
-            return any(fnmatch.fnmatchcase(name, pattern) for name in names)
-        compiled.append(match)
-    return lambda path: any(match(path) for match in compiled)
 
 
 def unified(path: str, old: str | None, new: str) -> dict[str, Any]:
@@ -1387,12 +1222,8 @@ class Session:
         self.modes: dict[str, Any] | None = None  # the agent's session modes: current and available
         self.config: list[dict[str, Any]] = []  # the agent's config options, as it sent them
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
-        self.asking: str | None = None  # the mode this agent is kept in so it asks before every write, ASKING_MODES
-        self.chosen_mode: str | None = None  # the mode the person chose for it, which decides what is approved unasked
         self.sources: dict[str, list[dict[str, str]]] | None = None  # the sources layer's paths, read when needed
-        # The rule on writing files, work_link, has gone to the agent with a prompt of this process: the lock holds for
-        # the session only from then, so no refusal reaches an agent never told of it, code.dispatcher.agent#47.
-        self.ruled = False
+        self.link_asked = False  # work_link, the request to link entry-point files, has gone with a prompt
         # ACP's compaction signal said the agent's context was compacted, so its next turn opens with `compacted`, the
         # line that says what it works on and that what Metaform gave it once comes again, CTX-045 and CTX-046.
         self.recompacted = False
@@ -1860,10 +1691,8 @@ class Session:
             self.reported('commands')
         elif kind == 'current_mode_update':
             self.modes = {**(self.modes or {'available': []}), 'current': data.get('currentModeId')}
-            self.spawn(self.hold_mode())
         elif kind == 'config_option_update':
             self.config = cast(list[dict[str, Any]], data.get('configOptions') or [])
-            self.spawn(self.hold_mode())
         elif kind == 'session_info_update':
             for key, field in (('title', 'title'), ('updatedAt', 'updated_at')):
                 if key in data:
@@ -1903,8 +1732,6 @@ class Session:
         info = init.agent_info
         self.acp['agent_info'] = info.model_dump(mode='json', exclude_none=True, exclude={'field_meta'}) \
             if info is not None else None
-        self.asking = ASKING_MODES.get(str(info.name if info is not None else '').rsplit('/', 1)[-1]) \
-            if LINK_LOCK else None  # with the lock off, the agent keeps the mode the person chose, code#1e
         # The logins it offers, as sent, since a method's `type` (agent, terminal or env_var) is what says how it runs.
         methods = cast(list[Any], (raw or {}).get('authMethods') or [])
         self.acp['auth_methods'] = [
@@ -1927,22 +1754,6 @@ class Session:
         options = getattr(made, 'config_options', None)
         if options is not None:
             self.config = [option.model_dump(mode='json', by_alias=True, exclude_none=True) for option in options]
-        if self.asking is not None and self.chosen_mode is None:  # the mode it began in is the person's until changed
-            self.chosen_mode = self.mode_now()
-
-    def mode_now(self) -> str | None:
-        """The mode the agent says it is in: its config option of category mode, else its session modes' current."""
-        found = next((option.get('currentValue') for option in self.config if option.get('category') == 'mode'), None)
-        return str(found) if found is not None else cast(str | None, (self.modes or {}).get('current'))
-
-    async def hold_mode(self) -> None:
-        """An agent that writes without asking outside one mode is put back in that mode whenever it is in another,
-        whatever the person chose, which goes on deciding what is approved without asking, CTX-061."""
-        if self.asking is None or self.ending or self.session_id is None or self.mode_now() in (None, self.asking):
-            return
-        found = next((one for one in self.settings() if one['category'] == 'mode'), None)
-        if found is not None:
-            await self.configure(str(found['id']), str(self.chosen_mode or self.asking))
 
     def settings(self) -> list[dict[str, Any]]:
         """What the person can set on this session, each a select or a switch: the agent's config options, a model
@@ -1958,8 +1769,6 @@ class Session:
                              'options': [{'value': mode['id'], 'name': mode['name'],
                                           'description': mode.get('description'), 'group': None}
                                          for mode in available], 'source': 'mode'})
-        if self.asking is not None and self.chosen_mode is not None:  # the person's mode, which the agent runs as
-            found = [{**one, 'current': self.chosen_mode} if one['category'] == 'mode' else one for one in found]
         return found
 
     async def remember(self) -> None:
@@ -2004,7 +1813,6 @@ class Session:
         current, as the agent's latest answer has it, is not sent again."""
         if self.ending or self.session_id is None:
             return []
-        await self.hold_mode()
         wanted = await asyncio.to_thread(wanted_options, self.ctx, self.store, self.agent,
                                          None if self.node is None else self.work_id)
         wanted = {**self.jev_chosen(), **wanted}  # Jev's choice, H23, under every choice of the person's
@@ -2388,14 +2196,6 @@ class Session:
             self.sources = await asyncio.to_thread(sources_index, self.store, self.root)
         return self.sources
 
-    async def denied(self) -> list[str] | None:
-        """The paths of the project the agent's commands may not write, denied_writes', read now; None with LINK_LOCK
-        off or for a probe, whose commands are not confined."""
-        if self.probe or not LINK_LOCK:
-            return None
-        patterns = await asyncio.to_thread(home.ignore_patterns, self.root)
-        return await asyncio.to_thread(denied_writes, self.root, self.folder, await self.places(), patterns)
-
     async def tool_detail(self, call: dict[str, Any]) -> dict[str, Any] | None:
         """What a tool call acts on, structured: each file it edits as a diff, each place it reads or writes, each
         terminal it runs, every file placed on the map; None for a call that names none."""
@@ -2490,11 +2290,6 @@ class Session:
                     return {'error': f'{value} is none of the choices of {found["name"]}: {listed}.'}
                 chosen, shown = option['value'], option['name']
                 sent = chosen
-                if self.asking is not None and found['category'] == 'mode':  # kept asking, the choice kept, CTX-061
-                    self.chosen_mode, sent = str(chosen), self.asking
-                    if sent != chosen:
-                        shown = f'{shown}, run as {self.asking} so every change of a file is asked first and ' \
-                                f'{shown} decides what is approved without asking'
                 if found['source'] == 'mode':
                     answer = await asyncio.wait_for(self.conn.set_session_mode(
                         session_id=self.session_id, mode_id=sent), SETTING_LIMIT)
@@ -2550,85 +2345,6 @@ class Session:
             await self.save_state()
         return nodes
 
-    async def locked(self, named: str | None) -> str | None:
-        """Why the agent may not write a file of the project, or None when it may, code.dispatcher.agent#3d: a path
-        under the project's `.metaform/ignore.txt` is read-only to agents, linked or not; a file no element's ref
-        names exactly is locked until the agent links it to its element, with the call that does it. A path outside the
-        project is not the map's. Reads never come here: reading is how the agent finds where a file belongs. With
-        LINK_LOCK off, no file is locked, the ignore list's included, until the rules and prompts are in place, Rich
-        2026-10-15; nor before the rule has gone to the agent, `ruled`, code.dispatcher.agent#47."""
-        if not named or self.probe or not LINK_LOCK or not self.ruled:
-            return None
-        patterns = await asyncio.to_thread(home.ignore_patterns, self.root)
-        if patterns and ignored(patterns)(named):
-            return prompt('write_ignored', file=named) or f'{named} is read-only to agents.'
-        if not LINK_LOCK or placed(await self.places(), named)[1]:
-            return None
-        return ' '.join(part for part in (prompt('write_unlinked'), prompt('link_call', file=named)) if part)
-
-    async def edit_locked(self, call: dict[str, Any]) -> str | None:
-        """Why a permission request to change files is refused, or None: every file it names, by its diffs, its
-        locations or its input's path, under `locked`. A request of any other kind is not a write; one that gives no
-        kind, as a request may when its call has begun, is taken as one, code.dispatcher.agent#43."""
-        if call.get('kind') is not None and str(call.get('kind')) not in WRITES:
-            return None
-        raw = call.get('rawInput')
-        given = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
-        paths = [*(str(one.get('path')) for one in cast(list[dict[str, Any]], call.get('content') or [])
-                   if one.get('type') == 'diff' and one.get('path')),
-                 *(str(one.get('path')) for one in cast(list[dict[str, Any]], call.get('locations') or [])
-                   if one.get('path')),
-                 *(str(given[key]) for key in ('file_path', 'notebook_path', 'path') if isinstance(given.get(key), str))]
-        for path in dict.fromkeys(paths):
-            why = await self.locked(relative(path, [self.folder, self.root]))
-            if why is not None:
-                return why
-        return None
-
-    async def unsandboxed(self, call: dict[str, Any]) -> str | None:
-        """Why a request to widen the sandbox the agent's commands run in is refused, or None, code.dispatcher.agent#43:
-        write access for a path of the project that `locked` holds, or for a folder that is or holds the project, which
-        no ref names exactly; a pattern or scope that cannot be read as a path, if it opens writing; and, for an agent
-        kept in its asking mode, a command run outside its sandbox altogether, which could write any file: a request
-        whose own input names a command. Network access, an MCP tool's approval and paths outside the project are left
-        to the answer as usual."""
-        if not LINK_LOCK or not SHELL_SANDBOX or not self.ruled:  # off with the lock or its sandbox, and until the rule
-            return None  # is sent, #47
-        raw = call.get('rawInput')
-        given = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
-        grant = given.get('additionalPermissions') or given.get('permissions')
-        if isinstance(grant, dict):
-            files = cast(dict[str, Any], cast(dict[str, Any], grant).get('fileSystem') or {})
-            paths = [str(one) for one in cast(list[Any], files.get('write') or [])]
-            for entry in cast(list[dict[str, Any]], files.get('entries') or []):
-                where = cast(dict[str, Any], entry.get('path') or {})
-                if 'write' not in str(entry.get('access', '')):
-                    continue
-                if where.get('type') != 'path':
-                    return prompt('command_unsandboxed') or 'Commands may not be given write access to the project.'
-                paths.append(str(where.get('path')))
-            root = Path(self.root).resolve()
-            for path in paths:
-                found = Path(path).resolve() if os.path.isabs(path) else root / path
-                if found == root or root in found.parents and found.is_dir() or found in root.parents:
-                    return prompt('command_unsandboxed') or 'Commands may not be given write access to the project.'
-                why = await self.locked(relative(str(found), [self.folder, self.root]))
-                if why is not None:
-                    return why
-            return None
-        if self.asking is not None and str(call.get('kind')) == 'execute' and given.get('command') \
-                and not given.get('url'):  # a command, not a network host or an MCP tool's approval
-            return prompt('command_unsandboxed') or 'Commands run in a sandbox that cannot write the project.'
-        return None
-
-    async def told(self, text: str) -> None:
-        """A refusal's reason given to the agent: into the turn in flight when it steers, otherwise as its next turn,
-        since a permission answer carries no text."""
-        steered = await self.steer(text) if self.turns and self.active_turn is not None and self.active_turn.sent \
-            else False
-        if steered is False:  # None: the agent may have taken it, so it is not sent again
-            self.turn(text)
-
     async def read_text_file(self, session_id: str, path: str, line: int | None = None, limit: int | None = None,
                              **kwargs: Any) -> ReadTextFileResponse:
         """ACP's fs/read_text_file: the file's text from `line`, 1-based, at most `limit` lines."""
@@ -2651,9 +2367,6 @@ class Session:
         inside a part of the map another ticket's claim reserves, LAYER-029."""
         found = await self.confined('write', path)
         named = relative(str(found), [self.folder, self.root])
-        why = await self.locked(named)
-        if why is not None:
-            raise await self.refuse('write', path, why)
         for place in placed(await self.places(), named)[0]:
             lock = await asyncio.to_thread(claimed, self.store, place.get('address'), self.work_id)
             if lock is not None:
@@ -2677,16 +2390,9 @@ class Session:
         together, kept up to its limit, or TERMINAL_KB when it names none."""
         folder = await self.confined('run a terminal in', cwd) if cwd else Path(self.folder)
         given = windowless({**child_environment(), **{one.name: one.value for one in env or []}})
-        # Run with the project read-only, as the agents' own commands are, code.dispatcher.agent#43, CTX-062.
-        denied = await self.denied()  # read for each command, so a file linked since the session began is writable
-        run = [command, *(args or [])] if denied is None or not SHELL_SANDBOX \
-            else confined_command(denied, command, args or [])
-        if run is None:
-            raise await self.refuse('run', command, prompt('terminal_unconfined')
-                                    or 'no sandbox can keep the project read-only to it here')
         try:
             process = await asyncio.create_subprocess_exec(
-                *run, cwd=str(folder), env=given, stdin=asyncio.subprocess.DEVNULL,
+                command, *(args or []), cwd=str(folder), env=given, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **group_options())
         except OSError as error:
             raise await self.refuse('run', command, str(error)) from None
@@ -3029,32 +2735,16 @@ class Session:
         rpc = INCOMING.get()
         waiting: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
         title = str(tool_call.title or tool_call.kind or 'a tool call')
-        # A change to a locked file, or a widening of the sandbox the agent's commands run in, is refused before any
-        # answer the prompts choice or the agent's mode would give, code.dispatcher.agent#3d and #43; the agent's
-        # reject-once option where it offers one, never one it would remember. A request names only what the call it
-        # belongs to did not already say, codex-acp's file changes, so the call as it began is read with it.
+        # A request names only what the call it belongs to did not already say, codex-acp's file changes, so the call
+        # as it began is read with it.
         asked = tool_call.model_dump(mode='json', by_alias=True, exclude_none=True)
         began = self.tools.get(str(asked.get('toolCallId')), {})
         call = {**{key: began[key] for key in ('kind', 'rawInput') if key in began}, **asked,
                 **{key: [*cast(list[Any], asked.get(key) or []), *cast(list[Any], began.get(key) or [])]
                    for key in ('content', 'locations')}}
-        why = await self.edit_locked(call) or await self.unsandboxed({**call, 'rawInput': asked.get('rawInput')})
-        if why is not None:
-            async with self.lock:
-                await self.flush()
-                await self.note(None, 'notice', f'{title}: refused, {why}')
-            self.spawn(self.told(why))
-            reject = next((option for option in options if str(option.kind) == 'reject_once'), None)
-            return RequestPermissionResponse(outcome=AllowedOutcome(option_id=reject.option_id, outcome='selected')
-                                             if reject is not None else DeniedOutcome(outcome='cancelled'))
         how, source = await self.answering()
         said = self.answered_by(how, source)
         allow = allowed(options, how, call.get('kind'))
-        approving = 'mcp' if kwargs.get('is_mcp_tool_approval') else str(call.get('kind'))  # codex-acp's mark
-        if allow is None and self.asking is not None and approving in MODE_APPROVES.get(
-                str(self.chosen_mode), ()):  # what the agent would have done unasked in the mode the person chose
-            allow = next((option for option in options if str(option.kind) == 'allow_once'), None)
-            said = f'the mode {self.chosen_mode}'
         if allow is not None:
             async with self.lock:
                 await self.flush()
@@ -3810,8 +3500,7 @@ class Session:
             if self.resume:
                 made = await asyncio.wait_for(self.reopen(servers), START_LIMIT)
             else:
-                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers,
-                                                                    **held_settings(await self.denied())),
+                made = await asyncio.wait_for(self.conn.new_session(cwd=self.folder, mcp_servers=servers),
                                               START_LIMIT)
                 async with self.lock:  # what the agent asked while the session was made moves to it
                     await self.waits_moved(str(made.session_id))
@@ -4099,13 +3788,11 @@ class Session:
         session_id = cast(str, self.resume)
         if caps.get('resume'):
             self.acp['resumed'] = 'resume'
-            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers,
-                                                   **held_settings(await self.denied()))
+            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers)
         if caps.get('load'):
             self.acp['resumed'] = 'load'
             self.replaying = True
-            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers,
-                                                 **held_settings(await self.denied()))
+            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers)
         raise RuntimeError(f'{self.name} offers neither session/resume nor session/load, so session {session_id} '
                            'cannot be resumed')
 
@@ -4325,13 +4012,12 @@ class Session:
                         reason = 'cancelled'
                     else:
                         current.sent = True
-                        # The rule on writing files rides the first prompt this process sends the session, whatever
-                        # it is, a ticket's hand-off, a resumed session's next message, the system agent's or the
-                        # intake's opening, and is never a turn of its own; the lock holds from then, #47, CTX-043.
-                        if LINK_LOCK and not self.ruled and not self.probe:
-                            rule = prompt('work_link')
-                            text = f'{text}\n\n{rule}' if rule else text
-                            self.ruled = True
+                        # The request to link entry-point files rides the first prompt this process sends a ticket
+                        # worker, never a turn of its own, and never a resumed one, whose conversation has it, CTX-060.
+                        if self.role == 'worker' and not self.link_asked and not self.resume and not self.probe:
+                            asked = prompt('work_link')
+                            text = f'{text}\n\n{asked}' if asked else text
+                            self.link_asked = True
                         # the person's system agent takes an edit of its prompt from its next turn, F4
                         if self.role == 'system' and not self.opening and not self.probe:
                             renewed = await asyncio.to_thread(self.reopened)

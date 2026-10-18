@@ -833,8 +833,8 @@ def memory_text(folder: Path, project: str | None, address: str | None) -> str:
 def work_line(work_id: str, folder: Path, node: str) -> str:
     """What a hand-off adds to the node brief: work the ticket with the map_work tool, whose description says how,
     and, while the memory module is on the folder's surface, the owner's sentence on recording what is learned, with
-    the node it is recorded at, so no agent is told to use a tool it does not have. The rule on writing files is not
-    here: the runner sends it with each session's first prompt, whatever the prompt, code.dispatcher.agent#47."""
+    the node it is recorded at, so no agent is told to use a tool it does not have. The request to link entry-point
+    files is not here: the runner adds work_link to a ticket worker's first prompt, CTX-060."""
     memory = any(module.id == 'memory' for module in surface(folder))
     if not memory or not node:
         return prompt('work', work_id=work_id, record='')
@@ -4593,7 +4593,7 @@ PUBLISHED = 'published'  # under the project's folder in the Metaform home: <ses
 def link(ctx: Context) -> dict[str, Any]:
     """A file linked to the element whose functionality it realizes, code.dispatcher.agent#3d: a ref of the sources
     layer naming its path, a record with an id that lasts, code.graph.knowledge#c, the refs the runner places files
-    by, so the runner's lock on writing it is lifted at once and the file is placed exactly from then on. The ref is
+    by, so the file is placed exactly from then on. The ref is
     named `ref`, a proper noun for what the file is, or from its path, and records who linked it and why. A file
     linked already at another place is a second ref here, with a name of its own; no ref moves. A ref is not an
     element and linking never makes one: an Address no element has is refused, with the call that adds the element
@@ -4644,7 +4644,7 @@ def link(ctx: Context) -> dict[str, Any]:
                 'said': f'{named} was already linked as {written.ref}.'}
     noted = [notice.message for notice in written.notices if notice.where == 'ref']
     return {'file': named, 'node': address, 'ref': written.ref, 'id': written.id, 'linked': True,
-            'said': ' '.join([f'{named} is linked as {written.ref}; writes to it go through.', *noted])}
+            'said': ' '.join([f'{named} is linked as {written.ref}.', *noted])}
 
 
 def attach(ctx: Context) -> dict[str, Any]:
@@ -6494,15 +6494,14 @@ MODULE = Module(
                         'Shows brief.txt in your chat as an attachment with Download.'),), open_world=False,
                         listed=in_session),
         Verb('link', link, 'Link a file to the element whose functionality it realizes: its path added to the '
-                           "element's refs in the sources layer, which unlocks writing it and places it on the map.",
+                           "element's refs in the sources layer, which places it on the map.",
              nouns=(Noun('file', 'The file, a path from the project folder or your working folder.'),
                     Noun('node', 'The Address of the element it realizes; an Address no element has yet is made.'),
                     Noun('ref', "The ref's name, a proper noun for what the file is, unique in the project: for code its "
                                 'qualified name, such as engine.run. Made from the path when left out.', required=False),
                     Noun('why', 'Why the file realizes that element, kept with the link.', required=False)),
              examples=(('metaform dispatch link file=src/engine/run.py node=code.engine.runner',
-                        ('Links run.py to code.engine.runner as engine.run@code.engine.runner; writes to it go '
-                         'through from then on.')),)),
+                        'Links run.py to code.engine.runner as engine.run@code.engine.runner.'),)),
         Verb('interrupt', interrupt, 'Interrupt the turn of the agent working a ticket, keeping its conversation open.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The chat session id, to avoid interrupting a replacement session.', required=False)),
