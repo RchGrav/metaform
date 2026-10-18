@@ -12,7 +12,8 @@ from __future__ import annotations
 import contextvars
 import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +32,11 @@ _LOCK = threading.Lock()
 _KEPT: contextvars.ContextVar[list[tuple[Any, ...]] | None] = contextvars.ContextVar('metaform_changes_kept',
                                                                                      default=None)
 _WRITES = (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
+# the connections whose writes `watch` records nothing of for now, `unwatched`, by `id`
+_UNWATCHED: contextvars.ContextVar[frozenset[int]] = contextvars.ContextVar('metaform_changes_unwatched',
+                                                                            default=frozenset())
+# the rows a watched connection changed while unwatched, by `id`, so `changed` leaves them out
+_INSTALLED: dict[int, int] = {}
 
 
 def watch(db: sqlite3.Connection) -> set[str]:
@@ -38,13 +44,40 @@ def watch(db: sqlite3.Connection) -> set[str]:
     prepared that changes no row still names its table, so a change may name a table it left as it was, never the
     reverse. The connection is a write's own, closed after it."""
     written: set[str] = set()
+    key = id(db)
+    _INSTALLED[key] = 0
 
     def authorizer(action: int, table: str | None, *_: object) -> int:
-        if action in _WRITES and table:
+        # SQLite's own catalogue, `sqlite_master` and the rest, is never a table a map draws
+        if action in _WRITES and table and not table.startswith('sqlite_') and key not in _UNWATCHED.get():
             written.add(table)
         return sqlite3.SQLITE_OK
     db.set_authorizer(authorizer)
     return written
+
+
+@contextmanager
+def unwatched(db: sqlite3.Connection) -> Generator[None, None, None]:
+    """Writes on this connection that `watch` records nothing of while the block runs: a module's tables created or
+    upgraded and their version recorded in `meta` are not a change anyone draws (UX recheck 2026-10-17, b410f6a5)."""
+    key = id(db)
+    if key in _UNWATCHED.get():  # inside one already, which counts the rows
+        yield
+        return
+    token = _UNWATCHED.set(_UNWATCHED.get() | {key})
+    before = db.total_changes
+    try:
+        yield
+    finally:
+        _UNWATCHED.reset(token)
+        if key in _INSTALLED:
+            _INSTALLED[key] += db.total_changes - before
+
+
+def changed(db: sqlite3.Connection) -> int:
+    """The rows a watched write changed, less those it changed unwatched: a write that only installed a module's
+    tables changed none anyone draws, so it notes no change, though a statement it prepared named a table."""
+    return db.total_changes - _INSTALLED.pop(id(db), 0)
 
 
 def note(project_id: str, base_id: str | None = None, tables: set[str] | None = None,

@@ -430,8 +430,7 @@ class Store:
             found = tables.state(tx.db, module, declared, 'metaform')
             if found in ('older', 'update'):  # an upgrade or an addition is a write, made before the read begins
                 reading.close()
-                with self._write() as upgrading:
-                    tables.ensure(upgrading.db, upgrading.path, module, declared, 'metaform')
+                changes.quietly(self._install, module, declared)  # a schema install for a read changes no row
                 tx = reading.enter_context(self._read())
                 found = tables.state(tx.db, module, declared, 'metaform')
         except BaseException:
@@ -439,6 +438,10 @@ class Store:
             raise
         stack.enter_context(reading)
         return tx.db, tx.path, found == 'ready'
+
+    def _install(self, module: str, declared: Tables) -> None:
+        with self._write() as upgrading:
+            tables.ensure(upgrading.db, upgrading.path, module, declared, 'metaform')
 
     @contextmanager
     def _project_write(self, path: Path, held: Sequence[TableTx] = ()) -> Generator[sqlite3.Connection, None, None]:
@@ -449,8 +452,8 @@ class Store:
         with tables.project_transaction(path, write=True) as db:
             written = changes.watch(db)
             yield db
-            changed = db.total_changes
-        if changed:
+            changed = changes.changed(db)
+        if changed:  # one that only installed the module's tables changed nothing drawn, `changes.unwatched`
             active = home.active_base(self.project_id)
             changes.note(self.project_id, active.id if active is not None else None, written,
                          about=held[0].about or None if held else None)

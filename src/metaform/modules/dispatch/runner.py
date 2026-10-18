@@ -3856,7 +3856,7 @@ class Session:
                         if self.took:
                             if record.taken_by != self.ctx.nouns['reservation']:
                                 raise Stop('The startup reservation is no longer held.', 'metaform map work open=true')
-                            self.store.move_work(self.work_id, 'todo', record.position)
+                            self.store.move_work(self.work_id, 'todo', kept=True)  # taken at once: no place changes
                         self.store.take_work(self.work_id, None, self.by)
                 with self.store.tables() as tx:
                     # its event names the ticket and the session, so an open page reads those alone, BASE-053

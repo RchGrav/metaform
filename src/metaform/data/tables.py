@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
-from .. import home, sqlite
+from .. import changes, home, sqlite
 from ..errors import StoreError
 from .paging import LIMIT
 from .records import Page
@@ -418,14 +418,16 @@ def cleanup(db: sqlite3.Connection, kind: str, identity: str) -> None:
 def ensure_extensions(db: sqlite3.Connection, path: Path) -> None:
     """Adopt existing-name tables and prepare recorded data declarations before the native transaction. Each module
     is prepared under a savepoint of its own: one that cannot be, its tables in conflict, is left as it was, and the
-    store opens for the map and every other module; that module's own calls answer with why, STORE-029."""
-    for module, declared in extensions(db):
-        db.execute('SAVEPOINT module_tables')
-        try:
-            ensure(db, path, module, declared, 'metaform')
-        except StoreError:
-            db.execute('ROLLBACK TO module_tables')
-        db.execute('RELEASE module_tables')
+    store opens for the map and every other module; that module's own calls answer with why, STORE-029. Installing
+    tables is not a change anyone draws, so the write is unwatched, `changes.unwatched`."""
+    with changes.unwatched(db):
+        for module, declared in extensions(db):
+            db.execute('SAVEPOINT module_tables')
+            try:
+                ensure(db, path, module, declared, 'metaform')
+            except StoreError:
+                db.execute('ROLLBACK TO module_tables')
+            db.execute('RELEASE module_tables')
 
 
 def legacy_fold(db: sqlite3.Connection, correction: str, intake: str) -> None:
@@ -859,7 +861,14 @@ def _not_held(recorded: Mapping[str, Any], tables: Sequence[Table]) -> str | Non
 def ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
     """Inside a write transaction: create the module's tables of this place; give a store that lacks a table, a
     column or an index the code needs it in place, keeping every row, and bring the record to the declared version;
-    or upgrade an earlier version's tables after keeping a copy of the file, STORE-045 and STORE-029."""
+    or upgrade an earlier version's tables after keeping a copy of the file, STORE-045 and STORE-029. Creating or
+    upgrading a module's tables and recording their version in `meta` is not a change anyone draws, so the write's
+    `changes.watch` records none of it (UX recheck 2026-10-17, b410f6a5)."""
+    with changes.unwatched(db):
+        _ensure(db, path, module, declared, place)
+
+
+def _ensure(db: sqlite3.Connection, path: Path, module: str, declared: Tables, place: Place) -> None:
     found = state(db, module, declared, place)
     if found == 'absent':
         _adopt(db, path, module, declared, place)

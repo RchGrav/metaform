@@ -231,7 +231,9 @@ class Session:
                         log.forget(path)  # the projection applied ops the log never took: read it whole again
                     raise
                 db.execute('COMMIT')
-            if db.total_changes:  # the chassis announces it when the command ends, VIEW-018
+            # the chassis announces it when the command ends, VIEW-018; a write that only installed a module's
+            # tables, `changes.unwatched`, changed nothing anyone draws
+            if changes.changed(db):
                 changes.note(self.project_id, metaform.id, written | {f'op:{kind}' for kind in tx.kinds}, held.seq,
                              about=tx.about)
 

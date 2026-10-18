@@ -460,9 +460,11 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None) -> WorkRecord:
+def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None, kept: bool = False) -> WorkRecord:
     """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
-    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again."""
+    takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again. `kept` leaves
+    every place as it is, the ticket's own too: a reservation given back to To do and taken at once, in one atomic
+    block, changes no other ticket, so its event names it alone (UX recheck 2026-10-17, b410f6a5)."""
     row = _work_row(tx, work_id)
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
@@ -485,6 +487,8 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
             (int(column == "backlog"), work_id),
         )
     del row
+    if kept:
+        return work_record(tx, _work_row(tx, work_id), tuple(notices))
     moved = work_record(tx, _work_row(tx, work_id))
     # the tickets of the same column, by id only: the column is a condition on three columns, WorkRecord.column,
     # so the whole table need not be rebuilt as records to find them. Found by review, 2026-10-06.
@@ -495,16 +499,20 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         "todo": "done IS NULL AND taken IS NULL AND held=0",
     }[moved.column]
     others = [
-        str(other["work_id"])
+        (str(other["work_id"]), other["position"])
         for other in tx.execute(
-            f"SELECT work_id FROM work WHERE work_id<>? AND {same} ORDER BY position IS NULL, position, row",
+            f"SELECT work_id, position FROM work WHERE work_id<>? AND {same} ORDER BY position IS NULL, position, row",
             (work_id,),
         )
     ]
     at = len(others) if position is None else max(0, min(len(others), int(position)))
-    _ticket_changed(tx, *others)  # their places in the column
-    for place, ident in enumerate([*others[:at], work_id, *others[at:]]):
-        tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, ident))
+    # Only the places that change are written and said: a ticket taken back to its own place in a column whose order
+    # holds changes no other, so its event names it alone and a page reads one ticket (UX recheck 2026-10-17, b410f6a5)
+    for place, (ident, held) in enumerate([*others[:at], (work_id, None), *others[at:]]):
+        if ident == work_id or held != place:
+            if ident != work_id:
+                _ticket_changed(tx, ident)  # its place in the column
+            tx.execute("UPDATE work SET position=? WHERE work_id=?", (place, ident))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 

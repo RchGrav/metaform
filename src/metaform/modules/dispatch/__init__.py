@@ -1769,6 +1769,7 @@ def launch_permissions(ctx: Context, store: Store, agent: str) -> tuple[dict[str
 def keep_launch(store: Store, work_id: str, given: dict[str, str | None]) -> None:
     """Write a launch's permissions over the previous launch's, keeping the ticket's own model and effort."""
     with own_store(store).tables() as tx:
+        tx.concern(work_id=work_id, kind='ticket')  # its event names the ticket, BASE-053
         held = tx.get('ticket_options', {'work_id': work_id})
         kept = {**{field: (held[field] if held else None) for field in ('model', 'effort')}, **given}
         tx.delete('ticket_options', {'work_id': work_id})
@@ -5054,7 +5055,7 @@ def new(ctx: Context) -> dict[str, Any]:
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():  # the ticket the ended session held is taken again at once, so no other start takes it between
         if ticket(store, work_id).taken_by == f'{agent} {session_id}':
-            store.move_work(work_id, 'todo')
+            store.move_work(work_id, 'todo', kept=True)  # taken again at once: no place changes
         startable(ctx, store, ticket(store, work_id), agent)
         store.take_work(work_id, by=reservation)
     ctx.nouns['agent'] = agent
@@ -6085,6 +6086,7 @@ def tune(ctx: Context) -> dict[str, Any]:
             raise Stop(f'{agent_label(agent)} offers {field} {", ".join(offered) or "none"} at its last session here, '
                        f'not {said}.', f'metaform dispatch options agent={agent}')
     with own_store(store).tables() as tx:
+        tx.concern(work_id=record.id, kind='ticket')  # its event names the ticket, BASE-053
         held = tx.get('ticket_options', {'work_id': record.id})
         kept = {field: (held[field] if held else None) for field in ('model', 'effort', 'prompts', 'mode')}
         kept.update({field: None if str(value).strip() in ('', 'none') else str(value).strip()
