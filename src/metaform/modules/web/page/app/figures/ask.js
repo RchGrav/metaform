@@ -73,12 +73,15 @@ function closeReply() {
 async function mascotAsk(text) {
   const live = DOCK.mine && D.sessions.some(one => one.work_id === DOCK.mine && one.state === 'running'
     && one.session_id);
-  ASKING.pending = text;
+  // a second ask while the first still waits joins it, so no words are lost
+  ASKING.pending = ASKING.pending ? `${ASKING.pending}\n\n${text}` : text;
   // what "this" is, as the person asks, as the chat's send fixes it when it queues; a second ask while the first
   // waits keeps the first one's line unless a click came between
   ASKING.told = clickedLine() || ASKING.told;
   if (ASKING.told) CLICKED.told = true;
+  if (!live && DOCK.calling) return;  // the agent is being reached already: the words go once it is, `flushAsk`
   if (!live) await callSystem();
+  if (!ASKING.pending) return;  // already delivered while the agent was reached
   if (!DOCK.mine) {
     if (ASKING.told) CLICKED.told = false;  // never told: the click is the person's to ask about again
     Object.assign(ASKING, {pending: null, told: ''});
