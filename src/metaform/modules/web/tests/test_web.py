@@ -6177,12 +6177,14 @@ def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest
 
     from metaform import home
     from metaform.data import Node, Store
+    # board_done_days is 0 by default, every done ticket archived at once; a day keeps the recent ones on the board
+    home.save(home.path_key(Path(mapped).resolve()), 'web', 'board_done_days', [1], folder=Path(mapped).resolve())
     store = Store('proj')
     node = Node('element', 'code.alarm.audible')
     stamp = lambda days: (datetime.now(UTC) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
     old, recent = [], []
     with monkeypatch.context() as clock:
-        clock.setattr(home, 'now', lambda: stamp(10))  # done before board_done_days, 1 by default
+        clock.setattr(home, 'now', lambda: stamp(10))  # done before board_done_days
         for number in range(400):
             old.append(store.add_work(node, None, task=f'old {number}').id)
             store.finish_work(old[-1], 'built')
