@@ -62,6 +62,7 @@ __all__ = [
     'agent_context_epoch',
     'agent_context_session',
     'aliases',
+    'begin_agent_context_check',
     'call',
     'chassis_version',
     'child_environment',
@@ -71,6 +72,7 @@ __all__ = [
     'context',
     'contributions',
     'feedback',
+    'finish_agent_context_check',
     'first_line',
     'held_role',
     'instructions',
@@ -1357,6 +1359,19 @@ def advance_agent_context(folder: Path, session: str | None, *, project: str | N
     """Start the recipient's next epoch after completed compaction or recovery without established retention."""
     service = _agent_context_service(folder, project)
     return int(service[1].advance(service[0], session, reason=reason)) if service is not None else 0
+
+
+def begin_agent_context_check(folder: Path, session: str | None, *, project: str | None = None) -> dict[str, Any]:
+    """Issue a startup checkpoint through the context owner, without invalidating retained delivery receipts."""
+    service = _agent_context_service(folder, project)
+    return cast(dict[str, Any], service[1].begin_check(service[0], session)) if service is not None else {}
+
+
+def finish_agent_context_check(folder: Path, session: str | None, checkpoint: str, *,
+                               project: str | None = None) -> dict[str, Any]:
+    """Close an unanswered startup checkpoint; the provider makes requested context eligible once on failure."""
+    service = _agent_context_service(folder, project)
+    return cast(dict[str, Any], service[1].finish_check(service[0], session, checkpoint)) if service is not None else {}
 
 
 def node_counts(folder: Path, addresses: tuple[str, ...], *, project: str | None = None,

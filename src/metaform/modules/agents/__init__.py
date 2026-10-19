@@ -62,8 +62,11 @@ class Role:
 
 # Sent to an agent of any role that dispatch runs, after its own.
 ANY = (
+    Sends('dispatch:context_retention', 'once per context epoch, to establish the retained startup key'),
+    Sends('dispatch:context_checkpoint', 'on the first necessary turn of a start or resume'),
+    Sends('dispatch:role_resource', 'when an authored role is assigned, and as a link after compaction'),
+    Sends('dispatch:communication', 'once per context epoch, with the initial instructions'),
     Sends('dispatch:timer', 'as a turn when a timer the agent set with dispatch timer is due'),
-    Sends('dispatch:peer_note', 'as a turn when a fellow agent sends it a note with dispatch note'),
     Sends('dispatch:workflow_answered', 'as a turn, or into the turn in flight, when a workflow run it paused is '
                                         'answered'),
 )
@@ -122,7 +125,8 @@ assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record f
 # keeps it; a session is read by its id or by its runner's, METAFORM_SESSION.
 # Version 2 adds the authored-role tables of roles.py: definitions, their history, role sources, and each recipient
 # context epoch with its receipts. It only adds tables, so version 1's code still reads and writes `sent`, STORE-029.
-TABLES = Tables(version=2, compatible_from=1, tables=(
+# Version 3 adds content fingerprints and startup context checks without changing the existing tables' fields.
+TABLES = Tables(version=3, compatible_from=1, tables=(
     Table('sent', place='project', key=('session_id', 'seq'),
           columns=(Column('session_id', required=True), Column('seq', 'int', required=True),
                    Column('work_id', required=True), Column('runner'), Column('role', required=True),
@@ -541,8 +545,13 @@ MODULE = Module(
                                           'without changing an agent assignment.',
              nouns=(Noun('name', 'The authored role name or URI from an enabled module provider.'),),
              effect='read', category='coordinate'),
-        Verb('receipts', authored.inspect_receipts, 'Read exact context components delivered in each agent epoch.',
+        Verb('receipts', authored.inspect_receipts, 'Read context delivery fingerprints and versions, without bodies.',
              nouns=(SESSION,), effect='read', category='coordinate'),
+        Verb('confirm', authored.confirm_context, 'Confirm a startup context checkpoint using your retained key; '
+             'omit the key if it is unavailable. Missing proof makes only requested context eligible again.',
+             nouns=(Noun('checkpoint', 'The checkpoint in the startup request.'),
+                    Noun('key', 'The key retained from the context instructions; omit if lost.', required=False)),
+             effect='write', category='coordinate'),
         Verb('updates', updates, 'Read selected prompt merge evidence, exact parent versions and retained conflicts.',
              nouns=(Noun('name', 'An existing prompt component identity; omit to read every applied update.',
                          required=False),), effect='read', category='coordinate'),

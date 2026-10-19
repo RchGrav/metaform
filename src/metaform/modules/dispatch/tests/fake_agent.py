@@ -163,6 +163,18 @@ def tool(ident, title, words):
     return printed
 
 
+def confirm_context(params):
+    text = '\n'.join(block.get('text', '') for block in params.get('prompt', []))
+    checkpoint = re.search(r'Startup context checkpoint: ([0-9a-f]+)', text)
+    if checkpoint:
+        key = re.search(r'Retain this context key: ([0-9a-f]+)', text)
+        words = ['agents', 'confirm', f'checkpoint={checkpoint[1]}', '--json']
+        if key:
+            words.append(f'key={key[1]}')
+        # This fixture has no retained model context on process restart, so it truthfully omits a lost key.
+        subprocess.run([sys.executable, '-m', 'metaform', *words], capture_output=True, check=True)
+
+
 def first_turn(prompt_id, text):
     update({'sessionUpdate': 'agent_thought_chunk', 'content': {'type': 'text', 'text': 'Thinking it over'}})
     update({'sessionUpdate': 'plan', 'entries': [{'content': 'Read', 'priority': 'high', 'status': 'in_progress'}]})
@@ -520,9 +532,11 @@ def main():
                 'sessions': [{'sessionId': one, 'cwd': message['params'].get('cwd') or os.getcwd(), 'title': one}
                              for one in listed], **({} if second else {'nextCursor': 'fake-page-2'})}})
         elif method == 'session/prompt' and V2:
+            confirm_context(message['params'])
             PROMPTS[0] += 1
             v2_turn(ident, message['params'], PROMPTS[0])
         elif method == 'session/prompt':
+            confirm_context(message['params'])
             CANCELLED.clear()  # each serial turn receives only its own cancellation
             PROMPTS[0] += 1
             if MODE == 'replace':

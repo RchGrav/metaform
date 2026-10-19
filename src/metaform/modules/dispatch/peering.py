@@ -583,13 +583,9 @@ def first_sentence(text: str, most: int = SAID_MOST) -> str:
 
 
 def inbox_line(one: dict[str, Any]) -> str:
-    """One note as the person's system agent's inbox lists it: the sender's ticket and title, the state a result
-    reports, and the first sentence of what was written."""
-    sender = cast(dict[str, Any], one.get('from') or {})
-    head = ' '.join(str(part) for part in (sender.get('item') or sender.get('agent') or '', sender.get('title') or '')
-                    if part)
-    state = str(one.get('state') or '')
-    return ' — '.join(part for part in (head, state, first_sentence(str(one.get('text') or ''))) if part)
+    """Ticket + status only. The authored message is available through an explicit note read."""
+    from .orchestration import inbox_status
+    return inbox_status(one)
 
 
 def notes(ctx: Context) -> dict[str, Any]:

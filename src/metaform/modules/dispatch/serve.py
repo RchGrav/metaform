@@ -1042,9 +1042,8 @@ class Served:
                 self.release(ident)
 
     async def peer_turn(self, session: Session, envelope: dict[str, Any]) -> None:
-        """An editor's registered agent receives peer messages at a normal turn, with actual sender provenance."""
-        from .orchestration import note_context
-        text = prompt('peer_note', message_context=note_context(envelope), note=str(envelope.get('text') or ''))
+        """An editor receives the authored message; sender provenance stays in the registered note."""
+        text = str(envelope.get('text') or '')
         async with self.queue(session):
             record = session.record
             if record is None or record.closed:

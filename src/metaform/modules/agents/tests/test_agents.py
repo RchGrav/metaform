@@ -61,8 +61,8 @@ def test_role_shows_each_prompt_with_its_text_and_the_version_the_store_sends(ru
     work = prompt_of(found, 'dispatch:work')
     assert (work['revision'], work['origin']) == (1, 'shipped') and 'note' not in work
     assert found['held_back'] is False and found['asks_person'] is False and found['running'] == []
-    assert [one['name'] for one in found['prompts']][-3:] == ['dispatch:timer', 'dispatch:peer_note',
-                                                               'dispatch:workflow_answered']
+    assert [one['name'] for one in found['prompts']][-3:] == ['dispatch:communication', 'dispatch:timer',
+                                                          'dispatch:workflow_answered']
 
 
 def test_a_renamed_prompt_element_makes_show_report_the_broken_name(project_folder, renamed):

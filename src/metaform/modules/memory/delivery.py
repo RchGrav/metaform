@@ -199,7 +199,10 @@ def prepare(ctx: Context, whole: Row, key: Key | None = None, *, interested: boo
         encounter(ctx, key, epoch=int(prepared['epoch']))
     result: Row = {'entities': [], 'relations': []}
     for one in due:
-        result.setdefault(one['kind'], []).append(one['value'])
+        if one.get('reference'):
+            result.setdefault('restored', []).append(one['reference'])
+        else:
+            result.setdefault(one['kind'], []).append(one['value'])
     return {**prepared, 'components': due, 'whole': result, 'current': current}
 
 

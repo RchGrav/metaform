@@ -13,6 +13,7 @@
 <!-- agents's instructions. Returned by metaform_instructions with module agents, at metaform://instructions/agents,
      and printed by metaform help agents agents. Off when the module is disabled. -->
 <instructions>agents is active.</instructions>
+<restore_context>After the change recorded at <after/>, <component_name/> now uses its previously delivered version <version/> (fingerprint <fingerprint/>) again. Use that retained content; its body is not repeated.</restore_context>
 <!-- The line under the counts an agent is told at its node, MCP-039; agents counts nothing at a node, so it is empty. -->
 <counts></counts>
 <!-- agents's rules, MCP-031: one sentence each with its reason in why="...". Empty, as here, sends nothing. -->

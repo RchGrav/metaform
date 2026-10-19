@@ -15,7 +15,9 @@ from metaform.module import (
     AgentRoleDefinition,
     advance_agent_context,
     agent_context_epoch,
+    begin_agent_context_check,
     context,
+    finish_agent_context_check,
     prepare_agent_context,
     provided,
     record_agent_context,
@@ -152,6 +154,49 @@ def test_changed_duty_and_actual_fallback_versions(project_folder):
     assert prepare_agent_context(project_folder, 'gc-context', fallback['components'])['components'] == []
     actual, _ = read_resource(project_folder, 'metaform://role/gc', 'fallback-recipient')
     assert duty['text'] in actual and '<unclosed>' not in actual
+
+
+def test_content_is_not_repeated_under_an_alias_or_after_version_reversion(project_folder):
+    first = prompt_files.component('one', 'Retained instruction A.')
+    second = prompt_files.component('one', 'Changed instruction B.')
+    record_agent_context(project_folder, 'retained', [first])
+    record_agent_context(project_folder, 'retained', [second])
+    alias = {**first, 'name': 'alias', 'rendered_fingerprint': 'untrusted-label'}
+    restored = prepare_agent_context(project_folder, 'retained', [first, alias])
+    assert len(restored['components']) == 1 and 'Retained instruction A.' not in restored['text']
+    assert restored['components'][0]['reference']['name'] == 'one'
+    record_agent_context(project_folder, 'retained', restored['components'])
+    assert prepare_agent_context(project_folder, 'retained', [first, alias])['components'] == []
+    fresh = prepare_agent_context(project_folder, 'other', [first, alias])
+    assert len(fresh['components']) == 1, 'Duplicate bodies in one batch also count once.'
+    advance_agent_context(project_folder, 'retained')
+    assert len(prepare_agent_context(project_folder, 'retained', [alias])['components']) == 1
+
+
+def test_startup_proof_survives_resume_and_missing_proof_reopens_only_on_demand(project_folder):
+    from metaform.modules.agents.roles import confirm_context
+    instruction = prompt_files.component('test:duty', 'A retained duty that must not be dumped.')
+    record_agent_context(project_folder, 'retained', [instruction])
+    first = begin_agent_context_check(project_folder, 'retained')
+    ctx = context('agents', project_folder, session='retained',
+                  nouns={'checkpoint': first['checkpoint'], 'key': first['marker']})
+    assert confirm_context(ctx)['confirmed']
+    assert finish_agent_context_check(project_folder, 'retained', first['checkpoint'])['confirmed']
+    resumed = begin_agent_context_check(project_folder, 'retained')
+    assert resumed['marker'] == first['marker'] and resumed['checkpoint'] != first['checkpoint']
+    assert finish_agent_context_check(project_folder, 'retained', first['checkpoint'])['stale']
+    assert prepare_agent_context(project_folder, 'retained', [instruction])['components'] == []
+    missed = finish_agent_context_check(project_folder, 'retained', resumed['checkpoint'])
+    assert missed['eligible'] and missed['epoch'] == 1
+    finish_agent_context_check(project_folder, 'retained', resumed['checkpoint'])
+    assert agent_context_epoch(project_folder, 'retained') == 1, 'One failed checkpoint invalidates once.'
+    assert len(prepare_agent_context(project_folder, 'retained', [instruction])['components']) == 1
+    record_agent_context(project_folder, 'retained', [instruction])
+    assert prepare_agent_context(project_folder, 'retained', [instruction])['components'] == []
+    next_check = begin_agent_context_check(project_folder, 'retained')
+    advance_agent_context(project_folder, 'retained')
+    assert finish_agent_context_check(project_folder, 'retained', next_check['checkpoint'])['stale']
+    assert agent_context_epoch(project_folder, 'retained') == 2, 'Compaction is not counted again as failed proof.'
 
 
 def test_memory_instruction_body_is_shared_between_inline_and_resource(project_folder):

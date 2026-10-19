@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -27,6 +28,7 @@ WORK = os.environ['METAFORM_WORK']
 ROLE = os.environ.get('METAFORM_AUTHORED_ROLE', '').removeprefix('metaform://role/')
 SESSION = ''
 MCP_SERVER = None
+DUTY = ''
 WRITING = threading.Lock()
 CANCELLED = threading.Event()
 PROGRESS = STATE / f'{WORK}.json'
@@ -239,17 +241,6 @@ def worker(stage):
 
 def specialist():
     if SCENARIO == 'direct':
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
-        environment = {one['name']: one['value'] for one in MCP_SERVER.get('env', [])}
-        parameters = StdioServerParameters(command=MCP_SERVER['command'], args=MCP_SERVER.get('args', []),
-            cwd=str(Path.cwd()), env={**os.environ, **environment})
-        async def read_duty():
-            async with stdio_client(parameters) as (read, write), ClientSession(read, write) as client:
-                await client.initialize()
-                return await client.read_resource('metaform://role/route_specialist')
-        resource = asyncio.run(read_duty())
-        log(role_resource=resource.model_dump(mode='json'))
         Path('candidate.txt').write_text(SPECIALIST_RESULT)
     # This is actual context delivery through the functional entry, rather than a fixture reading receipt rows.
     memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
@@ -291,7 +282,8 @@ def gc_requests_role(assignment, stage, text):
         suspend()
         return
     assert SPECIALIST_RESULT in str(specialist['result']) and SPECIALIST_RESULT in text
-    assert 'RETAINED_GC_SPECIALIST_PLAN' in text
+    assert 'RETAINED_GC_SPECIALIST_PLAN' not in text
+    assert 'RETAINED_GC_SPECIALIST_PLAN' in json.dumps(assignment)
     Path('candidate.txt').write_text(str(specialist['result']) + '\n')
     log(gc_self_received={'result': specialist['result'], 'assignment': assignment, 'text': text,
                           'candidate': current_candidate()})
@@ -357,9 +349,9 @@ def installed_bmad(assignment, stage, text):
               key='bmad-delivery')
     elif ROLE == 'bmad.bmm.dev':
         source = Path('_bmad/bmm/agents/dev.md').read_text()
-        assert source in text and 'This assignment uses an installed BMAD specialty.' in text
-        assert 'CR: review timer controls' in text and 'fixture-installed-version' in text
-        assert hashlib.sha256(source.encode()).hexdigest() in text
+        assert source in DUTY and 'This assignment uses an installed BMAD specialty.' in DUTY
+        assert 'CR: review timer controls' in assignment['task'] and 'fixture-installed-version' in DUTY
+        assert hashlib.sha256(source.encode()).hexdigest() in DUTY
         log(bmad_installed_observation={'source': source, 'task': assignment['task'], 'text': text})
         progress(stage=99)
         check('returned', 'BMAD_INSTALLED_REVIEW: ' + SPECIALIST_RESULT, key='installed-review-result')
@@ -367,7 +359,7 @@ def installed_bmad(assignment, stage, text):
         assessment(assignment)
 
 
-def compacted_gc(stage, text):
+def compacted_gc(stage, text, assignment):
     if stage == 0:
         progress(stage=1)
         check('running', 'GC retains delivery through context compaction.', work_so_far='RETAINED_COMPACTION_PLAN')
@@ -380,8 +372,9 @@ def compacted_gc(stage, text):
         gate('compaction-release')
         return
     memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
-    log(compaction_restored={'text': text, 'memory': memory})
-    assert 'RETAINED_COMPACTION_PLAN' in text and 'Your context was compacted' in text
+    log(compaction_restored={'text': text, 'memory': memory, 'assignment': assignment})
+    assert 'RETAINED_COMPACTION_PLAN' not in text and 'Your context was compacted' in text
+    assert 'RETAINED_COMPACTION_PLAN' in json.dumps(assignment)
     assert memory['entities']
     Path('candidate.txt').write_text(SPECIALIST_RESULT + '\n')
     progress(stage=99)
@@ -458,7 +451,8 @@ def communications(assignment, stage, text):
             log(specialist_reply=reply, peer_context=text)
             gate('finish-specialist')
         elif stage >= 2 and 'NEW_GC_DIRECTION:' in text:
-            assert 'RETAINED_SPECIALIST_STATE' in text
+            assert 'RETAINED_SPECIALIST_STATE' not in text
+            assert 'RETAINED_SPECIALIST_STATE' in json.dumps(assignment)
             log(interrupted_recipient={'assignment': assignment, 'text': text})
             check('running', 'Following NEW_GC_DIRECTION with retained specialist work.',
                   work_so_far='RETAINED_SPECIALIST_STATE')
@@ -469,9 +463,35 @@ def communications(assignment, stage, text):
         raise RuntimeError(f'Unexpected communicating role {ROLE!r}.')
 
 
+def read_duty():
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    environment = {one['name']: one['value'] for one in MCP_SERVER.get('env', [])}
+    parameters = StdioServerParameters(command=MCP_SERVER['command'], args=MCP_SERVER.get('args', []),
+        cwd=str(Path.cwd()), env={**os.environ, **environment})
+
+    async def read():
+        async with stdio_client(parameters) as (incoming, outgoing), ClientSession(incoming, outgoing) as client:
+            await client.initialize()
+            return await client.read_resource(f'metaform://role/{ROLE}')
+    resource = asyncio.run(read())
+    log(role_resource=resource.model_dump(mode='json'))
+    return '\n'.join(getattr(one, 'text', '') for one in resource.contents)
+
+
 def turn(ident, text):
+    global DUTY
     try:
         log(recipient_context=text)
+        checkpoint = re.search(r'Startup context checkpoint: ([0-9a-f]+)', text)
+        if checkpoint:
+            key = re.search(r'Retain this context key: ([0-9a-f]+)', text)
+            if key:
+                progress(context_key=key[1])
+            retained = progress().get('context_key')
+            cli('agents', 'confirm', checkpoint=checkpoint[1], **({'key': retained} if retained else {}))
+        if f'Your assigned duty is metaform://role/{ROLE}' in text:
+            DUTY = read_duty()
         capacity = cli('dispatch', 'agents')['slots']
         if ROLE == 'triage':
             # The Liaison observes actual recipient context. It neither replays fixture work nor edits the graph.
@@ -483,7 +503,7 @@ def turn(ident, text):
         if SCENARIO == 'bmad':
             installed_bmad(assignment, held['stage'], text)
         elif SCENARIO == 'compaction' and ROLE == 'gc':
-            compacted_gc(held['stage'], text)
+            compacted_gc(held['stage'], text, assignment)
         elif SCENARIO == 'communications':
             communications(assignment, held['stage'], text)
         elif held['stage'] == 99 or assignment['state'] in ('waiting', 'suspended', 'queued'):

@@ -171,13 +171,14 @@ def delivery_evidence(swarm, scenario):
                               for one in capacities)
     contexts = [one for one in logged if 'recipient_context' in one]
     assert {one['role'] for one in contexts} >= {'gc', 'implementer', 'functionality'}
-    assert any('orchestration_call' in one['recipient_context'] for one in contexts)
+    assert not any('"tools": {' in one['recipient_context'] for one in contexts)
     common = next(one['text'] for one in resolve_agent_role(swarm.folder, 'gc', project='proj')['components']
                   if one['name'] == 'orchestration:common')
     for role in ('gc', 'implementer'):
         own = [one for one in contexts if one['role'] == role]
-        assert sum(common in one['recipient_context'] for one in own) == 1, (
-            f'Unchanged shared responsibility repeated after {role} resumed its retained context.')
+        assert not any(common in one['recipient_context'] for one in own)
+        resources = [one['role_resource'] for one in logged if one['role'] == role and 'role_resource' in one]
+        assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in resources) == 1
     receipts = records('agents', 'receipts')
     assert any(one['name'] == 'orchestration:common' and one['actual_version_id'] and
                one['component']['text'] == common for one in receipts)
@@ -186,7 +187,9 @@ def delivery_evidence(swarm, scenario):
     worker_returns = [one for one in contexts if one['role'] == 'implementer' and
                       SPECIALIST_RESULT in one['recipient_context']]
     assert worker_returns, 'The immediate worker actually received its specialist result in an ACP prompt.'
-    assert any('RETAINED_WORKER_DRAFT' in one['recipient_context'] for one in worker_returns)
+    assert not any('RETAINED_WORKER_DRAFT' in one['recipient_context'] for one in worker_returns)
+    assert any('RETAINED_WORKER_DRAFT' in json.dumps(one.get('assignment_context', {})) for one in logged
+               if one['role'] == 'implementer')
     gc_returns = [one for one in contexts if one['role'] == 'gc' and 'WORKER_INTEGRATED' in one['recipient_context']]
     assert gc_returns, 'The GC actually received the integrated worker result.'
     assert any(one.get('specialist_grounding', {}).get('entities') for one in logged)
@@ -223,7 +226,9 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     assert requested['creator_assignment_id'], 'A missing role commissions its helper automatically.'
     received = [one['recipient_context'] for one in logged if one.get('role') == 'route_specialist'
                 and 'recipient_context' in one]
-    assert len(received) >= 2 and all('You are the Route Specialist.' in one for one in received)
+    assert len(received) >= 2 and all('You are the Route Specialist.' not in one for one in received)
+    duties = [one['role_resource'] for one in logged if one['role'] == 'route_specialist' and 'role_resource' in one]
+    assert len(duties) >= 2 and all('You are the Route Specialist.' in json.dumps(one) for one in duties)
     generated = [one for one in records('agents', 'definitions') if one['name'] == 'route_specialist']
     assert len(generated) == 1
     assert requested['source']['name'] == 'route_specialist'
@@ -262,7 +267,8 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     assert all(one['role'] == 'gc' and one['mcp_tool']['is_error'] is False and
                one['mcp_tool']['runner_identity'] == one['runner_identity'] for one in calls)
     received = next(one['gc_self_received'] for one in logged if 'gc_self_received' in one)
-    assert SPECIALIST_RESULT in received['text'] and 'RETAINED_GC_SPECIALIST_PLAN' in received['text']
+    assert SPECIALIST_RESULT in received['text'] and 'RETAINED_GC_SPECIALIST_PLAN' not in received['text']
+    assert 'RETAINED_GC_SPECIALIST_PLAN' in json.dumps(received['assignment'])
     assert any(one.get('role') == 'gc' and 'session_loaded' in one for one in logged)
     assert any('fqc_observation' in one for one in logged)
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
@@ -275,7 +281,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     duty = [one for one in records('agents', 'receipts')
             if one['name'] == 'agents:generated_proj_route_specialist']
     assert len(duty) == 1 and duty[0]['actual_version_id'] == definition['version_id']
-    assert any('You are the Route Specialist.' in one.get('recipient_context', '')
+    assert any('You are the Route Specialist.' in json.dumps(one.get('role_resource', {}))
                for one in logged if one['role'] == 'route_specialist')
     pm_evidence(swarm, 'gc-generated', ['GC_VALIDATED', 'FQC_ACCEPTED'])
 
@@ -313,7 +319,7 @@ def test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_g
     assert len(assignments) == 3 and all(one['used'] == one['machine_used'] == 1 for one in capacities)
 
 
-def test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_memory(swarm):
+def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_read(swarm):
     swarm.start(FAKE_SWARM_SCENARIO='compaction', FAKE_SWARM_STATE=str(swarm.swarm_state))
     first = wait_for(swarm, lambda: next((one for one in swarm.entries() if 'compaction_ready' in one), None))
     runner = first['runner_identity']
@@ -327,8 +333,9 @@ def test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_
     (swarm.swarm_state / 'compaction-release').touch()
     assignments = completed(swarm)
     restored = next(one['compaction_restored'] for one in swarm.entries() if 'compaction_restored' in one)
-    assert common in restored['text'] and 'orchestration_call' in restored['text']
-    assert 'RETAINED_COMPACTION_PLAN' in restored['text']
+    assert common not in restored['text'] and 'orchestration_call' not in restored['text']
+    assert 'RETAINED_COMPACTION_PLAN' not in restored['text']
+    assert 'RETAINED_COMPACTION_PLAN' in json.dumps(restored['assignment'])
     before = next(one['compaction_grounding'] for one in swarm.entries() if 'compaction_grounding' in one)
     assert restored['memory']['entities'] == before['entities']
     receipts = [one for one in records('agents', 'receipts') if one['session_id'] == runner]
@@ -336,7 +343,9 @@ def test_actual_acp_compaction_redelivers_native_role_assignment_and_functional_
         assert {one['epoch'] for one in receipts if one['name'] == name} == {0, 1}
     contexts = [one['recipient_context'] for one in swarm.entries()
                 if one['role'] == 'gc' and 'recipient_context' in one]
-    assert sum(common in text for text in contexts) == 2
+    assert not any(common in text for text in contexts)
+    duties = [one['role_resource'] for one in swarm.entries() if one['role'] == 'gc' and 'role_resource' in one]
+    assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in duties) == 2
     assert len(assignments) == 2 and swarm.ticket().done
     capacities = [one['capacity'] for one in swarm.entries() if 'capacity' in one]
     assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
@@ -445,7 +454,8 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     assert not any(one.get('message', {}).get('method') == '_session/steering' for one in seen)
     received = next(one['interrupted_recipient'] for one in seen if 'interrupted_recipient' in one)
     assert received['assignment']['pending_direction']
-    assert 'NEW_GC_DIRECTION' in received['text'] and 'RETAINED_SPECIALIST_STATE' in received['text']
+    assert 'NEW_GC_DIRECTION' in received['text'] and 'RETAINED_SPECIALIST_STATE' not in received['text']
+    assert 'RETAINED_SPECIALIST_STATE' in json.dumps(received['assignment'])
     assert any('GC_SWARM_BROADCAST' in one.get('recipient_context', '') for one in seen
                if one['role'] == 'implementer')
     peer_rows = [json.loads(one['text']) for one in records('dispatch', 'session_lines') if one['kind'] == 'peer']

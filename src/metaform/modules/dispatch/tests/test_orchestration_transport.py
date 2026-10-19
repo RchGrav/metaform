@@ -63,7 +63,7 @@ MEMORY_CHANGED = {'project': 'proj', 'tables': ['memory.entities', 'memory.obser
                   'kinds': ['memory.changed', 'memory:code.store.memory']}
 
 
-def sent(monkeypatch, session):
+def sent(monkeypatch, session, guide=None):
     """Run the session's queued turns against a stub agent, returning the prompt texts it was sent."""
     import asyncio
     from types import SimpleNamespace
@@ -78,11 +78,12 @@ def sent(monkeypatch, session):
         return None
 
     session.conn, session.session_id, session.prep, session.link_asked = SimpleNamespace(prompt=prompt), 's', True, True
+    session.context_checked = True  # These delivery tests represent a recipient past its startup checkpoint.
     for name in ('changed', 'note', 'flush', 'save_state', 'spend', 'peer_marked'):
         monkeypatch.setattr(session, name, nothing)
     for name in ('hush', 'arm', 'intake_clock', 'trace'):
         monkeypatch.setattr(session, name, lambda *args, **kwargs: None)
-    monkeypatch.setattr(session, 'guidance', lambda text, supplied: text)
+    monkeypatch.setattr(session, 'guidance', guide or (lambda text, supplied: text))
     session.turns = 1
     asyncio.run(session.prompted())
     return prompts
@@ -96,6 +97,91 @@ def busy(dispatch):
     session = runner.Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
     session.turns = 1
     return session
+
+
+@pytest.mark.kind('fixture')
+def test_peer_wire_carries_only_message_and_keeps_details_available(dispatch, monkeypatch):
+    """A result with large routing/context fields reaches an established recipient verbatim, once, without a
+    context rebuild; its metadata stays readable and a relayed user direction retains queue priority."""
+    import asyncio
+
+    worker = busy(dispatch)
+    worker.session_id, worker.spoken = 'recipient', True
+    detail = 'FULL TICKET AND EVIDENCE ' * 1000
+    line = {'id': 'brief-result', 'text': 'Fixed selection. Three interaction checks pass.',
+            'kind': 'result', 'state': 'returned', 'candidate': detail, 'evidence': [detail],
+            'from': {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude'},
+            'to': [{'session_id': 'recipient', 'work_id': worker.work_id}],
+            'context_components': [{'name': 'irrelevant', 'text': detail}]}
+    asyncio.run(worker.peer_note({'line': line, 'deliver': True}))
+    assert list(worker.pending) == [line['text']]
+    assert list(worker.prompt_contexts) == [[]]
+    with worker.store.tables(write=False) as tx:
+        kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:brief-result'})['text'])
+    assert kept['evidence'] == [detail] and kept['from']['session_id'] == 'sender'
+
+    def no_context(*args):
+        pytest.fail('A message must not rebuild the assignment or append its context.')
+
+    assert sent(monkeypatch, worker, guide=no_context) == [line['text']]
+
+
+@pytest.mark.kind('fixture')
+def test_first_peer_turn_still_initializes_a_fresh_context(dispatch, monkeypatch):
+    worker = busy(dispatch)
+    worker.spoken = False
+    worker.turn('A required result.', peers=[('result', 'sender')])
+    initialized = []
+
+    def guide(text, components):
+        initialized.append(text)
+        return f'Initial instructions.\n{text}'
+
+    assert sent(monkeypatch, worker, guide=guide) == ['Initial instructions.\nA required result.']
+    assert initialized == ['A required result.']
+
+
+@pytest.mark.kind('fixture')
+def test_startup_checkpoint_is_small_and_retained_key_is_not_repeated_on_resume(dispatch):
+    import asyncio
+
+    from metaform.module import agent_context_epoch, context
+    from metaform.modules.agents.roles import confirm_context
+
+    worker = busy(dispatch)
+    worker.runner = 'retention-test'
+    first = worker.context_checkpoint('Do the requested work.')
+    check = dict(worker.context_check)
+    assert check['marker'] in first and check['checkpoint'] in first
+    worker.context_delivered()
+    proof = context('agents', dispatch.folder, project='proj', session=worker.runner,
+                    nouns={'checkpoint': check['checkpoint'], 'key': check['marker']})
+    assert confirm_context(proof)['confirmed']
+    asyncio.run(worker.context_check_finished())
+    assert worker.context_checkpoint('Next message.') == 'Next message.'
+
+    resumed = busy(dispatch)
+    resumed.runner, resumed.resume = worker.runner, 'retained-session'
+    again = resumed.context_checkpoint('Resume requested work.')
+    assert check['marker'] not in again, 'A resume challenge cannot reveal the answer it tests.'
+    assert resumed.context_check['checkpoint'] in again
+    resumed.context_delivered()
+    asyncio.run(resumed.context_check_finished())  # No acknowledgement: eligibility changes, nothing is queued.
+    assert agent_context_epoch(dispatch.folder, worker.runner, project='proj') == 1
+    assert not resumed.pending and not resumed.prompt_contexts
+
+
+@pytest.mark.kind('fixture')
+def test_compaction_does_not_rebuild_assignment_or_actions(dispatch, monkeypatch):
+    worker = busy(dispatch)
+    worker.spoken, worker.recompacted = True, True
+    worker.turn('Continue the requested action.')
+
+    def no_dump(*args):
+        pytest.fail('Compaction permits contextual reads, never a bulk guidance dump.')
+
+    [text] = sent(monkeypatch, worker, guide=no_dump)
+    assert text.endswith('Continue the requested action.')
 
 
 @pytest.mark.kind('fixture')
@@ -156,7 +242,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     prompts = sent(monkeypatch, system)
     head, line = prompts[0].split('\n\n')
     assert head == 'What is new?' and '\n' not in line, prompts[0]
-    assert line.startswith('23 new in your inbox: code.router.assignment#0 returned, code.router.assignment#1 '
+    assert line.startswith('23 new in your inbox: Ticket 0 — done, Ticket 1 — '
                            'assessment, ') and 'and 13 more' in line, line
     assert 'Evidence' not in line and 'held cap' not in line and 'memories' not in line and len(line) < 600, line
     assert prompts[1] == 'And now?', 'Nothing new since the line was carried: no line.'
@@ -167,7 +253,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     assert sum(one['kind'] == 'board' for one in listed) == 3
     first = next(one for one in listed if one['note'] == 'gc-19')['summary']
     assert len(first) <= 300 and 'Evidence' not in first, first
-    assert first == 'code.router.assignment#19 Held cap 19 — returned — The held cap counts only open tickets 19.'
+    assert first == 'Ticket 19 — assessment'
     whole = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'note': 'gc-7'}))['notes']
     assert whole[0]['text'] == result(7)['text'], 'One item is given whole on request.'
 
@@ -176,7 +262,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     asyncio.run(system.peer_note({'line': result(30, kind='question', ask=True), 'deliver': True}))
     assert 'prompted' in started and list(system.pending) == [''], 'A question starts a turn of its own.'
     [woken] = sent(monkeypatch, system)
-    assert woken == '1 new in your inbox: code.router.assignment#30 question, note gc-30.', woken
+    assert woken == '1 new in your inbox: Ticket 30 — question, note gc-30.', woken
     assert '\n' not in woken and 'Evidence' not in woken, woken
 
     worker = busy(dispatch)

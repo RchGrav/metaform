@@ -463,7 +463,8 @@ def test_gc_delivery_closes_root_and_restart_activates_fqc_once(project, monkeyp
     assert 'integrated-candidate' in assessment['task']
     assert 'Actual countdown and alarm interactions passed.' in assessment['task']
     assert 'Timer outcome delivered.' in actual.chat[0][1]['body']
-    assert 'Actual countdown and alarm interactions passed.' in actual.chat[0][1]['body']
+    assert actual.chat[0][1]['body'] == 'Timer outcome delivered.'
+    assert actual.chat[0][1]['evidence'] == ['Actual countdown and alarm interactions passed.']
     SERVICE.returned(ctx(project), gc['work_id'], 'Duplicate completion event.', state='delivered')
     Orchestration().drain(ctx(project))
     assert len(actual.launches) == 1
@@ -645,8 +646,9 @@ def test_corrective_gc_owns_team_returns_evidence_to_pm_and_receives_independent
     SERVICE.drain(ctx(project))
     assert len(actual.launches) == launches, 'The configured review budget prevents a recursive review chain.'
     notice = next(message for _, message in actual.chat if 'Duration selection is preserved.' in message['body'])
-    assert 'corrected-b' in notice['body']
-    assert 'Changed duration during active countdown.' in notice['body']
+    assert notice['body'] == 'Duration selection is preserved.'
+    assert notice['candidate'] == {'revision': 'corrected-b'}
+    assert notice['evidence'] == ['Changed duration during active countdown.']
     stopped = SERVICE.stopped(ctx(project), work_id=gc['work_id'], by='user')
     assert {gc['work_id'], review['work_id']} <= set(stopped)
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'

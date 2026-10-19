@@ -87,13 +87,14 @@ from metaform.module import (
     Context,
     Stop,
     agent_opening,
+    begin_agent_context_check,
     child_environment,
     code_print,
     context,
+    finish_agent_context_check,
     forget_shown,
     mcp_server,
     prepare_agent_context,
-    provided,
     record_agent_context,
     record_shown,
     resolve_agent_role,
@@ -270,11 +271,9 @@ INBOX_SHOWN = 10  # the inbox entries the one inbox line names before it counts 
 def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
     """A note to the person's system agent as its inbox keeps it: the sender's ticket and what the note is, never its
     words, and whether it needs the person."""
-    sender = cast(dict[str, Any], held.get('from') or {})
-    from .orchestration import inbox_wakes, inbox_what
+    from .orchestration import inbox_status, inbox_wakes
     update, state, ask = str(held.get('update') or ''), str(held.get('state') or ''), bool(held.get('ask'))
-    what = inbox_what(update, state, ask, str(held.get('id') or ''), str(held.get('board') or ''))
-    return f'{sender.get("item") or sender.get("agent") or "an agent"} {what}', inbox_wakes(update, state, ask)
+    return inbox_status(held), inbox_wakes(update, state, ask)
 
 
 def said_as(held: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -1303,8 +1302,10 @@ class Session:
         self.inflight_versions: list[prompt_files.Sent] = []
         self.inflight_context: dict[str, Any] | None = None
         # whether a prompt of this conversation has gone out: until one has, even the person's turn carries the
-        # role and assignment, since a new agent knows nothing of its duty yet
+        # initial task context and role link, since a new agent knows nothing of its duty yet
         self.spoken = False
+        self.context_check: dict[str, Any] | None = None
+        self.context_checked = False
         self.inflight_peers: list[tuple[str, str]] = []
         self.queued_peer_ids: set[str] = set()
         self.peer_said: dict[tuple[str, str, str, str, str], str] = {}  # `said_as` → the note last queued with it
@@ -1320,7 +1321,8 @@ class Session:
         self.peered: deque[list[tuple[str, str]]] = deque()  # each waiting prompt's peer notes, beside `pending`
         # beside each, the person's own message it is, when it is one to the person's system agent, `ActiveTurn.word`
         self.worded: deque[dict[str, Any] | None] = deque()
-        # beside each, whether it is the person's own message, sent as they typed it with no context before it
+        # beside each, whether this is an explicit message, sent verbatim with no context before it;
+        # human authority and priority are tracked separately by worded and priority_count
         self.typed: deque[bool] = deque()
         # The work the person's word started, by the word's id: `{'word', 'tickets', 'stopped'}`, the tickets started,
         # released, ordered or added on it, with those that wait on them and the open tickets they wait on, and those
@@ -1991,7 +1993,8 @@ class Session:
         who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
             if self.at and self.role in ('worker', 'prep') else ''
         opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
-        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who))
+        role = prompt('role_resource', role=self.authored_role) if self.authored_role else ''
+        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who), role)
                              if part)
 
     async def notice(self, said: dict[str, Any]) -> None:
@@ -4192,8 +4195,9 @@ class Session:
         if note_id in self.queued_peer_ids:
             return {'noted': True, 'queued': False, 'reused': True}
         reply_to = str(held.get('reply_to') or '')
-        from .orchestration import note_context
-        text = prompt('peer_note', message_context=note_context(held), note=str(held.get('text') or ''))
+        # Keep routing, receipts and assignment data in the stored envelope. The model receives the author's
+        # message alone; dispatch_notes can read its sender and return route when a reply is needed.
+        text = str(held.get('text') or '')
         self.queued_peer_ids.add(note_id)
         self.peer_said[said_key] = note_id
         marks = [(note_id, str(sender.get('session_id') or ''))]
@@ -4215,9 +4219,9 @@ class Session:
                     await self.note(None, 'steered', 'Delivered into the running turn.')
                 self.spawn(self.peer_marked(marks, 'delivered'))
                 return {'noted': True, 'queued': False, 'steered': True}
-            self.turn(text, peers=marks, components=list(held.get('context_components') or []), first=True)
+            self.turn(text, peers=marks, first=True)
             return {'noted': True, 'queued': True, 'busy': busy}
-        self.turn(text, peers=marks, components=list(held.get('context_components') or []))
+        self.turn(text, peers=marks)
         return {'noted': True, 'queued': True, 'busy': busy}
 
     def unawait(self, asked: dict[str, Any]) -> dict[str, Any]:
@@ -4261,6 +4265,10 @@ class Session:
     def current_guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
         from .orchestration import resume_context, snapshots
         components: list[dict[str, Any]] = []
+        if not self.probe:
+            communication = prompt_files.module('dispatch', 'communication')
+            if communication:
+                components.append(prompt_files.component('dispatch:communication', communication))
         if self.authored_role and not self.probe:
             held = resume_context(self.ctx, self.work_id, self.session_id)
             role = (held or {}).get('role_snapshot') or resolve_agent_role(
@@ -4269,36 +4277,10 @@ class Session:
             if role.get('missing') or role.get('problems'):
                 raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
                            'metaform agents roles')
-            components += list(role.get('components') or [])
             components.append(prompt_files.component('orchestration:role_resource',
-                f'Your assigned duty is {self.authored_role}. Read this Metaform resource before acting; '
-                'it serves the exact version pinned to this assignment.'))
+                prompt('role_resource', role=self.authored_role)))
             if held:
                 self.assignment = held
-                keys = ('assignment_id', 'work_id', 'root_work_id', 'team_id', 'gc_assignment_id',
-                        'parent_assignment_id', 'reviewed_assignment_id', 'authored_role_uri', 'execution_role',
-                        'functional_locations', 'task', 'requested_result', 'candidate', 'specification', 'mode',
-                        'state', 'return_to', 'pending_direction', 'result', 'evidence', 'last_check_in',
-                        'returned_children', 'continuations', 'related_corrections', 'independent_assessments')
-                body = json.dumps({key: held.get(key) for key in keys}, ensure_ascii=False, indent=2)
-                components.append(prompt_files.component('orchestration:assignment', body))
-            for _, actions in provided(Path(self.root), 'agent.actions'):
-                bound = actions(self.ctx, capabilities={**(self.acp.get('capabilities') or {}),
-                                                        'execution_role': self.role})
-                relevant = ('dispatch_peers', 'dispatch_note', 'dispatch_notes', 'dispatch_broadcast',
-                            'dispatch_broadcasts', 'dispatch_interrupt', 'memory_read_unread', 'memory_join',
-                            'workflow_run', 'workflow_resume', 'workflow_handoff', 'metaform_catalog', 'map_work')
-                bound['tools'] = {name: {'required': one['arguments'].get('required', []),
-                    'arguments': {key: {field: value for field, value in spec.items()
-                                        if field in ('type', 'enum', 'default')}
-                                  for key, spec in one['arguments'].get('properties', {}).items()},
-                    'effect': one['effect'], 'person_decides': one['person_decides']}
-                    # every memory tool: the memory prompt asks each agent to read and keep memories current, removing
-                    # what is outdated, which takes all of them (2026-10-18)
-                    for name, one in bound['tools'].items()
-                    if name.startswith(('orchestration_', 'memory_')) or name in relevant}
-                components.append(prompt_files.component('orchestration:actions',
-                    json.dumps(bound, ensure_ascii=False, indent=2)))
         if not self.probe and (self.authored_role or self.role == 'worker'):
             address = self.at.partition('|')[0]
             if address:
@@ -4335,6 +4317,33 @@ class Session:
         by_name = {str(one['name']): one for one in [*captured, *due]}
         self.inflight_context = {'epoch': prepared['epoch'], 'components': list(by_name.values())}
         return text
+
+    def context_checkpoint(self, text: str) -> str:
+        """Piggyback one retention check on the first actual turn of a start/resume, never a separate model call."""
+        if self.probe or self.context_checked:
+            return text
+        if self.context_check is None:
+            self.context_check = begin_agent_context_check(Path(self.root), self.runner, project=self.store.project_id)
+        check = self.context_check
+        if not check:
+            self.context_checked = True
+            return text
+        marker = prompt_files.component('dispatch:context_retention', prompt('context_retention', key=check['marker']))
+        prepared = prepare_agent_context(Path(self.root), self.runner, [marker], project=self.store.project_id)
+        held = self.inflight_context
+        self.inflight_context = {'epoch': prepared['epoch'], 'components': [
+            *(held['components'] if held and held['epoch'] == prepared['epoch'] else []), *prepared['components']]}
+        request = prompt('context_checkpoint', checkpoint=check['checkpoint'])
+        return '\n\n'.join(part for part in (prepared['text'], request, text) if part)
+
+    async def context_check_finished(self) -> None:
+        if not self.context_check or self.context_checked:
+            return
+        result = await asyncio.to_thread(finish_agent_context_check, Path(self.root), self.runner,
+                                          str(self.context_check['checkpoint']), project=self.store.project_id)
+        self.context_checked = True
+        if result.get('eligible'):
+            await asyncio.to_thread(forget_shown, self.runner)
 
     def context_delivered(self) -> None:
         """Record only after ACP accepted the outgoing bytes; the body snapshots cannot race a later prompt edit."""
@@ -4430,7 +4439,7 @@ class Session:
              first: bool = False, typed: bool = False) -> None:
         """Queue one prompt; `first`, the person's own message, goes ahead of every prompt waiting, agents' notes
         among them, so it is never answered after a backlog (2026-10-18: the person's stop waited behind 136 notes).
-        `typed`, the person's words, goes as they wrote it: the context due goes with the next turn of another kind."""
+        `typed` preserves an explicit message verbatim; it confers no human authority or queue priority."""
         if self.handing:  # the runner taking the session over sends it
             self.handed_on.append({'text': text, 'by': None, 'first': first, 'typed': typed, 'word': word,
                                   'components': components, 'peers': peers,
@@ -4494,7 +4503,8 @@ class Session:
                     beside = self.voiced.popleft() if self.voiced else []
                     marks = self.peered.popleft() if self.peered else []
                     current.word = self.worded.popleft() if self.worded else None
-                    typed = self.typed.popleft() if self.typed else False
+                    if self.typed:
+                        self.typed.popleft()
                     # the person's system agent's turn carries its one inbox line, naming what waits, `inbox_add`
                     told = self.inbox_said() if self.role == 'system' else ''
                     if told:
@@ -4540,12 +4550,15 @@ class Session:
                             else:
                                 line = ''
                         fresh = not self.resume and not self.spoken  # a new conversation's first turn
-                        if not typed or compacted or fresh:  # the person's words reach the agent as they wrote them
+                        # Bootstrap a new conversation once. Resume/compaction does not authorize an assignment,
+                        # schema or memory dump; resources and tool guides become eligible at their next use.
+                        if fresh and not compacted:
                             text = await asyncio.to_thread(self.guidance, text, supplied)
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
                         if line:  # said once, by whichever comes first, ahead of what comes again: an agent that lost
                             text = f'{line}\n\n{text}'  # its context reads its instruction links and ticket first
+                        text = await asyncio.to_thread(self.context_checkpoint, text)
                         self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
                         self.inflight_peers = marks
                         self.cost_open, self.provisional = False, 0
@@ -4571,6 +4584,8 @@ class Session:
                     reason = f'error: {error}'
                     if began_ns is not None:  # a turn sent and failed is reported too, as an error
                         self.trace(None, 'error', began_ns, error=str(error) or type(error).__name__)
+                if began_ns is not None:
+                    await self.context_check_finished()
                 self.hush()
                 async with self.interrupt_lock:
                     self.active_turn = None
@@ -4904,7 +4919,7 @@ class Session:
                 if self.handing:  # its line could not be written: the runner taking the session over writes and sends it
                     word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
                         if asked.get('word') is True and not by and self.role == 'system' else None
-                    self.handed_on.append({'text': text, 'by': by, 'first': not by, 'typed': not by, 'word': word,
+                    self.handed_on.append({'text': text, 'by': by, 'first': not by, 'typed': True, 'word': word,
                         'components': [], 'peers': [], 'media': [one for one in (audio, image) if one is not None]})
                     await self.reply(writer, {**said, 'sent': True, 'steered': False, 'handed': True})
                     return
@@ -4929,7 +4944,7 @@ class Session:
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
                 preempt = not by and self.role == 'system' and current is not None
-                self.turn(text, audio, image, word=word, first=not by, typed=not by)
+                self.turn(text, audio, image, word=word, first=not by, typed=True)
                 await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
                                           'image': image is not None})
                 if preempt and current is not None:
@@ -4981,9 +4996,7 @@ class Session:
                             cast(deque[Any], queue).pop()
                     direction = cast(dict[str, Any] | None, asked.get('direction'))
                     if direction and direction.get('body'):
-                        from .orchestration import note_context
-                        text = prompt('peer_note', message_context=note_context(direction), note=str(direction['body']))
-                        self.turn(text, first=direction.get('kind') == 'user_direction')
+                        self.turn(str(direction['body']), first=direction.get('kind') == 'user_direction', typed=True)
                     await self.reply(writer, {**said, 'requested': requested})
                 except Exception as error:  # noqa: BLE001  a failed cancel is reported without destroying the session
                     await self.reply(writer, {**said, 'error': f'Could not interrupt the turn: {error}'})

@@ -42,19 +42,6 @@ def identity(*parts: str) -> str:
     return uuid.uuid5(uuid.NAMESPACE_URL, 'metaform:orchestration:' + ':'.join(parts)).hex
 
 
-def delivery_report(body: str, candidate: Any, evidence: Any) -> str:
-    """The PM/user message carries the observations, not only an internal record reference."""
-    parts = [body]
-    if candidate:
-        parts.append('Candidate: ' + (candidate if isinstance(candidate, str) else
-                                     json.dumps(candidate, ensure_ascii=False)))
-    if evidence:
-        observations = cast(list[Any], evidence) if isinstance(evidence, list) else [evidence]
-        parts.append('Verification evidence:\n' + '\n'.join('- ' + (one if isinstance(one, str) else
-                     json.dumps(one, ensure_ascii=False)) for one in observations))
-    return '\n\n'.join(parts)
-
-
 def prose(value: Any) -> str:
     """Structured finding parts written out as text: lists and objects become clauses, never their JSON."""
     if value is None:
@@ -904,7 +891,8 @@ class Orchestration:
             if state in ('waiting', 'blocked'):
                 transition(tx, held, 'suspend', {'reason': report['summary'] or state}, key)
             if gc and gc['assignment_id'] != held['assignment_id']:
-                transition(tx, gc, 'send', {'kind': state, 'report': report, 'sender_assignment_id': held['assignment_id'],
+                transition(tx, gc, 'send', {'kind': state, 'body': str(report['summary'] or state),
+                    'report': report, 'sender_assignment_id': held['assignment_id'],
                     'sender_session_id': held['owner_session_id']}, key)
             if state == 'blocked' and gc:
                 transition(tx, gc, 'assessment', {'report': report, 'key': key}, key)
@@ -949,7 +937,9 @@ class Orchestration:
                       'sender_assignment_id': held['assignment_id'],
                       'sender_session_id': held['owner_session_id'], 'work_id': work_id,
                       'return_to': held['return_to']}
-            user_packet = {**packet, 'body': delivery_report(body, returned['candidate'], returned['evidence'])}
+            # The author's summary is the notification. Candidate and evidence remain in the durable assignment
+            # and packet, available through inspect, rather than appended again to every message.
+            user_packet = packet
             route: dict[str, Any] = held['return_to'] or {}
             parent = row_for(tx, assignment_id=route.get('assignment_id'))
             followed: set[str] = set()

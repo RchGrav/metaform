@@ -1132,6 +1132,7 @@ def orphaned(ctx: Context) -> Any:
 def unjoin(ctx: Context) -> Any:
     """Take one memory join away by its id, an orphaned one included; the entity stays in the graph."""
     store = ctx.require_store()
+    withdrawal: Row | None = None
     with store.tables() as tx:
         held = tx.get('joins', {'join_id': ctx.nouns['id']})
         name = str(held['entity']) if held is not None else ''
@@ -1143,8 +1144,10 @@ def unjoin(ctx: Context) -> Any:
             withdrawal = delivery.component('withdrawn', {'name': name, **Key(held['receiver'], held['provider']).said()},
                                              name=f'memory:index:{held["join_id"]}',
                                              requires=delivery.entity_name(name))
-            delivery.changed(tx, {(held['receiver'], held['provider'])}, [withdrawal])
+            delivery.changed(tx, {(held['receiver'], held['provider'])}, [withdrawal], writer=ctx.session)
         deleted = tx.delete('joins', {'join_id': ctx.nouns['id']})
+    if withdrawal is not None:
+        delivery.authored(ctx, [withdrawal])
     return {'deleted': deleted}
 
 
@@ -1412,6 +1415,8 @@ def node_read(ctx: Context, node: Node) -> Any:
         if bodies.get('entities'):
             sent.update(one['name'] for one in bodies['entities'])
             joined.append({'receiver': receiver, 'provider': provider, 'entities': bodies['entities']})
+        if bodies.get('restored'):
+            joined.append({'receiver': receiver, 'provider': provider, 'restored': bodies['restored']})
     if joined:
         found['joins'] = joined
     return found or None

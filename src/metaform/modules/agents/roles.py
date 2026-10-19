@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
+import secrets
 import time
 from collections.abc import Sequence
 from typing import Any, cast
 
 from metaform import home, prompt_files
 from metaform.data import Column, Index, StoreError, Table
-from metaform.module import AgentRoleDefinition, Context, Stop, context, provided
+from metaform.module import AgentRoleDefinition, Context, Stop, context, forget_shown, provided
 
 TABLES = (
     Table('definitions', place='project', key=('name',), columns=(
@@ -29,7 +31,14 @@ TABLES = (
         Column('session_id', required=True), Column('epoch', 'int', required=True), Column('name', required=True),
         Column('fingerprint', required=True), Column('actual_version_id'), Column('selected_version_id'),
         Column('component', 'json', required=True), Column('channel', required=True), Column('at', required=True)),
-        indexes=(Index(('name',)),)),
+        indexes=(Index(('name',)), Index(('session_id', 'epoch', 'fingerprint')))),
+    Table('delivered_text', place='project', key=('session_id', 'epoch', 'fingerprint'), columns=(
+        Column('session_id', required=True), Column('epoch', 'int', required=True),
+        Column('fingerprint', required=True), Column('at', required=True))),
+    Table('context_checks', place='project', key=('session_id',), columns=(
+        Column('session_id', required=True), Column('epoch', 'int', required=True),
+        Column('checkpoint', required=True), Column('marker', required=True),
+        Column('pending', 'bool', required=True), Column('confirmed', 'bool', required=True))),
 )
 
 
@@ -165,6 +174,7 @@ class RoleService:
                 components: Sequence[dict[str, Any]]) -> dict[str, Any]:
         ctx = _own(ctx)
         previous: dict[str, Any] = {}
+        known: set[str] = set()
         epoch = 0
         if session is not None and ctx.store is not None:
             with ctx.store.tables(write=False) as tx:
@@ -174,14 +184,38 @@ class RoleService:
                     receipt = tx.get('receipts', {'session_id': session, 'epoch': epoch, 'name': one['name']})
                     if receipt:
                         previous[str(one['name'])] = receipt
+                    fingerprint = _fingerprint(one)
+                    where = {'session_id': session, 'epoch': epoch, 'fingerprint': fingerprint}
+                    # The old receipt table supplies evidence for homes predating the content ledger.
+                    if tx.get('delivered_text', where) or tx.rows('receipts', where, limit=1).results:
+                        known.add(fingerprint)
         due: list[dict[str, Any]] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[str] = set()
         for given in components:
             one = {**given, 'rendered_fingerprint': _fingerprint(given)}
-            key = (str(one['name']), str(one['rendered_fingerprint']))
-            if key in seen or previous.get(key[0], {}).get('fingerprint') == key[1]:
+            key = str(one['rendered_fingerprint'])
+            if key in seen:
                 continue
             seen.add(key)
+            if key in known:
+                before = cast(dict[str, Any] | None, previous.get(str(one['name'])))
+                if before is None:
+                    continue
+                previous_component = cast(dict[str, Any], before.get('component') or {})
+                active = str(previous_component.get('active_fingerprint') or before['fingerprint'])
+                if active == key:
+                    continue
+                # A -> B -> A changes which retained instruction is active. Send a reference to A, not A's body,
+                # and remember that activation only when the reference actually reaches the recipient.
+                reference: dict[str, Any] = {'name': one['name'], 'fingerprint': key,
+                                            'version': one.get('actual_version_id'), 'after': before['at']}
+                text = prompt_files.module('agents', 'restore_context', component_name=str(one['name']),
+                    fingerprint=key, version=str(one.get('actual_version_id') or 'unversioned'),
+                    after=str(before['at'])) or ''
+                one.update(text=text, active_fingerprint=key, reference=reference)
+                if 'delivered_value' in one:
+                    one['delivered_value'] = reference
+                one['rendered_fingerprint'] = _fingerprint(one)
             due.append(one)
         return {'epoch': epoch, 'components': due, 'previous': previous,
                 'text': '\n\n'.join(str(one.get('text') or '') for one in due)}
@@ -202,12 +236,20 @@ class RoleService:
                 tx.insert('contexts', {'session_id': session, 'epoch': epoch, 'at': home.now(), 'reason': 'first_delivery'})
             for given in components:
                 one = {**given, 'rendered_fingerprint': _fingerprint(given)}
+                content_key = {'session_id': session, 'epoch': epoch, 'fingerprint': one['rendered_fingerprint']}
+                if tx.get('delivered_text', content_key) is None:
+                    tx.insert('delivered_text', {**content_key, 'at': home.now()})
                 key = {'session_id': session, 'epoch': epoch, 'name': str(one['name'])}
                 row = {**key, 'fingerprint': one['rendered_fingerprint'],
                        'actual_version_id': one.get('actual_version_id'),
                        'selected_version_id': one.get('selected_version_id'), 'component': one,
                        'channel': channel, 'at': home.now()}
                 before = tx.get('receipts', key)
+                # Preserve the legacy receipt before replacing it: A -> B -> A must not resend A after upgrade.
+                if before is not None:
+                    old_key = {**content_key, 'fingerprint': before['fingerprint']}
+                    if tx.get('delivered_text', old_key) is None:
+                        tx.insert('delivered_text', {**old_key, 'at': before['at']})
                 if before is None:
                     tx.insert('receipts', row)
                 elif before['fingerprint'] != row['fingerprint']:
@@ -216,6 +258,56 @@ class RoleService:
                     continue
                 recorded += 1
         return {'recorded': recorded, 'epoch': epoch}
+
+    def begin_check(self, ctx: Context, session: str | None) -> dict[str, Any]:
+        """A startup/resume challenge. Only the runner receives the key; a retained context already has it."""
+        ctx = _own(ctx)
+        if session is None or ctx.store is None:
+            return {}
+        with ctx.store.tables() as tx:
+            key = {'session_id': session}
+            current = tx.get('contexts', key)
+            epoch = int(current['epoch']) if current else 0
+            prior = tx.get('context_checks', key)
+            marker = prior['marker'] if prior and prior['epoch'] == epoch else secrets.token_hex(12)
+            row = {**key, 'epoch': epoch, 'checkpoint': secrets.token_hex(8), 'marker': marker,
+                   'pending': True, 'confirmed': False}
+            if prior:
+                tx.update('context_checks', key, row)
+            else:
+                tx.insert('context_checks', row)
+        return row
+
+    def finish_check(self, ctx: Context, session: str | None, checkpoint: str,
+                     *, marker: str | None = None) -> dict[str, Any]:
+        """An absent/incorrect proof makes context eligible once, without pushing it or scheduling a turn.
+
+        A supplied marker confirms a pending check. A stale reply cannot confirm a newer startup or invalidate
+        context twice; completed compaction already made the old check obsolete.
+        """
+        ctx = _own(ctx)
+        if session is None or ctx.store is None:
+            return {}
+        with ctx.store.tables() as tx:
+            key = {'session_id': session}
+            check = tx.get('context_checks', key)
+            current = tx.get('contexts', key)
+            epoch = int(current['epoch']) if current else 0
+            if not check or check['checkpoint'] != checkpoint or check['epoch'] != epoch:
+                return {'confirmed': False, 'stale': True, 'epoch': epoch}
+            if not check['pending']:
+                return {'confirmed': bool(check['confirmed']), 'epoch': epoch}
+            confirmed = marker is not None and hmac.compare_digest(str(check['marker']), marker)
+            tx.update('context_checks', key, {'pending': False, 'confirmed': confirmed})
+            if confirmed:
+                return {'confirmed': True, 'epoch': epoch}
+            epoch += 1
+            row = {**key, 'epoch': epoch, 'reason': 'retention_unconfirmed', 'at': home.now()}
+            if current:
+                tx.update('contexts', key, row)
+            else:
+                tx.insert('contexts', row)
+        return {'confirmed': False, 'epoch': epoch, 'eligible': True}
 
     def advance(self, ctx: Context, session: str | None, *, reason: str = 'compaction') -> int:
         ctx = _own(ctx)
@@ -255,6 +347,19 @@ def inspect_receipts(ctx: Context) -> dict[str, Any]:
     session = str(ctx.nouns['session'])
     with ctx.require_store().tables(write=False) as tx:
         rows = tx.rows('receipts', {'session_id': session}, limit=0).results
-    return {'session': session, 'epoch': SERVICE.epoch(ctx, session), 'receipts': rows}
+    # An inspection must not become another route for dumping delivered bodies or revealing a retention key.
+    return {'session': session, 'epoch': SERVICE.epoch(ctx, session),
+            'receipts': [{key: value for key, value in row.items() if key != 'component'} for row in rows]}
+
+
+def confirm_context(ctx: Context) -> dict[str, Any]:
+    """Only the actual caller can acknowledge its retained key; a tool argument cannot choose another session."""
+    if not ctx.session:
+        raise Stop('A context check belongs to the calling agent session.', 'run this from the assigned agent')
+    result = SERVICE.finish_check(ctx, ctx.session, str(ctx.nouns['checkpoint']),
+                                   marker=str(ctx.nouns['key']) if ctx.nouns.get('key') else None)
+    if result.get('eligible'):
+        forget_shown(ctx.session)
+    return result
 
 

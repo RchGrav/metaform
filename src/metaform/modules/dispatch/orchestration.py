@@ -196,8 +196,12 @@ class Transport:
         sender.setdefault('agent', 'orchestration')
         sender.setdefault('session_id', '')
         body = envelope.get('text') or envelope.get('body') or envelope.get('summary')
+        # Older check-ins kept the message inside report. Read that sentence, never serialize the report and
+        # routing envelope into a prompt. Structured detail is retained for an explicit inspect/notes read.
+        if body is None and isinstance(envelope.get('report'), dict):
+            body = envelope['report'].get('summary') or envelope.get('kind')
         if body is None:
-            body = json.dumps(envelope, ensure_ascii=False, indent=2)
+            raise ValueError('An agent message requires a message body.')
         line = {**envelope, 'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
                 'text': str(body), 'at': envelope.get('at') or home.now(),
                 'kind': envelope.get('kind') or 'continuation',
@@ -246,8 +250,8 @@ class Transport:
                     add_line(tx, UPDATES, UPDATES, f'about:{message_id}', 'about', json.dumps(
                         {key: message.get(key) for key in ('work_id', 'kind', 'state')}, ensure_ascii=False), seq + 2)
                 tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
-        # User visibility is immediate. The Liaison receives the same actual state as an ordinary agent turn. Every call
-        # relays it, so a relay that failed is sent again by the next drain; the runner takes one note id once.
+        # The authored summary stays in the durable update/note for an explicit read. The system agent's automatic
+        # inbox render uses only ticket + status metadata. A failed relay can retry the same id.
         from . import sessions, system_sessions
         running = [row for row in sessions(ctx.require_store()) if row['state'] == 'running']
         route: dict[str, Any] = (message.get('return_to') or {}) if isinstance(message, dict) else {}
@@ -277,10 +281,25 @@ def inbox_what(update: str, state: str, ask: bool, note_id: str, board: str) -> 
     if ask:
         return f'question, note {note_id}'
     if update == 'result':
-        return state or 'result'
+        return {'returned': 'done', 'completed': 'done'}.get(state, state or 'result')
     if update:
         return update.removeprefix('functional_').replace('_', ' ')
     return 'note'
+
+
+def inbox_status(held: dict[str, Any]) -> str:
+    """The model-facing notification contains an identifier and status, never authored text or evidence.
+
+    Addresses and reply routes remain in the stored note; the inbox supplies its exact read handle alongside this
+    short label, so tickets with the same local number are still inspectable without guessing an address.
+    """
+    sender = cast(dict[str, Any], held.get('from') or {})
+    item = str(sender.get('item') or held.get('work_id') or sender.get('work_id') or '')
+    number = item.rpartition('#')[2] if '#' in item else item
+    label = f'Ticket {number}' if number else str(sender.get('agent') or 'Project')
+    what = inbox_what(str(held.get('update') or held.get('kind') or ''), str(held.get('state') or ''),
+                      bool(held.get('ask')), str(held.get('id') or ''), str(held.get('board') or ''))
+    return f'{label} — {what}'
 
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
@@ -335,8 +354,9 @@ def update_entries(ctx: Context, idents: list[str]) -> list[tuple[str, str, bool
     for ident in idents:
         held = about.get(ident) or {}
         work, update, state = str(held.get('work_id') or ''), str(held.get('kind') or 'update'), str(held.get('state') or '')
-        item = str(named[work][0]) if work in named else helper_item(work) if helper_id(work) else 'project'
-        entries.append((ident, f'{item} {inbox_what(update, state, False, ident, "")}', inbox_wakes(update, state, False)))
+        item = str(named[work][0]) if work in named else helper_item(work) if helper_id(work) else work
+        entries.append((ident, inbox_status({**held, 'id': ident, 'from': {'item': item}}),
+                        inbox_wakes(update, state, False)))
     return entries
 
 
@@ -400,18 +420,6 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
 def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, Any]:
     owner = service(ctx)
     return owner.context(ctx, work_id=work, session_id=session) or {} if owner is not None else {}
-
-
-def note_context(held: dict[str, Any]) -> str:
-    """A typed envelope accompanies authored note text without granting that text sender authority. It never repeats
-    the note's words: a result's body, raw result or summary the note already carries, and the context component made
-    of them, are left out, so one result is read once in its turn."""
-    words = str(held.get('text') or held.get('body') or '')
-    data = {key: value for key, value in held.items() if key not in ('text', 'to', 'context_components') and not (
-        key in ('body', 'result', 'summary') and isinstance(value, str) and value.strip() and value.strip() in words)}
-    if held.get('id'):
-        data['reply_call'] = f'dispatch_note reply={held["id"]}'
-    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def snapshots(sent: list[prompt_files.Sent]) -> list[dict[str, Any]]:

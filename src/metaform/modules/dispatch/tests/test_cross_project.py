@@ -51,7 +51,7 @@ def test_live_project_routing_and_reply_keep_original_sessions(run, home, projec
         assert returned['from']['project'] == 'other'
         assert returned['from']['base'] == original_base
         assert returned['from']['session_id'] == b['session_id']
-        shown = json.loads(run('dispatch', 'notes', '--json', cwd=first.folder, env={
+        shown = json.loads(run('dispatch', 'notes', f'note={reply["note"]}', '--json', cwd=first.folder, env={
             'METAFORM_ROLE': 'worker', 'METAFORM_WORK': first.id, 'METAFORM_SESSION': a['runner']}).stdout)
         received = next(one for one in shown['notes'] if one['note'] == reply['note'])
         assert received['way'] == 'received' and received['from']['project'] == 'other'
@@ -246,7 +246,7 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
     second = session('system-2')
     asyncio.run(second.updates_due())
     gc_item = live.store.numbers_of('work', [gc_work])[gc_work][0]
-    assert second.inbox == [('offline-1', '', f'{gc_item} returned', True)], second.inbox
+    assert second.inbox == [('offline-1', '', f'Ticket {gc_item.rpartition("#")[2]} — done', True)], second.inbox
 
     async def accepted():  # the turn carrying its inbox line went out
         second.inflight_updates = ['offline-1']
