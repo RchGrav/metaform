@@ -136,6 +136,26 @@ From the GC/FQC orchestration merged 2026-10-18 (4f2966c8):
   built on it.
 - Queued: ticket `code.router.assignment#4` (one ticket per finding, prose titles, no self-assessment, delivered once).
 
+## 3b. The person cannot reliably reach their agents
+
+Found late on 2026-10-18, while testing intake on another project (flask):
+- **Results are still delivered twice.** After code.router.assignment#4's fix, agents' check-in results still reached
+  the system agent twice, word for word (ticket code.router.assignment#f).
+- **The person's chat bounced.** Full Auto filled all eight machine slots, and the person's own system agent counted
+  against them, so starting it was refused and the message went back in the box. Fixed in 64755447: the person's own
+  agent may take one place beyond dispatch_machine_agents.
+- **The system agent was unreachable while working.** It ran long tests in its own turns, so the person's messages
+  queued for minutes and looked lost. Its prompt now says to stay reachable and hand long work to subagents or tickets.
+- **Switching projects ends the agents of the project left** (code.dispatcher.agent#5c).
+- **A freshly opened page starts on another project (c3lab), not the one the person was in,** so a message from it
+  starts a new agent there instead of reaching their own.
+- **Agents in different projects cannot reach each other;** the person had to carry findings by hand from the flask
+  project's agent to the metaform project's (code.gateway.messaging#4).
+- **Findings from the flask project's agent:** an unread-memory notice with nothing behind it (code.store.memory#e), a
+  correct memory marked stale (code.store.memory#f), an intake ticket left looking untouched (code.router.assignment#e),
+  a clicked answer named without its question (code.interface.graphical#146), and orchestration tools missing or failing
+  there (code.server.tool#1c).
+
 ## 4. Errors do not heal themselves
 
 - The log watcher exists as `modules/autoticket` but ships disabled and is off here. It sends a ranked list on a timer,
