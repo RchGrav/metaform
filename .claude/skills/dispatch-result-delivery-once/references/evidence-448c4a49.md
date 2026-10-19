@@ -1,0 +1,1 @@
+"OK, we need to fix your context being blasted you are burnning uyp my account and ruining your context" (Rich, 2026-10-19). Agent's plan: "the system agent works like an inbox."

@@ -347,6 +347,9 @@ The metaform:
 <work_step><item/> <title/>: step <done/> of <steps/> recorded.</work_step>
 <!-- What closing a ticket answers an agent over MCP, one line. -->
 <work_done><item/> <title/>: done.</work_done>
+<!-- What closing a ticket that closes only with proof answers an agent over MCP, one line: it stays open, its fix
+     landed and watched, until the proof holds (code.scheduler.task#9, 2026-10-19, wording for the person's approval). -->
+<work_watch><item/> <title/>: fix landed, watching; it closes once the fix is proven.</work_watch>
 <!-- What editing a ticket answers an agent over MCP, one line. -->
 <work_edit><item/> <title/>: edited.</work_edit>
 <!-- What moving a ticket to another board column answers an agent over MCP, one line. -->

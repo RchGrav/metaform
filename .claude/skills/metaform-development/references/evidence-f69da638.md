@@ -1,0 +1,1 @@
+{"type":"tool_result","tool_use_id":"toolu_017uuFcn4VkKUmGsw4wfkiqz","content":"state: delivered\nreturn_to: {\"kind\":\"pm\"}\npending_direction: []\nresult: Restored the pre-merge <record> element in src/metaform/modules/dispatch/resources/prompts.xml:58 word for word (from 4f2966c8^) ...\nevidence: []\nlast_check_in: \nstop: \nstop_history: []"}

@@ -32,7 +32,7 @@ import json
 import os
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import resources
 from typing import Any, cast
@@ -90,12 +90,19 @@ NOTE_LIMIT = 2048
 # All may be empty, a citation is then as it was cited, so version 7 still reads and writes the tables.
 # Version 9 adds functional-entry revisions/encounters and withdrawn identities. Earlier writers do not maintain
 # those revisions, so they must not write past the new unread-delivery contract.
-TABLES_VERSION = 9
+# Version 10 indexes withdrawals by the identity they withdraw, so a write reads only its own memories' withdrawals. The
+# upgrade applies delivery.remade to every memory held: a withdrawal of a memory deleted and made again before version
+# 10, which notices and reads at two nodes passed back and forth, is dropped or made an index withdrawal. Version 9
+# reads and writes the tables as before.
+TABLES_VERSION = 10
 
 
 def _upgrade(tx: TableTx, found: int) -> None:
     """Version 5: number every memory join at its receiver's address in the order the joins were made, those kept
-    before joins had times first in the order of their entities, and title each entity from its first observation."""
+    before joins had times first in the order of their entities, and title each entity from its first observation.
+    Version 10: no memory that exists keeps a withdrawal under its own identity, delivery.remade."""
+    if found < 10:
+        delivery.remade(tx, [str(row['name']) for row in tx.rows('entities', limit=0).results])
     if found >= 5:
         return
     entities = {row['name']: row for row in tx.rows('entities', limit=0).results}
@@ -303,16 +310,28 @@ class Graph:
         found = [(one['cite'], self.checker.held(one)) for one in self.citations.get(name, [])]
         return [f'{cite}: {why}' for cite, why in found if why]
 
-    def cite(self, tx: TableTx, name: str, rows: list[Row], written: Row | None = None) -> None:
-        """Keep the citations a write gives for the memory, each once; a citation given again is kept as it was
-        first seen, and an updated one is given under its new path or lines."""
-        held = {one['cite'] for one in self.citations.get(name, [])}
+    def cite(self, tx: TableTx, name: str, rows: list[Row], written: Row | None = None) -> bool:
+        """Keep the citations a write gives for the memory, each once. A citation given again is kept as its file
+        reads now, so a memory re-cited after its evidence changed is no longer stale; an updated one is given under
+        its new path or lines. Whether any citation was written."""
+        kept = self.citations.setdefault(name, [])
+        held = {one['cite']: at for at, one in enumerate(kept)}
+        wrote = False
         for row in rows:
-            if row['cite'] in held:
+            at = held.get(row['cite'])
+            if at is None:
+                held[row['cite']] = len(kept)
+                kept.append(tx.insert('citations', {'entity': name, **row, 'at': (written or {}).get('at')}))
+                wrote = True
                 continue
-            held.add(row['cite'])
-            self.citations.setdefault(name, []).append(
-                tx.insert('citations', {'entity': name, **row, 'at': (written or {}).get('at')}))
+            fields = ('path', 'start', 'end', 'symbol', 'digest', 'size', 'mtime')
+            if all(kept[at].get(one) == row.get(one) for one in fields) and kept[at].get('stale') is None:
+                continue  # as it was cited
+            restamped = {**{one: row.get(one) for one in fields}, 'at': (written or {}).get('at'), 'stale': None,
+                         'checked_size': None, 'checked_mtime': None}
+            kept[at] = tx.update('citations', {'entity': name, 'cite': row['cite']}, restamped) or kept[at]
+            wrote = True
+        return wrote
 
     def locked(self, name: str) -> bool:
         """Whether the memory is locked, CTX-023: read by every agent, changed by none."""
@@ -374,11 +393,23 @@ def _joined(tx: TableTx, key: Key) -> list[Row]:
     return list(tx.rows('joins', {'receiver': key.receiver, 'provider': key.provider}, limit=0).results)
 
 
-def _changed(tx: TableTx, names: list[str], removed: list[Row] | None = None) -> None:
-    """A graph mutation reaches every functional index of its affected memories, including incident relations."""
+def _changed(ctx: Context, tx: TableTx, names: list[str], removed: list[Row] | None = None) -> None:
+    """A graph mutation reaches every functional index of its affected memories, including incident relations, for
+    every session there but the one that wrote it."""
     keys = {(str(row['receiver']), str(row['provider'])) for name in dict.fromkeys(names)
             for row in tx.rows('joins', {'entity': name}, limit=0).results}
-    delivery.changed(tx, keys, removed)
+    if removed is None:
+        delivery.remade(tx, names)
+    delivery.changed(tx, keys, removed, ctx.session)
+
+
+def _bodies(ctx: Context, graph: Graph, names: list[str]) -> list[Row]:
+    """The memories' canonical bodies as delivery receipts them, for `delivery.authored`: their citations checked, as
+    a read and a notice check them, so a memory with a stale citation is the same body in each."""
+    if graph.checker is None:
+        graph.checker = Checker(ctx)
+    return [delivery.component('entities', graph.entity(name)) for name in dict.fromkeys(names)
+            if name in graph.entities]
 
 
 def _view(tx: TableTx, key: Key | None, checker: Checker | None = None) -> View:
@@ -724,7 +755,8 @@ def create_entities(ctx: Context) -> Any:
             made.append({'name': name, 'entityType': kind, 'observations': observations})
             written.append(name)
         if written:
-            _changed(tx, written)
+            _changed(ctx, tx, written)
+    delivery.authored(ctx, _bodies(ctx, graph, written))
     _lock_notice(given, locked, 'entities')
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line: what it just sent is not handed back, MCP-037
@@ -744,6 +776,24 @@ def _cites(ctx: Context, one: dict[str, Any]) -> list[Row]:
         return []
     root = root_of(ctx)
     return [stamp(str(each), root) for each in (cast(list[Any], given) if isinstance(given, list) else [given])]
+
+
+def _restamped(ctx: Context, graph: Graph, name: str, given: set[str]) -> list[Row]:
+    """The memory's whole-file citations as their files read now, besides those the write gives, for a write that adds
+    to the memory: its writer saw the file as it is. A cited line span is left as it was, since the same numbers may
+    now hold other text, and so is a citation whose file is gone, which stays stale."""
+    files = [one for one in graph.citations.get(name, [])
+             if one['cite'] not in given and one.get('start') is None and not one.get('symbol')]
+    if not files:
+        return []
+    root = root_of(ctx)
+    restamped: list[Row] = []
+    for one in files:
+        try:
+            restamped.append(stamp(str(one['cite']), root))
+        except Stop:
+            continue
+    return restamped
 
 
 def _prompt(name: str, **fills: str) -> str:
@@ -782,7 +832,8 @@ def create_relations(ctx: Context) -> Any:
             graph.related(tx, *triple)
             made.append({'from': triple[0], 'to': triple[1], 'relationType': triple[2]})
         if made:
-            _changed(tx, [str(one[end]) for one in made for end in ('from', 'to')])
+            _changed(ctx, tx, [str(one[end]) for one in made for end in ('from', 'to')])
+    delivery.authored(ctx, [delivery.component('relations', one) for one in made])
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
         return _line(_prompt('related', count=str(len(made))), given.notices)
@@ -807,18 +858,20 @@ def add_observations(ctx: Context) -> Any:
                 raise _not_found(name)
         _one_fact_each(ctx, [(name, contents) for name, contents, _ in observations])
         locked = _locked(graph, [name for name, _, _ in observations])
+        earlier = _bodies(ctx, graph, [name for name, _, _ in observations if name not in locked])
         for name, contents, cited in observations:
             if name in locked:
                 results.append({'entityName': name, 'addedObservations': []})
                 continue
             added = _observe(tx, graph, name, contents, by)
             results.append({'entityName': name, 'addedObservations': added})
-            before = len(graph.citations.get(name, []))
-            graph.cite(tx, name, cited, by)
-            if added or len(graph.citations.get(name, [])) != before:
+            if added:  # written against the files as they read now
+                cited = [*cited, *_restamped(ctx, graph, name, {row['cite'] for row in cited})]
+            if graph.cite(tx, name, cited, by) or added:
                 changed.append(name)
         if changed:
-            _changed(tx, changed)
+            _changed(ctx, tx, changed)
+    delivery.authored(ctx, _bodies(ctx, graph, changed), earlier)
     _lock_notice(given, locked, 'observations')
     _layered(store)
     if ctx.surface == 'mcp':  # to an agent, one line, MCP-037
@@ -844,14 +897,16 @@ def delete_entities(ctx: Context) -> Any:
         not_found = [name for name in names if name not in graph.entities]
         incident = [Graph.relation(row) for row in graph.relations
                     if row['source'] in deleted or row['target'] in deleted]
+        removed: list[Row] = []
         if deleted:
             removed = [delivery.component('deleted_entities', name, name=delivery.entity_name(name),
                                           requires=delivery.entity_name(name)) for name in dict.fromkeys(deleted)]
             removed += [delivery.component('deleted_relations', row, name=delivery.relation_name(row),
                                            requires=delivery.relation_name(row)) for row in incident]
-            _changed(tx, [*deleted, *(str(row[end]) for row in incident for end in ('from', 'to'))], removed)
+            _changed(ctx, tx, [*deleted, *(str(row[end]) for row in incident for end in ('from', 'to'))], removed)
         for name in dict.fromkeys(deleted):
             _forget(tx, graph, name)
+    delivery.authored(ctx, removed)
     message = ('Entities deleted successfully' if not not_found and not locked else
                f'Deleted {len(deleted)} of {len(names)} entities.' +
                (f' Not found: {", ".join(not_found)}' if not_found else '') + _locked_said(locked))
@@ -869,6 +924,7 @@ def delete_observations(ctx: Context) -> Any:
     with store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, [name for name, _ in deletions])
+        earlier = _bodies(ctx, graph, [name for name, _ in deletions if name not in locked])
         for name, contents in deletions:
             requested += len(contents)
             if name not in graph.entities:
@@ -882,7 +938,9 @@ def delete_observations(ctx: Context) -> Any:
                 if count:
                     changed.append(name)
         if changed:
-            _changed(tx, changed)
+            _changed(ctx, tx, changed)
+            graph = Graph.read(tx)
+    delivery.authored(ctx, _bodies(ctx, graph, changed), earlier)
     message = ('Observations deleted successfully' if deleted == requested else
                f'Deleted {deleted} of {requested} observations.' +
                (f' Entities not found: {", ".join(missing)}' if missing else '') + _locked_said(locked))
@@ -908,7 +966,8 @@ def delete_relations(ctx: Context) -> Any:
                     removed.append(delivery.component('deleted_relations', row, name=delivery.relation_name(row),
                                                        requires=delivery.relation_name(row)))
         if removed:
-            _changed(tx, [str(one['value'][end]) for one in removed for end in ('from', 'to')], removed)
+            _changed(ctx, tx, [str(one['value'][end]) for one in removed for end in ('from', 'to')], removed)
+    delivery.authored(ctx, removed)
     message = ('Relations deleted successfully' if deleted == len(relations) else
                f'Deleted {deleted} of {len(relations)} relations.' +
                (_locked_said(locked) if locked else ' The rest matched nothing.'))
@@ -978,7 +1037,11 @@ def read_unread(ctx: Context) -> Any:
     """Unread canonical entities/relations and applicable withdrawals through the requested functional entry."""
     given = _Given(ctx)
     view = _read(ctx, given.notices)
-    return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole(), unread=True))
+    found = dict(EMPTY) if view is None else _delivered(ctx, view.whole(), unread=True)
+    refine = ctx.calls(_prompt('refine')) if found.get('entities') else ''
+    if refine:  # reading what is new at a node is the moment to tidy what is there, as the arrival line asks
+        given.notices.append({'where': 'refine', 'message': refine})
+    return given.said(found)
 
 
 def search_nodes(ctx: Context) -> Any:
@@ -1301,6 +1364,16 @@ def memory_prompt(project: str, address: str | None = None) -> str:
     return '\n'.join(kept)
 
 
+def record(ctx: Context, address: str, entities: list[dict[str, Any]]) -> Any:
+    """Another module's own record of what happened at an Address, written as create_entities writes it: each new
+    entity joined to the element at `address`, under every rule an agent's write keeps (a title and a why, one fact
+    per observation, citations of project files). Offered as `memory.record`, so roundtables keeps a table's outcome
+    where it was asked; the writer named on it is the calling module."""
+    store = Store(ctx.require_store().project_id, module='memory')
+    return create_entities(replace(ctx, module='memory', store=store, client=ctx.client or ctx.module,
+                                   nouns={'entities': entities, 'node': f'element:{address}'}))
+
+
 # ------------------------------------------------------------------------------------------------ the node read
 
 def node_read(ctx: Context, node: Node) -> Any:
@@ -1373,9 +1446,6 @@ def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | 
             snapshots[address] = View(graph, [name for name in graph.entities if name in names]).whole()
             revision = tx.get('entry_revisions', {'receiver': address, 'provider': ''})
             revisions[address] = str(revision['revision']) if revision else ''
-    total_names: set[str] = set()
-    unread_names: set[str] = set()
-    updated_names: set[str] = set()
     for address, whole in snapshots.items():
         prepared = delivery.prepare(ctx, whole, (address, ''))
         total, unread, updated = delivery.counts(prepared)
@@ -1384,11 +1454,11 @@ def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | 
             updated.clear()
         at[address] = (len(total), len(unread), 0)
         updates[address] = len(updated)
-        total_names.update(total)
-        unread_names.update(unread)
-        updated_names.update(updated)
-    legend = _prompt('counts', total=str(len(total_names)), unread=str(len(unread_names)),
-                     updated=str(len(updated_names)), read_unread='metaform memory read_unread node=element:<address>')
+    # the arrival line names the node read, the first address, and only its unread: the neighbours' counts stand in the
+    # tree, and the map gives the line only while that node holds memory unread, `around.Around.tree`
+    focus = at.get(addresses[0], (0, 0, 0))[1] if addresses else 0
+    legend = _prompt('counts', unread=str(focus),
+                     read_unread='metaform memory read_unread node=element:<address>')
     return (Count('memory', 'memories', at, legend=legend, revisions=revisions, updated=updates),
             Count('note', 'notes', notes, legend=prompt_files.module('memory', 'note_counts') or ''),
             Count(_prompt('stale_one'), _prompt('stale_many'), stale, legend=_prompt('stale_counts')))
@@ -1620,7 +1690,8 @@ MODULE = Module(
     node_read=node_read,
     node_count=node_count,
     provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt),
-              Provides('memory.revision', delivery.revision), Provides('memory.notices', delivery.notices)),
+              Provides('memory.record', record),
+              Provides('memory.revision', delivery.revision)),
     item_read=item_read,
     items_at=items_at,
     item_kinds=('memory',),

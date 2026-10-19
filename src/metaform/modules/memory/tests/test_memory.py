@@ -369,7 +369,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 9
+    assert recorded['version'] == 10
     assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why', 'locked_by', 'locked_at'],
                     'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
@@ -881,7 +881,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (9, 9)
+    assert (recorded['version'], recorded['compatible_from']) == (10, 9)
 
 
 def item(run, reference, cwd, ok=True):
@@ -963,13 +963,13 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (9, 9)
+    assert (recorded['version'], recorded['compatible_from']) == (10, 9)
 
 
 @pytest.mark.req('MCP-039')
 def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_lines_change(run, mapped):
     """cite on create_entities is kept as what the cited lines read as; reads say which citations no longer hold,
-    with where the text went, the node's counts count the memory as stale, and a citation naming nothing is refused."""
+    and that the text moved, the node's counts count the memory as stale, and a citation naming nothing is refused."""
     source = mapped / 'route.py'
     source.write_text('def route():\n    return eject()\n')
     m(run, 'create_entities', J([{**entity('ejection', 'behavior', 'Routes are ejected.'),
@@ -989,7 +989,7 @@ def test_a_memory_cites_its_evidence_and_a_read_flags_it_stale_once_the_cited_li
 
 
 def test_the_moved_lines_search_reads_a_large_file_once_whatever_the_citations(tmp_path):
-    """Three moved citations in a file of 10,000 lines are found where the text went, in one pass over the file's
+    """Three moved citations in a file of 10,000 lines are found to have moved, in one pass over the file's
     lines; splitting the whole file again for each position looked at took seconds."""
     import time
 
@@ -1029,6 +1029,32 @@ def test_a_read_gives_each_citations_stored_result_while_the_watcher_runs_and_wo
             assert rework(tx, Checker(None, _root=mapped)) == 1  # the watcher's pass
         assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
     source.write_text('def route():\n    return eject()\n')  # as cited again, and no watcher runs
+    assert 'stale' not in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]
+
+
+@pytest.mark.req('MCP-039')
+def test_a_citation_is_checked_against_the_file_as_it_read_when_last_written_not_when_the_memory_was_made(run, mapped):
+    """A memory written to after its cited file changed holds what the file says now, so it is not stale; a change
+    after that write is. Giving the citation again keeps it as the file reads then. A cited line span is kept by its
+    text, so only giving it again moves it."""
+    script, source = mapped / 'setup.sh', mapped / 'route.py'
+    script.write_text('pip install --group dev\n')
+    source.write_text('def route():\n    return eject()\n')
+    m(run, 'create_entities', J([{**entity('setup', 'script', 'Setup installs with pip.'),
+                                 'cite': ['setup.sh', 'route.py:2']}]), ROUTE, cwd=mapped)
+    script.write_text('uv sync --locked\n')
+    source.write_text('def route():\n    return keep()\n')
+    stale = mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['stale']
+    assert sorted(stale) == ['route.py:2: line 2 changed', 'setup.sh: the file changed']
+    m(run, 'add_observations', J([{'entityName': 'setup', 'contents': ['Setup installs with uv sync --locked.']}]),
+      ROUTE, cwd=mapped)
+    assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
+    script.write_text('uv sync --locked --all-groups\n')  # changed after the memory was written to
+    m(run, 'add_observations', J([{'entityName': 'setup', 'contents': ['Setup installs with pip.'],
+                                   'cite': ['route.py:2']}]), ROUTE, cwd=mapped)  # nothing added, the span re-cited
+    assert mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]['stale'] == ['setup.sh: the file changed']
+    m(run, 'add_observations', J([{'entityName': 'setup', 'contents': ['Setup installs with pip.'],
+                                   'cite': 'setup.sh'}]), ROUTE, cwd=mapped)
     assert 'stale' not in mj(run, 'read_graph', ROUTE, cwd=mapped)['entities'][0]
 
 
@@ -1118,11 +1144,13 @@ def test_a_locked_memory_is_read_by_every_agent_and_changed_by_none_until_the_pe
 
 @pytest.mark.req('CTX-029')
 def test_no_shipped_prompt_or_verb_text_tells_an_agent_to_store_everything_it_learns_in_memory():
-    """Neither the 2026-10-11 sentence nor the three Axiom rules the memory prompt supersedes is in any shipped
-    prompts.xml or any Module or Verb summary, purpose or details; memory's RE rule is still served."""
+    """Neither the 2026-10-11 sentence, the three Axiom rules the memory prompt supersedes, nor a citation of the
+    memory prompt's former steps 5 and 6 is in any shipped prompts.xml or any Module or Verb summary, purpose or
+    details; memory's RE rule is still served."""
     from metaform import loader
     gone = ('store what you learn under the functional namespace', 'Never read or search the whole graph',
-            'Save findings at the narrowest applicable functionality', 'Do not save chronological activity logs')
+            'Save findings at the narrowest applicable functionality', 'Do not save chronological activity logs',
+            'steps 5 and 6 of the memory prompt')
     modules = Path(__file__).parents[2]
     texts = [path.read_text(encoding='utf-8') for path in [*modules.glob('*/resources/prompts.xml'),
                                                            modules.parent / 'resources' / 'prompts.xml']]

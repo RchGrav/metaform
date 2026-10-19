@@ -8,7 +8,7 @@ import pytest
 
 from metaform import events
 from metaform.data import Store
-from metaform.module import Context, advance_agent_context, record_agent_context
+from metaform.module import Context, advance_agent_context
 from metaform.modules.mcp import shaping
 from metaform.modules.mcp.server import Watch, answer
 
@@ -112,7 +112,7 @@ def test_nested_map_and_item_reads_use_transport_identity_and_ack_only_emitted_b
     assert mcp_read(project, session='item-http-worker') == {'entities': [], 'relations': []}
 
 
-def test_same_count_correction_notifies_grounded_agent_and_notice_does_not_ack_body(project):
+def test_same_count_correction_is_unread_to_a_grounded_agent_until_it_reads_the_body(project):
     from metaform.modules.memory import add_observations, delete_observations, delivery, node_count
     make(project)
     mcp_read(project)
@@ -132,36 +132,32 @@ def test_same_count_correction_notifies_grounded_agent_and_notice_does_not_ack_b
     assert delivery.revision('memory-delivery', A) != before
     count = node_count(ctx, (A,))[0]
     assert count.at[A] == (1, 1, 0) and count.updated[A] == 1
-    notice = delivery.notices(ctx, relevant)
-    assert 'memory read_unread' in notice['text']
-    record_agent_context(project, 'worker', notice['components'], project='memory-delivery',
-                         epoch=notice['epoch'], channel='normal_turn')
-    assert delivery.notices(ctx, relevant)['components'] == []
-    assert node_count(ctx, (A,))[0].at[A][1] == 1
+    assert 'memory read_unread' in count.legend and node_count(ctx, (A,))[0].at[A][1] == 1, 'a count reads no body'
     assert mcp_read(project)['entities'][0]['observations'] == ['Routes survive interrupted work.']
     assert node_count(ctx, (A,))[0].at[A][1] == 0
 
 
-def test_inspection_by_identity_registers_its_functional_entry_and_each_same_count_revision_notifies(project):
-    from metaform.modules.memory import add_observations, delete_observations, delivery
-
+def test_a_write_is_never_an_unread_notice_to_the_session_that_wrote_it(project):
+    """Code.dispatcher.agent#5b: a worker that recorded at its node was given one more turn telling it of its own
+    memory. The writer receives what it wrote; another agent's change it has not read stays unread to it."""
+    from metaform.modules.memory import add_observations, node_count
     make(project)
-    shown = asyncio.run(answer(project, 'memory_open_nodes', {'names': ['shared']}, session='inspector'))
-    assert shown[0] is False and shown[2]['entities'][0]['name'] == 'shared'
-    ctx = reading(project, session='inspector')
-    previous = 'Routes remain usable.'
-    identities = []
-    for current in ('Routes retain their requested output.', 'Routes restore their requested output.'):
-        delete_observations(reading(project, deletions=[{'entityName': 'shared', 'observations': [previous]}]))
-        add_observations(reading(project, observations=[{'entityName': 'shared', 'contents': [current]}]))
-        notice = delivery.notices(ctx)
-        assert len(notice['components']) == 1 and notice['entries'][0]['receiver'] == A
-        identities.append(notice['components'][0]['name'])
-        record_agent_context(project, 'inspector', notice['components'], project='memory-delivery',
-                             epoch=notice['epoch'], channel='normal_turn')
-        previous = current
-    assert len(set(identities)) == 2
-    assert mcp_read(project, session='inspector')['entities'][0]['observations'] == [previous]
+    mcp_read(project)
+    mcp_read(project, session='other')
+    events.announce(project, 'cli')
+
+    def observe(session, text):
+        add_observations(reading(project, session=session, observations=[{'entityName': 'shared',
+                                                                          'contents': [text]}]))
+    _, emitted = events.announced(project, 'cli', observe, 'worker', 'Routes answer within a second.')
+    relevant = next(one for one in emitted if 'memory.changed' in one.get('kinds', []))
+    assert relevant['session_ids'] == ['other'], 'the writer is not told of its own write'
+    assert node_count(reading(project, session='worker'), (A,))[0].at[A][1] == 0
+    assert node_count(reading(project, session='other'), (A,))[0].at[A][1] == 1
+    observe('other', 'Routes log each echo.')
+    observe('worker', 'Routes retry once.')
+    assert node_count(reading(project, session='worker'), (A,))[0].at[A][1] == 1, \
+        "another's change the writer had not read stays unread"
 
 
 def test_revision_written_during_response_remains_unread(project, monkeypatch):
@@ -260,3 +256,73 @@ def test_memory_watcher_detects_correction_with_same_item_number_and_filters_unr
         watch._heard({'project': 'another', 'tables': ['memory.observations']})
         watch._heard({'project': 'memory-delivery', 'tables': ['memory.encounters']})
     assert calls == []
+
+
+def test_the_notice_counts_what_read_unread_returns_for_a_memory_whose_citation_went_stale(project):
+    """Code.store.memory, 2026-10-18: a memory with a stale citation was read with its `stale` lines, while the notice
+    built its body without them, so it counted 1 unread, 1 updated, and read_unread came back empty."""
+    from metaform.modules.memory import add_observations, create_entities, node_count
+    (project / 'route.py').write_text('def route():\n    return 1\n')
+    create_entities(reading(project, node=f'element:{A}', entities=[
+        {'name': 'shared', 'entityType': 'behavior', 'observations': ['Routes return one.'], 'why': 'Supports it.',
+         'cite': ['route.py:2']}]))
+    (project / 'route.py').write_text('def route():\n    return 2\n')
+    assert mcp_read(project)['entities'][0]['stale']
+    ctx = reading(project, session='worker')
+    assert node_count(ctx, (A,))[0].at[A][1] == 0
+    assert mcp_read(project) == {'entities': [], 'relations': []}
+    add_observations(reading(project, observations=[{'entityName': 'shared', 'contents': ['Routes changed.']}]))
+    count = node_count(ctx, (A,))[0]
+    assert (count.at[A][1], count.updated[A]) == (1, 1)
+    assert [one['name'] for one in mcp_read(project)['entities']] == ['shared']
+
+
+def test_a_memory_whose_cited_text_moves_again_is_not_read_again_and_one_whose_cited_text_changes_is(project):
+    """Code.store.memory#18, 2026-10-19: a stale citation said 'the cited text is now at line N', so every edit above
+    the cited text changed the memory's body and handed it to every agent at the node again, unchanged. The reader is
+    still shown where it stands (#1c); a fresh citation going stale is an update."""
+    from metaform.modules.memory import create_entities, node_count
+    ctx = reading(project, session='worker')
+    source = project / 'route.py'
+    source.write_text('def route():\n    return 1\n')
+    create_entities(reading(project, node=f'element:{A}', entities=[
+        {'name': 'shared', 'entityType': 'behavior', 'observations': ['Routes return one.'], 'why': 'Supports it.',
+         'cite': ['route.py:2']}]))
+    assert 'stale' not in mcp_read(project)['entities'][0]
+    source.write_text('# above\ndef route():\n    return 1\n')
+    count = node_count(ctx, (A,))[0]
+    assert (count.at[A][1], count.updated[A]) == (1, 1)
+    assert mcp_read(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed; the cited text is now at line 3']
+    source.write_text('# above\n# and above\ndef route():\n    return 1\n')
+    assert node_count(ctx, (A,))[0].at[A][1] == 0
+    assert mcp_read(project) == {'entities': [], 'relations': []}
+    assert mcp_read(project, session='another')['entities'][0]['stale'] == [
+        'route.py:2: line 2 changed; the cited text is now at line 4']
+    source.write_text('# above\n# and above\ndef route():\n    return 2\n')
+    count = node_count(ctx, (A,))[0]
+    assert (count.at[A][1], count.updated[A]) == (1, 1)
+    assert mcp_read(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
+
+
+def test_a_memory_made_again_after_its_delete_is_read_once_and_not_withdrawn_again_at_another_node(project):
+    """Code.store.memory#e, 2026-10-19: the withdrawal of a deleted memory stayed at a node its remade namesake did
+    not reach, so reads there and where it was remade took turns returning the withdrawal and the body, unread forever.
+    At that node it becomes an index withdrawal, read once; another memory's withdrawal is not touched."""
+    from metaform.modules.memory import delete_entities, join
+    make(project)
+    join(reading(project, entity='shared', node=f'element:{B}'))
+    make(project, name='separate', address=B)
+    mcp_read(project)
+    mcp_read(project, B)
+    delete_entities(reading(project, node=f'element:{B}', entityNames=['separate']))
+    assert mcp_read(project, B)['deleted_entities'] == ['separate']
+    delete_entities(reading(project, node=f'element:{A}', entityNames=['shared']))
+    make(project, text='Routes are remade.')
+    store = Store('memory-delivery', module='memory')
+    with store.tables(write=False) as tx:
+        assert tx.get('withdrawals', {'receiver': B, 'provider': '', 'component': 'memory:entity:separate'})
+    assert mcp_read(project)['entities'][0]['observations'] == ['Routes are remade.']
+    assert mcp_read(project, B) == {'entities': [], 'relations': [], 'withdrawn': [{'name': 'shared', 'address': B}]}
+    for _ in range(3):
+        assert mcp_read(project, B) == {'entities': [], 'relations': []}
+        assert mcp_read(project) == {'entities': [], 'relations': []}

@@ -1,0 +1,1 @@
+Note: a Metaform process started from the shared tree after the edit opened the live metaform store and ran that upgrade at 07:05:43Z, before my dry run. The data layer kept a v9 backup at ~/.metaform/backups/module-memory-10/20261019T070543Z/modules/memory.sqlite3, and the dry run on a copy of that backup gives the same result as the live store now.

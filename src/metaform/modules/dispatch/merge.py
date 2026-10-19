@@ -207,6 +207,17 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     return row
 
 
+def in_force(store: Store, work_id: str) -> bool:
+    """Whether a ticket's work is in the project folder: it has no worktree of its own, which its merge removes, and no
+    merge of it waits."""
+    if (Path(store.project().path) / FOLDER / work_id[:12] / '.git').exists():
+        return False
+    own = Store(store.project_id, module='dispatch')
+    with own.tables(write=False) as tx:
+        row = tx.get('merges', {'work_id': work_id})
+    return row is None or row['state'] == MERGED
+
+
 def due(store: Store) -> list[dict[str, Any]]:
     """The merges waiting for review, the soonest first, with any a merge left part way, `merging`, whose deadline is
     past, so the next check finishes it."""

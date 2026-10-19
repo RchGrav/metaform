@@ -57,6 +57,19 @@ export function stepBubbleSize() {
 }
 /* The body the person sees through in the agent view, V, set by `eyesOf`; null in their own view and the mascot's. */
 export const WATCHED = {mesh: null};
+/* The roundtable's seats, roundtable/stage.js: while its stage is on, `on`, the stage's frame runs here, `frame`, just
+ * before the bubbles are placed, and each seat speaks through `list`, a pool of `Seated` the stage grows only as it
+ * opens a table; the agents' figures in the map behind it say nothing meanwhile. */
+export const SEATS = {on: false, frame: null, list: []};
+export class Seated {
+  constructor(n) {
+    this.id = `\u0000seat${n}`;  // the pool's id for the seat's words, never a figure's
+    // what it says: the line, cut for a bubble, when it began, how much it shows, 0 to 1, and the seat's name
+    this.text = ''; this.lineAt = 0; this.want = 0; this.name = '';
+    // its head on the page and the stage's edges, CSS pixels, and how far it is from the stage's eye
+    this.x = 0; this.y = 0; this.left = 0; this.top = 0; this.right = 0; this.bottom = 0; this.far = 0;
+  }
+}
 const MASCOT_ID = '\u0000mascot';  // the pool's id for the mascot's words, never a figure's
 const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SEEN = new THREE.Vector3();
 const MEASURE = document.createElement('canvas').getContext('2d');
@@ -361,6 +374,25 @@ function heardMascot() {
   SHOWN.push(bubble);
 }
 
+/* A seat's words at the roundtable, where its head was read by the stage's frame just before. */
+function heardSeat(seat) {
+  let bubble = bubbleOf(seat.id);
+  if (!seat.want && !bubble) return;
+  bubble ||= take(seat.id);
+  bubble.seen = FRAME.n;
+  if (seat.lineAt !== bubble.lineAt) bubble.lineAt = seat.lineAt;
+  if (seat.text && seat.text !== bubble.text) laidOut(bubble, seat.text);
+  bubble.want = seat.want;
+  fade(bubble);
+  bubble.fixed = false; bubble.mascot = false; bubble.name = seat.name; bubble.clickable = false;
+  bubble.on = bubble.shown > 0.02 && Boolean(bubble.text);
+  if (!bubble.on) return;
+  bubble.far = seat.far;
+  bubble.hx = seat.x; bubble.hy = seat.y;
+  bubble.left = seat.left; bubble.top = seat.top; bubble.right = seat.right; bubble.bottom = seat.bottom;
+  SHOWN.push(bubble);
+}
+
 /* The bubbles shown this frame, nearest speaker first, the agent view's own first of all, then the mascot's: sorted
  * in place. */
 const SHOWN = [];
@@ -565,7 +597,10 @@ export function bubbles3d() {
   AREA.width = area.width; AREA.height = area.height;
   FRAME.under = figureUnder();
   SHOWN.length = 0;
-  if (AREA.width) ROAM.figures.forEach(heard);
+  if (SEATS.on) {
+    SEATS.frame(FRAME.now);
+    for (let n = 0; n < SEATS.list.length; n++) heardSeat(SEATS.list[n]);
+  } else if (AREA.width) ROAM.figures.forEach(heard);
   heardMascot();
   place();
   write();

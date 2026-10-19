@@ -1,0 +1,1 @@
+With the original specifications.py copied back from /tmp it failed (the file became the amendment alone); with the fix it passed.

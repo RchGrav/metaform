@@ -1,0 +1,3 @@
+Since code.dispatcher.agent#5b, delivery.changed in memory/delivery.py leaves the writing session (ctx.session) out of the session_ids it concerns.
+Since code.dispatcher.agent#5b, delivery.authored records the bodies a session created, changed or deleted as received by that session, in the agents module's receipts.
+Test output after the fix: test_a_write_is_never_an_unread_notice_to_the_session_that_wrote_it passes; at HEAD it fails with "assert ['other', 'worker'] == ['other']".

@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Intake same_as behaviour was built this episode and has no skill; the rules (kept_in, unlink on re-record, taken-ticket fallback, what node reads do not show) are needed by the next agent touching intake findings.", "evidence": "references/evidence-dc383f2f.md"}

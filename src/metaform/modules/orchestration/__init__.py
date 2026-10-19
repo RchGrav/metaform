@@ -175,8 +175,14 @@ MODULE = Module(
              category='coordinate', nouns=(Noun('summary', 'Observed outcome or functional concern.'),
                                           ASSIGNMENT, EVIDENCE, CANDIDATE, KEY)),
         Verb('change', change, 'Publish an adaptive operative revision or record a strict-mode recommendation.',
-             category='coordinate', nouns=(Noun('content', 'Complete revised operative content.'),
+             category='coordinate', nouns=(Noun('content', 'With section: that one record, heading first. Without: '
+                                                'the whole new file, replacing every line of it.'),
                     Noun('reason', 'Connection to C(T) and the full design.'), ASSIGNMENT, SPEC, KEY,
+                    Noun('section', 'Record id or heading of the one file record to replace or, if absent, add '
+                                    'after the last record of its level; every other record stays.', required=False),
+                    Noun('removing', 'Headings or record ids a whole-file content removes; a write dropping any '
+                                     'record not named is refused.', 'json', required=False,
+                         schema={'type': 'array', 'items': {'type': 'string'}}),
                     Noun('assessment', 'Responsible assessment assignment; absent uses caller.', required=False),
                     Noun('base', 'Reviewed revision; intervening changes must be reconciled.', required=False),
                     Noun('observed_limitation', 'Observed limitation of the previous approach.', required=False),

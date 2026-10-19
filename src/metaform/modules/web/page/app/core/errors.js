@@ -64,9 +64,10 @@ function flushFaults() {
   SENDING.faults.clear();
   const project = SENDING.project();
   if (!project || !faults.length) return;
-  // a send that fails is said nowhere: the banner already says the error, and the server may be the one down
+  // a send that fails is said nowhere: the banner already says the error, and the server may be the one down;
+  // `loaded`, when this page's code was loaded, tells autoticket whether a fault comes from code older than a fix
   fetch('/api/page-faults', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({project, faults})}).catch(() => {});
+    body: JSON.stringify({project, loaded: performance.timeOrigin / 1000, faults})}).catch(() => {});
 }
 const unorigin = text => String(text || '').split(location.origin).join('');
 

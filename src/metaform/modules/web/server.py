@@ -89,6 +89,8 @@ from . import (
     ready_line,
     restart_said,
     run_file,
+    shown_file,
+    shown_project,
     spawn,
     token,
     write_run,
@@ -227,7 +229,8 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
-    '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel'})
+    '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
+    '/api/roundtable-open', '/api/roundtable-chair'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -240,6 +243,7 @@ ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech
 TOOL_RUN = '/api/workspace/run'
 HINTS = '/api/hints'  # the first-time tips a person has seen: any account keeps its own, hints.py
 VIEW = '/api/view'  # how a person's page looks right now: any account keeps its own, view.py
+SHOWN = '/api/shown'  # the project the person's page shows, VIEW-002
 
 
 def route_class(method: str, path: str) -> str:
@@ -247,7 +251,7 @@ def route_class(method: str, path: str) -> str:
     /api/settings, is read by GET and classed by its write for POST."""
     if path == '/api/build' or path.startswith(ADMIN_PREFIXES):
         return 'admin'
-    if method != 'POST' or path in (TOOL_RUN, HINTS, VIEW):  # a tool's run is classed again by its verb, verb_class
+    if method != 'POST' or path in (TOOL_RUN, HINTS, VIEW, SHOWN):  # a tool's run is classed again by its verb, verb_class
         return 'read'
     if path in WRITE_ROUTES:
         return 'write'
@@ -268,6 +272,7 @@ def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) ->
     return 'read' if verb.effect == 'read' else 'write'
 
 
+ROUNDTABLE_CHAIR = ('comment', 'hold', 'continue', 'advance', 'end')  # the stage's chair controls, roundtables' verbs
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
 GONE: dict[str, Any] = {'topic': 'gone'}  # put on a page's stream by its socket closing, `events`
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
@@ -383,6 +388,7 @@ def waits_on(path: str) -> str:
 
 
 SAID_KEPT = 512  # the refusals and faults remembered as already logged
+CODE_LOADED = time.time()  # when this server's code was loaded: each fault it raises says so, `loaded`, for autoticket
 PAGE_FAULTS = 20  # the page's errors taken from one request; the page sends the errors of a second in one
 
 
@@ -555,6 +561,7 @@ class Server(ThreadingHTTPServer):
         if home.project(str(payload.get('project', ''))) is None:
             self.watch_backgrounds(str(payload.get('project', '')), refresh=True)
             return 0
+        self.background_heard(payload)
         deaths = getattr(self, 'deaths', None)  # a server made without __init__, as a test's, has none
         if deaths is not None and runner_change(payload):  # the leases listed, read only when one is new
             deaths.arm()
@@ -604,6 +611,22 @@ class Server(ThreadingHTTPServer):
                 service = start(chassis.context(owner, folder, project=project, surface='web'))
                 if service is not None:
                     self.backgrounds[project].append(service)
+
+    def background_heard(self, payload: dict[str, Any]) -> None:
+        """Each `map.changed` of a project, this server's own writes and those heard from other processes alike, handed
+        to its background services that hear changes, `heard(payload)`: the server holds them, so they hear through any
+        reload of their module, and each decides from the event alone whether it concerns it."""
+        if not hasattr(self, 'backgrounds'):
+            return
+        with self.background_lock:
+            running = list(self.backgrounds.get(str(payload.get('project', '')), ()))
+        for service in running:
+            heard = getattr(service, 'heard', None)
+            if heard is not None:
+                try:
+                    heard(payload)
+                except Exception as error:  # noqa: BLE001  one service's failure never stops a page's update
+                    sys.stderr.write(f'A background service failed on a change: {error}\n')
 
     def close_backgrounds(self) -> None:
         with self.background_lock:
@@ -933,7 +956,7 @@ class Handler(BaseHTTPRequestHandler):
                                 'Metaform home'})
         named = parse_qs(url.query).get('project', [None])[-1] if self.command == 'GET' else \
             getattr(self, 'project_given', None)
-        self.fault_raised(named, {'source': 'web', 'message': said, 'detail': trace,
+        self.fault_raised(named, {'source': 'web', 'message': said, 'detail': trace, 'loaded': CODE_LOADED,
                                   'reproduce': f'{self.command} {url.path} on the web server, as the page asks it.'})
 
     def fault_raised(self, named: Any, payload: dict[str, Any]) -> None:
@@ -1054,9 +1077,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {'pid': os.getpid(), 'home': str(home.home())})
         if url.path == '/api/demo':  # the demo's card, in the home `metaform demo` runs, CLI-042
             return self.send(200, demo_card())
-        if url.path == '/api/projects':  # `opened`: the project of the folder `metaform web` ran in, VIEW-002
+        if url.path == '/api/projects':  # `opened`: the project of the folder `metaform web` ran in; `recent`: the
+            # project the person's page showed last, VIEW-002
             return self.send(200, {'projects': [{'id': found.project_id, 'path': found.path}
-                                                for found in home.projects()], 'opened': opened_project()})
+                                                for found in home.projects()], 'opened': opened_project(),
+                                   'recent': shown_project()})
         if url.path == '/api/clear-preview':
             return self.clear_preview(query.get('project', [''])[-1])
         if url.path == '/api/remove-preview':
@@ -1077,6 +1102,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_broadcasts({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/workflow-runs':
             return self.workflow_runs({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/roundtable':  # the roundtable stage's table, its events after a cursor
+            return self.roundtable({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-claims':
             return self.dispatch_claims({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/dispatch-prompts':
@@ -1095,7 +1122,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.authored_roles({key: values[-1] for key, values in query.items() if key != 't'},
                                        one=url.path == '/api/agent-role')
         if url.path == '/api/lookup':
-            return self.lookup(query.get('project', [''])[-1], query.get('ref', [''])[-1])
+            return self.lookup(query.get('project', [''])[-1], list(dict.fromkeys(query.get('refs', [''])[-1].split())))
         if url.path == '/api/merges':
             return self.list_merges({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/markdown':
@@ -1379,7 +1406,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
                   '/api/element': self.add_part, '/api/restore': self.restore, '/api/add-project': self.add_project, '/api/report': self.problem_report,
-                  '/api/page-faults': self.page_faults,
+                  '/api/page-faults': self.page_faults, SHOWN: self.shown,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
@@ -1403,6 +1430,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
+                  '/api/roundtable-open': self.roundtable_open, '/api/roundtable-chair': self.roundtable_chair,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -1754,18 +1782,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'fresh is true or false.'})
         self.dispatched(given, 'system', [*([f'agent={agent}'] if agent else []), *(['fresh=true'] if fresh else [])])
 
-    def lookup(self, project_id: str, ref: str) -> None:
-        """What a reference in text the person reads stands for, VIEW-042: a spec record, a ticket or a message by its
-        id or a prefix, or a file in the project folder. Nothing found is an answer too, with its plain reason, so a
-        page asking about every reference it draws logs no failed request."""
+    def lookup(self, project_id: str, refs: list[str]) -> None:
+        """What each reference in text the person reads stands for, VIEW-042, in one answer for every reference a page
+        drew: a spec record, a ticket or a message by its id or a prefix, or a file in the project folder. Nothing
+        found is an answer too, with its plain reason, so a page asking about every reference it draws logs no failed
+        request."""
         project = home.project(project_id)
         if project is None:
-            return self.send(200, {'kind': None, 'reason': f'No project {project_id} is registered.'})
+            return self.send(200, {'found': {ref: {'kind': None, 'reason': f'No project {project_id} is registered.'}
+                                             for ref in refs}})
         try:
-            found = referenced(project, ref)
+            found = referenced(project, refs)
         except (Stop, StoreError) as error:
-            return self.send(200, {'kind': None, 'reason': str(error)})
-        self.send(200, found or {'kind': None, 'reason': f'{ref} names nothing in this project.'})
+            return self.send(200, {'found': {ref: {'kind': None, 'reason': str(error)} for ref in refs}})
+        self.send(200, {'found': {ref: one or {'kind': None, 'reason': f'{ref} names nothing in this project.'}
+                                  for ref, one in found.items()}})
 
     def raise_issue(self, given: dict[str, Any]) -> None:
         """The person raises an issue on a node: the dispatch module's raise starts the sentinel."""
@@ -1929,11 +1960,23 @@ class Handler(BaseHTTPRequestHandler):
         found = home.project(project)
         self.send(200, {'project': project, 'created': created, 'path': found.path if found else path.strip()})
 
+    def shown(self, given: dict[str, Any]) -> None:
+        """The project the page now shows, kept as the one the person used last when the page is the person's own,
+        VIEW-002; a page an agent drives is answered and kept nowhere, so it never chooses the person's project."""
+        project = str(given.get('project') or '')
+        if home.project(project) is None:
+            return self.send(404, {'error': f'No project {project} is registered.', 'next': 'metaform list projects'})
+        if VOUCHED.server is None:
+            return self.send(200, {'project': project, 'kept': False})
+        home.mkdir_private(shown_file().parent)
+        write_run(shown_file(), project)
+        self.send(200, {'project': project, 'kept': True})
+
     def page_faults(self, given: dict[str, Any]) -> None:
         """The page's errors, core/errors.js: what failed on the page and the reads that failed, those of one second in
         one request, each with how many times it came. They are published together as one fault event, for autoticket
         to file each as a ticket to fix in one pass, once the page has its answer."""
-        faults, named = given.get('faults'), given.get('project')
+        faults, named, loaded = given.get('faults'), given.get('project'), given.get('loaded')
         if not isinstance(faults, list) or not named:
             return self.send(400, {'error': "The page's faults are a list, with the project they happened on."})
         taken = [cast(dict[str, Any], one) for one in cast(list[Any], faults)[:PAGE_FAULTS] if isinstance(one, dict)]
@@ -1951,6 +1994,7 @@ class Handler(BaseHTTPRequestHandler):
                 'source': 'page', 'message': f'{read} could not be read: {message}' if read else message,
                 'detail': str(one.get('stack') or '')[:8000], 'file': where,
                 'count': count if isinstance(count, int) and count > 0 else 1,
+                **({'loaded': float(loaded)} if isinstance(loaded, (int, float)) else {}),  # when the page loaded
                 'reproduce': (f'Open the web page on project {named}: it reads /api/{read}.' if read else
                               f'Open the web page on project {named}' + (f'; the error came from {one["where"]}.'
                                                                          if one.get('where') else '.'))})
@@ -2375,6 +2419,69 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json({'enabled': True, **cast(dict[str, Any], found)}).encode('utf-8'),
                    'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable(self, given: dict[str, str]) -> None:
+        """The roundtable stage's read, through the roundtables module: with a table, its events after the `after` the
+        page holds, and with `whole` its status too, for a stage that starts watching it; without one, the seats a
+        table opens with when the person names none, roundtables_seats."""
+        try:
+            if not given.get('table'):
+                project, folder = project_folder(given)
+                doing(f'the roundtable seats of {project}')
+                chassis.refresh_modules()  # roundtables declares the setting once it is loaded
+                if 'roundtables_seats' not in settings.SCHEMA:
+                    raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
+                return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
+            table = {'table': given['table']}
+            found = cast(dict[str, Any], module_verb(given, 'roundtables', 'events',
+                                                     {**table, 'after': int(given.get('after') or 0)}))
+            if given.get('whole'):
+                found['status'] = module_verb(given, 'roundtables', 'status', table)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except (Stop, ValueError) as error:
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_open(self, given: dict[str, Any]) -> None:
+        """A table opened on the person's question, `roundtables open`, focused on the part at `address` when the
+        person had one selected: with the seats the person chose, or none for roundtables_seats. It answers once the
+        table's follower has opened it."""
+        address, topic, seats = given.get('address'), given.get('topic'), given.get('seats')
+        if address is not None and not isinstance(address, str):
+            return self.send(400, {'error': 'The Address a table is about is text, or left out.'})
+        if not isinstance(topic, str) or not topic.strip():
+            return self.send(400, {'error': 'A table opens on a question.'})
+        if seats is not None and (not isinstance(seats, list) or not all(isinstance(one, str) for one in
+                                                                          cast(list[Any], seats))):
+            return self.send(400, {'error': 'The seats are a list of seat names, such as claude/opus.'})
+        nouns: dict[str, Any] = {'topic': topic.strip(), **({'address': address.strip()} if address and address.strip()
+                                                            else {}), **({'seats': seats} if seats else {})}
+        try:
+            found = module_verb(given, 'roundtables', 'open', nouns)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(found))
+
+    def roundtable_chair(self, given: dict[str, Any]) -> None:
+        """One of the chair's controls on the stage's table: comment, hold, continue, advance or end."""
+        table, act, text = given.get('table'), given.get('act'), given.get('text')
+        if not isinstance(table, str) or not table:
+            return self.send(400, {'error': 'The chair acts on a table, by its id.'})
+        if act not in ROUNDTABLE_CHAIR:
+            return self.send(400, {'error': f'The chair can {", ".join(ROUNDTABLE_CHAIR)}.'})
+        if act == 'comment' and (not isinstance(text, str) or not text.strip()):
+            return self.send(400, {'error': 'A comment says something.'})
+        nouns = {'table': table, **({'text': cast(str, text).strip()} if act == 'comment' else {})}
+        try:
+            found = module_verb(given, 'roundtables', str(act), nouns)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(found))
 
     def workflow_answer(self, given: dict[str, Any]) -> None:
         """The person's answer to a run paused on them, as `metaform workflow answer` takes it on the command line, the
@@ -3222,11 +3329,11 @@ HEX_REF = re.compile(r'^[0-9a-f]{8,32}$')  # a ticket's or a message's id, whole
 FILE_LINES = 80  # how much of a file a reference shows
 
 
-def spec_record(folder: Path, code: str) -> dict[str, Any] | None:
+def spec_record(folder: Path, code: str, specs: list[tuple[Path, list[str]]]) -> dict[str, Any] | None:
     """A record of the project's specifications by its code: its `### CODE` section, or the paragraph that opens with
-    `**CODE.`, whole, with the file it is in. The rich/ folder is never read for this."""
-    for path in sorted((folder / 'specifications').glob('*.md')):
-        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+    `**CODE.`, whole, with the file it is in; `specs` is each specification file's lines, read once for a batch. The
+    rich/ folder is never read for this."""
+    for path, lines in specs:
         for at, line in enumerate(lines):
             heading = re.match(rf'^(#{{2,4}})\s+{re.escape(code)}\b', line)
             if heading or line.startswith(f'**{code}.'):
@@ -3241,27 +3348,49 @@ def spec_record(folder: Path, code: str) -> dict[str, Any] | None:
     return None
 
 
-def referenced(project: Any, ref: str) -> dict[str, Any] | None:
-    """What one reference stands for in a project, or None."""
+def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None]:
+    """What each reference stands for in a project, or None, in one pass: the specifications are read once for every
+    code, and the tickets and the messages once for every id. A page draws hundreds of references at once, and one
+    read of every ticket for each of them held the server long enough that a restart's readiness check gave up
+    (2026-10-19)."""
     folder = Path(project.path)
-    if SPEC_CODE.match(ref):
-        return spec_record(folder, ref)
-    if HEX_REF.match(ref):
+    found: dict[str, dict[str, Any] | None] = {}
+    codes = [ref for ref in refs if SPEC_CODE.match(ref)]
+    if codes:
+        specs = [(path, path.read_text(encoding='utf-8', errors='replace').splitlines())
+                 for path in sorted((folder / 'specifications').glob('*.md'))]
+        found.update((code, spec_record(folder, code, specs)) for code in codes)
+    ids = [ref for ref in refs if HEX_REF.match(ref)]
+    if ids:
         store = Store(project.project_id)
-        tickets = [record for record in store.work(limit=0).results if record.id.startswith(ref)]
-        if len(tickets) == 1:
-            record = tickets[0]
-            return {'kind': 'ticket', 'id': record.id, 'title': record.task or record.note or record.id,
-                    'task': record.task, 'note': record.note, 'condition': record.condition, 'column': record.column,
-                    'done': record.done, 'resolution': record.resolution, 'address': record.address}
-        said = [message for kind in ('question', 'message')
-                for message in store.messages(None, kind, None, limit=0).results if message.id.startswith(ref)]
-        if len(said) == 1:
-            message = said[0]
-            return {'kind': 'message', 'id': message.id, 'type': message.kind, 'title': message.text or '',
-                    'text': message.text, 'choices': list(message.suggestions), 'answer': message.answer,
-                    'closed': message.closed, 'address': message.address}
-        return None
+        work = store.work(limit=0).results
+        said: list[Any] | None = None  # the messages, read only for an id no ticket has
+        for ref in ids:
+            tickets = [record for record in work if record.id.startswith(ref)]
+            if len(tickets) == 1:
+                record = tickets[0]
+                found[ref] = {'kind': 'ticket', 'id': record.id, 'title': record.task or record.note or record.id,
+                              'task': record.task, 'note': record.note, 'condition': record.condition,
+                              'column': record.column, 'done': record.done, 'resolution': record.resolution,
+                              'address': record.address}
+                continue
+            if said is None:
+                said = [message for kind in ('question', 'message')
+                        for message in store.messages(None, kind, None, limit=0).results]
+            messages = [message for message in said if message.id.startswith(ref)]
+            message = messages[0] if len(messages) == 1 else None
+            found[ref] = None if message is None else {
+                'kind': 'message', 'id': message.id, 'type': message.kind, 'title': message.text or '',
+                'text': message.text, 'choices': list(message.suggestions), 'answer': message.answer,
+                'closed': message.closed, 'address': message.address}
+    for ref in refs:
+        if ref not in found:
+            found[ref] = file_reference(folder, ref)
+    return found
+
+
+def file_reference(folder: Path, ref: str) -> dict[str, Any] | None:
+    """A file of the project named by its path, its first lines shown; never one in the rich/ folder."""
     if '/' not in ref or ref.startswith('rich/'):
         return None
     root = folder.resolve()
@@ -3338,10 +3467,10 @@ def based(base: str | None) -> dict[str, str] | None:
     return vouched({**os.environ, BASE_VARIABLE: base} if base else None)
 
 
-# The writes only the person makes: clearing, switching or removing the map, discarding an intake, deleting memories,
-# the settings and modules, among them the person-only ones, and what dispatch keeps the person's own (an agent's
-# permissions at its start, a ticket's model and effort, cancelling a ticket, `persons_own`). One sent by an agent's
-# process is refused, CLI-011.
+# The writes only the person makes: clearing, switching or removing the map, discarding an intake, the page's memory
+# edits, locking and unlocking among them, the settings and modules, among them the person-only ones, and what
+# dispatch keeps the person's own (an agent's permissions at its start, a ticket's model and effort, cancelling a
+# ticket, `persons_own`). One sent by an agent's process is refused, CLI-011.
 PERSONS_WRITES = frozenset({
     '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
@@ -3683,15 +3812,22 @@ def serve(given: argparse.Namespace) -> int:
     listener = events.listen('web', server.changed)
     ready(server)
     log(f'Process {os.getpid()} started on port {server.port}, code {server.code[:12]}, schema version {SCHEMA_VERSION}')
-    for project in home.projects():
-        server.watch_backgrounds(project.project_id)
-        server.schedule_dispatch(project.project_id)
+    # The projects' services start beside the loop, not before it: `metaform web start` asks the server it was told
+    # listens to answer within two seconds, and starting every project's services first left that request waiting.
+    threading.Thread(target=projects_started, args=(server,), daemon=True).start()
     with listener:
         server.run()  # the stop signal ends the process; a hand-over to newer code ends `run`
     server.close_backgrounds()
     server.vouch.close()
     log(f'Process {os.getpid()} stopped')
     return 0
+
+
+def projects_started(server: Server) -> None:
+    """Each registered project's background services and its agent starter's first look."""
+    for project in home.projects():
+        server.watch_backgrounds(project.project_id)
+        server.schedule_dispatch(project.project_id)
 
 
 def stopped(number: int, frame: Any) -> None:

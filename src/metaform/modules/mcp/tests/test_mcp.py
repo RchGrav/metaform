@@ -863,18 +863,12 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
 @pytest.mark.req('CLI-011')
 @pytest.mark.req('MCP-006')
 @pytest.mark.parametrize('tool, arguments', [('metaform_clear_project', {'confirm': True}),
-                                             ('map_add-base', {'name': 'fresh', 'confirm': True}),
-                                             ('memory_delete_entities', {'entityNames': ['kept'], 'confirm': True})])
+                                             ('map_add-base', {'name': 'fresh', 'confirm': True})])
 def test_a_dispatched_agent_gets_the_persons_decision_never_its_own_confirm(run, home, mapped, tool, arguments):
     """UX review round 1, fresh-start-intake F1, settings F5, web F1: a dispatched agent, the system agent among them,
-    whose client shows forms, cannot clear the project, switch the map or delete memories with its own confirm; it is
-    told the decision is the person's and given the command the person runs, never a call for itself, and the tools
-    are marked destructive."""
-    run('enable', 'memory', cwd=mapped)
-    run('memory', 'create_entities',
-        'entities=[{"name": "kept", "entityType": "note", "observations": ["It rings."], "why": "A test."}]',
-        'node=element:code.timer.kitchen', cwd=mapped)
-
+    whose client shows forms, cannot clear the project or switch the map with its own confirm; it is told the decision
+    is the person's and given the command the person runs, never a call for itself, and the tools are marked
+    destructive."""
     async def check(client):
         return await listed(client), await called(client, tool, arguments)
     tools, refused = consenting(home, mapped, check, answers=(), env={'METAFORM_ROLE': 'system', 'METAFORM_WORK': 'x'})
@@ -885,7 +879,6 @@ def test_a_dispatched_agent_gets_the_persons_decision_never_its_own_confirm(run,
     assert 'with confirm true' not in said and 'call ' not in said.split('\nNext: ')[1]
     assert tools[tool].annotations.destructive_hint is True
     assert Store('proj').active_base().name == 'main' and len(Store('proj').bases().results) == 1
-    assert 'It rings.' in run('memory', 'open_nodes', 'names=["kept"]', cwd=mapped).stdout
 
 
 @pytest.mark.req('CLI-011')
@@ -2644,7 +2637,9 @@ def test_a_caution_and_a_person_only_change_are_asked_of_the_person_by_form_on_t
         yes = {'consent': {'action': 'accept', 'content': {'go': True}}}
         ran = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}, 'inputResponses': yes,
                                              'requestState': asked['requestState']}, FORMS)
-        assert ran['isError'] is False and 'deleted' in ran['content'][0]['text']
+        # The session's first answer with content may open with MCP-028's provisioning notice, as the AI tool above
+        # this test is one the home has not recorded; the tool's own answer follows it.
+        assert ran['isError'] is False and 'deleted' in ' '.join(one['text'] for one in ran['content'])
         again = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}, 'inputResponses': yes,
                                                'requestState': asked['requestState']}, FORMS)
         assert again['resultType'] == 'input_required'  # an answer counts once
@@ -2659,11 +2654,13 @@ def test_a_caution_and_a_person_only_change_are_asked_of_the_person_by_form_on_t
         setting = declaring(wire, 'tools/call', {'name': 'metaform_set',
                                                  'arguments': {'roles_without_authority': ['worker']}}, FORMS)
         field = setting['inputRequests']['consent']['params']['requestedSchema']['properties']['roles_without_authority']
-        assert field['default'] == 'worker' and field['description'].startswith('The roles of the agents')
+        assert field['type'] == 'array' and 'sentinel' in field['items']['enum']  # a setting with choices: pick many
+        assert field['default'] == ['worker'] and field['description'].startswith('The roles of the agents')
         made = declaring(wire, 'tools/call', {
             'name': 'metaform_set', 'arguments': {'roles_without_authority': ['worker']},
             'requestState': setting['requestState'],
-            'inputResponses': {'consent': {'action': 'accept', 'content': {'roles_without_authority': 'worker, sentinel'}}}},
+            'inputResponses': {'consent': {'action': 'accept',
+                                           'content': {'roles_without_authority': ['worker', 'sentinel']}}}},
             FORMS)
         assert made['structuredContent']['updated'][0]['new'] == ['worker', 'sentinel']
     finally:
@@ -3780,6 +3777,7 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     or through the catalog; the person's configured controls remain the authority."""
     from metaform import prompt_files
     run('enable', 'memory', cwd=mapped)
+    run('enable', 'dispatch', cwd=mapped)
     heard = []
 
     async def check(client, init):
@@ -3805,6 +3803,8 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     # the memory tools are listed beside the open category, catalog.BESIDE
     assert 'metaform_catalog' in first and 'map_work' in first and 'memory_read_graph' in first
     assert not {'metaform_set', 'dispatch_start', 'map_activate'} & set(first)
+    # and the tools agents reach each other with, catalog.BESIDE_TOOLS, whichever category is open
+    assert {'dispatch_peers', 'dispatch_note', 'dispatch_notes'} <= set(first) & set(second)
     listing = blocks(categories)[-1]
     assert 'ticket (open): ' in listing and 'memory (always listed): ' in listing and 'steer: ' in listing
     assert 'setup: ' in listing
@@ -3818,6 +3818,29 @@ def test_a_worker_is_listed_its_category_alone_and_opens_another_in_its_place(ru
     for answer in (refused, through):
         assert not answer.is_error, blocks(answer)
     assert blocks(found)[-1].splitlines()[0].endswith('[coordinate]')
+
+
+@pytest.mark.req('MCP-003')
+def test_an_assigned_agent_is_listed_check_in_and_assess_and_the_system_agent_its_body(run, home, mapped, monkeypatch):
+    """A GC at work on its ticket is listed orchestration_check-in and orchestration_assess beside the ticket category,
+    so its work returns; the system agent is listed the web body tools its prompt names while the web module is on."""
+    from metaform.modules.mcp.server import listed_names
+    for module in ('dispatch', 'orchestration', 'web'):
+        run('enable', module, cwd=mapped)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    assert 'orchestration_check-in' not in listed_names(mapped, 'plain-worker')
+    monkeypatch.setenv('METAFORM_AUTHORED_ROLE', 'metaform://role/gc')
+    assert {'map_work', 'orchestration_check-in', 'orchestration_assess'} <= set(listed_names(mapped, 'gc-session'))
+    monkeypatch.delenv('METAFORM_AUTHORED_ROLE')
+    monkeypatch.setenv('METAFORM_ROLE', 'system')
+    import os
+
+    from metaform.modules.mcp.server import tools
+    running = tools(mapped)['web_say'][1].listed  # the body verbs are listed while the GUI runs, wherever web loaded from
+    monkeypatch.setitem(running.__globals__, 'recorded', lambda: {'pid': os.getpid()})
+    assert {'web_say', 'web_look', 'web_embody', 'web_viewing'} <= set(listed_names(mapped, 'system-session'))
+    run('disable', 'web', cwd=mapped)
+    assert not any(name.startswith('web_') for name in listed_names(mapped, 'system-session'))
 
 
 @pytest.mark.req('MCP-003')

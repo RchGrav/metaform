@@ -1,0 +1,1 @@
+{"type":"text","text":"thats a bug then if I turn off autostart and stop everyone turning it back on should make them come out"}

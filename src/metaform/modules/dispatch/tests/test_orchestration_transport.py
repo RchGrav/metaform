@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from metaform.data import Store
-from metaform.module import context
+from metaform.module import Stop, context
 from metaform.modules.dispatch.tests.test_dispatch import UNCONCERNED, Dispatch, eventually
 
 
@@ -57,6 +57,162 @@ def test_orchestration_and_memory_event_filters_read_nothing_for_unrelated_burst
     drained.clear()
     orchestration.changed({**mixed, 'kinds': ['orchestration.delivery']}, ctx)
     assert drained == []
+
+
+MEMORY_CHANGED = {'project': 'proj', 'tables': ['memory.entities', 'memory.observations', 'memory.entry_revisions'],
+                  'kinds': ['memory.changed', 'memory:code.store.memory']}
+
+
+def sent(monkeypatch, session):
+    """Run the session's queued turns against a stub agent, returning the prompt texts it was sent."""
+    import asyncio
+    from types import SimpleNamespace
+
+    prompts: list[str] = []
+
+    async def prompt(session_id, prompt):
+        prompts.append(prompt[0].text)
+        return SimpleNamespace(stop_reason='end_turn', usage=None)
+
+    async def nothing(*args, **kwargs):
+        return None
+
+    session.conn, session.session_id, session.prep, session.link_asked = SimpleNamespace(prompt=prompt), 's', True, True
+    for name in ('changed', 'note', 'flush', 'save_state', 'spend', 'peer_marked'):
+        monkeypatch.setattr(session, name, nothing)
+    for name in ('hush', 'arm', 'intake_clock', 'trace'):
+        monkeypatch.setattr(session, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(session, 'guidance', lambda text, supplied: text)
+    session.turns = 1
+    asyncio.run(session.prompted())
+    return prompts
+
+
+def busy(dispatch):
+    """A session in the middle of a long turn: what is queued now waits for the turn after it."""
+    from metaform.modules.dispatch import runner
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    session = runner.Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
+    session.turns = 1
+    return session
+
+
+@pytest.mark.kind('fixture')
+def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_one_line(dispatch, monkeypatch, run):
+    """code.dispatcher.agent#72: a burst of 20 GC results, reviews, board needs and memory changes starts no turn in
+    the person's system agent and puts no body and no memory notice in its conversation; the person's next message
+    carries one 'new in your inbox' line naming each by ticket and kind, the turn after it none; the inbox lists them
+    all, one short line each, and gives one whole on request. A question still wakes it, as that one line alone, and a
+    worker still receives a result whole. Memory changes cause no read in any session."""
+    import asyncio
+
+    from metaform.modules.dispatch import board, origin, peering, runner
+
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'sys', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+                                     'pid': os.getpid(), 'runner': 'r-sys', 'started': '2026-10-19T00:00:00Z',
+                                     'seq': 1, 'origin': origin()})
+        tx.insert('session_lines', {'session_id': 'sys', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state',
+                                    'text': json.dumps({'about': 'system', 'role': 'system'}), 'seq': 1})
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'system': True})
+    system = runner.Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
+    system.session_id, system.runner = 'sys', 'r-sys'
+    started: list[str] = []
+
+    def spawned(coro):
+        started.append(coro.__name__)
+        coro.close()
+    monkeypatch.setattr(system, 'spawn', spawned)
+    rest = ' '.join(['Evidence: pytest -n 0 ran 41 tests and every one passed on the working tree.'] * 30)
+
+    def result(number, kind='project_update', **more):
+        return {'id': f'gc-{number}', 'kind': kind, 'update': 'result', 'state': 'returned', 'epoch': 1000.0 + number,
+                'at': f'2026-10-19T08:{number:02d}:00Z', 'text': f'The held cap counts only open tickets {number}. {rest}',
+                'evidence': [rest], 'from': {'item': f'code.router.assignment#{number}', 'title': f'Held cap {number}',
+                                             'agent': 'claude', 'session_id': f'gc-session-{number}',
+                                             'work_id': f'gc-work-{number}'},
+                'to': [{'work_id': dispatch.id, 'session_id': 'sys'}], **more}
+
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)  # board needs are raised only while Full Auto is on
+    run_ctx = context('dispatch', dispatch.folder, project='proj')
+
+    async def burst():
+        for number in range(20):
+            update = 'functional_assessment' if number % 2 else 'result'
+            await system.peer_note({'line': result(number, update=update), 'deliver': True})
+            system.changed_elsewhere({**MEMORY_CHANGED, 'session_ids': ['r-sys']})
+        await system.board()
+    for number in range(3):  # what the board needs, raised by the changes that made it
+        board.raised(run_ctx, f'finished:{dispatch.id}-{number}', f'{number} was finished: {rest}',
+                     work_id=dispatch.id, start=False)
+    asyncio.run(burst())
+    assert 'prompted' not in started and not system.pending, 'A burst must start no turn of the system agent.'
+    assert len(system.inbox) == 23
+
+    system.turns = 1  # the person writes; their message is the turn that goes anyway
+    system.turn('What is new?', first=True, typed=True)
+    system.turn('And now?', first=True, typed=True)
+    prompts = sent(monkeypatch, system)
+    head, line = prompts[0].split('\n\n')
+    assert head == 'What is new?' and '\n' not in line, prompts[0]
+    assert line.startswith('23 new in your inbox: code.router.assignment#0 returned, code.router.assignment#1 '
+                           'assessment, ') and 'and 13 more' in line, line
+    assert 'Evidence' not in line and 'held cap' not in line and 'memories' not in line and len(line) < 600, line
+    assert prompts[1] == 'And now?', 'Nothing new since the line was carried: no line.'
+
+    monkeypatch.setattr(peering, 'caller', lambda store: (None, peering.sessions(store, dispatch.id)[0]))
+    listed = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'limit': 30}))['notes']
+    assert [one['note'] for one in listed if one['kind'] != 'board'] == [f'gc-{number}' for number in reversed(range(20))]
+    assert sum(one['kind'] == 'board' for one in listed) == 3
+    first = next(one for one in listed if one['note'] == 'gc-19')['summary']
+    assert len(first) <= 300 and 'Evidence' not in first, first
+    assert first == 'code.router.assignment#19 Held cap 19 — returned — The held cap counts only open tickets 19.'
+    whole = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'note': 'gc-7'}))['notes']
+    assert whole[0]['text'] == result(7)['text'], 'One item is given whole on request.'
+
+    started.clear()
+    system.spoken = True  # its turns went out, as the agent's ACP connection says
+    asyncio.run(system.peer_note({'line': result(30, kind='question', ask=True), 'deliver': True}))
+    assert 'prompted' in started and list(system.pending) == [''], 'A question starts a turn of its own.'
+    [woken] = sent(monkeypatch, system)
+    assert woken.startswith('1 new in your inbox: code.router.assignment#30 question, note gc-30. dispatch_notes'), woken
+    assert '\n' not in woken and 'Evidence' not in woken, woken
+
+    worker = busy(dispatch)
+    worker.session_id = 'w'
+    asyncio.run(worker.peer_note({'line': result(40), 'deliver': True}))
+    assert rest in worker.pending[0], 'A worker still receives the result whole.'
+    assert not worker.inbox
+
+
+@pytest.mark.kind('fixture')
+def test_a_burst_of_memory_changes_gives_no_session_a_turn_or_a_read(dispatch, monkeypatch):
+    """Memory notices are never pushed (code.dispatcher.agent#72): a burst of memory changes naming a worker and the
+    person's system agent among their recipients reads nothing and queues nothing in either; an agent hears of unread
+    memory only when it reads its own node."""
+    from metaform.modules.dispatch import runner
+
+    reads = []
+    original = Store.tables
+
+    def counted(self, *args, **kwargs):
+        reads.append(self.module)
+        return original(self, *args, **kwargs)
+    worker = busy(dispatch)
+    worker.session_id, worker.runner = 'w', 'r-w'
+    system = runner.Session(context('dispatch', dispatch.folder, project='proj', nouns={'system': True}),
+                            Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
+    system.session_id, system.runner = 'sys', 'r-sys'
+    scheduled = []
+    for one in (worker, system):
+        monkeypatch.setattr(one, 'spawn', lambda coro: (scheduled.append(coro.__name__), coro.close()))
+    monkeypatch.setattr(Store, 'tables', counted)
+    for _ in range(100):
+        for one in (worker, system):
+            one.changed_elsewhere({**MEMORY_CHANGED, 'session_ids': ['r-w', 'r-sys']})
+            one.changed_elsewhere({'project': 'proj', 'tables': ['memory.entry_revisions']})
+    assert reads == scheduled == [] and not worker.pending and not system.pending and not system.inbox
 
 
 @pytest.mark.kind('simulation')
@@ -106,6 +262,44 @@ def test_peer_identity_distinguishes_shared_ticket_sessions_and_follows_the_same
     monkeypatch.setattr(peering, 'peer_lines', lambda *args: answers)
     assert peering.replies(dispatch.store, 'editor-work', 'question', {'first'}) == []
     assert peering.replies(dispatch.store, 'editor-work', 'question', {'second'}) == answers
+
+
+@pytest.mark.kind('fixture')
+def test_a_review_finding_resumes_the_worker_with_its_reopened_ticket_its_own(dispatch, monkeypatch):
+    """Ticket ca815c74, 2026-10-19: an FQC finding moved the done ticket back to To do, untaken, and the launch
+    resumed the worker's session in place, whose runner then refused: no longer taken by that session."""
+    import metaform.modules.dispatch as package
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    store = dispatch.store
+    store.take_work(dispatch.id, by='claude worker-session')
+    store.move_work(dispatch.id, 'done')
+    store.move_work(dispatch.id, 'todo', kept=True)  # what the review finding's correction does
+    spawned = []
+
+    def resumed(store, work, agent, extra, name, **_):
+        spawned.append((Store('proj').ticket(work).work.taken_by, extra))
+        return {'pid': 1}
+
+    monkeypatch.setattr(package, 'launches', list)
+    monkeypatch.setattr(package, 'session_state', lambda store, session: {'capabilities': {'resume': True}})
+    monkeypatch.setattr(package, 'resume_spawn', resumed)
+    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: {'session_id': 'worker-session', 'agent': 'claude'})
+    held = {'work_id': dispatch.id, 'assignment_id': 'assignment'}
+    assert orchestration.Transport().launch(ctx, held, 'transition')['state'] == 'queued'
+    assert spawned and spawned[0][0] == 'claude worker-session', 'The runner must find the ticket its own.'
+    assert 'resume=worker-session' in spawned[0][1]
+
+    # A start the gate refuses gives the ticket back where it waited; a done ticket resumes nothing.
+    store.move_work(dispatch.id, 'todo', kept=True)
+    monkeypatch.setattr(package, 'resume_spawn', lambda *args, **kwargs: (_ for _ in ()).throw(Stop('full', 'next')))
+    with pytest.raises(Stop):
+        orchestration.Transport().launch(ctx, held, 'transition')
+    assert not Store('proj').ticket(dispatch.id).work.taken
+    store.take_work(dispatch.id, by='claude worker-session')
+    store.move_work(dispatch.id, 'done')
+    assert orchestration.Transport().launch(ctx, held, 'transition')['state'] == 'completed'
 
 
 @pytest.mark.skipif(not os.environ.get('METAFORM_IDLE_EVIDENCE'), reason='Explicit 60-second CPU evidence run.')

@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-10-19
+
+- `orchestration_change` on a ticket given no specification file revises the task of the GC's ticket, its operative specification, where it used to fail on a path of `None`; the earlier task is kept as the change record's `before_content`, and the change is routed and told to the person as a file's is. A `file:` path that does not exist is still refused (code.server.tool#1c).
+- `orchestration_change` takes `section`, a record id or heading: `content` is then that one record, which replaces the record with that heading or is added at the end, and the rest of the file stays. A write that would drop any heading of a specification file is refused, nothing written, unless `removing` names each record it removes; the refusal gives the `section` call that does what was meant (code.router.assignment#13, after two amendments overwrote whole specifications). A new record goes after the last record of its level, not under whatever heading ends the file; a `section` call whose content holds several records, or is headed by a record the file already holds, is refused so no id is written twice; the person's message and the change order carry the changed lines, each hunk headed by its record, instead of the whole file (functional review of the same ticket).
+- A ticket's read (`map work id=`) links what reviewed it: beside its assignment, `independent_assessments` gives each assessment's assignment, ticket, role, state, result and `findings_filed`, the tickets its findings landed on (the reviewed ticket when a finding reopens it, or the open ticket at the node a finding was folded into), so a ticket whose work ran shows that work, its reviews and where they led. Assignments table version 3 adds `findings_filed` (code.router.assignment#e).
+
 ## 2026-10-18
 
 - Add a native module for GC ticket ownership, authored role assignments, swarm membership, independent functional assessments and durable caller continuations. Keep these responsibilities separate from dispatch's operational execution roles.

@@ -1,0 +1,4 @@
+"notify_user once -> 1 failed, 6 deselected in 9.54s ['E       ValueError: too many values to unpack (expected 1)']"
+"turn records ids -> 1 failed, 6 deselected in 18.62s [\"E       AssertionError: assert ['7a0044031f7...fb6db4df9e72'] == ['7a0044031f7...fb6db4df9e72']\", 'E         ']"
+"note_context -> 1 failed, 6 deselected in 15.59s ['E       assert 2 == 1', 'E        +  where 2 = sum(<generator object test_a_gc_check_in_result_reaches_the_system_agents_session_once.<locals>.<genexpr> at 0x7cd0d228b440>)']"
+"Each check-in result now reaches the system agent once. Traced on real data: the held-cap result (transition defbd001, 2026-10-19 00:32Z) was delivered once by the orchestration store and queued once by the runner, yet the system agent answered it (thread seq 2112) and then said 'That's the same message again' (seq 2116)."

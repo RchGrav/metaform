@@ -1,0 +1,1 @@
+My session's identity variables are set, and the server reads them from the test process. CI and the person's terminal don't have them, so I'll rerun with them cleared, as a person's run would be.

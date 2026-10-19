@@ -753,6 +753,7 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
     if thing is None or not ctx.nouns.get('condition'):  # none or empty: no finding; a note is kept on the object
         return
     condition, note = str(ctx.nouns['condition']), ctx.nouns.get('note')
+    before = _kept_in(rec, kind, thing)  # the ticket another part keeps this part's last finding in, same_as
     if condition == OK:
         # A part that works is no work, MAP-046's amendment of 2026-10-15: its open findings no agent has taken close,
         # replaced by ok, and nothing is opened, so the board never holds an empty card for it. The check is kept at
@@ -760,9 +761,15 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         for row in rec.store.work(Node(kind, thing), open=True, limit=0).results:
             if _finding(row) and not row.taken:
                 rec.store.finish_work(row.id, f'Replaced by {condition}.')
+        _unlink(rec, kind, thing, before, notices)
         _checked(rec, kind, thing, True, notices)
         return
-    _checked(rec, kind, thing, False, notices)  # a newer condition replaces an ok, as it replaces a finding
+    kept, waits_on = _same_as(ctx, rec, kind, thing, note, notices)
+    if before != kept:
+        _unlink(rec, kind, thing, before, notices)
+    _checked(rec, kind, thing, False, notices, kept)  # a newer condition replaces an ok, as it replaces a finding
+    if kept is not None:
+        return
     task = _task(condition, note)
     # A part has one condition: recorded again, as verification does once it has read the source, the new one
     # replaces the last, which closes, so the read-back shows what was found most recently. The same condition
@@ -825,14 +832,91 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
         notices.append({'where': 'condition', 'message': f'A marker is open on the element and its purpose record; '
                                                          f'this one is kept in {joined.id}.'})
         return
-    _note(notices, rec.store.add_work(Node(kind, thing), condition, note=note, task=task))
+    _note(notices, rec.store.add_work(Node(kind, thing), condition, note=note, task=task,
+                                      links=[waits_on] if waits_on is not None else ()))
 
 
-def _checked(rec: Recording, kind: Literal['element', 'join'], thing: str, ok: bool, notices: Notices) -> None:
-    """Routine inspection status belongs to provenance, never to functional graph nodes."""
+def _same_as(ctx: Context, rec: Recording, kind: Literal['element', 'join'], thing: str, note: Any,
+             notices: Notices) -> tuple[str | None, Node | None]:
+    """A finding the agent says is the defect already open at another element, same_as, is recorded once: it joins
+    that element's open intake finding, its note added and this part linked, so work on that one ticket reaches both
+    parts and no second ticket looks untouched (flask 35a62198 and 19d75fe3, 2026-10-18). The two notes need share no
+    words, so only the agent that reasoned both can say they are one defect. Gives the ticket it is kept in. A ticket
+    an agent has taken is not changed but for the link: a note it does not hold is recorded here as its own finding,
+    linked to that ticket's part, as a finding beside a taken one waits behind it. With no open finding there, this
+    one is recorded here as any other is."""
+    named = str(ctx.nouns.get('same_as') or '').strip()
+    if not named:
+        return None, None
+    store = rec.store
+    other = store.element(named, raw=True)
+    if other is None or (kind == 'element' and other.id == thing):
+        notices.append({'where': 'same_as', 'message': f'{named} is no other recorded element; this finding is '
+                                                       'recorded here.'})
+        return None, None
+    found = [row for row in store.work(Node('element', other.id), open=True, limit=0, joins=True).results
+             if _finding(row) and row.condition in FIX and row.node_id != thing]
+    if not found:
+        notices.append({'where': 'same_as', 'message': f'{named} has no open finding; this one is recorded here.'})
+        return None, None
+    kept = next((row for row in found if row.node_id == other.id), found[0])
+    changes: dict[str, Any] = {}
+    if not any(link.kind == kind and link.id == thing for link in kept.links):
+        changes['links'] = [*(Node(link.kind, link.id) for link in kept.links), Node(kind, thing)]
+    new = bool(note and str(note).strip() and not _holds(kept.note, str(note)))
+    if new and kept.taken:
+        if changes:
+            _note(notices, store.edit_work(kept.id, changes))
+        notices.append({'where': 'same_as', 'message': f'The defect is open at {named} in {kept.id}, which an agent '
+                                                       'has taken; this finding is recorded here, linked to it.'})
+        return None, Node.of(kept.node_kind, kept.node_id)
+    for row in store.work(Node(kind, thing), open=True, limit=0).results:  # a finding recorded here before is this one
+        if _finding(row) and not row.taken:
+            store.finish_work(row.id, f'Recorded once in {kept.id}.')
+    if new:
+        merged = f'{kept.note.strip()}\n\n{str(note).strip()}' if kept.note and kept.note.strip() else str(note)
+        changes.update(note=merged, task=_task(kept.condition, merged))
+    if changes:
+        _note(notices, store.edit_work(kept.id, changes))
+    notices.append({'where': 'same_as', 'message': f'The defect is open at {named} in {kept.id}; it is kept there '
+                                                   'once, with this part linked to it.'})
+    return kept.id, None
+
+
+def _kept_in(rec: Recording, kind: str, thing: str) -> str | None:
+    """The ticket at another part this part's last finding was kept in, same_as, as its assessment records it."""
+    with assessment_store(rec.store).tables(write=False) as tx:
+        row = tx.get('assessments', {'node_kind': kind, 'node_id': thing})
+    return _kept(row.get('evidence') if row else None)
+
+
+def _kept(evidence: Any) -> str | None:
+    """The kept_in an assessment's evidence names, or None."""
+    kept = cast(dict[str, Any], evidence).get('kept_in') if isinstance(evidence, dict) else None
+    return str(kept) if kept else None
+
+
+def _unlink(rec: Recording, kind: str, thing: str, work_id: str | None, notices: Notices) -> None:
+    """A part recorded again no longer shows in the ticket its last finding was kept in, as a newer condition replaces
+    the last: its link is taken off that ticket. A ticket an agent has taken is left as it is."""
+    if work_id is None:
+        return
+    for row in rec.store.work(ids=[work_id], open=True, limit=1).results:
+        if row.taken:
+            notices.append({'where': 'same_as', 'message': f'The defect stays open in {row.id}, which an agent has '
+                                                           'taken; its link to this part is kept.'})
+        elif any(link.kind == kind and link.id == thing for link in row.links):
+            kept = [Node(link.kind, link.id) for link in row.links if not (link.kind == kind and link.id == thing)]
+            _note(notices, rec.store.edit_work(row.id, {'links': kept}))
+
+
+def _checked(rec: Recording, kind: Literal['element', 'join'], thing: str, ok: bool, notices: Notices,
+             kept: str | None = None) -> None:
+    """Routine inspection status belongs to provenance, never to functional graph nodes. A finding kept in another
+    part's ticket, same_as, records that ticket, so recording the part again finds it in one read."""
     del notices
     migrate_assessments(rec.store)
-    record_assessment(rec.store, kind, thing, OK if ok else 'finding')
+    record_assessment(rec.store, kind, thing, OK if ok else 'finding', evidence={'kept_in': kept} if kept else None)
 
 
 def _close_work(store: Store, things: set[str], resolution: str) -> None:
@@ -981,13 +1065,19 @@ def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[
     """The open condition and note on each recorded element and purpose record, by id, so an agent reads its marks back;
     a part with no open finding that the intake checked reads ok, from the checked layer, read in one pass."""
     ids = {element.id for element in elements} | {held.id for held in joins}
+    open_work = {row.id: row for row in store.work(open=True, limit=0).results}
     found: dict[str, dict[str, Any]] = {row.node_id: {'condition': row.condition, 'note': row.note}
-                                        for row in store.work(open=True, limit=0).results if row.node_id in ids}
+                                        for row in open_work.values() if row.node_id in ids}
     with assessment_store(store).tables(write=False) as tx:
         checked = tx.rows('assessments', limit=0).results
     for row in checked:
-        if row['node_id'] in ids and row['node_id'] not in found and row['condition'] == OK:
+        if row['node_id'] not in ids or row['node_id'] in found:
+            continue
+        if row['condition'] == OK:
             found[row['node_id']] = {'condition': OK}
+        # a part whose finding was kept once in another part's open ticket, same_as, reads that ticket
+        elif (kept := open_work.get(_kept(row['evidence']) or '')) is not None:
+            found[row['node_id']] = {'condition': kept.condition, 'note': kept.note, 'kept_in': kept.id}
     # Read older packets without mutating them. Their next intake migrates these routine markers.
     try:
         for item in store.layer_items(CHECKED, limit=0).results:
@@ -1390,11 +1480,13 @@ def first_run(ctx: Context) -> str | None:
     return None if got.instruction == prompt_files.required(resources.files(__name__), 'unfinished') else got.instruction
 
 E, P = ELEMENT_WORDS.get, PURPOSE_WORDS.get
-def _condition_nouns(words: Any) -> tuple[Noun, Noun]:
-    """The condition and the note an element or a purpose record is recorded with, each in that command's own words."""
+def _condition_nouns(words: Any) -> tuple[Noun, Noun, Noun]:
+    """The condition and the note an element or a purpose record is recorded with, and the element whose open finding
+    is the same defect, each in that command's own words."""
     return (Noun('condition', words('condition', ''), required=False,
                  schema={'type': 'string', 'enum': ['MISS', 'BKN', 'OK', 'broken', *INTAKE_MARKS]}),  # the procedure's word or its stored one
-            Noun('note', words('note', ''), required=False))
+            Noun('note', words('note', ''), required=False),
+            Noun('same_as', words('same_as', ''), required=False))
 
 def recording(folder: Path) -> bool:
     """Whether an intake is being recorded in the folder's project, or a verification pass is open on its map, so

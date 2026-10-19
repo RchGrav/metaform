@@ -95,6 +95,26 @@ def test_scoped_assignment_view_reads_only_its_relationships_and_preserves_indep
     assert ('continuations' in state['orchestration']) is thread
 
 
+def test_the_agents_key_names_an_ended_session_without_its_assignment_record(run, mapped):  # noqa: F811
+    """The agents key names an ended session by its responsibility and delivery, without its assignment's record and
+    directions, which made the read megabytes; a second read, from the states it keeps, says the same."""
+    from metaform.modules.dispatch import ENDED_ASSIGNMENT, read_sessions
+
+    run('enable', 'dispatch', cwd=mapped)
+    run('enable', 'orchestration', cwd=mapped)
+    owner, gc = managed_assignment(mapped)
+    assessment = owner.assessment(context('orchestration', mapped, session='gc-ui'), gc,
+        {'summary': 'GC validated countdown; review selection usability.', 'evidence': ['candidate-7 countdown check']},
+        'view-assessment')
+    owner.bind(context('orchestration', mapped), assessment['assignment_id'], 'fqc-ui')
+    record_view_session(mapped, assessment, 'fqc-ui')
+    listed = read_sessions(context('dispatch', mapped, nouns={'thread': False}))['states']['fqc-ui']
+    assert set(listed['orchestration']) == set(ENDED_ASSIGNMENT) and listed['pending_direction'] == []
+    assert listed['orchestration']['reviewed_assignment_id'] == gc['assignment_id']
+    assert listed['authored_role_uri'] == 'metaform://role/functionality'
+    assert read_sessions(context('dispatch', mapped, nouns={'thread': False}))['states']['fqc-ui'] == listed
+
+
 def test_native_role_menu_uses_registered_definitions_and_the_independent_assessment_launch_route(run, mapped):  # noqa: F811
     from metaform.modules.web.server import call_role, role_choices
 

@@ -214,7 +214,7 @@ def stop_group(pid: int, expected: str) -> None:
 
 def recover(ctx: Context) -> dict[str, Any]:
     """Apply the configured recovery policy on demand or before Autostart selection, without rewriting reads."""
-    from . import base_store, foreign, held_ticket, sessions, ticket
+    from . import base_store, foreign, held_ticket, sessions, ticket, work_over
 
     policy = str(ctx.setting('dispatch_recovery'))
     result: dict[str, Any] = {'policy': policy, 'released': [], 'deferred': []}
@@ -264,6 +264,8 @@ def recover(ctx: Context) -> dict[str, Any]:
                 raise ValueError('runner death cannot be verified')
             if ticket(own, work_id).taken_by != owner:
                 continue
+            if work_over(own, ticket(own, work_id)):  # its fix landed and is watched, not given back: its work is over
+                continue
             # Process cleanup never holds the project's write lock. It owns only this session's verified resources.
             # A short final transaction preserves any ownership or session changes made while cleanup ran.
             stop_adapter(held)
@@ -289,6 +291,8 @@ def recover(ctx: Context) -> dict[str, Any]:
                     reason='its verified dead runner was recovered automatically')
             publish(ctx, 'requeue', work_id=work_id, session_id=row['session_id'],
                     reason='automatic dead runner recovery')
+            from .board import died
+            died(ctx, work_id, str(row['session_id']), 'it is back in To do')
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             result['deferred'].append({'work_id': work_id, 'reason': str(error),
                                        'next': f'metaform map work op=move id={work_id} column=todo'})
@@ -353,4 +357,6 @@ def settle(ctx: Context) -> list[str]:
                 key=str(row['session_id']),
                 reason='its runner died; while Autostart agents is checked it resumes in place once its wait is over '
                        'and an agent slot is free')
+        from .board import died
+        died(ctx, str(row['work_id']), str(row['session_id']), 'the supervisor resumes it in place')
     return settled

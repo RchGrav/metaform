@@ -788,6 +788,12 @@ def surface(folder: Path) -> list[Module]:
     return withheld(composed.surfaced(folder), os.environ.get(WITHHELD, ''))
 
 
+def installed() -> list[Module]:
+    """Every module Metaform can load, enabled or not, in module id order: what a setting may name of them."""
+    from . import loader
+    return sorted((one.module for one in loader.discover() if one.module is not None), key=lambda one: one.id)
+
+
 # What a session's runner withholds from the agent it starts, named in its MCP server's environment: a session that
 # must not lean on earlier conclusions, an intake, is served without the tools that read them, dispatch's
 # dispatch_intake_withheld. Like the session's identity, it describes one session, so no process it starts carries it.
@@ -864,9 +870,17 @@ def builder() -> Any:
     from . import build
     return build
 
+# Set on the server `mcp_connect` starts with no identity: the web GUI's MCP host reading for the person's page, which
+# is no agent's conversation, so the server serves no session and lists every tool with its view, MCP-003 and VIEW-039.
+PAGE_HOST = 'METAFORM_PAGE_HOST'
+
+
 def serve_session() -> None:
     """Make this process one agent session of its own, for a server a host starts for one conversation, such as the
-    MCP server over stdio: what its calls tell the agent is told once, MCP-039. METAFORM_SESSION, when set, names it."""
+    MCP server over stdio: what its calls tell the agent is told once, MCP-039. METAFORM_SESSION, when set, names it.
+    A server the page's host started (PAGE_HOST) serves none."""
+    if os.environ.get(PAGE_HOST):
+        return
     from . import shown
     shown.serving()
 
@@ -974,6 +988,40 @@ def persons_decision(caution: str, command: str, page: str | None = None) -> Per
     the person runs, `command`, with the page's control `page` when there is one."""
     from . import caller
     return caller.persons_decision(caution, command, page)
+
+
+def page_vouched() -> bool:
+    """Whether the web server ran this process for a write from its own page, which carries the person's consent.
+    See `metaform.caller`."""
+    from . import caller
+    return caller.vouched()
+
+
+def dispatched() -> str | None:
+    """Why this process is known to run for an agent a Metaform dispatch runner started, in a few words; None when
+    nothing says so. See `metaform.caller`."""
+    from . import caller
+    return caller.dispatched()
+
+
+def current_os() -> str:
+    """The system this process runs on, as `Module.supported_os` names it: linux, macos or windows."""
+    from .module_metadata import current_os as running
+    return running()
+
+
+def noted(result: Any, notices: list[tuple[str, str]]) -> Any:
+    """A verb's result as plain data, with `notices`, (where, message) pairs, first among its own when it is an
+    object. See `metaform.results`."""
+    from . import results
+    return results.noted(result, notices)
+
+
+def skills_deployed(client_name: str) -> bool:
+    """Whether the MCP client of this name has the current discoverable skills on disk, BASE-059. See
+    `metaform.install`."""
+    from . import install
+    return install.skills_deployed(client_name)
 
 
 def persons_word(folder: Path, what: str, project: str | None = None,
@@ -1131,8 +1179,9 @@ def mcp_server(folder: Path) -> list[str] | None:
 def mcp_connect(folder: Path, **identity: str) -> Any:
     """A connection to the folder's own MCP server, MCP-010, for a surface that is an MCP host for the person, as the
     web GUI's chat is for an MCP App view: the server AI tools are registered with, run by this Python in the folder
-    with `identity`, the METAFORM_* names of the agent session its calls are made for, or with none. The caller keeps
-    it and closes it with `close()`; `request(method, params, deadline=)` sends one request with the per-request
+    with `identity`, the METAFORM_* names of the agent session its calls are made for, or with none: then as the host
+    itself (PAGE_HOST), serving no session, so it lists every tool whatever category an agent has open. The caller
+    keeps it and closes it with `close()`; `request(method, params, deadline=)` sends one request with the per-request
     `_meta`, whose client capabilities the caller may give. Stops when no enabled module serves MCP or the server does
     not start."""
     from . import probe
@@ -1141,7 +1190,7 @@ def mcp_connect(folder: Path, **identity: str) -> Any:
         raise Stop('No enabled module serves MCP here, so an agent has nothing to connect to.', 'metaform enable mcp')
     started = [sys.executable, '-m', 'metaform', *command[1:]] if command[0] == 'metaform' else command
     try:
-        return probe.Session(started, cwd=folder, env=child_environment(**identity))
+        return probe.Session(started, cwd=folder, env=child_environment(**(identity or {PAGE_HOST: '1'})))
     except OSError as error:
         raise Stop(f'The MCP server did not start here: {error}.', 'metaform mcp serve') from None
 

@@ -1,0 +1,1 @@
+"Notes arrived hours late. I traced c618adbb in the store. It was written into the system agent's thread at 16:38 (seq 1085) while a long turn was running. Each note became its own queued turn, and your messages (71 since then) kept going ahead of them, so more than 100 note-turns drained one per turn. The cause is in `runner.Session.turn()`, and it was still present."

@@ -1,0 +1,1 @@
+RuntimeError: tools/call failed: {'code': -32600, 'message': 'this connection serves the handshake protocol era; requests carrying the 2026-07-28 envelope are not accepted on it'}

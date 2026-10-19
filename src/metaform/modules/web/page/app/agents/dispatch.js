@@ -290,13 +290,17 @@ overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .bt
 /* The agents key: each agent working in the project now, with its flat icon and in words what it is; a click opens its
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
+let WHOLE_READS = 0;  // the reads of every agent begun, so one that lands after a later one's is let go
 export async function renderAgents(only = null) {
   if (FRAMED) return;
   const project = S.project, metaform = S.base, shown = `${project}/${metaform}`;
   // a change that names its tickets reads those tickets alone and merges them in, once the whole has been read here
   const some = Array.isArray(only) && only.length > 0 && D.readFor === shown;
+  const whole = some ? WHOLE_READS : ++WHOLE_READS;
   const {found, claimed} = some ? await readTickets(only) : await readDispatch();
   if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
+  // reads land in any order: a read of every agent begun after this one is the newer, and draws instead
+  if (whole !== WHOLE_READS) return;
   if (some) mergeTickets(only, found);
   else {
     D.sessions = found.sessions || [];

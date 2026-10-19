@@ -1,0 +1,1 @@
+mcp__metaform__map_work op=step said: "test_web.py: the new/clear test reads agent_sessions." and the same episode's step: "test_new_and_clear reads the old 'sessions' table, but sessions are kept in 'agent_sessions'."

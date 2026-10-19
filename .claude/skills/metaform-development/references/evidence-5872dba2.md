@@ -1,0 +1,1 @@
+mcp__metaform__map_work op=edit note: "in flask, intake filed one defect (on-create-command.sh installs the absent requirements/dev.txt) as two findings 35 s apart at two elements, 35a62198 (trouble, 2026-10-18T22:38:40Z) and 19d75fe3 at data.specification.dependency (missing, 22:39:15Z). The work ran on 35a62198 and nothing names 19d75fe3, so 19d75fe3 still looks untouched"

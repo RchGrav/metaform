@@ -1,0 +1,1 @@
+assistant: uv run metaform map work op=move id=code.store.memory#e column=todo position=0 ... tool_result: "item":"code.store.memory#e" ... assistant: "I've moved #e to the front of the queue so it starts on the next free slot."

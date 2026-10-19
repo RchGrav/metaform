@@ -13,6 +13,11 @@ read, replied. With `wait=<seconds>` the note is a question and the call waits f
 `reply=<id>`, and says plainly who did not answer; a reply that reaches a waiting sender is returned by the call rather
 than given to it again as a turn. A note never starts, stops, interrupts or redirects anyone, so the authority check
 `may_steer` does not apply to it. The configured controls and dynamic blacklist govern operation.
+
+One note is more than information: the person's own system agent, in a turn the person's message started, marks a
+note `decision=true` when it relays that person's decision. Its line is a `user_direction` that carries the person's
+message (`decision`), each recipient's assignment keeps it as the person's direction, and each runner puts it ahead
+of what waits, as it does the person's own message.
 """
 from __future__ import annotations
 
@@ -29,14 +34,15 @@ from metaform import events, home
 from metaform.data import Store, StoreError, WorkRecord, parse_reference
 from metaform.module import Context, Stop, context, provided, work_reads
 
-from . import base_store, held_ticket, session_status, sessions, tell
-from .signals import mark_peer, own_store
+from . import base_store, held_ticket, persons_word, session_status, sessions, system_sessions, tell
+from .signals import add_line, mark_peer, own_store
 
 WAIT_MOST = 120  # seconds a question waits for its replies
 RECENT_FILES = 12  # the files presence shows for each agent, the latest first
 RECENT_LINES = 10  # the file lines presence shows for each of them
 SAID_MOST = 240  # characters of what an agent said last that presence shows
 TARGETS = ('to', 'at', 'file', 'topic', 'reply')
+SYSTEM = 'system'  # to=system: the person's system agent of the project, target_project= naming another
 
 
 def stamp(at: float | None = None) -> str:
@@ -262,6 +268,26 @@ def mark_remote(store: Store, note: dict[str, Any], state: str, recipient_sessio
         events.announce(Path(found.path), 'cli')
 
 
+def system_agent(ctx: Context, everyone: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The person's system agent of the project `ctx` is in, as a note's receiver: its running session, else its last
+    conversation, which the next one resumes, marked `_waiting`, so the note is kept in that thread and given when a
+    system session next starts, `Session.replay_peers`. A project's system agent is how a fault one project finds in
+    another reaches that project, so a note to it is never refused because the person's session there has ended."""
+    store = ctx.require_store()
+    mine = system_sessions(store)
+    ids = {str(row['session_id']) for row in mine}
+    found = [entry for entry in everyone if entry['session_id'] in ids]
+    if found or not mine:
+        if not found:
+            raise Stop(f'Project {store.project_id} has had no system agent yet, so the note has no thread to wait in. '
+                       'Its system agent starts when the person opens the project.', 'metaform dispatch peers')
+        return found
+    row = mine[-1]
+    record = held_ticket(base_store(store, row), str(row['work_id']))
+    return [{**side(ctx, record, row), 'activity': 'waiting', 'files': [], 'said': '', '_record': record,
+             '_row': row, '_waiting': True}]
+
+
 def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tuple[str, str, list[dict[str, Any]],
                                                                     dict[str, Any] | None]:
     """Whom a note goes to: the target named, its kind, the agents at work there other than the caller, and the
@@ -288,6 +314,9 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
             # An adapter without load/resume may give the same recorded owner a new ACP id. Follow that
             # assignment, never another agent that later happens to take the old ticket.
             found = [entry for entry in everyone if entry.get('assignment_id') == sender['assignment_id']]
+        if not found and target in {str(row['session_id']) for row in system_sessions(target_ctx.require_store())}:
+            # the person's system agent answers in its next session: its own, or the one after it
+            found = system_agent(target_ctx, everyone)
         if not found:
             raise Stop(f'The agent that sent note {named} is no longer at work in a running session, so the reply would '
                        'reach no one.', 'metaform dispatch peers')
@@ -295,6 +324,12 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
     store = target_ctx.require_store()
     everyone = [entry for entry in working(target_ctx, store)
                 if store.project_id != source_project or entry['session_id'] != sender_session]
+    if kind == 'to' and named == SYSTEM:
+        found = [entry for entry in system_agent(target_ctx, everyone)
+                 if store.project_id != source_project or entry['session_id'] != sender_session]
+        if not found:
+            raise Stop('That is your own session; a note goes to another agent.', 'metaform dispatch peers')
+        return named, kind, found, None
     if kind == 'to':
         target = named
         reference = parse_reference(named)
@@ -361,22 +396,52 @@ def wait_seconds(ctx: Context) -> float:
     return seconds
 
 
+def relayed(store: Store, mine: dict[str, Any]) -> dict[str, Any]:
+    """The person's message a note marked decision=true relays: only their own system agent sends one, in a turn that
+    message started or was steered into, `persons_word`; any other note is a peer's information."""
+    word = persons_word(store, 'relay the person\'s decision', work=str(mine['work_id']), runner=mine.get('runner'))
+    if not word or word.get('covered') or not word.get('id'):
+        raise Stop('Only the person\'s own system agent relays their decision, in the turn their message started. '
+                   'Send this as a plain note, or ask the person to send it with dispatch message.',
+                   'metaform dispatch note to=<work id or address#n> -- "<note>"')
+    return {key: word.get(key) for key in ('id', 'text', 'at')}
+
+
+def kept_waiting(ctx: Context, entry: dict[str, Any], line: dict[str, Any]) -> dict[str, Any]:
+    """A note to a system agent no session runs for, `system_agent`: kept in its last conversation's thread as the
+    runner keeps a note it is given, marked `waiting`, and announced to that project's processes as any change is. The
+    next system session there gives it, `Session.replay_peers`; nothing waits on a timer for it."""
+    target = destination(ctx, entry.get('project'))
+    row = cast(dict[str, Any], entry['_row'])
+    try:
+        with own_store(target.require_store()).tables() as tx:
+            add_line(tx, str(row['session_id']), str(row['work_id']), f'peer:{line["id"]}', 'peer',
+                     json.dumps({**line, 'waiting': SYSTEM}, ensure_ascii=False))
+    except StoreError as error:
+        return {'error': str(error)}
+    events.announce(target.folder, 'cli')
+    return {'noted': True, 'waiting': True, 'pending': True}
+
+
 def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     """Send one note, keeping it first in the sender's thread so each receiver's delivery marks land on it, then
     giving it to each receiver's runner; a receiver whose runner does not take it is marked failed."""
     record, mine = caller(store)
     work_id = str(mine['work_id'])
+    decision = relayed(store, mine) if ctx.nouns.get('decision') is True else None
     named, kind, found, answered = chosen(ctx, store, work_id, str(mine['session_id']))
     now = time.time()
     note_id = secrets.token_hex(8)
     line: dict[str, Any] = {
-        'id': note_id, 'kind': 'question' if wait else 'peer', 'at': stamp(now), 'epoch': now, 'text': text, 'ask': wait > 0,
+        'id': note_id, 'kind': 'user_direction' if decision else 'question' if wait else 'peer', 'at': stamp(now),
+        'epoch': now, 'text': text, 'ask': wait > 0,
         'reply_to': answered.get('id') if answered else None, 'target': {kind: named},
         'from': side(ctx, record, mine),
         'to': [{key: value for key, value in entry.items() if not key.startswith('_')
                 and key not in ('files', 'said', 'activity')} for entry in found],
         'states': {entry['work_id']: 'queued' for entry in found},
-        'session_states': {entry['session_id']: 'queued' for entry in found}}
+        'session_states': {entry['session_id']: 'queued' for entry in found},
+        **({'decision': decision} if decision else {})}
     kept = told(mine, 'note', line=line, awaiting=wait)
     if not kept.get('noted'):
         raise Stop(f'Your own session did not keep the note: {kept.get("error") or "no answer"}. Nothing was sent.',
@@ -384,11 +449,20 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     taken: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for entry in found:
+        if decision:  # the person's decision, kept on the recipient's assignment as theirs, as `dispatch message` does
+            target_ctx = destination(ctx, entry.get('project'), entry.get('base'))
+            for _, owner in provided(target_ctx.folder, 'orchestration'):
+                if owner.assignment(target_ctx, session_id=str(entry['session_id'])) is not None:
+                    owner.directed(target_ctx, str(entry['session_id']), {
+                        'kind': 'user_direction', 'id': note_id, 'text': text, 'at': home.now(),
+                        'from': {'kind': 'user', 'relayed_by': line['from']}, 'message': decision})
         if entry.get('_assignment'):
             target_ctx = destination(ctx, entry.get('project'), entry.get('base'))
             for _, owner in provided(target_ctx.folder, 'orchestration'):
                 owner.queue_message(target_ctx, entry['_assignment']['assignment_id'], line, key=note_id)
             answer: dict[str, Any] = {'noted': True, 'busy': True, 'pending': True}
+        elif entry.get('_waiting'):
+            answer = kept_waiting(ctx, entry, line)
         else:
             answer = told(entry['_row'], 'note', line=line, deliver=True)
         (taken if answer.get('noted') else failed).append({'project': entry.get('project'), 'item': entry['item'], 'agent': entry['agent'],
@@ -396,7 +470,9 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
                                                            'pending': bool(answer.get('pending')),
                                                            **({'error': str(answer.get('error') or 'no answer')}
                                                               if not answer.get('noted') else
-                                                              {'turn': 'after the turn in flight' if answer.get('busy')
+                                                              {'turn': 'when its next session starts'
+                                                               if answer.get('waiting') else
+                                                               'after the turn in flight' if answer.get('busy')
                                                                else 'now'})})
     with own_store(store).tables() as tx:
         for one in failed:
@@ -491,9 +567,34 @@ async def note(ctx: Context) -> dict[str, Any]:
             'unanswered': silent, 'said': words}
 
 
+def first_sentence(text: str, most: int = SAID_MOST) -> str:
+    """The writer's own words up to the end of their first sentence or line, never reworded; cut at `most`."""
+    words = ' '.join(str(text).split())
+    for end in range(len(words)):
+        if words[end] in '.!?' and (end + 1 == len(words) or words[end + 1] == ' '):
+            words = words[:end + 1]
+            break
+    lines = str(text).strip().splitlines()
+    if lines and len(' '.join(lines[0].split())) < len(words):
+        words = ' '.join(lines[0].split())
+    return words if len(words) <= most else words[:most - 1].rstrip() + '…'
+
+
+def inbox_line(one: dict[str, Any]) -> str:
+    """One note as the person's system agent's inbox lists it: the sender's ticket and title, the state a result
+    reports, and the first sentence of what was written."""
+    sender = cast(dict[str, Any], one.get('from') or {})
+    head = ' '.join(str(part) for part in (sender.get('item') or sender.get('agent') or '', sender.get('title') or '')
+                    if part)
+    state = str(one.get('state') or '')
+    return ' — '.join(part for part in (head, state, first_sentence(str(one.get('text') or ''))) if part)
+
+
 def notes(ctx: Context) -> dict[str, Any]:
     """`dispatch notes`: the caller's notes, sent and received, the latest first, each with its delivery to each
-    receiver; with note=<id>, that note and the replies threaded to it."""
+    receiver; with note=<id>, that note and the replies threaded to it. For the person's system agent this is its
+    inbox: agents' notes and results land here rather than in its conversation, so the list gives each as one line,
+    `summary`, and note=<id> gives that one whole."""
     store = ctx.require_store()
     _, mine = caller(store)
     work_id = str(mine['work_id'])
@@ -505,6 +606,11 @@ def notes(ctx: Context) -> dict[str, Any]:
             raise Stop(f'Your ticket keeps no note {wanted}.', 'metaform dispatch notes')
     limit = ctx.nouns.get('limit')
     count = int(limit) if isinstance(limit, int) and limit > 0 else 20
+    if not wanted and system_sessions(store, [mine]):
+        inbox = [{'note': one.get('id'), 'at': one.get('at'), 'kind': one.get('kind'), 'summary': inbox_line(one),
+                  'read': f'dispatch_notes note={one.get("id")}'} for one in reversed(held)
+                 if str(cast(dict[str, Any], one.get('from') or {}).get('session_id') or '') != mine['session_id']]
+        return {'notes': inbox[:count], 'more': max(len(inbox) - count, 0)}
     listed = [{'note': one.get('id'), 'at': one.get('at'),
                'way': 'sent' if cast(dict[str, Any], one.get('from') or {}).get('session_id') == mine['session_id']
                else 'received',

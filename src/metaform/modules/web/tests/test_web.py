@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import FAKE_AGENT  # dispatch's ACP agent, no model, which every test home starts
+
 
 def own(project_id):
     """A project's folder in the home, PROJ-026."""
@@ -149,7 +151,6 @@ def intake_agent(run, folder, log, dispatch_runners, *nouns):
     from metaform.data import Store
     from metaform.modules.dispatch.tests.test_dispatch import eventually
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
     fake = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}
     launched = json.loads(run('dispatch', 'intake', 'agent=claude', *nouns, '--json', cwd=folder, env=fake).stdout)
     dispatch_runners.append((launched, folder, log))
@@ -3396,7 +3397,6 @@ def test_an_intake_left_unfinished_is_never_shown_as_recorded_and_offers_resume_
     folder.mkdir()
     run('add', 'project', 'left', str(folder))
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
     run('intake', 'start', cwd=folder)
     for address in ('code.timer.kitchen', 'code.alarm.audible'):
         run('intake', 'element', address, 'role=DE', cwd=folder)  # commands only: no agent records it now
@@ -5349,7 +5349,6 @@ def test_a_stored_workflow_runs_from_the_task_editor_through_acp(run, web, mappe
     run('workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality', cwd=mapped)
     run('workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
     run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     log = tmp_path / 'fake.jsonl'
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'workflow'})
     page, problems, _ = opened(browser, web)
@@ -5459,13 +5458,10 @@ def test_a_person_adds_an_element_joined_to_a_node_and_an_agent_is_started_to_va
                                                                                           tmp_path, watch_dispatch):
     """A new element tool so the user can add and join something into the map, with an option to
     kick off an agent to pre-validate the new element, prompted in his words."""
-    import sys
-
     from metaform.data import Store
     alarm = Store('proj').element('code.alarm.audible').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
@@ -6094,6 +6090,8 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     worked = page.locator(f'#board .card[data-id="{doing.id}"]')
     assert 'codex' in worked.inner_text() and '1/3' in worked.inner_text()
     assert worked.locator('.age').inner_text() == 'now'
+    # a card is drawn again only when what it shows changed: a move rebuilds the moved card, not the others
+    page.evaluate('document.querySelectorAll("#board .card").forEach(card => { card.kept = true; })')
     start = page.locator(f'#board .card[data-id="{todo.id}"] .text').bounding_box()
     end = page.locator('#board .column[data-column="doing"] .cards').bounding_box()
     page.mouse.move(start['x'] + 10, start['y'] + start['height'] / 2)
@@ -6104,12 +6102,24 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     moved = next(record for record in Store('proj').work(limit=0).results if record.id == todo.id)
     assert (moved.column, moved.taken_by, moved.kind) == ('doing', 'user', 'broken')
     assert int(count('doing')) == int(expected[2]) + 1 and int(count('todo')) == int(expected[1]) - 1
+    kept = 'id => Boolean(document.querySelector(`#board .card[data-id="${id}"]`).kept)'
+    assert not page.evaluate(kept, todo.id) and page.evaluate(kept, done.id)
+    page.evaluate('document.querySelectorAll("#board .card").forEach(card => { card.kept = true; })')
     page.fill('#board .search', 'quieter')
     assert page.locator('#board .card:visible').count() == 1
     page.fill('#board .search', '')
     page.click('#board .kinds [data-kind="broken"]')                    # a kind toggled off hides its cards
     assert page.locator(f'#board .card[data-id="{todo.id}"]').is_hidden()
     page.click('#board .kinds [data-kind="broken"]')
+    assert page.evaluate('[...document.querySelectorAll("#board .card")].every(card => card.kept)')  # drawn, none made
+    # a ticket read again that differs only in the age the server counts is the ticket held, not a change
+    assert page.evaluate('''async id => {
+        const {S} = await import('/page/app/core/reads.js'), ops = await import('/page/app/live/ops.js');
+        const held = S.tickets.find(one => one.id === id);
+        await new Promise(done => setTimeout(done, 1500));  // its age_seconds is now another
+        ops.ticketsHeard({work_ids: [id]});
+        await ops.ticketsChanged();
+        return Boolean(held) && S.tickets.find(one => one.id === id) === held; }''', doing.id)
     page.locator(f'#board .card[data-id="{todo.id}"] .node').first.click()
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
     page.click('#board .add')
@@ -6661,7 +6671,9 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
     one sent three minutes after the click, carries none, and a message to another agent carries none and leaves the
     click untold. The chat's own box and buttons are never recorded, nor a
     click on the mascot, and a question asked through the mascot carries the line as the chat does, the click as it
-    was when the person asked even while their system agent starts; two asked while it is called go together, once."""
+    was when the person asked even while their system agent starts; two asked while it is called go together, once,
+    and one waiting on the chat's call when that call fails is told so, its click going with the next message; another
+    agent's failed start leaves a question waiting on the system agent's call as it is."""
     from metaform.data import Store
     from metaform.modules.dispatch import end_group
     from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
@@ -6712,10 +6724,12 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
             }
             return null; }'''
 
+        page.evaluate("async () => { window.__build = await import('/page/app/map2d/build.js'); }")
+
         def click_join():
             map_key(page, 'Escape')                                    # a selection let go, the map drawn whole
-            page.wait_for_function('''async id => (await import('/page/app/map2d/build.js')).M.edges
-                .some(one => one.join?.id === id && one.path?.isConnected)''', arg=join)
+            page.wait_for_function('id => window.__build.M.edges'
+                                   '.some(one => one.join?.id === id && one.path?.isConnected)', arg=join)
             still2d(page)
             point = page.evaluate(on_edge, join)
             assert point
@@ -6730,6 +6744,21 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         told = clicked()
         assert (told['kind'], told['label'], told['control'], told['state']) == (
             'banner', 'The map was not read', 'Read again', 'a warning'), told
+        # a button that answers a question is named with the question, graphical#146: "No" alone says nothing
+        page.route('**/api/answer', lambda route: route.fulfill(status=200, content_type='application/json', body='{}'))
+        page.evaluate('''async alarm => { const {asked} = await import('/page/app/selection/select.js');
+            document.querySelector('#qa .body').replaceChildren(asked({id: 'q-146', node_kind: 'element',
+                node_id: alarm, text: 'Is the container still needed?', suggestions: ['No', 'Yes']}));
+            document.querySelector('#qa').hidden = false; }''', alarm)
+        page.click('#qa .suggestion:text-is("No")')
+        answered = clicked()
+        assert answered['said'] == 'question "Is the container still needed?", its button "No" in Question', answered
+        page.evaluate("document.querySelector('#qa').hidden = true")
+        page.evaluate('''async () => { (await import('/page/app/core/controls.js')).confirmAct(
+            {title: 'Remove project Demo?', verb: 'Remove'}); }''')
+        page.click('#confirm button.confirm')                          # a confirmation's act button closes it
+        removed = clicked()
+        assert removed['said'].startswith('question "Remove project Demo?", its button "Remove"'), removed
         click_join()                                                   # the join again, then the chat
         page.click('#helpdesk .say')
         page.keyboard.type('Why is this flashing red?')
@@ -6834,6 +6863,82 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
                         + '\n\nIs the alarm late\\?\n\nOr is the timer slow\\?$', both), both
         assert len(calls) == 1 and sum('alarm late' in one for one in prompts()) == 1, (calls, prompts())
         assert 'I could not reach your system agent.' not in page.evaluate('window.__said')
+        # a question to the mascot that waits on the chat's own call, which then fails: the person is told, and the
+        # click it named goes with their next message
+        map_key(page, 's')                                             # the 2D map in the large area, for the join
+        click_join()
+        map_key(page, 's')
+        page.route('**/api/dispatch-sessions*', not_running)
+        page.evaluate("async () => { window.__dispatch = await import('/page/app/agents/dispatch.js');"
+                      " window.__dock = (await import('/page/app/dock/embody.js')).DOCK;"
+                      " await window.__dispatch.renderAgents(); }")
+        page.wait_for_function('id => !window.__dispatch.D.sessions.some(one => one.work_id === id'
+                               ' && one.state === "running")', arg=agent.id)
+        failing = []
+
+        def hold_failing(route):                                       # held until the mascot's ask waits on it
+            failing.append(route)
+        page.route('**/api/system-chat', hold_failing)
+        # the chat's call, as its Call button makes it, held; the button is hidden while the agent's thread is open
+        page.evaluate("async () => { (await import('/page/app/dock/commands.js')).callSystem(); }")
+        page.wait_for_function('() => window.__dock.calling')
+        eventually(lambda: page.evaluate('() => 0') or failing)        # the route runs inside a Playwright call
+        page.wait_for_function(clear, timeout=15000)
+        page.mouse.click(*page.evaluate(clear))
+        page.wait_for_selector('input.reply')
+        page.fill('input.reply', 'Is it the battery?')
+        page.press('input.reply', 'Enter')
+        page.wait_for_function("() => window.__ask.ASKING.pending === 'Is it the battery?'")
+        page.unroute('**/api/system-chat', hold_failing)
+        failing[0].fulfill(status=409, json={'error': 'The agent did not start.'})
+        page.wait_for_function("() => window.__said.some(one => one?.includes('I could not reach your system agent.'))")
+        assert page.evaluate('() => window.__ask.ASKING.pending') is None
+        assert clicked()['told'] is False, clicked()
+        assert not any('battery' in one for one in prompts())
+        page.unroute('**/api/dispatch-sessions*', not_running)
+        page.evaluate('() => window.__dispatch.renderAgents()')       # live again
+        page.wait_for_function('id => window.__dispatch.D.sessions.some(one => one.work_id === id'
+                               ' && one.state === "running")', arg=agent.id)
+        page.fill('#helpdesk .say', 'Did that reach you?')
+        page.press('#helpdesk .say', 'Enter')
+        reached = eventually(lambda: next((one for one in prompts() if 'Did that reach you?' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nDid that reach you\\?$', reached), reached
+        # another agent's start fails while the question waits on the system agent's call: the question still waits,
+        # nothing says the system agent was not reached, and it goes once the call answers
+        map_key(page, 's')                                             # the 2D map in the large area, for the join
+        click_join()
+        map_key(page, 's')
+        page.evaluate("() => { window.__dock.mine = null; }")         # none yet
+        reaching_system = []
+
+        def hold_system(route):                                        # held while the other start fails
+            reaching_system.append(route)
+        page.route('**/api/system-chat', hold_system)
+        page.wait_for_function(clear, timeout=15000)
+        page.mouse.click(*page.evaluate(clear))
+        page.wait_for_selector('input.reply')
+        page.fill('input.reply', 'Is the bell broken?')
+        page.press('input.reply', 'Enter')
+        page.wait_for_function("() => window.__ask.ASKING.pending === 'Is the bell broken?' && window.__dock.calling")
+        # the bubble's status keeps its last words, the failed step's, until the mascot's 'Asking…' replaces them
+        page.wait_for_function("() => document.querySelector('#bubbles .heard')?.textContent.includes('Asking')")
+        page.evaluate('() => { window.__said = []; }')
+        page.route('**/api/talk', lambda route: route.fulfill(status=409, json={'error': 'The ticket agent is busy.'}),
+                   times=1)
+        page.evaluate("async () => { await (await import('/page/app/dock/commands.js'))"
+                      ".talkAbout({node: 'code.alarm.audible'}, 'the alarm'); }")
+        page.wait_for_function("() => window.__dock.notes.some(one => one.text.includes('The ticket agent is busy.'))")
+        # after any answer startFailed's import of ask.js would give
+        assert page.evaluate("async () => { await import('/page/app/figures/ask.js');"
+                             " await new Promise(done => setTimeout(done, 100));"
+                             " return window.__ask.ASKING.pending; }") == 'Is the bell broken?'
+        assert not any('could not reach' in (one or '') for one in page.evaluate('window.__said'))
+        page.unroute('**/api/system-chat', hold_system)
+        for call in reaching_system:  # answered here: a handler in Python runs only while the test waits on the page
+            call.fulfill(json={'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})
+        bell = eventually(lambda: next((one for one in prompts() if 'Is the bell broken?' in one), None))
+        assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nIs the bell broken\\?$', bell), bell
+        assert len(reaching_system) == 1, reaching_system
         # a message written while the system agent starts, whose send then fails: the person's words come back in the
         # box without the line, and the resend carries the line once, as the click was never told
         map_key(page, 's')                                             # the 2D map in the large area, for the join
@@ -6869,8 +6974,8 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         page.route('**/api/dispatch-message', lambda route: held.append(route), times=1)
         page.fill('#helpdesk .say', 'Still there?')
         page.press('#helpdesk .say', 'Enter')
-        eventually(lambda: held)
-        click_join()                                                   # a new click while the send goes
+        eventually(lambda: page.evaluate('() => 0') or held)          # the route runs inside a Playwright call
+        click_join()                                                  # a new click while the send goes
         held[0].fulfill(status=409, json={'error': 'The session is busy.'})
         page.wait_for_function("() => document.querySelector('#helpdesk .say').value === 'Still there?'")
         assert clicked()['told'] is False, clicked()
@@ -6901,7 +7006,7 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
         back = eventually(lambda: next((one for one in prompts() if 'Back to the join.' in one), None))
         assert re.match(re.escape(line).replace(r'\{\}', r'\d+') + '\n\nBack to the join\\.$', back), back
         assert back.count('The person clicked') == 1, back
-        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'] * 2, \
+        assert problems == ['Failed to load resource: the server responded with a status of 409 (Conflict)'] * 4, \
             problems
     finally:
         agent.close()
@@ -7124,6 +7229,76 @@ def test_each_projects_agents_are_drawn_when_the_person_switches_to_it_and_back(
     drawn_for('other')
     page.select_option('#proj', 'proj')
     drawn_for('proj')
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-035')
+@pytest.mark.req('VIEW-039')
+def test_switching_projects_on_the_page_ends_no_running_agent_and_its_figure_returns(run, web, mapped, browser,
+                                                                                   tmp_path, dispatch_runners):
+    """Reported by the person, code.dispatcher.agent#5c: switching the page to another project ended the agents running
+    in the project left. Each project's real runner, the fake agent held in its turn, is still running after the page
+    goes to the other project and back, and the figure of the first comes back; only the person's stop ends one."""
+    from metaform.data import Node, Store
+    from metaform.modules.dispatch.tests.test_dispatch import alive, eventually
+    run('enable', 'dispatch')
+    folder = tmp_path / 'other'
+    folder.mkdir()
+    run('add', 'project', 'other', str(folder))
+    build(Store('other'))
+    run('set', '--layers', ','.join(TOGGLED), cwd=folder)
+    folders, works, pids = {'proj': mapped, 'other': folder}, {}, {}
+    for project, where in folders.items():
+        log = tmp_path / f'{project}.jsonl'
+        works[project] = Store(project).add_work(Node('element', 'code.alarm.audible'), 'broken',
+                                                 task='a quieter tone').id
+        launched = json.loads(run('dispatch', 'start', works[project], 'claude', '--json', cwd=where,
+                                  env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}).stdout)
+        dispatch_runners.append((launched, where, log))
+        pids[project] = launched['pid']
+        logged_by(log, lambda entry: 'grandchild' in entry)   # in its turn, held there until it is cancelled
+        # and the person's system agent, kept connected, as the person keeps theirs
+        run('set', '--dispatch-stay-connected', cwd=where)
+        system = json.loads(run('dispatch', 'system', '--json', cwd=where,
+                                env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}).stdout)
+        dispatch_runners.append((system, where, log))
+        works[f'{project}:system'] = system['work_id']
+
+    def sessions():
+        found = {}
+        for named, work in works.items():
+            with Store(named.split(':')[0], module='dispatch').tables(write=False) as tx:
+                found[named] = [(row['state'], row.get('how')) for row in tx.rows('agent_sessions', limit=0).results
+                                if row['work_id'] == work]
+        return found
+
+    def running():
+        return all(rows == [('running', None)] for rows in sessions().values()) \
+            and all(alive(pid) for pid in pids.values())
+
+    eventually(running)
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#dockTab')                                    # the system agent's chat open, as the person has it
+    page.click('#helpdesk .call')
+    page.wait_for_selector('#helpdesk .threadbar .stop:not([hidden])', timeout=20000)
+
+    def drawn_for(project):
+        work = works[project]
+        page.wait_for_function(f'''() => window.metaform.loaded()
+            && window.metaform.figures().some(one => one.work_id === "{work}" && one.stage === "circling")''',
+                               timeout=20000)
+
+    drawn_for('proj')
+    page.select_option('#proj', 'other')
+    drawn_for('other')
+    page.wait_for_timeout(2000)   # whatever the switch set off has run by now
+    assert running(), sessions()
+    page.select_option('#proj', 'proj')
+    drawn_for('proj')
+    page.wait_for_timeout(2000)
+    assert running(), sessions()
     assert problems == []
 
 
@@ -7410,7 +7585,6 @@ def test_a_record_that_lights_nothing_leaves_the_label_in_depth_order(run, web, 
     assert problems == []
 
 
-FAKE_AGENT = Path(__file__).parents[2] / 'dispatch' / 'tests' / 'fake_agent.py'  # dispatch's ACP agent, no model
 AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp', 'comet', 'beetle', 'slime',
                 'plane', 'puffer', 'owl', 'cubebot', 'mushroom', 'seahorse')
 
@@ -7536,7 +7710,6 @@ def test_the_page_lists_the_agents_with_whether_each_is_found_and_sets_the_defau
     for read in ('dispatch-agents', 'dispatch-sessions', 'dispatch-claims'):  # a project not registered is said
         assert api(web, f'/api/{read}?project=gone')[0] == 404, read
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=mapped)
     status, said = api(web, '/api/dispatch-agents', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'default': 'claude'}))
@@ -7558,8 +7731,6 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
                                                                                      tmp_path, watch_dispatch):
     """A box on screen says Agent deployed, with each agent's icon and harness, so the person can watch an agent and
     message it to see whether it is doing the task right; the box says it, not a color."""
-    import sys
-
     from metaform.data import Node, Store
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
@@ -7568,7 +7739,6 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     store.ask(Node('element', 'code.alarm.audible'), 'Is the tone too high?')  # a question of no agent, at the same node
     log, gate, end_gate = tmp_path / 'fake.jsonl', tmp_path / 'ask', tmp_path / 'turn-end'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     # the test says when the agent's turn stops on its permission prompt, and the turn goes on working after the answer
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask', 'FAKE_ACP_WORK': work,
                               'FAKE_ACP_ASK_GATE': str(gate), 'FAKE_ACP_ASK_HOLD': '1',
@@ -8184,6 +8354,40 @@ def test_a_burst_of_changes_reads_only_what_each_change_names(run, web, mapped, 
     page.wait_for_function(f'() => window.metaform.changes() > {handled} && window.metaform.liveIdle()',
                            timeout=15000)
     assert asked(mark) == [f'work?project=proj&base={base}&ids={worked.id}&limit=0'], asked(mark)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-018')
+@pytest.mark.req('VIEW-035')
+def test_opening_the_page_reads_the_open_tickets_alone_and_a_step_reads_its_ticket_alone(run, web, mapped, browser):
+    """Opening the page costs what it shows, not the project's history (work 57bffbda): with 400 done tickets the load
+    reads the open ones alone, under 50 KB, and each node's light is paced from them; a ticket's step reads that ticket
+    alone and its node's pace follows, VIEW-035."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    for number in range(400):  # each about as long as a real ticket's task
+        done = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task=f'old work {number} ' + 'x' * 4000)
+        store.finish_work(done.id, 'Done long ago.')
+    worked = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='a quieter tone')
+    store.take_work(worked.id, steps=2, by='claude')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
+    with page.expect_response(lambda answer: '/api/work?' in answer.url, timeout=15000) as loaded:
+        page.reload()
+    page.wait_for_function('() => window.metaform.loaded() && window.metaform.liveIdle()', timeout=15000)
+    assert 'open=true' in loaded.value.url and len(loaded.value.body()) < 50_000, loaded.value.url
+    held = loaded.value.json()['results']
+    assert worked.id in [one['id'] for one in held] and not [one for one in held if one['done']], held
+    pace = f'document.querySelector(\'#map2d svg g.node[data-key="{worked.node_id}"]\').style.getPropertyValue("--pace")'
+    assert page.evaluate(pace) == '1.2s'  # taken, no step filed: the slow beat
+    reads = []
+    page.on('request', lambda sent: reads.append(sent.url))
+    run('map', 'work', 'op=step', f'id={worked.id}', 'said=Found the gain.', cwd=mapped)
+    page.wait_for_function(f'() => {pace} === "0.72s"', timeout=15000)  # one step of two: halfway to the fast beat
+    base = store.active_base().id
+    worked_reads = [url.split('/api/')[1] for url in reads if '/api/work?' in url]
+    assert worked_reads == [f'work?project=proj&base={base}&ids={worked.id}&limit=0'], worked_reads
     assert problems == []
 
 
@@ -8987,8 +9191,6 @@ def test_metaform_start_in_a_new_folder_takes_an_open_page_there_at_once(run, we
     even listed, and a reload kept the address it showed. Registration and the project opened are announced as such,
     before any intake agent is launched, and every open page goes there."""
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # nothing this test does may start a real agent
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"')
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
@@ -9271,14 +9473,11 @@ def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_i
 @pytest.mark.req('VIEW-032')
 @pytest.mark.req('VIEW-039')
 def test_a_task_can_be_created_and_started_in_acp_from_its_editor(run, web, mapped, browser, tmp_path, watch_dispatch):
-    import sys
-
     from metaform.data import Store
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
@@ -9354,13 +9553,10 @@ def test_start_is_not_offered_or_accepted_for_an_untaken_ticket_with_a_live_sess
 @pytest.mark.parametrize('distributed', [False, True])
 def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_board_order(
         run, web, mapped, browser, tmp_path, watch_dispatch, distributed):
-    import sys
-
     from metaform.data import Node, Store
     from metaform.modules.dispatch.tests.test_dispatch import eventually
 
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     store = Store('proj')
     # Remove the fixture's ordinary waiting work so only this controlled queue is launched.
     for record in store.work(open=True, limit=0).results:
@@ -9416,12 +9612,9 @@ def test_start_all_uses_one_agent_choice_and_starts_each_free_glyph_once_in_boar
 @pytest.mark.req('VIEW-040')
 def test_start_all_keeps_failed_tickets_retryable_and_does_not_restart_successes(
         run, web, mapped, browser, tmp_path, watch_dispatch):
-    import sys
-
     from metaform.data import Node, Store
 
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     store = Store('proj')
     for record in store.work(open=True, limit=0).results:
         store.finish_work(record.id, 'fixture setup')
@@ -9742,8 +9935,6 @@ def test_a_waiting_merge_shows_review_and_review_asks_about_help_in_a_support_wi
 
     from metaform.data import Node, Store
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     work = Store('proj').add_work(Node('element', 'code.alarm.audible'), None, task='A quieter alarm').id
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('merges', {'work_id': work, 'branch': f'metaform/{work[:12]}', 'worktree': str(mapped),
@@ -9781,8 +9972,6 @@ def test_the_chat_dock_rests_as_a_sliver_lifts_near_the_pointer_and_opens_into_t
     the person to stand by and preserves the session when the dock closes. An attached file is kept under the Metaform home with a safe name,
     never in the person's source tree."""
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
@@ -9841,8 +10030,6 @@ def test_a_message_sent_with_no_agent_starts_one_waits_in_the_thread_and_reaches
     """Enter with no agent there starts the system agent as Call does: the message waits in the thread, marked as
     waiting, and is never lost; one written while it connects waits behind it; both reach the agent in order."""
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     log = tmp_path / 'acp.log'
     monkeypatch.setenv('FAKE_ACP_LOG', str(log))
     monkeypatch.setenv('FAKE_ACP_MODE', 'plain')  # its first turn ends at once, so later prompts are taken
@@ -9879,8 +10066,6 @@ def test_new_and_clear_end_the_system_agents_conversation_and_start_one_resuming
     connected are left as they were, and the ended thread stays listed. The agent's own /clear never takes the name."""
     from metaform.data import Store
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     log = tmp_path / 'acp.log'
     monkeypatch.setenv('FAKE_ACP_LOG', str(log))
     monkeypatch.setenv('FAKE_ACP_MODE', 'plain')  # each turn ends at once
@@ -9932,7 +10117,7 @@ def test_new_and_clear_end_the_system_agents_conversation_and_start_one_resuming
     assert not any(method(entry) == 'session/prompt' and '/clear' in json.dumps(entry['message']['params']['prompt'])
                    for entry in entries), 'the agent was sent its own /clear'
     with Store('proj', module='dispatch').tables(write=False) as tx:
-        rows = {row['session_id']: row for row in tx.rows('sessions', limit=0).results}
+        rows = {row['session_id']: row for row in tx.rows('agent_sessions', limit=0).results}
     assert [(rows[one]['state'], rows[one]['how']) for one in ended] == [('ended', 'stopped by the person')] * 2, rows
     assert rows[dock()['on']]['state'] == 'running'
     assert settings() == kept  # the Resume box and Stay connected are left as they were
@@ -9948,8 +10133,6 @@ def test_a_pasted_picture_and_dropped_files_attach_as_the_paperclip_does_and_rea
     chips, and named to the agent with the message; pasted text stays text; a file the server refuses is named in the
     chat with why. Ticket code.interface.graphical#92."""
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     log = tmp_path / 'acp.log'
     monkeypatch.setenv('FAKE_ACP_LOG', str(log))
     monkeypatch.setenv('FAKE_ACP_MODE', 'plain')
@@ -10026,8 +10209,6 @@ def test_a_done_ticket_has_chat_and_it_opens_the_chat_dock_with_an_agent(run, we
     agent started to talk about that ticket; the ticket stays done and untaken."""
     from metaform.data import Node, Store
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # the fake agent, so no real agent ever starts
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     monkeypatch.setenv('METAFORM_PROMPTS', str(FAKE_AGENT.with_name('trial_prompts.xml')))  # test-only prompts
     monkeypatch.setenv('FAKE_ACP_LOG', str(tmp_path / 'acp.log'))
     monkeypatch.setenv('FAKE_ACP_MODE', 'hold')
@@ -10076,12 +10257,17 @@ def test_a_spec_code_and_a_ticket_id_in_a_question_open_what_they_refer_to(run, 
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()')
+    from urllib.parse import parse_qs, urlsplit
+    asked = []  # the references of each lookup read: those drawn together go in one read, not one read each
+    page.on('request', lambda sent: asked.append(parse_qs(urlsplit(sent.url).query).get('refs', [''])[0].split())
+            if '/api/lookup' in sent.url else None)
     page.click('#messages')
     page.wait_for_function(f'() => window.metaform.selected() === "{alarm}"')
     page.wait_for_selector('#float .asked span.ref-link[data-ref="VIEW-042"]')
     page.wait_for_selector(f'#float .asked span.ref-link[data-ref="{work[:8]}"]')
     page.wait_for_selector('#float .asked span.ref[data-ref="ZZZ-999"][data-looked]')
     assert page.locator('#float .asked span.ref-link[data-ref="ZZZ-999"]').count() == 0, 'an unknown code stays plain'
+    assert any({'VIEW-042', 'ZZZ-999', work[:8]} <= set(refs) for refs in asked), asked
     page.click('#float .asked span.ref-link[data-ref="VIEW-042"]')
     page.wait_for_selector('#refPop:not([hidden])')
     assert 'VIEW-042 A question never holds up work' in page.locator('#refPop h4').text_content()
@@ -10298,7 +10484,8 @@ def test_the_server_refuses_to_remove_the_active_base_and_activates_another(run,
 
 
 @pytest.mark.req('VIEW-042')
-def test_a_reference_is_looked_up_as_a_spec_record_a_ticket_or_nothing_with_its_reason(mapped, threaded):
+def test_a_reference_is_looked_up_as_a_spec_record_a_ticket_or_nothing_with_its_reason(mapped, threaded,
+                                                                                      monkeypatch):
     """What a reference in text stands for: a spec record by its code, a ticket by a prefix of its id, and nothing,
     with a plain reason, for what names nothing; the rich/ folder is never read."""
     from metaform.data import Node, Store
@@ -10309,18 +10496,22 @@ def test_a_reference_is_looked_up_as_a_spec_record_a_ticket_or_nothing_with_its_
     (mapped / 'rich' / 'notes.md').write_text('private\n', encoding='utf-8')
     ticket = Store('proj').add_work(Node('element', 'exterior.cook'), None, task='Name the cook').id
 
-    def lookup(ref):
-        status, said = api(threaded, f'/api/lookup?project=proj&ref={ref}')
-        assert status == 200
-        return said
-
-    record = lookup('MAP-001')
+    # every reference a page drew is answered in one read, the tickets read once for all of them
+    from metaform.data import store as stores
+    reads, invoke = [], stores.operations.invoke
+    monkeypatch.setattr(stores.operations, 'invoke', lambda tx, name, *args, **kwargs: (
+        reads.append(name) if name == 'work' else None) or invoke(tx, name, *args, **kwargs))
+    status, said = api(threaded, f'/api/lookup?project=proj&refs=MAP-001+{ticket[:8]}+MAP-999+rich/notes.md+'
+                                 f'{ticket[:9]}')
+    assert status == 200 and len(reads) == 1
+    found = said['found']
+    record = found['MAP-001']
     assert (record['kind'], record['title'], record['text'], record['file']) == (
         'spec', 'MAP-001 A record', 'What it says.', 'specifications/01-map.md')
-    assert lookup(ticket[:8])['id'] == ticket
-    nothing = lookup('MAP-999')
+    assert found[ticket[:8]]['id'] == found[ticket[:9]]['id'] == ticket
+    nothing = found['MAP-999']
     assert nothing['kind'] is None and 'MAP-999' in nothing['reason']
-    assert lookup('rich/notes.md')['kind'] is None
+    assert found['rich/notes.md']['kind'] is None
 
 
 @pytest.mark.browser
@@ -10334,7 +10525,6 @@ def test_chat_shows_busy_and_interrupts_a_turn_while_the_conversation_stays_avai
     monkeypatch.setenv('FAKE_ACP_ASK_GATE', str(tmp_path / 'permission-gate'))
     run('enable', 'dispatch')
     run('set', '--no-dispatch-worktrees', cwd=mapped)
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     work = Store('proj').add_work(Node('element', 'code.alarm.audible'), None, task='A quieter alarm').id
     run('dispatch', 'start', work, 'claude', cwd=mapped)
     try:
@@ -10509,6 +10699,42 @@ def test_the_page_is_told_the_project_of_the_folder_metaform_web_last_ran_in(run
     assert started(run, tmp_path / 'alpha')['state'] == 'running' and opened_first() == 'alpha'
     started(run, tmp_path / 'outside')
     assert opened_first() is None
+    # `recent` is the project the person's page showed last, never the one whose files background work wrote last
+    from metaform import home as metaform_home
+    from metaform.data import Store
+    shown = lambda project: request(web, '/api/shown', method='POST', body=json.dumps({'project': project}), headers={
+        'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
+    assert json.loads(shown('alpha')[1])['kept'] is True
+    Store('beta', module='dispatch')
+    for entry in metaform_home.project_folder('beta').iterdir():
+        os.utime(entry, (time.time() + 60, time.time() + 60))
+    assert json.loads(request(web, '/api/projects')[1])['recent'] == 'alpha'
+
+
+@pytest.mark.browser
+@pytest.mark.req('VIEW-002')
+def test_a_page_opened_after_choosing_a_project_opens_on_it(run, web, mapped, browser, tmp_path):
+    """The chat reaches the system agent of the project shown, so a new page opens on the project the person last had
+    open in this browser, before the project of the folder `metaform web` ran in."""
+    from metaform.data import Store
+    (tmp_path / 'beta').mkdir()
+    run('add', 'project', 'beta', str(tmp_path / 'beta'))
+    build(Store('beta'))
+    started(run, mapped)
+    assert json.loads(request(web, '/api/projects')[1])['opened'] == 'proj'
+    context = browser.new_context(viewport={'width': 1280, 'height': 800})
+    context.add_init_script(RETURNING)
+    own = f'http://127.0.0.1:{web}/'
+    shown = "() => window.metaform && new URLSearchParams(location.hash.slice(1)).get('p')"
+    first = context.new_page()
+    first.goto(own)
+    assert first.wait_for_function(shown).json_value() == 'proj'
+    first.select_option('#proj', 'beta')
+    first.wait_for_function("() => location.hash.includes('p=beta')")
+    second = context.new_page()
+    second.goto(own)
+    assert second.wait_for_function(shown).json_value() == 'beta'
+    context.close()
 
 
 @pytest.mark.req('VIEW-049')
@@ -10539,13 +10765,11 @@ def test_an_agents_permission_request_is_answered_from_its_own_buttons(run, web,
                                                                        watch_dispatch):
     """The agent asks before it writes a file; the request shows with the agent's own options as buttons, the person
     presses one, and the agent is told that option."""
-    import sys
 
     from metaform.data import Node, Store
     work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Write notes.txt').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
@@ -10583,7 +10807,6 @@ def test_permission_requests_off_screen_pop_up_stacked_and_allow_all_answers_the
     run('set', '--no-dispatch-worktrees', cwd=mapped)
     works = {}
     for agent in ('claude', 'codex', 'gemini'):
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
         works[agent] = Store('proj').add_work(Node('element', 'code.alarm.audible'), None, task=f'Notes by {agent}').id
         env = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask', **({'FAKE_ACP_ASK_AGAIN': str(again)}
                                                                     if agent == 'claude' else {})}
@@ -10654,10 +10877,8 @@ def test_an_agents_question_is_answered_from_its_card_and_its_notices_show(run, 
     """ACP's elicitation on the page: the head agent's AskUserQuestion, a choice and its "Other" box, shows as a card
     with the choices as buttons beside Decline; the person presses one and the agent gets that choice. Only the sentinel
     and the head agent ask the person, VIEW-045. The agent's session notice is a line of its own."""
-    import sys
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold', 'FAKE_ACP_ELICIT': 'ask',
                               'FAKE_ACP_NOTICE': '1'})
     page, problems, _ = opened(browser, web)
@@ -10688,14 +10909,12 @@ def test_a_consent_card_shows_what_runs_and_the_persons_allow_answers_the_waitin
     """UX review round 2, person-consent F5: the system agent's call that is the person's decision waits on a card in
     its chat that says who asks, the caution and the command it runs; Allow once answers the waiting call, and the
     card then says it was allowed once."""
-    import sys
     import threading
 
     from metaform.data import Store
     from metaform.modules.dispatch import ask_consent
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page, problems, _ = opened(browser, web)
     watch_dispatch(page)
@@ -10738,13 +10957,10 @@ def test_an_intake_is_started_from_the_page_with_the_agent_the_person_chose(run,
     """A project with no map offers its intake over the map; the person chooses the agent, adds a note and starts it,
     and that agent runs the intake with the note, holding no ticket, while a bar over the map says it runs. The
     Administration menu's Run an intake… opens the same box."""
-    import sys
     folder, log = tmp_path / 'fresh', tmp_path / 'fake.jsonl'
     folder.mkdir()
     run('add', 'project', 'fresh', str(folder))
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex'):
-        run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask'})
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     problems = []
@@ -10818,7 +11034,6 @@ def test_running_the_intake_again_refines_the_map_in_use_and_offers_no_new_map(r
     """Refinement first (2026-10-17): on a mapped project the intake window never offers a new map beside the one in
     use; it checks and refines the map in use and sends map=extend. The server refuses a name without a new map."""
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded() && window.metaform.drawn().nodes > 0', timeout=30000)
@@ -11306,7 +11521,6 @@ def test_a_dispatched_sessions_thread_opens_in_the_dock_with_its_messages_and_to
     monkeypatch.setenv('FAKE_ACP_ASK_GATE', str(tmp_path / 'permission-gate'))
     run('enable', 'dispatch')
     run('set', '--no-dispatch-worktrees', cwd=mapped)
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)
     store = Store('proj')
     alarm = store.element('code.alarm.audible').id
     work = store.add_work(Node('element', 'code.alarm.audible'), None, task='A quieter alarm').id
@@ -12608,7 +12822,6 @@ def test_an_intake_agent_killed_leaves_the_page_at_once_with_nothing_read_by_han
     folder.mkdir()
     run('add', 'project', 'cli', str(folder))
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'})
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
     page.goto(f'http://127.0.0.1:{web}/#p=cli')
@@ -12664,7 +12877,6 @@ def test_an_agent_started_and_recalled_from_the_page_moves_no_part_drawn_on_a_la
                             title='Faster unit').id
     log = tmp_path / 'fake.jsonl'
     run('enable', 'dispatch')
-    run('set', '--dispatch-claude', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=folder)
     fake = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'hold'}
     # a project agents have worked in before: one start and stop made the tables they keep, whose making is a change
     # to the store's own schema, which a page reads whole

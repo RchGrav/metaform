@@ -637,6 +637,17 @@ def test_autostart_can_select_recovered_ticket_only_after_old_workers_are_stoppe
     monkeypatch.setattr(module, 'run_reserved', start)
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert selected == [dispatch.id] and result['started'] == [{'work_id': dispatch.id}]
+    # the system agent, which owns the board, is told once: its runner died and the ticket is back in To do
+    from metaform.modules.dispatch.board import BOARD
+    from metaform.modules.dispatch.signals import rows
+    told = [one for one in rows(dispatch.store) if one['signal'] == BOARD]
+    assert len(told) == 1 and 'runner died; it is back in To do' in told[0]['said'], told
+    connected = result.get('connected') or {}  # none ran, so one is started for it, as stay_connected starts one
+    try:
+        assert connected.get('state') != 'failed' and connected.get('work_id'), result
+    finally:
+        if connected.get('work_id'):
+            run('dispatch', 'stop', connected['work_id'], cwd=dispatch.folder, ok=False)
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows ends a process without a signal it can handle')

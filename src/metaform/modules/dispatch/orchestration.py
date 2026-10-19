@@ -6,6 +6,7 @@ is accepted by a recipient's normal-turn queue, and its thread records the later
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import time
@@ -14,8 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import changes, home, prompt_files
-from metaform.module import Context, Stop, prepare_agent_context, provided
+from metaform import events, home, prompt_files
+from metaform.module import Context, Stop, provided
 
 SUSPENDED = 'orchestration suspended'
 UPDATES = 'conversation-orchestration-updates'
@@ -34,7 +35,7 @@ def assignment(ctx: Context, work_id: str | None = None, session_id: str | None 
 def drain(ctx: Context, work_ids: list[str] | None = None) -> list[dict[str, Any]]:
     with home.registry_scope(fresh=True):
         owner = service(ctx)
-        return changes.announced(ctx.folder, ctx.surface, owner.drain, ctx, work_ids)[0] if owner is not None else []
+        return events.announced(ctx.folder, ctx.surface, owner.drain, ctx, work_ids)[0] if owner is not None else []
 
 
 def render(ctx: Context, name: str, bindings: dict[str, str]) -> dict[str, str] | None:
@@ -84,7 +85,17 @@ class Transport:
             raise Stop(caution, f'metaform dispatch start {work_id}')
 
     def launch(self, ctx: Context, held: dict[str, Any], transition_id: str) -> dict[str, Any]:
-        from . import admit, agent_named, keep_launch, launches, resume_spawn, session_state, start_runner, ticket
+        from . import (
+            admit,
+            agent_named,
+            given_back_reservation,
+            keep_launch,
+            launches,
+            resume_spawn,
+            session_state,
+            start_runner,
+            ticket,
+        )
         store = ctx.require_store()
         work = str(held['work_id'])
         if held.get('stop'):
@@ -111,9 +122,27 @@ class Transport:
                 kept = session_state(store, str(row['session_id'])) or {}
                 capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
                 if capabilities.get('resume') or capabilities.get('load'):
-                    made = resume_spawn(store, work, agent, [*words, f'resume={row["session_id"]}', 'retry=true'],
-                                        'orchestration', ctx=launch_ctx, asked=asked, auto=True)
-                    return {'state': 'queued', 'reservation': transition_id, **made}
+                    # A worker resumed in place goes on only with the ticket its session's own. A review finding
+                    # reopens a done ticket into To do, untaken, so the session takes it back before its runner
+                    # starts; a ticket another holder took since goes on through a new session below.
+                    by = f'{agent} {row["session_id"]}'
+                    with store.atomic():
+                        record = ticket(store, work)
+                        if record.done:
+                            return {'state': 'completed', 'work_id': work}
+                        took = not record.taken
+                        if took:
+                            store.take_work(work, by=by)
+                    if took or record.taken_by == by:
+                        try:
+                            made = resume_spawn(store, work, agent,
+                                                [*words, f'resume={row["session_id"]}', 'retry=true'],
+                                                'orchestration', ctx=launch_ctx, asked=asked, auto=True)
+                        except (Stop, OSError):
+                            if took:
+                                given_back_reservation(store, work, by)
+                            raise
+                        return {'state': 'queued', 'reservation': transition_id, **made}
             # Unknown context retention creates a new registered context with the retained work and current brief.
             # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
             admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=True)
@@ -183,11 +212,11 @@ class Transport:
         This is a notification conversation, identified as such in its state, with no model, process or capacity
         reservation. Its rendered message and stable identity make replay harmless and the notification reviewable.
         """
-        return changes.announced(ctx.folder, ctx.surface, self._notify_user, ctx, message, change_id)[0]
+        return events.announced(ctx.folder, ctx.surface, self._notify_user, ctx, message, change_id)[0]
 
     def _notify_user(self, ctx: Context, message: dict[str, Any] | str, change_id: str) -> dict[str, Any]:
         from . import origin
-        from .signals import own_store
+        from .signals import add_line, own_store
         body = message if isinstance(message, str) else str(message.get('text') or message.get('body') or
                                                           message.get('summary') or '')
         if not body:
@@ -213,8 +242,12 @@ class Transport:
                          'latest_message_text': body, 'updated_at': home.now()}
                 tx.update('session_lines', {'session_id': UPDATES, 'name': 'state'},
                           {'text': json.dumps(state, ensure_ascii=False), 'seq': seq + 2})
+                if isinstance(message, dict):  # what the system agent's inbox names it by, `update_entries`
+                    add_line(tx, UPDATES, UPDATES, f'about:{message_id}', 'about', json.dumps(
+                        {key: message.get(key) for key in ('work_id', 'kind', 'state')}, ensure_ascii=False), seq + 2)
                 tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
-        # User visibility is immediate. The Liaison receives the same actual state as an ordinary agent turn.
+        # User visibility is immediate. The Liaison receives the same actual state as an ordinary agent turn. Every call
+        # relays it, so a relay that failed is sent again by the next drain; the runner takes one note id once.
         from . import sessions, system_sessions
         running = [row for row in sessions(ctx.require_store()) if row['state'] == 'running']
         route: dict[str, Any] = (message.get('return_to') or {}) if isinstance(message, dict) else {}
@@ -222,10 +255,9 @@ class Transport:
         pms = [row for row in running if row['session_id'] == preferred] if preferred else system_sessions(
             ctx.require_store(), running)
         delivered_pm: list[dict[str, Any]] = []
-        for pm in pms:
-            component = prompt_files.component(f'dispatch:user-update:{message_id}', body)
+        for pm in pms:  # `update` keeps the update's own kind, which the system agent's inbox names it by
             envelope = {**(message if isinstance(message, dict) else {}), 'id': message_id, 'text': body,
-                        'kind': 'project_update', 'context_components': [component]}
+                        'kind': 'project_update', 'update': message.get('kind') if isinstance(message, dict) else None}
             delivered_pm.append(self.send(ctx, {'work_id': pm['work_id'], 'owner_session_id': pm['session_id'],
                                                 'assignment_id': None}, envelope))
         return {'state': 'delivered', 'session_id': UPDATES, 'message_id': message_id, 'text': body, 'pm': delivered_pm}
@@ -234,14 +266,86 @@ class Transport:
 TRANSPORT = Transport()
 
 
-def user_updates(ctx: Context) -> dict[str, Any]:
-    """A reconnected Liaison receives project messages it has not carried in this context epoch."""
+CARRIED = ('delivered', 'read', 'replied')
+
+
+def inbox_what(update: str, state: str, ask: bool, note_id: str, board: str) -> str:
+    """What an inbox entry is, in a word or two, for the inbox line: a board item's kind, a question with the note id
+    that answers it, a project update's kind (a result by its state), or a note."""
+    if board:
+        return f'board {board.partition(":")[0]}'
+    if ask:
+        return f'question, note {note_id}'
+    if update == 'result':
+        return state or 'result'
+    if update:
+        return update.removeprefix('functional_').replace('_', ' ')
+    return 'note'
+
+
+def inbox_wakes(update: str, state: str, ask: bool) -> bool:
+    """Whether an inbox entry needs the person, so it may start the system agent's turn: an agent's question waiting
+    on an answer, a recommendation the person decides, a failed result the person must act on, or an ended
+    roundtable whose report the person waits for."""
+    return ask or update in ('specification_recommendation', 'roundtable_report') or state == 'failed'
+
+
+def user_updates(ctx: Context) -> list[str]:
+    """The project updates the person's system agent, one role across its conversations, has not carried, by id: a
+    conversation, new or resumed, takes those written while none ran. One is carried once any system conversation's
+    inbox line named it, shown by its `carried:<id>` mark here, or by its note delivered in a system thread."""
+    from . import system_sessions
     from .signals import own_store
-    with own_store(ctx.require_store()).tables(write=False) as tx:
+    store = ctx.require_store()
+    systems = system_sessions(store)
+    with own_store(store).tables(write=False) as tx:
         rows = tx.rows('session_lines', {'session_id': UPDATES}, by=('session_id', 'seq'), limit=0).results
-    components = [prompt_files.component(f'dispatch:user-update:{str(row["name"]).partition(":")[2]}', str(row['text']))
-                  for row in rows if str(row['name']).startswith('notification:')]
-    return prepare_agent_context(ctx.folder, ctx.session, components, project=ctx.project)
+        carried = {str(row['name']).partition(':')[2] for row in rows if str(row['name']).startswith('carried:')}
+        updates = [str(row['name']).partition(':')[2] for row in rows if str(row['name']).startswith('notification:')]
+        for ident in set(updates) - carried:
+            for system in systems:
+                line = tx.get('session_lines', {'session_id': system['session_id'], 'name': f'peer:{ident}'})
+                held: Any = json.loads(str(line['text'])) if line is not None else {}
+                states = [*cast(dict[str, Any], held.get('session_states') or {}).values(),
+                          *cast(dict[str, Any], held.get('states') or {}).values()]
+                if any(state in CARRIED for state in states):
+                    carried.add(ident)
+                    break
+    return [ident for ident in updates if ident not in carried]
+
+
+def update_entries(ctx: Context, idents: list[str]) -> list[tuple[str, str, bool]]:
+    """Each project update as the system agent's inbox names it, by id: its ticket and kind, from the `about:<id>`
+    line its notification keeps, never its words, and whether it needs the person."""
+    from .signals import own_store
+    if not idents:
+        return []
+    store = ctx.require_store()
+    about: dict[str, dict[str, Any]] = {}
+    with own_store(store).tables(write=False) as tx:
+        for ident in idents:
+            line = tx.get('session_lines', {'session_id': UPDATES, 'name': f'about:{ident}'})
+            with contextlib.suppress(ValueError, TypeError):
+                about[ident] = json.loads(str(line['text'])) if line is not None else {}
+    works = sorted({str(one.get('work_id')) for one in about.values() if one.get('work_id')})
+    named: dict[str, Any] = store.numbers_of('work', works) if works else {}
+    entries: list[tuple[str, str, bool]] = []
+    for ident in idents:
+        held = about.get(ident) or {}
+        work, update, state = str(held.get('work_id') or ''), str(held.get('kind') or 'update'), str(held.get('state') or '')
+        item = str(named[work][0]) if work in named else 'project'
+        entries.append((ident, f'{item} {inbox_what(update, state, False, ident, "")}', inbox_wakes(update, state, False)))
+    return entries
+
+
+def carried_updates(ctx: Context, idents: list[str]) -> None:
+    """Mark project updates a system conversation's accepted turn carried, so no other conversation is given them."""
+    from .signals import add_line, own_store
+    with own_store(ctx.require_store()).tables() as tx:
+        for ident in idents:
+            if tx.get('session_lines', {'session_id': UPDATES, 'name': f'notification:{ident}'}) is not None:
+                add_line(tx, UPDATES, UPDATES, f'carried:{ident}', 'carried',
+                         json.dumps({'runner': ctx.session, 'at': home.now()}))
 
 
 def broadcast(ctx: Context, text: str, team: str | None = None) -> dict[str, Any]:
@@ -297,8 +401,12 @@ def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, An
 
 
 def note_context(held: dict[str, Any]) -> str:
-    """A typed envelope accompanies authored note text without granting that text sender authority."""
-    data = {key: value for key, value in held.items() if key not in ('text', 'to')}
+    """A typed envelope accompanies authored note text without granting that text sender authority. It never repeats
+    the note's words: a result's body, raw result or summary the note already carries, and the context component made
+    of them, are left out, so one result is read once in its turn."""
+    words = str(held.get('text') or held.get('body') or '')
+    data = {key: value for key, value in held.items() if key not in ('text', 'to', 'context_components') and not (
+        key in ('body', 'result', 'summary') and isinstance(value, str) and value.strip() and value.strip() in words)}
     if held.get('id'):
         data['reply_call'] = f'dispatch_note reply={held["id"]}'
     return json.dumps(data, ensure_ascii=False, indent=2)

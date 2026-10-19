@@ -1,6 +1,6 @@
 /* The board, VIEW-037: each ticket's agent, controls and card, the columns, and the board's buttons. */
 import '/page/app/board/refs.js';  // the part before runs first, so the parts run in the page's order
-import {$, h, fill} from '/page/app/core/dom.js';
+import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, undoable} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
@@ -9,7 +9,8 @@ import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
 import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
-import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords} from '/page/app/board/refs.js';
+import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords, ago, unshown}
+  from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, history, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork} from '/page/app/task/task.js';
@@ -231,13 +232,37 @@ function shownOnBoard(box) {
 /* The board's order of cards in a column: by their position, else as they were read. */
 const cardOrder = (one, two) => (one.position ?? 1e9) - (two.position ?? 1e9)
   || B.tickets.indexOf(one) - B.tickets.indexOf(two);
+/* The board's columns, made once, each with its cards' list and its tally; and the map the cards' names were drawn
+ * from, so a map read again or changed draws every card again. */
+const COLUMNS = new Map();
+const DRAWN = {elements: null, generation: 0};
+/* Everything a card shows, past its ticket: a card whose ticket and these are as they were keeps its node. */
+function cardText(ticket, place, total, shared) {
+  const status = ticket.done ? null : ticketStatus(ticket), ended = endedStatus(ticket);
+  return JSON.stringify([shared, ticket, place, total, Boolean(waiting(ticket)), status, ended,
+    waitsOn(ticket).map(handleOf), ROAM.figures.get(ticket.id)?.glyph || null,
+    ago(ticket.done || ticket.taken || ticket.created),
+    Boolean(ticket.taken && !ticket.done && D.sessions.some(one => one.work_id === ticket.id
+      && one.state === 'running'))], unshown);
+}
 export function drawBoard() {
-  // the cards are drawn anew, as the agents are read or the map changes, and a card keeps open what the person opened
+  // A card is drawn again only when what it shows changed, so an event that changes one ticket, or none, rebuilds
+  // one card, or none, not all of them: every card drawn anew on each agent event, five or six times as an agent
+  // started, held the page for seconds and the browser called it not responding (2026-10-19). A card made again keeps
+  // open what the person opened.
   const folds = root => [...root.querySelectorAll('.card details')]
     .map(box => [`${box.closest('.card').dataset.id} ${box.className}`, box]);
   const opened = new Set(folds($('#board')).filter(([, box]) => box.open).map(([key]) => key));
   fill($('#board .kinds'), [...KINDS, 'none'].map(kindToggle));
-  fill($('#board .columns'), BOARD.map(([column, title]) => columnBox(column, title)));
+  if (!COLUMNS.size) fill($('#board .columns'), BOARD.map(([column, title]) => columnBox(column, title)));
+  if (DRAWN.elements !== S.elements) { DRAWN.elements = S.elements; DRAWN.generation++; }
+  const shared = JSON.stringify([DRAWN.generation, B.names, HARNESS.agents, HARNESS.default]);
+  for (const [column, {cards, tally}] of COLUMNS) {
+    const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(cardOrder);
+    tally.textContent = String(tickets.length);
+    keyedFill(cards, tickets.map((ticket, place) => ({key: ticket.id,
+      text: cardText(ticket, place, tickets.length, shared), make: () => card(ticket, place, tickets.length)})));
+  }
   for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box);
   for (const [key, box] of folds($('#board'))) if (opened.has(key)) box.open = true;
   $('#board .start-all').disabled = D.starting || !B.tickets.some(startsByItself);
@@ -248,15 +273,15 @@ function kindToggle(kind) {
   return h('button', {class: `kindtoggle${B.off.has(kind) ? ' off' : ''}`, 'data-kind': kind,
     'aria-pressed': String(!B.off.has(kind)), onclick: flip}, kind === 'none' ? 'task' : kind);
 }
-/* One column of cards, which takes a card dragged onto it. */
+/* One column of cards, made once, which takes a card dragged onto it; its cards and tally are filled by drawBoard. */
 function columnBox(column, title) {
-  const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(cardOrder);
-  const cards = h('div', {class: 'cards'}, tickets.map((ticket, place) => card(ticket, place, tickets.length)));
+  const cards = h('div', {class: 'cards'}), tally = h('span', {class: 'tally'}, '0');
   cards.addEventListener('dragover', event => { event.preventDefault(); cards.classList.add('over'); });
   cards.addEventListener('dragleave', () => cards.classList.remove('over'));
   cards.addEventListener('drop', event => dropCard(event, cards, column));
-  return h('div', {class: 'column', 'data-column': column},
-    h('div', {class: 'head'}, h('span', {}, title), h('span', {class: 'tally'}, String(tickets.length))), cards);
+  COLUMNS.set(column, {cards, tally});
+  return h('div', {class: 'column', 'data-column': column}, h('div', {class: 'head'}, h('span', {}, title), tally),
+    cards);
 }
 /* A card dropped in a column moves its ticket there, to the place it was dropped. Where it was is kept, so a move to
  * another column, which takes, finishes or opens the ticket again, can be undone. */

@@ -1,0 +1,1 @@
+yes and it also compartmentalizes the related tools for that module what am I missing ..  We need to think long term here; I disagree, if they are being notified of the available modules or have a metaform://modules command to list modules, and each module has a description why cant they find the commands that they hneed

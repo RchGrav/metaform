@@ -1,0 +1,1 @@
+{"task": "On 2026-10-19 a reviewer called orchestration_change with the 957-byte amendment it meant to add, and the tool wrote those 957 bytes over the whole of specifications/11-context.md. The reviewer noticed and restored the file by hand from the change record's before_content."}

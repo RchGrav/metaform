@@ -6,7 +6,12 @@ relative to the project's folder. The write refuses a citation that names no fil
 symbol the file does not hold, so a citation is true when it is made. What it saw is kept: the cited lines' text
 hashed, or for a whole file its bytes hashed, and for a symbol nothing more than its name; with each, the file's size
 and modification time. A citation whose file is gone, whose lines no longer read as they did, or whose symbol is no
-longer in the file is stale, with the reason, and where the cited text now stands when it moved.
+longer in the file is stale, with the reason, and where the cited text now stands when it moved. That line is shown
+to the reader but left out of what identifies the delivered body, `settled`, and out of whether the watcher's result
+changed: it moves with every edit above the cited text, and in the body's identity it handed every agent at the node
+the same memory again each time (code.store.memory#18, #1c). What it saw is the
+file as it read when the citation was last written: a write that gives the citation again keeps it as the file reads
+then, and so does a write that adds observations to the memory for each whole file it cites.
 
 Whether a citation holds is worked out once each time its file changes and stored with it, beside the file's size and
 time it was worked out against: by the citation watcher, `watch.py`, when the system says the file changed, so a read
@@ -180,6 +185,15 @@ class Checker:
         return f'{where} changed' + (f'; the cited text is now at line {moved}' if moved else '')
 
 
+MOVED = re.compile(r'; the cited text is now at line \d+$')
+
+
+def settled(why: str | None) -> str | None:
+    """A stale reason, or a memory's `<cite>: <why>` stale line, without where the moved cited text now stands: what
+    identifies it, so the body counts as changed when what it says or whether it holds changes, not when lines shift."""
+    return MOVED.sub('; the cited text is elsewhere in the file, unchanged', why) if why else why
+
+
 def checked(row: Row) -> tuple[int | None, int | None]:
     """The file's size and time the citation's stored result was worked out against: those it was cited at, until
     the watcher works it out again."""
@@ -204,7 +218,7 @@ def rework(tx: TableTx, checker: Checker, paths: set[str] | None = None) -> int:
         why = checker.stale(row)
         tx.update('citations', {'entity': row['entity'], 'cite': row['cite']},
                   {'stale': why, 'checked_size': size, 'checked_mtime': mtime})
-        different = why != (row.get('stale') or None)
+        different = settled(why) != settled(row.get('stale') or None)
         changed += different
         if different:
             affected.add(str(row['entity']))

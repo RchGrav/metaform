@@ -1,0 +1,1 @@
+if source['kind'] in ('workflow', 'ticket') or not change_record['before_content'] else

@@ -1,0 +1,3 @@
+Command: timeout 300 uv run pytest -n 0 -q src/metaform/modules/orchestration/tests/test_orchestration.py -k "change_on_a_ticket_without_a_specification" src/metaform/modules/mcp/tests/test_mcp.py::test_an_assigned_agent_is_listed_check_in_and_assess_and_the_system_agent_its_body 2>&1 | tail -5
+Result: "...  [100%]\n3 passed, 36 deselected in 4.53s"
+Assistant: "Tests pass for the ticket path; running the MCP listing test on its own (the `-k` filter dropped it)."

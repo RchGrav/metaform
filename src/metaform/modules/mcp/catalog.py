@@ -95,6 +95,21 @@ ALWAYS = ('metaform_feedback',)  # runs for every role, so a fault can always be
 # works and keep them current as it works, removing what is outdated, so those tools are never a category away
 # (2026-10-18, the person's decision after agents left memories stale).
 BESIDE = ('memory',)
+# The tools listed beside whichever category is open, for every role: agents at work at once find each other and send
+# notes, and a note that arrives names its reply as `dispatch_note reply=<id>`. Behind the coordinate category an
+# agent's tool search found none of them, so it guessed or gave up (2026-10-19).
+BESIDE_TOOLS = ('dispatch_peers', 'dispatch_note', 'dispatch_notes')
+# The tools listed beside whichever category is open for an agent at work on an orchestration assignment, one whose
+# runner set METAFORM_AUTHORED_ROLE: its work returns through check-in, and a GC or reviewer asks for the independent
+# assessment through assess. Behind the coordinate category a GC in another project found neither, so it left its
+# result in a ticket resolution and its work never returned (2026-10-18).
+ASSIGNED_TOOLS = ('orchestration_check-in', 'orchestration_assess')
+# The tools listed beside whichever category is open for a role whose prompt sends it to them: the system agent's
+# mascot and eyes lines name the web module's body tools, dispatch's MASCOT_VERBS and EYES_VERBS, which sat behind the
+# show category, so the agent was told to use tools it was not listed (2026-10-18).
+ROLE_BESIDE: dict[str, tuple[str, ...]] = {
+    'system': ('web_say', 'web_go', 'web_point', 'web_emote', 'web_look', 'web_see', 'web_turn', 'web_come',
+               'web_embody', 'web_viewing', 'web_capture')}
 
 assert set(CATEGORY_TOOLS) == set(CATEGORY_NAMES), 'one entry for each category the chassis names'
 
@@ -133,6 +148,14 @@ def opens(named: str | None = None) -> str | None:
 def first(named: str | None = None) -> tuple[str, ...]:
     """The tools listed beside the catalog while no category is open, the ones the role's first message names."""
     return ROLE_FIRST.get((role() if named is None else named) or '', ())
+
+
+def beside_tools(named: str | None = None) -> tuple[str, ...]:
+    """The tools listed beside whichever category is open: BESIDE_TOOLS for every role, the role's ROLE_BESIDE, and
+    ASSIGNED_TOOLS while the agent works an orchestration assignment. A tool off the folder's surface is left out by
+    the caller, so the system agent is listed the web body tools only while the web module is on."""
+    assigned = ASSIGNED_TOOLS if os.environ.get('METAFORM_AUTHORED_ROLE') else ()
+    return (*BESIDE_TOOLS, *ROLE_BESIDE.get((role() if named is None else named) or '', ()), *assigned)
 
 
 # The roles that act for the person, beside the person's own sessions: they are given what a verb says only to the

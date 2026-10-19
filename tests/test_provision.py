@@ -264,6 +264,7 @@ def earlier_installs(home: Path, *, recorded: bool) -> list[str]:
 @pytest.mark.req('STORE-029')
 @pytest.mark.parametrize('recorded_before', [False, True])
 @pytest.mark.parametrize('write', [False, True])
+@pytest.mark.product_defaults  # the earlier home holds its own settings alone
 def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, recorded_before, write):
     from metaform import harness, install
     from metaform import home as metaform_home

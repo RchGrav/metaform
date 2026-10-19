@@ -1,0 +1,2 @@
+{"type":"text","text":"it shouldnt be limited is my point"}
+{"type":"text","text":"it could work the way you have it now, but that wasnt my intent for it the entent is to produce a report..  when I end the roundtable the user facing agent should write up the full outcome of it"}

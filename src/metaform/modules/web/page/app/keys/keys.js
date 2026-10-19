@@ -26,6 +26,7 @@ import {putChatAway} from '/page/app/dock/helpdesk.js';
 import {toggleWork} from '/page/app/session/apps.js';
 import {openSearch} from '/page/app/search/search.js';
 import {chatDocked, WS} from '/page/app/workspace/workspace.js';
+import {openRoundtable} from '/page/app/roundtable/stage.js';
 
 /* Every key the page takes, in one table: the reference `?` opens is drawn from it, grouped and searchable, and the
  * map's keys run from it, `KEY_RUN`, so the two never part. `keys` is what the reference shows, `match` the keys that
@@ -48,6 +49,8 @@ const KEYS = [
     run: () => followNext()},
   {group: 'Agents', keys: ['V'], what: "Your view or the followed agent's view", match: ['v', 'V'],
     run: () => agentView()},
+  {group: 'Agents', keys: ['T'], what: 'Roundtable: agents debate your question',
+    match: ['t', 'T'], run: () => openRoundtable()},
   // each digit cycles one setting, and each press says its new value at the 2D map's corner; the 2D map is fit-all,
   // zooming by the wheel at any time, VIEW-041, and onto a followed agent's node
   {group: 'Zoom', keys: ['1'], what: '3D camera: work in view, zoom 1/4, 1/2, 3/4', match: ['1'], run: zoomKey},

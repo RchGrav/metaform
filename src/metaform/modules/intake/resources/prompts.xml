@@ -69,6 +69,7 @@ request right after.
     <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
     <note>Free text about the element, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
+    <same_as>With MISS or BKN, when one defect shows at two parts: the address of the other element, where this intake already recorded it. The finding is then kept once, in that element's ticket, with this part linked to it, so one ticket carries the defect.</same_as>
   </element>
   <purpose>
     <receiver>The address of the receiving element, the RE, that holds the purpose record.</receiver>
@@ -80,6 +81,7 @@ request right after.
     <refs>Where the purpose record is found: a list of references, each a key and a value.</refs>
     <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
     <note>Free text about the purpose record, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
+    <same_as>With MISS or BKN, when one defect shows at two parts: the address of the other element, where this intake already recorded it. The finding is then kept once, in that element's ticket, with this purpose record linked to it, so one ticket carries the defect.</same_as>
   </purpose>
 </fields>
 </prompts>

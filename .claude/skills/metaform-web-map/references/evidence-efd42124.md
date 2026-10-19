@@ -1,0 +1,1 @@
+Per-tab storage lost the project in a new tab. Folder times follow background sweeps, not the person, so only the page's own report says what the person used.

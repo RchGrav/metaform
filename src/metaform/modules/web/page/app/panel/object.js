@@ -18,6 +18,7 @@ import {noteBy} from '/page/app/task/notes.js';
 import {showTab} from '/page/app/panel/prompts.js';
 import {summonAgent, summonPicker} from '/page/app/agents/pickers.js';
 import {following} from '/page/app/live/stream.js';
+import {openRoundtable} from '/page/app/roundtable/stage.js';
 
 export async function renderWork(target, key, also = null) {
   let records = [];
@@ -30,9 +31,10 @@ export async function renderWork(target, key, also = null) {
   const held = records.find(record => !record.done && record.condition);
   const state = stateSelect(held ? held.condition : '', () => renderWork(target, key, also), target, key);
   const issue = issueForm(key);
-  // One row for the part: its state, Raise an issue and one Chat for the node; then one row for each ticket on it.
+  // One row for the part: its state, Raise an issue, one Chat for the node and, for an element, its Roundtable; then
+  // one row for each ticket on it.
   fill(box, h('div', {class: 'workhead'}, h('div', {class: 'eyebrow'}, 'Work'), state, raiseButton(issue),
-    chatButton(nodeTalk(key), calledOf(key) || 'this node')), issue,
+    chatButton(nodeTalk(key), calledOf(key) || 'this node'), S.elements.has(key) ? roundtableButton() : null), issue,
     records.map(workRow));
 }
 // a part with no state is built, the normal state, which marks nothing: built and none are one choice, MAP-046
@@ -79,6 +81,11 @@ async function sendIssue(event, issue, key) {
   openHelpdesk(started.work_id, `the sentinel on ${calledOf(key) || 'this node'}`, queued, started.session_id,
     'sentinel');
 }
+/* Roundtable, code.interface.graphical#131: a table of agents debates the person's question about this part on the
+ * 3D map's stage, T. */
+const roundtableButton = () => h('button', {class: 'btn sm roundtablebtn', type: 'button', 'aria-keyshortcuts': 'T',
+  title: 'Ask a table of agents a question about this part and watch them debate it (T)',
+  onclick: () => openRoundtable()}, 'Roundtable');
 function raiseButton(issue) {
   const raise = h('button', {class: 'btn sm raise', type: 'button', 'aria-expanded': 'false',
     title: 'Say what is wrong with this part; a sentinel investigates and brings you proposals',

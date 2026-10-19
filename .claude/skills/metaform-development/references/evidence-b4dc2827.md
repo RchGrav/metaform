@@ -1,0 +1,2 @@
+dispatch stop-all treats seat ledger entries as runners still starting and ends the follower's process group, which leaves the engine's table runner and its seats running (FQC 2026-10-19).
+The follower installs no SIGTERM handler, so a follower ended by a signal skips its finally and leaves its roundtable web server running (FQC 2026-10-19).

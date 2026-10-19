@@ -1,0 +1,1 @@
+Its stupposed to work like an inbox..  and you should not be receiving all of those messages you are not woriking on the map this is pissing me off that this is working this way its wrong its not efficient

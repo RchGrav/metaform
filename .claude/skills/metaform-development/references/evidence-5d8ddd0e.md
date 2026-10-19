@@ -1,0 +1,3 @@
+env -u METAFORM_ROLE -u METAFORM_SESSION -u METAFORM_WORK -u METAFORM_NODE -u METAFORM_AUTHORED_ROLE -u METAFORM_LEASE PYTHONPATH=/tmp/rtcheck/src timeout 600 /home/rich/metaform/.venv/bin/python -m pytest -p no:cacheprovider -n 0 src/metaform/modules/roundtables/tests/test_roundtables.py -k "opens_on_the_parts_context" -q -x
+
+Harness output: "An earlier test run stopped before its teardown left these metaform processes running; they are now ended:" followed by three "dispatch run ... claude system=true" pids, each with METAFORM_HOME=/tmp/metaform-tests-.../home

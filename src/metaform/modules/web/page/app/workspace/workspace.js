@@ -46,7 +46,7 @@ import {isIntake, workPart} from '/page/app/session/tools.js';
 import {INTAKE, openIntakeChat, openIntake} from '/page/app/intake/intake.js';
 import {BUILD} from '/page/app/build/build.js';
 import {listen, agentsIdle, heardCount} from '/page/app/live/ops.js';
-import {loadProject, fillProjects} from '/page/app/loading/load.js';
+import {loadProject, fillProjects, shown} from '/page/app/loading/load.js';
 import {openMapFolder} from '/page/app/header/admin.js';
 
 /* ---------- the developer level: browser-console detail and traces, only with metaform web start --web-debug
@@ -331,14 +331,15 @@ export async function main() {
     revealed();
     return;
   }
-  // The project shown first, VIEW-002: the one the address names; else the project of the folder `metaform web` ran
-  // in; else the one this browser showed last; else the first.
+  // The project shown first, VIEW-002: the one the address names; else the one the person last had open in this
+  // browser, kept in local storage so a new tab opens on it too; else the project of the folder `metaform web` ran in;
+  // else the one the person's page showed last, in any browser; else the first.
   let remembered = null;
-  try { remembered = sessionStorage.getItem('metaform.project'); } catch (error) { /* storage can be blocked */ }
+  try { remembered = localStorage.getItem('metaform.project'); } catch (error) { /* storage can be blocked */ }
   const registered = id => S.projects.some(item => item.id === id);
-  S.project = [new URLSearchParams(location.hash.slice(1)).get('p'), remembered, listed.opened].find(registered)
-    || S.projects[0].id;
-  try { sessionStorage.setItem('metaform.project', S.project); } catch (error) { /* storage can be blocked */ }
+  S.project = [new URLSearchParams(location.hash.slice(1)).get('p'), remembered, listed.opened, listed.recent]
+    .find(registered) || S.projects[0].id;
+  shown(S.project);
   const selected = new URLSearchParams(location.hash.slice(1));
   if (selected.get('p') !== S.project) selected.delete('b');
   selected.set('p', S.project);

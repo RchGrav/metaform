@@ -542,11 +542,13 @@ function toolRows(rows, line, key, text, work, shown) {
 /* A peer note, `dispatch note`: one agent's information to the agents on other open tickets, kept in the threads of
  * every ticket it touches; drawn as sent or received by this thread's ticket, a question or a reply as such, with the
  * other tickets' agents and numbers and where it stands for each, queued, delivered, read or replied, and never as the
- * person's words. */
+ * person's words. An end in another project than this thread's is named with that project, `target_project=`. */
 function peerRow(line) {
   const note = line.data || {}, sent = note.from?.work_id === line.work_id, states = note.states || {};
   const to = Array.isArray(note.to) ? note.to : [note.to].filter(Boolean);
-  const named = end => `${agentName(end.agent)} on ${end.item || end.work_id || 'another ticket'}`;
+  const here = sent ? note.from?.project : to.find(end => end.work_id === line.work_id)?.project;
+  const named = end => `${agentName(end.agent)} on ${end.item || end.work_id || 'another ticket'}`
+    + (end.project && here && end.project !== here ? ` in project ${end.project}` : '');
   const what = note.reply_to ? 'Reply' : note.ask ? 'Question' : 'Note';
   const lead = sent ? `${what} to ${to.map(end => `${named(end)} (${states[end.work_id] || 'queued'})`).join(', ')}:`
     : `${what} from ${named(note.from || {})}, a fellow agent (${states[line.work_id] || 'queued'}):`;

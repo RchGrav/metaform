@@ -1,25 +1,27 @@
 """Functional memory delivery, using the agents module's shared context-epoch receipts.
 
 The graph remains the source of memory bodies. These tables keep functional encounters, entry revisions and
-withdrawn identities only; a notice never copies a graph into a per-agent inbox or acknowledges its contents.
+withdrawn identities only. Nothing is pushed to an agent when memory changes: an agent is told of unread memory when it
+reads the node it works on (the map's count of it, `node_count`), and a count never acknowledges a body.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import uuid
-from pathlib import Path
 from typing import Any, cast
 
+from metaform import events
 from metaform.data import Column, Index, Store, Table, TableTx
 from metaform.module import (
     Context,
     agent_context_collecting,
     agent_context_epoch,
-    context,
     prepare_agent_context,
     record_agent_context,
 )
+
+from .citations import settled
 
 Row = dict[str, Any]
 Key = tuple[str, str]
@@ -36,7 +38,8 @@ TABLES = (
     Table('withdrawals', place='project', key=('receiver', 'provider', 'component'),
           columns=(Column('receiver', required=True), Column('provider', required=True, default=''),
                    Column('component', required=True), Column('requires', required=True),
-                   Column('kind', required=True), Column('value', 'json', required=True))),
+                   Column('kind', required=True), Column('value', 'json', required=True)),
+          indexes=(Index(('component',)),)),
 )
 
 
@@ -57,10 +60,14 @@ def relation_name(value: Row) -> str:
 
 
 def component(kind: str, value: Any, *, name: str | None = None, requires: str | None = None) -> Row:
-    """One exact canonical body, independently receipted from the other entities and relations in a response."""
+    """One exact canonical body, independently receipted from the other entities and relations in a response. Its
+    receipted text leaves out where a moved cited text now stands, which `value` still shows the reader, `settled`."""
     if name is None:
         name = entity_name(str(value['name'])) if kind == 'entities' else relation_name(value)
-    text = encoded({kind: value})
+    identity = value
+    if kind == 'entities' and value.get('stale'):
+        identity = {**value, 'stale': [settled(one) for one in value['stale']]}
+    text = encoded({kind: identity})
     digest = hashlib.sha256(text.encode()).hexdigest()
     return {'name': name, 'text': text, 'rendered_fingerprint': digest, 'actual_version_id': digest,
             'origin': 'memory', 'kind': kind, 'value': value, 'delivered_value': value, 'requires': requires}
@@ -87,8 +94,9 @@ def encounter(ctx: Context, key: Key, *, epoch: int | None = None) -> None:
         tx.concern(session_id=ctx.session, kind='memory.encounter')
 
 
-def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None) -> None:
-    """Publish enough identity for relay recipients to filter before reading. Called inside the graph mutation."""
+def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None, writer: str | None = None) -> None:
+    """Publish enough identity for relay recipients to filter before reading. Called inside the graph mutation. The
+    session that wrote, `writer`, is not among them: what it wrote is its own, `authored`."""
     for receiver, provider in sorted(keys):
         identity = {'receiver': receiver, 'provider': provider}
         revision = uuid.uuid4().hex
@@ -108,7 +116,55 @@ def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None) -
         if provider:
             tx.concern(kind=f'memory:{provider}')
         for row in tx.rows('encounters', identity, limit=0).results:
-            tx.concern(session_id=row['session'])
+            if row['session'] != writer:
+                tx.concern(session_id=row['session'])
+
+
+def remade(tx: TableTx, names: list[str]) -> None:
+    """A memory that exists is not withdrawn under its own identity: kept, a withdrawal at a node the memory made again
+    does not reach is read there while its new body is read at another, and the two take turns as the one receipt of
+    that identity, unread forever. Where the memory is joined its new body supersedes the withdrawal, which is dropped;
+    where it is not, the withdrawal becomes an index withdrawal, as unjoin writes, with an identity of its own for this
+    making, so the agent that held the memory there is told once it no longer applies. A withdrawal of one of their
+    relations is dropped: a relation reaches a node only through its ends' joins. Reads only these memories' rows."""
+    from . import Key as MemoryKey
+    for name in dict.fromkeys(names):
+        entity = tx.get('entities', {'name': name})
+        if entity is None:
+            continue
+        joined = {(row['receiver'], row['provider']) for row in tx.rows('joins', {'entity': name}, limit=0).results}
+        for row in tx.rows('withdrawals', {'component': entity_name(name)}, limit=0).results:
+            identity = {'receiver': row['receiver'], 'provider': row['provider']}
+            tx.delete('withdrawals', {**identity, 'component': row['component']})
+            if (row['receiver'], row['provider']) in joined:
+                continue
+            index = {**identity, 'component': f'memory:index:{row["receiver"]}|{row["provider"]}:{name}@{entity["seq"]}'}
+            if tx.get('withdrawals', index) is None:
+                tx.insert('withdrawals', {**index, 'requires': entity_name(name), 'kind': 'withdrawn',
+                                          'value': {'name': name, **MemoryKey(**identity).said()}})
+        for end in ('source', 'target'):
+            for row in tx.rows('relations', {end: name}, limit=0).results:
+                tx.delete('withdrawals', {'component': relation_name(
+                    {'from': row['source'], 'to': row['target'], 'relationType': row['relation_type']})})
+
+
+def authored(ctx: Context, after: list[Row], before: list[Row] | None = None) -> None:
+    """The bodies the calling session just wrote are received by it, so its own write never comes back to it as an
+    unread notice, one more turn to tell it what it sent (2026-10-19, code.dispatcher.agent#5b). A body it changed,
+    `after`, counts only when it held the one it changed, `before`, at that version: another agent's change it has not
+    read stays unread."""
+    if ctx.session is None or not after:
+        return
+    known: set[str] = set()
+    if before:
+        due = {str(one['name']) for one in prepare_agent_context(ctx.folder, ctx.session, before,
+                                                                 project=ctx.project)['components']}
+        known = {str(one['name']) for one in before} - due
+    changed_names = {str(one['name']) for one in before or ()}
+    # a receipt changes no map and no one listens for it, so it is announced by no event: noted, it would strip the
+    # write's own concerns, the sessions and kinds every other recipient filters on
+    events.quietly(record_agent_context, ctx.folder, ctx.session, [one for one in after if one['name'] not in
+                   changed_names or one['name'] in known], project=ctx.project, channel='authored')
 
 
 def revision(project: str, address: str, provider: str = '') -> str:
@@ -178,59 +234,3 @@ def counts(prepared: Row) -> tuple[set[str], set[str], set[str]]:
         unread.update(names)
         updated.update(name for name in names if entity_name(name) in previous or one['name'] in previous)
     return current, unread, updated
-
-
-def notices(ctx: Context, payload: Row | None = None) -> Row:
-    """Unread notices for functional entries this agent already encountered, suitable for its next normal turn.
-
-    Returned components acknowledge only the notices. The referenced read_unread operation acknowledges graph
-    contents independently after those contents are returned. A resumed session can request this without a payload.
-    """
-    if ctx.session is None or ctx.project is None:
-        return {'epoch': 0, 'components': [], 'text': '', 'entries': []}
-    if payload is not None:
-        kinds: list[Any] = payload.get('kinds') or []
-        if payload.get('project') not in (None, ctx.project) or 'memory.changed' not in kinds:
-            return {'epoch': 0, 'components': [], 'text': '', 'entries': []}
-        recipients = payload.get('session_ids')
-        if isinstance(recipients, list) and ctx.session not in recipients:
-            return {'epoch': 0, 'components': [], 'text': '', 'entries': []}
-    from . import Key as MemoryKey
-    from . import _prompt, _reaches, _view  # pyright: ignore[reportPrivateUsage]
-
-    epoch = agent_context_epoch(ctx.folder, ctx.session, project=ctx.project)
-    store = Store(ctx.project, module='memory')
-    with store.tables(write=False) as tx:
-        entries = list(tx.rows('encounters', {'session': ctx.session, 'epoch': epoch}, limit=0).results)
-    selected: list[Row] = []
-    details: list[Row] = []
-    addresses = {str(kind)[7:] for kind in (payload or {}).get('kinds', []) if str(kind).startswith('memory:')}
-    for entry in entries:
-        receiver, provider = str(entry['receiver']), str(entry['provider'])
-        if addresses and receiver not in addresses and provider not in addresses:
-            continue
-        reading = context('memory', Path(ctx.folder), project=ctx.project)
-        reading.session = ctx.session
-        reading.switches = {'layers': entry['layers']} if entry['layers'] else {}
-        reading.store = Store(ctx.project, module='memory', toggled=entry['layers'] or None)
-        if not _reaches(reading.store, receiver):
-            continue
-        with reading.store.tables(write=False) as tx:
-            whole = _view(tx, MemoryKey(receiver, provider)).whole()
-        pending = prepare(reading, whole, (receiver, provider), interested=False)
-        total, unread, updated = counts(pending)
-        if not unread:
-            continue
-        call = (f'metaform memory read_unread receiver={receiver} provider={provider}' if provider else
-                f'metaform memory read_unread node=element:{receiver}')
-        text = ctx.calls(_prompt('counts', total=str(len(total)), unread=str(len(unread)),
-                                 updated=str(len(updated)), read_unread=call))
-        # Distinct corrections with unchanged totals still produce a new notice.
-        digest = fingerprint([(one['name'], one['rendered_fingerprint']) for one in pending['components']])
-        selected.append({'name': f'memory:notice:{receiver}|{provider}:{digest}', 'text': text,
-                         'rendered_fingerprint': digest, 'actual_version_id': digest,
-                         'origin': 'memory', 'delivered_value': text})
-        details.append({'receiver': receiver, 'provider': provider, 'total': len(total), 'unread': len(unread),
-                        'updated': len(updated), 'read_unread': call})
-    result = prepare_agent_context(ctx.folder, ctx.session, selected, project=ctx.project)
-    return {**result, 'entries': details}

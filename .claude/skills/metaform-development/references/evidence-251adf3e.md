@@ -1,0 +1,1 @@
+Assistant: "Set the agent limit back to 10" then Bash `timeout 30 uv run metaform set --dispatch-agents 10 2>&1 | tail -1`, result: "Next: ask the person in chat; to do it they use the settings screen on the page, or paste into their own terminal window (an AI tool runs commands without the consent a terminal carries): metaform set --dispatch-agents 10"

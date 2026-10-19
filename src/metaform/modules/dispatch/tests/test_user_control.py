@@ -36,9 +36,9 @@ def test_worker_can_stop_itself_but_cannot_manufacture_user_authority(home, monk
 
 
 def test_human_messages_keep_fifo_ahead_of_background_work():
-    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'worded')
+    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'worded', 'typed')
     held = SimpleNamespace(**{name: deque() for name in queues}, sent=[], priority_count=0,
-                           handing=False, ending=False, replaying=False, turns=1)
+                           handing=False, ending=False, replaying=False, turns=1, queued_peer_ids=set())
     Session.turn(held, 'background one')
     Session.turn(held, 'human one', first=True, word={'id': 'one'})
     Session.turn(held, 'background two')
@@ -46,6 +46,50 @@ def test_human_messages_keep_fifo_ahead_of_background_work():
     assert list(held.pending) == ['human one', 'human two', 'background one', 'background two']
     assert list(held.worded) == [{'id': 'one'}, {'id': 'two'}, None, None]
     assert {len(getattr(held, name)) for name in queues} == {4}
+
+
+def test_typed_turn_is_bare_once_the_conversation_has_its_duty():
+    """The person's words go as typed, except as a new conversation's first turn, which carries the role; a failed
+    send's leftover context is never recorded as delivered by a typed turn, and stays due for the next turn."""
+    import asyncio
+
+    queues = ('pending', 'prompt_versions', 'prompt_contexts', 'voiced', 'peered', 'worded', 'typed')
+    held = SimpleNamespace(**{name: deque() for name in queues}, sent=[], priority_count=0, handing=False,
+                           ending=False, replaying=False, turns=1, prep=True, role='system', opening=True,
+                           probe=True, resume=None, link_asked=True, recompacted=False, spoken=False,
+                           inflight_context=None, inflight_versions=[], inflight_peers=[], attached=[],
+                           active_turn=None, interrupted=False, session_id='s', acp={'tokens': None},
+                           queued_peer_ids=set())
+    sent: list[tuple[str, object]] = []
+
+    def guidance(text, supplied):
+        held.inflight_context = {'components': ['orchestration:role_resource']}
+        return f'ROLE\n\n{text}'
+
+    async def prompt(session_id, prompt):
+        sent.append((prompt[0].text, held.inflight_context))
+        Session.context_delivered(held)
+        return SimpleNamespace(stop_reason='end_turn', usage=None)
+
+    async def nothing(*args, **kwargs):
+        return None
+
+    held.guidance, held.conn = guidance, SimpleNamespace(prompt=prompt)
+    held.changed = held.flush = held.note = held.save_state = held.peer_marked = held.spend = nothing
+    held.arm = held.intake_clock = held.hush = held.trace = lambda *args, **kwargs: None
+    held.context_delivered = lambda: Session.context_delivered(held)
+
+    async def turns():
+        held.lock, held.interrupt_lock, held.idle = asyncio.Lock(), asyncio.Lock(), asyncio.Event()
+        for text, typed, stale in (('hello', True, False), ('again', True, True), ('note', False, False)):
+            if stale:  # as a send that failed before its bytes went out leaves it
+                held.inflight_context = {'components': ['stale']}
+            held.turns = 1  # queued only: the turn is run here, not spawned
+            Session.turn(held, text, first=typed, typed=typed)
+            await Session.prompted(held)
+    asyncio.run(turns())
+    assert sent == [('ROLE\n\nhello', {'components': ['orchestration:role_resource']}), ('again', None),
+                    ('ROLE\n\nnote', {'components': ['orchestration:role_resource']})]
 
 
 def test_workers_share_global_capacity_but_helpers_do_not_take_worker_slots(home, store, monkeypatch):

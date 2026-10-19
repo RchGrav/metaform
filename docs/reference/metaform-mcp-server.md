@@ -39,7 +39,7 @@ Each command is its own tool. A module's command is `<module>_<command>`, such a
 
 Each tool's annotations say what it does, from the effect its verb declares: `readOnlyHint` and `idempotentHint` for a read, `destructiveHint` for a removal and for a tool that is the person's decision (marked *person's decision* below), `openWorldHint` for a command that starts or steers agents or reaches the network. The Effect column below shows them. A result that is a JSON object comes as text and also as `structuredContent`.
 
-A tool that is the person's decision (clearing the project, switching, collapsing or removing a base, deleting memories) takes no `confirm` from the agent: it runs only when the person says yes in the form their AI tool shows them. Without that answer, for a dispatched agent always, it is refused with its caution, which names what it would take, and the command the person runs, CLI-011 and MCP-006 (UX review round 1, 2026-10-17).
+A tool that is the person's decision (clearing the project, switching, collapsing or removing a base) takes no `confirm` from the agent: it runs only when the person says yes in the form their AI tool shows them. Without that answer, for a dispatched agent always, it is refused with its caution, which names what it would take, and the command the person runs, CLI-011 and MCP-006 (UX review round 1, 2026-10-17).
 
 An error ends with one `Next:` line naming the tool to call or the resource to read.
 
@@ -145,7 +145,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_merges` | List the agents' merges waiting for the person's review, the soonest first. | read |
 | `dispatch_options` | List the settings each agent offers, its model, effort, mode and the rest, as it offered them at its last session in this project, and the ones dispatch_<agent>_<option> gives it. prime=true starts the agent once to read them, with no prompt. | write, open world |
 | `dispatch_message` | Send a person's message to the agent working a ticket. | write, open world |
-| `dispatch_note` | Send a short note to the agents working other open tickets, by ticket, part of the map, file or topic: information each reads at its next turn, kept on every ticket it touches; it never steers. With wait=<seconds> it is a question, and the call waits for the replies. | write, open world |
+| `dispatch_note` | Send a note to other registered agents, by session, ticket, a project's system agent (to=system, kept for its next session when none runs), part of the map, file or topic: information each reads at its next turn, kept on every ticket it touches; it never steers. With wait=<seconds> it is a question, and the call waits for the replies. With decision=true, the person's own system agent relays their decision, which each recipient takes as the person's direction. | write, open world |
 | `dispatch_notes` | List your notes, sent and received, with where each stands for each receiver: queued, delivered, read or replied; note=<id> for one note and its replies. | read |
 | `dispatch_peers` | See who is at work where: each agent on an open ticket, its Address, the files it touched and what it said last. With at=, file= or topic=, who else is in that part or file, with a note ready to ask them before you edit. | read |
 | `dispatch_prep` | Start an agent in a merge's worktree to prepare its code for the person's review. | write, open world |
@@ -247,9 +247,9 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | `memory_add_observations` | Add observations to memory entities that already exist, at a node or in the whole memory graph. | write |
 | `memory_create_entities` | Record what happened in the work at a node of the map: new memory entities with their observations. What is true of the project goes to the knowledge layers. Without node, they go in the memory graph joined to no node. | write |
 | `memory_create_relations` | Relate memory entities to one another, at a node or in the whole memory graph. Relations should be in active voice. | write |
-| `memory_delete_entities` | Delete memory entities and their relations, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
-| `memory_delete_observations` | Delete observations from memory entities, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
-| `memory_delete_relations` | Delete relations between memory entities, at a node or in the whole memory graph. Caution: Deleting memories removes them from the memory graph for every agent; no copy is kept and it is not undone. | remove, person's decision |
+| `memory_delete_entities` | Delete memory entities and their relations, at a node or in the whole memory graph. | remove |
+| `memory_delete_observations` | Delete observations from memory entities, at a node or in the whole memory graph. | remove |
+| `memory_delete_relations` | Delete relations between memory entities, at a node or in the whole memory graph. | remove |
 | `memory_graph` | Read the whole memory graph with its joins to the map: who wrote each, and whether each shows at its node. | read |
 | `memory_joins` | List the memory joins that tie entities to map nodes: at a node, of an entity, or all. Each comes with who made it and whether it is orphaned. | read |
 | `memory_note` | Read the person's one note at a node of the map; only the web page writes it. | read |
@@ -259,6 +259,33 @@ A memory graph, presented at each node of the map as the MCP reference memory se
 | `memory_rekey` | Move the memory joins and notes at an old address to the address that replaced it. | write |
 | `memory_search_nodes` | Search memory entities by name, type and observation text, at a node or in the whole memory graph. | read |
 | `memory_unjoin` | Detach one memory join from its node by its id; the entity stays in the memory graph. | remove |
+
+### roundtables
+
+Bring a question to a table of agents at an Address, through the Roundtable 2 engine.
+
+| Tool | What it does | Effect |
+|---|---|---|
+| `roundtables_open` | Open a table on a question at an Address, with its seats in speaking order. | write, open world |
+| `roundtables_comment` | As the chair, say something to the table at its next gap between turns. | write, open world |
+| `roundtables_hold` | As the chair, hold the table after the turn in flight. | write, open world |
+| `roundtables_continue` | As the chair, run a held table again. | write, open world |
+| `roundtables_advance` | As the chair, end the topic's discussion after its fewest rounds, for its synthesis, rankings and summary. | write, open world |
+| `roundtables_reseat` | As the chair, bring a seat that left or failed back to the table. | write, open world |
+| `roundtables_end` | As the chair, end the table: its report is written and saved here. | write, open world |
+| `roundtables_status` | A table: its state, seats, spend, answer and whether its report is saved. | read |
+| `roundtables_tables` | Every table of the project, newest first. | read |
+| `roundtables_events` | A table's events after a cursor, as its follower told them. | read |
+| `roundtables_follow` | Start a table's follower again when it stopped before the table ended. | write, open world |
+| `roundtables_adopt` | Adopt an idea of an ended table: a ticket at the part it concerns, the table its source. | write |
+
+### orchestration
+
+Assignments, specialists, check-ins and independent assessment. Only the tool that writes a specification is listed here so far.
+
+| Tool | What it does | Effect |
+|---|---|---|
+| `orchestration_change` | Publish an adaptive operative revision or record a strict-mode recommendation. With `section` (a record id such as `CTX-050`, or a heading), `content` is that one record, starting with its Markdown heading: it replaces the record with that heading, through its last line, or is added after the last record of its level (a new `###` record goes after the last `###` record, before a closing `## Open questions`), and every other record stays. `content` holding more than one record, or headed by a record the file already holds under another `section`, is refused, nothing written, with the call that does what was meant. Without `section`, `content` is the whole new file. Either way, a write that would drop a heading of the file is refused, nothing written, unless `removing` names each record it removes; the refusal lists the records it would have dropped and gives the `section` call that adds or replaces the one record instead (2026-10-19, ticket code.router.assignment#13, after two amendments overwrote whole specifications). The person's message and the team's change order show the changed lines, each hunk headed by its record, not the whole file; agents still get the whole revision as `operative_content`. A stored workflow takes only the whole-content form. | write |
 
 ### twilio
 

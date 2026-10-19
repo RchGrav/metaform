@@ -87,6 +87,8 @@ from metaform.module import (
 )
 
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
+from .board import changed as board_changed
+from .board import waiting as board_waiting
 from .progress import SOURCE as PROGRESS
 from .progress import blocked as rework_blocked
 from .progress import changed as progress_changed
@@ -250,11 +252,17 @@ NODE = '22'
 # A setting that decides which agents run, how they start, what they are permitted, how they are watched or when
 # their work lands is person_only: written by the person, never by an agent over MCP, CLI-011; Full Auto is
 # also set by the person's own system agent on their word, `on_persons_word`. How long one wait blocks only paces the
-# agent that calls it, so it is not.
-settings.boolean('dispatch_autostart', False, label='Full Auto', person_only=True, on_persons_word=True,
+# agent that calls it, so it is not. On by default, so a new install's board clears itself: the tickets go to agents,
+# and the system agent is given a turn for what needs it, `board_changed` (the person's decision, 2026-10-18).
+settings.boolean('dispatch_autostart', True, label='Full Auto', person_only=True, on_persons_word=True,
                  help='Start agents on tickets that have not been tried, and resume a worker\'s session that ended '
                       'without your stop, up to dispatch_retries; a ticket whose agent stopped with it open waits for '
-                      'you.',
+                      'you. Turned on after Stop all, it resumes the work Stop all stopped; a ticket you stopped on '
+                      'its own stays stopped.',
+                 details='On, the default, your system agent is also given a turn when the board needs it: a ticket '
+                         'filed with no task or repeating an open one, a ticket whose agent died, and a ticket an '
+                         'agent finished, whose work may clear fault lights; one is started for it when none runs, '
+                         'unless you stopped yours.',
                  category='automation', heading='Dispatch and capacity', essential=20)
 settings.boolean('dispatch_pause_on_stop', True, label='Pause the project queue when I stop a worker',
                  person_only=True, category='automation', heading='User control',
@@ -496,11 +504,10 @@ for _agent in agent_choices():
                           'as before. Empty, Jev is told only the agent\'s name.')
 def _withheld_choices(ctx: Context) -> list[str]:
     """What an intake's server can leave out: each module, its reading tools, and each of its tools by name."""
-    from metaform import loader
+    from metaform.module import installed
     found: list[str] = []
-    for item in sorted((one for one in loader.discover() if one.module is not None), key=lambda one: one.id):
-        assert item.module is not None
-        found += [item.id, f'{item.id}:read', *(f'{item.id}_{verb.name}' for verb in item.module.verbs)]
+    for module in installed():
+        found += [module.id, f'{module.id}:read', *(f'{module.id}_{verb.name}' for verb in module.verbs)]
     return found
 
 
@@ -923,12 +930,22 @@ def group_options(system: str | None = None) -> dict[str, Any]:
 
 
 def end_group(pid: int, system: str | None = None) -> None:
-    """End a process and every process it started: `npx` starts the agent as a grandchild."""
+    """End a process and every process it started: `npx` starts the agent as a grandchild. A process that leads no
+    group of its own is ended alone: the group it is in is its starter's, perhaps the caller's own."""
     if (system or os.name) == 'nt':
         subprocess.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True, check=False)
         return
     try:
-        os.killpg(pid, signal.SIGKILL)
+        leads = os.getpgid(pid) == pid
+    except ProcessLookupError:
+        leads = True  # its leader is gone and the group it led can live on; no other group has its id
+    except PermissionError:
+        return
+    try:
+        if leads:
+            os.killpg(pid, signal.SIGKILL)
+        else:
+            os.kill(pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
 
@@ -1053,15 +1070,28 @@ INTAKE = 'intake-'
 # hang on this work id, which is never a ticket either, so the person always talks with their own agent and an intake
 # is offered, never required first, VIEW-045.
 CONVERSATION = 'conversation-'
+# A helper the person's system agent starts with a brief, `helper`, holds no ticket either: its work id is this prefix
+# and a token of its own, and its record is its session, its brief kept in the session's state and its work in its
+# thread, read afterwards as any session's is.
+HELPER = 'helper-'
 
 
 def intake_id(work_id: Any) -> bool:
     return str(work_id).startswith(INTAKE)
 
 
+def helper_id(work_id: Any) -> bool:
+    return str(work_id).startswith(HELPER)
+
+
+def helper_item(work_id: Any) -> str:
+    """How a helper is named where a ticket would be named by its item: `helper` and the first of its token."""
+    return 'helper ' + str(work_id)[len(HELPER):][:8]
+
+
 def ticketless(work_id: Any) -> bool:
-    """Whether a work id names no ticket by what it is: an intake's or a conversation held on no map."""
-    return intake_id(work_id) or str(work_id).startswith(CONVERSATION)
+    """Whether a work id names no ticket by what it is: an intake's, a helper's or a conversation held on no map."""
+    return intake_id(work_id) or helper_id(work_id) or str(work_id).startswith(CONVERSATION)
 
 
 def held_ticket(store: Store, work_id: str) -> WorkRecord | None:
@@ -1512,7 +1542,8 @@ def called(store: Store, work_ids: Sequence[str]) -> dict[str, str]:
     named: dict[str, str] = {}
     for work_id in work_ids:
         if ticketless(work_id):
-            named[work_id] = 'the intake' if intake_id(work_id) else 'a conversation'
+            named[work_id] = 'the intake' if intake_id(work_id) else helper_item(work_id) if helper_id(work_id) \
+                else 'a conversation'
             continue
         item, title, _ = found.get(work_id) or (None, None, None)
         named[work_id] = (f'{item} "{title}"' if title else str(item)) if item else f'ticket {work_id[:8]}'
@@ -1964,9 +1995,17 @@ def agents_at_work(project_id: str, base_id: str | None, stop: bool) -> tuple[st
     # and so is every other runner the gate started that has made no session yet: a ticket's agent an autostart pass
     # launched a moment before, a chat or a sentinel, on the metaform it was pinned to (ux-verify-combined F1)
     made = {row.get('pid') for row in rows}
+    seated: set[int] = set()
     for entry in launches():
         if entry.get('project') != project_id or entry['pid'] in made or intake_id(entry.get('work_id')) \
                 or entry['pid'] == os.getpid() or entry.get('subject') == 'system':  # the person's own, starting
+            continue
+        if entry.get('seat'):  # a roundtable belongs to the project: a metaform's clear or removal leaves it at work
+            if base_id is None and entry['pid'] not in seated:
+                seated.add(entry['pid'])
+                said.append(f'A roundtable, {str(entry.get("work_id") or "").removeprefix("roundtables-")}')
+                if stop:
+                    stopped_seats(int(entry['pid']))
             continue
         on = entry.get('base') or (active.id if active is not None else None)
         if base_id is not None and on != base_id:
@@ -2126,6 +2165,28 @@ def after_of(store: Store, work_id: str) -> dict[str, Any]:
     except StoreError:
         return {}
     return {'after_work': row['works']} if row is not None else {}
+
+
+def fix_in_force(store: Store, work_id: str) -> bool:
+    """Whether a ticket's work runs from the project folder: worked there, or its worktree merged into it, VIEW-044. A fix
+    in a worktree is not in force until it merges, so autoticket's proof of it waits for the merge."""
+    from .merge import in_force
+    return in_force(store, work_id)
+
+
+def work_over(store: Store, record: WorkRecord) -> bool:
+    """Whether its agent's work on a ticket is over: done, or its fix landed on a ticket that closes only with proof,
+    which stays open, watched, until the module that filed it proves the fix (`map.storage.prove_work`). Its session
+    ends as a done ticket's does. The landing is read by key from the map module's own table, and only for an open
+    ticket."""
+    if record.done:
+        return True
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': record.id})
+    except StoreError:
+        return False
+    return row is not None and bool(dict(row).get('landed'))
 
 
 def waiting_on(kept: dict[str, Any] | None, opened: Iterable[str]) -> list[str]:
@@ -2313,6 +2374,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     # 1, runaway F3: each pass reconciled every open ticket's progress in a write transaction first, 93% of a core
     # under a burst of note edits). A ticket's progress is reconciled where its change is heard, progress.changed.
     opened = store.work(open=True, limit=0).results
+    paused: dict[str, Any] = {}
     backoff = start_backoff(store)
     now = time.time()
     ends = [float(row['next_at']) for row in backoff.values() if not row['handed'] and float(row['next_at']) > now]
@@ -2320,7 +2382,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     if not may_start(ctx, store, opened, backoff):
         return {'started': [], 'recovery': recovered,
                 'capacity_waiting': bool(opened) and slots(ctx, store)['machine_free'] == 0,
-                **merged_due(retry(ctx, store, opened, asked), start_due)}
+                **merged_due(retry(ctx, store, opened, asked), start_due), **paused}
     # Jev's choice of agent, model and effort for the tickets the person gave no agent, asked before the transaction
     # below, so no network call is ever made inside it; nothing when Jev is off, H23.
     picks = jev_choices(ctx, store)
@@ -2352,7 +2414,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         rows = [row for row in sessions(store, verify=False)
                 if row['state'] != 'running' or runner_of(row.get('pid')) in (row['work_id'], SERVED)]
         active = [row for row in rows if row['state'] == 'running']
-        candidates.sort(key=lambda record: (record.held, record.position is None, record.position or 0))
+        candidates.sort(key=board_order)
         glyph = {work_id: held.get('glyph') for work_id, held in kept.items()}
         occupied = {glyph.get(row['work_id']) for row in active} - {None}
         busy = {row['work_id'] for row in active}
@@ -2444,7 +2506,52 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     if failed is not None:
         raise failed
     return {'started': started, 'recovery': recovered, 'capacity_waiting': bool(candidates),
-            'more': bool(ctx.nouns.get('batch') and started and len(candidates) > len(reserved)), **retried}
+            'more': bool(ctx.nouns.get('batch') and started and len(candidates) > len(reserved)), **retried, **paused}
+
+
+def board_order(record: WorkRecord) -> tuple[bool, bool, int]:
+    """Where a ticket stands in the board's order, the order the agent starter takes tickets in."""
+    return record.held, record.position is None, record.position or 0
+
+
+def resume_paused(ctx: Context, store: Store, opened: Sequence[WorkRecord]) -> dict[str, Any]:
+    """The work the person's Stop all paused, resumed in place now that Full Auto is on again, VIEW-042: Stop all
+    turns Full Auto off and lists each assignment it stopped in the project's halt, `keep_paused`, so the first pass
+    of the agent starter after the person turns Full Auto on is their word to go again. Each is resumed as their own
+    restart resumes it, `reopen`, keeping its session and its work so far, in the board's order and only as many as
+    the agent slots have room for; the rest stay listed for the passes the next free slot brings. Work restarted,
+    stopped on its own, done or gone since is dropped from the list, never resumed: a stop the person gave one ticket
+    lasts until they restart it. Costs the one read of the halt when nothing is paused. Found 2026-10-19: after Stop
+    all on the machine, Full Auto turned on again started none of the 16 assignments it had stopped."""
+    entry = _read_json(halt_path(store.project_id))
+    listed = [str(one) for one in cast(list[Any], (entry or {}).get('paused') or [])]
+    if entry is None or not listed:
+        return {}
+    from .orchestration import drain, service
+    owner = service(ctx)
+    if owner is None:
+        return {}
+    rank = {record.id: place for place, record in enumerate(sorted(opened, key=board_order))}
+    room = free_slots(ctx, store)
+    kept: list[str] = []
+    resumed: list[str] = []
+    for work_id in sorted((one for one in listed if one in rank), key=rank.__getitem__):
+        held = owner.assignment(ctx, work_id=work_id)
+        if held is None or not cast(dict[str, Any], held.get('stop') or {}).get('every'):
+            continue
+        if room <= 0:
+            kept.append(work_id)
+            continue
+        try:
+            owner.reopen(ctx, work_id, queue=True)
+        except Stop:
+            continue
+        resumed.append(work_id)
+        room -= 1
+    keep_paused(store.project_id, entry, kept)
+    if resumed:
+        drain(ctx, resumed)  # their launches, through the gate; one the gate refuses waits queued for the next drain
+    return {'resumed': resumed, **({'paused_waiting': kept} if kept else {})}
 
 
 # How a session ends that the person ended, or that ended with its work: never retried, P012. A runner ended with
@@ -2642,11 +2749,16 @@ def stay_connected(ctx: Context, store: Store, asked: int | None = None) -> dict
     its agent needs a login, it is handed to the person, who brings it back with Call. One whose agent can neither
     resume nor load starts a new conversation, and the person is told once. It is the one agent the person can always
     summon, so it takes no slot from the agents at work. Returns what it started and, while a retry waits, when it is
-    due."""
-    if not ctx.setting('dispatch_stay_connected'):
+    due. While Full Auto is on and something the board needs waits for it, `board`, it is started the same way with
+    dispatch_stay_connected off, unless the person stopped it: then what waits is taken by their next Call."""
+    kept_on = bool(ctx.setting('dispatch_stay_connected'))
+    if not kept_on and not (ctx.setting('dispatch_autostart') and board_waiting(store)):
         return {}
     held = anchor(ctx, store)  # with no map, a work id that is no ticket: the person's agent needs no intake first
     mine = system_sessions(store)
+    if not kept_on and mine and str(mine[-1].get('how') or '') in SYSTEM_STOPS \
+            and mine[-1]['state'] != 'running':
+        return {}  # the person's stop is kept: nothing but their own Call starts it again
     own = own_store(store)
     with own.tables(write=False) as tx:
         kept = tx.get('session_attempts', {'work_id': held})
@@ -2784,7 +2896,8 @@ def reset(ctx: Context) -> dict[str, Any]:
     recorded as ended, and what its runner left running, its agent's processes and its terminals, is ended first;
     every ticket taken with no live agent behind it goes back to the queue. Live agents and their tickets are left
     alone, and so is a ticket whose agent the person stopped, or the supervisor handed to them, which waits for them
-    as before, `kept_for_you`; a ticket whose leftover processes cannot be verified ended stays taken, `deferred`.
+    as before, `kept_for_you`; a ticket whose leftover processes cannot be verified ended stays taken, `deferred`; a
+    ticket whose fix landed and is watched for its proof is no agent's work and stays as it is, `watching`.
     Nothing is deleted. UX review round 1, 2026-10-17: reset released the tickets the person had stopped, which
     autostart then started again (web-gui-controls F7), and left a dead runner's agent's children running while a new
     agent took its ticket (interrupt-failure-recovery F3, dispatch-concurrency F6)."""
@@ -2843,11 +2956,14 @@ def reset(ctx: Context) -> dict[str, Any]:
     every = sessions(store, verify=False)
     launching = {entry.get('work_id') for entry in launches() if entry.get('project') == store.project_id}
     kept: list[str] = []
+    watching: list[str] = []  # tickets whose fix landed and is watched for its proof: no agent's, so left as they are
     for at, name in pinned_bases(store, every):
         opened = at.work(open=True, limit=0).results
         yours = left_waiting(at, opened, every)
         for record in opened:
-            if record.taken and record.id not in alive and record.id not in yours and record.id not in unswept \
+            if record.taken and record.id not in alive and work_over(at, record):
+                watching.append(record.id)
+            elif record.taken and record.id not in alive and record.id not in yours and record.id not in unswept \
                     and record.id not in launching:
                 at.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
                 released.append(record.id)
@@ -2860,7 +2976,8 @@ def reset(ctx: Context) -> dict[str, Any]:
             if name is not None:
                 elsewhere[record.id] = name
     return {'released': released, 'sessions_ended': ended, 'still_working': sorted(alive),
-            'kept_for_you': sorted(kept), 'deferred': deferred, **({'on_bases': elsewhere} if elsewhere else {})}
+            'kept_for_you': sorted(kept), 'deferred': deferred, **({'watching': sorted(watching)} if watching else {}),
+            **({'on_bases': elsewhere} if elsewhere else {})}
 
 
 def merges(ctx: Context) -> dict[str, Any]:
@@ -2920,6 +3037,7 @@ def _running_or_stop(store: Store, work_id: str, session_id: str | None = None, 
     if session is None:
         # an intake is no ticket: what starts one again is `dispatch intake`, never a start on its work id
         raise Stop(f'No agent is running on work {work_id}.', 'metaform dispatch intake' if intake_id(work_id)
+                   else f'metaform dispatch sessions id={work_id}' if helper_id(work_id)
                    else f'metaform dispatch start {work_id} <agent>')
     return session
 
@@ -2967,8 +3085,8 @@ def may_steer(ctx: Context) -> None:
 def sender(ctx: Context) -> str | None:
     """The role of the agent a message comes from, None for the person: on the page always the person, elsewhere the
     role the runner gave the calling agent, BASE-052."""
-    from metaform import caller
-    if ctx.surface == 'cli' and caller.vouched():
+    from metaform.module import page_vouched
+    if ctx.surface == 'cli' and page_vouched():
         return None
     return (os.environ.get('METAFORM_ROLE') or ('agent' if os.environ.get('METAFORM_SESSION') else None)) \
         if ctx.surface in ('mcp', 'cli') else None
@@ -3335,7 +3453,11 @@ def launch_kind(words: Sequence[str]) -> str:
 
 
 def capacity_kind(ctx: Context, work_id: str, kind: str) -> str:
-    """Only recorded role-creation assignments are exempt ticket helpers; ordinary delegated work consumes slots."""
+    """Only recorded role-creation assignments and the helpers the system agent starts, `helper`, are exempt helpers;
+    ordinary delegated work consumes slots. dispatch_agents bounds what Full Auto starts by itself, and a helper is
+    started on purpose, to get round a full queue when it has to (the owner's ruling, 2026-10-19)."""
+    if helper_id(work_id):
+        return 'helper'
     if kind != 'worker':
         return kind
     from .orchestration import assignment
@@ -3361,7 +3483,7 @@ def slots(ctx: Context, store: Store, *, besides: int | None = None) -> dict[str
                 and runner_of(pid) == row['work_id']:
             known.add(pid)
             unledgered = {'pid': pid, 'project': store.project_id, 'work_id': row['work_id'],
-                          'kind': 'summoned' if summoned(row) else 'worker'}
+                          'kind': 'summoned' if summoned(row) or helper_id(row['work_id']) else 'worker'}
             own.append(unledgered)
             entries.append(unledgered)
     workers = [entry for entry in own if entry.get('kind') == 'worker']
@@ -3644,6 +3766,14 @@ def ended_launch_group(pid: int) -> None:
         end_group(agent)
 
 
+def stopped_seats(pid: int) -> None:
+    """A roundtable's follower, which holds its seats' slots, asked to stop with SIGTERM: it ends its table and follows
+    it until the engine has closed the seats, and gives the slots back only then. Its group is never killed, which
+    would free the slots and leave the engine's seats at work."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.kill(pid, signal.SIGTERM)
+
+
 def leave_ledger() -> None:
     """A runner whose agent has ended gives its slot back: its ledger entry goes, though the process may still wait to
     run the queue, `moved_on`."""
@@ -3672,6 +3802,45 @@ def fork_capacity(ctx: Context, store: Store, work_id: str, agent: str) -> Path:
             'started': time.time(), 'asked': time.time_ns(), 'fork': token}))
         os.replace(temporary, path)
         return path
+
+
+def seat_slots(project_id: str, work_id: str, count: int) -> list[Path]:
+    """Hold one worker slot for each of a roundtable's `count` seats through the one admission gate, for as long as the
+    calling process lives, offered to the roundtables module as `dispatch.seats`: a seat is an agent at work, so a
+    table never runs past dispatch_agents or dispatch_machine_agents, and a ticket never starts past the seats a table
+    holds. Refused, with the limit that binds, when fewer slots are free than seats; then nothing is held. Removing the
+    returned entries gives the slots back, as the end of the process does."""
+    from .recovery import identity
+    store = Store(project_id, module='dispatch')
+    ctx = runner_context(store)
+    home.mkdir_private(ledger())
+    made: list[Path] = []
+    with home.file_lock(admit_lock()):
+        held = slots(ctx, store)
+        if count > held['free']:
+            binding = 'dispatch_machine_agents' if held['machine_free'] < count else 'dispatch_agents'
+            raise Refused(f'A table of {count} seat{"" if count == 1 else "s"} needs {count} free agent '
+                          f'slot{"" if count == 1 else "s"} and {held["free"]} '
+                          f'{"is" if held["free"] == 1 else "are"} free: {binding} allows '
+                          f'{held["machine_limit"] if binding == "dispatch_machine_agents" else held["limit"]}, and '
+                          f'{held["machine_used"] if binding == "dispatch_machine_agents" else held["used"]} '
+                          'are at work. Seat fewer, or wait for agents to finish.', 'metaform dispatch sessions')
+        try:
+            for _ in range(count):
+                admit(ctx, store, work_id, 'worker')  # a halt or the day's budget refuses a seat as it does a start
+                path = ledger() / f'{os.getpid()}-seat-{secrets.token_hex(8)}.json'
+                temporary = path.with_suffix('.tmp')
+                home.write_private(temporary, json.dumps({'pid': os.getpid(), 'born': identity(os.getpid()) or '',
+                    'project': project_id, 'work_id': work_id, 'agent': 'roundtable seat', 'kind': 'worker',
+                    'seat': True, 'started': time.time(), 'asked': time.time_ns()}))
+                os.replace(temporary, path)
+                made.append(path)
+        except BaseException:
+            for path in made:
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            raise
+    return made
 
 
 def given_back_reservation(store: Store, work_id: str, reservation: str) -> None:
@@ -3731,14 +3900,26 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
 def halt(project_id: str, by: str, *, base_id: str | None = None, held: bool = False) -> dict[str, Any]:
     """Write the project's halt under the gate's lock, so every start the gate admits after it sees it: `by` is what
     halted it, `base_id` the one metaform it halts, or every one; `held` refuses every start, whenever asked, for as
-    long as the halt's own process lives and has not let it go, `let_go`."""
+    long as the halt's own process lives and has not let it go, `let_go`. The work a Stop all paused, `paused`, is
+    kept from the halt before it until Full Auto brings it back, `resume_paused`."""
     from .recovery import identity
     home.mkdir_private(ledger())
     with home.file_lock(admit_lock()):
+        before = _read_json(halt_path(project_id)) or {}
         entry = {'at': time.time_ns(), 'by': by, 'base': base_id, 'pid': os.getpid(),
-                 'born': identity(os.getpid()) or '', 'held': held}
+                 'born': identity(os.getpid()) or '', 'held': held, 'paused': list(before.get('paused') or [])}
         _write_json(halt_path(project_id), entry)
     return entry
+
+
+def keep_paused(project_id: str, entry: dict[str, Any], work_ids: Sequence[str]) -> None:
+    """The work paused under the halt `entry`: written into it while it is still the project's halt, so the person's
+    Full Auto, turned on again, finds the work their Stop all stopped, and only that work."""
+    with home.file_lock(admit_lock()):
+        kept = _read_json(halt_path(project_id))
+        if kept is not None and kept.get('at') == entry['at'] and kept.get('pid') == entry['pid'] \
+                and kept.get('paused') != list(work_ids):
+            _write_json(halt_path(project_id), {**kept, 'paused': list(work_ids)})
 
 
 def let_go(project_id: str, entry: dict[str, Any]) -> None:
@@ -5028,7 +5209,7 @@ def stop_all(ctx: Context) -> dict[str, Any]:
         if person or word is not None:
             halts.append((store.project_id, halt(store.project_id, 'stop-all', held=True)))
     try:
-        return stopped_all(ctx, found, person, by, word)
+        return stopped_all(ctx, found, person, by, word, dict(halts))
     finally:
         for project_id, entry in halts:
             with contextlib.suppress(OSError):
@@ -5036,9 +5217,11 @@ def stop_all(ctx: Context) -> dict[str, Any]:
 
 
 def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None,
-                word: dict[str, Any] | None = None) -> dict[str, Any]:
+                word: dict[str, Any] | None = None, halts: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """`stop_all`'s stops, under its halt. On the person's word, `word`, their system agent stops every agent but
-    itself and turns Full Auto off, as their own Stop all does."""
+    itself and turns Full Auto off, as their own Stop all does. Stop all is a pause of the whole machine: each
+    assignment it stops is marked as stopped by it, `every`, and listed in the project's halt, `halts`, so Full Auto
+    turned on again resumes it, `resume_paused`; a stop the person gave one ticket on its own is never listed."""
     acting = person or word is not None
     me = os.environ.get('METAFORM_SESSION') if not person else None
     own_work = os.environ.get('METAFORM_WORK') if not person else None
@@ -5065,6 +5248,12 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                     for assignment in owner.assignments(project_ctx):
                         if not assignment.get('stop'):
                             owner.stopped(project_ctx, work_id=assignment['work_id'], by='user')
+                    entry = (halts or {}).get(project.project_id)
+                    if entry is not None:  # the work it paused: what was live, never work already ended
+                        paused = [one['work_id'] for one in owner.assignments(project_ctx)
+                                  if one['state'] == 'stopped' and cast(dict[str, Any], one.get('stop') or {}).get('every')]
+                        with contextlib.suppress(OSError):
+                            keep_paused(project.project_id, entry, list(dict.fromkeys([*entry['paused'], *paused])))
             rows = [row for row in sessions(held, verify=False) if row['state'] == 'running'
                     and runner_of(row.get('pid')) == row['work_id'] and (me is None or row.get('runner') != me)
                     and (acting or started_by_caller(row))]
@@ -5086,12 +5275,19 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                                 'session_id': row['session_id']})
         made = {row.get('pid') for row in rows}
         ended_starting: list[int] = []
+        seated: set[int] = set()
         for entry in launches():  # a runner the gate started that has not made its session yet
             if entry.get('project') != project.project_id or entry['pid'] in made or entry['pid'] == os.getpid():
                 continue
             if own_work and entry.get('work_id') == own_work:  # the caller's own runner, never ended by its own call
                 continue
             if not acting and (me is None or entry.get('by') != me):  # neither the person nor its starter
+                continue
+            if entry.get('seat'):  # a roundtable's seats, held by its follower, which ends its table when asked
+                if entry['pid'] not in seated:
+                    seated.add(entry['pid'])
+                    stopped_seats(int(entry['pid']))
+                    stopped.append({'project': project.project_id, 'work_id': entry.get('work_id'), 'table': True})
                 continue
             # its reservation first, so the start the stop ends is not counted as a start that failed, `start_failed`
             with contextlib.suppress(StoreError, Stop):
@@ -5568,8 +5764,11 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 
 
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
-ENDED_STATE = ('about', 'intake', 'notification', 'title', 'role', 'authored_role_uri', 'assignment_id', 'team_id',
+ENDED_STATE = ('about', 'brief', 'intake', 'notification', 'title', 'role', 'authored_role_uri', 'assignment_id', 'team_id',
                'latest_message_id', 'latest_message_text', 'updated_at')
+# What the agents key keeps of an ended session's assignment: the fields its state and the Agents menu name it by.
+ENDED_ASSIGNMENT = ('assignment_id', 'authored_role_uri', 'team_id', 'gc_assignment_id', 'root_work_id',
+                    'parent_assignment_id', 'reviewed_assignment_id', 'state', 'work_id')
 # What the agents key kept of each ended session's state, by project and session id, with the stored row it was read
 # for, `ended_mark`; None for a session that kept no state. A session's state line holds about 50 KB, its commands
 # mostly, and reading and parsing every ended session's on every read was the most of this read's cost,
@@ -5735,7 +5934,15 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
             parent: dict[str, Any] = by_id.get(str(assigned.get('parent_assignment_id'))) or {}
             reviewed: dict[str, Any] = by_id.get(str(assigned.get('reviewed_assignment_id'))) or {}
             directions: list[dict[str, Any]] = assigned.get('pending_direction') or []
-            states.setdefault(str(session['session_id']), {}).update({
+            if agents_key and session.get('state') != 'running':
+                # An ended session in the agents key: what names it in the Agents menu, its responsibility and
+                # delivery, not its assignment's record and directions, which made this read megabytes (4.4 MB for
+                # 462 sessions, 2026-10-19), read and parsed on each change the page hears. Its thread's read has them.
+                assigned = {key: assigned.get(key) for key in ENDED_ASSIGNMENT}
+                directions = []
+            # a new dict: the state held for an ended session, ENDED_STATES, is kept as it was read
+            sid = str(session['session_id'])
+            states[sid] = {**states.get(sid, {}),
                 'orchestration': assigned, 'authored_role_uri': assigned['authored_role_uri'],
                 'assignment_id': assigned['assignment_id'], 'team_id': assigned['team_id'],
                 'owner_gc_id': assigned['gc_assignment_id'], 'root_work_id': assigned['root_work_id'],
@@ -5745,7 +5952,7 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                 'latest_direction': directions[-1] if directions else None,
                 'assessment_work_id': assigned['work_id'] if reviewed else None,
                 'reviewed_work_id': reviewed.get('work_id'), 'reviewed_session_id': reviewed.get('owner_session_id'),
-                'reviewed_gc_id': reviewed.get('assignment_id')})
+                'reviewed_gc_id': reviewed.get('assignment_id')}
     return {'sessions': [*({**{key: value for key, value in session.items() if key not in PRIVATE},
                             **session_work_status(session, [one for one in raised
                                                             if one.get('work_id') == session['work_id']])}
@@ -6068,6 +6275,45 @@ def intake(ctx: Context) -> dict[str, Any]:
     # said once the launch is noted, before the wait for its session: every surface reads it as starting from here, so
     # `metaform start` opens the page at this line and the page shows it starting, never an intake still to start
     ctx.say(f'The intake agent is launched, work {work_id}; waiting for it to make its session.')
+    return {**said, **launched(store, work_id, started['pid'])}
+
+
+def helper(ctx: Context) -> dict[str, Any]:
+    """Start a helper agent with a brief and no ticket, for quick work the person's system agent needs done while it
+    stays reachable in the chat: a diagnosis, a small fix, a check. It runs through the one gate and runner like any
+    agent, so it is a figure on the map, listed with the agents, its thread live in the chat, counted in spend, steered
+    and stopped from the page, and ended by stop-all; a harness's own background subagents are none of these. It takes
+    the helper capacity, never a worker slot: dispatch_agents bounds what Full Auto starts by itself, and a helper is
+    started on purpose. Only the person and their system agent start one. When its brief's turns are done it puts one
+    line in the system agent's inbox and ends; its record is its session, read with `dispatch sessions id=<work id>`."""
+    if not person_asks(ctx) and sender(ctx) != 'system':
+        raise Stop("A helper is started by the person or their system agent; an agent at work asks the system agent "
+                   'for one with a note.', 'metaform dispatch note to=system -- "<what you need done>"')
+    may_steer(ctx)
+    store = ctx.require_store()
+    agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent')))
+    runnable(ctx, agent)
+    given: Any = ctx.nouns.get('text') or []
+    brief = (' '.join(str(word) for word in cast(list[Any], given)) if isinstance(given, (list, tuple))
+             else str(given)).strip()
+    if not brief:
+        raise Stop('A helper is given a brief: what to do and what to report back.',
+                   'metaform dispatch helper -- "<the brief>"')
+    work_id = HELPER + secrets.token_hex(16)
+    # The brief reaches the runner in the launch's row, never in an argument, as an intake's words do; the runner takes
+    # it before its session is made and keeps it in the session's state.
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.insert('raised', {'work_id': work_id, 'node': '', 'agent': agent, 'started': time.time(),
+                             'seq': time.time_ns(), 'asked': brief})
+    try:
+        started = spawn(store, work_id, agent, [], 'helper', kept=bool(ctx.nouns.get('wait')), ctx=ctx)
+    except (Stop, OSError):  # refused by the gate or not started: its launch holds nothing
+        with Store(store.project_id, module='dispatch').tables() as tx:
+            tx.delete('raised', {'work_id': work_id})
+        raise
+    said = {'state': 'starting', 'work_id': work_id, 'agent': agent, **started, 'session_id': None, 'helper': True}
+    if not ctx.nouns.get('wait'):
+        return said
     return {**said, **launched(store, work_id, started['pid'])}
 
 
@@ -6559,6 +6805,18 @@ MODULE = Module(
                        ('metaform dispatch intake -- "src/engine only"',
                         'Starts the default agent on an intake of what is asked.')), open_world=True,
              person_decides=new_map_asked),
+        Verb('helper', helper, "Start a helper agent with a brief and no ticket, for the person's system agent: a "
+                               'figure on the map, steered and stopped like any agent, outside the worker slots. It '
+                               "reports one line to the system agent's inbox when done and ends.",
+             nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
+                         required=False),
+                    Noun('wait', 'true: answer once the agent has made its session, state running, or with why it '
+                                 'did not start, state failed.', kind='bool', required=False),
+                    Noun('text', 'The brief: what to do, where, and what to report back.', many=True)),
+             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
+             examples=(('metaform dispatch helper -- "Find why the page freezes on a node click; report the cause."',
+                        'Starts the default agent on the brief; its thread reads with dispatch sessions id=<work id>.'),),
+             open_world=True),
         Verb('resume', resume, 'Resume an ended agent session in place, so the agent keeps its memory and its thread '
                                'goes on. It works where the agent can load or resume a session, and waits for your '
                                'next message.',
@@ -6696,11 +6954,16 @@ MODULE = Module(
                         'Wakes this session in 30 seconds with that note.'),
                        ('metaform dispatch timer cancel=1a2b3c4d', 'Takes that timer back.')), open_world=True,
                        listed=in_session),
-        Verb('note', note, 'Send a note to other registered agents, by session, ticket, part of the map, file '
-                           'or topic: information each reads at its next turn, kept on every ticket it touches; it never '
-                           'steers. With wait=<seconds> it is a question, and the call waits for the replies.',
+        Verb('note', note, 'Send a note to other registered agents, by session, ticket, a project\'s system agent '
+                           '(to=system, kept for its next session when none runs), part of the map, file or topic: '
+                           'information each reads at its next turn, kept on every ticket it touches; it never '
+                           'steers. With wait=<seconds> it is a question, and the call waits for the replies. With '
+                           'decision=true, the person\'s own system agent relays their decision, which each recipient '
+                           'takes as the person\'s direction.',
              nouns=(Noun('target_project', 'Registered destination project; defaults to this project. Replies retain their original project.', required=False),
-                    Noun('to', 'One agent: its session id, work id, or ticket number, <address>#<n>.', required=False),
+                    Noun('to', 'One agent: its session id, work id, or ticket number, <address>#<n>; or system, the '
+                               'person\'s system agent of this project or of target_project, which takes the note '
+                               'in its next session when none runs now.', required=False),
                     Noun('at', 'A part of the map, by Address: every agent at work at it or inside it, so a trunk '
                                'Address reaches a whole area.', required=False),
                     Noun('file', 'A file or folder, from the project folder: every agent whose tool calls touched it.',
@@ -6710,12 +6973,18 @@ MODULE = Module(
                          required=False),
                     Noun('wait', 'Seconds, 1 to 120, to wait for the replies, which the call returns; it says plainly '
                                  'who did not answer.', kind='int', required=False),
+                    Noun('decision', 'true when the note relays the person\'s decision from their message in this turn: '
+                                     'each recipient gets it as the person\'s direction, with that message. Only the '
+                                     'person\'s own system agent sends one.', kind='bool', required=False),
                     Noun('text', 'The note.', many=True)),
              examples=((('metaform dispatch note file=src/metaform/modules/web/page/app/core/dom.js wait=60 -- "I am '
                          'about to change css(); anything I should know?"'),
                         'Asks every agent that touched dom.js, and waits up to a minute for their replies.'),
                        ('metaform dispatch note reply=3f9a0c1d2e4b5a6c -- "Go ahead; I am done with it."',
-                        'Answers the note 3f9a0c1d2e4b5a6c, threaded to it.')), open_world=True),
+                        'Answers the note 3f9a0c1d2e4b5a6c, threaded to it.'),
+                       (('metaform dispatch note target_project=flask to=system -- "Your app factory raises on import; '
+                         'please file it there."'),
+                        'Tells the flask project\'s system agent, now or in its next session.')), open_world=True),
         Verb('notes', notes, 'List your notes, sent and received, with where each stands for each receiver: queued, '
                              'delivered, read or replied; note=<id> for one note and its replies.',
              nouns=(Noun('note', 'A note\'s id, for it and the replies threaded to it.', required=False),
@@ -6860,7 +7129,7 @@ MODULE = Module(
     tables=TABLES,
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed),
-                   Subscription('map.changed', orchestration_changed)),
+                   Subscription('map.changed', orchestration_changed), Subscription('map.changed', board_changed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the
@@ -6868,7 +7137,8 @@ MODULE = Module(
     provides=(Provides('base.holds', base_holds), Provides('dispatch.deaths', watch_deaths),
               Provides('person.consent', ask_consent), Provides('work.overlap', overlap),
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
-              Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt)),
+              Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt),
+              Provides('dispatch.seats', seat_slots), Provides('work.in_force', fix_in_force)),
     start=started,
     stop=None,
     status=None,

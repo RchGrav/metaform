@@ -111,8 +111,9 @@ def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str,
 
 
 def record(store: Store, signal: str, *, work_id: str = '', session_id: str = '', key: str = '',
-           active: bool = True, **details: Any) -> dict[str, Any] | None:
-    """Keep one signal per source/key; repeated evidence does not raise duplicate events."""
+           active: bool = True, once: bool = False, **details: Any) -> dict[str, Any] | None:
+    """Keep one signal per source/key; repeated evidence does not raise duplicate events. `once` raises a key only
+    the first time, so one a reader has taken and cleared is never raised again by a later report of the same thing."""
     own = own_store(store)
     source = session_id or f'work:{work_id}'
     name = f'signal:{signal}:{key}'
@@ -121,7 +122,7 @@ def record(store: Store, signal: str, *, work_id: str = '', session_id: str = ''
         return None
     with own.tables() as tx:
         previous = tx.rows(TABLE, {'session_id': source, 'name': name}, limit=1).results
-        if previous and json.loads(previous[0]['text'])['active'] == active:
+        if previous and (once and active or json.loads(previous[0]['text'])['active'] == active):
             return None
         if not previous and not active:
             return None

@@ -1,0 +1,1 @@
+Assistant: "The race is fixed in `web/server.py`. On start, the server now begins answering requests right away and starts each project's background services and agent starter beside that, instead of before it. I ran `metaform web restart` twice and both succeeded."

@@ -18,7 +18,7 @@ import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {drawAgentList} from '/page/app/dock/threads.js';
 import {Q, renderMessages} from '/page/app/board/messages.js';
-import {B} from '/page/app/board/refs.js';
+import {B, unshown} from '/page/app/board/refs.js';
 import {drawBoard, boardTickets} from '/page/app/board/board.js';
 import {renderAgents} from '/page/app/agents/dispatch.js';
 import {renderWork} from '/page/app/panel/object.js';
@@ -93,6 +93,7 @@ export async function appliedOps() {
     if (layer === false) continue;  // not in view: nothing to draw
     if (!applyOp(op, layer)) return false;
     mine ||= concernsSelected(op);
+    if (op.kind === 'element' || op.kind === 'join') B.names++;  // the board's cards name their nodes
   }
   const byAddress = addressesNow();
   for (const entry of S.elements.values()) entry.parent = holderOf(entry.element, byAddress);
@@ -270,7 +271,7 @@ async function namedTickets(ids) {
   for (const id of ids) {
     const now = found.find(one => one.id === id) || null, at = S.tickets.findIndex(one => one.id === id);
     const before = at < 0 ? null : S.tickets[at];
-    if (JSON.stringify(now) === JSON.stringify(before)) continue;
+    if (JSON.stringify(now, unshown) === JSON.stringify(before, unshown)) continue;  // the same, but for its age
     if (before) changed.push(before);
     if (now) changed.push(now);
     if (now && at >= 0) S.tickets[at] = now;

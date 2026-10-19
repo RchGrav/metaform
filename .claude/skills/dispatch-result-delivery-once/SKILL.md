@@ -1,0 +1,23 @@
+---
+name: dispatch-result-delivery-once
+description: Use when a dispatch result or note reaches an agent twice, or when results, review findings, memory notices or board lists flood the system agent's conversation.
+category: development
+---
+
+# Dispatch delivers each result to an agent once
+
+A result, peer note or user update reaches each agent exactly once. A relay that fails is retried by the next drain, and that retry relays again: the transition stays pending until a relay succeeds. Repeats are stopped by the receiving session (`Session.peer_note` drops a note id it already holds), not by whichever call wrote the line. Later replays, hand-offs and resumes that find the id already held send nothing.
+
+- A receiving agent answers a repeat in silence: a review finding or update that arrives again after its work is delivered gets no reply, not even a recap of the fixes already reported (on 2026-10-19 an implementer re-received a review finding and wrote a full summary of it).
+- Never gate the relay on who wrote the line. `Transport._notify_user` in `dispatch/orchestration.py` relays on every call until one relay succeeds. A `fresh` flag that returns early after the first write loses the result when that first relay raises `OSError`: the retry finds the line written, marks the transition delivered with `pm=[]`, and the running system agent never hears it. Keep the line write idempotent and rely on the receiver's id dedupe.
+- Every peer note a session queues goes into `queued_peer_ids` (`Session.turn`, `dispatch/runner.py`). Any path that restores turns (`taken_over`, resume, new start) must keep those ids out of the next queue.
+- An update reaches an agent as a note or as a `dispatch:user-update:<id>` component, never both. `Session.updates_due` gives only the ids not already queued and records the ids it gives. Resume runs `replay_peers` before it; a new start runs it after. The shared set makes either order safe.
+- `note_context` leaves out `text`, `to`, `context_components`, and any body, result or summary whose words the note text already holds.
+- Prove a delivery change with one test in `dispatch/tests/test_cross_project.py`. It runs a real check-in, two drains at once, a repeat drain, a direct notify replay, a hand-off with the turn still waiting, then `replay_peers` and `updates_due`. It asserts one queued turn and the result's words once, and it asserts what the running session receives, not only the count of transport calls. Add a case where the first `tell` raises `TimeoutError`: the result must still reach the session on the retry, and the transition must not read `delivered` before it does. Get the transport and service through `provided()` after `refresh_modules()`: the loader names the package `metaform_module_system_dispatch`, so patching `metaform.modules.dispatch` does not reach the drain.
+- Mutation-check each fix against that test, alone, in a copy under `/tmp` and never the shared tree: switch off one fix, confirm the test fails at its own assertion rather than a timeout or import error, then restore it. The procedure is in `metaform-development`, under "Tests that follow an event stream". Each of the four fixes must fail the test by itself.
+
+- The person's system agent is one role across its conversations. `user_updates(ctx, session_id)` gives a conversation, new or resumed, only the updates no system conversation has carried. Carried means any of three records: a `carried:<id>` line in the `conversation-orchestration-updates` thread, which `Session.context_delivered` writes through `carried_updates` once a system turn carrying the update is accepted; the update's peer note marked delivered, read or replied in any system thread; or the update not being due in another system conversation's current context receipts. Updates written while no system agent ran are still given to the next conversation, once. The page draws no `carried` lines. Test it with a second and a third conversation (new session ids) in the same regression test.
+
+- The system agent is an inbox, not a feed. A result, review, project update, memory notice or board list bound for a system-role session waits there to be read on demand; none is carried in full as turn content. At most one coalesced line rides on a turn, with ticket ids and kind only (for example "3 new in your inbox: code.store.memory#1c returned, 1 board item"). Only something that needs the person may start a turn, and then as one line. Memory notices never reach the system role. Prove it with a burst test: results that need no decision cause no turn and no report body.
+
+The causes and their evidence are in `references/delivery-causes-2026-10-19.md`.

@@ -9,15 +9,24 @@
      Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out.
      A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing
      what is learned. -->
-<orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as steps 5 and 6 of the memory prompt say: metaform instructions memory.</orient>
-<!-- The line under the counts an agent is told at its node, MCP-039: what a new memory is, and the call that reads the
-     memories at one address. Shown once per agent session under the counts in map where, the ticket read and the
-     handoff, wherever any memory is counted; over MCP the command is named as its tool. <address> is filled
-     with the address that holds new memories, or each of them, the call given once per address; else with each
-     address that holds any, so no placeholder is sent. Empty leaves the line out and the counts stand alone. -->
+<orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as the shared memory instructions, metaform://memory, say: metaform instructions memory.</orient>
+<!-- The one line an agent is told when it arrives at the node it works on, its own read of that node (map where, the
+     ticket read, the handoff), and only while memories there are unread in its current context: how many, the call
+     that reads them, and that reading them is the moment to tidy them, since memory that only grows makes every arrival
+     cost more to read and buries what matters. Nothing is said when every memory there is read, and nothing is pushed
+     when memories change (2026-10-19, code.dispatcher.agent#72). Over MCP the command is named as its tool. <unread/> is
+     the count unread at the node; <read_unread/> the call, its <address> filled with the node. Empty leaves the line out
+     and the counts stand alone. -->
 <counts>
-<total/> memories; <unread/> unread, including <updated/> updated. Read applicable unread contents with <read_unread/>.
+Unread memories here: <unread/>. Read them with <read_unread/>, then merge repeats and remove the observations and entities that are outdated or no longer help the next agent.
 </counts>
+<!-- Said with what read_unread returns, as one of its notices, whenever it returns memories: reading what is new at a
+     node is when the agent tidies the memory there, since memory that only grows makes every arrival cost more to read
+     and buries what matters (2026-10-19: one entity at code.graph.knowledge held about 40 one-off sightings). Empty
+     leaves it out. -->
+<refine>
+Before you add to this node's memory, merge repeats into one observation and delete the observations and entities that are outdated or no longer help the next agent, with metaform memory delete_observations and metaform memory delete_entities.
+</refine>
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
 <note_counts>The person's note: metaform memory note node=&lt;address&gt;</note_counts>

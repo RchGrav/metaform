@@ -1250,6 +1250,58 @@ def test_a_finding_on_an_element_and_its_purpose_record_is_written_once(run, pro
 
 
 @pytest.mark.req('MAP-046')
+def test_one_defect_found_at_two_elements_is_one_ticket_linking_both(run, project):
+    """Found 2026-10-18 in flask: one defect filed at two elements in one run, worded apart, left the second ticket
+    looking untouched after the first was done. Named same_as, it is kept once, with the second part linked."""
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.automation.environment', 'role=SE', 'condition=BKN',
+             'note=on-create-command.sh installs the absent requirements/dev.txt')
+    said = recorded(run, project, 'element', 'data.specification.dependency', 'role=SE', 'condition=MISS',
+                    'note=The container setup claims requirements/dev.txt, which is absent.',
+                    'same_as=code.automation.environment')
+    assert 'kept there once' in said['notices'][-1]['message']
+    store = Store('timer')
+    [ticket] = store.work(open=True, limit=0).results
+    assert ticket.address == 'code.automation.environment' and ticket.condition == 'trouble'
+    assert [link.address for link in ticket.links] == ['data.specification.dependency']
+    assert ticket.note.endswith('\n\nThe container setup claims requirements/dev.txt, which is absent.')
+    by = {entry['namespace_address']: entry for entry in recorded(run, project, 'show')['elements']}
+    assert (by['data.specification.dependency']['condition'], by['data.specification.dependency']['kept_in']) == \
+        ('trouble', ticket.id)
+    recorded(run, project, 'element', 'data.specification.dependency', 'condition=MISS',  # recorded again: still one
+             'note=The container setup claims requirements/dev.txt, which is absent.',
+             'same_as=code.automation.environment')
+    assert [w.id for w in store.work(open=True, limit=0).results] == [ticket.id]
+    recorded(run, project, 'element', 'data.specification.dependency', 'condition=OK')  # found fine: unlinked
+    assert [link.address for link in store.work(ids=[ticket.id], limit=1).results[0].links] == []
+    by = {entry['namespace_address']: entry for entry in recorded(run, project, 'show')['elements']}
+    assert by['data.specification.dependency']['condition'] == 'ok'
+    recorded(run, project, 'element', 'data.specification.dependency', 'condition=MISS',
+             'note=The container setup claims requirements/dev.txt, which is absent.',
+             'same_as=code.automation.environment')
+    store.finish_work(ticket.id, 'Setup installs the dependency groups.')
+    assert store.work(open=True, limit=0).results == ()  # nothing at the second part looks untouched
+    [done] = store.work(open=False, limit=0).results
+    assert [link.address for link in done.links] == ['data.specification.dependency']
+    by = {entry['namespace_address']: entry for entry in recorded(run, project, 'show')['elements']}
+    assert 'condition' not in by['data.specification.dependency']
+    lone = recorded(run, project, 'element', 'code.display.digit', 'role=SE', 'condition=MISS', 'note=no display',
+                    'same_as=code.timer.kitchen')  # nothing open there: recorded at its own part
+    assert any(n['where'] == 'same_as' for n in lone['notices'])
+    assert [w.address for w in store.work(open=True, limit=0).results] == ['code.display.digit']
+    # a ticket an agent has taken is not changed: a new note is its own finding, the two linked to each other
+    store.take_work(store.work(open=True, limit=0).results[0].id, by='claude')
+    taken = recorded(run, project, 'element', 'code.light.indicator', 'role=SE', 'condition=MISS',
+                     'note=no light either', 'same_as=code.display.digit')
+    assert any(n['where'] == 'same_as' and 'taken' in n['message'] for n in taken['notices'])
+    found = {w.address: w for w in store.work(open=True, limit=0).results}
+    assert found['code.display.digit'].note == 'no display'
+    assert [link.address for link in found['code.display.digit'].links] == ['code.light.indicator']
+    assert (found['code.light.indicator'].note, [link.address for link in found['code.light.indicator'].links]) == \
+        ('no light either', ['code.display.digit'])
+
+
+@pytest.mark.req('MAP-046')
 def test_trouble_and_missing_are_tickets_an_agent_starts_and_recording_them_again_adds_none(run, project):
     """An open trouble or missing finding with no task was never started by the agent starter, so nobody fixed it."""
     recorded(run, project, 'start')

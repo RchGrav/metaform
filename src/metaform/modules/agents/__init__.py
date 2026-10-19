@@ -121,6 +121,8 @@ assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record f
 
 # Version 1: what each session was sent, one row for each turn that carried a prompt, kept in the project so a clear
 # keeps it; a session is read by its id or by its runner's, METAFORM_SESSION.
+# Version 2 adds the authored-role tables of roles.py: definitions, their history, role sources, and each recipient
+# context epoch with its receipts. It only adds tables, so version 1's code still reads and writes `sent`, STORE-029.
 TABLES = Tables(version=2, compatible_from=1, tables=(
     Table('sent', place='project', key=('session_id', 'seq'),
           columns=(Column('session_id', required=True), Column('seq', 'int', required=True),

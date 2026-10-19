@@ -389,6 +389,21 @@ function controlWords(control) {
   const own = control.getAttribute('aria-label') || (field ? control.labels?.[0]?.textContent : control.textContent);
   return clip(own || control.getAttribute('title') || (field ? control.getAttribute('placeholder') : ''));
 }
+/* The cards that ask the person something, and where each says what it asks, tried in order: a button there answers
+ * that question, and its label alone ("No", "Allow once", "Decline") does not say which (graphical#146). */
+const ASKING = [['.question-form', '.asked'], ['.elicitation', '.why', '.ask b'], ['.permission', '.ask b'],
+  ['div.confirm', '.ask'], ['#mergeAsk', '.body p']];  // div: the act button has the class confirm too
+function askedIn(control) {
+  for (const [card, ...heads] of ASKING) {
+    const box = control.closest(card);
+    if (!box) continue;
+    for (const head of heads) {
+      const said = clip(box.querySelector(head)?.textContent);
+      if (said) return said;
+    }
+  }
+  return null;
+}
 /* Where a control is: the window by its title, or the side panel's tab and the heading over it. */
 function placeOf(target) {
   const box = target.closest('.window');
@@ -416,7 +431,14 @@ function clickedOn(event) {
     return;
   }
   const card = target.closest('#board .card'), banner = target.closest('.banner');
-  if (card) {
+  const asked = control && askedIn(control);
+  if (asked) {  // a button that answers a question: the question, the button, and where the card is
+    heard('question');
+    CLICKED.label = asked;
+    CLICKED.control = controlWords(control);
+    CLICKED.name = placeOf(control);
+    return;
+  } else if (card) {
     ticketClicked('board card', card.dataset.id, null);
   } else if (banner) {
     heard('banner');

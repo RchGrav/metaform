@@ -1,0 +1,3 @@
+src/metaform/modules/dispatch/runner.py: "def role(nouns: dict[str, Any], work_id: str) -> str:" ... "if nouns.get('system'):\n        return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'"
+src/metaform/modules/mcp/catalog.py: "ROLE_FIRST: dict[str, tuple[str, ...]] = {'talk': ('map_where',), 'sentinel': ('map_where',)}"
+prompts.xml: "<eyes>  +> The person watches the map on Metaform's web page: web_embody gives you a body there, web_look and web_see show what it sees, web_viewing says what the person is looking at, ... and dispatch_timer wakes you later to look again."

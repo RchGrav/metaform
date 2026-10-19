@@ -1,0 +1,1 @@
+No new findings this time. The memory read came back empty even with the full view, so the "1 unread" in the notice doesn't match anything I can read; it's the same miscount as before.

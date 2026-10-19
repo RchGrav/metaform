@@ -826,14 +826,16 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
     refused = run('map', 'work', 'op=add', 'title=A ticket', 'condition=unbuilt', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
-    # The store refuses an open record nothing shows, whoever writes it, MAP-046, ticket 97085c0e: an ok, a built, a
-    # note alone; a stage with no task is the part's state, drawn on its node, and is kept.
-    for given in ('condition=ok', 'condition=built', 'note=just a note'):
+    # A ticket needs a task, what its agent works from (code.dispatcher.agent#58): op=add refuses one with none, a
+    # stage alone among them, since such a ticket never starts; a marker starts from its note, so it needs none.
+    for given in ('condition=ok', 'condition=built', 'note=just a note', 'condition=unbuilt'):
         empty = run('map', 'work', 'op=add', 'title=Works', 'node=element:code.alarm.audible', given, '--json',
                     cwd=mapped, ok=False)
-        assert empty.returncode != 0 and 'is not work' in empty.stderr, given
-    stage = j(run, 'work', 'op=add', 'title=Stage', 'node=element:code.alarm.audible', 'condition=unbuilt', cwd=mapped)
-    assert (stage['condition'], stage['is_work']) == ('unbuilt', False)
+        assert empty.returncode != 0 and 'the task is what an agent works from' in empty.stderr, given
+    # The store refuses an open record nothing shows, whoever writes it, MAP-046, ticket 97085c0e: an ok, a built, a
+    # note alone; a stage with no task is the part's state, drawn on its node, and is kept.
+    stage = store.add_work(Node('element', store.element('code.alarm.audible').id), 'unbuilt')
+    assert (stage.condition, stage.to_dict()['is_work']) == ('unbuilt', False)
     emptied = run('map', 'work', 'op=edit', f'id={on_join["id"]}', 'condition=none', 'task=', cwd=mapped, ok=False)
     assert emptied.returncode != 0 and 'is not work' in emptied.stderr
     assert j(run, 'work', f'id={on_join["id"]}', cwd=mapped)['task'] == 'fix the tone'  # the refused edit wrote nothing
@@ -1614,7 +1616,8 @@ def test_map_work_names_a_join_by_its_receiver_and_provider_and_an_element_it_ho
     beside = j(run, 'work', 'op=add', *display, 'node=element:code.alarm.audible', 'condition=broken', cwd=mapped)
     assert (beside['node_kind'], beside['provider_address']) == ('join', 'code.display.digit')
     assert said(beside) == [('node', 'receiver, provider and address name the node; node was not read.')]
-    on_part = j(run, 'work', 'op=add', *named, 'address=code.alarm.audible.piezo', 'condition=unbuilt', cwd=mapped)
+    on_part = j(run, 'work', 'op=add', *named, 'address=code.alarm.audible.piezo', 'condition=unbuilt',
+                'task=build the piezo', cwd=mapped)
     assert (on_part['node_kind'], on_part['address']) == ('element', 'code.alarm.audible.piezo')
     elsewhere = run('map', 'work', 'op=add', 'title=A ticket', *named, 'address=code.display.digit.segment', 'condition=unbuilt',
                     '--json', cwd=mapped, ok=False)
@@ -2032,16 +2035,26 @@ def test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_chang
                                                 '▶ code.timer.kitchen  kitchen timer']
     again = where('agent-a')
     assert 'around' not in again and 'changed' not in again and again['element'] == first['element']
+    # code.dispatcher.agent#72: unread memory is told only at the node the agent reads, as one line, and only while
+    # some there is unread; a neighbour's new memory and the agent's own write say nothing
     remember('agent-b', 'code.alarm.audible', 'tone')
-    changes = where('agent-a')['changed']
-    assert len(changes) == 1 and '1 unread' in changes[0] and 'code.alarm.audible' in changes[0]
+    assert 'changed' not in where('agent-a')
     remember('agent-a', 'code.timer.kitchen', 'mine')
-    assert 'code.timer.kitchen' in where('agent-a')['changed'][0]
+    assert 'changed' not in where('agent-a'), 'its own write is read'
+    remember('agent-b', 'code.timer.kitchen', 'theirs')
+    [line] = where('agent-a')['changed']
+    assert line.startswith('Unread memories here: 1. Read them with metaform memory read_unread '
+                           'node=element:code.timer.kitchen, then merge repeats and remove'), line
     fresh = where('agent-c')['around']
-    assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +1 memory · 1 unread', fresh)
+    assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +2 memories · 2 unread', fresh)
     assert re.search(r'└ code\.alarm\.audible +1 memory · 1 unread', fresh)
-    assert 'metaform memory read_unread node=element:code.timer.kitchen' in fresh
-    assert 'metaform memory read_unread node=element:code.alarm.audible' in fresh and '<address>' not in fresh
+    assert 'Unread memories here: 2. Read them with metaform memory read_unread node=element:code.timer.kitchen' in fresh
+    assert 'node=element:code.alarm.audible' not in fresh and '<address>' not in fresh
+    monkeypatch.setenv('METAFORM_SESSION', 'agent-e')  # an agent that read everything at the node, then arrives
+    run('memory', 'read_unread', 'node=element:code.timer.kitchen', cwd=mapped)
+    arrived = where('agent-e')['around']
+    assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +2 memories', arrived), arrived
+    assert '2 unread' not in arrived and 'Unread memories' not in arrived, arrived
 
 
 @pytest.mark.req('MCP-039')

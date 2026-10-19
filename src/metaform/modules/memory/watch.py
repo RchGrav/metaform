@@ -344,7 +344,7 @@ def _ensure(store: Store, folder: Path) -> int | None:
 def web_started(payload: dict[str, Any], ctx: Context) -> dict[str, Any] | None:
     """Start the citation watcher of each registered project with memory whose memories cite files and none runs,
     wherever the web GUI was started, since it serves every project."""
-    from metaform.module_metadata import current_os
+    from metaform.module import current_os
     if current_os() not in WATCH_OS:
         return None
     started: dict[str, int] = {}

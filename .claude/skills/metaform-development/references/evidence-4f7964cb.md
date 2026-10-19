@@ -1,0 +1,1 @@
+mcp__metaform__map_work op=edit note: "Separately: a single-test pytest run's session-start sweep reported ending three pytest-home runners (still alive afterwards, not group leaders) and ended five web servers on random ports, one in worktree agent-ab23e95a97c2ce408; the person's page on 7433 and system agent were untouched."

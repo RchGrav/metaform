@@ -14,8 +14,12 @@ import {named} from '/page/app/task/task.js';
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 /* The board's tickets, the kinds hidden, and cutoff: the time its done tickets start at, as the server's board read
- * gives it, board_done_days ago or the line in the sand; a ticket done before it is in the Archive. */
-export const B = {tickets: [], off: new Set(), cutoff: ''};
+ * gives it, board_done_days ago or the line in the sand; a ticket done before it is in the Archive. names: counted up
+ * as element or join ops are applied to the map shown, so the cards draw the names those ops gave, `drawBoard`. */
+export const B = {tickets: [], off: new Set(), cutoff: '', names: 0};
+/* A ticket's fields as the page compares them, with the age the server counts in seconds left out: it differs on
+ * every read, and the page shows its own, `ago`. A JSON.stringify replacer. */
+export const unshown = (key, value) => (key === 'age_seconds' ? undefined : value);
 export const KINDS = ['broken', 'flawed', 'enhancement'];  // a ticket's kind; none is a plain task
 export const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not
@@ -70,24 +74,59 @@ export function linked(text) {
   parts.push(text.slice(at));
   return parts;
 }
-const LOOKED = new Map();  // project and reference → what it stands for, or null
+const LOOKED = new Map();  // project and reference → a promise of what it stands for, or null
+/* The references drawn since the last read, each with its promise's resolve, asked in one read for all of them: a
+ * board drew about 900 references at once, one read each, and the server, reading every ticket for each, was held long
+ * enough that a restart's readiness check gave up (2026-10-19). A read under way gathers what is drawn meanwhile for
+ * the next. */
+const LOOKUP = {waiting: new Map(), busy: false};
+const LOOKUP_BATCH = 200;  // references in one read, so its address stays short
 function looked(ref) {
   const key = `${S.project}\n${ref}`;
   if (!LOOKED.has(key)) {
-    LOOKED.set(key, read('lookup', {ref}).then(found => (found.kind ? found : null)).catch(() => null));
+    LOOKED.set(key, new Promise(resolve => { LOOKUP.waiting.set(key, resolve); }));
+    // read once every reference this task draws has been asked for
+    if (!LOOKUP.busy) { LOOKUP.busy = true; queueMicrotask(lookUp); }
   }
   return LOOKED.get(key);
 }
-/* Each reference drawn anywhere on the page is looked up once, and becomes a link once it is known. */
-function findRefs() {
-  for (const span of document.querySelectorAll('span.ref:not([data-looked])')) {
-    span.dataset.looked = '1';
-    looked(span.dataset.ref).then(found => {
-      if (!found) return;
-      span.classList.add('ref-link');
-      Object.assign(span, {tabIndex: 0, title: found.title || span.dataset.ref});
-      span.setAttribute('role', 'button');
-    });
+async function lookUp() {
+  try {
+    while (LOOKUP.waiting.size) {
+      const project = S.project, batch = [];
+      for (const [key, resolve] of LOOKUP.waiting) {
+        const at = key.indexOf('\n');
+        if (key.slice(0, at) !== project) { LOOKED.delete(key); resolve(null); }  // drawn for a project left
+        else batch.push([key.slice(at + 1), resolve]);
+        LOOKUP.waiting.delete(key);
+        if (batch.length === LOOKUP_BATCH) break;
+      }
+      if (!batch.length) continue;
+      let found = {};
+      try { found = (await read('lookup', {refs: batch.map(([ref]) => ref).join(' ')})).found || {}; }
+      catch { found = {}; }
+      for (const [ref, resolve] of batch) resolve(found[ref]?.kind ? found[ref] : null);
+    }
+  } finally { LOOKUP.busy = false; }
+}
+/* Each reference drawn anywhere on the page is looked up once, and becomes a link once it is known: only the nodes a
+ * change added are searched, never the whole page again. */
+function linkRef(span) {
+  span.dataset.looked = '1';
+  looked(span.dataset.ref).then(found => {
+    if (!found) return;
+    span.classList.add('ref-link');
+    Object.assign(span, {tabIndex: 0, title: found.title || span.dataset.ref});
+    span.setAttribute('role', 'button');
+  });
+}
+function findRefs(records) {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      if (node.matches('span.ref:not([data-looked])')) linkRef(node);
+      else for (const span of node.querySelectorAll('span.ref:not([data-looked])')) linkRef(span);
+    }
   }
 }
 new MutationObserver(findRefs).observe(document.body, {childList: true, subtree: true});

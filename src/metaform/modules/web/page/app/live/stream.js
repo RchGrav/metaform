@@ -20,6 +20,7 @@ import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged,
   agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
 import {listBases, loadGraph, loadProject, fillProjects, goToProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
+import {tableChange} from '/page/app/roundtable/stage.js';
 
 /* ---------- live: the server pushes what modules publish, and the page redraws; nothing polls, VIEW-018 ----------
  * An intake being recorded is drawn as each object arrives, BASE-039; any other write to the metaform shown is read
@@ -255,6 +256,8 @@ export async function changed(event) {
   if (event.payload && projectsChange(event.payload)) return;
   if (event.payload?.project && event.payload.project !== S.project) return intakeElsewhere(event.payload);
   if (event.payload?.project !== S.project) return;
+  // a roundtable's events change no map: the stage reads its own table's, and nothing else is read for them
+  if (tableChange(event.payload)) return;
   const named = event.payload.tables;
   // the workspace's panes that read the map read again, but for an agent's thread lines alone, which no pane shows;
   // its messages and its workflow runs only when the change names their tables, or names none

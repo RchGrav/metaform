@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from collections.abc import Mapping, Sequence
@@ -100,6 +101,20 @@ def signature(title: str) -> str:
     return fingerprint(' '.join(''.join(one if one.isalnum() else ' ' for one in title.lower()).split()))[:16]
 
 
+def names(said: Any, subjects: Sequence[str], called: Sequence[str] = ()) -> bool:
+    """Whether the person's words name one of these parts: its address, a part within it, a dotted address of a
+    whole that holds it, or the short name a part is called by, as whole words. A plain word never stands for a
+    whole, so 'code' alone names no code part."""
+    text = ' '.join(str(said or '').lower().split())
+    if any(re.search(rf'(?<!\w){re.escape(one)}(?!\w)', text) for one in called if one):
+        return True
+    for named in re.findall(r'\w+(?:\.\w+)*', text):
+        if any(named == one or named.startswith(f'{one}.') or ('.' in named and one.startswith(f'{named}.'))
+               for one in subjects if one):
+            return True
+    return False
+
+
 def own(ctx: Context) -> Store:
     store = ctx.require_store()
     if store.module == 'orchestration':
@@ -109,7 +124,10 @@ def own(ctx: Context) -> Store:
                  base=None if base is None else base.id, toggled=store.toggled)
 
 
-TABLES = Tables(version=2, compatible_from=1, tables=(
+# Version 2 adds an assignment's `role_snapshot` and `attempt`; version 3 its `findings_filed`, the tickets its
+# assessment's findings landed on. Each column may be empty or has a default, so version 1's code still reads and
+# writes the tables, STORE-029.
+TABLES = Tables(version=3, compatible_from=1, tables=(
     Table('assignments', key=('assignment_id',), columns=(
         Column('assignment_id', required=True), Column('work_id', required=True),
         Column('root_work_id', required=True), Column('team_id', required=True),
@@ -122,7 +140,7 @@ TABLES = Tables(version=2, compatible_from=1, tables=(
         Column('specification', 'json'), Column('mode', required=True), Column('state', required=True),
         Column('return_to', 'json'), Column('pending_direction', 'json'), Column('result', 'json'),
         Column('evidence', 'json'), Column('last_check_in', 'json'), Column('stop', 'json'), Column('stop_history', 'json'),
-        Column('created', required=True),
+        Column('findings_filed', 'json'), Column('created', required=True),
         Column('updated', required=True)), indexes=(
             Index(('work_id',), unique=True), Index(('owner_session_id',)), Index(('team_id',)),
             Index(('parent_assignment_id',)), Index(('reviewed_assignment_id',)), Index(('state',)))),
@@ -553,6 +571,9 @@ class Orchestration:
 
     def stopped(self, ctx: Context, session_id: str | None = None, work_id: str | None = None,
                 by: str | None = None, direction: str | None = None) -> list[str]:
+        """Stop the assignment and those it is responsible for. `every`: the person's Stop all, a pause of the whole
+        machine that their Full Auto turned on again lifts (dispatch `resume_paused`); without it the stop is of this
+        work alone and lasts until it is restarted."""
         with own(ctx).tables() as tx:
             root = row_for(tx, session_id=session_id, work_id=work_id)
             if root is None:
@@ -910,10 +931,13 @@ class Orchestration:
             returned = update(tx, held, state=state, result=result, evidence=evidence or held['evidence'],
                               candidate=candidate or held['candidate'])
             reviewed_gc = row_for(tx, assignment_id=held.get('reviewed_assignment_id'))
-            superseded = reviewed_gc is not None and self._decided(tx, reviewed_gc, held)
-            found = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
+            superseded = reviewed_gc is not None and self._decided(tx, store, reviewed_gc, held)
+            filed = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
                      for number, finding in enumerate(findings or [])] if reviewed_gc and not superseded else []
-            corrections = list({one['assignment_id']: one for one in found if one}.values())
+            if filed:
+                returned = update(tx, returned, findings_filed=list(dict.fromkeys(
+                    landed for landed, _ in filed if landed)))
+            corrections = list({one['assignment_id']: one for _, one in filed if one}.values())
             body = str(result) if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
             packet = {'kind': 'role_publication' if held['authored_role_uri'] == 'metaform://role/role_creator' else 'result', 'state': state, 'result': result, 'body': body,
                       'evidence': returned['evidence'],
@@ -962,28 +986,42 @@ class Orchestration:
             return returned
 
     @staticmethod
-    def _decided(tx: TableTx, gc: Mapping[str, Any], review: Mapping[str, Any]) -> bool:
-        """The person's decision superseded what a review examined: a direction of theirs reached the reviewed GC or
-        the review, or a specification change of theirs touched the reviewed ticket, since the review began."""
+    def _decided(tx: TableTx, store: Store, gc: Mapping[str, Any], review: Mapping[str, Any]) -> bool:
+        """The person's decision superseded what a review examined: since the review began, a direction of theirs
+        that names the reviewed part, by address or short name, reached the reviewed GC, its root or the review, or
+        a specification change of theirs whose instruction names that part was routed to that work. Their word about
+        another part is no decision about this one, and the findings are filed. Only the change orders the work
+        received are read."""
         since = str(review['created'])
-        directions = cast(list[Mapping[str, Any]], [*(gc.get('pending_direction') or []),
-                                                    *(review.get('pending_direction') or [])])
-        if any(one.get('kind') == 'user_direction' and one.get('supersedes') is True
-               and str(one.get('at') or '') >= since for one in directions):
-            return True
-        tickets = {gc['work_id'], gc['root_work_id']}
-        return any(one['source'] == 'user' and str(one['created']) >= since and tickets & set(one['affected_work_ids'])
-                   for one in tx.rows('changes', limit=0).results)
+        locations = cast(list[Mapping[str, Any]], gc.get('functional_locations') or [])
+        subjects = [str(one.get('address') or one.get('id') or '').lower() for one in locations]
+        elements = [store.element(str(one.get('address') or one.get('id') or ''))
+                    for one in locations if one.get('kind') != 'join']
+        called = [one.short_name.lower() for one in elements if one is not None]
+        top = row_for(tx, work_id=gc['root_work_id']) if gc['root_work_id'] != gc['work_id'] else None
+        for one in cast(list[Mapping[str, Any]], [*(gc.get('pending_direction') or []),
+                                                  *((top or {}).get('pending_direction') or []),
+                                                  *(review.get('pending_direction') or [])]):
+            if one.get('kind') == 'user_direction':
+                if str(one.get('at') or '') >= since and names(one.get('text') or one.get('body'), subjects, called):
+                    return True
+            elif one.get('kind') == 'change_order' and one.get('source') == 'user':
+                record = tx.get('changes', {'change_id': one.get('change_id')})
+                instruction = cast(Mapping[str, Any], (record or {}).get('user_instruction') or {})
+                if record and str(record['created']) >= since and names(instruction.get('text'), subjects, called):
+                    return True
+        return False
 
     @staticmethod
     def _finding(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
-                 finding: Any, key: str, evidence: Any) -> dict[str, Any] | None:
+                 finding: Any, key: str, evidence: Any) -> tuple[str | None, dict[str, Any] | None]:
         """A finding becomes corrective work only when no open ticket at its node covers it; a ticket that does
-        takes the new evidence in its note, and no second ticket or GC is made."""
+        takes the new evidence in its note, and no second ticket or GC is made. Gives the ticket the finding landed
+        on, None when it landed nowhere, with that ticket's assignment."""
         ident = identity(assessment['assignment_id'], 'correction', key)
         existing = row_for(tx, assignment_id=ident)
         if existing:
-            return existing
+            return existing['work_id'], existing
         fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
             'task': str(finding)}
         title, task = finding_text(fields)
@@ -998,20 +1036,20 @@ class Orchestration:
                 continue
             if source not in (record.note or ''):
                 store.edit_work(record.id, {'note': f'{record.note}\n\n{said}' if record.note else said})
-            return row_for(tx, work_id=record.id)
+            return record.id, row_for(tx, work_id=record.id)
         return Orchestration._correction(tx, store, gc, assessment, fields, key, title=title, task=task, note=said)
 
     @staticmethod
     def _correction(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
                     finding: Any, key: str, *, title: str | None = None, task: str | None = None,
-                    note: str | None = None) -> dict[str, Any]:
+                    note: str | None = None) -> tuple[str | None, dict[str, Any]]:
         fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {'task': str(finding)}
         if title is None or task is None:
             title, task = finding_text(fields)
         current = row_for(tx, assignment_id=gc['assignment_id']) or dict(gc)
         record = store.ticket(current['work_id']).work
         if current.get('stop') or record.outcome == 'cancelled':
-            return current
+            return None, current
         mark = f'Review {assessment["work_id"]} finding {key}'
         if mark not in (record.note or ''):
             history = f'{mark}: {task}\n{note or ""}'
@@ -1031,7 +1069,7 @@ class Orchestration:
                                      'previous_candidate': current['candidate']} if new_attempt else current['last_check_in'])
         transition(tx, made, 'launch', {'resume': True, 'kind': 'functional_correction', 'finding': fields},
                    identity(assessment['assignment_id'], 'correction'))
-        return made
+        return record.id, made
 
     def handoff(self, ctx: Context) -> dict[str, Any]:
         return self.delegate(ctx, waiting=True, handoff=True)
@@ -1120,8 +1158,18 @@ class Orchestration:
 SERVICE = Orchestration()
 
 
+LINKED = ('assignment_id', 'work_id', 'authored_role_uri', 'state', 'result', 'findings_filed')
+
+
 def work_read(ctx: Context, record: WorkRecord) -> Any:
-    return SERVICE.assignment(ctx, work_id=record.id)
+    """A ticket's assignment, with the assessments that reviewed it, each by its assignment, ticket, state, result and
+    the tickets its findings landed on: a ticket whose work ran shows that work, its reviews and where they led."""
+    with own(ctx).tables(write=False) as tx:
+        held = row_for(tx, work_id=record.id)
+        if held is None:
+            return None
+        reviews = tx.rows('assignments', {'reviewed_assignment_id': held['assignment_id']}, limit=0).results
+    return {**held, 'independent_assessments': [{key: one.get(key) for key in LINKED} for one in reviews]}
 
 
 def work_changed(payload: dict[str, Any], ctx: Context) -> None:

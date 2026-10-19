@@ -105,6 +105,7 @@ def test_a_new_home_is_its_owners_alone_and_an_open_one_is_closed_once(home, tmp
 
 @pytest.mark.req('STORE-002')
 @pytest.mark.req('BASE-047')
+@pytest.mark.product_defaults  # no settings stored, the test home's own included
 def test_read_only_commands_create_only_first_run_version_records(home, run, tmp_path):
     from metaform import __version__
     run(cwd=tmp_path)

@@ -100,7 +100,7 @@ def gone(pids, limit=5):
 
 
 class Dispatch:
-    """One ticket at NODE in the project proj, dispatch enabled, and claude's start command the fake agent."""
+    """One ticket at NODE in the project proj, dispatch enabled; every agent is the fake, as in every test home."""
 
     def __init__(self, run, home, folder, tmp_path, *, orchestration=False):
         from metaform.data import Node, Store
@@ -111,8 +111,6 @@ class Dispatch:
         # owner, whose independent post-delivery assessments intentionally create additional managed sessions.
         if not orchestration:
             run('disable', 'orchestration')
-        for agent in ('claude', 'codex', 'gemini'):  # every agent is the fake, so no test ever starts a real one
-            run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=folder)
         self.store = Store('proj')
         self.store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
         self.store.add_element('parts', NODE)
@@ -128,10 +126,12 @@ class Dispatch:
 
     def start(self, mode='ask', *nouns, **more):
         """`metaform dispatch run <id> claude`, the runner, in the foreground of its own process; nouns such as
-        system=true go after it."""
+        system=true go after it. It leads a process group of its own, as a dispatched runner does, so ending its group
+        after its test died ends it and never the test's own group."""
+        from metaform.modules.dispatch import group_options
         self.process = subprocess.Popen([sys.executable, '-m', 'metaform', 'dispatch', 'run', self.id, 'claude',
                                          *nouns], cwd=self.folder, env=self.env(mode, **more), stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE)
+                                        stderr=subprocess.PIPE, **group_options())
         return self
 
     def entries(self):
@@ -240,6 +240,31 @@ def test_each_agent_has_its_start_command_as_a_setting(run):
     assert settings.SCHEMA['dispatch_gemini'].default == 'npx -y @google/gemini-cli@0.63.0 --acp'
 
 
+@pytest.mark.req('VIEW-042')
+@pytest.mark.req('MAP-049')
+@pytest.mark.kind('fixture')
+@pytest.mark.product_defaults  # a new install's, not the test home's
+def test_a_new_install_runs_full_auto_and_returns_a_dead_runners_ticket_by_itself(run, project_folder):
+    """A new install's board clears itself out of the box (code.dispatcher.agent#58): with nothing set, Full Auto is
+    on and dead runner recovery is automatic."""
+    run('enable', 'dispatch')
+    shown = run('config', '--show', cwd=project_folder).stdout
+    assert re.search(r'^\s*dispatch_autostart: true$', shown, re.M), shown
+    assert re.search(r'^\s*dispatch_recovery: automatic$', shown, re.M), shown
+
+
+@pytest.mark.kind('fixture')
+def test_a_test_home_starts_no_real_agent_by_itself(run, home, tmp_path):
+    """A test home holds Full Auto off and the fake agent as every agent's start command, conftest.py, so a test that
+    enables dispatch and opens the page never starts a paid session unless it asks with product_defaults."""
+    from metaform import loader, settings
+    run('enable', 'dispatch')
+    loader.get('dispatch')
+    assert settings.value('dispatch_autostart', tmp_path / 'any') is False
+    for agent in ('claude', 'codex', 'gemini'):
+        assert settings.value(f'dispatch_{agent}', tmp_path / 'any') == f'"{sys.executable}" "{FAKE}"'
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('QUAL-002')
 @pytest.mark.kind('fixture')
@@ -265,9 +290,26 @@ def test_the_agent_starts_in_its_own_process_group_and_stopping_ends_the_group(m
     assert ran == [['taskkill', '/T', '/F', '/PID', '4321']]
     if os.name != 'nt':
         killed = []
+        monkeypatch.setattr(dispatch.os, 'getpgid', lambda pid: pid)
         monkeypatch.setattr(dispatch.os, 'killpg', lambda group, sent: killed.append((group, sent)))
         dispatch.end_group(4321, 'posix')
         assert killed == [(4321, signal.SIGKILL)]
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.skipif(os.name == 'nt', reason='process groups are POSIX')
+def test_a_process_that_leads_no_group_is_ended_alone_and_its_starter_s_group_lives_on():
+    """code.dispatcher.agent#6b: a runner started in its starter's group has no group of its own to end, so ending its
+    group found none and it ran on. It is ended alone; the group it shares, here this test's, is never signalled."""
+    from metaform.modules.dispatch import end_group
+    child = subprocess.Popen(['sleep', '60'])
+    try:
+        assert os.getpgid(child.pid) == os.getpgid(0) != child.pid
+        end_group(child.pid)
+        assert child.wait(timeout=5) == -signal.SIGKILL
+    finally:
+        child.kill()
+        child.wait()
 
 
 # ------------------------------------------------------------------ a dispatched session
@@ -331,14 +373,15 @@ def test_the_mcp_server_is_named_metaform_variables_and_codex_runs_it_over_its_o
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('BASE-050')
 def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_by_ticket_id(dispatch, run):
+    from metaform.modules.dispatch import memory_text
     dispatch.start('hold')
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     blocks = prompt['params']['prompt']
     assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
-    memory, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with the map_work tool')
-    assert memory.startswith('Follow these steps for each interaction:\n') and handed, \
-        "the owner's memory prompt first, then the work sentence, CTX-028"
-    assert f'   - This is {NODE} (' in memory and '{' not in memory, "filled with the ticket's element, CTX-027"
+    given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with map_work')
+    assert given.startswith(f'{{"address": "{NODE}", ') and handed, \
+        "the node's effective context first, then the memory prompt, then the work sentence, CTX-028"
+    assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of the work, CTX-028'
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
     assert ticket.taken and ticket.taken_by == 'claude fake-session-1'
@@ -352,7 +395,7 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     assert session['nonce'] is None, 'the session and its identity carry the work; no nonce is requested'
     assert (session['recovery']['work_id'], session['recovery']['session_id']) == (dispatch.id, 'fake-session-1')
     read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    assert read.partition('\n')[0] == f'Work ticket {dispatch.id} with the map_work tool{handed}'.partition('\n')[0], \
+    assert read.partition('\n')[0] == f'Work ticket {dispatch.id} with map_work{handed}'.partition('\n')[0], \
         'the same work line on every surface'
     assert NODE in read and LINKED in read, 'the handoff gives the agent the namespace nodes of its work'
     dispatch.stop()
@@ -404,10 +447,12 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     from metaform import events
     from metaform.module import Context
     from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.board import changed as board_changed
     from metaform.modules.dispatch.orchestration import changed as orchestration_changed
     from metaform.modules.dispatch.progress import changed as progress_changed
     assert [one.handler for one in module.MODULE.subscriptions if one.topic == 'map.changed'] == \
-        [progress_changed, orchestration_changed], 'the base relays to runners; subscribers handle their own state'
+        [progress_changed, orchestration_changed, board_changed], \
+        'the base relays to runners; subscribers handle their own state'
     dispatch.start('ask')
     [question] = eventually(dispatch.questions)
     dispatch.store.reply(question.id, 'Reject')  # written here, and announced by no command
@@ -419,7 +464,7 @@ def test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before(d
     assert not dispatch.logged('permission')
     deliveries = events.publish('map.changed', {'project': 'proj', 'base_id': None},
                                 Context(module='chassis', folder=dispatch.folder, project='proj'))
-    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'] * 3, \
+    assert [delivery['status'] for delivery in deliveries if delivery['module'] == 'dispatch'] == ['completed'] * 4, \
         'published once to each dispatch subscriber and once handed by the base to the runner listener'
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
@@ -1094,6 +1139,22 @@ def test_the_persons_stop_turns_autostart_off_and_reset_leaves_the_ticket_they_s
     assert dispatch.ticket().taken_by == 'claude fake-session-1', 'it waits for the person'
 
 
+def test_reset_leaves_a_ticket_whose_fix_landed_and_is_watched(dispatch, run):
+    """A ticket that closes only with proof, whose fix landed with no agent's take (a done from the board or the
+    command line), waits for its proof and is no agent's work: reset leaves it with its landing and its resolution
+    (code.scheduler.task#9)."""
+    from metaform.data import Store
+    dispatch.store.prove_work(dispatch.id)
+    dispatch.store.finish_work(dispatch.id, 'Fixed the notes.', 'Tested.')
+    reset = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
+    assert dispatch.id not in reset['released'] and dispatch.id not in reset['kept_for_you']
+    assert reset['watching'] == [dispatch.id]
+    record = dispatch.ticket()
+    assert not record.done and record.taken_by == 'watching' and record.resolution == 'Fixed the notes.'
+    with Store('proj', module='map').tables(write=False) as tx:
+        assert tx.get('ticket_settings', {'work_id': dispatch.id})['landed']
+
+
 @pytest.mark.req('BASE-052')
 def test_a_second_start_on_one_ticket_is_refused_at_once(dispatch, run, dispatch_runners):
     """Found 2026-10-03 with the ghost agents: f566b181 had two sessions from two starts, since start checked the
@@ -1123,7 +1184,7 @@ def test_message_and_stop_name_the_next_step_when_no_agent_runs(dispatch, run):
 @pytest.mark.req('BASE-050')
 def test_an_agent_hands_work_on_by_ticket_id_and_the_next_agent_reads_the_work_and_its_nodes(dispatch, run):
     read = run('dispatch', 'handoff', f'id={dispatch.id}', cwd=dispatch.folder).stdout
-    assert f'Work ticket {dispatch.id} with the map_work tool' in read
+    assert f'Work ticket {dispatch.id} with map_work' in read
     assert NODE in read and LINKED in read
     assert not dispatch.ticket().taken, 'making a hand-off takes nothing'
 
@@ -1416,6 +1477,7 @@ def test_a_line_of_the_thread_announces_only_dispatchs_tables_and_a_write_to_the
 def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     """The agents key needs only the sessions; the threads of every session are read only for the window that shows
     one."""
+    from metaform.modules.dispatch import ENDED_STATE
     dispatch.start('ask')
     eventually(dispatch.questions)
     whole = json.loads(run('dispatch', 'sessions', '--json', cwd=dispatch.folder).stdout)
@@ -1426,7 +1488,7 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     assert bare['states'][session] == whole['states'][session] and len(bare['states'][session]) > 2
     dispatch.stop()
     ended = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['states']
-    assert set(ended.get(session, {})) <= {'about', 'intake'}, 'an ended session keeps only what names it'
+    assert set(ended.get(session, {})) <= set(ENDED_STATE), 'an ended session keeps only what names it'
 
 
 @pytest.mark.req('VIEW-039')
@@ -2042,18 +2104,17 @@ def test_an_agent_over_mcp_cannot_answer_a_permission_question_at_its_node(dispa
 
 @pytest.mark.req('BASE-052')
 def test_the_handoff_asks_to_record_at_the_node_only_while_memory_is_on(tmp_path):
-    """The handoff carries the owner's sentence with both scope forms while memory is on the folder's surface, and
-    leaves it out when memory is not there, so no agent is told to use a command it does not have."""
+    """The handoff carries the record line, which defers to the shared memory instructions (CTX-029), while memory is
+    on the folder's surface, and leaves it out when memory is not there, so no agent is told to keep a memory it does
+    not have."""
     from unittest import mock
 
     from metaform.modules.dispatch import handoff_prompt
+    line = 'Maintain established project knowledge through the shared memory instructions'
     with mock.patch('metaform.instructions.surfaced', return_value=[mock.Mock(id='memory')]):
-        text = handoff_prompt('w1', tmp_path)
-    assert 'Record what happened in the work as memory at the ticket\'s node' in text
-    assert 'as steps 5 and 6 of the memory prompt say' in text
-    assert 'node=<the address under at in the ticket read>' in text and 'receiver=<its receiver>' in text
+        assert line in handoff_prompt('w1', tmp_path)
     with mock.patch('metaform.instructions.surfaced', return_value=[]):
-        assert 'memory tool' not in handoff_prompt('w1', tmp_path)
+        assert line not in handoff_prompt('w1', tmp_path)
 
 
 def waiter(dispatch, *nouns):
@@ -2453,15 +2514,17 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     ticket's fields, the nodes it links by address, the node's brief with the counts there and the MCP calls that
     read them, and the metaform:// links of the node and the ticket, never the JSON of what is held. The full
     worker's brief is no longer sent; full=true reads it on demand."""
-    from metaform.modules.dispatch import handoff_prompt, prompt
+    from metaform.modules.dispatch import handoff_prompt, memory_text, prompt
     dispatch.start('hold')
     [sent] = eventually(lambda: dispatch.received('session/prompt'))
-    memory, _, text = sent['params']['prompt'][0]['text'].partition('\n\n')
-    assert memory.startswith('Follow these steps for each interaction:'), 'the memory prompt ahead of it, CTX-028'
+    given, _, text = sent['params']['prompt'][0]['text'].partition(f'\n\nWork ticket {dispatch.id} ')
+    text = f'Work ticket {dispatch.id} {text}'
+    assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
-    assert first == (f'Work ticket {dispatch.id} with the map_work tool. Record what happened in the work at {NODE} as '
-                     f'memory with memory_create_entities node={NODE}, so the next agent at this part reads it, and '
-                     "what is now known to be true of the project in the map's knowledge layers.")
+    assert first == (f'Work ticket {dispatch.id} with map_work and your delivered authored role. Use the supplied '
+                     f'current assignment and specification. Maintain relevant project knowledge at {NODE} according '
+                     'to the shared memory instructions. Keep progress, outcome and evidence in the ticket and result '
+                     'records.')
     assert text.endswith(f'\n\n{prompt("work_link")}'), 'the request to link entry points ends the first prompt'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
@@ -3086,6 +3149,89 @@ def test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_s
         dispatch.stop()
 
 
+@pytest.mark.req('VIEW-045')
+def test_what_the_board_needs_waits_in_the_system_agents_inbox_while_full_auto_is_on(dispatch, run, tmp_path):
+    """The person's system agent owns the board: while Full Auto is on, the change that made a need, never a timer,
+    puts it in the agent's inbox, for a ticket filed with no task, a ticket filed with the title of an open one, a
+    ticket whose runner died and a ticket an agent finished. None starts a turn (code.dispatcher.agent#72: one board
+    turn listed 30 tickets in full); each is a note in the agent's thread saying it whole, and the person's next message
+    carries one line naming each by ticket and kind. With Full Auto off nothing is raised, and a burst of changes that
+    file nothing reads nothing. Every agent here is the fake agent."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import board
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    for number in range(1, 6):  # every turn here ends at once
+        (gates / str(number)).touch()
+    dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: next((row for row in read(run, dispatch)['sessions']
+                             if row.get('state') == 'running' and row.get('runner')), None))
+
+    def prompts():
+        return [one['params']['prompt'][0]['text'] for one in dispatch.received('session/prompt')
+                if one['params']['sessionId'] == 'fake-session-1']
+
+    def noted():  # what the board needs, as notes in the system agent's thread
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            rows = tx.rows('session_lines', limit=0).results
+        return [json.loads(one['text']) for one in rows if one['kind'] == 'peer' and '"kind": "board"' in one['text']]
+
+    def item(work_id):
+        return dispatch.store.numbers_of('work', [work_id])[work_id][0]
+
+    eventually(lambda: len(prompts()) == 1 and read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    try:
+        # a ticket filed with no task: the store keeps it as a stage, and no agent can start it
+        stage = dispatch.store.add_work(dispatch.node, 'unbuilt', title='Never starts').id
+        board.changed({'project': 'proj', 'kinds': ['ticket', 'filed'], 'work_ids': [stage]}, ctx)
+        # a ticket filed with an open one's title, through the verb: the store's `filed` change is heard
+        first = json.loads(run('map', 'work', 'op=add', f'node={NODE}', 'title=Tone too quiet', 'task=Raise it',
+                               '--json', cwd=dispatch.folder).stdout)['id']
+        again = json.loads(run('map', 'work', 'op=add', f'node={NODE}', 'title=Tone too quiet!', 'task=Raise it',
+                               '--json', cwd=dispatch.folder).stdout)['id']
+        # a ticket whose runner died, and a ticket an agent finished
+        board.died(ctx, first, 'dead-session', 'it is back in To do')
+        board.finished(ctx, again)
+        notes = eventually(lambda: found if len(found := noted()) == 4 else None)
+        said = {one['board'].partition(':')[0]: one['text'] for one in notes}
+        assert 'no task' in said['taskless'] and f'repeats the open ticket {item(first)}' in said['duplicate']
+        assert 'runner died' in said['died'] and 'fault lights' in said['finished'], said
+        assert len(prompts()) == 1, 'what the board needs starts no turn'
+
+        run('dispatch', 'message', dispatch.id, '--', 'What is new?', cwd=dispatch.folder)
+        told = eventually(lambda: found[1] if len(found := prompts()) == 2 else None)
+        head, line = told.split('\n\n')
+        assert head == 'What is new?' and line.startswith('4 new in your inbox: '), told
+        for kind, work_id in (('taskless', stage), ('duplicate', again), ('died', first), ('finished', again)):
+            assert f'{item(work_id)} board {kind}' in line, line
+        assert 'no task' not in line and 'repeats' not in line and 'fault lights' not in line, line
+        eventually(lambda: read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
+
+        # Full Auto off: nothing is raised, so no turn comes
+        run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+        quiet = dispatch.store.add_work(dispatch.node, None, task='Quiet').id
+        assert board.raised(context('dispatch', dispatch.folder, project='proj'), f'finished:{quiet}', 'x',
+                            work_id=quiet) is False
+        from metaform.modules.dispatch.signals import rows
+        assert not [one for one in rows(dispatch.store) if one['signal'] == board.BOARD]
+        assert len(prompts()) == 2
+
+        # a burst of changes that file nothing reads nothing, not even a setting
+        from types import SimpleNamespace
+
+        def refused(*_, **__):
+            raise AssertionError('read on a change that files nothing')
+        reader = SimpleNamespace(surface='cli', setting=refused, require_store=refused)
+        for _ in range(100):
+            board.changed({'project': 'proj', 'kinds': ['ticket', 'step'], 'work_ids': [first]}, reader)
+            board.changed({'project': 'proj', 'tables': ['dispatch.session_lines']}, reader)
+    finally:
+        dispatch.stop()
+
+
 @pytest.mark.req('BASE-052')
 def test_a_page_to_open_is_shown_with_its_host_and_consent_is_the_persons_answer(dispatch, run):
     """URL-mode elicitation, as an MCP server's sign-in asks it: the full address and its host are put to the person,
@@ -3331,12 +3477,13 @@ def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offe
         with pytest.raises(Stop, match='the person'):
             verb(context('dispatch', dispatch.folder, project='proj', nouns=nouns, surface='mcp'))
     assert not dispatch.ticket().done
-    with Store('proj', module='dispatch').tables() as tx:
-        tx.insert('catalog', {'agent': 'codex', 'version': '9', 'name': 'Codex', 'seen': '2026-10-12T00:00:00Z',
-                              'seq': 1, 'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
-                                                      'options': [{'value': 'small'}, {'value': 'large'}]}]})
+    with Store('proj', module='dispatch').tables() as tx:  # claude: preferred() resolves the ticket to dispatch_agent since 7876f16b
+        for seq, (agent, name) in enumerate((('claude', 'Claude Code'), ('codex', 'Codex')), 1):
+            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': name, 'seen': '2026-10-12T00:00:00Z',
+                                  'seq': seq, 'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
+                                                            'options': [{'value': 'small'}, {'value': 'large'}]}]})
     refused = run('dispatch', 'tune', dispatch.id, 'model=bogus', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and 'small, large' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and 'Claude Code offers model small, large' in refused.stdout + refused.stderr
     run('dispatch', 'tune', dispatch.id, 'model=large', cwd=dispatch.folder)
     shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert shown['dispatch']['options'] == {'model': 'large'}
@@ -5082,7 +5229,7 @@ def test_the_runner_taking_a_session_over_says_so_once_and_sends_what_the_old_ru
 
     media, kept = metadata[1]
     assert media == ({'type': 'image', 'data': 'example'},)
-    assert kept == {'first': True, 'word': {'id': 'human'}, 'components': [{'name': 'context'}],
+    assert kept == {'first': True, 'typed': False, 'word': {'id': 'human'}, 'components': [{'name': 'context'}],
                     'peers': [['note', 'sender']]}
 
 
@@ -5153,6 +5300,81 @@ def test_a_halt_refuses_every_start_asked_for_before_it_and_a_clear_every_start_
     assert fresh['state'] == 'starting', 'a start asked for after the halt starts'
     eventually(lambda: (dispatch.store.ticket(second).work.taken_by or '').startswith('claude fake-session'))
     run('dispatch', 'stop', second, '--json', cwd=dispatch.folder)
+
+
+def paused_by_stop_all(run, home, project_folder, tmp_path):
+    """Three assignments, one agent slot and Stop all pressed: the work, the assignments' reader and the dispatch
+    context."""
+    from metaform.module import context
+    from metaform.modules.orchestration.state import SERVICE
+    made = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
+    works = [made.id, *(made.store.add_work(made.node, 'unbuilt', task=f'Write part {n}.').id for n in (2, 3))]
+    owner_ctx = context('orchestration', project_folder, project='proj')
+    for work in works:
+        SERVICE.ensure(owner_ctx, work)
+    run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=project_folder)
+    run('dispatch', 'stop-all', '--json', cwd=project_folder)
+    return made, works, (lambda work: SERVICE.assignment(owner_ctx, work_id=work)), \
+        context('dispatch', project_folder, project='proj')
+
+
+def launches_recorded(monkeypatch):
+    """The dispatch module, with the launches its agent starter asks for recorded rather than run: the orchestration
+    drain each goes through is caught where it is announced, in the chassis, which no module load replaces."""
+    import importlib
+
+    from metaform import events
+    original, launched = events.announced, []
+
+    def announced(folder, surface, function, *args, **kwargs):
+        if getattr(function, '__name__', '') == 'drain':
+            launched.append(args[1])
+            return [], []
+        return original(folder, surface, function, *args, **kwargs)
+    monkeypatch.setattr(events, 'announced', announced)
+    return importlib.import_module('metaform.modules.dispatch'), launched
+
+
+@pytest.mark.req('VIEW-042')
+def test_full_auto_turned_on_after_stop_all_resumes_the_work_it_paused_in_board_order_within_the_slots(
+        run, home, project_folder, tmp_path, monkeypatch):
+    """Found 2026-10-19: after Stop all on the machine, Full Auto turned on again started none of the 16 assignments
+    it had stopped, since every stopped assignment read as the person's stop of that one work. Stop all is a pause:
+    Full Auto turned on resumes each in place, as many as the slots allow, in board order, the rest on later passes."""
+    from metaform.modules import dispatch as module
+    made, works, assignment, ctx = paused_by_stop_all(run, home, project_folder, tmp_path)
+    try:
+        assert all(assignment(work)['state'] == 'stopped' for work in works)
+        assert ctx.setting('dispatch_autostart') is False
+        assert 'resumed' not in module.autostart(ctx), 'nothing comes back while Full Auto is off'
+        run('set', '--dispatch-autostart', cwd=project_folder)
+        module, launched = launches_recorded(monkeypatch)
+        board = [record.id for record in sorted(made.store.work(open=True, limit=0).results, key=module.board_order)]
+        first = module.autostart(ctx)
+        assert first.get('resumed') == board[:1] and first.get('paused_waiting') == board[1:], first
+        assert assignment(board[0])['stop'] is None and assignment(board[0])['state'] == 'queued'
+        assert launched[-1] == board[:1], 'its launch goes through the gate, resumed in place'
+        assert [module.autostart(ctx).get('resumed') for _ in board[1:]] == [[one] for one in board[1:]]
+        assert module.autostart(ctx).get('resumed') is None, 'the pause is lifted once'
+    finally:
+        made.close()
+
+
+@pytest.mark.req('VIEW-042')
+def test_a_stop_the_person_gave_one_ticket_survives_full_auto_turned_on_after_stop_all(
+        run, home, project_folder, tmp_path, monkeypatch):
+    """A stop of one ticket lasts until that work is restarted, even given after Stop all paused it; Full Auto
+    turned on again resumes only the rest of what Stop all paused."""
+    made, works, assignment, ctx = paused_by_stop_all(run, home, project_folder, tmp_path)
+    try:
+        run('dispatch', 'stop', works[0], '--json', cwd=project_folder)
+        run('set', '--dispatch-agents', '3', '--dispatch-autostart', cwd=project_folder)
+        module, _ = launches_recorded(monkeypatch)
+        assert sorted(module.autostart(ctx).get('resumed') or []) == sorted(works[1:])
+        assert assignment(works[0])['state'] == 'stopped' and not assignment(works[0])['stop'].get('every')
+        assert module.autostart(ctx).get('resumed') is None
+    finally:
+        made.close()
 
 
 @pytest.mark.req('BASE-053')

@@ -34,6 +34,7 @@ from metaform.data import (
     StoreError,
     WorkRecord,
     author,
+    is_work,
     plain,
 )
 from metaform.finish_xml import xml as map_xml
@@ -49,6 +50,7 @@ from metaform.module import (
     Stop,
     ToolbarItem,
     Verb,
+    dispatched,
     held_role,
     item_read,
     latest_item,
@@ -1433,6 +1435,13 @@ def work(ctx: Context) -> Any:
         if node is None:
             raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
         titled(ctx, 'The ticket', nouns.get('title'))  # it takes the next number at its node, MCP-037
+        # A ticket with no task never starts: no agent starter takes it, so it sits on the board for good (2026-10-18:
+        # two such sat still). A marker, trouble, broken or missing, starts from its note, `marker_task` in dispatch;
+        # a condition outside the closed list is the store's to refuse, with its own words.
+        condition = nouns.get('condition')
+        if not is_work(condition, nouns.get('task')) and (condition in CONDITIONS or condition in (None, '', 'none')):
+            raise Stop('A ticket needs a task: the task is what an agent works from, so a ticket without one never '
+                       'starts.', 'add task="what it needs, and the check that shows it done"')
         _numbering(store)
         writer = _agent_writing(ctx)
         # with hold_agent_tickets on, work never writes its own successor work and starts it
@@ -1491,7 +1500,8 @@ def work(ctx: Context) -> Any:
     # what the work built belongs on the map in use: each gap at the ticket's node, or where its session linked a
     # file, is said with the refine call that closes it, LAYER-025; the ticket is done either way, BASE-044
     notices += store.landing(finished.node_kind, finished.node_id, finished.id)
-    return _written(ctx, store, finished, 'done', notices)
+    # a ticket that closes only with proof is still open: its fix landed and it is watched, `storage.prove_work`
+    return _written(ctx, store, finished, 'done' if finished.done else 'watch', notices)
 
 
 def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: list[Notice]) -> Any:
@@ -1549,8 +1559,9 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
         found = {work_id: tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids}
         eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
         after = {work_id: tx.get('after', {'work_id': work_id}) for work_id in work_ids}
-    kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold'])} for work_id, row in found.items()
-            if row is not None}
+    kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold']),
+                      **({'proof': True, 'landed': row['landed']} if row['proof'] else {})}
+            for work_id, row in found.items() if row is not None}
     for work_id, row in eligible.items():
         if row is not None:
             kept.setdefault(work_id, {})['eligible'] = row['agents']
@@ -1612,7 +1623,8 @@ def _added_on_word(ctx: Context, store: Store, work_id: str,
     started, the next wave of the work that message started; in any later turn, when every open ticket it waits on is
     in one work their word covers that the person has not stopped, the wave the agent plans next of that work
     (`_joining`). Either way it joins the work that word covers and is recorded in the chat with it. A ticket that
-    waits on anything outside that work joins none; the ticket an agent writes stays held all the same, and the cover
+    waits on anything outside that work joins none; the ticket an agent writes stays held all the same while
+    hold_agent_tickets is on, and the cover
     lets the system agent release or start it in a later turn."""
     if ctx.surface not in ('mcp', 'cli') or not isinstance(waits, list) or not waits:
         return None
@@ -1669,8 +1681,7 @@ def _agent_writing(ctx: Context) -> str | None:
     role = os.environ.get('METAFORM_ROLE')
     if role and role != 'none':
         return role
-    from metaform import caller
-    return 'dispatched' if caller.dispatched() else None
+    return 'dispatched' if dispatched() else None
 
 
 def _article(word: str) -> str:
@@ -1986,8 +1997,8 @@ WORK_NOUNS = (
     _noun('task', 'add and edit: what it needs.'),
     _noun('held', 'add and edit: put it in Backlog, where it waits: no agent starter starts it, Full Auto, Start '
                   'all, Distribute and an agent\'s glyph among them; the person releases it to To do or starts it '
-                  'on its own. A ticket an agent of Metaform writes is always held, and releasing one is the '
-                  'person\'s decision.', 'bool'),
+                  'on its own. While hold_agent_tickets is on, a ticket an agent of Metaform writes is held; while '
+                  'agents_ask_first is on, releasing one is the person\'s decision.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
                    'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
@@ -2212,9 +2223,11 @@ MODULE = Module(
                             'working files are preserved. Marking a record does not remove files or change gitignore. '
                             'Unneeded legacy migration code is marked for review. A store at an earlier layout is '
                             'updated by Metaform when it opens it. The person writes one, and so do the agents that '
-                            'serve them, the system agent, a talk, the sentinel and the intake; a ticket an agent '
-                            'writes is held in Backlog until the person releases it or starts it, and releasing a held '
-                            'ticket, or lifting the person\'s hold, is the person\'s decision. A role in '
+                            'serve them, the system agent, a talk, the sentinel and the intake. A ticket needs a task, '
+                            'what its agent works from; a trouble, broken or missing marker starts from its note. '
+                            'While hold_agent_tickets is on, a ticket an agent writes is held in Backlog until the '
+                            'person releases it or starts it; while agents_ask_first is on, releasing a held ticket, '
+                            'or lifting the person\'s hold, is the person\'s decision. A role in '
                             'roles_without_authority, a worker or a merge preparation by default, writes none and says '
                             'what it found in its own ticket\'s note.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '

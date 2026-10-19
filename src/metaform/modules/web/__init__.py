@@ -408,6 +408,21 @@ def opened_project() -> str | None:
     return found if found and home.project(found) is not None else None
 
 
+def shown_file() -> Path:
+    """The project the person's page showed last, written by the server as the page tells it, VIEW-002."""
+    return run_dir() / 'web-shown'
+
+
+def shown_project() -> str | None:
+    """The project the person's page showed last, when it is still registered: the one used most recently. Background
+    work opens every project's stores, so no time a project's files were written says which one the person used."""
+    try:
+        found = shown_file().read_text(encoding='utf-8').strip()
+    except OSError:
+        return None
+    return found if found and home.project(found) is not None else None
+
+
 def loopback(bind: str) -> bool:
     if bind == 'localhost':
         return True

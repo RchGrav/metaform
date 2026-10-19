@@ -31,9 +31,9 @@ def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_moti
     page.evaluate("""async () => {
         const {swap} = await import('/page/app/camera/flight.js'); await swap(true);
     }""")
-    page.wait_for_function("""async () => {
-        const {ROAM2D} = await import('/page/app/figures/roam2d.js'); return ROAM2D.figures.size === 2;
-    }""")
+    # a predicate must be synchronous to be waited on: an async one is a promise, truthy at once
+    page.evaluate("async () => { window.__roam2d = await import('/page/app/figures/roam2d.js'); }")
+    page.wait_for_function('() => window.__roam2d.ROAM2D.figures.size === 2')
     found = page.evaluate("""async () => {
         const {ROAM2D, again2d, spot2d} = await import('/page/app/figures/roam2d.js');
         const {M} = await import('/page/app/map2d/build.js');

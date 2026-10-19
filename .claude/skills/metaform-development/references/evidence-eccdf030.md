@@ -1,0 +1,3 @@
+Dispatch now uses events.announced, and metaform.module's installed(), page_vouched() and skill_served() in place of those imports.
+The import test reports only its first offending import, so a private import added later stays hidden while an earlier one fails.
+On 2026-10-19 dispatch held four private chassis imports: metaform.changes in orchestration.py (4f2966c8), metaform.loader (2026-10-15), metaform.skills (2026-10-14) and metaform.caller (c4f449fc).

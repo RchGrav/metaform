@@ -130,7 +130,10 @@ export function moodOf(workId) {
 }
 // the person chose a character for an agent's type, web_agent_glyphs: entries such as claude=owl
 export function typeGlyph(workId) {
-  const agent = String(D.sessions.filter(one => one.work_id === workId).at(-1)?.agent || '');
+  return glyphOfType(String(D.sessions.filter(one => one.work_id === workId).at(-1)?.agent || ''));
+}
+/* The character the person chose for an agent's type, such as claude, or null; a roundtable's seats take it too. */
+export function glyphOfType(agent) {
   if (!agent) return null;
   for (const entry of (WS.view().agent_glyphs || []).flatMap(one => String(one).split(/[,\s]+/))) {
     const [type, glyph] = String(entry).split('=').map(part => part.trim());

@@ -1,7 +1,8 @@
 """The chat's MCP Apps, `io.modelcontextprotocol/ui`: the web GUI as an MCP host for the person, so a Metaform tool call
 whose tool declares a view (`_meta.ui.resourceUri`) shows that view in the chat's thread, MCP-037 and VIEW-039.
 
-  GET  /api/mcp-apps   the tools of the folder's MCP server that declare a view, {tool: {uri, visibility}}, and every
+  GET  /api/mcp-apps   the tools of the folder's MCP server that declare a view, {tool: {uri, visibility}}, read as the
+                       host itself, which serves no agent session and so is listed every tool, and every
                        view it lists (its resources of type text/html;profile=mcp-app), for the chat's gallery
   GET  /api/mcp-app    one view's document, ?uri=ui://..., under the content policy its `_meta.ui.csp` asks for: shown
                        in a sandboxed frame with an opaque origin, it reaches nothing but its host, the page
@@ -228,8 +229,11 @@ def call(handler: Handler, given: dict[str, Any]) -> None:
     if not isinstance(given_arguments, dict):
         raise Stop('A tool\'s arguments are an object.', 'GET /api/mcp-apps')
     arguments = cast(dict[str, Any], given_arguments)
-    held = connection(folder_of(given), identity(given))
-    tool = tools(held).get(name)
+    # checked against the host's own listing, every tool, since the session's lists only the category it has open and
+    # asking it would count as its AI tool re-listing; the server still refuses a tool the session's role is not given
+    folder = folder_of(given)
+    tool = tools(connection(folder, {})).get(name)
+    held = connection(folder, identity(given))
     if tool is None:
         return handler.send(404, {'error': f'The MCP server here offers no tool {name}.', 'next': 'GET /api/mcp-apps'})
     if 'app' not in cast(list[Any], ui_of(tool).get('visibility') or ['model', 'app']):

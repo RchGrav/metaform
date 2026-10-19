@@ -28,12 +28,13 @@ import {chatDocked} from '/page/app/workspace/workspace.js';
 /* The chat on view, as ACP gives it: its settings and usage in the session bar, its plan as a checklist, and its
  * thread, the conversation with the agent's tool calls and permission requests in it. With no chat on view, what
  * waits for the person's permission elsewhere is listed, each with Open. */
+let DRAWS = 0;  // the draws begun, so a read that lands after a later one's is let go
 export async function drawHelpdesk(trouble) {
   let lines = [], session = null, state = null;
-  const target = DOCK.target;
+  const target = DOCK.target, draw = ++DRAWS;
   if (target) {
     try {
-      const read = await readThread(target, DOCK.session, DOCK.chat);
+      const read = await readThread(target, DOCK.session, DOCK.chat, draw);
       if (read.moved) return;  // the chat moved on while this was read
       if (read.other) return showChat(read.other);
       ({lines, session, state} = read);
@@ -82,11 +83,12 @@ export async function drawHelpdesk(trouble) {
   D.onAsking?.();  // the thread on screen changed: the pop-up leaves its requests to it, agents/asking.js
 }
 /* The thread on view as dispatch reads it: its session, the running one or the one it is with, its state and its
- * lines, or a child session's lines when one is open. `moved` when the chat moved on while this was read; `other`
- * when a waiting thread finds its session already open in another tab, which it gives way to. */
-async function readThread(target, openedSession, chat) {
+ * lines, or a child session's lines when one is open. `moved` when the chat moved on while this was read, or a later
+ * draw began, whose read is the newer and draws instead; reads land in any order, and one that lands last is not
+ * newest; `other` when a waiting thread finds its session already open in another tab, which it gives way to. */
+async function readThread(target, openedSession, chat, draw) {
   const found = await read('dispatch-sessions', {id: target});
-  if (DOCK.target !== target || DOCK.session !== openedSession) return {moved: true};
+  if (DOCK.target !== target || DOCK.session !== openedSession || draw !== DRAWS) return {moved: true};
   const sessions = found.sessions || [];
   let session = DOCK.session ? sessions.find(one => one.session_id === DOCK.session)
     : sessions.filter(one => one.state === 'running').at(-1);
@@ -111,7 +113,8 @@ async function readThread(target, openedSession, chat) {
     knownAsSystem(chat, state);
     if (failed) {
       startFailed(`${agentName(failed.agent)} did not start: `
-        + String(failed.how).replace(/^it (failed|did not start):?\s*/, ''));
+        + String(failed.how).replace(/^it (failed|did not start):?\s*/, ''), null,
+      chat.target === DOCK.mine || chat.source === 'system');
     }
   }
   let lines = session ? (found.lines || []).filter(line => line.session_id === session.session_id) : [];

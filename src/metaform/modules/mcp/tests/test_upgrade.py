@@ -104,7 +104,8 @@ def test_failed_replacement_keeps_the_connection_and_independent_commands_usable
             damage()
             refusal = client.call('map_tag', REQUEST, limit=10)
             assert refusal.get('isError'), refusal
-            assert 'schema version' in refusal['content'][0]['text']
+            # every block: the old server answers it, and a once-per-session notice may come first
+            assert 'schema version' in ' '.join(block['text'] for block in refusal['content'])
             assert not client.call('metaform_instructions', {}, limit=10).get('isError')
             assert client.call('map_tag', REQUEST, limit=10).get('isError')
             with closing(sqlite.connect(database)) as db:
@@ -119,7 +120,7 @@ def test_failed_replacement_keeps_the_connection_and_independent_commands_usable
             damage()
             refusal = await client.call_tool('map_tag', REQUEST)
             assert refusal.is_error
-            assert 'schema version' in refusal.content[0].text
+            assert 'schema version' in ' '.join(block.text for block in refusal.content)
             following = await client.call_tool('metaform_instructions', {})
             assert not following.is_error, following
             assert (await client.call_tool('map_tag', REQUEST)).is_error
@@ -251,3 +252,95 @@ def test_flat_project_override_recovers_the_selected_store(run, installation):
                 assert db.execute(WRITTEN).fetchone()[0] == 1
 
     asyncio.run(check())
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads the server\'s children with ps --ppid')
+def test_a_code_change_on_disk_is_served_by_one_successor_replaced_in_place(installation):
+    """A server keeps the code it imported, so one an agent started hours before served old code, or a file it read
+    half written. A tool call after the package's code changed on disk is served by a successor on that code, with no
+    schema change; a second change replaces that successor rather than adding a third process."""
+    import subprocess
+
+    from metaform.probe import Session, discover
+    folder, copied, parameters, _, _ = installation
+    source = copied / 'modules' / 'mcp' / 'catalog.py'
+    original = source.read_text()
+
+    def change(mark):
+        source.write_text(original.replace("return prompt_files.module('mcp', 'category_'",
+                                           f"return '{mark} ' + prompt_files.module('mcp', 'category_'"))
+        state = source.stat()
+        os.utime(source, (state.st_atime, state.st_mtime + 2))  # bytecode checks whole seconds
+
+    def listed():
+        return ' '.join(block['text'] for block in client.call('metaform_catalog', {}, limit=20)['content'])
+
+    def successors():
+        found = subprocess.run(['ps', '--ppid', str(client.process.pid), '-o', 'pid=,args='], capture_output=True,
+                               text=True, check=False).stdout.splitlines()
+        return [line.split()[0] for line in found if 'mcp serve' in line]
+    client = Session([parameters.command, *parameters.args], cwd=folder, env=parameters.env)
+    try:
+        discover(client, limit=10)
+        assert 'CHANGED' not in listed() and successors() == []
+        change('CHANGED')
+        assert 'CHANGED' in listed()
+        first = successors()
+        assert len(first) == 1
+        change('CHANGED AGAIN')
+        assert 'CHANGED AGAIN' in listed()
+        second = successors()
+        assert len(second) == 1 and second != first
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize('opening', ['initialize', 'discover, then a refused initialize'])
+def test_a_successor_serves_in_the_era_the_client_opened(installation, opening):
+    """The client's first request fixes the connection's era, so a successor taking over after a code change must open
+    in that era. Claude Code probes with server/discover and, when the probe times out on a server slow to start,
+    sends initialize as well; the server had read the probe first, so it refuses the initialize and the connection
+    stays July. Before 2026-10-19 the relay replayed that refused initialize to the successor, which then served the
+    handshake era and refused every enveloped request, an agent's check-in among them (code.server.tool#24)."""
+    folder, copied, parameters, _, _ = installation
+    source = copied / 'modules' / 'mcp' / 'catalog.py'
+    original = source.read_text()
+
+    def change():
+        source.write_text(original.replace("return prompt_files.module('mcp', 'category_'",
+                                           "return 'CHANGED ' + prompt_files.module('mcp', 'category_'"))
+        state = source.stat()
+        os.utime(source, (state.st_atime, state.st_mtime + 2))  # bytecode checks whole seconds
+
+    if opening == 'initialize':
+        async def check():
+            async with stdio_client(parameters) as (read, write), ClientSession(read, write, 10) as client:
+                await client.initialize()
+                assert not (await client.call_tool('metaform_catalog', {})).is_error
+                change()
+                async with asyncio.timeout(20):
+                    served = await client.call_tool('metaform_catalog', {})
+                    following = await client.call_tool('metaform_catalog', {})
+                assert not served.is_error and not following.is_error, served
+                assert 'CHANGED' in ' '.join(block.text for block in served.content)
+
+        asyncio.run(check())
+        return
+
+    from metaform.probe import Session, discover
+    client = Session([parameters.command, *parameters.args], cwd=folder, env=parameters.env)
+    try:
+        discover(client, limit=10)
+        with pytest.raises(RuntimeError, match='initialize failed'):
+            client.request('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                                          'clientInfo': {'name': 'claude-code', 'version': '2.1.300'}},
+                           deadline=time.monotonic() + 10)
+        discover(client, limit=10)
+        assert not client.call('metaform_catalog', {}, limit=10).get('isError')
+        change()
+        served = client.call('metaform_catalog', {}, limit=20)
+        assert not served.get('isError'), served
+        assert 'CHANGED' in ' '.join(block['text'] for block in served['content'])
+        assert not client.call('metaform_catalog', {}, limit=10).get('isError')
+    finally:
+        client.close()

@@ -1,7 +1,7 @@
 """Whose consent a call carries: the person's, or none, CLI-011 and MCP-006.
 
 A person-only setting and an operation that is the person's decision (clearing the project, restoring it, switching
-or removing its map, discarding an intake, deleting memories, changing what agents are sent, answering an agent's
+or removing its map, discarding an intake, changing what agents are sent, answering an agent's
 permission request) run only on the person's consent. Round 1 (2026-10-17) judged the caller instead: an agent was
 known by the identity its runner sets and by the processes above it, and every other process counted as the person.
 One shell line, `( metaform ... & )`, re-parents a command to init, so nothing above it is an agent, and it passed

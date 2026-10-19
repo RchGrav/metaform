@@ -91,7 +91,9 @@ async function mascotAsk(text) {
   await flushAsk();
 }
 /* The system agent could not be reached for a question asked of the mascot that waited on another start, the
- * chat's: the person is told, and their click is theirs to ask about again, as when the mascot's own start fails. */
+ * chat's: the person is told, and their click is theirs to ask about again, as when the mascot's own start fails.
+ * Called by the chat's `startFailed` only for the system agent's failures: its Call, or its thread's session that did
+ * not start; another agent's failed start or a refused chat message leaves the question waiting. */
 export function askFailed() {
   if (!ASKING.pending) return;
   if (ASKING.told) CLICKED.told = false;

@@ -1,0 +1,1 @@
+metaform-intake-findings [project]: Use when editing intake findings, same_as or intake show. | metaform-development [project]: Use when editing Metaform code, web UI, tickets, agents, prompts.xml, module verbs or settings, pytest runs

@@ -42,14 +42,14 @@ def test_two_tabs_keep_project_and_base_when_another_project_opens(run, web, map
         a.reload()
         a.wait_for_function('() => document.querySelector("#proj").value === "proj"')
         a.wait_for_function('(base) => document.querySelector("#mf").value === base', arg=base)
-        a.wait_for_function('''async () => {
-          const {S} = await import('/page/app/core/reads.js');
-          const {select} = await import('/page/app/selection/select.js');
-          const found = [...S.elements.values()].find(one => one.element.address === 'code.timer.kitchen');
-          if (S.loading || !found) return false;
-          await select(found.element.id);
-          return true;
+        a.evaluate('''async () => {
+          window.__reads = await import('/page/app/core/reads.js');
+          window.__select = await import('/page/app/selection/select.js');
         }''')
+        a.wait_for_function('''() => !window.__reads.S.loading && [...window.__reads.S.elements.values()]
+          .some(one => one.element.address === 'code.timer.kitchen')''')
+        a.evaluate('''() => window.__select.select([...window.__reads.S.elements.values()]
+          .find(one => one.element.address === 'code.timer.kitchen').element.id)''')
         a.wait_for_selector('.scoped-knowledge', state='attached')
         assert 'Use C++23 ownership rules.' in a.locator('.scoped-knowledge').first.text_content()
         # Full Auto is a dedicated policy page including both scopes and independent helper admission.

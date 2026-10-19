@@ -4,7 +4,7 @@ import '/page/app/live/ops.js';  // the part before runs first, so the parts run
 import {releaseGlyph} from '/page/agents3d.js';
 import {$, h, fill, writingInPanel} from '/page/app/core/dom.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
-import {S, MEM, read, viewLayers} from '/page/app/core/reads.js';
+import {S, MEM, read, reach, viewLayers} from '/page/app/core/reads.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {readFailed} from '/page/app/core/errors.js';
 import {renderChips} from '/page/app/header/layers.js';
@@ -280,6 +280,13 @@ async function removeBase() {
   else baseButtons();
 }
 $('#removeBase').onclick = removeBase;
+/* The project the page shows, VIEW-002: kept in this browser, so a new tab opens on it, and told to the server, which
+ * keeps the last one the person's page showed for a page that has none kept, such as one in another browser. */
+export function shown(id) {
+  try { localStorage.setItem('metaform.project', id); } catch (error) { /* storage can be blocked */ }
+  reach('/api/shown', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project: id})}, 2).catch(() => { /* this browser keeps it */ });
+}
 /* Another project chosen: the agents drawn are the project left's, so its agent window closes and its agents go,
  * VIEW-039, and its figures with them at once, having no map here to walk back on, VIEW-035; the new project's are
  * read with its map. */
@@ -289,8 +296,7 @@ export function toProject(id) {
   S.tickets = []; B.tickets = [];  // nothing of the project left behind shows on the next one
   if (!$('#board').hidden) drawBoard();
   location.hash = 'p=' + encodeURIComponent(id);
-  try { sessionStorage.setItem('metaform.project', id); }
-  catch (error) { /* storage can be blocked; the address keeps it */ }
+  shown(id);
   Object.assign(LIVE, {layer: null, base: null, seen: ''});
   Object.assign(D, {sessions: []});
   $('#autostartAgents').checked = false;

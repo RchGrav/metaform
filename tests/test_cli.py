@@ -940,19 +940,13 @@ def test_no_command_without_the_persons_terminal_carries_their_consent_however_i
 @pytest.mark.req('CLI-011')
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
 def test_the_command_a_refusal_gives_the_person_runs_when_pasted(run, project, home):
-    """UX review round 2, person-consent F4: the command the person is given is quoted for a shell, so a JSON
-    argument pastes as it was given and deletes the memory; the caution counts what the graph holds and names what
-    it does not."""
+    """UX review round 2, person-consent F4: the command the person is given is quoted for a shell, so an argument
+    pastes as it was given and saves the prompt text it carries."""
     run('set', '--agents-ask-first', cwd=project)  # these check asking, off by default since 2026-10-18
-    run('enable', 'memory')
     noted(run, project, 'Counts down.')
-    run('memory', 'create_entities', json.dumps([{'name': 'k3', 'entityType': 'part', 'observations': ['Old.'],
-                                                    'why': 'A test of the paste.'}]),
-        cwd=project)
-    refused = as_agent(project, home, 'memory', 'delete_entities', json.dumps(['k3', 'nope']), '--confirm')
+    refused = as_agent(project, home, 'agents', 'override', 'name=dispatch:work',
+                       "text=Work <work_id/> now, Ada's way & no other.<record/>", '--confirm')
     assert refused.returncode == 2, refused.stderr
-    assert 'Deleting 1 memory, k3, with 1 observation and 0 relations' in refused.stderr, refused.stderr
-    assert 'nope is not in the memory graph' in refused.stderr, refused.stderr
     pasted = refused.stderr.rsplit('carries): ', 1)[1].strip()
     from conftest import own_terminal
     terminal, ends = own_terminal()
@@ -964,7 +958,15 @@ def test_the_command_a_refusal_gives_the_person_runs_when_pasted(run, project, h
         for end in ends:
             os.close(end)
     assert done.returncode == 0, (pasted, done.stdout, done.stderr)
-    assert json.loads(run('memory', 'read_graph', '--json', cwd=project).stdout)['entities'] == []
+    from importlib import resources
+
+    from metaform import prompt_files
+    sent = prompt_files.collect()
+    try:
+        served = prompt_files.served(resources.files('metaform.modules.dispatch'), 'work', work_id='T1', record='')
+        assert served == "Work T1 now, Ada's way & no other."
+    finally:
+        prompt_files.release(sent)
     # person-consent F6: a switch to the map already active takes nothing, and says so
     same = run('map', 'activate', 'main', cwd=project, ok=False)
     assert same.returncode == 2 and 'main is already the active map of proj; nothing changes.' in same.stderr

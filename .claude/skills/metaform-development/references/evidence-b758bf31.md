@@ -1,0 +1,1 @@
+"yes then put iot back how it was but tickets need to close out you cant just leave tickets open forever.." and "also are you sure all of the tickets right now are still relavenet". Agent's reply: "I closed 6 tickets. 31 are still open. ... I'd close more after the restart."

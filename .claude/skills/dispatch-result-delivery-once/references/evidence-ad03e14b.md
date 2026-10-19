@@ -1,0 +1,1 @@
+"OK, we need to fix your context being blasted you are burnning uyp my account and ruining your context" (Rich, 2026-10-19). Agent's plan in the trace: "Everything pushed to a system-role session becomes inbox entries it reads on demand, not turn content."

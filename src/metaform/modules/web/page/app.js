@@ -5,7 +5,7 @@
  * written. Each part imports the part before it first, and this file imports the last, so the parts run in that
  * order whatever else they import from each other: what a part does as it loads can rely on every part before it.
  * A new part goes into that chain, imported first by the part after it. */
-import '/page/app/agents/broadcast.js';  // the last part: the Broadcast window, from the Agents menu
+import '/page/app/roundtable/stage.js';  // the last part: the roundtable stage, a mode of the 3D map
 import {main} from '/page/app/workspace/workspace.js';
 
 main();

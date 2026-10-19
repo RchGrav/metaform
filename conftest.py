@@ -22,17 +22,48 @@ os.environ['METAFORM_HOLD'] = ''
 for _display in ('DISPLAY', 'WAYLAND_DISPLAY'):
     os.environ.pop(_display, None)
 
+# dispatch's ACP agent with no model behind it, which every test home starts in place of a real one
+FAKE_AGENT = Path(__file__).parent / 'src' / 'metaform' / 'modules' / 'dispatch' / 'tests' / 'fake_agent.py'
+
+
+def _test_defaults(request, tmp_path):
+    """The settings a test home holds from its start, as (scope, owner, key, position, value) rows: Full Auto off and
+    every agent's start command the fake agent, stored at the root folder so every folder inherits them. A test home
+    holds a mapped project with open tickets, so with the product's defaults a test that enabled dispatch and opened
+    the page started a paid Claude session by itself, and that session's end could start another through the person's
+    own harness hooks. A test asks for the product's defaults with @pytest.mark.product_defaults; none otherwise."""
+    if request.node.get_closest_marker('product_defaults') is not None:
+        return []
+    import json
+
+    from metaform import home as metaform_home
+    root = metaform_home.path_key(Path(tmp_path.anchor))
+    command = f'"{sys.executable}" "{FAKE_AGENT}"'
+    values = [('dispatch_autostart', False), *((f'dispatch_{agent}', command) for agent in ('claude', 'codex', 'gemini'))]
+    return [(root, 'dispatch', key, 0, json.dumps(value)) for key, value in values]
+
+
 @pytest.fixture
-def home(tmp_path, monkeypatch):
+def home(tmp_path, monkeypatch, request):
     """An isolated Metaform home; nothing touches ~/.metaform. The loader's cache of modules found, with each one's
-    enabled state, starts and ends empty, so the modules one test's home enabled never reach the next."""
+    enabled state, starts and ends empty, so the modules one test's home enabled never reach the next. The home
+    starts with `_test_defaults`: its chassis database is made with them, and a read before it exists reads them, so
+    the home is still made only by what the test does."""
+    from metaform import home as metaform_home
     from metaform import loader
     loader.reset()
     path = tmp_path / 'home'
     monkeypatch.setenv('METAFORM_HOME', str(path))
+    rows = _test_defaults(request, tmp_path)
+    if rows:
+        def quoted(text):
+            return "'" + text.replace("'", "''") + "'"
+        monkeypatch.setattr(metaform_home, 'CHASSIS_SCHEMA', metaform_home.CHASSIS_SCHEMA + ''.join(
+            f'INSERT OR IGNORE INTO settings VALUES ({quoted(scope)}, {quoted(owner)}, {quoted(key)}, {position}, '
+            f'{quoted(value)});\n' for scope, owner, key, position, value in rows))
     # A test run from a dispatched agent's session would otherwise sign each memory written with it, and be refused
     # the tickets the agent's role may not write, MAP-050.
-    for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE'):
+    for name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_AUTHORED_ROLE'):
         monkeypatch.delenv(name, raising=False)
     # Intake's optional live classifier must never inherit real billing credentials in fixture tests.
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
@@ -86,7 +117,9 @@ def run(home, tmp_path, request):
     test marked cli_process, one about what crosses between processes, runs each call as its own process, as does
     isolated=True on one call or METAFORM_TEST_SUBPROCESS=1 for the whole run."""
     from metaform import harness
+    from metaform import home as metaform_home
     separate = request.node.get_closest_marker('cli_process') is not None
+    pending = _test_defaults(request, tmp_path)  # stored once, after the first process that made the database
 
     def invoke(*args, cwd=None, ok=True, input=None, env=None, isolated=separate):
         folder = Path(cwd or tmp_path)
@@ -112,6 +145,12 @@ def run(home, tmp_path, request):
                     proof.close()
                 for end in ends:
                     os.close(end)
+            # A chassis database that process made was made without this process's schema, so without the test
+            # home's settings; they are stored now, before the next call can start an agent.
+            if pending and environment['METAFORM_HOME'] == str(home) and metaform_home.chassis_path().exists():
+                with metaform_home.chassis(write=True) as db:
+                    db.executemany('INSERT OR IGNORE INTO settings VALUES (?, ?, ?, ?, ?)', pending)
+                pending.clear()
         else:
             result = _in_process(list(args), folder, environment, input)
         # MCP-028's notice is checked in test_provision; these assertions concern the command's own output.
@@ -189,38 +228,52 @@ def dispatch_runners(run):
 
 # The command lines of the processes a test home must not leave behind; matching them keeps a PID the system has
 # since given to another process, such as an xdist worker with its own listener, from being ended.
-SURVIVORS = ('-m metaform.modules.web.server ', '-m metaform dispatch ')
+SURVIVORS = ('-m metaform.modules.web.watchdog ', '-m metaform.modules.web.server ', '-m metaform dispatch ')
 
 
 def _left(folder):
-    """The metaform processes started under the test homes in a folder that are still running: each web server and
-    dispatch runner records its PID in its home's run/web.json or run/listeners, VIEW-002 and BASE-052."""
+    """The metaform processes started under the test homes in a folder that are still running: each web watchdog, web
+    server and dispatch runner records its PID in its home's run/web-watchdog.json, run/web.json or run/listeners,
+    VIEW-002 and BASE-052. Watchdogs come first, so none is left to restart a server ended before it."""
     import json
 
     from metaform.modules.dispatch import command_line
     from metaform.modules.dispatch.tests.test_dispatch import alive
-    pids = set()
-    for path in [*folder.glob('**/run/web.json'), *folder.glob('**/run/listeners/*.json')]:
+    pids = {}
+    for path in [*folder.glob('**/run/web-watchdog.json'), *folder.glob('**/run/web.json'),
+                 *folder.glob('**/run/listeners/*.json')]:
         try:
-            pids.add(int(json.loads(path.read_text(encoding='utf-8'))['pid']))
+            pids[int(json.loads(path.read_text(encoding='utf-8'))['pid'])] = None
         except (OSError, ValueError, KeyError, TypeError):
             continue
     said = {pid: ' '.join(command_line(pid)) for pid in pids if alive(pid)}
     return {pid: words for pid, words in said.items() if any(one in words for one in SURVIVORS)}
 
 
+def _home_under(pid, folder):
+    """Whether a process's METAFORM_HOME, read from /proc/<pid>/environ, lies under a folder: a PID the system has since
+    given to a runner of the person's own home is never ended. Where /proc cannot be read nothing is known, so no."""
+    try:
+        environ = Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
+    except OSError:
+        return False
+    home = next((one.split(b'=', 1)[1] for one in environ if one.startswith(b'METAFORM_HOME=')), None)
+    return home is not None and Path(os.fsdecode(home)).resolve().is_relative_to(folder.resolve())
+
+
 def pytest_sessionstart(session):
     """A run stopped before its teardown, by a timeout or a kill, leaves the servers its tests started running, since a
     web server outlives the command that starts it. pytest keeps such a run's numbered folder with its .lock naming the
     run's PID: a lock whose PID has ended marks a run that died, and what its test homes left running is ended here. A
-    folder whose PID is alive belongs to a run in progress and is left alone. Under xdist only the controller sweeps."""
+    folder whose PID is alive belongs to a run in progress and is left alone. Under xdist only the controller sweeps. A
+    process is ended only when its METAFORM_HOME lies under that folder, and told ended only once it is gone."""
     if hasattr(session.config, 'workerinput'):
         return
     factory = getattr(session.config, '_tmp_path_factory', None)
     if factory is None:
         return
     from metaform.modules.dispatch import end_group
-    from metaform.modules.dispatch.tests.test_dispatch import alive
+    from metaform.modules.dispatch.tests.test_dispatch import alive, gone
     current = factory.getbasetemp()
     ended = {}
     for folder in current.parent.glob('pytest-*'):
@@ -234,14 +287,23 @@ def pytest_sessionstart(session):
         if alive(owner):
             continue
         for pid, words in _left(folder).items():
-            end_group(pid)
-            ended[pid] = words
+            if _home_under(pid, folder):
+                end_group(pid)
+                ended[pid] = words
+    gone(list(ended))
+    survived = {pid: words for pid, words in ended.items() if alive(pid)}
+    ended = {pid: words for pid, words in ended.items() if pid not in survived}
     reporter = session.config.pluginmanager.get_plugin('terminalreporter')
     if ended and reporter is not None:
         reporter.write_line('An earlier test run stopped before its teardown left these metaform processes running; '
                             'they are now ended:', yellow=True)
         for pid, words in ended.items():
             reporter.write_line(f'  {pid} {words}', yellow=True)
+    if survived and reporter is not None:
+        reporter.write_line('An earlier test run left these metaform processes running and ending them failed; they '
+                            'still run:', red=True)
+        for pid, words in survived.items():
+            reporter.write_line(f'  {pid} {words}', red=True)
 
 
 def pytest_sessionfinish(session):

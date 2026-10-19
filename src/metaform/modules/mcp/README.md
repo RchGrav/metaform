@@ -85,9 +85,14 @@ claude mcp add --transport http --scope user metaform http://127.0.0.1:7434/mcp
 ```
 
 `mcp_recovery` selects `relay` (the default) or `manual` when the server starts. Relay keeps the host connection
-when a pre-dispatch schema check refuses a newer store and the package code on disk has changed. It starts a
-replacement using the same Python interpreter, working folder and environment, replays the host's initialization
-internally, and retries only refused calls. Manual returns the ordinary schema error, leaving restart to the host.
+when a pre-dispatch schema check refuses a newer store and the package code on disk has changed, and when a tool
+call finds the package's code changed on disk since the server serving the connection started, with no other call
+in flight (2026-10-19: agents' servers served code hours old, and one served a file it had read half written). It
+starts a replacement using the same Python interpreter, working folder and environment, replays the host's
+initialization internally, and retries only refused or handed-over calls. The first process keeps the host's pipes
+and replaces its replacement in place on the next change, so a busy tree never makes a chain of processes. The check
+is one stat of each source file the package holds, tests aside, made by the tool call itself, never on a timer.
+Manual returns the ordinary schema error, leaving restart to the host, and serves the code it started with.
 Unchanged code never starts a replacement. A host pinned to an old wheel must select a newer package source.
 The `set` tool stores any setting for the server's folder.
 
@@ -212,7 +217,8 @@ The server runs until its standard input closes. The relay owns routing tasks an
 SDK transports. Calls already in progress finish before hand-over, with cancellation and host responses still
 delivered to them. July subscription streams finish gracefully, so clients can reopen them. Errors after dispatch
 are never replayed, because the call may already have committed a write. A failed replacement returns the schema
-error and keeps the old session usable. Closing the host connection closes and reaps the replacement.
+error and keeps the old session usable; a call a code change handed over is served by the old server instead,
+which serves that code until the code changes again. Closing the host connection closes and reaps the replacement.
 
 ## Modules relied on
 

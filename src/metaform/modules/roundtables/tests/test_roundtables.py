@@ -1,0 +1,455 @@
+"""roundtables: a table opened at an Address through the Roundtable 2 engine, followed live and chaired from Metaform,
+ticket code.gateway.messaging#3.
+
+The engine is the person's own checkout (ROUNDTABLE_ENGINE_HOME, ~/roundtable by default), run with its own fakes as
+its offline proof runs it (scripts/offline_table.py): its stub OpenRouter and Jev on the loopback, from
+scripts/check.py, and its fake ACP agent, dev/fake_agent.py, as Claude Code. Nothing is paid for and nothing leaves the
+machine. Without the checkout the tests are skipped.
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import signal
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from metaform import events
+from metaform.data import Store
+from metaform.module import Context
+from metaform.modules.roundtables import engine, follow
+
+pytestmark = pytest.mark.kind('simulation')
+
+ENGINE = Path(os.environ.get('ROUNDTABLE_ENGINE_HOME', str(Path.home() / 'roundtable')))
+COMMAND = ENGINE / '.venv' / 'bin' / 'roundtable'
+ADDRESS = 'code.gateway.messaging'
+PURPOSE = 'Accept external agent work as project-addressed tickets.'
+MEMORY = 'Peers are named by the person'
+LIMIT = 240.0  # seconds a fake table has to end
+REPORT_MARK = 'The roundtable has ended'
+STAGE_MARKS = ('# Topic synthesis', '# Rank collected ideas', '# Explain your top three', '# Explain your bottom three',
+               '# Host summary', REPORT_MARK, 'could not be read as every idea')  # the offline proof's
+
+needs_engine = pytest.mark.skipif(not COMMAND.is_file(), reason=f'the Roundtable 2 engine is not at {ENGINE}')
+
+
+def checks() -> Any:
+    """The engine's own stub of OpenRouter and Jev, scripts/check.py."""
+    spec = importlib.util.spec_from_file_location('roundtable_check', ENGINE / 'scripts' / 'check.py')
+    assert spec is not None and spec.loader is not None
+    found = importlib.util.module_from_spec(spec)
+    sys.modules['roundtable_check'] = found
+    spec.loader.exec_module(found)
+    return found
+
+
+def stubbed(*, failing_reports: bool = False, pace: float = 0.0) -> Any:
+    """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and a Jev
+    that finds the topic covered with nothing added each round, so the topic goes to synthesis on its sufficiency.
+    `failing_reports` refuses every request for the report, so no model writes it; `pace` slows every seat's turn so
+    the chair acts while the table runs."""
+    base = checks().Stub
+
+    class Offline(base):  # type: ignore[misc, valid-type]
+        def chat(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+            last = json.dumps(body['messages'][-1]['content'])
+            if failing_reports and REPORT_MARK in last:
+                return 400, {'error': {'message': 'the stub writes no report'}}
+            time.sleep(pace)  # a stub's pacing, so the table is still running when the chair acts
+            code, answer = super().chat(body)
+            asked = sum(1 for one in self.chats if one.get('session_id') == body.get('session_id'))
+            if code == 200 and body['model'] == 'stub/vega' and asked == 2 and not any(mark in last
+                                                                                     for mark in STAGE_MARKS):
+                answer['choices'][0]['message']['content'] = 'vega agrees, veto this, it adds nothing.'
+            return code, answer
+
+        def decide(self, body: dict[str, Any]) -> tuple[int, dict[str, Any] | None]:
+            if body['state'].get('latest_round') is None:
+                return super().decide(body)
+            with self.lock:
+                self.decisions.append(body)
+            values = {'covered': 0.92, 'round_added': 0.2}
+            return 200, {'model': body['model'], 'answers': {name: {'type': 'noul', 'noul': values.get(name, 0.92)}
+                                                             for name in body['questions']}, 'usage': {'cost': 0.0001}}
+    return Offline()
+
+
+@pytest.fixture
+def table(run, tmp_path, monkeypatch):
+    """A project with the part on its map and a memory at it, the engine set up with its fakes in a home of its own,
+    dispatch on for the slots, and the person's jev on."""
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    store = Store('proj')
+    with store.atomic():
+        store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False, hideable=False,
+                    provenance={'module': 'intake'}, ready=True)
+        store.add_element('intake-1', 'code.server.tool', name_length=2, role='DE')
+        store.add_element('intake-1', ADDRESS, name_length=2, role='SE')
+        store.add_join('intake-1', 'code.server.tool', ADDRESS, purpose=PURPOSE, ef='Hands over a peer\'s task.')
+    run('memory', 'create_entities', json.dumps([{
+        'name': MEMORY, 'entityType': 'behaviour', 'title': MEMORY, 'why': 'A seat must not invent peers.',
+        'observations': ['Only a peer the person names in the home can be sent a message.']}]),
+        f'node=element:{ADDRESS}', cwd=folder)
+    run('enable', 'dispatch', cwd=folder)
+    run('set', '--jev', cwd=folder)
+    run('set', f'--roundtables-engine={COMMAND}', cwd=folder)
+    engine_home = tmp_path / 'engine'
+    log = tmp_path / 'fake-acp.log'
+    for key, value in {'ROUNDTABLE_HOME': str(engine_home), 'OPENROUTER_API_KEY': 'stub-key',
+                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {ENGINE / "dev" / "fake_agent.py"}',
+                       'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
+                       'ROUNDTABLE_REPORT_MODEL': 'stub/reporter', 'FAKE_ACP_LOG': str(log)}.items():
+        monkeypatch.setenv(key, value)
+    return folder, log
+
+
+def serve(monkeypatch, stub: Any) -> Any:
+    held = checks().serve_stub(stub)
+    monkeypatch.setenv('ROUNDTABLE_OPENROUTER_URL', f'http://127.0.0.1:{held.server_address[1]}/api')
+    return held
+
+
+class Heard:
+    """The table's events as another process of the home hears them: each map.changed naming the kind roundtables,
+    then the table's events read after the last seq held; `ended` is set once the end is told."""
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+        self.changes = 0
+        self.ended = threading.Event()
+        self.lock = threading.Condition()
+        self.listener = events.listen('roundtables-test', self.heard)
+
+    def heard(self, payload: dict[str, Any]) -> None:
+        if 'roundtables' not in (payload.get('kinds') or []):
+            return
+        with self.lock:
+            self.changes += 1
+            seen = {(one['table_id'], int(one['seq'])) for one in self.events}  # each table counts its own seq
+            with Store('proj', module='roundtables').tables(write=False) as tx:
+                fresh = [dict(one) for one in tx.rows('events', limit=0).results
+                         if (one['table_id'], int(one['seq'])) not in seen]
+            self.events += fresh
+            if any(one['kind'] == 'end' for one in fresh):
+                self.ended.set()
+            self.lock.notify_all()
+
+    def told(self, check: Any, limit: float = LIMIT) -> bool:
+        """Whether an event that passes `check` is heard within the limit, woken by each one heard."""
+        with self.lock:
+            return self.lock.wait_for(lambda: any(check(one) for one in self.events), limit)
+
+    def kinds(self) -> list[str]:
+        with self.lock:
+            return [str(one['kind']) for one in self.events]
+
+    def close(self) -> None:
+        self.listener.close()
+
+
+def seat_entries(home: Path) -> list[Path]:
+    return sorted((home / 'run' / 'dispatch' / 'agents').glob('*-seat-*.json'))
+
+
+def opened(run, folder: Path, *args: str) -> dict[str, Any]:
+    return json.loads(run('roundtables', 'open', 'How should agents in two projects reach each other?',
+                          f'address={ADDRESS}', *args, '--json', cwd=folder).stdout)
+
+
+def gone(paths_of: Any, limit: float = 30.0) -> bool:
+    deadline = time.monotonic() + limit
+    while paths_of():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.2)
+    return True
+
+
+@needs_engine
+@pytest.mark.timeout(LIMIT + 60)
+def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_heard_as_it_runs_to_its_answer(
+        run, home, table, monkeypatch):
+    folder, log = table
+    stub = stubbed()
+    held = serve(monkeypatch, stub)
+    heard = Heard()
+    try:
+        answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'stub/vega']), 'host=stub/host', 'rounds=3')
+        assert len(seat_entries(home)) == 2, 'each seat holds one agent slot while the table runs'
+        assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
+        kinds = heard.kinds()
+        # the events came while the table ran, each write of the follower heard by this process as it happened
+        assert heard.changes > 3 and kinds.index('turn') < kinds.index('end')
+        for kind in ('turn', 'veto', 'stage', 'ideas', 'rankings', 'summary', 'end'):
+            assert kind in kinds, (kind, kinds)
+        end = next(one for one in heard.events if one['kind'] == 'end')
+        assert end['audience'] == 'person' and end['payload']['answered'] is True
+        status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+        assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer']
+        assert status['handed'] == f'roundtable-{answer["table"]}', 'the record went to the system agent to report on'
+    finally:
+        heard.close()
+        held.shutdown()
+    # the opening every seat read first is the part's context and the question
+    first = next(body for body in stub.chats if body['model'] == 'stub/vega')
+    seen = json.dumps(first['messages'])
+    assert ADDRESS in seen and PURPOSE in seen and MEMORY in seen and 'two projects reach each other' in seen
+    # the seat's write was refused, and it was given no MCP server to write through
+    lines = [json.loads(line) for line in log.read_text().splitlines()]
+    asked = [line['permission']['outcome'] for line in lines if 'permission' in line]
+    assert asked and all(one.get('optionId') == 'reject' for one in asked), asked
+    sessions = [line['message']['params'] for line in lines if line.get('message', {}).get('method') == 'session/new']
+    assert sessions and all(not one.get('mcpServers') for one in sessions)
+    assert gone(lambda: seat_entries(home)), 'the slots go back when the table ends'
+    # the table's record is saved in the project: the engine's mechanical report and its export with the Borda count;
+    # the report is the system agent's to write beside them
+    saved = folder / status['saved']
+    assert status['saved'].startswith('docs/roundtables/') and not (saved / 'report.md').exists(), status
+    assert (saved / 'mechanical-report.md').is_file()
+    assert any(one.get('borda') for one in json.loads((saved / 'export.json').read_text())['topics'])
+    # its outcome is one memory at the Address it was raised at, naming the question and the answer, linked to the
+    # saved record
+    graph = json.loads(run('memory', 'read_graph', f'node=element:{ADDRESS}', '--json', cwd=folder).stdout)
+    kept = [one for one in graph['entities'] if one['entityType'] == 'roundtable']
+    assert len(kept) == 1 and kept[0]['name'] == status['recorded'], graph
+    said = ' '.join(kept[0]['observations'])
+    assert 'two projects reach each other' in said and 'summarises' in said, said
+    assert f'{status["saved"]}/export.json' in said and f'{status["saved"]}/report.md' in said, said
+    # an idea the person adopts becomes one ticket at its part, with the table as its source, once
+    idea = next(one for one in heard.events if one['kind'] == 'ideas')['payload']['ideas'][0]
+    adopted = json.loads(run('roundtables', 'adopt', answer['table'], idea['id'], '--json', cwd=folder).stdout)
+    again = json.loads(run('roundtables', 'adopt', answer['table'], idea['id'], '--json', cwd=folder).stdout)
+    assert again['ticket'] == adopted['ticket']
+    listed = json.loads(run('map', 'work', f'node={ADDRESS}', 'limit=0', '--json', cwd=folder).stdout)
+    made = [one for one in listed['results'] if answer['table'] in (one.get('note') or '')]
+    assert [one['id'] for one in made] == [adopted['ticket']] and made[0]['address'] == ADDRESS, made
+    ticket = json.loads(run('map', 'work', f'id={adopted["ticket"]}', '--json', cwd=folder).stdout)
+    assert not ticket['held'] and idea['name'] in ticket['task'], 'a ticket Full Auto starts, on the idea'
+
+
+def test_a_table_ended_with_no_report_records_its_outcome_citing_its_export_and_adopt_passes_on_the_maps_notice(
+        run, table):
+    """Memory refuses a citation of a missing file, so a table the engine wrote no report for cites its saved export;
+    an idea adopted at a part the map does not hold is filed with the map's notice that says so."""
+    folder, _ = table
+    store = Store('proj', module='roundtables')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'rt1', 'address': ADDRESS, 'topic': 'Who reaches whom?', 'opening': '.',
+                             'seats': ['stub/vega'], 'spend': 0.0, 'state': 'ended', 'created': follow.now(),
+                             'followed': {'saved': 'docs/roundtables/1-who-reaches-whom'}})
+        tx.insert('events', {'table_id': 'rt1', 'seq': 1, 'kind': 'ideas', 'audience': 'table', 'at': follow.now(),
+                             'payload': {'ideas': [{'id': 'I1', 'name': 'Named peers', 'summary': 'Peers by name.'}]}})
+    saved = folder / 'docs' / 'roundtables' / '1-who-reaches-whom'
+    saved.mkdir(parents=True)
+    (saved / 'export.json').write_text('{}\n', encoding='utf-8')
+    listed = [{'host_summary': {'name': 'host', 'text': 'Peers are named.'}}]
+    follower = follow.Follower(Context('roundtables', folder, project='proj', store=store), 'rt1')
+    recorded, unrecorded = follower.recorded(listed, 'Peers are named.', 'docs/roundtables/1-who-reaches-whom')
+    assert recorded and unrecorded is None, unrecorded
+    graph = json.loads(run('memory', 'read_graph', f'node=element:{ADDRESS}', '--json', cwd=folder).stdout)
+    kept = [one for one in graph['entities'] if one['entityType'] == 'roundtable']
+    assert [one['name'] for one in kept] == [recorded], graph
+    said = ' '.join(kept[0]['observations'])
+    assert 'docs/roundtables/1-who-reaches-whom/export.json' in said, said
+    adopted = json.loads(run('roundtables', 'adopt', 'rt1', 'I1', 'address=no.such.part', '--json', cwd=folder).stdout)
+    assert any('No current element' in one['message'] for one in adopted.get('notices', [])), adopted
+
+
+def openings(run, folder: Path, tmp_path: Path) -> dict[str, str]:
+    """Each table's opening as `open` kept it, by its question, the engine a stand-in that fails at once, so the
+    table is refused after its opening is written and no seat starts."""
+    failing = tmp_path / 'no-engine'
+    failing.write_text('#!/bin/sh\nexit 1\n')
+    failing.chmod(0o755)
+    run('set', f'--roundtables-engine={failing}', cwd=folder)
+    run('roundtables', 'open', 'What could a peer directory be?', 'seats=["stub/vega"]', cwd=folder, ok=False)
+    run('roundtables', 'open', 'Who reaches whom?', f'address={ADDRESS}', 'seats=["stub/vega"]', cwd=folder, ok=False)
+    with Store('proj', module='roundtables').tables(write=False) as tx:
+        return {str(one['topic']): str(one['opening']) for one in tx.rows('tables', limit=0).results
+                if one['address'] in (None, ADDRESS)}
+
+
+def test_a_table_with_no_address_opens_on_the_question_alone_and_one_with_an_address_on_the_part(
+        run, table, tmp_path):
+    folder, _ = table
+    found = openings(run, folder, tmp_path)
+    alone = found['What could a peer directory be?']
+    assert 'What could a peer directory be?' in alone, alone
+    assert ADDRESS not in alone and PURPOSE not in alone and MEMORY not in alone, alone
+    focused = found['Who reaches whom?']
+    assert ADDRESS in focused and PURPOSE in focused and MEMORY in focused, focused
+
+
+def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ideas_where_the_map_holds_them(
+        run, table):
+    """A table about no part keeps its outcome at the project's top element, asks the person's system agent for its
+    report through the inbox, and an idea adopted from it is filed where the map holds the Address named for it, else
+    at the top element with the Address in its note and nothing added to the map."""
+    from metaform.modules.dispatch.orchestration import update_entries, user_updates
+    folder, _ = table
+    store = Store('proj', module='roundtables')
+    saved = 'docs/roundtables/2-peer-directory'
+    ideas = [{'id': 'I1', 'name': 'Peer list', 'summary': 'One list.'},
+             {'id': 'I2', 'name': 'Named peers', 'summary': 'By name.'},
+             {'id': 'I3', 'name': 'Peer directory', 'summary': 'A directory.'}]
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'rt2', 'topic': 'What could a peer directory be?', 'opening': '.',
+                             'seats': ['stub/vega'], 'spend': 0.0, 'state': 'ended', 'created': follow.now(),
+                             'followed': {'saved': saved}})
+        tx.insert('events', {'table_id': 'rt2', 'seq': 1, 'kind': 'ideas', 'audience': 'table', 'at': follow.now(),
+                             'payload': {'ideas': ideas}})
+    (folder / saved).mkdir(parents=True)
+    (folder / saved / 'export.json').write_text('{}\n', encoding='utf-8')
+    follower = follow.Follower(Context('roundtables', folder, project='proj', store=store), 'rt2')
+    recorded, unrecorded = follower.recorded([], '', saved)
+    assert recorded and unrecorded is None, unrecorded
+    graph = json.loads(run('memory', 'read_graph', 'node=element:code.server.tool', '--json', cwd=folder).stdout)
+    assert [one['name'] for one in graph['entities'] if one['entityType'] == 'roundtable'] == [recorded], graph
+    handed, unhanded = follower.handed(saved)
+    assert handed == 'roundtable-rt2' and unhanded is None, unhanded
+    told = Context('dispatch', folder, project='proj', store=Store('proj'))
+    assert handed in user_updates(told)
+    assert update_entries(told, [handed]) == [(handed, 'project roundtable report', True)]
+    top = json.loads(run('roundtables', 'adopt', 'rt2', 'I1', '--json', cwd=folder).stdout)
+    held = json.loads(run('roundtables', 'adopt', 'rt2', 'I2', f'address={ADDRESS}', '--json', cwd=folder).stdout)
+    new = json.loads(run('roundtables', 'adopt', 'rt2', 'I3', 'address=code.peers.directory', '--json',
+                         cwd=folder).stdout)
+    assert (top['address'], held['address'], new['address']) == ('code.server.tool', ADDRESS, 'code.server.tool')
+    assert new['proposed'] == 'code.peers.directory' and not new.get('notices'), new
+    ticket = json.loads(run('map', 'work', f'id={new["ticket"]}', '--json', cwd=folder).stdout)
+    assert 'code.peers.directory' in ticket['note'] and ticket['kind'] == 'enhancement', ticket
+    assert Store('proj').element('code.peers.directory') is None, 'a ticket never changes the map'
+
+
+@needs_engine
+@pytest.mark.timeout(LIMIT + 60)
+def test_hold_and_end_work_from_metaform_and_the_report_is_saved_when_no_model_writes_it(run, home, table,
+                                                                                         monkeypatch):
+    folder, _ = table
+    held = serve(monkeypatch, stubbed(failing_reports=True, pace=0.4))
+    heard = Heard()
+    try:
+        answer = opened(run, folder, 'seats=' + json.dumps(['stub/vega', 'stub/orion']), 'host=stub/host',
+                        'reporter=stub/vega')
+        holding = json.loads(run('roundtables', 'hold', answer['table'], '--json', cwd=folder).stdout)
+        assert holding['state'] == 'held'
+        assert heard.told(lambda one: one['kind'] == 'state' and one['payload']['state'] == 'held'), heard.kinds()
+        ending =json.loads(run('roundtables', 'end', answer['table'], '--json', cwd=folder).stdout)
+        assert ending['state'] in ('ending', 'ended')
+        assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
+        states = [one['payload']['state'] for one in heard.events if one['kind'] == 'state']
+        assert 'held' in states and all(one['audience'] == 'person' for one in heard.events
+                                        if one['kind'] in ('state', 'operational', 'seat_lost', 'end'))
+        status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+        assert status['state'] == 'ended' and status['handed'] and (folder / status['saved'] / 'export.json').is_file()
+        # a submission the table ended before Jev judged it is told, as unjudged, when the engine lists one
+        exported = json.loads((folder / status['saved'] / 'export.json').read_text())
+        if any(one.get('outcome') == 'unjudged' for one in exported['submissions']):
+            assert any(one['kind'] == 'turn' and one['payload'].get('outcome') == 'unjudged' for one in heard.events)
+    finally:
+        heard.close()
+        held.shutdown()
+    assert gone(lambda: seat_entries(home))
+
+
+@needs_engine
+def test_a_table_with_more_seats_than_free_agent_slots_is_refused_before_any_seat_starts(run, home, table):
+    folder, log = table
+    run('set', '--dispatch-agents=1', cwd=folder)
+    refused = run('roundtables', 'open', 'Too many seats?', f'address={ADDRESS}',
+                  'seats=' + json.dumps(['claude/haiku', 'stub/vega']), cwd=folder, ok=False)
+    assert refused.returncode != 0 and 'needs 2 free agent slots and 1 is free' in refused.stderr, refused.stderr
+    listed = json.loads(run('roundtables', 'tables', '--json', cwd=folder).stdout)['tables']
+    assert [one['state'] for one in listed] == ['refused']
+    assert not log.exists() and not seat_entries(home), 'no seat started and no slot is held'
+
+
+def running(pid: int) -> bool:
+    """Whether a process runs: an ended follower this test process started and never reaped is a zombie."""
+    try:
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except OSError:
+        return False
+
+
+def page_servers() -> list[int]:
+    """The engine's page servers of this test's engine home that still run."""
+    found = []
+    for proc in Path('/proc').iterdir():
+        try:
+            words = (proc / 'cmdline').read_bytes().split(b'\0')
+            environ = (proc / 'environ').read_bytes().split(b'\0')
+        except OSError:
+            continue
+        if b'web' in words and f'ROUNDTABLE_HOME={os.environ["ROUNDTABLE_HOME"]}'.encode() in environ:
+            found.append(int(proc.name))
+    return found
+
+
+@needs_engine
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc for the page servers left')
+@pytest.mark.timeout(2 * LIMIT + 60)
+def test_a_stopped_follower_ends_its_table_before_its_slots_go_back(run, home, table, monkeypatch):
+    """The follower's SIGTERM, and the person's Stop all, which asks it with one: the table is ended through the
+    engine, its seats close, the person is told why, and only then do the slots go back."""
+    folder, _ = table
+    held = serve(monkeypatch, stubbed(pace=2.0))  # slow enough that each stop lands while the table discusses
+    try:
+        for stop in ('sigterm', 'stop-all'):
+            heard = Heard()
+            try:
+                answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'stub/vega']), 'host=stub/host')
+                with Store('proj', module='roundtables').tables(write=False) as tx:
+                    row = dict(tx.get('tables', {'table_id': answer['table']}) or {})
+                assert len(seat_entries(home)) == 2 and follow.alive(row['follower'])
+                said = ''
+                if stop == 'sigterm':
+                    os.kill(int(row['follower']), signal.SIGTERM)
+                else:
+                    said = run('dispatch', 'stop-all', '--json', cwd=folder).stdout
+                table_id = answer['table']
+                assert heard.told(lambda one: one['table_id'] == table_id and one['kind'] == 'end'), (  # noqa: B023
+                    f'{stop}: the table did not end: {heard.kinds()} {said}')
+                own = [one for one in heard.events if one['table_id'] == table_id]
+                told = [one for one in own if one['payload'].get('what') == 'follower_stopped']
+                assert told and told[0]['audience'] == 'person', (stop, [one['kind'] for one in own])
+                end = next(one for one in own if one['kind'] == 'end')
+                assert end['audience'] == 'person'
+                engine_said = engine.call(folder, 'status', discussion=int(row['discussion']))
+                assert engine_said['state'] == 'ended' and engine_said.get('runner') == 'stopped', (stop, engine_said)
+                assert 'ended by its chair' in str(engine_said.get('reason')), 'the follower ended it, the table did not'
+                pid = int(row['follower'])
+                assert gone(lambda: running(pid)), f'{stop}: the follower ended'  # noqa: B023
+                assert gone(lambda: seat_entries(home)), f'{stop}: the slots went back'
+                assert not page_servers(), f'{stop}: no page server is left'
+            finally:
+                heard.close()
+    finally:
+        held.shutdown()
+
+
+@needs_engine
+def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slot(run, home, table, tmp_path):
+    folder, _ = table
+    failing = tmp_path / 'failing-roundtable'
+    failing.write_text('#!/bin/sh\nif [ "$1" = serve ]; then echo "the engine broke" >&2; exit 1; fi\n'
+                       f'exec {COMMAND} "$@"\n')
+    failing.chmod(0o755)
+    run('set', f'--roundtables-engine={failing}', cwd=folder)
+    began = time.monotonic()
+    refused = run('roundtables', 'open', 'Does it open?', f'address={ADDRESS}', 'seats=' + json.dumps(['stub/vega']),
+                  cwd=folder, ok=False)
+    assert refused.returncode != 0 and 'The table did not open' in refused.stderr, refused.stderr
+    assert time.monotonic() - began < engine.CALL_LIMIT, 'refused at once, not at the follower\'s deadline'
+    listed = json.loads(run('roundtables', 'tables', '--json', cwd=folder).stdout)['tables']
+    assert [one['state'] for one in listed] == ['refused'] and 'The table did not open' in listed[0]['reason']
+    assert gone(lambda: seat_entries(home)), 'no slot is held'

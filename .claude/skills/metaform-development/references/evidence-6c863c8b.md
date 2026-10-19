@@ -1,0 +1,1 @@
+Decisions for you: - **Real agents in other test suites:** about 18 other test files enable dispatch without pointing claude at the fake agent. With Full Auto on by default, they could start a real Claude agent. I turned Full Auto off only in the dispatch tests' shared fixture and haven't run those other suites.

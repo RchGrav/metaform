@@ -206,6 +206,7 @@ def add_work(
     _link(tx, work_id, links, notices)
     _number(tx, "work", work_id, target_kind, thing, _titled(title, task, note))
     _ticket_changed(tx, work_id)
+    _ticket_changed(tx, work_id, kind="filed")  # new on the board: dispatch's `board.changed` reads it, no other change
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -480,7 +481,15 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
     notices: list[Notice] = []
+    proof = _proof(tx, work_id)
+    if column == "done" and proof is not None and row["done"] is None:
+        # moved to done on the board is a done, and a ticket that closes only with proof is not closed on a move
+        return _landed(tx, row, row["resolution"], notices)
     _ticket_changed(tx, work_id)
+    if proof is not None and column in ("todo", "backlog"):
+        # given back, its fix has not held or is not yet given: no landed fix is kept, nor its resolution
+        tx.execute("UPDATE work SET resolution=NULL WHERE work_id=?", (work_id,))
+        tx.tables().update("ticket_settings", {"work_id": work_id}, {"landed": None})
     if work_record(tx, row).column == column:
         pass  # Within a column only the order changes.
     elif column == "done":
@@ -538,11 +547,14 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, outcome: str = "completed") -> WorkRecord:
+def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, outcome: str = "completed",
+                proven: bool = False) -> WorkRecord:
     """Mark a work record done, keeping its resolution beside it, the why of that resolution with its number, MCP-037,
     and how it ended, `outcome`: a terminal state of the one status vocabulary, completed unless the person cancelled
     it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
-    resolution and outcome."""
+    resolution and outcome. A ticket that closes only with proof, `prove_work`, completes only `proven`: until then
+    its fix lands and it is watched, `_landed`; cancelled or failed it ends as any ticket does. Its landing is kept once
+    it closes, so the module that proved it can still tell a recurrence from code older than the fix."""
     ended = status.known(outcome, "map work op=done id=<id>")
     if ended not in status.TERMINAL:
         raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
@@ -551,6 +563,9 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     if row["done"] is not None:
         notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
+    proof = _proof(tx, work_id)
+    if proof is not None and ended == "completed" and not proven:
+        return _landed(tx, row, _work_text(resolution, "resolution", notices), notices)
     _ticket_changed(tx, work_id)
     tx.execute(
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
@@ -560,6 +575,46 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         tables = tx.tables()
         if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
             tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
+    return work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def prove_work(tx: Tx, work_id: str) -> WorkRecord:
+    """The ticket closes only with proof: a done on it lands the fix and leaves it open, watched, until the module
+    that filed it proves the fix held and closes it `proven`, as autoticket does for the tickets of its error groups.
+    Kept with the ticket's settings, so it holds through a reopen."""
+    _work_row(tx, work_id)
+    tables = tx.tables()
+    if tables.update("ticket_settings", {"work_id": work_id}, {"proof": 1}) is None:
+        tables.insert("ticket_settings", {"work_id": work_id, "proof": 1})
+    return work_record(tx, _work_row(tx, work_id))
+
+
+def _proof(tx: Tx, work_id: str) -> Any:
+    """The settings row of a ticket that closes only with proof, or None for any other."""
+    row = tx.tables().get("ticket_settings", {"work_id": work_id})
+    return row if row is not None and row["proof"] else None
+
+
+def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice]) -> WorkRecord:
+    """A done on a ticket that closes only with proof, on an agent's word: the fix lands, kept as its resolution and
+    said as a step, `Fix landed, watching`, and the ticket stays open in its column; one never taken is taken, so no
+    agent starts on it while it is watched. Its `landed` time starts the proof's watch."""
+    work_id = str(row["work_id"])
+    _ticket_changed(tx, work_id)
+    done = int(row["steps_done"] or 0) + 1
+    planned = None if row["steps"] is None else max(int(row["steps"]), done)
+    tx.execute(
+        "UPDATE work SET resolution=?, steps=?, steps_done=?, taken=COALESCE(taken, ?), "
+        "taken_by=COALESCE(taken_by, 'watching') WHERE work_id=?",
+        (resolution, planned, done, now(), work_id),
+    )
+    tx.execute(
+        "INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)",
+        (work_id, done, f"Fix landed, watching: {resolution or 'no resolution was given'}", now()),
+    )
+    tx.tables().update("ticket_settings", {"work_id": work_id}, {"landed": now()})
+    notices.append(Notice("watching", "Fix landed, watching: this ticket closes only with proof that the fix held, "
+                                      "so it stays open in its column until then."))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -1386,8 +1441,10 @@ TABLES = Tables(
     # tables dropped with map code-import and the other code-* verbs, code.analyzer.refactoring#1a (2026-10-15), and
     # an earlier version that still declares them makes them again, empty, so version 9 still reads the store; 17: the
     # tickets each ticket waits on, `after`, in a table of its own, read by dispatch's agent starter (UX review round 1,
-    # 2026-10-17), so version 9 still reads and writes the store
-    version=17,
+    # 2026-10-17), so version 9 still reads and writes the store; 18: whether a ticket closes only with proof and when
+    # its fix landed, `proof` and `landed` in ticket_settings, columns version 9 never names (code.scheduler.task#9,
+    # 2026-10-19), so it still reads and writes the store
+    version=18,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1398,7 +1455,9 @@ TABLES = Tables(
     ), Table(
         # each ticket's preferred agent and the person's hold, which hides it from agents and automatic starts
         'ticket_settings', place='metaform', key=('work_id',),
-        columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0)),
+        # and whether it closes only with proof, `proof`, and when its fix landed while it is watched, `landed`
+        columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
+                 Column('proof', 'int', default=0), Column('landed')),
     ), Table(
         'eligible', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('agents', 'json', required=True)),
@@ -1447,6 +1506,7 @@ DATA = Data(
                 plan_work,
                 step_work,
                 finish_work,
+                prove_work,
                 answer,
                 approve,
                 add_plan,

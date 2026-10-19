@@ -108,7 +108,8 @@ def completed(swarm):
 
 
 def pm_evidence(swarm, scenario, expected):
-    """Actual delivery to a newly connected PM, followed by a load of its retained context without duplicate mail."""
+    """A newly connected PM is told of the project updates in one inbox line, never their words, which stay readable
+    in the Project updates chat (code.dispatcher.agent#72); a load of its retained context names them again in no line."""
     wait_for(swarm, lambda: not any(one['state'] == 'running' for one in records('dispatch', 'agent_sessions')))
     # Session end is recorded before its runner releases admission. Respect the same actual ledger as a launch.
     wait_for(swarm, lambda: json.loads(swarm.run('dispatch', 'agents', '--json', cwd=swarm.folder).stdout)[
@@ -117,13 +118,15 @@ def pm_evidence(swarm, scenario, expected):
     started = json.loads(swarm.run('dispatch', 'system', '--json', cwd=swarm.folder, env=environment).stdout)
     observed = wait_for(swarm, lambda: next((one for one in swarm.entries() if 'pm_observation' in one), None))
     assert observed['role'] == 'triage'
-    assert all(text in observed['pm_observation'] for text in expected)
+    assert 'new in your inbox' in observed['pm_observation']
+    bodies = [text for text in expected if text != 'C(T)']  # C(T) is in every role's instructions too
+    assert not any(text in observed['pm_observation'] for text in bodies), 'No update body reaches its turn.'
+    updates = '\n'.join(one['text'] for one in records('dispatch', 'session_lines')
+                         if str(one['name']).startswith('notification:'))
+    assert all(text in updates for text in expected), 'Each update stays whole where it is read.'
     assert observed['capacity']['machine_used'] == 0
     assert observed['capacity']['machine_limit'] == 1
     session = observed['session']
-    delivered = [one for one in records('agents', 'receipts') if one['session_id'] == observed['runner_identity']
-                 and one['name'].startswith('dispatch:user-update:')]
-    assert delivered, 'The actual PM turn, rather than a saved notification, acknowledged delivery.'
     swarm.run('dispatch', 'stop', started['work_id'], f'session={session}', cwd=swarm.folder)
     wait_for(swarm, lambda: any(one['session_id'] == session and one['state'] == 'ended'
                                for one in records('dispatch', 'agent_sessions')))
@@ -137,10 +140,7 @@ def pm_evidence(swarm, scenario, expected):
                                          if 'PM_RECONNECTED:' in one.get('pm_observation', '')), None))
     assert again['session'] == session and again['pid'] != observed['pid']
     assert again['runner_identity'] == observed['runner_identity']
-    recipient = [one['recipient_context'] for one in swarm.entries()
-                 if one.get('role') == 'triage' and 'recipient_context' in one]
-    for component in delivered:
-        assert sum(component['component']['text'] in text for text in recipient) == 1
+    assert 'new in your inbox' not in again['pm_observation'], 'Updates its inbox line named are not new again.'
     assert not swarm.questions(), 'The PM receives informational updates without introducing an approval wait.'
 
 
@@ -408,10 +408,6 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     swarm.start(FAKE_SWARM_SCENARIO='communications', FAKE_SWARM_STATE=str(swarm.swarm_state))
     wait_for(swarm, lambda: all(any(flag in one for one in swarm.entries())
                               for flag in ('gc_ready', 'worker_ready', 'specialist_ready')))
-    swarm.run('memory', 'delete_observations', json.dumps([{'entityName': 'route-grounding',
-        'observations': ['The caller retains ownership of its requested result.']}]), cwd=swarm.folder)
-    swarm.run('memory', 'add_observations', json.dumps([{'entityName': 'route-grounding',
-        'contents': ['MEMORY_CORRECTION: restore the retained result before returning to the caller.']}]), cwd=swarm.folder)
     (swarm.swarm_state / 'peer-note').touch()
     wait_for(swarm, lambda: any('peer_note_sent' in one for one in swarm.entries()))
     early = swarm.entries()
@@ -450,8 +446,6 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     received = next(one['interrupted_recipient'] for one in seen if 'interrupted_recipient' in one)
     assert received['assignment']['pending_direction']
     assert 'NEW_GC_DIRECTION' in received['text'] and 'RETAINED_SPECIALIST_STATE' in received['text']
-    wait_for(swarm, lambda: any('MEMORY_CORRECTION:' in json.dumps(one.get('memory_update_read', {}))
-                               for one in swarm.entries() if one['role'] == 'investigator'))
     assert any('GC_SWARM_BROADCAST' in one.get('recipient_context', '') for one in seen
                if one['role'] == 'implementer')
     peer_rows = [json.loads(one['text']) for one in records('dispatch', 'session_lines') if one['kind'] == 'peer']

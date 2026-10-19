@@ -1,0 +1,1 @@
+gate-unwanted-enforcement-behind-one-switch [global]: Use when switching a lock or sandbox off, not deleting it. metaform-development body: Removing a module or feature / Delete it; never switch it off (the person's rule).

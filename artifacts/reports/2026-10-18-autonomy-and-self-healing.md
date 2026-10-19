@@ -291,7 +291,7 @@ Self-healing
 - Proven fixes and reopening (code.scheduler.task#9), queued.
 - Onboarding does not yet give a project its logging and point the log watcher at it (not filed).
 - The phone check repeats after every server restart though nothing changed (not filed).
-- The cap on tickets autoticket keeps open counts held tickets but not a ticket dispatch holds for itself (not filed).
+- A ticket on dispatch's own hold took one of autoticket's open slots; closed by code.scheduler.task#9's resting().
 - An MCP server keeps the code it started with: the system agent's own server ran Oct 17 code all day, so memory
   writes were refused and dispatch notes failed until it reconnected (section 7, restart after a code fix).
 
@@ -314,8 +314,8 @@ Roundtable mode
 - The bubble rebuild's review found four faults, being fixed: bubbles draw over windows and menus (z-index 40 against
   26 and 30); a mascot line longer than three lines is cut without a sign; the live region screen readers use is
   hidden; a spent line comes back after a 2D/3D switch (the #c7 coordinator reports this one fixed in bubble3d.js).
-- The bubble dimming test fails by 0.011 to 0.015 every run, with or without the 3D pivot work: the page puts the
-  bubble's head at the eye plus a lift scaled by the figure's size, the test at the eye alone (bubble3d.js:339-344).
+- The bubble dimming test that failed by about 0.01 was fixed (graphical#bd) and then replaced by the word-bubble test
+  of graphical#c7; nothing open.
 
 Other
 - Intake ticket left looking untouched when its work ran elsewhere (code.router.assignment#e).

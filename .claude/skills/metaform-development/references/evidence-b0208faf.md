@@ -1,0 +1,1 @@
+"but only when they arrive to work on a node that has memory they have not read yetthey also should be cleaning up older less useful memories" (Rich, 2026-10-19). Agent note: "Unread notice persists while read_unread returns nothing (seen 2026-10-18)" at code.graph.knowledge has about 40 observations, mostly one-off sightings.

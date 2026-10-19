@@ -170,7 +170,7 @@ Source: [context.py](../../src/metaform/context.py), [module.py](../../src/metaf
 
 ## Use the same public services as shipped modules
 
-The public base is `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.prompt_files` and `metaform.home`. Shipped modules and user modules use the same services, BASE-004. This gives extensions the existing project and transport behavior without importing private chassis code or rebuilding those resources. Importing these public names creates no project, database or process state. Services resolve the active context when called.
+The public base is `metaform.module`, `metaform.settings`, `metaform.data`, `metaform.events`, `metaform.prompt_files`, `metaform.home`, `metaform.outline` and `metaform.finish_xml` (the map's Markdown and XML writers), `metaform.jev` (typed decisions from Jev, the optional decision model), `metaform.frames` (the tunnel wire format) and `metaform.skills` (the skill registry, BASE-059). Shipped modules and user modules use the same services, BASE-004. This gives extensions the existing project and transport behavior without importing private chassis code or rebuilding those resources. Importing these public names creates no project, database or process state. Services resolve the active context when called.
 
 Import the following functions from `metaform.module`:
 

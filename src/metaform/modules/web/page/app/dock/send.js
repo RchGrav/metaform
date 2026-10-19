@@ -88,8 +88,9 @@ export async function deliverQueued(session) {
   drawHelpdesk();
 }
 /* A start or a send that failed: why, in the chat, and every message still waiting back in the box, so nothing
- * written is lost. */
-export function startFailed(reason, next = null) {
+ * written is lost. `system` when the start that failed was the system agent's, the one a question asked of the mascot
+ * waits on; any other agent's failure leaves that question waiting. */
+export function startFailed(reason, next = null, system = false) {
   // what the person wrote, without the line about their click, which was never theirs to see in the box
   const left = DOCK.queue.filter(item => item.state !== 'sent');
   const waiting = left.map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
@@ -100,7 +101,7 @@ export function startFailed(reason, next = null) {
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
   dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
   // a question asked of the mascot that waited on this start is answered too
-  import('/page/app/figures/ask.js').then(part => part.askFailed());
+  if (system) import('/page/app/figures/ask.js').then(part => part.askFailed());
 }
 export const chatButton = (given, label) => h('button', {class: 'chat', title: `Talk with an agent about ${label}`,
   onclick: event => { event.stopPropagation(); talkAbout(given, label); }}, 'Chat');

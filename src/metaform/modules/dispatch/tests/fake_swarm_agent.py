@@ -485,8 +485,6 @@ def turn(ident, text):
         elif SCENARIO == 'compaction' and ROLE == 'gc':
             compacted_gc(held['stage'], text)
         elif SCENARIO == 'communications':
-            if held['stage'] and 'Read applicable unread contents with' in text:
-                log(memory_update_read=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
             communications(assignment, held['stage'], text)
         elif held['stage'] == 99 or assignment['state'] in ('waiting', 'suspended', 'queued'):
             log(maintenance_turn=True)

@@ -28,6 +28,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import traceback
 import uuid
 from collections import OrderedDict
@@ -102,9 +103,11 @@ from metaform.module import (
     tool_arguments,
 )
 from metaform.module import (
+    noted as with_notices,
+)
+from metaform.module import (
     withheld as withhold,
 )
-from metaform.results import noted as with_notices
 from metaform.settings import refuse_held_control
 
 from . import catalog, consent, shaping
@@ -536,6 +539,9 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any], session: str
     return False, (['\n'.join(notices)] if notices else []) + [result]
 
 
+CODE_LOADED = time.time()  # when this server's code was loaded: each fault it raises says so, `loaded`, for autoticket
+
+
 def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> list[str] | None:
     """Publish `fault.raised`, for autoticket to file as a ticket to fix: a module's verb that failed, or feedback;
     `work_id` names the ticket of the agent whose call it was. Returns the tickets it was filed or counted on, empty
@@ -544,6 +550,7 @@ def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> list[str] | N
         source = context('mcp', folder, project=str(project) if project else None, surface='mcp')
         if source.project is None:
             return None
+        payload = {**payload, 'loaded': CODE_LOADED}
         taken = [cast(dict[str, Any], one['result']) for one in events.publish('fault.raised', payload, source)
                  if one.get('status') == 'completed' and isinstance(one.get('result'), dict)
                  and cast(dict[str, Any], one['result']).get('taken')]
@@ -597,9 +604,10 @@ HOST_KEEPS = 2048
 def fallback_skills(folder: Path, client: str | None = None) -> list[dict[str, Any]]:
     """The discoverable skills a connecting harness is told of, BASE-059: none with skill_index off, or auto where a
     completed native deployment already provides them."""
-    from metaform import install, skills
+    from metaform import skills
+    from metaform.module import skills_deployed
     mode = settings.value('skill_index', folder)
-    if mode == 'off' or (mode == 'auto' and client and install.skills_deployed(client)):
+    if mode == 'off' or (mode == 'auto' and client and skills_deployed(client)):
         return []
     return skills.listing(discoverable=True)
 
@@ -1357,9 +1365,9 @@ PURPOSES_KEY = 'announce:purposes'
 
 def listed_names(folder: Path, session: str | None) -> tuple[str, ...]:
     """The names a session is listed now, MCP-003: metaform_catalog and the tools of the category it has open, or the
-    tools its role starts with while none is, and beside either the memory category's tools, `catalog.BESIDE`; for a
-    listing that names no session, every tool its role is given, since no category it opens could change what it is
-    listed."""
+    tools its role starts with while none is, and beside either the memory category's tools, `catalog.BESIDE`, and
+    the tools agents reach each other with and those its role or assignment needs at hand, `catalog.beside_tools`; for a listing that names no session, every tool
+    its role is given, since no category it opens could change what it is listed."""
     given = given_tools(folder)
     if session is None:
         return (catalog.CATALOG, *given)
@@ -1368,7 +1376,8 @@ def listed_names(folder: Path, session: str | None) -> tuple[str, ...]:
     held = groups.get(opened, []) if opened else [name for name in catalog.first() if name in given]
     beside = [name for category in catalog.BESIDE if category != opened for name in groups.get(category, [])
               if name not in held]
-    return (catalog.CATALOG, *held, *beside)
+    reach = [name for name in catalog.beside_tools() if name in given and name not in held and name not in beside]
+    return (catalog.CATALOG, *held, *beside, *reach)
 
 
 def relisted(session: str | None, opened: str | None) -> None:

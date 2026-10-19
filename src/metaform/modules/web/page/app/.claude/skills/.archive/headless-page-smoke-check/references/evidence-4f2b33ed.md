@@ -1,0 +1,3 @@
+tool_result: "status 200\ndockTab 1 helpdesk 1\nhelpdesk hidden False compose hidden False\nwarning: THREE.WebGLRenderer: KHR_parallel_shader_compile extension not supported."
+assistant: "The imports all resolve; those 14 were false alarms from my checker. Loading the live page headless to look for errors."
+assistant: "The page itself is fine. I loaded your page headless: no script errors, the chat opens, and the message box is there."

@@ -167,10 +167,12 @@ class Around:
             lines.append(f'{label.ljust(width)}  {number.rjust(digits)} {rest}' +
                          ''.join(f' · {part}' for part in parts[1:]))
         everyone = (self.address, *self.above, *self.below)
-        legends = [legend(count.legend, [one for one in everyone if count.at.get(one, (0, 0, 0))[1]] or
+        legends = [self.unread_line(count) if count.revisions else
+                   legend(count.legend, [one for one in everyone if count.at.get(one, (0, 0, 0))[1]] or
                           [one for one in everyone if count.at.get(one, (0, 0, 0))[0]])
                    for count in self.counts.values()
                    if count.legend and any(any(count.at.get(one, (0, 0, 0))[:2]) for one in everyone)]
+        legends = [one for one in legends if one]
         reads = ' · '.join(f'{name}: {read}' for _, name, read in self.own)
         closing = _prompt('around_read', reads=reads) if reads else ''
         return self.ctx.calls('\n'.join([*lines, *legends, *([closing] if closing else [])]))
@@ -203,9 +205,16 @@ class Around:
                     said.append(line)
         for kind, addresses in revised.items():
             count = self.counts[kind]
-            if count.legend:
-                said.append(self.ctx.calls(legend(count.legend, addresses)))
-        return said
+            if count.legend and self.address in addresses:
+                said.append(self.ctx.calls(self.unread_line(count)))
+        return [one for one in said if one]
+
+    def unread_line(self, count: Any) -> str:
+        """The one line a count of unread records gives, memory's: only while the node read holds records unread in
+        this session's context, naming that node alone; '' when all there is read. Nothing is said of a neighbour's
+        unread here: the tree counts them, and the agent is told when it works there (2026-10-19,
+        code.dispatcher.agent#72)."""
+        return legend(count.legend, [self.address]) if count.at.get(self.address, (0, 0, 0))[1] else ''
 
 
 def legend(said: str, held: list[str]) -> str:

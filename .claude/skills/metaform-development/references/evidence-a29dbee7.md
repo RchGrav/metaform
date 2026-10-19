@@ -1,0 +1,1 @@
+"OK, we need to fix your context being blasted you are burnning uyp my account and ruining your context" (Rich, 2026-10-19). Agent call: map_work op=list open=true fields=["id","map.item","map.title","taken","held"] limit=300, after a view=count read showing total 37.

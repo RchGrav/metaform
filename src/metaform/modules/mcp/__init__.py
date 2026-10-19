@@ -94,9 +94,12 @@ settings.choice('mcp_search_fetch', ['remote', 'always', 'never'], 'remote', lab
                         'one. Over stdio a local agent has the real tools (map_search, memory_search_nodes), so remote '
                         'leaves the two generic ones out there.')
 settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgrade recovery',
-                help='On a newer store, relay this connection to changed code on disk, or require a manual restart.',
-                details='Relay preserves the host connection and retries calls refused before dispatch. '
-                        'Manual returns the schema error. Unchanged package code never starts a replacement.')
+                help='On a newer store or changed code on disk, relay this connection to the code on disk, or '
+                     'require a manual restart.',
+                details='Relay preserves the host connection and retries calls refused before dispatch, and serves a '
+                        'tool call made after the package code on disk changed from that code. Manual returns the '
+                        'schema error and serves the code it started with. Unchanged package code never starts a '
+                        'replacement.')
 settings.choice('skill_index', ['auto', 'on', 'off'], 'auto', label='Skill index at MCP connect',
                 help='auto lists discoverable skills unless this harness has a recorded native deployment; '
                      'on always lists them and off omits the index.',

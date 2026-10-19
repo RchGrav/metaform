@@ -1,4 +1,6 @@
 """A working figure holds its place and shares its label gaze with its own camera."""
+import sys
+
 import pytest
 
 from metaform.modules.web.tests.test_web import (  # noqa: F401 -- shared fixtures
@@ -606,3 +608,235 @@ def test_the_work_camera_shows_a_node_with_its_agents_and_all_the_work_each_in_v
     assert every['agents'] == 3 and every['out'] == [] and every['hidden'] == [], every
     assert every['apart'] > 30, every
     assert problems == []
+
+
+ROUNDTABLE_PROBE = """async () => {
+    const THREE = await import('three');
+    const {stageView, TABLE} = await import('/page/app/roundtable/stage.js');
+    const {LOOK} = await import('/page/app/figures/bubble3d.js');
+    const {eyeOf} = await import('/page/agents3d.js');
+    await new Promise(requestAnimationFrame);
+    const view = stageView(), camera = view.camera, [left, top, right, bottom] = view.area;
+    const at = new THREE.Vector3(), gaze = new THREE.Vector3(), forward = new THREE.Vector3();
+    const toScreen = point => {
+        const seen = point.clone().project(camera);
+        return [left + (seen.x + 1) / 2 * (right - left), top + (1 - seen.y) / 2 * (bottom - top)];
+    };
+    const seats = view.meshes.map((mesh, n) => {
+        eyeOf(mesh, at, gaze);
+        at.y += LOOK.lift * mesh.scale.x;
+        mesh.getWorldDirection(forward);
+        const toward = camera.position.clone().sub(mesh.position).normalize();
+        const el = [...document.querySelectorAll('#bubbles .wbubble')].find(one => one.dataset.who === view.speakers[n].id
+            && one.style.display !== 'none');
+        let tip = null;
+        if (el) {
+            const tail = el.querySelector('[id^="wbubble-tail-"]');
+            const m = (tail.getAttribute('d') || '').match(/^M(-?[0-9.]+),(-?[0-9.]+)/);
+            const point = m && new DOMPoint(Number(m[1]), Number(m[2])).matrixTransform(tail.getScreenCTM());
+            tip = point ? [point.x, point.y] : null;
+        }
+        return {name: view.names[n], middle: toScreen(mesh.position), head: toScreen(at),
+            facing: forward.angleTo(toward) * 180 / Math.PI, visible: mesh.visible && Boolean(mesh.parent),
+            want: view.speakers[n].want, tip, opacity: el ? Number(el.style.opacity) : 0,
+            words: el ? el.querySelector('.said').textContent : ''};
+    });
+    return {seats, area: view.area, floor: TABLE.floor, next: TABLE.next, state: TABLE.state,
+        hands: [...document.querySelectorAll('.rt-seat.hand')].length};
+}"""
+
+
+@pytest.mark.req('VIEW-035')
+@pytest.mark.timeout(600)
+def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_question_until_it_is_answered(
+        run, web, mapped, browser, monkeypatch):  # noqa: F811 -- imported fixtures keep their names for discovery
+    """code.interface.graphical#131: a table opened from the selected part, run by the Roundtable 2 engine with its own
+    fakes (its stub OpenRouter and Jev, its fake ACP agent), as the roundtables module's tests run it. The map sinks
+    back and the seats stand in an arc facing the person; the floor's bubble points at its head; a veto fades; the
+    ideas, rankings and summary grow above the arc as they come; hold and end work; leaving puts the map back."""
+    import itertools
+    import math
+    import time
+
+    from metaform.modules.roundtables.tests import test_roundtables as rt
+    if not rt.COMMAND.is_file():
+        pytest.skip(f'the Roundtable 2 engine is not at {rt.ENGINE}')
+    for key, value in {'ROUNDTABLE_HOME': str(mapped.parent / 'engine'), 'OPENROUTER_API_KEY': 'stub-key',
+                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {rt.ENGINE / "dev" / "fake_agent.py"}',
+                       'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
+                       'ROUNDTABLE_REPORT_MODEL': 'stub/reporter',
+                       'FAKE_ACP_LOG': str(mapped.parent / 'fake-acp.log')}.items():
+        monkeypatch.setenv(key, value)
+    held = rt.serve(monkeypatch, rt.stubbed(pace=1.0))
+    try:
+        run('enable', 'dispatch', cwd=mapped)
+        run('set', '--jev', cwd=mapped)
+        run('set', f'--roundtables-engine={rt.COMMAND}', cwd=mapped)
+        run('set', '--roundtables-seats=stub/vega,claude/haiku,stub/orion', cwd=mapped)
+        started(run)
+        page, problems, _ = opened(browser, web, plain=True)
+        page.wait_for_function('() => window.metaform.figures !== undefined')
+        page.evaluate("""async () => {
+            const {S} = await import('/page/app/core/reads.js');
+            const {select} = await import('/page/app/selection/select.js');
+            const id = [...S.elements.values()].find(one => one.element.address === 'code.alarm.audible').element.id;
+            select(id, true);
+        }""")
+        # the camera at rest on the selected part, the layout held, so what leaving gives back can be compared
+        page.evaluate("async () => (await import('/page/app/map3d/graph3d.js')).pauseLayout()")
+        assert page.evaluate("""async () => {
+            const {G} = await import('/page/app/map3d/graph3d.js');
+            const {FLIGHT} = await import('/page/app/camera/flight.js');
+            for (let tries = 0; tries < 60; tries++) {
+                const at = G.camera().position.clone();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                if (!FLIGHT.on && at.distanceTo(G.camera().position) < 1e-6) return true;
+            }
+            return false;
+        }"""), 'the camera came to rest'
+        before = page.evaluate("""async () => {
+            const {G} = await import('/page/app/map3d/graph3d.js');
+            const at = G.camera().position;
+            return {camera: [at.x, at.y, at.z], filter: getComputedStyle(document.querySelector('#stage')).filter};
+        }""")
+        # the ideas, the rankings and the answer noted as each first shows, above the arc
+        page.evaluate("""() => {
+            window.__arrived = [];
+            new MutationObserver(() => {
+                for (const name of ['ideas', 'rankings', 'answer']) {
+                    const box = document.querySelector(`.rt-${name}`);
+                    if (box && !box.hidden && !window.__arrived.includes(name)) window.__arrived.push(name);
+                }
+            }).observe(document.body, {subtree: true, attributes: true, attributeFilter: ['hidden'], childList: true});
+        }""")
+        page.wait_for_selector('#work .roundtablebtn')
+        page.evaluate("() => document.querySelector('#work .roundtablebtn').click()")  # the panel redraws as it loads
+        page.wait_for_function('() => document.querySelector(".rt-setup input").value.includes("stub/orion")')
+        sunk = page.evaluate("""() => ({sunk: document.querySelector('#big3d').classList.contains('roundtable'),
+            filter: getComputedStyle(document.querySelector('#stage')).filter})""")
+        assert sunk['sunk'] and 'blur' in sunk['filter'] and 'brightness' in sunk['filter'], sunk
+        assert 'blur' not in before['filter'], before
+        page.fill('.rt-setup textarea', 'How should the alarm tell the cook the dish is ready?')
+        # each frame Vega has the floor with its vetoed turn: how much its bubble wants to show, and shows
+        page.evaluate("""async () => {
+            window.__stage = await import('/page/app/roundtable/stage.js');
+            const {SEATS} = await import('/page/app/figures/bubble3d.js'), {TABLE} = window.__stage;
+            window.__veto = [];
+            const frame = () => {
+                const n = TABLE.names.indexOf('Vega');
+                if (n >= 0 && TABLE.floor === n && document.querySelector('.rt-transcript .vetoed')) {
+                    const el = [...document.querySelectorAll('#bubbles .wbubble')].find(one =>
+                        one.dataset.who === SEATS.list[n].id);
+                    window.__veto.push([SEATS.list[n].want,
+                        el && el.style.display !== 'none' ? Number(el.style.opacity) : 0]);
+                }
+                if (!TABLE.ended) requestAnimationFrame(frame);
+            };
+            requestAnimationFrame(frame);
+        }""")
+        page.click('.rt-setup .rt-start')  # the default seats, roundtables_seats
+
+        # three figures in an arc in view, facing the person; the floor's bubble tail on its head
+        page.wait_for_function('() => window.__stage.TABLE.floor >= 0', timeout=120000)
+        time.sleep(0.6)  # the floor's step forward and its bubble eased into place
+        probe = page.evaluate(ROUNDTABLE_PROBE)
+        left, top, right, bottom = probe['area']
+        assert [one['name'] for one in probe['seats']] == ['Vega', 'Haiku', 'Orion'], probe
+        for one in probe['seats']:
+            assert one['visible'] and left < one['middle'][0] < right and top < one['middle'][1] < bottom, one
+            assert one['facing'] < 25, one
+        xs = [one['middle'][0] for one in probe['seats']]
+        assert xs == sorted(xs) and xs[-1] - xs[0] > (right - left) * 0.5, xs  # across the screen
+        speaking = probe['seats'][probe['floor']]
+        assert speaking['tip'] and math.dist(speaking['tip'], speaking['head']) < 6, speaking
+        assert speaking['words'], speaking
+
+        # hold, and the table holds after the turn in flight; continue runs it again
+        page.click('.rt-chair .rt-hold')
+        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "held"', timeout=60000)
+        assert page.is_enabled('.rt-chair .rt-continue') and not page.is_enabled('.rt-chair .rt-hold')
+        page.click('.rt-chair .rt-continue')
+        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "running"',
+                               timeout=60000)
+
+        # Vega's second turn is vetoed: struck in the transcript, and it fades from its bubble while Vega has the floor,
+        # recorded frame by frame since the table opened
+        faded = page.evaluate("() => window.__veto")
+        assert len(faded) > 2 and all(b[0] <= a[0] for a, b in itertools.pairwise(faded)), faded
+        assert faded[-1][0] < 0.5 < faded[0][0] and faded[-1][1] < faded[0][1], faded
+        assert page.evaluate("() => document.querySelector('.rt-transcript .vetoed').textContent").startswith('Vega')
+
+        # the ideas, then each seat's ranking, then the host's summary, which answers the question; the table ends
+        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "ended"', timeout=180000)
+        board = page.evaluate("""() => ({arrived: window.__arrived,
+            ideas: [...document.querySelectorAll('.rt-ideas li')].map(li => li.dataset.id),
+            rankings: [...document.querySelectorAll('.rt-rankings li')].map(li => li.dataset.seat),
+            answer: document.querySelector('.rt-answertext').textContent,
+            transcript: document.querySelectorAll('.rt-transcript li').length,
+            chair: [...document.querySelectorAll('.rt-chair button:not(.rt-leave)')].some(one => !one.disabled)})""")
+        assert board['arrived'] == ['ideas', 'rankings', 'answer'], board
+        assert board['ideas'][:2] == ['I1', 'I2'] and sorted(board['rankings']) == ['Haiku', 'Orion', 'Vega'], board
+        assert 'summarises' in board['answer'] and board['transcript'] > 4 and not board['chair'], board
+
+        # leaving puts the map back as it was
+        page.click('.rt-chair .rt-leave')
+        page.wait_for_function(f"() => getComputedStyle(document.querySelector('#stage')).filter === '{before['filter']}'")
+        after = page.evaluate("""async () => {
+            const {G} = await import('/page/app/map3d/graph3d.js');
+            const {SEATS} = await import('/page/app/figures/bubble3d.js');
+            const at = G.camera().position;
+            return {camera: [at.x, at.y, at.z], filter: getComputedStyle(document.querySelector('#stage')).filter,
+                sunk: document.querySelector('#big3d').classList.contains('roundtable'), on: SEATS.on,
+                shown: !document.querySelector('#roundtable').hidden,
+                seats: [...document.querySelectorAll('#bubbles .wbubble')].filter(one => (one.dataset.who || '').startsWith(
+                    '\\u0000seat') && one.style.display !== 'none').length};
+        }""")
+        assert after == {'camera': after['camera'], 'filter': before['filter'], 'sunk': False, 'on': False,
+                         'shown': False, 'seats': 0}, after
+        assert all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(after['camera'], before['camera'])), after
+
+        # a second table, its seats chosen, from the T key: the chair ends it while it runs
+        page.focus('#stage')
+        page.keyboard.press('t')
+        page.wait_for_selector('.rt-setup:not([hidden])')
+        page.fill('.rt-setup textarea', 'Is a second alarm needed?')
+        page.fill('.rt-setup input', 'stub/vega, stub/orion')
+        page.click('.rt-setup .rt-start')
+        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "running"',
+                               timeout=120000)
+        assert page.evaluate('async () => (await import("/page/app/roundtable/stage.js")).TABLE.names') == [
+            'Vega', 'Orion']
+        # leaving a table that runs and coming back to it shows its seats again: each figure in the stage's scene
+        page.click('.rt-chair .rt-leave')
+        page.wait_for_function("() => document.querySelector('#roundtable').hidden")
+        page.focus('#stage')
+        page.keyboard.press('t')
+        page.wait_for_selector('#roundtable:not([hidden])')
+        back = page.evaluate("""async () => {
+            const {stageView} = await import('/page/app/roundtable/stage.js');
+            await new Promise(requestAnimationFrame);
+            const view = stageView();
+            return {seats: view.meshes.length, inScene: view.meshes.every(mesh => mesh.parent !== null),
+                labels: [...document.querySelectorAll('.rt-seat')].filter(one => !one.hidden).length,
+                setup: !document.querySelector('.rt-setup').hidden};
+        }""")
+        assert back == {'seats': 2, 'inScene': True, 'labels': 2, 'setup': False}, back
+
+        # a burst of the roundtables module's changes for another table reads nothing: no table, no map
+        reads = []
+        page.on('request', lambda sent: reads.append(sent.url) if '/api/' in sent.url else None)
+        page.evaluate("""async () => {
+            const {changed} = await import('/page/app/live/stream.js');
+            const {S} = await import('/page/app/core/reads.js');
+            for (let n = 0; n < 50; n++) await changed({topic: 'map.changed', payload: {project: S.project,
+                tables: ['roundtables.events', 'roundtables.tables'], kinds: ['roundtables', 'roundtables:another']}});
+        }""")
+        page.wait_for_timeout(500)
+        assert not [url for url in reads if '/api/roundtable' in url or '/api/layer' in url], reads
+        page.click('.rt-chair .rt-end')
+        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "ended"', timeout=180000)
+        page.keyboard.press('Escape')
+        assert page.evaluate("() => document.querySelector('#roundtable').hidden"), 'Escape leaves the stage'
+        assert problems == []
+    finally:
+        held.shutdown()

@@ -1,0 +1,1 @@
+{"project":"metaform","item":"code.suite.test#e","text":["Yes, take click_join. My block's waits are already synchronous (window.__dispatch / window.__dock / window.__ask). Please hold the edit until I tell you I'm clear: my 3 runs plus 2 negative runs read test_web.py, about 5 more minutes. I'll note you when done."]}

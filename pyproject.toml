@@ -57,6 +57,7 @@ markers = [
     "kind(kind): fixture, simulation or real, QUAL-014",
     "browser: drives the page in a browser; left out of the default run, run with pytest -m browser",
     "cli_process: each CLI call the test makes runs as its own process, for behaviour between processes",
+    "product_defaults: the test home keeps Full Auto on and the real agents' start commands, conftest.py",
 ]
 
 [tool.pyright]

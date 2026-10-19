@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from metaform.data import Node, StoreError
-from metaform.module import Stop, context
+from metaform.module import Stop, context, work_reads
 from metaform.modules.orchestration import assess, change
 from metaform.modules.orchestration import state as implementation
 from metaform.modules.orchestration.state import SERVICE, Orchestration, fingerprint, work_changed
@@ -301,6 +301,47 @@ def test_strict_publication_reads_latest_mode_and_new_user_direction_still_appli
     assert path.read_text() == 'New user instruction.'
     with pytest.raises(Stop, match='advanced'):
         change(ctx(project, 'fqc', content='Stale assessment.', base=fingerprint('Old approach.'), reason='Stale.'))
+
+
+def test_an_amendment_changes_one_record_and_never_erases_the_others(project):
+    _, folder = project
+    path = folder / 'spec.md'
+    records = '# Timer\n\n### TIM-001 Show the countdown\n\nAlways visible.\n\n### TIM-002 Ring once\n\nOne alarm.\n'
+    questions = '\n## Open questions\n\nNone yet.\n'
+    path.write_text(records + questions, encoding='utf-8')
+    root(project, specification={'uri': 'file:spec.md'})
+    review = assess(ctx(project, 'gc-one', summary='Review the alarm.', key='r'))
+    SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
+    amendment = '### TIM-003 Keep the selection\n\nAdjusting the duration keeps the selection.\n'
+    change(ctx(project, 'fqc', section='TIM-003', content=amendment, reason='Adds the record.', key='add'))
+    assert path.read_text(encoding='utf-8') == records + '\n' + amendment + questions
+    replaced = change(ctx(project, 'fqc', section='TIM-002', content='### TIM-002 Ring twice\n\nTwo alarms.\n',
+                          reason='Replaces the record.', key='replace'))
+    assert path.read_text(encoding='utf-8') == records.replace('Ring once\n\nOne alarm.', 'Ring twice\n\nTwo alarms.') \
+        + '\n' + amendment + questions
+    told = next(one['payload']['body'] for one in SERVICE.pending(ctx(project)) if one['kind'] == 'user_message'
+                and one['payload'].get('change_id') == replaced['change_id'])
+    assert '@@ TIM-002 Ring twice @@' in told and '+Two alarms.' in told and '-One alarm.' in told
+    assert 'TIM-001' not in told and 'None yet.' not in told
+    kept = path.read_text(encoding='utf-8')
+    for section, content, refusal in (
+            ('TIM-02', '### TIM-002 Ring twice\n\nThree alarms.\n', "section='TIM-002 Ring twice'"),
+            ('TIM-002', '### TIM-002 Ring twice\n\nTwo.\n\n' + amendment, 'holds 2 records'),
+            ('TIM-002', '### TIM-001 Show the countdown\n\nHidden.\n', 'TIM-001 Show the countdown')):
+        with pytest.raises(Stop) as refused:
+            change(ctx(project, 'fqc', section=section, content=content, reason='Duplicates a record.', key=section))
+        assert refusal in f'{refused.value} {refused.value.next_step}'
+        assert path.read_text(encoding='utf-8') == kept
+    with pytest.raises(Stop, match='drop 4 of its records') as refused:
+        change(ctx(project, 'fqc', content=amendment, reason='The amendment alone.', key='whole'))
+    assert "section='TIM-003 Keep the selection'" in refused.value.next_step
+    assert path.read_text(encoding='utf-8') == kept
+    with pytest.raises(Stop, match='TIM-002 Ring twice'):
+        change(ctx(project, 'fqc', content='# Timer\n\n' + amendment, removing=['TIM-001', 'Open questions'],
+                   reason='Unnamed.', key='w'))
+    change(ctx(project, 'fqc', content='# Timer\n\n' + amendment, removing=['TIM-001', 'TIM-002', 'Open questions'],
+               reason='Removes the three records it names.', key='named'))
+    assert path.read_text(encoding='utf-8') == '# Timer\n\n' + amendment
 
 
 def test_stopped_descendants_and_interrupt_direction_survive_recovery(project, monkeypatch):
@@ -714,6 +755,36 @@ def test_sessionless_agent_is_not_classified_as_new_user_instruction(project, mo
     assert spec.read_text(encoding='utf-8') == 'Keep the requested timer behavior.'
 
 
+@pytest.mark.parametrize('given', [({'uri': 'file:missing.md'}), 'None'])
+def test_change_to_a_missing_specification_file_stops_with_an_answer(project, given):
+    gc = root(project)
+    with pytest.raises(Stop, match='No specification file at'):
+        change(ctx(project, assignment=gc['assignment_id'], content='Revised.', reason='The file is not there.',
+                   specification=given))
+
+
+@pytest.mark.parametrize('given', [None, {'kind': 'file'}, {'uri': ''}])
+def test_change_on_a_ticket_without_a_specification_revises_its_task(project, given):
+    store, folder = project
+    gc = root(project)
+    review = assess(ctx(project, 'gc-one', summary='Review the timer.', key='r'))
+    SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
+    changed = change(ctx(project, 'fqc', content='Preserve countdown, alarm and selection.',
+                         reason='Keeping the selection serves the person setting the timer.', specification=given))
+    assert changed['state'] == 'published'
+    assert changed['specification']['uri'] == f'work:{gc["work_id"]}'
+    assert changed['before_content'] == 'Preserve countdown and alarm behavior.'
+    assert store.ticket(gc['work_id']).work.task == 'Preserve countdown, alarm and selection.'
+    assert not (folder / 'None').exists()
+    told = next(one['payload']['body'] for one in SERVICE.pending(ctx(project)) if one['kind'] == 'user_message'
+                and one['payload'].get('change_id') == changed['change_id'])
+    assert 'Preserve countdown, alarm and selection.' in told and '@@' not in told  # a task is told whole, not as a diff
+    again = change(ctx(project, 'fqc', content='Preserve countdown, alarm, selection and volume.',
+                       reason='The volume too.', key='second'))
+    assert again['previous_revision'] == changed['current_revision']
+    assert store.ticket(gc['work_id']).work.task == 'Preserve countdown, alarm, selection and volume.'
+
+
 def test_same_finding_from_two_reviews_at_one_node_gives_one_open_ticket_with_both_evidence(project):
     gc = root(project)
     SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
@@ -784,15 +855,116 @@ def test_result_sent_twice_reaches_its_recipient_once(project, monkeypatch):
     assert [message['body'] for _, message in actual.chat] == ['Timer outcome delivered.'] * 2
 
 
-def test_review_superseded_by_persons_decision_closes_without_filing_work(project):
+def test_review_closes_unfiled_only_for_a_direction_about_its_part(project, monkeypatch):
+    read = []
+    rows = implementation.TableTx.rows
+    monkeypatch.setattr(implementation.TableTx, 'rows', lambda tx, table, *a, **k: read.append((table, a, k)) or
+                        rows(tx, table, *a, **k))
+
+    _, folder = project
+    (folder / 'spec.md').write_text('Old approach.', encoding='utf-8')
+
+    def reviewed(session, said, finding, ordered=False):
+        gc = root(project, session=session, **({'specification': {'uri': 'file:spec.md'}} if ordered else {}))
+        SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+        review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, session)
+        if ordered:
+            change(context('orchestration', folder, project='proj', surface='web', nouns={
+                'assignment': gc['assignment_id'], 'content': 'New approach.',
+                'reason': 'The person decided.', 'user_instruction': said}))
+        else:
+            SERVICE.directed(ctx(project), session, {'kind': 'user_direction', 'id': session,
+                                                     'at': implementation.now(), 'text': said,
+                                                     'from': {'kind': 'user'}})
+        read.clear()
+        returned = SERVICE.returned(ctx(project), review['work_id'], 'The alarm could be louder.',
+                                    findings=[{'summary': finding}])
+        assert returned['state'] == 'returned' and project[0].ticket(review['work_id']).work.done
+        assert not [one for one in read if one[0] == 'changes']
+        held = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])
+        return [one for one in held['pending_direction'] if one.get('kind') == 'review_finding'
+                and one.get('reviewed_assignment_id') == review['assignment_id']]
+
+    # the person's word about another part is not a decision about this one: the finding is filed
+    assert reviewed('gc-one', 'Leave code.loop.tick as it is.', 'Make the alarm louder.')
+    # their word about the reviewed part is: the review closes without filing
+    assert not reviewed('gc-two', 'Keep code.timer.kitchen as it is.', 'Make the countdown visible.')
+    # the person speaks in short names: another part's leaves the finding filed, the reviewed part's closes it
+    assert reviewed('gc-three', 'Leave the loop tick alone.', 'Make the alarm flash.')
+    assert not reviewed('gc-four', 'Keep the kitchen timer as it is.', 'Show the time left.')
+    # a specification change of theirs whose instruction names the part closes it, read by key
+    assert not reviewed('gc-five', 'Keep the kitchen timer as it is.', 'Ring twice.', ordered=True)
+
+
+def test_a_decision_the_system_agent_relays_by_note_reaches_the_gc_as_the_persons_and_closes_its_review(
+        project, run, monkeypatch):
+    """A note the person's own system agent marks decision=true, in the turn the person's message started, is kept
+    on the GC's assignment as a user_direction with that message, so the review under way closes on it; marked so in
+    any other turn, it is refused."""
+    from metaform.modules.dispatch import peering
+    store, folder = project
+    run('enable', 'dispatch', cwd=folder)
     gc = root(project)
     SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
     review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'decided')
-    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'decision', 'supersedes': True, 'at': implementation.now(),
-                                              'text': 'Keep the alarm as it is.', 'from': {'kind': 'user'}})
+    words = 'Keep code.timer.kitchen as it is.'
+    asked = {'id': 'person-1', 'text': words, 'at': implementation.now()}
+    mine = {'work_id': 'system-work', 'session_id': 'system-session', 'runner': 'system-runner', 'agent': 'claude'}
+    entry = {'work_id': gc['work_id'], 'session_id': 'gc-one', 'item': 'gc', 'agent': 'claude', '_row': {}}
+    monkeypatch.setattr(peering, 'caller', lambda _: (None, mine))
+    monkeypatch.setattr(peering, 'side', lambda *_: {'session_id': 'system-session', 'agent': 'claude'})
+    monkeypatch.setattr(peering, 'chosen', lambda *_: (gc['work_id'], 'to', [entry], None))
+    monkeypatch.setattr(peering, 'told', lambda *_, **__: {'noted': True})
+    monkeypatch.setattr(peering, 'persons_word', lambda *_, **__: None)
+    with pytest.raises(Stop, match='Only the person\'s own system agent relays their decision'):
+        peering.send(context('dispatch', folder, project='proj', nouns={'decision': True}), store, words, 0)
+    monkeypatch.setattr(peering, 'persons_word', lambda *_, **__: dict(asked))
+    sent = peering.send(context('dispatch', folder, project='proj', nouns={'decision': True}), store, words, 0)
+    [direction] = SERVICE.assignment(ctx(project), session_id='gc-one')['pending_direction']
+    assert direction['kind'] == 'user_direction' and direction['id'] == sent['note']
+    assert direction['message'] == asked and direction['from']['kind'] == 'user'
     returned = SERVICE.returned(ctx(project), review['work_id'], 'The alarm could be louder.',
                                 findings=[{'summary': 'Make the alarm louder.'}])
-    assert returned['state'] == 'returned' and project[0].ticket(review['work_id']).work.done
-    assert not [one for one in project[0].work(node=Node('element', NODE), open=True, limit=0).results
+    assert returned['state'] == 'returned' and store.ticket(review['work_id']).work.done
+    assert not [one for one in store.work(node=Node('element', NODE), open=True, limit=0).results
                 if 'louder' in (one.task or '')]
-    assert not [one for one in SERVICE.pending(ctx(project)) if one['payload'].get('kind') == 'functional_correction']
+
+
+def test_a_tickets_read_shows_its_gc_steps_result_and_linked_assessment(project, monkeypatch):
+    """The board shows whether work was done: the steps and result of a ticket's GC assignment are on that ticket,
+    and its read links the assessment that reviewed it, by assignment and ticket, with its state and result."""
+    store, folder = project
+    gc = root(project)
+    store.plan_work(gc['work_id'], 2)
+    store.step_work(gc['work_id'], 'Traced the alarm.')
+    store.step_work(gc['work_id'], 'Fixed the countdown.')
+    SERVICE.returned(ctx(project, 'gc-one'), gc['work_id'], 'Timer outcome delivered.', state='delivered',
+                     evidence=['The alarm rang at zero.'])
+    transport(monkeypatch, project)
+    Orchestration().drain(ctx(project))
+    review = SERVICE.related(ctx(project), gc['assignment_id'])['independent_assessments'][0]
+    SERVICE.returned(ctx(project), review['work_id'], 'Countdown and alarm pass.', evidence=['Observed the alarm.'])
+    work = store.ticket(gc['work_id']).work
+    assert (work.steps, work.steps_done, work.resolution) == (2, 2, 'Timer outcome delivered.')
+    read = work_reads(folder, work, project='proj')['orchestration']
+    assert (read['assignment_id'], read['state'], read['result']) == (
+        gc['assignment_id'], 'delivered', 'Timer outcome delivered.')
+    assert [(one['assignment_id'], one['work_id'], one['state'], one['result'])
+            for one in read['independent_assessments']] == [
+        (review['assignment_id'], review['work_id'], 'returned', 'Countdown and alarm pass.')]
+
+
+def test_a_tickets_read_shows_the_open_ticket_its_reviews_finding_was_folded_into(project):
+    """A finding an open ticket at the node already covers goes into that ticket's note; the reviewed ticket's read
+    names that ticket under the assessment, so work landing elsewhere points back."""
+    store, folder = project
+    gc = root(project)
+    covering = store.add_work(Node('element', NODE), None, task='Selection resets while duration changes.',
+                              title='Selection resets')
+    SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'fold')
+    SERVICE.returned(ctx(project), review['work_id'], 'The selection resets.',
+                     findings=[{'summary': 'Selection resets while duration changes.'}])
+    read = work_reads(folder, store.ticket(gc['work_id']).work, project='proj')['orchestration']
+    assert [one['findings_filed'] for one in read['independent_assessments']] == [[covering.id]]
+    assert 'related_corrections' not in read

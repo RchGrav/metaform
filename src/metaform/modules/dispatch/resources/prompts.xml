@@ -52,7 +52,8 @@
 </instructions>
 
 <!-- One line of the full worker's brief below: record what happened in the work as memory, at the ticket's node, or
-     at the receiver and provider of a ticket on a join, and what is true of the project as knowledge. A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing what is learned.
+     at the receiver and provider of a ticket on a join, and what is true of the project as knowledge. It defers to the
+     shared memory instructions, metaform://memory, and cites none of their steps, CTX-029.
      Placed in the brief's <record/> only while the memory module is on in the folder, and read only with the brief,
      on demand. Must not be deleted: the code requires it. Empty leaves a blank line in the brief. -->
 <record>
@@ -134,10 +135,10 @@ Work ticket <work_id/> with map_work and your delivered authored role. Use the s
 </work>
 
 <!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the
-     agent calls the memory tool over MCP: memory and knowledge as the memory prompt splits them, CTX-029. A draft
-     awaiting the owner's approval of its wording; it replaced his 2026-10-11 sentence on storing what is learned.
-     <node/> is the element's address, or the join's receiver and provider for a ticket on a join; <call/> the memory
-     tool's call that records there, its arguments filled. Names the tool, so the line says how to record by itself.
+     agent calls the memory tool over MCP. It defers to the shared memory instructions, metaform://memory, and names
+     the node it records at, CTX-029. <node/> is the element's address, or the join's receiver and provider for a
+     ticket on a join; <call/> is the memory tool's call that records there, its arguments filled, which this text
+     does not use and the earlier version a person can select still does.
      Follows the work sentence only while the memory module is on in the folder. Empty leaves the work sentence
      alone. -->
 <work_record>
@@ -313,6 +314,20 @@ Message from another agent:
 
 Use the supplied sender and assignment relationship to distinguish peer information, a parent assignment/update, a GC change order, a returned result or relayed user direction. Reconcile relevant instructions with the current operative specification and mode. Reply through the supplied return action when a response is needed.
 </peer_note>
+
+<!-- The person's system agent's inbox line. What is sent to the person's system agent is not put into its
+     conversation: agents' notes, project updates (results, assessments, corrections, specification changes) and what
+     the board needs while Full Auto is on wait in its inbox, its threads' notes, read with dispatch notes, and each
+     report stays whole on its ticket and assignment. The next turn going to it for another reason, the person's message
+     among them, carries this one line naming what came since a turn last carried it; only an entry that needs the
+     person (an agent's question waiting on an answer, a recommendation the person decides, a failed result) starts a
+     turn, of this line alone. <count/> is how many are new; <items/> names each by its ticket and kind, a question
+     with its note id, never its words, the first ten and a count of the rest. Empty: no line is added, nothing starts a
+     turn, and the inbox is still read with dispatch notes. Drafted 2026-10-19, ticket code.dispatcher.agent#72,
+     awaiting the owner's approval of its wording. -->
+<inbox_new>
+<count/> new in your inbox: <items/>. dispatch_notes lists them; dispatch_notes note=&lt;id&gt; gives one whole, dispatch_note reply=&lt;id&gt; answers one, and map_work id=&lt;ticket&gt; reads a ticket's report.
+</inbox_new>
 
 <!-- A conversation about one item the person clicked on the web page: a ticket, a node, a question or an ended session.
      Sent as the first message to the agent started from an item's Chat button on the web page, or with dispatch talk.

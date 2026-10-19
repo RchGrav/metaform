@@ -1,0 +1,1 @@
+"97:TABLES_VERSION = 10" and the test line "assert (recorded['version'], recorded['compatible_from']) == (9, 9)"; the edit to "(10, 9)" followed, and the memory tests then passed (52 passed).

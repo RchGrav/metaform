@@ -1,0 +1,2 @@
+user: "I disagree, if they are being notified of the available modules or have a metaform://modules command to list modules, and each module has a description why cant they find the commands that they need"
+assistant: "You're right, I over-built it. Agents haven't failed because they lacked search or tags. They failed because nothing told them where tools live. With a list of modules and a good description for each, an agent finds what it needs in two reads:"

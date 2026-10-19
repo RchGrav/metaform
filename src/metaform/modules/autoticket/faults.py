@@ -4,7 +4,8 @@ becomes one ticket at once, so a project heals with no one reading logs.
 A source publishes what failed and where: `source` (`web`, `page`, `mcp`, `run`, `feedback`), `message`, the one line
 saying what failed; `detail`, a traceback, a stack or the text reported; `file`, the failing file when the source knows
 it, else the one the detail's trace names; `reproduce`, how to make it happen again; `work_id`, the ticket of the agent
-whose call failed, when one did; and `count`, when the source merged repeats of it before sending. A source with several
+whose call failed, when one did; `count`, when the source merged repeats of it before sending; and `loaded`, when the
+code that raised it was loaded, so a recurrence from code older than a fix counts against nothing. A source with several
 faults at once, the page's errors of one second, publishes them as one event whose `faults` is the list of them.
 
 Faults are grouped as log entries are, `grouping.py`, among those raised at the same place: the same source, file and
@@ -34,7 +35,7 @@ from metaform import events, prompt_files, settings
 from metaform.data import Node, Store, StoreError, WorkRecord
 from metaform.module import Context
 
-from . import entries, grouping
+from . import entries, grouping, proof
 from .watch import active_work, first_line, now_text, place, secret_values, similarity
 
 HERE = resources.files(__package__ or 'metaform.modules.autoticket')
@@ -62,6 +63,7 @@ class Fault:
     first: float
     last: float
     group_id: int = 0
+    loaded: float | None = None  # when the code that raised it was loaded, as its source says; None when it does not
 
 
 PENDING: dict[str, dict[tuple[str, str, str, str], Fault]] = {}  # by project: faults waiting for a pass
@@ -73,12 +75,13 @@ def fault_of(payload: dict[str, Any]) -> Fault | None:
     message = str(payload.get('message') or '').strip()
     if not message:
         return None
-    count = payload.get('count')
+    count, loaded = payload.get('count'), payload.get('loaded')
     at = time.time()
     return Fault(source=str(payload.get('source') or 'log'), message=message, detail=str(payload.get('detail') or ''),
                  file=str(payload.get('file') or ''), reproduce=str(payload.get('reproduce') or ''),
                  work_id=str(payload.get('work_id') or ''),
-                 count=count if isinstance(count, int) and count > 0 else 1, first=at, last=at)
+                 count=count if isinstance(count, int) and count > 0 else 1, first=at, last=at,
+                 loaded=float(loaded) if isinstance(loaded, (int, float)) else None)
 
 
 def raised(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
@@ -103,6 +106,7 @@ def raised(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
                 waiting[key] = fault
             else:
                 had.count, had.last = had.count + fault.count, fault.last
+                had.loaded = None if had.loaded is None or fault.loaded is None else max(had.loaded, fault.loaded)
             mine.append(waiting[key])
         if project in PASSING:
             return {'taken': True, 'merged': True}
@@ -167,7 +171,13 @@ def settle(ctx: Context, store: Store, batch: list[Fault]) -> int:
         with store.tables() as tx:
             for group_id, (address, number) in placed.items():
                 tx.update('groups', {'group_id': group_id}, {'address': address, 'number': number})
-    return tell(ctx, store, touched, by_agent)
+    latest = {fault.group_id: first_line(entries.mask(f'{fault.message}\n{fault.detail}'.strip(), secrets))
+              for fault in batch}
+    loaded: dict[int, float | None] = {}  # each group's newest code that raised it; None when one fault does not say
+    for fault in batch:
+        had = loaded.get(fault.group_id, fault.loaded)
+        loaded[fault.group_id] = None if had is None or fault.loaded is None else max(had, fault.loaded)
+    return tell(ctx, store, touched, by_agent, latest, loaded)
 
 
 def where(fault: Fault) -> tuple[str, str]:
@@ -194,21 +204,43 @@ def matched(terms: tuple[int, ...], known: list[tuple[int, tuple[int, ...]]], th
     return grouping.first_match(terms[1:], same, threshold)
 
 
-def reopen_fault(store: Store, work_id: str, last_seen: str) -> None:
-    """Reopen a completed canonical issue once, retaining the previous repair's evidence."""
+def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '') -> None:
+    """Reopen a completed canonical issue once: the fix that did not hold and the new evidence go into its note, it
+    stays of kind broken with its fault light, condition broken, on again, and it closes only with proof again."""
     with store.atomic():
         current = store.ticket(work_id).work
         if current.done and current.outcome != 'cancelled':
-            history = (f'Previous resolution ({current.done}): {current.resolution or "not recorded"}. '
-                       f'Fault recurred at {last_seen}; repair and verify it again.')
-            store.edit_work(work_id, {'note': f'{current.note or ""}\n\n{history}'.strip()})
+            history = (f'Previous resolution ({current.done}), a fix that did not hold: '
+                       f'{(current.resolution or "not recorded").rstrip(".")}. Fault recurred at {last_seen}'
+                       f'{f": {evidence}" if evidence else ""}; repair and verify it again.')
+            store.edit_work(work_id, {'note': f'{current.note or ""}\n\n{history}'.strip(), 'kind': 'broken',
+                                      'condition': 'broken'})
+            store.prove_work(work_id)
             store.move_work(work_id, 'todo', kept=True)
 
 
-def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int, str]) -> int:
+def not_held(store: Store, work_id: str, landed: str, last_seen: str, evidence: str = '') -> None:
+    """A recurrence while a ticket's fix is watched: the fix did not hold, so the ticket goes back to To do, its
+    landing and resolution cleared, with that fix and the new evidence in its note, to be repaired again."""
+    with store.atomic():
+        current = store.ticket(work_id).work
+        if current.done:
+            return
+        history = (f'The fix that landed at {landed} did not hold: {(current.resolution or "not recorded").rstrip(".")}. Fault '
+                   f'recurred at {last_seen}{f": {evidence}" if evidence else ""}; repair and verify it again.')
+        store.edit_work(work_id, {'note': f'{current.note or ""}\n\n{history}'.strip()})
+        store.move_work(work_id, 'todo', kept=True)
+
+
+def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int, str],
+         latest: dict[int, str] | None = None, loaded: dict[int, float | None] | None = None) -> int:
     """Each group counted: on its open ticket, its count and last seen written in that ticket's note; raised by an
-    agent working a ticket autoticket filed, counted on that ticket; recurrence reopens its canonical ticket unless
-    the person cancelled it or disabled reopening. Waiting new groups file while there is room."""
+    agent working a ticket autoticket filed, counted on that ticket; on a ticket whose fix landed and is watched, that
+    fix did not hold and the ticket goes back to To do, `not_held`; recurrence reopens its canonical ticket unless
+    the person cancelled it or disabled reopening. A recurrence that comes before the fix is in force, from code loaded
+    before it or while it waits to merge, `proof.before_fix`, counts against nothing: it is noted on the ticket with
+    what puts the fix in force. `latest` is each group's newest evidence, the fault's first line, and `loaded` when the
+    code that raised it was loaded. Waiting new groups file while there is room."""
     with store.tables(write=False) as tx:
         rows = {int(group_id): dict(row) for group_id in touched
                 if (row := tx.get('groups', {'group_id': group_id})) is not None}
@@ -217,10 +249,21 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
     named = {str(row['work_id']) for row in rows.values() if row['work_id']} | agents
     records = {record.id: record for record in store.work(ids=sorted(named), limit=0).results} if named else {}
     notes: dict[str, list[dict[str, Any]]] = {}
+    early: dict[str, list[tuple[int, str]]] = {}  # by ticket: the groups seen before its fix was in force, and why
     for group_id, row in rows.items():
         record = records.get(str(row['work_id']))
         agent = by_agent.get(group_id)
-        if record is not None and not record.done:
+        landed = proof.landed_of(store, record.id) if record is not None else None
+        why = proof.before_fix(ctx.folder, store, record.id, landed, (loaded or {}).get(group_id),
+                               str(row['source'])) if record is not None and landed is not None else None
+        if why is not None and record is not None:
+            early.setdefault(record.id, []).append((group_id, why))
+            notes.setdefault(record.id, []).append(row)
+        elif record is not None and not record.done:
+            if landed is not None:
+                events.announced(ctx.folder, ctx.surface, not_held, store, record.id, landed, str(row['last_seen']),
+                                 (latest or {}).get(group_id, ''))
+                records[record.id] = store.ticket(record.id).work
             notes.setdefault(record.id, []).append(row)
         elif agent in agents and (on := records.get(agent)) is not None and not on.done:
             row['work_id'] = agent
@@ -228,7 +271,8 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
         elif record is not None:
             # A recurrence belongs to the same issue. Explicit cancellation is retained; it is not a crash.
             if record.outcome != 'cancelled' and settings.value('autoticket_reopen', ctx.folder):
-                events.announced(ctx.folder, ctx.surface, reopen_fault, store, record.id, str(row['last_seen']))
+                events.announced(ctx.folder, ctx.surface, reopen_fault, store, record.id, str(row['last_seen']),
+                                 (latest or {}).get(group_id, ''))
                 records[record.id] = store.ticket(record.id).work
             notes.setdefault(record.id, []).append(row)
     with store.tables() as tx:
@@ -236,7 +280,7 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
             for row in told:
                 tx.update('groups', {'group_id': int(row['group_id'])}, {'work_id': work_id})
     for work_id, told in notes.items():
-        note = noted(records[work_id].note or '', told)
+        note = early_noted(noted(records[work_id].note or '', told), early.get(work_id, []))
         if note != (records[work_id].note or ''):
             events.announced(ctx.folder, ctx.surface, store.edit_work, work_id, {'note': note})
     return file_waiting(ctx, store)
@@ -246,6 +290,20 @@ def line(row: dict[str, Any]) -> str:
     count = int(row['count'])
     return (f'autoticket group {int(row["group_id"])}: seen {count} {"time" if count == 1 else "times"}, first '
             f'{row["first_seen"]}, last {row["last_seen"]}: {first_line(str(row["example"]))}')
+
+
+def early_noted(note: str, early: list[tuple[int, str]]) -> str:
+    """The note with each group's line for a recurrence before the fix was in force, written in place of its last."""
+    lines: list[str] = note.split('\n') if note else []
+    for group_id, why in early:
+        start = f'autoticket group {group_id} '
+        said = f'{start}{why}.'
+        at = next((index for index, one in enumerate(lines) if one.startswith(start)), None)
+        if at is None:
+            lines.append(said)
+        else:
+            lines[at] = said
+    return '\n'.join(lines)
 
 
 def noted(note: str, rows: list[dict[str, Any]]) -> str:
@@ -264,7 +322,8 @@ def noted(note: str, rows: list[dict[str, Any]]) -> str:
 
 def file_waiting(ctx: Context, store: Store) -> int:
     """File the waiting groups, oldest first, while fewer than `autoticket_open_most` tickets it filed are open and not
-    held: a held ticket waits for the person and starts no agent work, so it takes no slot. Each group is claimed first,
+    held or watched: a held ticket waits for the person and a watched one for its proof, and neither starts agent work,
+    so neither takes a slot. Each group is claimed first,
     so two processes never file one group twice. Returns how many were filed."""
     if not settings.value('autoticket_file', ctx.folder):
         return 0
@@ -274,7 +333,7 @@ def file_waiting(ctx: Context, store: Store) -> int:
         rows = [dict(row) for row in tx.rows('groups', limit=0).results]
     filed_ids = sorted({str(row['work_id']) for row in rows if row['work_id'] and not filing(row)})
     records: Sequence[WorkRecord] = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
-    kept = holds(store, [record.id for record in records])
+    kept = resting(store, [record.id for record in records])
     open_now = sum(not record.held and record.id not in kept for record in records)
     waiting = sorted((row for row in rows if row['address'] and waits(row, at)), key=lambda row: int(row['group_id']))
     filed = 0
@@ -297,9 +356,10 @@ def file_waiting(ctx: Context, store: Store) -> int:
     return filed
 
 
-def holds(store: Store, work_ids: list[str]) -> set[str]:
-    """Those of these tickets the person holds, `map_work hold=true`, kept in the map module's own table: a hold keeps
-    agents and automatic starts off a ticket as the Backlog's held mark does. Read by key; none without the map module."""
+def resting(store: Store, work_ids: list[str]) -> set[str]:
+    """Those of these tickets the person holds, `map_work hold=true`, or whose fix landed and is watched, kept in the
+    map module's own table: a hold keeps agents and automatic starts off a ticket as the Backlog's held mark does, and a
+    watched ticket waits only for its proof, so neither is agent work. Read by key; none without the map module."""
     if not work_ids:
         return set()
     try:
@@ -307,7 +367,7 @@ def holds(store: Store, work_ids: list[str]) -> set[str]:
             found = [tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids]
     except StoreError:
         return set()
-    return {str(row['work_id']) for row in found if row is not None and row['hold']}
+    return {str(row['work_id']) for row in found if row is not None and (row['hold'] or dict(row).get('landed'))}
 
 
 def filing(row: dict[str, Any]) -> bool:
@@ -337,7 +397,8 @@ def held_why(row: dict[str, Any], folder: Any = None) -> str | None:
 
 def ticket(store: Store, row: dict[str, Any]) -> Any:
     """The ticket for a group: kind broken, at its element, its task the evidence, how to reproduce it and that the fix
-    proves itself; held for the person, with why, when its fix is a design choice or removes data."""
+    proves itself; held for the person, with why, when its feedback asks a design choice. Its condition broken is the
+    fault light at its element, and it closes only with proof, `proof.py`, so the light goes off only with the proof."""
     count = int(row['count'])
     example = str(row['example'])
     task = prompt_files.required(
@@ -348,14 +409,17 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
     why = held_why(row, Path(store.project().path))
     note = '\n'.join([*([f'Held for the person: {why}'] if why else []), line(row)])
     title = f'{TITLES.get(str(row["source"]), "Error")}: {first_line(example)}'[:120]
-    return store.add_work(Node('element', str(row['address'])), None, kind='broken', title=title, note=note,
-                          task=task, held=why is not None)
+    with store.atomic():
+        record = store.add_work(Node('element', str(row['address'])), 'broken', kind='broken', title=title, note=note,
+                                task=task, held=why is not None)
+        store.prove_work(record.id)
+    return record
 
 
 def freed(payload: dict[str, Any], ctx: Context) -> None:
-    """`map.changed`: a ticket autoticket filed may be done or held, its slot free for a waiting group. Decided from the
-    event alone: one naming tables other than `work`, or only words, steps or sessions of tickets, concerns it not; one
-    naming tickets reads whether any of them is one it filed and done or held; one that does not say what it concerns
+    """`map.changed`: a ticket autoticket filed may be done, held or watched, its slot free for a waiting group. Decided
+    from the event alone: one naming tables other than `work`, or only words, steps or sessions of tickets, concerns it
+    not; one naming tickets reads whether any of them is one it filed and done, held or watched; one that does not say what it concerns
     may have closed any, so the waiting groups are looked at once. A held ticket released takes a slot and files
     nothing; `file_waiting` reads each ticket's held mark when it counts, so the next pass counts it."""
     store = ctx.store
@@ -372,6 +436,7 @@ def freed(payload: dict[str, Any], ctx: Context) -> None:
             return
         with store.tables(write=False) as tx:
             ours = [work_id for work_id in named if tx.rows('groups', {'work_id': work_id}, limit=1).results]
-        if not ours or not any(record.done or record.held for record in store.work(ids=ours, limit=0).results):
+        if not ours or not any(record.done or record.held for record in store.work(ids=ours, limit=0).results) \
+                and not resting(store, ours):
             return
     file_waiting(ctx, store)

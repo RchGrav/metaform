@@ -120,7 +120,7 @@ export async function callSystem({fresh = false} = {}) {
   DOCK.calling = null;
   $('#helpdesk .call').disabled = false;
   if (!started) {
-    startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next);
+    startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next, true);
     return null;
   }
   const closed = $('#helpdesk').hidden || dockGoingAway();
