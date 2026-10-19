@@ -1,0 +1,2 @@
+User: "When a task is setup tickets get completed and then they should be archived the board has nearly 400 tickets on it this cant work the board hangs the web browser and doesnt work properly it needs to be a system this isnt a proper system"
+Assistant commit: "Done tickets leave the board after one day: board_done_days defaults to 1, was 7" then "A done ticket goes to the board's Archive at once: board_done_days defaults to 0"
