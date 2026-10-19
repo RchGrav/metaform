@@ -19,4 +19,27 @@
 <counts></counts>
 <!-- autoticket's rules, MCP-031. Empty sends nothing. -->
 <rules></rules>
+<!-- The task of a ticket autoticket files for a new kind of error, read by the agent that takes it, under Autostart
+     the one dispatch starts. The empty elements are filled in: message, the error's first line; source, what raised
+     it (the web server, the web page, an MCP tool call, an agent run, a feedback report or a watched log); count,
+     first and last, how often and when it was seen when filed; sample, its example with secrets masked; reproduce,
+     how its source says to make it happen again. Later counts go to the ticket's note. Wording drafted for the
+     person's approval, ticket code.scheduler.task#8 (2026-10-18). -->
+<ticket>An error was seen while the project ran, and nothing has fixed it yet. Find its cause and fix it.
+
+What failed: <message/>
+Raised by <source/>, seen <count/>, first <first/>, last <last/>.
+A sample, with secrets masked:
+<sample/>
+
+How to reproduce it: <reproduce/>
+
+The fix comes with a check that proves this error no longer happens: a test that fails before the fix and passes after it, or the reproduction above run again without the error. Say in your resolution what the check was and what it showed. The ticket's note counts each time the error comes back while the ticket is open.
+
+If the fix is a design choice, or would delete or remove data, do not make it: write what you found and the choice in this ticket's note, and stop with the ticket open, for the person to decide.</ticket>
+<!-- Why a ticket filed for a feedback report waits for the person, in Backlog: written at the start of its note. -->
+<held_design>Feedback says how Metaform should work, and what to change is a design choice.</held_design>
+<!-- Why a ticket filed for an error naming deleting or removing data waits for the person, in Backlog: written at the
+     start of its note. -->
+<held_data>The error is about deleting or removing data, so its fix may delete or remove data.</held_data>
 </prompts>

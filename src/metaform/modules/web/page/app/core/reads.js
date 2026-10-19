@@ -1,7 +1,7 @@
 /* The page's state S, the memory store's state, and reads of the server's API that wait out a restart. */
 import '/page/app/core/health.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
-import {readBack} from '/page/app/core/errors.js';
+import {faultsFrom, readBack} from '/page/app/core/errors.js';
 import {askHealth, healthMayBeBack, SLOW} from '/page/app/core/health.js';
 
 /* ---------- reads ---------- */
@@ -28,6 +28,7 @@ export const S = {
   // LAYER-013
   memory: {entities: new Map(), relations: [], joins: [], at: new Map(), age: 0, orphaned: 0},
 };
+faultsFrom(() => S.project);  // the page's errors say the project they happened on
 /* The memory network open in both views, VIEW-031: the node it belongs to, what is drawn of it, and what the map was
  * when it gave way, to go back to: the levels entered in 2D and where each node of the 3D map stood. */
 export const MEM = {key: null, network: null, drawn: false, levels: [], positions: null, generation: 0};

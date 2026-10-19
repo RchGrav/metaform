@@ -91,8 +91,8 @@
   }
  },
  "autoticket": {
-  "version": 1,
-  "compatible_from": 1,
+  "version": 2,
+  "compatible_from": 2,
   "tables": {
    "groups": {
     "place": "project",
@@ -142,29 +142,29 @@
       true,
       null
      ],
-     "known": [
-      "int",
-      "INTEGER",
-      true,
-      "0"
-     ],
      "last_seen": [
       "text",
       "TEXT",
       true,
       null
      ],
-     "listed": [
-      "int",
-      "INTEGER",
-      true,
-      "0"
-     ],
      "number": [
       "int",
       "INTEGER",
       true,
       "0"
+     ],
+     "reproduce": [
+      "text",
+      "TEXT",
+      true,
+      "''"
+     ],
+     "source": [
+      "text",
+      "TEXT",
+      true,
+      "'log'"
      ],
      "work_id": [
       "text",

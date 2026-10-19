@@ -1,9 +1,10 @@
-"""autoticket: watches the project's logs while work goes on and ranks the errors in them by how often they happen.
+"""autoticket: every fault Metaform raises, and every error in the project's watched logs, files itself as a ticket.
 
-Entries are grouped by the similarity method of onhold's log viewer, `grouping.py`; the logs are read as they grow and
-never kept, `sources.py`; one process at a time reads each log, under a lease, `watch.py`. The orchestrator is sent a
-ranked list every `autoticket_interval_minutes`, and, once the first list has set the baseline, a group never seen
-before at once, both as signals, BASE-057. A group becomes a ticket only when promoted.
+Faults reach it as `fault.raised` events from the web server, the page, the MCP server, the dispatch runner and
+feedback, `faults.py`; log entries from the logs it reads as they grow and never keeps, `sources.py`, one process at a
+time reading each log under a lease, `watch.py`. Both are grouped by the similarity method of onhold's log viewer,
+`grouping.py`. A group never seen before becomes one ticket at once, at the element that owns its file; a recurring one
+is counted on its open ticket; at most `autoticket_open_most` are open at once.
 """
 from __future__ import annotations
 
@@ -17,15 +18,15 @@ from importlib import resources
 from typing import Any
 
 from metaform import prompt_files, settings
-from metaform.data import Column, Index, Node, Table, Tables, WorkRecord
-from metaform.module import Context, Module, Noun, Status, Stop, Verb, held_role
+from metaform.data import Column, Index, Table, Tables, WorkRecord
+from metaform.module import Context, Module, Noun, Status, Stop, Subscription, Verb
 
-from . import sources
-from .watch import Watch, first_line, make_list, ranked, send_list, shown, state
+from . import faults, sources
+from .watch import Watch, first_line, ranked, shown, state
 
 SUPPORTED_OS = ('linux', 'macos')  # it follows logs as tail -F does and reaches hosts through ssh and a POSIX shell
 DEPENDENCIES = ()
-SHIPS_DISABLED = True
+SHIPS_DISABLED = False  # every project files its faults, so it heals with no one reading logs
 REMOTE_AGENT = False  # it reads logs on the machine Metaform runs on and through its ssh
 
 HERE = resources.files(__name__)
@@ -39,9 +40,9 @@ def _similarity_check(value: Any, folder: Any) -> list[str] | None:
     return None if 0 < number <= 1 else ['autoticket_similarity is a number above 0 and at most 1, such as 0.45.']
 
 
-settings.number('autoticket_interval_minutes', 15, min=1, max=1440, label='List interval',
-                help='How often the orchestrator is sent the ranked list of error groups; the first list sets the '
-                     'baseline.')
+settings.number('autoticket_open_most', 5, min=1, max=100, label='Open at most',
+                help='How many tickets autoticket filed may be open at once; each further kind of error waits as a '
+                     'group and is filed when one of them is done.')
 settings.text('autoticket_similarity', '0.45', check=_similarity_check, label='Similarity',
               help='The Dice coefficient at which two entries are the same kind of error, above 0 and at most 1; '
                    '0.45 is onhold\'s value.')
@@ -56,19 +57,22 @@ settings.choice('autoticket_capture', ['errors', 'rules'], 'errors', label='Capt
 
 # autoticket's own tables, STORE-045, in the project's store so a clear of its metaforms keeps the error history.
 # groups: one row per kind of error, its fingerprint, one example with secrets masked, its counter, first and last
-#   seen, the agents and tickets at work when it was first seen, where it sits on the map with its item number, its
-#   counter at the last list and whether the orchestrator knows it, and the ticket it was promoted to. Never the logs.
+#   seen, the agents and tickets at work when it was first seen, what raised it and how to reproduce it, where it sits
+#   on the map with its item number, and its ticket: empty while it waits to be filed. Never the logs.
 # logs: one row per watched log, the lease of the process reading it, where it has reached, and its drops.
 # rules: the capture rules agents add, each a regular expression.
-# state: the baseline, when the last list was made, and whether the project has no logs yet.
-TABLES = Tables(version=1, tables=(
+# state: whether the project has no logs yet.
+# Version 2, ticket code.scheduler.task#8 (2026-10-18): groups file themselves, so `listed` and `known`, which served
+# the timed list, are gone, and `source` and `reproduce` are added for the ticket; version 1 code wrote the columns
+# gone, so it cannot read these tables.
+TABLES = Tables(version=2, compatible_from=2, tables=(
     Table('groups', place='project', key=('group_id',),
           columns=(Column('group_id', 'int', required=True), Column('fingerprint', required=True),
                    Column('example', required=True), Column('count', 'int', required=True, default=0),
                    Column('first_seen', required=True), Column('last_seen', required=True),
-                   Column('active', required=True, default='{}'), Column('address', required=True, default=''),
-                   Column('number', 'int', required=True, default=0), Column('listed', 'int', required=True, default=0),
-                   Column('known', 'int', required=True, default=0), Column('work_id', required=True, default='')),
+                   Column('active', required=True, default='{}'), Column('source', required=True, default='log'),
+                   Column('reproduce', required=True, default=''), Column('address', required=True, default=''),
+                   Column('number', 'int', required=True, default=0), Column('work_id', required=True, default='')),
           indexes=(Index(('address', 'number')), Index(('work_id',)))),
     Table('logs', place='project', key=('source',),
           columns=(Column('source', required=True), Column('holder', required=True, default=''),
@@ -189,55 +193,16 @@ async def watch_logs(ctx: Context) -> dict[str, Any]:
         listener.close()
         watching.release()
     totals = watching.totals
-    return {'lines': totals.lines, 'captured': totals.captured, 'groups_made': totals.made,
-            'reported': totals.reported, 'lists': totals.lists, 'drops': totals.drops}
+    return {'lines': totals.lines, 'captured': totals.captured, 'groups_made': totals.made, 'drops': totals.drops}
 
 
 def listed(ctx: Context) -> dict[str, Any]:
-    """The groups now, most counted first, with the change since the last list; it is not a list sent, so the next
-    list's changes still run from the last one."""
+    """The groups now, most counted first, each with its ticket once filed."""
     store = ctx.require_store()
     with store.tables(write=False) as tx:
         groups = ranked(tx)
-        baseline = state(tx, 'baseline')
     limit = ctx.nouns.get('limit')
-    return {'baseline': baseline or None, 'groups': groups[:limit] if isinstance(limit, int) and limit > 0 else groups}
-
-
-def reset(ctx: Context) -> dict[str, Any]:
-    """A clean start: the list is made now and sent, and it is the new baseline, so from here a group never seen
-    before is reported at once."""
-    store = ctx.require_store()
-    with store.tables() as tx:
-        if state(tx, 'baseline'):
-            tx.delete('state', {'name': 'baseline'})
-        made = make_list(tx, time.time())
-    send_list(ctx, made)
-    return {'baseline': made['at'], 'groups': len(made['groups'])}
-
-
-def promote(ctx: Context) -> dict[str, Any]:
-    """Make a group a ticket at its Address, linked back to the group so its counter shows whether the fix held."""
-    if (role := held_role(ctx)) is not None:
-        raise Stop(f'A {role} does not write tickets here.', 'metaform map work op=edit id=<your work id> note="..."')
-    store = ctx.require_store()
-    number = int(ctx.nouns['group'])
-    with store.tables(write=False) as tx:
-        row = tx.get('groups', {'group_id': number})
-    if row is None:
-        raise Stop(f'No group {number}.', 'metaform autoticket list')
-    if row['work_id']:
-        return {'group': number, 'work_id': row['work_id'], 'promoted': False}
-    if not row['address']:
-        raise Stop('The group has no place on the map yet, so it has nowhere for a ticket.', 'metaform map roots')
-    title = str(ctx.nouns.get('title') or f'Error group {number}: {first_line(str(row["example"]))}')[:120]
-    record = store.add_work(Node('element', str(row['address'])), '', kind='broken', title=title,
-                            note=f'autoticket group {number}: {row["count"]} seen from {row["first_seen"]} to '
-                                 f'{row["last_seen"]}. Its counter stops rising once the fix holds.',
-                            task=f'Find and fix the cause of this error.\n\n{row["example"]}')
-    with store.tables() as tx:
-        tx.update('groups', {'group_id': number}, {'work_id': record.id})
-    return {'group': number, 'work_id': record.id, 'promoted': True}
+    return {'groups': groups[:limit] if isinstance(limit, int) and limit > 0 else groups}
 
 
 # ------------------------------------------------------------------------------------------------ hooks
@@ -297,7 +262,7 @@ def items_at(ctx: Context, address: str, before: int | None, limit: int) -> list
 
 
 def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
-    """On a ticket promoted from a group: the group's counter now, so whether the fix held shows on the ticket."""
+    """On a ticket filed for a group: the group's counter now, so whether the fix held shows on the ticket."""
     if ctx.store is None:
         return None
     with ctx.store.tables(write=False) as tx:
@@ -314,15 +279,18 @@ LOG = Noun('log', 'A local log file, or ssh://<host>/<absolute path> read throug
 
 MODULE = Module(
     id='autoticket',
-    summary='Watch the project\'s logs and rank the errors in them by how often they happen.',
-    purpose='Watches the project\'s logs while work goes on, groups the errors in them by kind, and counts each kind. '
-            'The orchestrator is sent a ranked list at each interval and a kind never seen before at once, so a new '
-            'error is seen while the change that caused it is fresh, and a counter that stops rising shows a fix '
-            'held. Details: metaform help autoticket.',
+    summary='File each new kind of fault, and of error in the project\'s logs, as one ticket, ready to fix.',
+    purpose='Groups every fault Metaform raises, in the web server, the page, an MCP tool call, an agent run or a '
+            'feedback report, and the errors in the project\'s watched logs, by kind, and counts each kind. A kind '
+            'never seen before becomes one ticket at once, at the element that owns its file, so the project heals '
+            'with no one reading logs, and a counter that stops rising shows a fix held. Details: metaform help '
+            'autoticket.',
     details='Watched logs are local files or ssh://<host>/<path>, read through the system\'s own ssh with its config '
             'and keys; Metaform stores no credentials. A log is read as it grows and never kept: each group keeps one '
             'example with secrets masked, its counter, when it was first and last seen, and the agents and tickets at '
-            'work when it first appeared. metaform autoticket watch reads them until stopped.',
+            'work when it first appeared. metaform autoticket watch reads them until stopped. At most '
+            'autoticket_open_most tickets it filed are open at once; feedback, and an error whose fix may remove data, '
+            'are filed held for the person.',
     verbs=(
         Verb('add', add, 'Watch a log: a local file, or ssh://<host>/<absolute path>.', nouns=(LOG,),
              examples=(('metaform autoticket add /var/log/app.log', 'Watches a local log from its end now.'),
@@ -341,13 +309,10 @@ MODULE = Module(
              details='Each log is read by one process at a time: another watch takes over a log whose reader has '
                      'stopped, from where it had reached.',
              task=True, open_world=True),
-        Verb('list', listed, 'The error groups, most counted first, with the change since the last list.',
+        Verb('list', listed, 'The error groups, most counted first, each with its ticket once filed.',
              nouns=(Noun('limit', 'How many groups; all when left out.', 'int', required=False),), effect='read'),
-        Verb('reset', reset, 'Send the list now as the new baseline, for a clean start such as before a refactor.'),
-        Verb('promote', promote, 'Make an error group a ticket at its Address, linked back to the group.',
-             nouns=(Noun('group', 'The group\'s number, as autoticket list shows it.', 'int'),
-                    Noun('title', 'The ticket\'s title; the group\'s example when left out.', required=False))),
     ),
+    subscriptions=(Subscription(faults.TOPIC, faults.raised), Subscription('map.changed', faults.freed)),
     status=status,
     default='list',
     tables=TABLES,

@@ -1,6 +1,7 @@
 /* The page's one error surface: a read of the server that failed, an exception nothing caught and a promise refused
  * with no one to hear it are each said on screen, in a banner: what happened in plain words, the next step the server
- * sent, and Report a problem, the report `metaform report` makes. The page never stays blank without saying why. */
+ * sent, and Report a problem, the report `metaform report` makes. The page never stays blank without saying why. Each
+ * is also sent to the server, where autoticket files it as a ticket to fix. */
 import '/page/app/core/banner.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill} from '/page/app/core/dom.js';
 import {banner, unbanner, bannered} from '/page/app/core/banner.js';
@@ -43,11 +44,39 @@ function say(key, {title, text, next = null, where = null, reload = false}) {
     actions, onClose: by => { if (by === 'person') entry.closed = true; }});
 }
 
-/* A read of the server that failed, `read` in core/reads.js throws it with the server's {error, next}. */
+/* Every error said here goes to the server too, `/api/page-faults`, which publishes each as a fault for autoticket to
+ * file: those of one second in one request, each once with how many times it came, so a burst costs one request. */
+const SENDING = {project: () => null, faults: new Map(), due: false};
+/* The page's project, registered by the part that holds it, `core/reads.js`, so the errors say where they happened. */
+export const faultsFrom = project => { SENDING.project = project; };
+function sendFault(fault) {
+  const key = `${fault.read}\n${fault.message}\n${fault.where}`;
+  const had = SENDING.faults.get(key);
+  if (had) { had.count += 1; return; }
+  SENDING.faults.set(key, {...fault, count: 1});
+  if (SENDING.due) return;
+  SENDING.due = true;
+  setTimeout(flushFaults, 1000);  // the end of the second's batch, a deadline; nothing looks for errors on a clock
+}
+function flushFaults() {
+  SENDING.due = false;
+  const faults = [...SENDING.faults.values()];
+  SENDING.faults.clear();
+  const project = SENDING.project();
+  if (!project || !faults.length) return;
+  // a send that fails is said nowhere: the banner already says the error, and the server may be the one down
+  fetch('/api/page-faults', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project, faults})}).catch(() => {});
+}
+const unorigin = text => String(text || '').split(location.origin).join('');
+
+/* A read of the server that failed, `read` in core/reads.js throws it with the server's {error, next}. A 500 is the
+ * server's own fault, which it files itself, so only the others are sent. */
 export function readFailed(error) {
   if (error?.name === 'AbortError') return;  // a read the page itself gave up, for one it needs more
   const name = error?.read || 'server';
   FAILING.add(name);
+  if (error?.status !== 500) sendFault({read: name, message: error?.message || String(error), where: '', stack: ''});
   say(`error:read:${name}`, {title: `${readWords(name)} could not be read`, text: error?.message || String(error),
     next: error?.body?.next || null});
   // the object panel waits for the map with "Reading the map…"; a map that cannot be read says so there too
@@ -92,6 +121,8 @@ export function pageFailed(error, where = null) {
   if (error?.read) return readFailed(error);
   if (error?.name === 'AbortError') return;
   const text = error?.message || String(error ?? 'An unknown error.');
+  sendFault({read: '', message: `${error?.name && error.name !== 'Error' ? `${error.name}: ` : ''}${text}`,
+    where: unorigin(where), stack: unorigin(error?.stack)});
   say(`error:page:${text}`, {title: 'Part of the page failed', text, where, reload: true});
 }
 

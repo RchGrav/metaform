@@ -109,6 +109,21 @@ The roles of the agents Metaform starts, the prompts each is sent, and what each
 | `agents_roles` | List the roles of the agents Metaform starts, with the prompts each is sent. | read |
 | `agents_sent` | Read which role a session ran as and which prompt versions each of its turns carried. | read |
 
+### autoticket
+
+File each new kind of fault, and of error in the project's logs, as one ticket, ready to fix.
+
+| Tool | What it does | Effect |
+|---|---|---|
+| `autoticket_add` | Watch a log: a local file, or ssh://<host>/<absolute path>. | write |
+| `autoticket_add-rule` | Count the entries a regular expression matches, grouped as errors are. | write |
+| `autoticket_list` | The error groups, most counted first, each with its ticket once filed. | read |
+| `autoticket_logs` | List the watched logs, who reads each and their drops, and the capture rules. | read |
+| `autoticket_no-logs` | Record that the project has no logs to watch yet: it is not built, only intent. | write |
+| `autoticket_remove` | Stop watching a log; its groups are kept. | write |
+| `autoticket_remove-rule` | Remove a capture rule. | write |
+| `autoticket_watch` | Read the watched logs and count their errors until stopped. | write, open world |
+
 ### dispatch
 
 Start an agent on a ticket through ACP, follow it, message it and stop it.

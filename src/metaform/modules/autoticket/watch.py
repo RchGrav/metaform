@@ -1,6 +1,6 @@
 """The watch: reads the project's watched logs, joins their lines into entries, groups the entries it captures, and
-keeps each group's counter; it tells the orchestrator a ranked list every interval and a group never seen before at
-once, once the first list has set the baseline.
+keeps each group's counter; a group never seen before is filed as a ticket at once, and a recurring one counted on its
+open ticket, as every fault is, `faults.py`.
 
 Each log is read by one process at a time, the holder of its lease: a lock on a file of its own in the home, which the
 system lets go when the holder ends, by a crash too. A process that wants the log waits on that lock and takes the log
@@ -11,8 +11,7 @@ position past it, and by no other.
 
 Nothing here wakes on a timer to look for a change, QUAL-015. The watch sleeps on its events queue until a reader hands
 it a line, a lease is handed over, a `map.changed` from another process names its tables (a log added or removed, a
-rule, the list sent elsewhere), or a real deadline comes: an open entry's quiet time, the one-second write batch, the
-interval's list, or the end of a `seconds` run.
+rule), or a real deadline comes: an open entry's quiet time, the one-second write batch, or the end of a `seconds` run.
 """
 from __future__ import annotations
 
@@ -39,8 +38,7 @@ from . import entries, grouping, sources
 
 BEAT_SECONDS = 1.0  # counts and positions are written at most once a second, after something was read
 CONCERNS = {'autoticket.logs', 'autoticket.rules', 'autoticket.state'}  # the tables whose change the watch reads again
-LIST_LIMIT = 20  # groups in the list the orchestrator is sent; the rest are read with autoticket list
-EXAMPLE_LINE = 300  # characters of an example's first line in a list or a report
+EXAMPLE_LINE = 300  # characters of an example's first line in a list or a title
 
 
 def now_text(at: float | None = None) -> str:
@@ -126,13 +124,6 @@ def state(tx: TableTx, name: str) -> str:
     return '' if row is None else str(row['value'])
 
 
-def put_state(tx: TableTx, name: str, value: str) -> None:
-    if tx.get('state', {'name': name}) is None:
-        tx.insert('state', {'name': name, 'value': value})
-    else:
-        tx.update('state', {'name': name}, {'value': value})
-
-
 def first_line(text: str) -> str:
     line = next((one for one in text.splitlines() if one.strip()), '')
     return line[:EXAMPLE_LINE]
@@ -152,8 +143,10 @@ def top_node(store: Store) -> str | None:
 
 
 def file_address(store: Store, file: str) -> str | None:
-    """The Address whose file ref, `path=` in the sources layer, names the file, as dispatch link writes it; None
-    when the file is outside the project or no element holds it."""
+    """The Address that owns a file: the element whose file ref, `path=` in the sources layer, names it, as dispatch
+    link writes it; else the element whose ref names a file of the same name ending the path, as the page names its
+    parts (`page/app/core/errors.js`); else the nearest owner, the element citing a file in the deepest folder the
+    two paths share. None when the file is outside the project or no ref shares a folder with it."""
     root = os.path.realpath(store.project().path)
     path = file.replace('\\', '/')
     if os.path.isabs(file):
@@ -163,17 +156,34 @@ def file_address(store: Store, file: str) -> str | None:
         path = os.path.relpath(real, root).replace(os.sep, '/')
     try:
         cited = store.citing('path', path, limit=0).results
+        found = next((one for one in cited if one.layer == 'sources' and one.address), None) \
+            or next((one for one in cited if one.address), None)
+        if found is not None:
+            return found.address
+        refs = [(ref.value, ref.address) for ref in store.refs() if ref.key == 'path' and ref.address]
     except Exception:  # noqa: BLE001  a project with no map yet holds no refs
         return None
-    found = next((one for one in cited if one.layer == 'sources' and one.address), None) \
-        or next((one for one in cited if one.address), None)
-    return None if found is None else found.address
+    ending = next((address for value, address in refs if value.endswith('/' + path)), None)
+    if ending is not None:
+        return ending
+    folders = path.split('/')[:-1]
+    nearest, depth = None, 0
+    for value, address in refs:
+        shared = 0
+        for mine, theirs in zip(folders, value.split('/')[:-1], strict=False):
+            if mine != theirs:
+                break
+            shared += 1
+        if shared > depth:
+            nearest, depth = address, shared
+    return nearest
 
 
-def place(ctx: Context, store: Store, example: str) -> str | None:
-    """Where a group sits: the Address whose file ref names the file its trace names, else the project's top node."""
-    found = entries.location(example)
-    address = file_address(store, found[0]) if found is not None else None
+def place(ctx: Context, store: Store, example: str, file: str | None = None) -> str | None:
+    """Where a group sits: the Address that owns the file the source named or its trace names, else the project's top
+    node."""
+    found = file or (named[0] if (named := entries.location(example)) is not None else None)
+    address = file_address(store, found) if found else None
     return address or top_node(store)
 
 
@@ -189,10 +199,10 @@ def active_work(store: Store) -> dict[str, Any]:
                          'title': first_line(record.task or record.note or '')[:120]} for record in taken]}
 
 
-# ------------------------------------------------------------------------------------------------ the list
+# ------------------------------------------------------------------------------------------------ the groups
 
 def ranked(tx: TableTx) -> list[dict[str, Any]]:
-    """Every group, most counted first, with its change since the last list."""
+    """Every group, most counted first."""
     found = [dict(row) for row in tx.rows('groups', limit=0).results]
     found.sort(key=lambda row: (-int(row['count']), int(row['group_id'])))
     return [shown(row) for row in found]
@@ -200,39 +210,10 @@ def ranked(tx: TableTx) -> list[dict[str, Any]]:
 
 def shown(row: dict[str, Any]) -> dict[str, Any]:
     address, number = row.get('address') or None, row.get('number')
-    return {'group': int(row['group_id']), 'count': int(row['count']),
-            'change': int(row['count']) - int(row['listed'] or 0), 'example': first_line(str(row['example'])),
+    return {'group': int(row['group_id']), 'count': int(row['count']), 'example': first_line(str(row['example'])),
             'address': address, **({'item': f'{address}#{int(number):x}'} if address and number else {}),
             'first_seen': row['first_seen'], 'last_seen': row['last_seen'],
             **({'work_id': row['work_id']} if row.get('work_id') else {})}
-
-
-def make_list(tx: TableTx, at: float) -> dict[str, Any]:
-    """The list now, written as the last list: each group's counter is remembered for the next change, and the first
-    list since a reset sets the baseline, every group in it known."""
-    groups = ranked(tx)
-    baseline = not state(tx, 'baseline')
-    for group in groups:
-        tx.update('groups', {'group_id': group['group']}, {'listed': group['count'], 'known': 1})
-    if baseline:
-        put_state(tx, 'baseline', now_text(at))
-    put_state(tx, 'listed_at', str(at))
-    logs = [{'log': row['source'], 'drops': int(row['drops']), 'reconnects': int(row['reconnects']),
-             **({'last_drop': row['last_drop']} if row['last_drop'] else {})}
-            for row in tx.rows('logs', limit=0).results if int(row['drops'])]
-    return {'baseline': baseline, 'at': now_text(at), 'groups': groups, 'logs': logs}
-
-
-def signal(ctx: Context, kind: str, details: dict[str, Any]) -> None:
-    """Tell the orchestrator: a signal it reads, BASE-057, kept by dispatch where dispatch is on."""
-    ctx.publish('signal.raised', {'signal': kind, 'module': 'autoticket', **details})
-
-
-def send_list(ctx: Context, listed: dict[str, Any]) -> None:
-    signal(ctx, 'autoticket-list', {'baseline': listed['baseline'], 'at': listed['at'],
-                                    'groups': listed['groups'][:LIST_LIMIT], 'more': max(0, len(listed['groups'])
-                                                                                         - LIST_LIMIT),
-                                    **({'logs': listed['logs']} if listed['logs'] else {})})
 
 
 # ------------------------------------------------------------------------------------------------ the watch
@@ -273,8 +254,6 @@ class Totals:
     lines: int = 0
     captured: int = 0
     made: int = 0
-    reported: int = 0
-    lists: int = 0
     drops: int = 0
 
 
@@ -289,28 +268,23 @@ class Watch:
         self.known: list[tuple[int, tuple[int, ...]]] = []  # every group written, in the order made
         self.threshold = similarity(ctx.folder)
         self.mode = str(settings.value('autoticket_capture', ctx.folder) or 'errors')
-        self.interval = 60.0 * int(settings.value('autoticket_interval_minutes', ctx.folder) or 15)
         self.secrets = secret_values(ctx.folder)
         self.rules: list[re.Pattern[str]] = []
         self.written_at = 0.0
         self.dirty = False  # read since the last write: counts or a position to write
-        self.claim_due = True  # the logs, rules and state to read again, at the first turn and after a change
-        self.listed_at = 0.0  # when the last list was sent, by any process, as last read
+        self.claim_due = True  # the logs and rules to read again, at the first turn and after a change
+        self.touched: set[int] = set()  # the groups counted since the last write, new and known
         self.stopping = False
         self.totals = Totals()
 
     # -------------------------------------------------------------- leases
 
     def claim(self) -> None:
-        """Read the watched logs, the rules and when the last list went; wait on the lease of each log new here, and
-        let go of each log no longer watched."""
+        """Read the watched logs and the rules; wait on the lease of each log new here, and let go of each log no
+        longer watched."""
         self.claim_due = False
-        at = self.clock()
-        with self.store.tables() as tx:
+        with self.store.tables(write=False) as tx:
             self.rules = rules(tx)
-            if not state(tx, 'listed_at'):  # the first interval starts with the first watch
-                put_state(tx, 'listed_at', str(at))
-            self.listed_at = float(state(tx, 'listed_at') or at)
             names = {str(row['source']) for row in tx.rows('logs', limit=0).results}
         for name in sorted(names - set(self.leases)):
             lease = Lease(self.store.project_id, name, self.events)
@@ -493,84 +467,65 @@ class Watch:
             if row is not None:
                 tx.update('groups', {'group_id': group_id}, {'count': int(row['count']) + group.count,
                                                              'last_seen': now_text(max(group.last, 0))})
+                self.touched.add(group_id)
                 return []
         row = tx.insert('groups', {'fingerprint': grouping.encode(group.terms), 'example': group.example,
                                    'count': group.count, 'first_seen': now_text(group.first),
                                    'last_seen': now_text(group.last), 'active': json.dumps(active_work(self.store)),
-                                   'listed': 0, 'known': 0, 'address': '', 'number': 0, 'work_id': ''})
+                                   'source': 'log', 'reproduce': '', 'address': '', 'number': 0, 'work_id': ''})
         self.known.append((int(row['group_id']), group.terms))
+        self.touched.add(int(row['group_id']))
         return [row]
 
     def settle(self, made: list[dict[str, Any]]) -> None:
-        """Place each group made on the map, and report it at once when the baseline is set."""
-        if not made:
+        """Place each group made on the map, then file each new group as a ticket and count each recurring one on its
+        open ticket, as every fault is."""
+        from . import faults
+        touched, self.touched = self.touched, set()
+        if not touched:
             return
         placed: dict[int, tuple[str, int]] = {}
         for row in made:
             address = place(self.ctx, self.store, str(row['example']))
             if address:
                 placed[int(row['group_id'])] = (address, self.store.number(address))
-        report: list[dict[str, Any]] = []
-        with self.store.tables() as tx:
-            baseline = bool(state(tx, 'baseline'))
-            for row in made:
-                group_id = int(row['group_id'])
-                address, number = placed.get(group_id, ('', 0))
-                changed = {'address': address, 'number': number, **({'known': 1} if baseline else {})}
-                now = tx.update('groups', {'group_id': group_id}, changed)
-                if baseline and now is not None:
-                    # `working`, never `active`: dispatch reads `active` on a signal as its own raised-or-cleared flag
-                    report.append({**shown(now), 'working': json.loads(str(now['active']) or '{}')})
-        for group in report:
-            signal(self.ctx, 'autoticket-new', group)
-            self.totals.reported += 1
+        if placed:
+            with self.store.tables() as tx:
+                for group_id, (address, number) in placed.items():
+                    tx.update('groups', {'group_id': group_id}, {'address': address, 'number': number})
+        faults.tell(self.ctx, self.store, touched, {})
         project = self.store.project_id
         bound = self.store.bound_base()
         self.ctx.publish('map.changed', {'project': project, 'base_id': bound.id if bound else None})
 
-    def report(self) -> dict[str, Any] | None:
-        """The ranked list, when its interval has passed since the last one, claimed so only one process sends it."""
-        at = self.clock()
-        if at - self.listed_at < self.interval:
-            return None
-        with self.store.tables() as tx:
-            last = state(tx, 'listed_at')
-            if last and at - float(last) < self.interval:
-                self.listed_at = float(last)  # another process sent it
-                return None
-            listed = make_list(tx, at)
-        self.listed_at = at
-        send_list(self.ctx, listed)
-        self.totals.lists += 1
-        return listed
-
     # -------------------------------------------------------------- one turn
 
     def tick(self, first: tuple[sources.Source | None, sources.Event] | None = None) -> None:
-        """One turn: the logs read again when a change asked for it, what was handed over taken, what was read written
-        once its batch is due, and the list sent when its interval has passed."""
+        """One turn: the logs read again when a change asked for it, what was handed over taken, and what was read
+        written once its batch is due."""
         self.drain(first)
         if self.claim_due:  # once for a burst of changes, in the turn they arrived in
             self.claim()
         if self.dirty and self.clock() - self.written_at >= BEAT_SECONDS:
             self.settle(self.write())
-        self.report()
 
-    def wait(self) -> float:
-        """Seconds until the next deadline: an open entry's quiet time, the write batch, or the list."""
+    def wait(self) -> float | None:
+        """Seconds until the next deadline, an open entry's quiet time or the write batch; None while there is none.
+        No wait while the logs are to be read again, at the first turn too."""
+        if self.claim_due:
+            return 0.0
         now, at = self.monotonic(), self.clock()
         due = [held.assembler.closes_at - now for held in self.held.values() if held.assembler.closes_at is not None]
         if self.dirty:
             due.append(self.written_at + BEAT_SECONDS - at)
-        due.append(self.listed_at + self.interval - at)
-        return max(0.0, min(due))
+        return max(0.0, min(due)) if due else None
 
     def run(self, ends: float | None = None) -> None:
         """Turn on each event and at each deadline until `stop`, or until the monotonic time `ends`."""
         while not self.stopping:
             left = self.wait()
             if ends is not None:
-                left = max(0.0, min(ends - self.monotonic(), left))
+                left = max(0.0, ends - self.monotonic() if left is None else min(ends - self.monotonic(), left))
             try:
                 first = self.events.get(timeout=left)
             except queue.Empty:

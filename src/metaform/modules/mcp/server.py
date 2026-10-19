@@ -28,6 +28,7 @@ import re
 import shlex
 import subprocess
 import sys
+import traceback
 import uuid
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable
@@ -508,7 +509,13 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any], session: str
         if name == 'instructions' and given.get('tool'):
             return False, [tool_guide(folder, str(given['tool']), given.get('op'), session)]
         if name == 'feedback':
-            result = result_json(feedback(folder, given.pop('text'), project=project, **given))
+            text = str(given.pop('text'))
+            saved = feedback(folder, text, project=project, **given)
+            result = result_json(saved)
+            _fault(folder, project, {'source': 'feedback', 'message': text.strip().split('\n')[0][:300],
+                                     'detail': text, 'reproduce': f'Read the feedback saved as '
+                                     f'{", ".join(str(one) for one in cast(list[Any], saved.get("files") or []))}, with '
+                                     f'{OWN}_read_report.', 'work_id': os.environ.get('METAFORM_WORK')})
         elif name == 'list_reports':
             result = result_json(list_reports(folder, project=project, **given))
         elif name == 'instructions' and given.get('module'):
@@ -527,6 +534,17 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any], session: str
     except Stop as stop:
         return _error(stop, folder)
     return False, (['\n'.join(notices)] if notices else []) + [result]
+
+
+def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> None:
+    """Publish `fault.raised`, for autoticket to file as a ticket to fix: a module's verb that failed, or feedback;
+    `work_id` names the ticket of the agent whose call it was. A fault that cannot be published changes no answer."""
+    try:
+        source = context('mcp', folder, project=str(project) if project else None, surface='mcp')
+        if source.project is not None:
+            events.publish('fault.raised', payload, source)
+    except Exception as error:  # noqa: BLE001  the caller's answer stands whether or not the fault is filed
+        sys.stderr.write(f'The fault could not be published: {error}\n')
 
 
 def run_skills(given: dict[str, Any]) -> dict[str, Any]:
@@ -1680,6 +1698,10 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
         error, blocks = _error(stop, folder)
         return error, blocks, None
     except Exception as error:  # noqa: BLE001  any failure of a module's verb goes back to the host, MCP-006
+        payload = {'source': 'mcp', 'message': f'{type(error).__name__}: {error}', 'detail': traceback.format_exc(),
+                   'reproduce': f'call {name} with {json.dumps(arguments, default=str)[:1000]}',
+                   'work_id': os.environ.get('METAFORM_WORK')}
+        await anyio.to_thread.run_sync(_fault, folder, arguments.get('project'), payload)
         return True, [(f'Error: {type(error).__name__}: {error}\nNext: call {OWN}_feedback and say what you '
                        'called')], None
     if os.environ.get('METAFORM_ROLE') == 'system':  # the one agent that follows the active map, `map_moved`

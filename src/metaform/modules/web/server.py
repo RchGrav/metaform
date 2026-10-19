@@ -220,7 +220,7 @@ WRITE_ROUTES = frozenset({
     '/api/apply-layers', '/api/answer', '/api/reopen', '/api/read', '/api/task', '/api/state', '/api/element',
     '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/eligible', '/api/memory', '/api/ignore',
     '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak',
-    '/api/voice/note'})
+    '/api/voice/note', '/api/page-faults'})
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
     '/api/orchestration-call',
@@ -383,6 +383,7 @@ def waits_on(path: str) -> str:
 
 
 SAID_KEPT = 512  # the refusals and faults remembered as already logged
+PAGE_FAULTS = 20  # the page's errors taken from one request; the page sends the errors of a second in one
 
 
 class Server(ThreadingHTTPServer):
@@ -784,6 +785,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self.body_read = False
+        self.project_given: str | None = None  # the project a write's body names, for a fault answering it
         try:
             self.answer('POST')
         finally:
@@ -865,14 +867,31 @@ class Handler(BaseHTTPRequestHandler):
             self.fault(error)
 
     def fault(self, error: Exception) -> None:
-        """An error no handler expected: logged once with its traceback, and answered as a 500 the page can show."""
-        path = urlsplit(self.path).path
+        """An error no handler expected: logged once with its traceback, answered as a 500 the page can show, then
+        published as a fault each time, for autoticket to file as a ticket to fix."""
+        url = urlsplit(self.path)
         said = f'{type(error).__name__}: {error}'
-        if self.gui.first_time(f'fault {self.command} {path} {said}'):
-            log(f'Fault answering {self.command} {path}:\n{traceback.format_exc().rstrip()}')
-        self.send(500, {'error': f'The server failed answering {path}: {said}',
+        trace = traceback.format_exc().rstrip()
+        if self.gui.first_time(f'fault {self.command} {url.path} {said}'):
+            log(f'Fault answering {self.command} {url.path}:\n{trace}')
+        self.send(500, {'error': f'The server failed answering {url.path}: {said}',
                         'next': 'metaform report "what you were doing"; the traceback is in run/web.log in the '
                                 'Metaform home'})
+        named = parse_qs(url.query).get('project', [None])[-1] if self.command == 'GET' else \
+            getattr(self, 'project_given', None)
+        self.fault_raised(named, {'source': 'web', 'message': said, 'detail': trace,
+                                  'reproduce': f'{self.command} {url.path} on the web server, as the page asks it.'})
+
+    def fault_raised(self, named: Any, payload: dict[str, Any]) -> None:
+        """Publish `fault.raised` for the project a request named; nothing when it named none this home holds."""
+        project = home.project(str(named or ''))
+        if project is None:
+            return
+        try:
+            source = chassis.context('web', Path(project.path), project=project.project_id, surface='web')
+            events.publish('fault.raised', payload, source)
+        except Exception:  # noqa: BLE001  a fault that cannot be published is in the log, which is enough
+            log(f'The fault could not be published:\n{traceback.format_exc().rstrip()}')
 
     def send_response(self, code: int, message: str | None = None) -> None:
         self.begun = True
@@ -1295,6 +1314,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/save-prompt': self.save_prompt, '/api/clear-project': self.clear_project, '/api/remove-project': self.remove_project,
                   '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
                   '/api/element': self.add_part, '/api/restore': self.restore, '/api/add-project': self.add_project, '/api/report': self.problem_report,
+                  '/api/page-faults': self.page_faults,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
@@ -1327,6 +1347,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return self.send(400, {'error': 'The body is not JSON.'})
         given = cast(dict[str, Any], body) if isinstance(body, dict) else {}
+        self.project_given = str(given.get('project') or '') or None
         try:
             writes[path](given)
         finally:  # announced as a command's write is: map.changed on the module event bus, VIEW-018 and BASE-010,
@@ -1842,6 +1863,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         found = home.project(project)
         self.send(200, {'project': project, 'created': created, 'path': found.path if found else path.strip()})
+
+    def page_faults(self, given: dict[str, Any]) -> None:
+        """The page's errors, core/errors.js: what failed on the page and the reads that failed, those of one second in
+        one request, each with how many times it came. Each is published as a fault, for autoticket to file as a ticket
+        to fix, once the page has its answer."""
+        faults, named = given.get('faults'), given.get('project')
+        if not isinstance(faults, list) or not named:
+            return self.send(400, {'error': "The page's faults are a list, with the project they happened on."})
+        taken = [cast(dict[str, Any], one) for one in cast(list[Any], faults)[:PAGE_FAULTS] if isinstance(one, dict)]
+        self.send(200, {'taken': len(taken)})
+        for one in taken:
+            message, count = str(one.get('message') or '')[:2000], one.get('count')
+            if not message:
+                continue
+            framed = re.search(r'/page/[^\s:()]+\.js', str(one.get('stack') or ''))  # its innermost part of the page
+            where = re.sub(r':\d+(?::\d+)?$', '', str(one.get('where') or '') or (framed[0] if framed else ''))
+            where = where.lstrip('/')
+            read = str(one.get('read') or '')
+            self.fault_raised(named, {
+                'source': 'page', 'message': f'{read} could not be read: {message}' if read else message,
+                'detail': str(one.get('stack') or '')[:8000], 'file': where,
+                'count': count if isinstance(count, int) and count > 0 else 1,
+                'reproduce': (f'Open the web page on project {named}: it reads /api/{read}.' if read else
+                              f'Open the web page on project {named}' + (f'; the error came from {one["where"]}.'
+                                                                         if one.get('where') else '.'))})
 
     def problem_report(self, given: dict[str, Any]) -> None:
         """A tester's problem report, as `metaform report` makes it, with the page's browser and console errors,

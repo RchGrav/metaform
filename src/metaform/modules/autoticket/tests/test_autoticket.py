@@ -255,30 +255,23 @@ def test_a_line_holding_an_api_key_is_kept_with_the_key_masked(run, project, hom
             assert key.encode() not in data and bearer.encode() not in data and password.encode() not in data, path
 
 
-def test_after_the_first_list_a_new_error_is_reported_at_once_and_a_known_one_is_not(run, project, monkeypatch):
+def test_a_new_kind_of_error_in_a_log_is_filed_at_once_and_a_known_kind_is_counted_on_its_ticket(run, project):
+    store = mapped(project)
     log = project / 'app.log'
     log.touch()
     run('autoticket', 'add', str(log), cwd=project)
-    from metaform.modules.autoticket import watch as watching  # after run, which loads the module afresh
-    told = []
-    monkeypatch.setattr(watching, 'signal', lambda ctx, kind, details: told.append((kind, details)))
     rng = random.Random(4)
     driver = Driver(project)
     try:
         write(log, [TEMPLATES[0](rng) for _ in range(3)])
         driver.settle(until=lambda: driver.watch.totals.lines >= 3)
-        assert told == []  # no baseline yet: a group made now is not reported
-        driver.skew += 15 * 60  # the interval passes: the first list, which sets the baseline
-        driver.watch.written_at = 0
-        driver.watch.tick()
-        assert [kind for kind, _ in told] == ['autoticket-list']
-        assert told[0][1]['baseline'] is True and told[0][1]['groups'][0]['count'] == 3
+        [first] = tickets(store)
+        assert first.kind == 'broken' and 'payment declined' in first.task and first.address == 'code.metaform'
         write(log, [TEMPLATES[0](rng), TEMPLATES[1](rng)])  # a known kind and a new one
         driver.settle(until=lambda: driver.watch.totals.lines >= 5)
-        news = [details for kind, details in told if kind == 'autoticket-new']
-        assert len(news) == 1 and 'database connection pool' in news[0]['example']
-        assert news[0]['count'] == 1 and set(news[0]['working']) == {'agents', 'tickets'}
-        assert [kind for kind, _ in told] == ['autoticket-list', 'autoticket-new']  # the next list is not due yet
+        filed = tickets(store)
+        assert len(filed) == 2 and any('database connection pool' in record.task for record in filed)
+        assert 'seen 4 times' in note_of(store, first.id)
     finally:
         driver.close()
 
@@ -387,5 +380,174 @@ def test_a_group_sits_at_the_address_whose_file_ref_names_its_traces_file_else_a
     ctx = context('autoticket', project)
     trace = 'Traceback (most recent call last):\n  File "{}", line 9, in charge\nValueError: declined'
     assert place(ctx, store, trace.format(project / 'app' / 'pay.py')) == 'code.gateway.payment'
-    assert place(ctx, store, trace.format(project / 'app' / 'cart.py')) == 'code.shop.online'
+    assert place(ctx, store, trace.format(project / 'app' / 'cart.py')) == 'code.gateway.payment'  # nearest: its folder
+    assert place(ctx, store, trace.format(project / 'lib' / 'cart.py')) == 'code.shop.online'
     assert place(ctx, store, trace.format('/elsewhere/app/pay.py')) == 'code.shop.online'
+
+
+# ------------------------------------------------------------------------------------------------ faults filed
+
+
+OWNED = (('code.server.web', 'src/metaform/modules/web/server.py'),
+         ('code.interface.graphical', 'src/metaform/modules/web/page/app/core/errors.js'),
+         ('code.dispatcher.agent', 'src/metaform/modules/dispatch/runner.py'))
+
+
+def mapped(project):
+    """A map whose sources layer names the web server, the page's error part and the dispatch runner, each at its own
+    element, under a DE."""
+    from metaform.data import Node, Store
+    store = Store('proj')
+    with store.atomic():
+        layer = store.layer('intake-1', 'intake', 'The functional map.', kind='intake', mutable=False,
+                            hideable=False, provenance={'module': 'intake'}, ready=True)
+        store.add_element(layer.name, 'code.metaform', name_length=1, role='DE')
+        for address, _ in OWNED:
+            store.add_element(layer.name, address, name_length=2, role='SE')
+            store.add_join(layer.name, 'code.metaform', address, purpose=f'Serve {address}.')
+        sources = store.layer('sources', 'intake', 'refs', mutable=True, hideable=True, ready=True)
+        for address, path in OWNED:
+            store.add_item(sources.name, Node('element', address), address, refs=[('path', path)])
+    return store
+
+
+def raise_fault(project, **payload):
+    """A fault as its source publishes it, `fault.raised`."""
+    from metaform.module import context
+    return context('autoticket', project).publish('fault.raised', payload)
+
+
+def web_fault(project, number=0):
+    return raise_fault(project, source='web', message=f"KeyError: 'node {number}'",
+                       detail=('Traceback (most recent call last):\n'
+                               f'  File "{project}/src/metaform/modules/web/server.py", line 812, in graph\n'
+                               f"KeyError: 'node {number}'"),
+                       reproduce='GET /api/graph on the web server, as the page reads the map.')
+
+
+def delivered():
+    """The faults module the bus delivers to, as the loader loaded it, so a patch on it is the one that runs."""
+    from metaform import loader
+    module = next(module for module in loader.enabled() if module.id == 'autoticket')
+    return sys.modules[module.subscriptions[0].handler.__module__]
+
+
+def tickets(store, open=True):
+    return [record for record in store.work(open=open, limit=0).results]
+
+
+def note_of(store, work_id):
+    return next(record for record in store.work(limit=0).results if record.id == work_id).note or ''
+
+
+def test_a_web_fault_a_page_error_and_a_crashed_run_each_file_one_ticket_at_the_owning_element(run, project):
+    store = mapped(project)
+    web_fault(project)
+    raise_fault(project, source='page', message='TypeError: graph.nodes is undefined',
+                detail='TypeError: graph.nodes is undefined\n    at draw (/page/app/core/errors.js:77:12)',
+                file='page/app/core/errors.js', reproduce='Open the web page on the project and select a node.')
+    raise_fault(project, source='run', message='The run of ticket 1234 ended: it failed: the agent crashed',
+                detail=('Traceback (most recent call last):\n'
+                        f'  File "{project}/src/metaform/modules/dispatch/runner.py", line 3480, in run\n'
+                        'RuntimeError: the agent crashed'),
+                reproduce='metaform dispatch start 1234 claude', work_id='1234')
+    found = {record.address: record for record in tickets(store)}
+    assert set(found) == {'code.server.web', 'code.interface.graphical', 'code.dispatcher.agent'}
+    web = found['code.server.web']
+    assert web.kind == 'broken' and not web.held
+    assert "KeyError: 'node 0'" in web.task and 'seen 1 time' in web.task and 'GET /api/graph' in web.task
+    assert 'first 20' in web.task and 'last 20' in web.task  # first and last seen, as times
+    assert 'server.py", line 812' in web.task  # the sample
+    assert 'check' in web.task and 'no longer happens' in web.task
+    assert 'graph.nodes is undefined' in found['code.interface.graphical'].task
+    assert 'metaform dispatch start 1234 claude' in found['code.dispatcher.agent'].task
+
+
+def test_the_same_error_ten_times_makes_one_ticket_whose_note_counts_ten(run, project):
+    store = mapped(project)
+    for number in range(10):
+        web_fault(project, number)
+    filed = tickets(store)
+    assert len(filed) == 1
+    assert 'seen 10 times' in filed[0].note
+
+
+def test_a_burst_of_one_error_is_one_pass_and_counts_each(run, project, monkeypatch):
+    """Faults that arrive while a pass runs merge into the next pass: twenty in a burst, two passes, one ticket."""
+    store = mapped(project)
+    faults = delivered()
+    passes = []
+    real = faults.settle
+
+    def counted(ctx, store, batch):
+        passes.append(sum(fault.count for fault in batch))
+        if len(passes) == 1:  # the burst arrives while the first pass runs
+            for number in range(1, 20):
+                web_fault(project, number)
+        return real(ctx, store, batch)
+    monkeypatch.setattr(faults, 'settle', counted)
+    web_fault(project)
+    assert passes == [1, 19]
+    assert len(tickets(store)) == 1 and 'seen 20 times' in tickets(store)[0].note
+
+
+SIX = ('payment declined by gateway for order', 'database connection pool exhausted waiting on replica',
+       'cache stampede detected on shard key', 'websocket handshake rejected by proxy upstream',
+       'template render missing variable heading in layout', 'thumbnail resize ran out of memory on image')
+
+
+def test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes(run, project):
+    store = mapped(project)
+    for words in SIX:
+        raise_fault(project, source='web', message=f'ValueError: {words}',
+                    reproduce='GET /api/x')
+    filed = tickets(store)
+    assert len(filed) == 5
+    assert not any('thumbnail' in record.task for record in filed)
+    run('map', 'work', 'op=done', f'id={filed[0].id}', 'resolution=Fixed.', 'why=Tested.', cwd=project)
+    now = tickets(store)
+    assert len(now) == 5 and any('thumbnail' in record.task for record in now)
+
+
+def test_an_error_from_an_agent_on_an_autoticket_ticket_lands_on_that_ticket(run, project):
+    store = mapped(project)
+    web_fault(project)
+    [ticket] = tickets(store)
+    for _ in range(3):
+        raise_fault(project, source='mcp', message='StoreError: the store is locked',
+                    reproduce='call map_work op=step', work_id=ticket.id)
+    assert [record.id for record in tickets(store)] == [ticket.id]
+    note = note_of(store, ticket.id)
+    assert 'the store is locked' in note and 'seen 3 times' in note
+
+
+def test_feedback_and_an_error_about_removing_data_are_filed_held_with_why(run, project):
+    store = mapped(project)
+    raise_fault(project, source='feedback', message='The map_work help never says what held means.',
+                reproduce='Read map_work help.')
+    raise_fault(project, source='web', message='OSError: could not delete the base folder',
+                reproduce='POST /api/remove-base: remove a base from the page.')
+    held = tickets(store)
+    assert len(held) == 2 and all(record.held for record in held)
+    assert all('Held for the person' in (record.note or '') for record in held)
+
+
+@pytest.mark.req('QUAL-015')
+def test_a_burst_of_changes_that_do_not_close_an_autoticket_ticket_reads_nothing(run, project, monkeypatch):
+    """The subscriber that files a waiting group when a slot frees decides from the event alone: a burst of
+    map.changed naming notes, steps, sessions or no tickets costs no read."""
+    from metaform.data import Store
+    from metaform.module import context
+    faults = delivered()
+    touched = []
+    real = Store.tables
+    monkeypatch.setattr(Store, 'tables', lambda self, *a, **k: (touched.append(1), real(self, *a, **k))[1])
+    ctx = context('autoticket', project)
+    for _ in range(50):
+        for payload in ({'project': 'proj', 'tables': ['ops'], 'work_ids': ['a'], 'kinds': ['note']},
+                        {'project': 'proj', 'tables': ['work'], 'work_ids': ['b'], 'kinds': ['step']},
+                        {'project': 'proj', 'tables': 'dispatch', 'work_ids': [], 'kinds': ['session']},
+                        {'project': 'proj', 'tables': ['objects', 'ops']},
+                        {'project': 'other', 'tables': ['work'], 'work_ids': ['c'], 'kinds': ['ticket']}):
+            faults.freed(payload, ctx)
+    assert touched == []

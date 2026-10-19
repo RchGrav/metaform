@@ -171,6 +171,8 @@ REOPENED = ('dispatch:system', 'dispatch:mascot')
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
+# how a session ends when its run is a fault: it crashed, or its agent ended by itself with the ticket open
+FAULTED = ('it failed', 'it did not start', 'the agent ended with exit code')
 RELEASE_LIMIT = 90.0  # the one wait for a new process to release: its start, and two writes that may each wait on a lock
 RELEASE = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import release; '
            "given = json.loads(sys.argv[1]); release(Store(given.pop('project'), module='dispatch'), **given)")
@@ -1298,6 +1300,8 @@ class Session:
         self.ending = False
         self.over = asyncio.Event()
         self.how = ''
+        self.failed_trace = ''  # the traceback of a run that failed, for its fault
+        self.login_needed = False  # it failed for want of the person's login: the person's to fix, no fault
         self.tasks: set[asyncio.Task[Any]] = set()
         self.failure: Exception | None = None
         self.progress_steps = record.steps_done if record is not None else 0
@@ -3485,6 +3489,7 @@ class Session:
         except Exception as error:  # noqa: BLE001  the agent did not start; the map says why
             said = 'did not start' if self.session_id is None else 'failed'
             sys.stderr.write(f'{self.name} {said} on work {self.work_id}: {error}\n')
+            self.failed_trace = ''.join(traceback.format_exception(error))
             last = self.tail()
             self.how = f'it {said}: {error}' + (f'; its last stderr: {last}' if last else '')
             text = f'{self.name} {said} on work {self.work_id}: {error}' + (
@@ -3513,6 +3518,7 @@ class Session:
                 loop.remove_signal_handler(signal.SIGTERM)
             try:
                 await asyncio.shield(self.end(self.how or 'the runner ended'))
+                await self.fault_raised()
             finally:
                 pending = tuple(self.tasks)
                 for task in pending:
@@ -3525,6 +3531,22 @@ class Session:
                     server.close()
                     await server.wait_closed()
         return {'work_id': self.work_id, 'agent': self.agent, 'session_id': self.session_id, 'ended': self.how}
+
+    async def fault_raised(self) -> None:
+        """A run that crashed, or whose agent ended by itself with its ticket open, is a fault: published as
+        `fault.raised` with the ticket it ran, for autoticket to file as a ticket to fix, or to count on this ticket when
+        autoticket filed it. A login the agent needs is the person's, raised to them as its own signal, so no fault."""
+        if self.probe or self.login_needed or not self.how.startswith(FAULTED):
+            return
+        tail = '\n'.join(self.stderr_tail)
+        payload = {'source': 'run', 'message': f'The {self.agent} run ended: {self.how.split(chr(10))[0]}'[:500],
+                   'detail': '\n'.join(part for part in (f'Ticket {self.work_id}: {self.how}', self.failed_trace,
+                                                         f'Its last stderr:\n{tail}' if tail else '') if part),
+                   'reproduce': f'metaform dispatch start {self.work_id} {self.agent}', 'work_id': self.work_id}
+        try:
+            await self.ctx.publish_async('fault.raised', payload)
+        except Exception as error:  # noqa: BLE001  a fault that cannot be published never keeps the runner up
+            sys.stderr.write(f'The fault of work {self.work_id} could not be published: {error}\n')
 
     async def begin(self) -> None:
         if self.ending:
@@ -3574,6 +3596,7 @@ class Session:
                     await self.waits_moved(str(made.session_id))
         except acp.RequestError as error:
             if error.code == AUTH_REQUIRED:  # the agent needs a login first: the person's, never Metaform's, P031
+                self.login_needed = True
                 await self.raise_signal('login-needed', key=self.agent, agent=self.agent,
                                         methods=[one.get('id') for one in self.acp['auth_methods']],
                                         next=f'metaform dispatch login {self.agent}')
