@@ -1,119 +1,40 @@
-"""The tool catalog, MCP-003: Metaform's tools found by purpose, and the tools each agent's role is given.
+"""MCP tools belong to their declaring module; discovery never assigns synthetic categories.
 
-An agent knows what it is trying to do before it knows which tool does it, and every tool it is listed it reads and
-carries, so the server lists by purpose. Each tool belongs to a category, the purpose it serves: its verb's own
-`category`, else the one given it here, else its module's. A connection whose listing follows its session is listed
-one tool, metaform_catalog, and the tools of the one category it has open: called with nothing, it says each category's
-purpose; with a category, it opens it, so its tools are listed in place of the last one's; with search, it finds tools
-from words for what the agent wants to do, in any category; with tool and arguments, it runs one, for an AI tool that
-keeps the list it was first given. A connection whose listing names no session, such as an HTTP client on the July
-2026 wire, which has no session header, is listed every tool its role is given, since no category it opens could
-change what it is listed.
-
-Every execution role may discover each category unless the person's configured roles_without_authority holds it
-back from steering. Authored responsibility does not grant or remove tool authority. A role starts with the category
-its first task needs open, so the
-tool its first message names is listed at once: a worker's ticket category, an intake's intake category; a role whose
-first task needs one tool alone, a talk or a sentinel reading its node, starts with that tool and no category open.
+The module directory publishes each active module's own summary. Sessions expose only the module they open.
+Stateless clients use the catalog's direct-call path rather than receiving every module's schemas at startup.
+Discovery and the user's configured authority controls remain independent.
 """
 from __future__ import annotations
 
 import os
 import re
 from collections.abc import Iterable
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from metaform import prompt_files, settings
-from metaform.module import CATEGORY_NAMES, Module, Verb
+from metaform import settings
+from metaform.module import Module, Verb
 
-CATALOG = 'metaform_catalog'  # the one tool every connection is listed in catalog mode
-OPEN_KEY = 'catalog:open'  # the ledger key of the category a session has open; shown.KEPT_THROUGH_COMPACTION keeps it
+CATALOG = 'metaform_catalog'
+OPEN_KEY = 'catalog:module'
 
-# The tools each category holds, in the order an agent reads them, where the verb does not name its own: the tool's home
-# category first. A tool may serve two purposes, such as intake_start, which also opens a verification pass that adds
-# a part to the map, so it is found from either.
-CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
-    'orient': ('map_where', 'map_find', 'map_search', 'map_roots', 'map_element', 'map_node', 'map_children',
-               'map_joins', 'map_identity', 'map_context', 'map_links', 'map_citing', 'map_item', 'map_history',
-               'map_layers', 'map_layer', 'map_bases', 'map_glossary', 'map_cypher',
-               'map_challenges'),
-    'ticket': ('map_work', 'map_where', 'dispatch_handoff', 'dispatch_link', 'map_messages', 'map_reply',
-               'map_answer', 'dispatch_attach', 'dispatch_timer'),
-    'memory': ('memory_read_graph', 'memory_search_nodes', 'memory_open_nodes', 'memory_create_entities',
-                 'memory_add_observations', 'memory_create_relations', 'memory_joins', 'memory_note', 'memory_graph',
-                 'memory_orphaned', 'memory_rekey', 'memory_unjoin', 'memory_delete_entities',
-                 'memory_delete_observations', 'memory_delete_relations'),
-    'coordinate': ('dispatch_peers', 'dispatch_note', 'dispatch_notes', 'agents_resolve', 'agents_roles',
-                   'agents_receipts', 'mcp_a2a_peers', 'mcp_a2a_send',
-                   'mcp_a2a_exchanges', 'mcp_a2a_cancel'),
-    'change-map': ('map_refine', 'map_knowledge', 'map_term', 'map_promote', 'intake_start', 'map_tag', 'map_untag',
-                   'map_select', 'map_mask', 'map_clear', 'map_hide', 'map_unhide', 'map_reexamined', 'map_critic'),
-    'intake': ('intake_prompt', 'intake_schema', 'intake_start', 'intake_element', 'intake_purpose', 'intake_show',
-               'intake_remove', 'intake_finish', 'intake_status'),
-    'steer': ('dispatch_start', 'dispatch_agents', 'dispatch_sessions', 'dispatch_message', 'dispatch_wait',
-              'dispatch_stop', 'dispatch_talk', 'dispatch_system', 'dispatch_intake', 'dispatch_helper',
-              'dispatch_signals',
-              'dispatch_resume', 'dispatch_interrupt', 'dispatch_cancel', 'dispatch_broadcast',
-              'dispatch_broadcasts', 'dispatch_autostart', 'dispatch_stop-all', 'dispatch_propose', 'dispatch_claim',
-              'dispatch_claims', 'dispatch_merges', 'dispatch_review', 'dispatch_prep', 'dispatch_fork',
-              'dispatch_options', 'dispatch_tune', 'dispatch_spend', 'dispatch_registry', 'dispatch_recover',
-              'dispatch_reset', 'dispatch_permit', 'dispatch_publication', 'agents_roles', 'agents_role',
-              'agents_sent', 'agents_override', 'agents_drop'),
-    'show': ('web_start', 'web_restart', 'web_stop'),
-    'workflow': ('metaform_skills',),
-    'setup': ('metaform_set', 'metaform_register', 'metaform_instructions', 'metaform_prompts', 'metaform_prompt',
-              'metaform_save_prompt', 'metaform_add_origin', 'metaform_list_origins', 'metaform_add_variant',
-              'metaform_list_variants', 'metaform_extract', 'metaform_clear_project', 'map_bases', 'map_add-base',
-              'map_activate', 'map_remove-base', 'map_collapse', 'fork_init', 'fork_upkeep'),
-    'report': ('metaform_feedback', 'metaform_list_reports', 'metaform_read_report', 'metaform_instructions'),
-}
-# The category of a module's tools that no category above names and whose verb names none.
-MODULE_CATEGORY: dict[str, str] = {
-    'map': 'orient', 'memory': 'memory', 'dispatch': 'steer', 'intake': 'intake', 'web': 'show',
-    'workflow': 'workflow', 'mcp': 'coordinate', 'agents': 'steer', 'orchestration': 'coordinate',
-    'fork': 'setup', 'twilio': 'setup',
-    'paperclip': 'coordinate', 'metaform': 'setup'}
-FALLBACK = 'setup'  # a module this table does not know, whose verbs name no category
-
-# The category open when an execution role starts, containing the first message's named tool.
-ROLE_OPENS: dict[str, str] = {'worker': 'ticket', 'prep': 'ticket', 'intake': 'intake'}
-# The tools listed beside the catalog to a role that starts with no category open, the one its first message names:
-# a talk and a sentinel read the node they were given before anything else, and the 20 other orient tools would come
-# with a category opened for it.
-ROLE_FIRST: dict[str, tuple[str, ...]] = {'talk': ('map_where',), 'sentinel': ('map_where',)}
-# What a role the person holds back, roles_without_authority, never writes over a tool: the ops of a tool it is refused,
-# and the arguments only those ops and the board read, left out of the tool's schema and its guide for that role, so
-# its agent is not handed the board's controls. A tool not named keeps its schema whole.
 HELD_OPS: dict[str, tuple[str, ...]] = {'map_work': ('add', 'move', 'distribute', 'glyphs')}
 HELD_ARGUMENTS: dict[str, tuple[str, ...]] = {
     'map_work': ('column', 'position', 'held', 'reviewed', 'agent', 'hold', 'glyph', 'eligible', 'after_work', 'agents',
                  'links', 'by', 'title', 'task'),
     'dispatch_handoff': ('full',)}  # the full brief, no longer sent to agents, is the person's to read
-STEER = 'steer'  # what a role the person holds back, roles_without_authority, never opens
-ALWAYS = ('metaform_feedback',)  # runs for every role, so a fault can always be reported, MCP-006
-# The categories listed beside whichever one is open: the memory prompt asks every agent to read the memories where it
-# works and keep them current as it works, removing what is outdated, so those tools are never a category away
-# (2026-10-18, the person's decision after agents left memories stale).
-BESIDE = ('memory',)
-# The tools listed beside whichever category is open, for every role: agents at work at once find each other and send
-# notes, and a note that arrives names its reply as `dispatch_note reply=<id>`. Behind the coordinate category an
-# agent's tool search found none of them, so it guessed or gave up (2026-10-19).
-BESIDE_TOOLS = ('dispatch_peers', 'dispatch_note', 'dispatch_notes')
-# The tools listed beside whichever category is open for an agent at work on an orchestration assignment, one whose
-# runner set METAFORM_AUTHORED_ROLE: its work returns through check-in, and a GC or reviewer asks for the independent
-# assessment through assess. Behind the coordinate category a GC in another project found neither, so it left its
-# result in a ticket resolution and its work never returned (2026-10-18).
-ASSIGNED_TOOLS = ('orchestration_check-in', 'orchestration_assess')
-# The tools listed beside whichever category is open for a role whose prompt sends it to them: the system agent's
-# mascot and eyes lines name the web module's body tools, dispatch's MASCOT_VERBS and EYES_VERBS, which sat behind the
-# show category, so the agent was told to use tools it was not listed (2026-10-18). Its prompt sends it to
-# dispatch_helper for work it hands off, so that is listed beside too (code.dispatcher.agent#78).
-ROLE_BESIDE: dict[str, tuple[str, ...]] = {
-    'system': ('web_say', 'web_go', 'web_point', 'web_emote', 'web_look', 'web_see', 'web_turn', 'web_come',
-               'web_embody', 'web_viewing', 'web_capture', 'dispatch_helper')}
 
-assert set(CATEGORY_TOOLS) == set(CATEGORY_NAMES), 'one entry for each category the chassis names'
+# These operations remain subject to roles_without_authority, independently of tool discovery.
+RESTRICTED_STEERING_TOOLS = frozenset({
+    'dispatch_start', 'dispatch_agents', 'dispatch_sessions', 'dispatch_message', 'dispatch_wait',
+    'dispatch_stop', 'dispatch_talk', 'dispatch_system', 'dispatch_intake', 'dispatch_helper', 'dispatch_signals',
+    'dispatch_resume', 'dispatch_interrupt', 'dispatch_cancel', 'dispatch_broadcast', 'dispatch_broadcasts',
+    'dispatch_autostart', 'dispatch_stop-all', 'dispatch_propose', 'dispatch_claim', 'dispatch_claims',
+    'dispatch_merges', 'dispatch_review', 'dispatch_prep', 'dispatch_fork', 'dispatch_options', 'dispatch_tune',
+    'dispatch_spend', 'dispatch_registry', 'dispatch_recover', 'dispatch_reset', 'dispatch_permit',
+    'dispatch_publication', 'agents_role', 'agents_sent', 'agents_override', 'agents_drop',
+})
 
 
 def role() -> str | None:
@@ -133,35 +54,6 @@ def held(folder: Path, named: str | None) -> bool:
         return False
 
 
-def allowed(folder: Path, named: str | None = None) -> tuple[str, ...]:
-    """All categories, in chassis order, except steering when the person's configuration holds the role back."""
-    named = role() if named is None else named
-    found = set(CATEGORY_NAMES)
-    if held(folder, named):
-        found.discard(STEER)
-    return tuple(one for one in CATEGORY_NAMES if one in found)
-
-
-def opens(named: str | None = None) -> str | None:
-    """The category open when the role's session starts, None for a role that starts with the categories alone."""
-    return ROLE_OPENS.get((role() if named is None else named) or '')
-
-
-def first(named: str | None = None) -> tuple[str, ...]:
-    """The tools listed beside the catalog while no category is open, the ones the role's first message names."""
-    return ROLE_FIRST.get((role() if named is None else named) or '', ())
-
-
-def beside_tools(named: str | None = None) -> tuple[str, ...]:
-    """The tools listed beside whichever category is open: BESIDE_TOOLS for every role, the role's ROLE_BESIDE, and
-    ASSIGNED_TOOLS while the agent works an orchestration assignment. A tool off the folder's surface is left out by
-    the caller, so the system agent is listed the web body tools only while the web module is on."""
-    assigned = ASSIGNED_TOOLS if os.environ.get('METAFORM_AUTHORED_ROLE') else ()
-    return (*BESIDE_TOOLS, *ROLE_BESIDE.get((role() if named is None else named) or '', ()), *assigned)
-
-
-# The roles that act for the person, beside the person's own sessions: they are given what a verb says only to the
-# person, Verb.person_details, such as how the person writes a ticket.
 FOR_PERSON = ('system', 'sentinel')
 
 
@@ -179,44 +71,19 @@ def held_back(folder: Path, name: str) -> tuple[tuple[str, ...], tuple[str, ...]
     return HELD_OPS.get(name, ()), HELD_ARGUMENTS.get(name, ())
 
 
-def categories_of(name: str, verb: Verb | None, module: Module | None) -> tuple[str, ...]:
-    """The categories a tool is found under, its home first: its verb's own, else each category naming it, else its
-    module's."""
-    if verb is not None and verb.category is not None:
-        return (verb.category,)
-    named = tuple(category for category, members in CATEGORY_TOOLS.items() if name in members)
-    if named:
-        home = next((category for category in named if CATEGORY_TOOLS[category][0] == name), None)
-        return (home, *(one for one in named if one != home)) if home else named
-    owner = module.id if module is not None else name.split('_', 1)[0]
-    return (MODULE_CATEGORY.get(owner, FALLBACK),)
-
-
 def grouped(names: Iterable[str], declared: dict[str, tuple[Module, Verb]]) -> dict[str, list[str]]:
-    """Each category, in CATEGORY_NAMES order, with the tools of `names` it holds, in its declared order, then by
-    name for those it holds by module."""
-    found: dict[str, list[str]] = {category: [] for category in CATEGORY_NAMES}
+    """Each tool occurs once, under its declared owner; chassis commands belong to metaform."""
+    found: dict[str, list[str]] = {}
     for name in names:
-        module, verb = declared.get(name, (None, None))
-        for category in categories_of(name, verb, module):
-            found[category].append(name)
-    order = {category: {tool: index for index, tool in enumerate(members)}
-             for category, members in CATEGORY_TOOLS.items()}
-    return {category: sorted(tools, key=lambda tool: (order[category].get(tool, len(order[category])), tool))
-            for category, tools in found.items()}
+        declaration = declared.get(name)
+        owner = declaration[0].id if declaration is not None else 'metaform'
+        found.setdefault(owner, []).append(name)
+    return {owner: sorted(found[owner]) for owner in sorted(found)}
 
 
 def in_scope(name: str, declared: dict[str, tuple[Module, Verb]], folder: Path, named: str | None = None) -> bool:
-    """Whether a tool is given to the role: one of its categories is one the role may open."""
-    if name in ALWAYS or name == CATALOG:
-        return True
-    module, verb = declared.get(name, (None, None))
-    return bool(set(categories_of(name, verb, module)) & set(allowed(folder, named)))
-
-
-def purpose(category: str) -> str:
-    """What a category is for, from the mcp module's prompts.xml, `category_<name>`; its name when the line is empty."""
-    return prompt_files.module('mcp', 'category_' + category.replace('-', '_')) or category
+    """Preserve explicit user restrictions without using discovery groupings as authority."""
+    return name not in RESTRICTED_STEERING_TOOLS or not held(folder, role() if named is None else named)
 
 
 def signature(schema: dict[str, Any]) -> str:
@@ -233,17 +100,28 @@ def words(text: str) -> set[str]:
     return set(WORD.findall(text.lower()))
 
 
-def ranked(query: str, described: dict[str, str], homes: dict[str, str]) -> list[str]:
-    """The tools whose name, description and category's purpose hold the most of the query's words, each as a prefix
-    of a word there, best first; a tool that holds none is left out."""
+def ranked(query: str, described: dict[str, str], homes: dict[str, str],
+           purposes: dict[str, str] | None = None) -> list[str]:
+    """Find commands by their own descriptions and their declaring module's published purpose."""
     asked = words(query)
     if not asked:
         return []
-    scored: list[tuple[int, str]] = []
+    scored: list[tuple[float, str]] = []
     for name, said in described.items():
-        held = words(f'{name.replace("_", " ")} {said} {homes.get(name, "")} {purpose(homes.get(name, ""))}')
-        hits = sum(1 for word in asked if any(one.startswith(word) for one in held))
-        named = sum(1 for word in asked if word in name)
-        if hits:
-            scored.append((-(hits * 2 + named), name))
+        owner = homes.get(name, '')
+        held = words(f'{name.replace("_", " ")} {said} {owner} {(purposes or {}).get(owner, "")}')
+        score = 0.0
+        for word in asked:
+            if word in held:
+                score += 4.0 + (2.0 if word in words(name) else 0.0)
+            elif any(one.startswith(word) for one in held):
+                score += 3.0
+            elif len(word) >= 4:
+                # Short tokens are too ambiguous to correct. Compare similarly sized words only.
+                nearby = (one for one in held if abs(len(one) - len(word)) <= 2)
+                similarity = max((SequenceMatcher(None, word, one).ratio() for one in nearby), default=0.0)
+                if similarity >= 0.75:
+                    score += similarity
+        if score:
+            scored.append((-score, name))
     return [name for _, name in sorted(scored)]

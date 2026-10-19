@@ -30,12 +30,7 @@ Before you add to this node's memory, merge repeats into one observation and del
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
 <note_counts>The person's note: metaform memory note node=&lt;address&gt;</note_counts>
-<!-- memory's rules, MCP-031: each one sentence an agent keeps while it works that memory's own refusals cannot teach,
-     with why="..." giving its reason; a title and a why on every memory are not here, since memory refuses a write
-     without them and says so at that moment. The MCP
-     server gathers every enabled module's rules into one block at the end of metaform://tools, each line
-     "[memory] <rule> Why: <why>", read once with the tools. A rule without a why stops the module loading. Empty
-     <rules></rules> sends nothing. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules>
 <rule why="The Join rule attaches all knowledge to the RE, so the next agent finds a memory where the goal it serves is borne, and memory cannot tell an RE from a PE for you.">Record each memory at the RE whose goal it serves, never at a PE that provides for it.</rule>
 </rules>

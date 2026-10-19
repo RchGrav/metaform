@@ -659,16 +659,13 @@ def connect_instructions(folder: Path) -> str:
 
 
 def role_text(folder: Path, client: str | None = None, session: str | None = None, keyed: bool = True) -> str:
-    """metaform://role/<role>: what the role of the agent this server serves is for and the tool categories it gets,
-    then what else it needs before its first call. The person's own sessions get `connect_use` and the system agent its
-    role's line, each followed by one line per tool category it may open with what the category is for; a dispatched
-    agent of another role gets its role's line, which names the categories it is given. Then the line on the catalog,
-    with the category open at connect or the tool listed beside it; to a connection whose calls name no session (`keyed`
-    False: the July 2026 wire over HTTP) how to name one, `connect_unkeyed`, else to a session no runner follows,
-    `session` None or a process's own, the compaction line. Then the folder's project to the person's own sessions,
-    the notices the folder's state calls for but intake's first-run text, which is metaform://firstrun, and to the
-    person's own sessions and the system agent the skill index for the connecting AI tool, `client`, BASE-059."""
+    """Role responsibilities and module discovery pointers, followed by session and project guidance.
+
+    Capabilities and tool names are read from their owning module only when needed. The module directory is
+    never repeated inside the role prompt, and selecting expertise does not select an MCP tool module.
+    """
     named = catalog.role()
+    listed = named is None or named == 'system'
     project = project_for(folder)
     assignment = assignment_context(folder, session)
     authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or
@@ -678,18 +675,11 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
     lines: list[str] = []
     if named is None or named == 'system':
         head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
-        lines.append('\n'.join(part for part in (head, *category_lines(folder)) if part))
-    elif said := prompt_files.module('mcp', f'role_{named}', categories=', '.join(openable(folder)),
+        lines.append(head)
+    elif said := prompt_files.module('mcp', f'role_{named}',
                                      assignment=assignment_id, authored_role=authored_role):
         lines.append(said)
-    opened, first = catalog.opens(named), catalog.first(named)
-    held = prompt_files.module('mcp', 'connect_open', category=opened) if opened and keyed else \
-        prompt_files.module('mcp', 'connect_first', tool=', '.join(first)) if first and keyed else ''
-    listed = named is None or named == 'system'  # its categories were each said above, with what each is for
-    # Where the listing names no session it never narrows, so the line saying a category is opened in place of the
-    # last would be false there; connect_unkeyed below says how this connection is used instead.
-    if keyed and (said := (prompt_files.module('mcp', 'connect_catalog_listed') if listed else
-                           prompt_files.module('mcp', 'connect_catalog', open=f' {held}' if held else ''))):
+    if said := prompt_files.module('mcp', 'connect_catalog'):
         lines.append(said)
     if not keyed:
         said = prompt_files.module('mcp', 'connect_unkeyed', handle=HANDLE)
@@ -706,14 +696,6 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
     if listed and (index := skill_index(folder, client)):  # the skills are the person's workflows, BASE-059
         lines.append(index)
     return '\n\n'.join(lines)
-
-
-def category_lines(folder: Path) -> list[str]:
-    """One line per category the role may open that holds a tool here, `– <name>: <what it is for>`, the purpose cut at
-    its first colon, or else its first `, and`, so the whole fits the connect message; metaform_catalog says each
-    whole."""
-    return [f'– {name}: {catalog.purpose(name).split(":", 1)[0].split(", and ", 1)[0].rstrip(".")}'
-            for name in openable(folder)]
 
 
 def register(folder: Path, given: str | None = None) -> dict[str, Any]:
@@ -936,7 +918,6 @@ class Listed:
     guide: Callable[[str | None], str] = lambda op: ''
     module: str = 'metaform'  # the module that serves it, whose rules come with the first use of any of its tools
     persons: bool = False  # the person's decision, Verb.person_says: destructive whatever its effect
-    categories: tuple[str, ...] = ()  # the purposes it is found under, its home first, catalog.categories_of
     verb: Verb | None = None  # the module verb it runs, None for the chassis's own tools
 
     def annotations(self) -> dict[str, bool]:
@@ -953,7 +934,7 @@ SENTENCE = re.compile(r'(?<=\.)\s')  # where a description's first sentence ends
 def glossary(folder: Path) -> str:
     """metaform://metaform: the system glossary, the mcp module's glossary prompt exactly as written and nothing more,
     how to operate in Metaform; the same for every folder, and for a project named metaform too. The tools and the
-    modules' rules are metaform://tools, the project's own terms metaform://<project>, each read once on its own. The
+    modules are discovered at metaform://modules, with commands at metaform://<module>/tools. The
     text is `metaform instructions metaform`'s, MCP-003, made in one place."""
     return module_instructions(folder, 'metaform') or ''
 
@@ -974,7 +955,7 @@ LINE_LEAST = 32  # and the fewest it is cut to
 
 
 def short_line(description: str) -> str:
-    """One tool's line in metaform://tools: the head of its description's first sentence, what it does, before the
+    """One tool's line in its module's tools resource: the head of its description's first sentence, what it does, before the
     details a colon or semicolon opens, with the command it matches left out; the details come with the tool."""
     first = SENTENCE.split(description.split(' Caution:')[0], maxsplit=1)[0]
     head = CLAUSE.split(AS_DOES.sub('', first), maxsplit=1)[0].strip().rstrip('.')
@@ -986,37 +967,30 @@ def short_line(description: str) -> str:
     return head
 
 
-def tools_text(folder: Path) -> str:
-    """metaform://tools: every tool the agent's role is given, one line each, under the category it is found by, with
-    what the category is for, so an agent knows every tool it can reach and where; then the rules of the modules on
-    the surface, MCP-031; at most TOOLS_MOST characters. Linked from every connect message and read when the agent
-    needs it; nothing here is pushed. A tool in two categories is under each."""
-    groups = catalog.grouped(given_tools(folder), tools(folder))
-    heading = prompt_files.module('mcp', 'tool_index')
-    index = '\n'.join(
-        f'{category}{" (always listed)" if category in catalog.BESIDE else ""} — '
-        f'{catalog.purpose(category).split(":", 1)[0].split(", and ", 1)[0].rstrip(".")}: {", ".join(names)}'
-        for category, names in groups.items() if names)
-    listed = (heading + '\n' if heading else '') + index
-    kept = rules(folder)  # the rules are never cut: past the limit, category lines go, the rules stay whole
-    tail = '\n\n' + kept + '\n' if kept else '\n'
-    if len(listed) + len(tail) > TOOLS_MOST:
-        # the whole lines that fit beside the pointer and the rules; rules longer than TOOLS_MOST on their own are
-        # still given whole, past the limit, since a cut tool line is found again by search and a lost rule is not
-        more = prompt_files.module('mcp', 'tool_index_more') or f'… more: {catalog.CATALOG} search'
-        cut = listed[:max(0, TOOLS_MOST - len(tail) - len(more))]
-        listed = (cut.rsplit('\n', 1)[0] + '\n' if '\n' in cut else '') + more
-    return listed + tail
+def module_descriptions(folder: Path) -> dict[str, str]:
+    """Active modules publish their own capability description, including modules with no MCP verbs."""
+    return {'metaform': prompt_files.module('mcp', 'chassis_description') or '',
+            **{module.id: module.summary for module in surface(folder)}}
 
 
-def rules(folder: Path) -> str:
-    """The rules block that closes metaform://tools: mcp's `rules_heading`, then each rule of each module on the
-    folder's surface, in module id order, as `[module] <rule> Why: <why>`; empty when no module there holds a rule, so
-    an agent is handed each rule once, with its reason and the module it comes from."""
-    heading = prompt_files.module('mcp', 'rules_heading')
-    lines = [f'[{module.id}] {said} Why: {why}' for module in surface(folder)
-             for said, why in prompt_files.module_rules(module.id)]
-    return heading + '\n' + '\n'.join(lines) if heading and lines else ''
+def modules_text(folder: Path) -> str:
+    """A directory of capabilities and their tool resources, without command names or schemas."""
+    head = prompt_files.module('mcp', 'module_index') or ''
+    return '\n'.join([head, *(f'- {name}: {purpose} — metaform://{name}/tools'
+                             for name, purpose in sorted(module_descriptions(folder).items()))])
+
+
+def module_tools_text(folder: Path, module: str) -> str:
+    """Only one module's commands, generated from that module's current declarations."""
+    descriptions = module_descriptions(folder)
+    if module not in descriptions:
+        raise Missing(f'No active module {module}.', 'read metaform://modules')
+    available = given_tools(folder)
+    names = catalog.grouped(available, tools(folder)).get(module, [])
+    lines = [f'{module}: {descriptions[module]}',
+             prompt_files.module('mcp', 'module_tools', module=module) or '',
+             *(catalog_line(available[name]) for name in names)]
+    return '\n'.join(line for line in lines if line)
 
 
 def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
@@ -1051,7 +1025,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
         built = functools.partial(verb_schema, verb, folder, name)
         found[name] = Listed(name, tool_named(said, folder), functools.partial(briefed, built), verb.effect,
                              verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder, name=name),
-                             module.id, verb.person_says, catalog.categories_of(name, verb, module), verb)
+                             module.id, verb.person_says, verb)
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
         'set': (('Save settings for this folder, each given as name=value. Called with none, it lists the settings '
                  'an agent may change, each with its help, choices and current value.'),
@@ -1066,8 +1040,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
         head, more = headed(said)
         found[f'{OWN}_{name}'] = Listed(f'{OWN}_{name}', tool_named(head, folder), functools.partial(briefed, build),
                                         CHASSIS_EFFECTS[name], guide=functools.partial(own_guide, more, build, folder),
-                                        persons=name in PERSON_SAYS,
-                                        categories=catalog.categories_of(f'{OWN}_{name}', None, None))
+                                        persons=name in PERSON_SAYS)
     return dict(sorted(found.items()))
 
 
@@ -1291,14 +1264,14 @@ def _digest(text: str) -> str:
 
 
 def catalog_schema(folder: Path, unkeyed: bool = False) -> dict[str, Any]:
-    """metaform_catalog's input schema: the category to open, among those the role may, the words to search, the tool
+    """metaform_catalog's input schema: the module to open, among those the role may, the words to search, the tool
     to run with its arguments, and the flag that says the agent's context was compacted. `unkeyed`: for a listing that
-    names no session, whose category's help says what opening it does there."""
+    names no session, whose module's help says what opening it does there."""
     def said(name: str) -> str:
         return prompt_files.module('mcp', name) or ''
-    opening = said('catalog_category_unkeyed' if unkeyed else 'catalog_category')
+    opening = said('catalog_module')
     return {'type': 'object', 'additionalProperties': False, 'properties': {
-        'category': {'type': 'string', 'enum': list(openable(folder)), 'description': opening},
+        'module': {'type': 'string', 'description': opening},
         'search': {'type': 'string', 'description': said('catalog_search')},
         'tool': {'type': 'string', 'description': said('catalog_run')},
         'arguments': {'type': 'object', 'description': said('catalog_arguments')},
@@ -1306,15 +1279,13 @@ def catalog_schema(folder: Path, unkeyed: bool = False) -> dict[str, Any]:
 
 
 def openable(folder: Path) -> tuple[str, ...]:
-    """The categories the role may open that hold a tool on this folder's surface, catalog.allowed: one whose tools
-    are all withheld, such as an intake's orient while map:read is, is no category to it, so it is never named."""
-    grouped = catalog.grouped(given_tools(folder), tools(folder))
-    return tuple(name for name in catalog.allowed(folder) if grouped[name])
+    """Module ids available on this surface, without a separate registry of modules."""
+    return tuple(sorted(module_descriptions(folder)))
 
 
 def given_tools(folder: Path) -> dict[str, Listed]:
     """The tools the role of the agent this server serves is given, by name, in listing order, MCP-003: every tool on
-    the folder's surface whose category the role may open, catalog.in_scope."""
+    the folder's surface whose module the role may open, catalog.in_scope."""
     declared = tools(folder)
     return {name: one for name, one in listing(folder).items() if catalog.in_scope(name, declared, folder)}
 
@@ -1331,10 +1302,10 @@ def action_bindings(ctx: Context, capabilities: dict[str, Any] | None = None) ->
                       for name, one in active.items()}}
 
 
-def open_category(folder: Path, session: str | None) -> str | None:
-    """The category a session has open: the one it opened last, else the one its role starts with; None for none."""
+def open_module(folder: Path, session: str | None) -> str | None:
+    """The module a session has open: the one it opened last, else the one its role starts with; None for none."""
     held = shown_before(session, catalog.OPEN_KEY)
-    chosen = held if isinstance(held, str) else catalog.opens()
+    chosen = held if isinstance(held, str) else None
     return chosen if chosen in openable(folder) else None
 
 
@@ -1344,7 +1315,7 @@ def open_category(folder: Path, session: str | None) -> str | None:
 HANDLE = 'session_handle'
 HANDLE_META = 'io.metaform/session'
 HANDLED = re.compile(r'[0-9a-f]{12}')  # a handle as metaform_catalog makes it; anything else names no session
-# The keys of a session's record of how its AI tool lists: the category opened whose listing the AI tool has not asked
+# The keys of a session's record of how its AI tool lists: the module opened whose listing the AI tool has not asked
 # for yet, and that it asked for one after a change was announced, so it re-lists and needs no tool lines. Both start
 # with catalog:, so a compaction keeps them, shown.KEPT_THROUGH_COMPACTION.
 PENDING_KEY = 'catalog:pending'
@@ -1353,78 +1324,62 @@ PURPOSES_KEY = 'announce:purposes'
 
 
 def listed_names(folder: Path, session: str | None) -> tuple[str, ...]:
-    """The names a session is listed now, MCP-003: metaform_catalog and the tools of the category it has open, or the
-    tools its role starts with while none is, and beside either the memory category's tools, `catalog.BESIDE`, and
-    the tools agents reach each other with and those its role or assignment needs at hand, `catalog.beside_tools`; for a listing that names no session, every tool
-    its role is given, since no category it opens could change what it is listed."""
-    given = given_tools(folder)
+    """Only discovery at startup; after selecting a module, only that module's tools.
+
+    Stateless clients invoke the catalog directly. They never receive the entire tool inventory.
+    """
     if session is None:
-        return (catalog.CATALOG, *given)
-    opened = open_category(folder, session)
-    groups = catalog.grouped(given, tools(folder))
-    held = groups.get(opened, []) if opened else [name for name in catalog.first() if name in given]
-    beside = [name for category in catalog.BESIDE if category != opened for name in groups.get(category, [])
-              if name not in held]
-    reach = [name for name in catalog.beside_tools() if name in given and name not in held and name not in beside]
-    return (catalog.CATALOG, *held, *beside, *reach)
+        return (catalog.CATALOG,)
+    opened = open_module(folder, session)
+    if opened is None:
+        return (catalog.CATALOG,)
+    groups = catalog.grouped(given_tools(folder), tools(folder))
+    return (catalog.CATALOG, *groups.get(opened, []))
 
 
 def relisted(session: str | None, opened: str | None) -> None:
-    """A session's AI tool asked for the tools with `opened` open: when that is the category opened last and not yet
-    listed, the AI tool re-lists on a change, so the next category it opens is answered in one line."""
+    """A session's AI tool asked for the tools with `opened` open: when that is the module opened last and not yet
+    listed, the AI tool re-lists on a change, so the next module it opens is answered in one line."""
     if session is not None and opened is not None and shown_before(session, PENDING_KEY) == opened:
         record_shown(session, PENDING_KEY, '')
         record_shown(session, RELISTS_KEY, True)
 
 
 def run_catalog(folder: Path, given: dict[str, Any], session: str | None, follows: bool = True) -> Outcome:
-    """metaform_catalog without a tool to run: the categories, a category opened, a search, or a compaction said.
-    `follows`: the session's listing follows the category it opens; without it every tool its role is given is listed
-    already, so opening a category says its tools and never that the listing changed."""
+    """Discover modules, select one, search its declared capabilities, or report compaction."""
     if given.get('compacted') is True:
         return False, [compaction_state(folder, session, follows)]
-    tools_given = given_tools(folder)
-    grouped = catalog.grouped(tools_given, tools(folder))
-    allowed = openable(folder)
-    category, search = given.get('category'), given.get('search')
-    if category is not None:
-        if category not in allowed:
-            raise Stop(f'No category {category} for this agent; the categories are {", ".join(allowed)}.',
-                       f'call {catalog.CATALOG} with nothing')
-        lines = [catalog_line(tools_given[name]) for name in grouped[category]]
-        if not follows:
-            record_shown(session, catalog.OPEN_KEY, category)
-            head = prompt_files.module('mcp', 'catalog_opened_listed', category=category) or ''
-            return False, ['\n'.join(line for line in (head, *lines) if line)]
-        before = open_category(folder, session)
-        if before == category:  # its tools are listed already, and the agent was told so
-            return False, [prompt_files.module('mcp', 'catalog_reopened', category=category) or category]
-        record_shown(session, catalog.OPEN_KEY, category)
-        record_shown(session, PENDING_KEY, category)
-        closed = prompt_files.module('mcp', 'catalog_closed', category=before) if before else ''
-        head = [prompt_files.module('mcp', 'catalog_opened', category=category, closed=closed or '') or '']
-        if shown_before(session, PURPOSES_KEY) is None:  # what it is for, unless the category list said it
-            head.insert(0, f'{category}: {catalog.purpose(category)}')
-        if shown_before(session, RELISTS_KEY):  # its AI tool lists them now: the lines would say them twice
-            return False, [' '.join(line for line in head if line)]
-        said = prompt_files.module('mcp', 'catalog_lines') or ''
-        fallback = prompt_files.module('mcp', 'catalog_fallback') \
-            if record_shown(session, 'announce:catalog_fallback', 1) is None else ''
-        return False, ['\n'.join(line for line in (*head, said, *lines, fallback) if line)]
+    module, search = given.get('module'), given.get('search')
+    if module is not None and module not in openable(folder):
+        raise Stop(f'No active module {module}.', 'read metaform://modules')
+    if module is not None and not search:
+        text = module_tools_text(folder, str(module))
+        if follows:
+            record_shown(session, catalog.OPEN_KEY, module)
+            record_shown(session, PENDING_KEY, module)
+        return False, [discovery_delivery(folder, session, f'metaform://{module}/tools', text)]
     if isinstance(search, str) and search.strip():
-        homes = {name: one.categories[0] if one.categories else '' for name, one in tools_given.items()}
-        found = catalog.ranked(search, {name: one.description for name, one in tools_given.items()}, homes)[:8]
+        available = {name: one for name, one in given_tools(folder).items()
+                     if module is None or one.module == module}
+        homes = {name: one.module for name, one in available.items()}
+        found = catalog.ranked(search, {name: one.description for name, one in available.items()}, homes,
+                               module_descriptions(folder))[:8]
         if not found:
             return False, [prompt_files.module('mcp', 'catalog_none') or 'No tool fits.']
-        return False, ['\n'.join(f'{catalog_line(tools_given[name])} [{homes[name]}]' for name in found)]
-    opened = open_category(folder, session) if follows else None
-    record_shown(session, PURPOSES_KEY, 1)
-    marks = {name: ' (always listed)' for name in catalog.BESIDE} if follows else {}
-    if opened:
-        marks[opened] = ' (open)'
-    lines = [f'{name}{marks.get(name, "")}: {catalog.purpose(name)} ({len(grouped[name])} tools)'
-             for name in allowed if grouped[name]]
-    return False, ['\n'.join(lines)]
+        return False, ['\n'.join(f'{catalog_line(available[name])} [metaform://{homes[name]}/tools]'
+                                 for name in found)]
+    return False, [discovery_delivery(folder, session, MODULES_URI, modules_text(folder))]
+
+
+def discovery_delivery(folder: Path, session: str | None, uri: str, text: str) -> str:
+    """Resources and catalog calls share content receipts; opening a retained module still changes selection."""
+    one = prompt_files.component('mcp:discovery_' + uri.removeprefix('metaform://').replace('/', '_'), text)
+    prepared = prepare_agent_context(folder, session, [one])
+    due = cast(list[dict[str, Any]], prepared['components'])
+    if not due:
+        return prompt_files.module('mcp', 'already_read', uri=uri, again='use the current context') or ''
+    record_agent_context(folder, session, due, epoch=int(prepared['epoch']), channel='mcp_discovery')
+    return str(prepared['text'])
 
 
 def role_refusal(folder: Path, name: str) -> str | None:
@@ -1436,9 +1391,7 @@ def role_refusal(folder: Path, name: str) -> str | None:
         return None
     if catalog.in_scope(name, declared, folder):
         return None
-    module, verb = declared.get(name, (None, None))
-    said = prompt_files.module('mcp', 'catalog_refused', tool=name, role=catalog.role() or 'this',
-                               categories=', '.join(catalog.categories_of(name, verb, module)))
+    said = prompt_files.module('mcp', 'catalog_refused', tool=name, role=catalog.role() or 'this')
     step = prompt_files.module('mcp', 'catalog_refused_next') or f'call {catalog.CATALOG}'
     return f'Error: {said}\nNext: {step}'
 
@@ -1457,15 +1410,15 @@ def compaction_state(folder: Path, session: str | None, follows: bool = True) ->
     """What a session is told once its agent's context was compacted: first the directive and the links to its
     instruction blocks, `opening`, since compaction removed what it read; then that the record
     of what it was given is forgotten, so each piece comes again at its next use, and, when its listing follows it, the
-    category it has open, which its AI tool still lists."""
+    module it has open, which its AI tool still lists."""
     gone = forget_shown(session)
     try:  # CTX-045's topic, as the runner publishes it on ACP's signal, for a module that keeps more per session
         context('mcp', folder, surface='mcp', session=session).publish(
             'session.compacted', {'session': session, 'forgotten': gone, 'by': 'agent'})
     except (Stop, StoreError):
         pass
-    opened = open_category(folder, session) if follows else None
-    held = prompt_files.module('mcp', 'compaction_open', category=opened) if opened else ''
+    opened = open_module(folder, session) if follows else None
+    held = prompt_files.module('mcp', 'compaction_open', module=opened) if opened else ''
     said = prompt_files.module('mcp', 'compaction_state', n=str(gone), open=f' {held}' if held else '') or ''
     return '\n\n'.join(part for part in (opening(folder, catalog.role()), said) if part)
 
@@ -1859,12 +1812,14 @@ INSTRUCTIONS_URI = 'metaform://instructions'
 # The system glossary, the mcp module's glossary prompt, which the connect instructions tell every agent to read first.
 # It replaced metaform://glossary, with no alias kept (Phase 1c, item 8).
 GLOSSARY_URI = 'metaform://metaform'
-TOOLS_MOST = 4500  # the most characters metaform://tools gives, a strict limit, the person's 2026-10-18; past it, a pointer
-TOOLS_URI = 'metaform://tools'  # each tool in one line and the modules' rules, for a host that defers tool descriptions
+MODULES_URI = 'metaform://modules'
+MODULE_TOOLS = re.compile(r'^metaform://(?P<module>[a-zA-Z0-9_.-]+)/tools$')
 # What a session reads once its agent's context was compacted, as metaform_catalog compacted=true answers: the record of
 # what it was given is forgotten, so each piece comes again at its next use, CTX-045. Read, it forgets.
 COMPACTION_URI = 'metaform://runtime/compaction-state'
 TEMPLATES: tuple[tuple[str, str, str], ...] = (
+    ('metaform://{module}/tools', 'Module commands',
+     'The commands of one active module, using its declared name. Discover modules at metaform://modules.'),
     ('metaform://instructions/{module}', "A module's instructions",
      "One module's full instructions, as metaform_instructions gives them with module. module is a module's id."),
     ('metaform://prompts/{name}', 'A stored prompt', "A stored prompt's newest text and version, by name."),
@@ -2055,8 +2010,9 @@ BLOCKS: tuple[Block, ...] = (
           else None),
     Block('memory', lambda agent: MEMORY_URI if 'memory' in agent.modules else None,
           lambda reading, uri: memory_text(reading.folder) if uri == MEMORY_URI else None),
-    # every tool the agent can reach, by category, so none is unknown to it and none is pushed into its context
-    Block('tools', lambda _: TOOLS_URI, lambda reading, uri: tools_text(reading.folder) if uri == TOOLS_URI else None),
+    # every tool the agent can reach, by module, so none is unknown to it and none is pushed into its context
+    Block('modules', lambda _: MODULES_URI,
+          lambda reading, uri: modules_text(reading.folder) if uri == MODULES_URI else None),
     Block('firstrun', lambda agent: FIRSTRUN_URI if agent.role is None and first_run_text(agent.folder) else None,
           lambda reading, uri: first_run_text(reading.folder) if uri == FIRSTRUN_URI else None),
     Block('role', lambda agent: ROLE_URI + (agent.role or PERSON), _role_read),
@@ -2106,7 +2062,7 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
     blocks = {RULES_URI: ('Rules', 'Read first: the rules every agent works by.'),
               MEMORY_URI: ('Memory', 'How to keep memory in this project.'),
               FIRSTRUN_URI: ('First run', 'What to do first: this project has no intake yet.'),
-              **{uri: ('Role', ('What your role is for, the tool categories it gets, and what else you need before '
+              **{uri: ('Role', ('What your role is for, the module commands it gets, and what else you need before '
                                 'your first call.')) for uri in applies if uri.startswith(ROLE_URI)}}
     listed = [*({'uri': uri, 'name': name, 'description': description, 'mime_type': 'text/plain'}
                 for uri, (name, description) in blocks.items() if uri in applies),
@@ -2117,8 +2073,8 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
               *([{'uri': own, 'name': 'Project glossary',
                   'description': "This project's own terms after the peer register standard, generated from its map.",
                   'mime_type': 'text/plain'}] if own else []),
-              {'uri': TOOLS_URI, 'name': 'Tools',
-               'description': "Each Metaform tool in one line, by module, then the rules the modules ask you to keep.",
+              {'uri': MODULES_URI, 'name': 'Modules',
+               'description': "Each active module's name, description, and its commands resource.",
                'mime_type': 'text/plain'},
               {'uri': COMPACTION_URI, 'name': 'After a compaction',
                'description': 'Read once your context was compacted: what Metaform gave you once comes again at its '
@@ -2162,6 +2118,8 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
     if found is None:
         return None
     text, mime = found
+    if uri == MODULES_URI or MODULE_TOOLS.fullmatch(uri):
+        text = await anyio.to_thread.run_sync(discovery_delivery, folder, session, uri, text)
     components: list[dict[str, Any]] = []
     if uri.startswith(ROLE_URI) and uri != ROLE_URI + (catalog.role() or PERSON):
         resolved = await anyio.to_thread.run_sync(assigned_role, folder, uri, session)
@@ -2204,6 +2162,13 @@ async def _read_resource_text(folder: Path, uri: str, *, client: str | None = No
     said = await anyio.to_thread.run_sync(functools.partial(block_text, folder, uri, client, session, keyed))
     if said is not None:
         return said, 'text/plain'
+    if matched_module := MODULE_TOOLS.fullmatch(uri):
+        module = matched_module.group('module')
+        text = await anyio.to_thread.run_sync(module_tools_text, folder, module)
+        if keyed and session is not None:
+            record_shown(session, catalog.OPEN_KEY, module)
+            record_shown(session, PENDING_KEY, module)
+        return text, 'text/plain'
     for module in await anyio.to_thread.run_sync(surface, folder):
         for held in module.resources:
             fields = held.matched(uri)
@@ -2218,8 +2183,6 @@ async def _read_resource_text(folder: Path, uri: str, *, client: str | None = No
                 if error:
                     raise Stop(blocks[0], 'read resource ' + INSTRUCTIONS_URI)
                 return '\n'.join(blocks), held.mime_type
-    if uri == TOOLS_URI:
-        return await anyio.to_thread.run_sync(tools_text, folder), 'text/plain'
     if uri == INSTRUCTIONS_URI:
         return await anyio.to_thread.run_sync(functools.partial(instructions, folder, surface='mcp')), 'text/plain'
     matched = next(((name, held.groupdict()) for name, pattern in TEMPLATE_PATTERNS.items()
@@ -2306,8 +2269,7 @@ SECTION = re.compile(r'^\s*//\s*-*\s*(?P<title>.+?)\s*-*\s*$')
 def glossary_view(folder: Path) -> dict[str, Any]:
     """What the glossary view draws, MCP-037: the mcp module's glossary prompt as written, `text`, with each term
     defined in it (`{TERM} := "definition"`, quoted) taken out with the section it stands in, its definition exactly as
-    written inside its quotes; then the tools on the folder's surface and the rules of its modules, as metaform://tools
-    gives them. Nothing is reworded: a term the view shows is the prompt's own line."""
+    written inside its quotes; then a human-readable reference of tools and module rules. Nothing is reworded: a term the view shows is the prompt's own line."""
     written = prompt_files.module('mcp', 'glossary') or ''
     terms: list[dict[str, str]] = []
     section = ''
@@ -2378,7 +2340,7 @@ def completions(folder: Path, kind: str, ref: str, argument: str, value: str,
         return _addresses(folder, value, items=False)
     if kind == 'resource' and ref in (ITEM_TEMPLATE, ITEM_ALIAS) and argument == 'n':
         return [number for number in _numbers(folder, known.get('address', ''), value)]
-    if kind == 'resource' and ref == 'metaform://instructions/{module}' and argument == 'module':
+    if kind == 'resource' and ref in ('metaform://instructions/{module}', 'metaform://{module}/tools') and argument == 'module':
         return sorted(module.id for module in surface(folder) if module.id.startswith(value))
     if kind == 'resource' and ref == 'metaform://prompts/{name}' and argument == 'name':
         return sorted(one.name for one in prompts.prompts() if one.name.startswith(value))
@@ -2658,7 +2620,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
     def current(session: str | None = None) -> dict[str, Any]:
         """What each list follows: the tools are the names listed to the session, which change with the modules on
-        the surface and the category it has open."""
+        the surface and the module it has open."""
         both = tuple(module.id for module in surface(folder)), on_surface('chassis', folder)
         return {'tools': listed_names(folder, session), 'prompts': both, 'resources': both[0]}
 
@@ -2681,7 +2643,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         return f'handle:{held}' if isinstance(held, str) and HANDLED.fullmatch(held) else None
 
     def follows(ctx: Any) -> bool:
-        """Whether the tools listed to the caller follow its session, so a category it opens changes them: a request
+        """Whether the tools listed to the caller follow its session, so a module it opens changes them: a request
         that names its session by itself, which an argument the model passes cannot do for tools/list."""
         return session_of(ctx) is not None
 
@@ -2744,7 +2706,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         session = session_of(ctx)
         tools = await anyio.to_thread.run_sync(build, apps(ctx), client_of(ctx), session)
         if session is not None:
-            await anyio.to_thread.run_sync(relisted, session, await anyio.to_thread.run_sync(open_category, folder,
+            await anyio.to_thread.run_sync(relisted, session, await anyio.to_thread.run_sync(open_module, folder,
                                                                                                session))
         await listed_now(ctx, 'tools')
         return types.ListToolsResult(tools=tools)
@@ -3093,6 +3055,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             raise MCPError(missing_code,
                            f'No resource {uri} on this surface.\nNext: list the resources and their templates')
         text, mime = found
+        if MODULE_TOOLS.fullmatch(uri):
+            await announce(ctx, [])
         await watch.seen(uri)
         return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, text=text, mime_type=mime)])
 

@@ -544,17 +544,17 @@ MODULE = Module(
         Verb('resolve', authored.resolve, 'Resolve authored responsibilities and actual selected prompt components '
                                           'without changing an agent assignment.',
              nouns=(Noun('name', 'The authored role name or URI from an enabled module provider.'),),
-             effect='read', category='coordinate'),
+             effect='read'),
         Verb('receipts', authored.inspect_receipts, 'Read context delivery fingerprints and versions, without bodies.',
-             nouns=(SESSION,), effect='read', category='coordinate'),
+             nouns=(SESSION,), effect='read'),
         Verb('confirm', authored.confirm_context, 'Confirm a startup context checkpoint using your retained key; '
              'omit the key if it is unavailable. Missing proof makes only requested context eligible again.',
              nouns=(Noun('checkpoint', 'The checkpoint in the startup request.'),
                     Noun('key', 'The key retained from the context instructions; omit if lost.', required=False)),
-             effect='write', category='coordinate'),
+             effect='write'),
         Verb('updates', updates, 'Read selected prompt merge evidence, exact parent versions and retained conflicts.',
              nouns=(Noun('name', 'An existing prompt component identity; omit to read every applied update.',
-                         required=False),), effect='read', category='coordinate'),
+                         required=False),), effect='read'),
         Verb('sent', sent, 'Read which role a session ran as and which prompt versions each of its turns carried.',
              nouns=(SESSION,), effect='read'),
         Verb('override', override, "Save an edit of a role's prompt, sent in place of the shipped text; the result "

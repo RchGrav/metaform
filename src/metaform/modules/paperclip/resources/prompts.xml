@@ -19,8 +19,7 @@
 <!-- The line under the counts an agent is told at its node, MCP-039. paperclip declares no node_count, so this is
      never shown. -->
 <counts></counts>
-<!-- paperclip's rules, MCP-031, gathered at the end of metaform://tools, each "[paperclip] <rule> Why: <why>".
-     Write each as <rule why="the reason">One sentence.</rule>. Empty, as here, sends nothing. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules></rules>
 <!-- The comment `heartbeat` posts on a Paperclip issue it takes for a Metaform agent, once, in the same heartbeat.
      Read by the issue's people and by Paperclip's agents on its thread; Paperclip's heartbeat protocol asks for a

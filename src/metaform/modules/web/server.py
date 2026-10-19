@@ -1265,14 +1265,14 @@ class Handler(BaseHTTPRequestHandler):
         """What an agent connecting here receives, read from the folder's own MCP server over MCP, as the MCP Inspector
         reads a server: the server/discover result, its capabilities and the instructions sent at connect; every tool,
         resource, resource template and prompt the lists give, each entry as received with its size, the tools largest
-        first; metaform://metaform, and metaform://tools measured apart; and with an address, that node's brief
+        first; metaform://metaform, and metaform://modules measured apart; and with an address, that node's brief
         as the agent reads it. What it costs is `agent_cost`, said as Claude Code sends it to the model. The
         instructions are counted in characters too, since Claude Code keeps only the first
         `HOST_LIMIT` of a server's instructions and of each tool's description."""
         try:
             _, folder = project_folder(given)
             address = given.get('address', '').strip()
-            uris = ('metaform://metaform', 'metaform://tools', *((f'metaform://{address}',) if address else ()))
+            uris = ('metaform://metaform', 'metaform://modules', *((f'metaform://{address}',) if address else ()))
             read = chassis.mcp_reads(folder, uris)
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
@@ -1280,7 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
         connect = str(found.get('instructions') or '')
         texts = cast(dict[str, str], read['texts'])
         glossary = texts.get('metaform://metaform', '')
-        index = texts.get('metaform://tools', '')  # each tool in one line, read apart from the glossary
+        index = texts.get('metaform://modules', '')  # each tool in one line, read apart from the glossary
         cost = agent_cost(read)
         self.send(200, {'connect': sized(connect), 'glossary': {**sized(glossary), 'index': sized(index)},
                         'brief': sized(texts[f'metaform://{address}']) if address else None,

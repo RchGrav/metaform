@@ -1,0 +1,84 @@
+{
+  "baseline_commit": "e00f582a689368e3832d41761b3cbabf28acd487",
+  "measurement": "Serialized name, description and inputSchema fields from the startup listing. Catalog descriptions and transport-specific search/fetch/view tools excluded in both measurements. Bytes are not token counts or API billing.",
+  "before": {
+    "worker_session": {
+      "tools": 26,
+      "manifest_bytes": 28759
+    },
+    "worker_stateless": {
+      "tools": 154,
+      "manifest_bytes": 118341
+    },
+    "system_session": {
+      "tools": 22,
+      "manifest_bytes": 21272
+    },
+    "system_stateless": {
+      "tools": 154,
+      "manifest_bytes": 118341
+    },
+    "person_session": {
+      "tools": 21,
+      "manifest_bytes": 22228
+    },
+    "person_stateless": {
+      "tools": 154,
+      "manifest_bytes": 128596
+    }
+  },
+  "after": {
+    "worker_session": {
+      "tools": 1,
+      "manifest_bytes": 737
+    },
+    "worker_stateless": {
+      "tools": 1,
+      "manifest_bytes": 737
+    },
+    "system_session": {
+      "tools": 1,
+      "manifest_bytes": 737
+    },
+    "system_stateless": {
+      "tools": 1,
+      "manifest_bytes": 737
+    },
+    "person_session": {
+      "tools": 1,
+      "manifest_bytes": 737
+    },
+    "person_stateless": {
+      "tools": 1,
+      "manifest_bytes": 737
+    }
+  },
+  "idle_before": {
+    "label": "before-module-discovery",
+    "source": "/workspace/metaform/src/metaform",
+    "interval_seconds": 60.00012983000488,
+    "cpu_seconds": {
+      "runner": 0.030000000000000027,
+      "adapter": 0.0
+    },
+    "cpu_percent_of_one_core": {
+      "runner": 0.049999891808563415,
+      "adapter": 0.0
+    },
+    "native_orchestration": true
+  },
+  "idle_after": {
+    "label": "after-module-discovery",
+    "source": "/workspace/metaform/src/metaform",
+    "interval_seconds": 60.00347712299845,
+    "cpu_seconds": {
+      "runner": 0.030000000000000027,
+      "adapter": 0.0
+    },
+    "cpu_percent_of_one_core": {
+      "runner": 0.04999710256541361,
+      "adapter": 0.0
+    },
+    "native_orchestration": true
+  }
+}

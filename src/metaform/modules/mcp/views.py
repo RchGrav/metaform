@@ -14,7 +14,7 @@ Four views, each a `ui://` resource of type `text/html;profile=mcp-app`:
   threads, asked for again while the view is on screen and read again only after a change to the ticket, `Traces`,
   so the person watches the agent work.
 - `ui://metaform/glossary`, shown by `metaform_instructions` and `map_glossary`: the call's own answer, then the terms
-  of metaform://metaform as written, then the tools and the rules metaform://tools gives, searchable.
+  of metaform://metaform as written, then the tools and the rules metaform://modules gives, searchable.
 
 All speak to their host through the official MCP Apps SDK, `@modelcontextprotocol/ext-apps`, kept here as
 `ext-apps.js`, under `bridge.js`, which they share. A view reads through `metaform_view`, a tool only views call
@@ -69,7 +69,7 @@ SHOWN_BY = {'map_where': MAP, 'map_roots': MAP, 'map_item': NODE, 'map_node': NO
 NAMES = {MAP: ('Map view', 'The 2D and 3D map, focused on the address map_where reads.'),
          NODE: ('Node view', 'One node\'s brief with its numbered items, as map_item reads them.'),
          TRACE: ('Agent trace', 'A ticket\'s agent sessions and their threads, followed while the agent works.'),
-         GLOSSARY: ('Glossary', 'The terms, tools and rules every agent works by, as metaform://metaform and metaform://tools hold them.')}
+         GLOSSARY: ('Glossary', 'The terms, tools and rules every agent works by, as metaform://metaform and metaform://modules hold them.')}
 FILES = {NODE: 'node.html', TRACE: 'trace.html', GLOSSARY: 'glossary.html'}  # the views kept as written
 # The display modes each view offers its host (MCP Apps' availableDisplayModes): the trace also floats beside the
 # conversation (pip), so the person can watch an agent while they talk.

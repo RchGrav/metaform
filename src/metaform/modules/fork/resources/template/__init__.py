@@ -68,8 +68,14 @@ for the prompt, never in Python, MCP-031. A module reads one with
 when a missing prompt is a defect. `instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
 Its `rules` hold the module's rules, `<rule why="the reason">One sentence.</rule>`
-each; the MCP server lists every enabled module's at the end of
-metaform://tools, and a rule without a why stops the module loading.
+each; the MCP server delivers the module's rules with the first use of its
+commands, and a rule without a why stops the module loading.
+
+Module.id and Module.summary publish the capability at metaform://modules.
+Its MCP verbs appear automatically at metaform://<id>/tools, named
+<id>_<verb>, with their argument schemas generated from Noun declarations.
+There is no category registry or Verb.category. A new module needs no
+MCP-server edit. Descriptions also feed fuzzy command search.
 
 A verb that can take long declares `task=True`: an AI tool that declares the
 MCP tasks extension is answered with a task it polls, BASE-030. hello's `wait`

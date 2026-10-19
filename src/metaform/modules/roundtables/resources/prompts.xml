@@ -89,7 +89,7 @@ The whole debate is in <report/>. Build the idea where the report and this ticke
 <adopted_unsaved>not saved in the project</adopted_unsaved>
 <!-- Put in the opening's <memories/> place when no memory is kept at the part yet. -->
 <no_memories>- None yet.</no_memories>
-<!-- roundtables' rules, one sentence each with its reason, listed at the end of metaform://tools for every agent. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules><rule why="Each seat is an agent at work; a table the slots cannot hold is refused, and seating fewer is how it opens.">Seat no more agents than the free agent slots dispatch_sessions shows.</rule></rules>
 <counts></counts>
 </prompts>

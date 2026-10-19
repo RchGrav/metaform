@@ -19,11 +19,6 @@
      such as "Read them: metaform template read node=<address>". Shown once per agent session, with the counts.
      Empty, as here, leaves the line out; a module with no node_count never shows it. -->
 <counts></counts>
-<!-- template's rules, MCP-031: one sentence each that an agent keeps while it works with this module, each with its
-     reason in why="...", so a later reader can apply it to a case it does not name. The MCP server gathers the rules of
-     every enabled module on the folder's surface into one block at the end of metaform://tools, which an agent
-     reads once, each line "[template] <rule> Why: <why>". Write each as
-     <rule why="The next agent reads the title to decide whether to open the record.">Give every record a title.</rule>
-     A rule without a why, or with no sentence, stops the module loading. Empty, as here, sends nothing. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules></rules>
 </prompts>

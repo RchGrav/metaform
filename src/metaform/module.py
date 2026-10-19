@@ -119,11 +119,6 @@ SURFACES: tuple[Surface, ...] = ('cli', 'mcp')
 # there, as a new version, a history or a backup; `remove` deletes or replaces what cannot be had back from the store.
 Effect = Literal['read', 'write', 'remove']
 EFFECTS: tuple[Effect, ...] = ('read', 'write', 'remove')
-# The purposes an agent finds tools by over MCP, MCP-003: each a category of the mcp module's catalog, which says what
-# each is for in its prompts.xml and which tools each holds. A verb's `category` is one of them.
-CATEGORY_NAMES = ('orient', 'ticket', 'memory', 'coordinate', 'change-map', 'intake', 'steer', 'show', 'workflow',
-                  'setup', 'report')
-
 # The module contract's callables, BASE-035. Each may be a plain function or a coroutine function, BASE-009.
 VerbFunction = Callable[['Context'], Any]  # returns the verb's result, BASE-036
 Handler = Callable[[dict[str, Any], 'Context'], Any]  # a subscriber: the payload and its own context, BASE-010
@@ -200,10 +195,8 @@ class Verb:
     would actually take: the tickets, layers, conversations and agents at work it removes or puts out of view, and
     the backup it makes; `caution` is the fixed text of the tool's description and the fallback when it fails.
 
-    `category` names the purpose an agent finds the verb's tool under over MCP, one of `CATEGORY_NAMES`, such as
-    `orient` or `memory`, each said in the mcp module's catalog: an agent opens the category its task
-    needs and is listed only its tools, MCP-003. None takes the category the mcp module gives the tool, or else the
-    one it gives the module; a name no category holds stops the module loading.
+    MCP tools are discovered under this verb's declaring module. The module's id and summary publish
+    its capability; no separate category registration is required.
 
     `person_details` is what the details say only to the person and the agents that act for them: the person, in the
     command line's help after `details`, and over MCP the person's own sessions, the system agent and a sentinel, with
@@ -239,13 +232,10 @@ class Verb:
     person_says: bool = False
     cautioned: Callable[[Context], str] | None = None
     page: str | None = None
-    category: str | None = None
     person_details: str = ''
     person_decides: Callable[[Context], str | None] | None = None
 
     def __post_init__(self) -> None:
-        if self.category is not None and self.category not in CATEGORY_NAMES:
-            raise ValueError(f'Verb {self.name}: category must be one of {", ".join(CATEGORY_NAMES)}.')
         if self.person_says and not self.caution:
             raise ValueError(f'Verb {self.name}: a verb the person decides declares the caution it is asked with.')
         if self.effect not in EFFECTS:

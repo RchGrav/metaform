@@ -521,7 +521,7 @@ MODULE = Module(
              nouns=(Noun('run', 'The active workflow run.'), Noun('change', 'Stable specification change id.'),
                     ADDRESS, Noun('name', 'The changed subroutine name.'),
                     Noun('revision', 'The committed operative logic revision.'),
-                    Noun('layer', 'The stored logic layer.', required=False)), category='workflow'),
+                    Noun('layer', 'The stored logic layer.', required=False))),
         Verb('export', export, 'Export a workflow from its stored layer as a portable document, printed or written to '
                                'a file.',
              nouns=(ADDRESS, LAYER, Noun('file', 'The destination <workflow name>.metaform file.', required=False))),

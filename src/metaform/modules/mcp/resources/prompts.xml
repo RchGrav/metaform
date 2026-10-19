@@ -82,25 +82,11 @@ Example: Instead of "I have reviewed your code and found that your authenticatio
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
 </glossary>
-<!-- The heading of metaform://tools, which every agent's connect message links to: every tool the agent's role is
-     given, one line each, generated from the tools' declarations so it never drifts, under the category it is found
-     by with what the category is for. An agent reads it when it needs a tool it is not listed; a tool's arguments come
-     with it when the agent loads it. Wording revised by the system agent on 2026-10-18 for the grouping by category,
-     awaiting the owner's approval. Empty leaves the heading out. -->
-<tool_index>Every Metaform tool you can use, by category: what each category is for, then its tools by name. Open a category with metaform_catalog category=&lt;name&gt; to list its tools, or run one with metaform_catalog tool=&lt;name&gt;. A tool's description and arguments come with it when you load it.</tool_index>
-<!-- The line that ends metaform://tools when the list passes its strict limit, TOOLS_MOST characters in the mcp server, in
-     place of what is cut. A draft by the system agent, 2026-10-18. Empty uses the server's own short line. -->
-<tool_index_more>… more tools: find them with metaform_catalog search=&lt;words&gt;.</tool_index_more>
-<!-- The heading of the rules block that follows the tool index in metaform://tools. The block gathers the <rules>
-     of every enabled module on the folder's surface, one line each, written "[module] <rule> Why: <why>", so an agent
-     reads them once with the tools. A module writes its rules in its own prompts.xml as
-     <rules><rule why="...">One sentence.</rule></rules>; a rule without a why stops the module loading. Empty leaves
-     the block out; a folder whose modules hold no rules gets no block either. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules_heading>Rules the enabled modules ask you to keep, each with its reason.</rules_heading>
-<!-- The heading of what the result of a module's tool carries the first time in an agent's session that it calls
-     any of that module's tools, and again only once the rules change: the rules of that module's prompts.xml, one
-     line each with its reason. <module/> is the module's id. Empty leaves the module's rules out of results; they are
-     still in metaform://tools. DRAFT wording, artifacts/specs-draft/2026-10-15-agent-context-cost.md. -->
+<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <module_guide>The <module/> module's rules, given once in this session, each with its reason:</module_guide>
 <!-- The heading of what a tool's result carries the first time in an agent's session that it calls that tool, and
      again only once it changes: what the tool list cut to keep it small, the rest of the tool's description and the
@@ -246,74 +232,32 @@ Example: Instead of "I have reviewed your code and found that your authenticatio
      it, this message is left at the Address, so the person and the next agent there know the answer did not reach
      it. <peer/> takes the peer's name, <error/> what the peer said. Empty leaves no message. -->
 <a2a_answer_refused><peer/> did not take the answer to its question: <error/></a2a_answer_refused>
-<!-- THE TOOL CATALOG, MCP-003. Every element below is a DRAFT of 2026-10-17 (artifacts/critic/mcp-context-build.md,
-     and the finishing pass's report), awaiting the owner's approval of its wording. -->
+<!-- Module-owned command discovery, MCP-003. Module declarations supply the directory and command resources. -->
 <!-- The description of metaform_catalog, the tool every agent is listed at connect, read by every agent before
-     its first call, where its AI tool's listing follows the category it opens. Empty lists the tool with no
+     its first call, where its AI tool's listing follows the module it opens. Empty lists the tool with no
      description, which no agent would know to call. -->
-<catalog_tool>Find the Metaform tool for what you want to do, by purpose. With nothing, it lists the categories your role may open, each with what it is for. With category, it opens that one: its tools are listed to you in place of the last category's, so you carry only the tools your task needs. With search, it finds tools in any category from words for what you want to do. With tool and arguments, it runs one.</catalog_tool>
-<!-- metaform_catalog's description where the listing names no session, such as an HTTP client on the July 2026 wire:
-     every tool the role is given is listed there, so opening a category only says its tools. -->
-<catalog_tool_unkeyed>Find the Metaform tool for what you want to do, by purpose, and get the session handle your calls pass, so each tool's guide is given you once. With nothing, it lists the categories your role may open, each with what it is for. With category, it says that category's tools. With search, it finds tools in any category from words for what you want to do. With tool and arguments, it runs one.</catalog_tool_unkeyed>
+<catalog_tool>Discover commands by their owning module. Read metaform://modules for module descriptions and metaform://&lt;module&gt;/tools for its commands. With module, load only that module. With search, find commands by name or purpose, including misspellings; module optionally narrows the search. With tool and arguments, run the exact command.</catalog_tool>
+<!-- Stateless transports list discovery tools only. The catalog invokes exact commands without listing every schema. -->
+<catalog_tool_unkeyed>Discover commands through metaform://modules and metaform://&lt;module&gt;/tools. With module, read that module's commands; with search, find commands by name or purpose, including misspellings. With tool and arguments, run a command. This connection lists discovery alone; use the returned session handle to retain delivery receipts.</catalog_tool_unkeyed>
 <!-- The help of metaform_catalog's arguments, read with its description. -->
-<catalog_category>The category to open; its tools are listed to you in place of the last one's.</catalog_category>
-<catalog_category_unkeyed>The category whose tools to read, each with the arguments it takes.</catalog_category_unkeyed>
-<catalog_search>Words for what you want to do; the tools that fit, from every category, best first.</catalog_search>
+<catalog_search>Command names or words describing the desired capability; matching tolerates misspellings.</catalog_search>
 <catalog_run>A tool to run, by name, with arguments.</catalog_run>
 <catalog_arguments>The arguments of the tool named in tool.</catalog_arguments>
 <catalog_compacted>true once your context was compacted, so the guides you lost come again at their next use.</catalog_compacted>
 <!-- The help of session_handle, the argument every tool takes where the listing names no session. -->
 <handle_argument>The session handle metaform_catalog gave you, so each tool's guide is given you once.</handle_argument>
-<!-- What each category is for: one line each, read by an agent that calls metaform_catalog with nothing, beside each
-     tool search finds, and at the head of an opened category the agent was not told the purposes of. The part before
-     the first colon, or else the first ", and", is the category's line in metaform://role/<role> for the person's own
-     sessions and the system agent.
-     The element is category_<name>, - written _. Empty shows the category by its name alone. -->
-<category_orient>Find and read the part of the project you work on: an Address's element, what it receives and provides, its layers, items and history, and the project's terms.</category_orient>
-<category_ticket>Work a ticket: read it, plan it, report each step, close it, link the files you change, and answer the questions left at nodes.</category_ticket>
-<category_memory>Read and record what happened in the work at a node, as memory on its receiving element.</category_memory>
-<category_coordinate>Reach the other agents: see who is at work where, send a note to an agent, a part of the map or a file, and send work to A2A peers.</category_coordinate>
-<category_change_map>Change the map: refine an element or join, build knowledge layers and add terms, promote a join, show or hide layers, or open a verification pass that adds a part the map lacks.</category_change_map>
-<category_intake>Map the AUE into its elements and purpose records: the intake procedure, its schema, and the calls that record and finish it.</category_intake>
-<category_steer>Start, follow, message and stop agents, and read their sessions, signals, spend and roles.</category_steer>
-<category_show>Show the person the map on Metaform's web page, and act on it there with a body.</category_show>
-<category_workflow>Run and author Axiom workflows and skills.</category_workflow>
-<category_setup>Set up Metaform for this folder: settings, registration, bases, stored prompts, origins and variants, and module repositories.</category_setup>
-<category_report>Report a fault in Metaform, read the reports kept, and read a module's full instructions or a tool's guide.</category_report>
-<!-- The line that opens metaform://role/<role> for a dispatched agent, whose runner names its role: it says why the catalog holds the categories it does, so the agent does not look for
-     tools its role is not given. <categories/> is the categories the role may open, by name. role_system is followed
-     by one line per category with what it is for. The element is role_<role>; a role without one gets no line.
-     Empty sends none. -->
-<role_worker>
-Your operational session works assignment <assignment/>. Your authored responsibilities are supplied separately at <authored_role/>. Use the current assignment, specification, mode and return route. Available tool categories reflect the active modules and configured controls: <categories/>.
-</role_worker>
-<role_prep>
-Your operational session uses the existing merge-preparation path. Your authored responsibilities are supplied at <authored_role/>. Use the assigned candidate, current specification and return route. Available tool categories reflect the active modules and configured controls: <categories/>.
-</role_prep>
-<role_intake>You map this project's AUE from its source, so you are given the tool categories that work needs: <categories/>.</role_intake>
-<role_sentinel>You take up an issue the person raised on a node, so you are given the tool categories that work needs: <categories/>.</role_sentinel>
-<role_talk>You talk with the person about what they clicked on the map, so you are given the tool categories that conversation needs: <categories/>.</role_talk>
-<role_system>You are the person's own agent in this project, so every tool category is yours:</role_system>
-<!-- The first line of metaform://role/person, for the person's own sessions, the AI tool they run in the project folder: why
-     Metaform's tools are used for the project's work. One line per tool category follows it, with what each is for.
-     Empty sends the category lines alone. -->
-<connect_use>Metaform keeps this project's map, tickets and what was learned at each part, where the person and every agent read your work, so do the project's work through its tools, found by purpose:</connect_use>
-<!-- The line of metaform://role/<role> on finding tools, for every agent: how the tools are found, and why
-     they are not all listed. <open/> takes connect_open while the agent's role starts with a category open, or
-     connect_first while it starts with one tool listed beside the catalog. Not sent to a connection whose listing
-     names no session, the July 2026 wire over HTTP, where the listing never narrows; connect_unkeyed is sent there.
-     Empty sends nothing, and an agent learns of the catalog only from its tool's description. -->
-<connect_catalog>Metaform lists its tools by purpose so that you carry only those your task needs: metaform_catalog says what each category is for, opens the one your task calls for, and finds a tool from words for what you want to do.<open/></connect_catalog>
-<!-- connect_catalog's place in metaform://role/<role> for the person's own sessions and the system agent, which name each
-     category with what it is for just above it. Not sent where the listing names no session, as connect_catalog is
-     not. Empty sends nothing. -->
-<connect_catalog_listed>metaform_catalog opens one category at a time, so you carry only the tools your task needs, and finds a tool from words for what you want to do.</connect_catalog_listed>
-<!-- What <open/> takes in connect_catalog: <category/> is the category open at connect, the one the role's first
-     message uses, such as a worker's ticket. -->
-<connect_open> The <category/> category is open now, since your first task uses its tools.</connect_open>
-<!-- What <open/> takes in connect_catalog for a role that starts with no category open and the tool its first message
-     names listed beside the catalog, a talk's and a sentinel's map_where. <tool/> is the tool. -->
-<connect_first> <tool/> is listed now, since your first task reads your node with it; open a category for the rest.</connect_first>
+
+<!-- Operational context for dispatched sessions. Reusable authored expertise is read separately by URL. -->
+<role_worker>Your operational session works assignment <assignment/>. Read your reusable expertise at <authored_role/>. Use the current assignment, specification, mode and return route. Discover the needed commands through their owning modules.</role_worker>
+<role_prep>Your operational session prepares an assigned candidate for integration. Read your authored responsibilities at <authored_role/>. Discover the needed commands through their owning modules.</role_prep>
+<role_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</role_intake>
+<role_sentinel>You take up an issue the person raised on a node. Read metaform://map/tools to inspect that node.</role_sentinel>
+<role_talk>You talk with the person about a selected node. Read metaform://map/tools to inspect that node.</role_talk>
+<role_system>You are the person's agent in this project. Discover capabilities through their owning modules.</role_system>
+<!-- Purpose of the project connection, before the module discovery instructions. -->
+<connect_use>Use Metaform to work with this project's functional map, tickets and shared knowledge.</connect_use>
+
+<connect_catalog>Metaform is extended by named modules. Read metaform://modules for their descriptions, then metaform://&lt;module&gt;/tools for the commands of the module you need. Reference commands by their exact listed names. metaform_catalog module=&lt;name&gt; loads that module; search=&lt;words&gt; finds commands, including approximate names. If your host cannot refresh tools, invoke them through metaform_catalog tool=&lt;name&gt; arguments={...}.</connect_catalog>
 <!-- The line of metaform://role/<role> on compaction, only for an agent no runner follows, such as the
      person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
      context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
@@ -331,26 +275,11 @@ Your operational session uses the existing merge-preparation path. Your authored
      which project the folder is, so the agent knows where it is before it reads anything. <project/> is its id. Empty
      sends nothing. -->
 <connect_here>This folder is the project <project/>.</connect_here>
-<!-- The head of what metaform_catalog answers when it opens a category in a session whose listing follows it, read by
-     the agent that opened it. <category/> is the category, <closed/> catalog_closed when another was open before it.
-     Until the agent's AI tool has been seen to list the tools again after a change, catalog_lines and each tool's line
-     follow it, name(arguments): what it does; after that it is the whole answer. Empty leaves the head out. -->
-<catalog_opened><category/> is open<closed/>: its tools are listed to you now.</catalog_opened>
-<catalog_closed>, in place of <category/></catalog_closed>
-<catalog_lines>Each takes the arguments named, those marked ? optional:</catalog_lines>
-<!-- What metaform_catalog answers when the category asked for is the one open already. -->
-<catalog_reopened><category/> is open already, so its tools are listed to you.</catalog_reopened>
-<!-- The head of what metaform_catalog answers for a category where the listing names no session: every tool the role
-     is given is listed already, so it says the category's tools and changes nothing. Each tool's line follows it. -->
-<catalog_opened_listed>The <category/> category's tools, each listed to you already, with the arguments it takes, those marked ? optional:</catalog_opened_listed>
-<!-- Said once in a session with the first category an agent opens, before its AI tool is seen to list again: how to
-     run a tool its AI tool does not list. -->
-<catalog_fallback>If your AI tool does not show these tools, run one with metaform_catalog tool=&lt;name&gt; arguments={...}: some AI tools refresh their tool list only when they reconnect.</catalog_fallback>
+
 <!-- What metaform_catalog answers a search no tool fits. -->
-<catalog_none>No tool fits those words. Call metaform_catalog with nothing for the categories and what each is for.</catalog_none>
-<!-- The refusal of a call to a tool the agent's role is not given, by name or through metaform_catalog. <tool/> is the
-     tool, <role/> the role, <categories/> the categories the tool is in. The next step follows it. -->
-<catalog_refused><tool/> is not among the tools a <role/> agent is given: it is in <categories/>, which your role does not open.</catalog_refused>
+<catalog_none>No command fits those words. Read metaform://modules for the available capabilities, or search with different words.</catalog_none>
+<!-- A restriction explicitly configured by the person, independent of discovery. -->
+<catalog_refused>The person's configured roles_without_authority setting restricts <tool/> for the <role/> execution role.</catalog_refused>
 <catalog_refused_next>call metaform_catalog with nothing for what your role opens; if your task needs this tool, call metaform_feedback and say why, since what each role is given is the person's to change</catalog_refused_next>
 <!-- Said once in a session, with the first list a lookup tool gives trimmed (view triage): how to get more. -->
 <triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full gives every field, fields=[...] keeps the ones you name, view=count counts the records by the fields you name, and must_contain or status_equals filter a list before it reaches you.</triage_note>
@@ -358,9 +287,9 @@ Your operational session uses the existing merge-preparation path. Your authored
 <list_cut><n/> more not shown, so you read only the records your decision needs: narrow the list with must_contain or status_equals.</list_cut>
 <!-- What metaform_catalog compacted=true answers, and metaform://runtime/compaction-state gives: the agent's context
      was compacted, so what Metaform gave it once comes again. <n/> is how many pieces were forgotten; <open/> takes
-     compaction_open while a category is open in a listing that follows it. -->
+     compaction_open while a module is open in a listing that follows it. -->
 <compaction_state>Metaform forgot what it gave you once in this session, <n/> pieces, so each tool's guide and each node's summary come again at their next use.<open/></compaction_state>
-<compaction_open> The <category/> category is still open, so its tools stay listed to you.</compaction_open>
+<compaction_open> The <module/> module is still open, so its tools stay listed to you.</compaction_open>
 <!-- In place of a tool's guide for a call that names no session, such as an HTTP client on the July 2026 wire that
      passed no session handle: nothing can record that it was given, so the guide is not repeated on every call.
      <tool/> is the tool. Empty sends nothing. -->
@@ -369,4 +298,8 @@ Your operational session uses the existing merge-preparation path. Your authored
      map_glossary, unchanged since the first: it is in the agent's context already. <uri/> is what was read, <again/>
      the call that reads it whole anyway. -->
 <already_read><uri/> is unchanged since you read it in this session, so it is not given again; <again/> reads it whole.</already_read>
+<module_index>Metaform is extended by named modules. Each module publishes its own capability description and commands. Read only the module tools resource needed for your work. Search commands with metaform_catalog search=&lt;words&gt;.</module_index>
+<chassis_description>Manage Metaform configuration, projects, prompts, skills and reports.</chassis_description>
+<module_tools>Commands owned by <module/>. Arguments marked ? are optional. Use metaform_catalog module=<module/> to expose these tools, or call metaform_catalog tool=&lt;exact command name&gt; arguments={...}.</module_tools>
+<catalog_module>The declaring module's exact name from metaform://modules; load its commands, or narrow a search.</catalog_module>
 </prompts>
