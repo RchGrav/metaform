@@ -1040,6 +1040,12 @@ def test_the_machine_ceiling_counts_the_agents_of_every_project_of_the_home(disp
                       env=dispatch.env('hold'))
         assert refused.returncode != 0 and 'running on this machine across 1 project' in refused.stderr
         assert 'dispatch_machine_agents' in refused.stderr and not dispatch.ticket().taken
+        # the person can always summon their own system agent, one place beyond the machine's; no other summons
+        from metaform.module import context
+        ctx = context('dispatch', dispatch.folder)
+        module.admit(ctx, dispatch.store, dispatch.id, 'summoned', persons_own=True)
+        with pytest.raises(module.Refused, match='dispatch_machine_agents'):
+            module.admit(ctx, dispatch.store, dispatch.id, 'summoned')
     finally:
         elsewhere.unlink()
     assert run('set', '--dispatch-machine-agents', '65', cwd=dispatch.folder, ok=False).returncode != 0

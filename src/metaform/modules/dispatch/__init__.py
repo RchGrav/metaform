@@ -3353,6 +3353,8 @@ def slots(ctx: Context, store: Store, *, besides: int | None = None) -> dict[str
     return {'limit': limit, 'used': used, 'workers': len(workers), 'summoned': len(called),
             'free': min(max(0, limit - used), machine_free),
             'room': min(max(0, 1 + max(0, limit - len(workers)) - len(called)), machine_free),
+            # the project's room alone, for the person's own agent, which may take one place beyond the machine's
+            'own_room': max(0, 1 + max(0, limit - len(workers)) - len(called)),
             'machine_limit': most, 'machine_used': len(entries), 'machine_free': machine_free,
             'projects': len({entry.get('project') for entry in entries}),
             'holding': [str(entry.get('work_id')) for entry in workers]}
@@ -3399,14 +3401,16 @@ def what_follows(ctx: Context, kind: str) -> str:
 
 
 def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
-          asked: int | None = None, agent: str | None = None, auto: bool = False) -> None:
+          asked: int | None = None, agent: str | None = None, auto: bool = False, persons_own: bool = False) -> None:
     """Apply the gate against current settings, including calls made inside a long-lived runner."""
     with home.registry_scope(fresh=True):
-        _admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto)
+        _admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto,
+               persons_own=persons_own)
 
 
 def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
-           asked: int | None = None, agent: str | None = None, auto: bool = False) -> None:
+           asked: int | None = None, agent: str | None = None, auto: bool = False,
+           persons_own: bool = False) -> None:
     """Refuse a start the gate has no room for, saying which limit binds and what follows: a halt newer than the start
     was asked for, `halted`; an agent that keeps failing, for an automatic start, `failing_agent`; the machine's
     agents, dispatch_machine_agents; the project's slots, dispatch_agents; the day's budget. Run under the gate's
@@ -3421,7 +3425,11 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
                           f'{failing["reason"]}. Nothing starts it by itself until its start command, '
                           f'dispatch_{agent}, changes, or you start a ticket yourself.', 'metaform dispatch signals')
     held = slots(ctx, store, besides=besides)
-    if held['machine_free'] <= 0:
+    # the person can always summon their own system agent: background work fills at most dispatch_machine_agents, and
+    # their agent may take one place beyond it, so their chat is never refused for work running elsewhere (2026-10-18:
+    # Full Auto filled all eight and the person's chat in another project bounced)
+    beyond = persons_own and held['machine_used'] <= held['machine_limit']
+    if held['machine_free'] <= 0 and not beyond:
         raise Refused(f'{_agents(held["machine_used"])} {"is" if held["machine_used"] == 1 else "are"} running on '
                       f'this machine across {held["projects"]} project{"" if held["projects"] == 1 else "s"}, the most '
                       f'dispatch_machine_agents allows ({held["machine_limit"]}). {what_follows(ctx, kind)}',
@@ -3431,7 +3439,7 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
         holders = ', '.join(names[one] for one in held['holding'][:5]) or 'agents the person summoned'
         raise Refused(f'Every agent slot is in use: dispatch_agents allows {_agents(held["limit"])} at once, held by '
                       f'{holders}. {names[work_id]}: {what_follows(ctx, kind)}', 'metaform dispatch sessions')
-    if kind != 'worker' and held['room'] <= 0:
+    if kind != 'worker' and (held['own_room'] if beyond else held['room']) <= 0:
         raise Refused(f'Every agent slot is in use: dispatch_agents allows {_agents(held["limit"])} besides the one '
                       f'you can always summon. {what_follows(ctx, kind)}', 'metaform dispatch sessions')
     found = over_budget(ctx, store, work_id=work_id if kind == 'worker' and not ticketless(work_id) else None)
@@ -3519,7 +3527,8 @@ def start_runner(ctx: Context | None, store: Store, work_id: str, agent: str, wo
                     if entry.get('project') == store.project_id and entry.get('work_id') == work_id \
                             and entry.get('subject') == subject:
                         return {'pid': entry['pid'], 'log': str(log), 'reused': True}
-            admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto)
+            admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto,
+                  persons_own=follows)  # the person's own agent, as follows_map names it
             token, lease, held = _leased()
             try:
                 with os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), 'ab') as written:
