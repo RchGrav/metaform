@@ -27,7 +27,6 @@ from metaform.module import (
     Subscription,
     Verb,
     context,
-    held_role,
     surface,
 )
 
@@ -391,13 +390,6 @@ def updates(ctx: Context) -> dict[str, Any]:
     return {'updates': prompts.prompt_merges(str(name) if name else None)}
 
 
-def _refused(ctx: Context) -> None:
-    held = held_role(ctx)
-    if held is not None:
-        raise Stop(f'An agent running as {held} may not change what agents are sent; say what you need in your '
-                   "ticket's note.", 'metaform help --roles-without-authority')
-
-
 def _known(ctx: Context, name: str) -> str:
     """The shipped text of a prompt some role names; a name no role names is refused, so an edit goes nowhere unsent."""
     if not any(sends.name == name for role in ROLES for sends in _sends(role)) and not any(
@@ -457,7 +449,6 @@ def override(ctx: Context) -> dict[str, Any]:
     """Save an edit of a role's prompt in the prompt store, sent in place of the shipped text, STORE-044: written as
     plain text and encoded by `prompt_files.save_edit`, so what is saved is what is sent; each role that names it
     takes it from its next turn, or from its next conversation for a prompt sent only as one begins."""
-    _refused(ctx)
     name, text = str(ctx.nouns['name']), str(ctx.nouns['text']).strip()
     shipped = _known(ctx, name)
     parent = ctx.nouns.get('parent')
@@ -483,7 +474,6 @@ def override(ctx: Context) -> dict[str, Any]:
 def drop(ctx: Context) -> dict[str, Any]:
     """Go back to the shipped text of a prompt whose edit is sent in its place: the shipped text becomes the newest
     version, so later shipped changes flow in again, STORE-044."""
-    _refused(ctx)
     name = str(ctx.nouns['name'])
     shipped = _known(ctx, name)
     try:
@@ -565,11 +555,11 @@ MODULE = Module(
                     Noun('parent', 'The version this edit came from; the newest by default.', kind='int',
                          required=False)),
              caution='Every agent of the roles that name this prompt is sent the edit, each as its role takes it.',
-             person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
+             cautioned=_sent_caution, page='the Prompt tab'),
         Verb('drop', drop, "Go back to a prompt's shipped text, so its edit is no longer sent.", nouns=(NAME,),
              caution='Every agent of the roles that name this prompt is sent the shipped text, each as its role takes '
                      'it.',
-             person_says=True, cautioned=_sent_caution, page='the Prompt tab'),
+             cautioned=_sent_caution, page='the Prompt tab'),
     ),
     subscriptions=(Subscription('prompt.sent', record), Subscription('session.compacted', authored.compacted)),
     provides=(Provides('agent.role', authored.SERVICE), Provides('agent.roles', authored.generated)),

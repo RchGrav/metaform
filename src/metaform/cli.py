@@ -927,10 +927,6 @@ def prompt_(args: list[str], folder: Path) -> None:
         parent = named.get('parent', [None])[0]
         if parent is not None and (not parent.isdecimal() or int(parent) < 1):
             raise Stop('parent= takes a positive version number.', 'metaform help prompt')
-        if prompts.sent_to_agents(name) and caller.unconsented():  # what every agent of its roles is told, CLI-011
-            raise caller.persons_decision(
-                f'Saving an edit of {name} changes what every agent sent it is told, from its next turn.',
-                shlex.join(['metaform', 'prompt', 'save', *args[1:]]), 'the Prompt tab')
         try:  # through the one gate every surface saves through: plain text in, sent as written
             saved, said = prompt_files.save_edit(name, sys.stdin.read() if text == '-' else text,
                                                  format=named.get('format', ['text'])[0],

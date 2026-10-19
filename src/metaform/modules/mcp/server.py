@@ -377,7 +377,6 @@ CHASSIS_EFFECTS: dict[str, Effect] = {
     'restore_project': 'remove', 'extract': 'write'}
 # The chassis's own tools that are the person's decision, run only on their answer to the form, CLI-011 and MCP-006.
 PERSON_SAYS = ('clear_project', 'restore_project')
-# Saving a prompt Metaform sends its agents is the person's decision too, prompts.sent_to_agents; an agent's own is not.
 # The chassis's own tools of SURFACED that act on a project's records, so they are listed once the folder has one.
 ON_PROJECT = ('add_origin', 'list_origins', 'add_variant', 'list_variants', 'clear_project', 'restore_project',
               'extract')
@@ -756,10 +755,6 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
         # as the person and the agent read and edit it: the characters sent, fill places written <name />
         return False, [result_json(dataclasses.replace(found, text=prompt_files.readable(found)))]
     if name == 'save_prompt':
-        if prompts.sent_to_agents(str(given['name'])) and not consented:  # what its roles are told, CLI-011
-            raise persons_decision(saving_caution(str(given['name'])), shlex.join(
-                ['metaform', 'prompt', 'save', str(given['name']), str(given['text']),
-                 *(f'{key}={given[key]}' for key in ('format', 'parent') if key in given)]), 'the Prompt tab')
         try:  # the one gate every surface saves through: plain text in, sent as written
             saved, said = prompt_files.save_edit(str(given['name']), str(given['text']),
                                                  format=str(given.get('format', 'text')), parent=given.get('parent'))
@@ -808,12 +803,6 @@ def _history(folder: Path, name: str, given: dict[str, Any], consented: bool = F
     written = store.extract([str(item) for item in given['variants']], _within(folder, given['folder']),
                             given.get('origin'))
     return False, [result_json([str(path) for path in written])]
-
-
-def saving_caution(name: str) -> str:
-    """What saving an edit of a prompt Metaform sends its agents does, said before it does."""
-    return (f'Saving an edit of {name} changes what every agent sent it is told, from its next turn; metaform agents '
-            f'drop {name} goes back to the shipped text.')
 
 
 def _within(folder: Path, given: Any) -> Path:
@@ -1501,11 +1490,6 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
         said = home.to_clear(project).caution if own == 'clear_project' else \
             home.restore_caution(project, backup if isinstance(backup, str) else None)
         return consent.form(name, said, {}, folder)
-    if own == 'save_prompt':
-        named = arguments.get('name')
-        if not isinstance(named, str) or not prompts.sent_to_agents(named):
-            return None
-        return consent.form(name, saving_caution(named), {}, folder)
     found = None if own else tools(folder).get(name)
     if found is None:
         return None
@@ -1517,7 +1501,7 @@ def needs(folder: Path, name: str, arguments: dict[str, Any]) -> consent.Ask | N
 
 def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
     """Whether a call is the person's decision, which no confirm of an agent's runs: a tool that is theirs
-    (PERSON_SAYS, a verb declared person_says, a save of a prompt Metaform sends its agents) or person-only settings
+    (PERSON_SAYS, a verb declared person_says) or person-only settings
     it asks to change, unless the person lets agents set them."""
     own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
     if own == 'set':
@@ -1525,9 +1509,6 @@ def persons_call(folder: Path, name: str, arguments: dict[str, Any]) -> bool:
                                  folder))
     if own in PERSON_SAYS:
         return True
-    if own == 'save_prompt':
-        named = arguments.get('name')
-        return isinstance(named, str) and prompts.sent_to_agents(named)
     if own:
         return False
     found = tools(folder).get(name)

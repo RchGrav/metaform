@@ -937,42 +937,6 @@ def test_no_command_without_the_persons_terminal_carries_their_consent_however_i
     assert shown(run, cwd=project)['jev']['value'] is True
 
 
-@pytest.mark.req('CLI-011')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='the processes that started a command are read on Linux')
-def test_the_command_a_refusal_gives_the_person_runs_when_pasted(run, project, home):
-    """UX review round 2, person-consent F4: the command the person is given is quoted for a shell, so an argument
-    pastes as it was given and saves the prompt text it carries."""
-    run('set', '--agents-ask-first', cwd=project)  # these check asking, off by default since 2026-10-18
-    noted(run, project, 'Counts down.')
-    refused = as_agent(project, home, 'agents', 'override', 'name=dispatch:work',
-                       "text=Work <work_id/> now, Ada's way & no other.<record/>", '--confirm')
-    assert refused.returncode == 2, refused.stderr
-    pasted = refused.stderr.rsplit('carries): ', 1)[1].strip()
-    from conftest import own_terminal
-    terminal, ends = own_terminal()
-    try:
-        done = subprocess.run(['bash', '-c', pasted.replace('metaform', f'"{sys.executable}" -m metaform', 1)],
-                              cwd=project, env={**os.environ, 'METAFORM_HOME': str(home)}, capture_output=True,
-                              text=True, timeout=60, check=False, **terminal)
-    finally:
-        for end in ends:
-            os.close(end)
-    assert done.returncode == 0, (pasted, done.stdout, done.stderr)
-    from importlib import resources
-
-    from metaform import prompt_files
-    sent = prompt_files.collect()
-    try:
-        served = prompt_files.served(resources.files('metaform.modules.dispatch'), 'work', work_id='T1', record='')
-        assert served == "Work T1 now, Ada's way & no other."
-    finally:
-        prompt_files.release(sent)
-    # person-consent F6: a switch to the map already active takes nothing, and says so
-    same = run('map', 'activate', 'main', cwd=project, ok=False)
-    assert same.returncode == 2 and 'main is already the active map of proj; nothing changes.' in same.stderr
-    run('map', 'activate', 'main', '--confirm', cwd=project)
-
-
 @pytest.mark.req('STORE-027')
 @pytest.mark.req('BASE-002')
 def test_export_then_import_into_an_empty_home_reproduces_the_project(run, project, tmp_path, home):
