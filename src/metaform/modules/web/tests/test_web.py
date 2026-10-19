@@ -6182,11 +6182,11 @@ def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest
     stamp = lambda days: (datetime.now(UTC) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
     old, recent = [], []
     with monkeypatch.context() as clock:
-        clock.setattr(home, 'now', lambda: stamp(10))  # done before board_done_days, 7 by default
+        clock.setattr(home, 'now', lambda: stamp(10))  # done before board_done_days, 1 by default
         for number in range(400):
             old.append(store.add_work(node, None, task=f'old {number}').id)
             store.finish_work(old[-1], 'built')
-        clock.setattr(home, 'now', lambda: stamp(1))
+        clock.setattr(home, 'now', lambda: stamp(0.5))
         for number in range(5):
             recent.append(store.add_work(node, None, task=f'recent {number}').id)
             store.finish_work(recent[-1], 'built')
