@@ -218,6 +218,108 @@ def test_compaction_makes_current_memory_due_again(project):
     assert mcp_read(project)['entities'][0]['name'] == 'shared'
 
 
+def test_author_knows_its_writes_but_does_not_acknowledge_other_agents_changes(project):
+    from metaform.modules.memory import add_observations, delivery, node_count
+
+    def write(name, arguments):
+        result = asyncio.run(answer(project, name, arguments, session='author'))
+        assert result[0] is False, result[1]
+
+    # Counts register interest without acknowledging bodies. The writer already knows what it supplies.
+    ctx = reading(project, session='author')
+    node_count(ctx, (A,))
+    write('memory_create_entities', {'node': f'element:{A}', 'entities': [
+        {'name': 'own', 'entityType': 'behavior', 'observations': ['Routes remain usable.'],
+         'why': 'Supports delivery.'}]})
+    assert delivery.notices(ctx)['components'] == []
+    assert mcp_read(project, session='author')['entities'] == []
+    assert mcp_read(project, session='peer')['entities'][0]['name'] == 'own'
+
+    write('memory_add_observations', {'observations': [
+        {'entityName': 'own', 'contents': ['Own correction.']},
+        {'entityName': 'own', 'contents': ['Another fact in the same batch.']}]})
+    assert delivery.notices(ctx)['components'] == []
+    add_observations(reading(project, observations=[{'entityName': 'own', 'contents': ['Unseen peer correction.']}]))
+    write('memory_add_observations', {'observations': [{'entityName': 'own', 'contents': ['Another own fact.']}]})
+    assert delivery.notices(ctx)['components'], 'An own write must not acknowledge an unseen peer revision.'
+    assert 'Unseen peer correction.' in mcp_read(project, session='author')['entities'][0]['observations']
+
+    write('memory_delete_observations', {'deletions': [{'entityName': 'own', 'observations': ['Own correction.']}]})
+    assert delivery.notices(ctx)['components'] == []
+    write('memory_delete_entities', {'entityNames': ['own']})
+    assert delivery.notices(ctx)['components'] == []
+    assert mcp_read(project, session='peer')['deleted_entities'] == ['own']
+
+
+def test_memory_notice_read_while_queued_is_not_sent_as_an_extra_turn(project, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform.module import context
+    from metaform.modules.dispatch.runner import Session
+    from metaform.modules.memory import add_observations, delivery
+
+    make(project)
+    ctx = context('dispatch', project, project='memory-delivery', session='worker')
+    runner = Session(ctx, Store('memory-delivery', module='dispatch'), None, 'claude', [], prep=True)
+    runner.runner, runner.session_id, runner.turns = 'worker', 'adapter', 1
+    # Register the encounter but leave its body unread, then queue its notice behind a running turn.
+    from metaform.modules.memory import node_count
+    node_count(reading(project, session='worker'), (A,))
+
+    async def scenario():
+        await runner.memory_changes()
+        assert len(runner.pending) == 1
+        for number in range(3):
+            add_observations(reading(project, observations=[
+                {'entityName': 'shared', 'contents': [f'Peer correction {number}.']}]))
+            await runner.memory_changes()
+        assert len(runner.pending) == 1, 'Repeated edits must coalesce behind the current turn.'
+        reader = asyncio.StreamReader()
+        reader.feed_data(json.dumps({'op': 'interrupt', 'token': runner.token}).encode() + b'\n')
+        await runner.control(reader, SimpleNamespace(write=lambda data: None, drain=AsyncMock(), close=lambda: None))
+        assert not runner.pending and not runner.memory_queued
+        add_observations(reading(project, observations=[{'entityName': 'shared', 'contents': ['After interrupt.']}]))
+        await runner.memory_changes()
+        assert len(runner.pending) == 1, 'Interrupt must not block notices for later changes.'
+        result = await answer(project, 'memory_read_unread', {'node': f'element:{A}'}, session='worker')
+        assert result[0] is False and result[2]['entities']
+        assert delivery.notices(reading(project, session='worker'))['components'] == []
+        await runner.prompted()
+
+    runner.conn = type('Connection', (), {'prompt': AsyncMock(side_effect=AssertionError('Stale notice sent.'))})()
+    monkeypatch.setattr(runner, 'changed', AsyncMock())
+    monkeypatch.setattr(runner, 'note', AsyncMock())
+    monkeypatch.setattr(runner, 'flush', AsyncMock())
+    asyncio.run(scenario())
+    runner.conn.prompt.assert_not_called()
+    assert runner.turns == 0 and runner.active_turn is None and not runner.memory_queued
+
+
+def test_author_knows_relation_and_index_changes_while_peers_receive_withdrawals(project):
+    from metaform.modules.memory import delivery
+
+    make(project, name='route')
+    make(project, name='echo', address=B)
+    for session in ('author', 'peer'):
+        mcp_read(project, session=session)
+        mcp_read(project, B, session=session)
+    edge = {'from': 'echo', 'to': 'route', 'relationType': 'checks'}
+    ctx = reading(project, session='author')
+    def write(name, arguments):
+        result = asyncio.run(answer(project, name, arguments, session='author'))
+        assert result[0] is False, result[1]
+        assert delivery.notices(ctx)['components'] == []
+    write('memory_create_relations', {'relations': [edge]})
+    assert mcp_read(project, session='peer')['relations'] == [edge]
+    write('memory_delete_relations', {'relations': [edge]})
+    assert mcp_read(project, session='peer')['deleted_relations'] == [edge]
+    with Store('memory-delivery', module='memory').tables(write=False) as tx:
+        link = tx.rows('joins', {'entity': 'route'}, limit=1).results[0]
+    write('memory_unjoin', {'id': link['join_id']})
+    assert mcp_read(project, session='peer')['withdrawn'][0]['name'] == 'route'
+
+
 def test_separate_cli_processes_share_memory_receipts_and_epoch(project, run):
     from metaform.modules.memory import join
     make(project)

@@ -550,6 +550,8 @@ async def note(ctx: Context) -> dict[str, Any]:
                 for session_id in {str(one['_session']), str(sender.get('session_id') or '')} - {''}:
                     mark_peer(tx, session_id, str(one['id']), work, 'read', str(mine['session_id']))
     await asyncio.to_thread(read)
+    for one in got:
+        await asyncio.to_thread(mark_remote, store, one, 'read', str(mine['session_id']), work)
     answered = {str(cast(dict[str, Any], one['from']).get('session_id') or ends(one)[0]) for one in got}
     silent = [one for one in sent['to'] if one['session_id'] not in answered]
     words = sent['said']
@@ -561,8 +563,8 @@ async def note(ctx: Context) -> dict[str, Any]:
         words += (f' No reply came from {", ".join(one["item"] for one in silent)} within {wait:g} seconds; a later '
                   'reply reaches you as a turn of its own.')
     return {**sent, 'replies': [{'note': one['id'], 'from': {key: cast(dict[str, Any], one['from']).get(key)
-                                                              for key in ('work_id', 'session_id', 'assignment_id',
-                                                                          'item', 'title', 'agent')},
+                                                              for key in ('project', 'base', 'work_id', 'session_id',
+                                                                          'assignment_id', 'item', 'title', 'agent')},
                                  'text': one.get('text'), 'at': one.get('at')} for one in got],
             'unanswered': silent, 'said': words}
 
@@ -612,11 +614,14 @@ def notes(ctx: Context) -> dict[str, Any]:
                  if str(cast(dict[str, Any], one.get('from') or {}).get('session_id') or '') != mine['session_id']]
         return {'notes': inbox[:count], 'more': max(len(inbox) - count, 0)}
     listed = [{'note': one.get('id'), 'at': one.get('at'),
-               'way': 'sent' if cast(dict[str, Any], one.get('from') or {}).get('session_id') == mine['session_id']
+               'way': 'sent' if (cast(dict[str, Any], one.get('from') or {}).get('session_id') == mine['session_id']
+                                and cast(dict[str, Any], one.get('from') or {}).get('project', store.project_id)
+                                == store.project_id)
                else 'received',
                'from': {key: cast(dict[str, Any], one.get('from') or {}).get(key)
-                        for key in ('item', 'agent', 'work_id', 'session_id', 'assignment_id', 'team_id')},
-               'to': [{key: end.get(key) for key in ('item', 'agent', 'work_id', 'session_id', 'assignment_id', 'team_id')}
+                        for key in ('project', 'base', 'item', 'agent', 'work_id', 'session_id', 'assignment_id', 'team_id')},
+               'to': [{key: end.get(key) for key in ('project', 'base', 'item', 'agent', 'work_id', 'session_id',
+                                                    'assignment_id', 'team_id')}
                       for end in cast(list[dict[str, Any]], one.get('to') or [])],
                'text': one.get('text'), 'ask': bool(one.get('ask')), 'reply_to': one.get('reply_to'),
                'states': one.get('states') or {}, 'session_states': one.get('session_states') or {}}

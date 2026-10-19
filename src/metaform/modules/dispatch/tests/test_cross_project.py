@@ -51,6 +51,23 @@ def test_live_project_routing_and_reply_keep_original_sessions(run, home, projec
         assert returned['from']['project'] == 'other'
         assert returned['from']['base'] == original_base
         assert returned['from']['session_id'] == b['session_id']
+        shown = json.loads(run('dispatch', 'notes', '--json', cwd=first.folder, env={
+            'METAFORM_ROLE': 'worker', 'METAFORM_WORK': first.id, 'METAFORM_SESSION': a['runner']}).stdout)
+        received = next(one for one in shown['notes'] if one['note'] == reply['note'])
+        assert received['way'] == 'received' and received['from']['project'] == 'other'
+
+        # Replies consumed by a waiting tool carry the same read receipt back to the other project.
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            waiting = pool.submit(command, first, a, 'target_project=other', f'to={b["session_id"]}',
+                                  'wait=10', '--', 'Can the alarm retain this interface?')
+            question = eventually(lambda: next((one for one in peer_lines(second.store, second.id)
+                                                if one.get('ask')), None))
+            response = command(second, b, f'reply={question["id"]}', '--', 'Yes, it is retained.')
+            result = waiting.result(timeout=15)
+        assert result['replies'][0]['note'] == response['note'] and not result['unanswered']
+        receipt = next(one for one in peer_lines(second.store, second.id) if one['id'] == response['note'])
+        assert receipt['session_states'][a['session_id']] == 'read'
     finally:
         first.close()
         second.close()
