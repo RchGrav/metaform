@@ -323,6 +323,93 @@ Other
 - Spec drafts awaiting the owner: VIEW-035/041 (key 6), MCP-003 (tools by category), VIEW-005 (last click).
 - The repository's loose objects and a stale .git/gc.log block git's own cleanup.
 
+## 12. Issues the owner raised in chat that section 11 does not list
+
+Mined on 2026-10-19 from every line the owner wrote in agent chats (737 unique lines, 83 sessions, 2026-10-12 to
+2026-10-19, `dispatch.session_lines` kind `person`). Dates are the session's start. Each item's present state has not
+been checked unless it says so.
+
+Control of agents (2026-10-19, fixed in eacb47f0, untested in use)
+- With Full Auto off, every stopped agent was replaced at once: GC launches, retries and the queue ignored the setting.
+- The owner could not stop their own agents: the consent check took them for an agent ("An agent stops only the agents
+  it started"). Stop is now never refused (`STOP_CONSENT = False`).
+- The owner's messages and stops waited behind a backlog of agent notes, so the system agent answered old notes while
+  being told to stop. The owner's message now goes first, and Interrupt drops the queued turns.
+- The system agent became the GC of a ticket's swarm and did the work itself. Its job is the board and tickets; long
+  work goes to subagents (10-17).
+
+Permissions and questions
+- With approve-all set, agents still raise permission pop-ups, and they need closing by hand (10-17).
+- Accepting a permission fails: "The agents could not be read. Unsupported method ... GET" (10-17).
+- A false notice appears when an agent changes its own mode (10-17).
+- The permission options are hard to understand (10-17), and the agent permission mode cannot be found. It belongs in
+  the agent dropdown in chat (10-12, 10-13).
+- Question buttons in chat stopped working when answered, and the question opened outside the chat (10-16).
+- A prompt check flags the owner's own prompt as incomplete ("@STATE_INIT is missing" and the rest). Those terms are
+  contextual, not parsed, and the check is not part of the design (10-16).
+
+Chat
+- Chat bounces to the wrong tab, tabs show for agents that are not there, and it is unclear who is being chatted
+  with. The chat window should take the selected agent's colour (10-17).
+- Chat opened from a pop-up has no input bar (10-17).
+- Esc minimises the chat, where muscle memory expects Esc to undo. Wanted: up arrow for earlier messages, no minimise
+  on Esc (10-16).
+- New did not reset the system agent's context (10-16).
+- A system-delivered "ticket done" message did not say who sent it (10-17).
+- Messages vanish too fast to copy, with no log to read them in (10-13).
+- Not yet built: paste or drag images into the input; a messenger-style agent list in full mode showing each task
+  (10-13).
+
+The mascot
+- It asks for a mascot with every new context, and the chosen seahorse was lost and shown as the crystal (10-16).
+
+The 2D map, layers and refs
+- The 2D map broke: labels no longer match their functions, and it no longer matches the 3D map (10-15, 10-16).
+- The SVG errors "scale(Infinity -Infinity)" flood the console (10-16).
+- Layers appeared with names that are no element's short name ("untitled", "feature audit"), about 20 of them, on new
+  projects too (10-15, 10-16).
+- Refs were turned into properties, and 94 refs were linked to `code` (10-13, 10-15).
+- File write locks went live before the rules and prompts that explain them. Agents were locked out, sandboxes
+  followed, and the machine crashed (10-13, 10-15).
+
+The 3D map
+- Agents fade into a dark patch as the map rotates. The haze is right if it is gentler (10-17).
+- Label dimming and the haze both darken labels, and they conflict. Drop the dimming and let the haze do it (10-17).
+- The haze is pinned to the map, not to the viewer's camera (10-18).
+- Labels should sit on the side of an object facing the viewer (10-17).
+- Opening the page shows every figure that has ever run, all at once (10-17).
+- Figures shake when switching projects (10-18).
+- The intake banner stays up after the intake finishes (10-13).
+
+Memory
+- Memories hang straight off nodes ("dandelions"), with no relations between memories or between nodes (10-13,
+  10-16).
+- Old memories that are not atomic facts were to be purged, and agents should keep memories current and remove dated
+  ones (10-16, 10-17).
+- The note field was to go. If kept, it is singular and the owner's alone (10-13).
+
+The board
+- The board's count of agents to start does not match the agents setting (10-17).
+- Every status reads "not set" (10-17).
+- A part flashes red though it is not marked broken, and its ticket stays open (10-17).
+- The four work columns are not layers of the map (backlog, todo, doing, done) (10-13).
+
+Voice
+- Speech to text failed with 400s from `/api/voice/transcribe` (10-13).
+- ElevenLabs does not speak (10-13).
+- Words were transcribed up to ten times over, and silence makes the recogniser invent words. faster-whisper was
+  suggested (10-13, 10-16).
+
+Settings
+- Settings open on the module list, buried two screens deep, instead of a short page of the settings that matter
+  (10-13).
+
+Tickets and orchestration
+- Tickets written without understanding crashed the system and had agents breaking things. They quoted the owner's
+  words instead of encoding the intent (10-13).
+- Agents came back with questions after long runs instead of tracing the code first (10-16).
+- The roundtable run did not end, and it spent the budget (10-16).
+
 ## Changes made on 2026-10-18 (in this commit)
 
 - 3D map: turns around the selected node, including when grabbed mid-flight; label sizing unchanged.
