@@ -1,0 +1,1 @@
+The test run's cleanup ended three web-server processes left over from earlier interrupted runs. One of them came from another agent's worktree (`.claude/worktrees/agent-ab23e95a…`).

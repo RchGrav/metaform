@@ -16,7 +16,7 @@ import {callSystem} from '/page/app/dock/commands.js';
 import {wrote} from '/page/app/board/history.js';
 import {D, agentAt} from '/page/app/agents/dispatch.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {bubbleAt} from '/page/app/figures/bubble3d.js';
+import {bubbleAt, bubbleText} from '/page/app/figures/bubble3d.js';
 import {spokenOf, sameWords} from '/page/app/session/apps.js';
 import {CLICKED, clickedLine} from '/page/app/figures/eyes.js';
 
@@ -129,7 +129,7 @@ export function mascotHeard(target, lines) {
   // what the agent said on the map with web_say since the person asked is in the bubble already, and not said twice
   const onMap = lines.filter(line => (Number(line.seq) || 0) > ASKING.base).map(spokenOf).filter(Boolean);
   if (onMap.some(said => sameWords(words).includes(sameWords(said)))) return;
-  const short = words.length > 160 ? words.slice(0, 157) + '…' : words;
+  const short = bubbleText(words);
   const own = ROAM.figures.get(DOCK.mine)?.talk ? DOCK.mine : null;  // an embodied system agent answers from its figure
   say(short, readFor(short), () => agentAt(DOCK.mine), own);
 }
@@ -162,8 +162,8 @@ export function figureAt(x, y) {
     const off = ray.distanceToPoint(middle) / size;
     if (!best || off < best.off) best = {id, off, distance: ray.origin.distanceTo(middle) - size};
   }
-  const said = bubbleAt(FIGURE_PICK.ray);  // a bubble is drawn over everything, so it takes the click where it shows
-  if (said) return said.id;
+  const said = bubbleAt(x, y);  // a bubble is drawn over everything, so it takes the click where it shows
+  if (said) return said;
   return best?.id || null;
 }
 export function openFigure(workId) {

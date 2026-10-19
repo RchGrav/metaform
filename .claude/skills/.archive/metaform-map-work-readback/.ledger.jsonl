@@ -1,0 +1,1 @@
+{"action": "create", "reason": "A map_work read asked for done, resolution, steps_done, steps and outcome and failed: those fields are not on a work record. The fields are number, said and at, and a full view was needed to see the resolution. Staging so the next agent reads a finished ticket correctly the first time.", "evidence": "references/evidence-e502766b.md"}

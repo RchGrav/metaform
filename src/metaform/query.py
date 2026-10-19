@@ -52,8 +52,10 @@ READS: dict[str, Read] = {
                                                       'each with the elements it holds.'),
     'messages': Read('messages', (), {'node': _node, 'kind': str, 'open': _bool, **PAGING},
                      'The questions and messages agents left the user, oldest first.'),
-    'work': Read('work', (), {'node': _node, 'condition': str, 'open': _bool, 'ids': _list, **PAGING},
-                 'The work records: the condition of an element or a join, apart from the map; ids=a,b reads those.'),
+    'work': Read('work', (), {'node': _node, 'condition': str, 'open': _bool, 'ids': _list, 'done_since': str,
+                              'done_before': str, **PAGING},
+                 'The work records: the condition of an element or a join, apart from the map; ids=a,b reads those; '
+                 'done_since=<time> the open ones and those done since, done_before=<time> those done before.'),
     'element': Read('element', (('ref', str),), dict(CONTEXT), 'One element by address or id.'),
     'joins': Read('joins', (('element', str),), {'as': str, **CONTEXT, **PAGING},
                   'The joins an element receives, or with as=provider those that hold it.'),

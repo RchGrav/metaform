@@ -13,7 +13,9 @@ import {named} from '/page/app/task/task.js';
 
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
-export const B = {tickets: [], off: new Set()};
+/* The board's tickets, the kinds hidden, and cutoff: the time its done tickets start at, as the server's board read
+ * gives it, board_done_days ago or the line in the sand; a ticket done before it is in the Archive. */
+export const B = {tickets: [], off: new Set(), cutoff: ''};
 export const KINDS = ['broken', 'flawed', 'enhancement'];  // a ticket's kind; none is a plain task
 export const BOARD = [['backlog', 'Backlog'], ['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']];
 /* What a record's condition says about the part it is at, MAP-046: the condition belongs to the element or join, not

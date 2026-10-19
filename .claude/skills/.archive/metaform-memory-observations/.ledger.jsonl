@@ -1,0 +1,2 @@
+{"action": "create", "reason": "Memory observation writes failed mid-batch: the delete landed, the add was refused for holding two facts, and the entity was left without its new lines. No skill covers the one-fact rule or the non-atomic batch.", "evidence": "references/evidence-6ebdb484.md"}
+{"action": "delete", "reason": "Absorbed into the metaform-development umbrella under Memory notices and observations. No subfiles.", "evidence": "references/evidence-0bf7c955.md", "absorbed_into": "metaform-development"}

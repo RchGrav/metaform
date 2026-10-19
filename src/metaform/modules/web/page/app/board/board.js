@@ -283,7 +283,8 @@ async function dropCard(event, cards, column) {
  * written with the same condition and note on an element and on a purpose record it holds or receives is drawn once,
  * at the element. */
 export function boardTickets(records) {
-  records = records.filter(ticket => ticket.is_work);
+  // done before the board's cutoff, it is in the Archive: the tickets the map holds are not all the board's
+  records = records.filter(ticket => ticket.is_work && (!ticket.done || ticket.done >= B.cutoff));
   const finding = ticket => !ticket.task && ticket.condition
     ? [ticket.condition, ticket.note || '', Boolean(ticket.done)].join('\n') : null;
   const atElements = new Set(records.filter(ticket => ticket.node_kind === 'element' && finding(ticket))
@@ -299,13 +300,65 @@ export async function renderBoard() {
   const count = $('#board .distribute input');
   if (!count.dataset.chosen && AUTO.agents) count.value = String(AUTO.agents);
   const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
-  let tickets;
-  try { tickets = boardTickets((await read('work', {limit: 0})).results || []); }
+  let found;
+  // the server reads what the board shows, the open tickets and those done since its cutoff, never every ticket
+  try { found = await read('work', {limit: 0, board: 'shown'}); }
   catch (error) { toast(error.message); return; }
   if (S.project !== project || S.base !== metaform) return;  // a later choice's read draws its own tickets
-  B.tickets = tickets;
+  B.cutoff = found.cutoff || '';
+  B.tickets = boardTickets(found.results || []);
   drawBoard();
+  if (!$('#board .archive').hidden) await renderArchive();
 }
+/* The Archive: the tickets done before the board's cutoff, each still a record at its part of the map, read from the
+ * server a page at a time in the order they were written, More reading the next; a row opens its part's history. */
+const ARCHIVE_PAGE = 50;
+async function renderArchive(after = null) {
+  const list = $('#board .archive .rows'), more = $('#board .archive .more');
+  const project = S.project, metaform = S.base;
+  let found;
+  try { found = await read('work', {limit: ARCHIVE_PAGE, board: 'archive', ...(after ? {after} : {})}); }
+  catch (error) { toast(error.message); return; }
+  if (S.project !== project || S.base !== metaform) return;
+  const rows = (found.results || []).filter(ticket => ticket.is_work).map(archiveRow);
+  if (after) list.append(...rows); else fill(list, rows);
+  if (!list.children.length) fill(list, [h('p', {class: 'empty'}, 'Nothing is archived yet.')]);
+  more.hidden = !found.next;
+  more.dataset.after = found.next || '';
+  $('#board .archive .since').textContent = found.cutoff ? `Done before ${found.cutoff.replace('T', ' ')}` : '';
+}
+function archiveRow(ticket) {
+  const open = () => {
+    const element = partAt(ticket.address);
+    if (element) { select(element.id, true); history(element.id); }
+  };
+  return h('div', {class: 'row', 'data-id': ticket.id, onclick: open},
+    h('span', {class: 'item'}, ticket.map?.item || ticket.map?.title || ticket.id.slice(0, 8)),
+    h('span', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
+    h('span', {class: 'address'}, ticket.address || ''),
+    h('small', {class: 'when'}, `Done ${String(ticket.done).replace('T', ' ')}`),
+    ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null);
+}
+$('#board .archive-toggle').onclick = async () => {
+  const box = $('#board .archive'), showing = box.hidden;
+  box.hidden = !showing;
+  $('#board .columns').hidden = showing;
+  $('#board .archive-toggle').setAttribute('aria-pressed', String(showing));
+  if (showing) await renderArchive();
+};
+$('#board .archive .more').onclick = event => renderArchive(event.currentTarget.dataset.after || null);
+/* Line in the sand: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
+ * line that was before back. */
+$('#board .line-in-sand').onclick = async () => {
+  const set = await wrote('/api/board-line', {});
+  if (!set) return;
+  await renderBoard();
+  undoable('Everything done up to now is in the Archive.', async () => {
+    const back = await wrote('/api/board-line', {line: set.was});
+    await renderBoard();
+    return Boolean(back);
+  });
+};
 $('#boardBtn').onclick = async () => {
   if (WS.reveal('board')) return;
   $('#board').hidden = false;

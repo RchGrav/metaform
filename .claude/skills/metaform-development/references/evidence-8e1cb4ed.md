@@ -1,0 +1,1 @@
+{"type":"tool_result","content":[{"type":"text","text":"code.scheduler.task#f Run fault does not check the ticket is open: done.\nid: This work record was done at 2026-10-19T00:27:01Z; its resolution was kept."}]} — the op=done call that followed the returned check-in (the check-in ran at 00:27:00Z; the done was sent at 00:27:07Z).

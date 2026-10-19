@@ -4,14 +4,15 @@ becomes one ticket at once, so a project heals with no one reading logs.
 A source publishes what failed and where: `source` (`web`, `page`, `mcp`, `run`, `feedback`), `message`, the one line
 saying what failed; `detail`, a traceback, a stack or the text reported; `file`, the failing file when the source knows
 it, else the one the detail's trace names; `reproduce`, how to make it happen again; `work_id`, the ticket of the agent
-whose call failed, when one did; and `count`, when the source merged repeats of it before sending.
+whose call failed, when one did; and `count`, when the source merged repeats of it before sending. A source with several
+faults at once, the page's errors of one second, publishes them as one event whose `faults` is the list of them.
 
 Faults are grouped as log entries are, `grouping.py`, among those raised at the same place: the same source, file and
 function. So one kind of error is one group however often it repeats, and the words a source puts around every error it
 raises never make two errors one. A group never seen before is filed as a ticket of kind broken at the element that owns its file, `watch.file_address`;
 a group that recurs while its ticket is open has its count and last seen written in that ticket's note. At most
-`autoticket_open_most` filed tickets are open at once: the rest wait as groups, and the oldest is filed when one of
-those tickets is done. A fault raised by an agent working a ticket autoticket filed is counted on that ticket. Feedback,
+`autoticket_open_most` filed tickets are open and not held at once: the rest wait as groups, and the oldest is filed
+when one of those tickets is done or held. A fault raised by an agent working a ticket autoticket filed is counted on that ticket. Feedback,
 whose answer is a design choice, and an error that names deleting or removing data are filed held for the person.
 
 Event rules, CLAUDE.md section 2: the faults that arrive while a pass for the same project runs merge into its next
@@ -30,7 +31,7 @@ from importlib import resources
 from typing import Any, cast
 
 from metaform import events, prompt_files, settings
-from metaform.data import Node, Store
+from metaform.data import Node, Store, StoreError
 from metaform.module import Context
 
 from . import entries, grouping
@@ -50,7 +51,8 @@ REMOVES = re.compile(r'\b(?:delet|remov|drop|purg|wip|truncat|eras)\w*', re.IGNO
 
 @dataclass
 class Fault:
-    """One fault as its source said it, with how many times it came while it waited for a pass."""
+    """One fault as its source said it, with how many times it came while it waited for a pass, and the group a
+    pass counted it in."""
     source: str
     message: str
     detail: str
@@ -60,6 +62,7 @@ class Fault:
     count: int
     first: float
     last: float
+    group_id: int = 0
 
 
 PENDING: dict[str, dict[tuple[str, str, str, str], Fault]] = {}  # by project: faults waiting for a pass
@@ -80,20 +83,28 @@ def fault_of(payload: dict[str, Any]) -> Fault | None:
 
 
 def raised(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
-    """`fault.raised`: the fault waits with the others of its project, and a pass runs unless one runs already, which
-    then takes it in its next turn; the pass ends once nothing waits."""
-    fault, store = fault_of(payload), ctx.store
-    if fault is None or store is None:
+    """`fault.raised`: the fault, or each of its `faults`, waits with the others of its project, and a pass runs unless
+    one runs already, which then takes them in its next turn; the pass ends once nothing waits. A pass it ran returns
+    `tickets`, the tickets its faults were filed or counted on, so the caller can name them."""
+    given = payload.get('faults')
+    each = [cast(dict[str, Any], one) for one in cast(list[Any], given) if isinstance(one, dict)] \
+        if isinstance(given, list) else [payload]
+    found = [fault for fault in map(fault_of, each) if fault is not None]
+    store = ctx.store
+    if not found or store is None:
         return {'taken': False}
     project = store.project_id
-    key = (fault.source, fault.message, fault.file, fault.work_id)
     with LOCK:
         waiting = PENDING.setdefault(project, {})
-        had = waiting.get(key)
-        if had is None:
-            waiting[key] = fault
-        else:
-            had.count, had.last = had.count + fault.count, fault.last
+        mine: list[Fault] = []
+        for fault in found:
+            key = (fault.source, fault.message, fault.file, fault.work_id)
+            had = waiting.get(key)
+            if had is None:
+                waiting[key] = fault
+            else:
+                had.count, had.last = had.count + fault.count, fault.last
+            mine.append(waiting[key])
         if project in PASSING:
             return {'taken': True, 'merged': True}
         PASSING.add(project)
@@ -108,7 +119,11 @@ def raised(payload: dict[str, Any], ctx: Context) -> dict[str, Any]:
     finally:
         with LOCK:
             PASSING.discard(project)
-    return {'taken': True, 'filed': filed}
+    with store.tables(write=False) as tx:
+        rows = [tx.get('groups', {'group_id': group_id}) for group_id in dict.fromkeys(f.group_id for f in mine)]
+    tickets = [str(row['work_id']) for row in rows
+               if row is not None and row['work_id'] and not str(row['work_id']).startswith(FILING)]
+    return {'taken': True, 'filed': filed, 'tickets': list(dict.fromkeys(tickets))}
 
 
 def settle(ctx: Context, store: Store, batch: list[Fault]) -> int:
@@ -140,6 +155,7 @@ def settle(ctx: Context, store: Store, batch: list[Fault]) -> int:
                 group_id = int(row['group_id'])
                 known.append((group_id, terms))
                 made[group_id] = fault
+            fault.group_id = group_id
             touched.add(group_id)
             if fault.work_id:
                 by_agent[group_id] = fault.work_id
@@ -236,14 +252,17 @@ def noted(note: str, rows: list[dict[str, Any]]) -> str:
 
 
 def file_waiting(ctx: Context, store: Store) -> int:
-    """File the waiting groups, oldest first, while fewer than `autoticket_open_most` tickets it filed are open: each
-    claimed first, so two processes never file one group twice. Returns how many were filed."""
+    """File the waiting groups, oldest first, while fewer than `autoticket_open_most` tickets it filed are open and not
+    held: a held ticket waits for the person and starts no agent work, so it takes no slot. Each group is claimed first,
+    so two processes never file one group twice. Returns how many were filed."""
     most = int(settings.value('autoticket_open_most', ctx.folder) or 5)
     at = time.time()
     with store.tables(write=False) as tx:
         rows = [dict(row) for row in tx.rows('groups', limit=0).results]
     filed_ids = sorted({str(row['work_id']) for row in rows if row['work_id'] and not filing(row)})
-    open_now = len(store.work(ids=filed_ids, open=True, limit=0).results) if filed_ids else 0
+    records = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
+    kept = holds(store, [record.id for record in records])
+    open_now = sum(not record.held and record.id not in kept for record in records)
     waiting = sorted((row for row in rows if row['address'] and waits(row, at)), key=lambda row: int(row['group_id']))
     filed = 0
     for row in waiting[:max(0, most - open_now)]:
@@ -263,6 +282,19 @@ def file_waiting(ctx: Context, store: Store) -> int:
             tx.update('groups', {'group_id': group_id}, {'work_id': record.id})
         filed += 1
     return filed
+
+
+def holds(store: Store, work_ids: list[str]) -> set[str]:
+    """Those of these tickets the person holds, `map_work hold=true`, kept in the map module's own table: a hold keeps
+    agents and automatic starts off a ticket as the Backlog's held mark does. Read by key; none without the map module."""
+    if not work_ids:
+        return set()
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            found = [tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids]
+    except StoreError:
+        return set()
+    return {str(row['work_id']) for row in found if row is not None and row['hold']}
 
 
 def filing(row: dict[str, Any]) -> bool:
@@ -311,10 +343,12 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
 
 
 def freed(payload: dict[str, Any], ctx: Context) -> None:
-    """`map.changed`: a ticket autoticket filed may be done, its slot free for a waiting group. Decided from the event
-    alone: one naming tables other than `work`, or only words, steps or sessions of tickets, concerns it not; one
-    naming tickets reads whether any of them is one it filed and done; one that does not say what it concerns may
-    have closed any, so the waiting groups are looked at once."""
+    """`map.changed`: a ticket autoticket filed may be done or held, its slot free for a waiting group. Decided from the
+    event alone: one naming tables other than `work`, or only words, steps or sessions of tickets, concerns it not; one
+    naming tickets reads whether any of them is one it filed and done or held; one that does not say what it concerns
+    may have closed any, so the waiting groups are looked at once. A held ticket released takes a slot and files
+    nothing; `file_waiting` reads each ticket's held mark when it counts, so the next pass counts it."""
+    print('FREED', payload.get('tables'), payload.get('kinds'), payload.get('work_ids'))
     store = ctx.store
     if store is None or payload.get('project') not in (None, store.project_id):
         return
@@ -329,6 +363,6 @@ def freed(payload: dict[str, Any], ctx: Context) -> None:
             return
         with store.tables(write=False) as tx:
             ours = [work_id for work_id in named if tx.rows('groups', {'work_id': work_id}, limit=1).results]
-        if not ours or not any(record.done for record in store.work(ids=ours, limit=0).results):
+        if not ours or not any(record.done or record.held for record in store.work(ids=ours, limit=0).results):
             return
     file_waiting(ctx, store)

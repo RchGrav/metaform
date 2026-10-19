@@ -1,0 +1,1 @@
+- Keep one agent running at a time unless the person says go and the cost is stated. (metaform-development) vs At most 5 agents run at once. A dispatch start that finds every slot taken fails with "Every agent slot is in use: dispatch_agents allows 5 agents at once" (metaform-ticket-dispatch)

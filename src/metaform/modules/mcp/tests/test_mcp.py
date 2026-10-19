@@ -3581,6 +3581,40 @@ def test_metaform_serves_its_glossary_alone_the_projects_own_and_the_tools_in_a_
     assert read('metaform://proj') == standard + '\n\n' + prompt_files.module('mcp', 'project_glossary_absent') + '\n'
 
 
+@pytest.mark.req('MCP-006')
+def test_a_failed_verb_whose_fault_is_filed_names_its_ticket_and_asks_no_feedback_on_it(run, home, mapped, tmp_path,
+                                                                                       monkeypatch):
+    """A module verb that raises publishes its fault, which autoticket files, so the answer names the ticket and asks
+    for feedback only for what the error does not say; asked to report it, an agent would file it again. With no
+    project nothing files it, and the answer still asks for feedback."""
+    import asyncio
+    import dataclasses
+
+    from metaform.modules.mcp import server
+    run('enable', 'autoticket')
+    real = server.tools
+
+    def boom(ctx):
+        raise FileNotFoundError('no such file: spec.md')
+
+    def failing(folder):
+        known = real(folder)
+        module, verb = known['map_where']
+        return {**known, 'map_where': (module, dataclasses.replace(verb, run=boom))}
+    monkeypatch.setattr(server, 'tools', failing)
+    error, blocks = asyncio.run(server.run_tool(mapped, 'map_where', {'address': 'code.timer.kitchen'}))
+    filed = [record.id for record in Store('proj').work(limit=0).results]
+    assert error and len(filed) == 1, blocks
+    assert blocks[-1].splitlines() == ['Error: FileNotFoundError: no such file: spec.md',
+                                       (f'Next: this failure is filed for a fix as ticket {filed[0]}; call '
+                                        'metaform_feedback only for what this error does not say')]
+    loose = tmp_path / 'loose'
+    loose.mkdir()
+    error, blocks = asyncio.run(server.run_tool(loose, 'map_where', {'address': 'code.timer.kitchen'}))
+    assert error and blocks[-1].splitlines() == ['Error: FileNotFoundError: no such file: spec.md',
+                                                 'Next: call metaform_feedback and say what you called']
+
+
 @pytest.mark.req('MCP-037')
 def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, home, mapped):
     """A ticket's add, plan, step and done, a memory recorded and a term added each answer an agent one line naming

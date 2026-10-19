@@ -1,0 +1,1 @@
+src/metaform/modules/orchestration/state.py | 120 ++++++++++- ... def finding_text(fields: Mapping[str, Any]) -> tuple[str, str]: ... head = next((name for name in HEADLINES if prose(fields.get(name))), None) ... title = ' '.join(prose(fields.get(named)).split()) if named else 'Functional finding'

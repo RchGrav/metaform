@@ -1,40 +1,45 @@
-/* What each agent at work is saying, in a comic speech bubble beside its figure in the 3D map. The bubble is drawn in
- * SVG: a white body with rounded corners, tilted so its top rises to the right, a thick black outline of one weight
- * whatever its size, a soft shadow below and right, and a pointed tail from its lower left to the figure's head. The
- * words are set large and bold and wrap; the body grows and shrinks around them while the outline, corners and tail
- * keep their size. The drawing becomes the texture of a plane in the scene, not a layer over the map: it faces the
- * camera, is the same readable size on the screen at any distance, and is drawn over the map so its words can be read; a
- * nearer bubble covers a farther one, and an agent farther than the nearest one talking is drawn dimmer, still solid.
- * Every bubble stays inside the view and apart from the others, `apart`. A new line shows for web_bubble_seconds (auto by
- * default, by its words, `bubbleSeconds`) and goes, fading in and out by the clock, so at any frame rate; the pointer on an agent brings its last line
- * back. In the agent view, V, the agent seen through has no body on the screen, so its words are at the bottom of the
- * view for as long as it says them, `atBottom`. It is drawn again only when its words change, never each frame. The
- * words are the newest line the agent said in its thread, `said` on its session from the server, never its tool calls
- * or its thinking (code.interface.graphical#81, 2026-10-15). */
+/* What each agent at work says, and what the mascot says, in comic word bubbles drawn as SVG in one layer over the
+ * maps, `#bubbles`. A bubble is a white body with rounded corners, tilted so its top rises to the right, a thick dark
+ * outline of one weight whatever its size, a soft shadow below and right, and bold words that wrap; the body grows and
+ * shrinks around them. Its tail is drawn again every frame from the body to the speaker's head as it is on the screen,
+ * `tailOf`, wherever the body sits, so the tail always shows who speaks (code.interface.graphical#c7, 2026-10-18).
+ * Each bubble starts above its speaker and stays inside the map it is drawn over; nearest speaker first, one that would
+ * cover a bubble placed before it is pushed apart, `apart`, eased over a few frames so it settles without jumping, its
+ * tail following. A speaker off the screen keeps its bubble at the view's edge, its tail running to that edge toward
+ * the speaker. An agent farther than the nearest one talking is drawn dimmer, still solid, and a nearer bubble covers a
+ * farther one. A new line shows for web_bubble_seconds (auto by default, by its words, `bubbleSeconds`) and goes,
+ * fading in and out by the clock, so at any frame rate; the pointer on an agent brings its last line back. In the agent
+ * view, V, the agent seen through has no body on the screen, so its words are at the bottom of the view for as long as
+ * it says them, the tail pointing down out of the view. The words are the newest line the agent said in its thread,
+ * `said` on its session from the server, never its tool calls or its thinking (code.interface.graphical#81).
+ * The elements are a pool made once and reused, `POOL`; each frame reads everything first, places the bubbles, then
+ * writes the DOM in one pass, `bubbles3d`, and a body is laid out again only when its words change. */
 import * as THREE from 'three';
 import {eyeOf} from '/page/agents3d.js';
 import {reduced} from '/page/app/core/dom.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {D} from '/page/app/agents/dispatch.js';
-import {G, STAGE, wake3d} from '/page/app/map3d/graph3d.js';
+import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {WS} from '/page/app/workspace/workspace.js';
-import {bubbleSeconds} from '/page/app/figures/bubble.js';
+import {BUBBLE, bubbleSeconds} from '/page/app/figures/bubble.js';
 
-const LOOK = {
+export const LOOK = {
   most: 140,  // the most characters shown; a longer line is cut at a word with an ellipsis
   width: 340,  // the widest the words run, SVG pixels
   font: 26, lines: 3, lineGap: 1.18,
   family: "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Trebuchet MS', sans-serif",
   padX: 22, padY: 16, minWidth: 90,
   tilt: -4,  // degrees; negative rises to the right
-  outline: 6, radius: 22, shadow: [7, 8],
-  tail: {at: 0.16, base: 34, length: 40, lean: -18},  // along the bottom edge, its width, how far down and left
-  scale: 3,  // texture pixels per SVG pixel, so the bubble stays sharp up close
+  outline: 6, radius: 22, shadowX: 7, shadowY: 8,
+  base: 34,  // the tail's width where it leaves the body
+  rise: 40, aside: 0.35,  // where a bubble starts: its body this far above the head, and moved right by this share
+  name: 18,  // the size of the speaker's name over the body, SVG pixels
   dimmest: 0.33,  // the brightness of the farthest bubbles
-  lift: 0.6, aside: 0.4,  // where the tail's point sits: up and to the right of the head, in figure sizes
+  lift: 0.6,  // the speaker's head on the screen, where the tail points: this many figure sizes above its eyes
   pop: 320,  // ms of the pop when new words arrive
   fade: 84,  // ms, the time constant of the fade in and out: full within about a quarter of a second
-  edge: 0.98, gap: 0.012,  // the view's edge a bubble stays inside, and the gap between two, in view units (-1 to 1)
+  settle: 60,  // ms, the time constant of a bubble easing to the place it is pushed to
+  margin: 6, gap: 6,  // the room kept from the view's edge, and between two bubbles, CSS pixels
 };
 /* The bubbles' size on the screen, CSS pixels per SVG pixel, the same for every bubble at any distance: key 5 steps
  * through these, the first the smallest allowed; the choice is kept in this browser. */
@@ -50,12 +55,12 @@ export function stepBubbleSize() {
   wake3d();
   return SIZE.at;
 }
-const BUBBLES = new Map();  // figure id -> bubble, `made`
 /* The body the person sees through in the agent view, V, set by `eyesOf`; null in their own view and the mascot's. */
 export const WATCHED = {mesh: null};
-const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SHIFT = new THREE.Vector3(), SIDE = new THREE.Vector3();
-const AHEAD = new THREE.Vector3(), SEEN = new THREE.Vector3();
+const MASCOT_ID = '\u0000mascot';  // the pool's id for the mascot's words, never a figure's
+const HEAD = new THREE.Vector3(), GAZE = new THREE.Vector3(), SEEN = new THREE.Vector3();
 const MEASURE = document.createElement('canvas').getContext('2d');
+const TURN = LOOK.tilt * Math.PI / 180, COS = Math.cos(TURN), SIN = Math.sin(TURN);
 
 /* The line a bubble shows: the last non-empty line of what the agent said, cut at a word. */
 export function bubbleText(text) {
@@ -65,7 +70,8 @@ export function bubbleText(text) {
   const start = flat.slice(0, LOOK.most - 1), word = start.lastIndexOf(' ');
   return `${(word > 40 ? start.slice(0, word) : start).trimEnd()}…`;
 }
-/* The words wrapped to the bubble's width, the font shrinking a step at a time until they fit in `lines`. */
+/* The words wrapped to the bubble's width, the font shrinking a step at a time until they fit in `lines`; words that
+ * still run past them at the smallest size end the last line kept with an ellipsis, so the cut shows. */
 function wrapped(text) {
   for (let size = LOOK.font; size >= 16; size -= 2) {
     MEASURE.font = `800 ${size}px ${LOOK.family}`;
@@ -78,190 +84,285 @@ function wrapped(text) {
     }
     if (line) lines.push(line);
     if (lines.length <= LOOK.lines || size <= 16) {
-      return {size, lines: lines.slice(0, LOOK.lines),
-        wide: Math.max(...lines.slice(0, LOOK.lines).map(one => MEASURE.measureText(one).width))};
+      const kept = lines.length <= LOOK.lines ? lines : cutLast(lines.slice(0, LOOK.lines));
+      return {size, lines: kept, wide: Math.max(...kept.map(one => MEASURE.measureText(one).width))};
     }
   }
   return {size: 16, lines: [text], wide: LOOK.width};
 }
-const escaped = text => text.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
-/* The bubble as SVG: its size, and where the tail's point is, in its own pixels. */
-export function bubbleSVG(text) {
-  const {size, lines, wide} = wrapped(text);
-  const lineHeight = size * LOOK.lineGap;
-  const w = Math.max(LOOK.minWidth, Math.ceil(wide) + 2 * LOOK.padX);
-  const h = Math.ceil(lines.length * lineHeight + 2 * LOOK.padY);
-  const r = Math.min(LOOK.radius, h / 2.4), t = LOOK.tail;
-  const from = Math.max(r + 4, w * t.at), base = Math.min(t.base, w * 0.3);
-  const tip = [from + t.lean, h + t.length];
-  const body = `M${r},0 H${w - r} Q${w},0 ${w},${r} V${h - r} Q${w},${h} ${w - r},${h} H${from + base} `
-    + `L${tip[0]},${tip[1]} L${from},${h} H${r} Q0,${h} 0,${h - r} V${r} Q0,0 ${r},0 Z`;
-  // the whole bubble turns about its middle; the canvas is sized to hold it turned, with its outline and shadow
-  const turn = LOOK.tilt * Math.PI / 180, cos = Math.cos(turn), sin = Math.sin(turn), cx = w / 2, cy = h / 2;
-  const turned = ([x, y]) => [cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos];
-  const corners = [[0, 0], [w, 0], [0, h], [w, h], tip].map(turned);
-  const edge = LOOK.outline;
-  const left = Math.min(...corners.map(([x]) => x)) - edge, top = Math.min(...corners.map(([, y]) => y)) - edge;
-  const width = Math.ceil(Math.max(...corners.map(([x]) => x)) + edge + LOOK.shadow[0] - left);
-  const height = Math.ceil(Math.max(...corners.map(([, y]) => y)) + edge + LOOK.shadow[1] - top);
-  const words = lines.map((line, n) => `<text x="${cx}" y="${LOOK.padY + (n + 0.5) * lineHeight}">${escaped(line)}</text>`)
-    .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * LOOK.scale}" height="${height * LOOK.scale}" `
-    + `viewBox="${left} ${top} ${width} ${height}">`
-    + `<g transform="rotate(${LOOK.tilt} ${cx} ${cy})">`
-    + `<path d="${body}" transform="translate(${LOOK.shadow[0]} ${LOOK.shadow[1]})" fill="rgba(20,22,30,0.28)"/>`
-    + `<path d="${body}" fill="#fff" stroke="#111" stroke-width="${LOOK.outline}" stroke-linejoin="round"/>`
-    + `<g font-family="${LOOK.family.replace(/"/g, "'")}" font-size="${size}" font-weight="800" fill="#111" `
-    + `text-anchor="middle" dominant-baseline="central" letter-spacing="0.3">${words}</g></g></svg>`;
-  const [tx, ty] = turned(tip);
-  return {svg, width, height, tip: [tx - left, ty - top]};
+/* The last line ended with an ellipsis, a word at a time taken off, a letter at a time if one word, until it fits. */
+function cutLast(lines) {
+  let last = `${lines.at(-1)}…`;
+  while (last.length > 1 && MEASURE.measureText(last).width > LOOK.width) {
+    const words = last.slice(0, -1).trimEnd();
+    const space = words.lastIndexOf(' ');
+    last = `${space > 0 ? words.slice(0, space) : words.slice(0, -1)}…`;
+  }
+  lines[lines.length - 1] = last;
+  return lines;
 }
-/* One bubble's plane: a texture the SVG is drawn into, shown in the scene, facing the camera. */
-function made(id) {
-  const canvas = document.createElement('canvas');
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = G.renderer().capabilities.getMaxAnisotropy();
-  // drawn over the map, `layer`, so its words can always be read
-  const material = new THREE.MeshBasicMaterial({map: texture, transparent: true, depthTest: false, depthWrite: false,
-    alphaTest: 0.05, toneMapped: false,
-    fog: false, opacity: 0});
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
-  mesh.renderOrder = 1000;
-  mesh.visible = false;
-  mesh.raycast = () => {};  // never in the way of a click
-  G.scene().add(mesh);
-  // at: when its fade last stepped; head: how far its agent's head is; far: what `layer` sorts by; seen: the frame it
-  // was last on; fixed: at the bottom of the agent view; lasts: how long its line shows, in ms, set as it is drawn
-  const bubble = {id, mesh, canvas, texture, text: '', drawn: null, born: 0, shown: 0, line: '', lineAt: 0,
-    at: performance.now(), head: 0, far: 0, seen: 0, fixed: false, lasts: 0};
-  BUBBLES.set(id, bubble);
+
+/* One bubble of the pool: its elements, made once, and its state, every field set here in one order. The body path
+ * and the tail path are drawn once each, in the paper layer, and shown again by reference in the shadow and the ink
+ * layers under it: the ink is stroked twice the outline's width, so the paper over it leaves the outline outside the
+ * body and the tail as one shape. */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svg(name, attributes) {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const key in attributes) el.setAttribute(key, attributes[key]);
+  return el;
+}
+class Bubble {
+  constructor(n) {
+    this.id = null;  // the figure whose words it shows, MASCOT_ID for the mascot's, null while free
+    this.el = document.createElement('div');
+    this.el.className = 'wbubble';
+    this.el.style.display = 'none';
+    this.svg = svg('svg', {overflow: 'visible', 'aria-hidden': 'true'});
+    this.turn = svg('g', {});
+    this.body = svg('path', {id: `wbubble-body-${n}`});
+    this.tail = svg('path', {id: `wbubble-tail-${n}`});
+    this.paper = svg('g', {class: 'paper', fill: '#fff'});
+    this.words = svg('g', {class: 'words', 'font-family': LOOK.family.replace(/"/g, "'")});
+    const shade = svg('g', {class: 'shade', transform: `translate(${LOOK.shadowX} ${LOOK.shadowY})`});
+    const ink = svg('g', {class: 'ink', 'stroke-width': 2 * LOOK.outline});
+    for (const layer of [shade, ink]) {
+      layer.append(svg('use', {href: `#wbubble-body-${n}`}), svg('use', {href: `#wbubble-tail-${n}`}));
+    }
+    this.paper.append(this.body, this.tail);
+    this.turn.append(shade, ink, this.paper, this.words);
+    this.svg.append(this.turn);
+    this.said = document.createElement('span');  // the words for screen readers
+    this.said.className = 'said';
+    this.el.append(this.svg, this.said);
+    this.el.addEventListener('click', clickBubble);
+    // what it says: the raw words heard, the line shown, the session line they belong to, when that line began, how
+    // long it shows, and its laid-out body (font size, lines, width and height in SVG pixels); `dirty` until written
+    this.raw = ''; this.text = ''; this.sid = ''; this.seq = -1; this.lineAt = 0; this.lasts = 0;
+    this.size = 0; this.lines = null; this.w = 0; this.h = 0; this.dirty = false;
+    // this frame: the frame it was last met, wanted or not, how far it has faded in and when that last stepped, shown
+    // or not and whether it was the frame before, the agent view's own, the mascot's, its name and whether it is
+    // clicked, and how far its speaker is
+    this.seen = 0; this.want = 0; this.shown = 0; this.at = 0; this.on = false; this.was = false;
+    this.fixed = false; this.mascot = false; this.name = ''; this.clickable = false; this.far = 0;
+    // on the screen, CSS pixels: the speaker's head, the map's edges, the scale and the pop, the body's half extents,
+    // where it starts, how far it is eased from there, where it is, the tail's tip, its brightness and its stacking
+    this.hx = 0; this.hy = 0; this.left = 0; this.top = 0; this.right = 0; this.bottom = 0;
+    this.k = 0; this.grow = 1; this.ex = 0; this.ey = 0;
+    this.nx = 0; this.ny = 0; this.ox = 0; this.oy = 0; this.x = 0; this.y = 0; this.tipX = 0; this.tipY = 0;
+    this.dim = 1; this.z = 0; this.lx = 0; this.ly = 0;  // lx, ly: the tip in the body's frame, `tipInBody`
+    // what was last written, so a write happens only when it changes
+    this.wrote = {shown: false, x: NaN, y: NaN, k: NaN, opacity: NaN, z: -1, paper: -1, name: '', clickable: false,
+      lx: NaN, ly: NaN};
+  }
+}
+/* The layer the bubbles are drawn in, over both maps, made with the page, and the pool of bubbles in it, grown by
+ * `take` only when more speak at once than it holds. `live` tells screen readers the mascot's lines as they come: one
+ * hidden status always in the layer, apart from the drawn bubble, which comes and goes; `heard` is the line it holds. */
+const POOL = [];
+const LAYER = {el: document.createElement('div'), live: document.createElement('span'), heard: ''};
+LAYER.el.id = 'bubbles';
+LAYER.live.className = 'heard';
+LAYER.live.setAttribute('role', 'status');
+LAYER.live.setAttribute('aria-live', 'polite');
+LAYER.el.append(LAYER.live);
+document.body.append(LAYER.el);
+function grow(count) {
+  for (let n = POOL.length; n < count; n++) {
+    const bubble = new Bubble(n);
+    POOL.push(bubble);
+    LAYER.el.append(bubble.el);
+  }
+}
+/* The bubble showing `id`'s words, or null. */
+function bubbleOf(id) {
+  for (let n = 0; n < POOL.length; n++) if (POOL[n].id === id) return POOL[n];
+  return null;
+}
+/* A free bubble for `id`, the pool grown when none is free. */
+function take(id) {
+  let bubble = null;
+  for (let n = 0; n < POOL.length && !bubble; n++) if (POOL[n].id === null) bubble = POOL[n];
+  if (!bubble) { grow(Math.max(8, POOL.length * 2)); return take(id); }
+  bubble.id = id;
+  bubble.el.dataset.who = id === MASCOT_ID ? 'mascot' : id;  // whose words, for a check and a reader of the page
+  bubble.raw = bubble.text = bubble.sid = '';
+  bubble.seq = -1; bubble.lineAt = 0; bubble.shown = 0; bubble.at = FRAME.now; bubble.ox = bubble.oy = 0;
   return bubble;
 }
-/* Draw new words into the bubble's texture: the SVG is made an image, and the image is painted once. */
-function draw(bubble, text) {
+/* New words: the body laid out for them, its size measured now and its elements written with the frame's writes. */
+function laidOut(bubble, text) {
   bubble.text = text;
-  bubble.lasts = 1000 * bubbleSeconds(text, WS.view()?.bubble_seconds ?? 'auto');
-  const {svg, width, height, tip} = bubbleSVG(text);
-  const image = new Image();
-  image.onload = () => {
-    if (bubble.text !== text) return;  // newer words arrived while this one loaded
-    const {canvas} = bubble;
-    canvas.width = Math.ceil(width * LOOK.scale); canvas.height = Math.ceil(height * LOOK.scale);
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    bubble.texture.dispose();  // a new size needs a new GPU texture
-    bubble.texture.needsUpdate = true;
-    bubble.drawn = {width, height, tip};
-    bubble.born = performance.now();
-    wake3d(LOOK.pop + 100);
-  };
-  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const {size, lines, wide} = wrapped(text);
+  bubble.size = size; bubble.lines = lines;
+  bubble.w = Math.max(LOOK.minWidth, Math.ceil(wide) + 2 * LOOK.padX);
+  bubble.h = Math.ceil(lines.length * size * LOOK.lineGap + 2 * LOOK.padY);
+  bubble.dirty = true;
 }
-/* The newest line of the running session of each figure, from the sessions the page reads. */
-function saying(figure) {
-  const session = figure.child ? null
-    : D.sessions.filter(one => one.work_id === figure.id && one.state === 'running').at(-1);
-  if (!session || session.activity !== 'working' || !session.said?.text) return null;
-  return {text: bubbleText(session.said.text), line: `${session.session_id}:${session.said.seq}`};
+function writeBody(bubble) {
+  const {w, h, size} = bubble, r = Math.min(LOOK.radius, h / 2.4), lineHeight = size * LOOK.lineGap;
+  bubble.svg.setAttribute('width', w); bubble.svg.setAttribute('height', h);
+  bubble.svg.style.left = `${-w / 2}px`; bubble.svg.style.top = `${-h / 2}px`;
+  bubble.el.style.setProperty('--w', `${w}px`); bubble.el.style.setProperty('--h', `${h}px`);
+  bubble.turn.setAttribute('transform', `rotate(${LOOK.tilt} ${w / 2} ${h / 2})`);
+  bubble.body.setAttribute('d', `M${r},0 H${w - r} Q${w},0 ${w},${r} V${h - r} Q${w},${h} ${w - r},${h} H${r} `
+    + `Q0,${h} 0,${h - r} V${r} Q0,0 ${r},0 Z`);
+  bubble.words.setAttribute('font-size', size);
+  bubble.words.replaceChildren(...bubble.lines.map((line, n) => {
+    const one = svg('text', {x: w / 2, y: LOOK.padY + (n + 0.5) * lineHeight});
+    one.textContent = line;
+    return one;
+  }));
+  // an agent's words are there to be read; the mascot's are told by the layer's status, `LAYER.live`, and not twice
+  bubble.said.textContent = bubble.id === MASCOT_ID ? '' : bubble.text;
+  bubble.dirty = false;
 }
-/* The boxes on the screen of the bubbles placed this frame, in view units (-1 to 1), one array per edge; grown, never
- * shrunk, when more agents talk than it holds. */
-const PLACED = {n: 0, x0: new Float64Array(32), y0: new Float64Array(32), x1: new Float64Array(32),
-  y1: new Float64Array(32)};
-function keep(box) {
-  if (PLACED.n === PLACED.x0.length) {
-    for (const edge of ['x0', 'y0', 'x1', 'y1']) {
-      const more = new Float64Array(PLACED.n * 2);
-      more.set(PLACED[edge]);
-      PLACED[edge] = more;
+
+/* A click on the mascot's bubble does what it was said with, and the bubble goes. An agent's bubble takes no click of
+ * its own: a click on it reaches the 3D map, which opens its agent, `bubbleAt`. */
+function clickBubble(event) {
+  event.stopPropagation();
+  const act = BUBBLE.click;
+  if (!act) return;
+  BUBBLE.until = 0;
+  BUBBLE.el?.classList.remove('on');
+  act();
+}
+/* The agent whose bubble is drawn at the page point x, y, the nearest one where two overlap, for a click on its
+ * words; else null. */
+export function bubbleAt(x, y) {
+  for (let n = 0; n < SHOWN.length; n++) {
+    const bubble = SHOWN[n];
+    if (bubble.mascot || !bubble.on) continue;
+    if (Math.abs(x - bubble.x) <= bubble.ex && Math.abs(y - bubble.y) <= bubble.ey) return bubble.id;
+  }
+  return null;
+}
+
+/* The agent the pointer is over, read once a frame from the 3D map's own pointer, `figureUnder`: its last bubble shows
+ * for as long as the pointer stays on it. */
+const HOVER = {id: null, x: 0, y: 0, moved: false, best: Infinity};  // best: how near the ray passes
+const RAY = new THREE.Raycaster(), POINT = new THREE.Vector2(), BALL = new THREE.Sphere(), MIDDLE = new THREE.Vector3();
+addEventListener('pointermove', event => {
+  HOVER.x = event.clientX; HOVER.y = event.clientY; HOVER.moved = true;
+}, {passive: true});
+function figureUnder() {
+  if (!HOVER.moved) return HOVER.id;
+  HOVER.moved = false;
+  if (!AREA.width || HOVER.x < AREA.left || HOVER.x > AREA.right || HOVER.y < AREA.top || HOVER.y > AREA.bottom) {
+    return (HOVER.id = null);
+  }
+  POINT.set((HOVER.x - AREA.left) / AREA.width * 2 - 1, -(HOVER.y - AREA.top) / AREA.height * 2 + 1);
+  RAY.setFromCamera(POINT, G.camera());
+  HOVER.id = null;
+  HOVER.best = Infinity;
+  ROAM.figures.forEach(nearestUnder);
+  return HOVER.id;
+}
+function nearestUnder(figure, id) {
+  const size = Math.max(0.5, figure.mesh.scale.x), middle = figure.mesh.getWorldPosition(MIDDLE);
+  BALL.set(middle, size);
+  if (!RAY.ray.intersectsSphere(BALL)) return;
+  const off = RAY.ray.distanceToPoint(middle) / size;
+  if (off < HOVER.best) { HOVER.best = off; HOVER.id = id; }
+}
+
+/* The newest line of the running session of a figure, from the sessions the page reads; null when it says nothing. */
+function sessionOf(figure) {
+  if (figure.child || figure.stage === 'leaving' || figure.done) return null;
+  const sessions = D.sessions;
+  let found = null;
+  for (let n = 0; n < sessions.length; n++) {
+    const one = sessions[n];
+    if (one.work_id === figure.id && one.state === 'running') found = one;
+  }
+  return found && found.activity === 'working' && found.said?.text ? found : null;
+}
+/* What the frame shares: its number and clock, the camera, reduced motion, the scale, the agent under the pointer,
+ * and the 3D map's area on the page, read once. */
+const FRAME = {n: 0, now: 0, last: 0, camera: null, still: false, scale: 1, under: null};
+const AREA = {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
+const easeOut = k => 1 + 2.4 * (k - 1) ** 3 + 1.4 * (k - 1) ** 2;  // overshoots a little, then settles
+/* The fade toward what the bubble wants, by the clock, so it comes and goes in the same time at any frame rate. */
+function fade(bubble) {
+  const step = FRAME.still ? 1 : 1 - Math.exp(-(FRAME.now - bubble.at) / LOOK.fade);
+  bubble.shown += (bubble.want - bubble.shown) * step;
+  bubble.at = FRAME.now;
+}
+/* Where the speaker's head is on the page, from its eyes, LOOK.lift figure sizes up: false when it is behind the eye,
+ * where it says nothing on the screen. */
+function headOf(bubble, mesh) {
+  const camera = FRAME.camera;
+  eyeOf(mesh, HEAD, GAZE);
+  HEAD.y += LOOK.lift * mesh.scale.x;
+  if (SEEN.copy(HEAD).applyMatrix4(camera.matrixWorldInverse).z >= -camera.near) return false;
+  bubble.far = HEAD.distanceTo(camera.position);
+  HEAD.project(camera);
+  bubble.hx = AREA.left + (HEAD.x + 1) / 2 * AREA.width;
+  bubble.hy = AREA.top + (1 - HEAD.y) / 2 * AREA.height;
+  bubble.left = AREA.left; bubble.top = AREA.top; bubble.right = AREA.right; bubble.bottom = AREA.bottom;
+  return true;
+}
+/* An agent's words this frame: new words laid out, its fade, and where its speaker is. */
+function heard(figure, id) {
+  const session = sessionOf(figure);
+  let bubble = bubbleOf(id);
+  if (!session && !bubble) return;
+  bubble ||= take(id);
+  bubble.seen = FRAME.n;
+  if (session) {
+    // a new line starts its time; the same line growing as it streams is laid out again and keeps its start, its
+    // time set again by its words, `lasts`
+    if (session.session_id !== bubble.sid || session.said.seq !== bubble.seq) {
+      bubble.sid = session.session_id; bubble.seq = session.said.seq; bubble.lineAt = FRAME.now;
+    }
+    if (session.said.text !== bubble.raw) {
+      bubble.raw = session.said.text;
+      const text = bubbleText(bubble.raw);
+      if (text && text !== bubble.text) {
+        laidOut(bubble, text);
+        bubble.lasts = 1000 * bubbleSeconds(text, WS.view()?.bubble_seconds ?? 'auto');
+      }
     }
   }
-  PLACED.x0[PLACED.n] = box.x0; PLACED.y0[PLACED.n] = box.y0; PLACED.x1[PLACED.n] = box.x1; PLACED.y1[PLACED.n] = box.y1;
-  PLACED.n++;
-}
-/* A bubble's box on the screen: its plane faces the camera, so the box is its plane's, scaled. */
-const CORNER = new THREE.Vector3(), UP = new THREE.Vector3(), RIGHT = new THREE.Vector3();
-const BOX = {x0: 0, y0: 0, x1: 0, y1: 0};
-function boxOf(mesh, camera) {
-  CORNER.set(-0.5, -0.5, 0).applyMatrix4(mesh.matrixWorld).project(camera);
-  BOX.x0 = CORNER.x; BOX.y0 = CORNER.y;
-  CORNER.set(0.5, 0.5, 0).applyMatrix4(mesh.matrixWorld).project(camera);
-  BOX.x1 = CORNER.x; BOX.y1 = CORNER.y;
-  return BOX;
-}
-/* How much of the placed boxes the bubble's box covers, moved by dx, dy. */
-function covers(dx, dy) {
-  const x0 = BOX.x0 + dx, x1 = BOX.x1 + dx, y0 = BOX.y0 + dy, y1 = BOX.y1 + dy;
-  let area = 0;
-  for (let n = 0; n < PLACED.n; n++) {
-    const w = Math.min(x1, PLACED.x1[n]) - Math.max(x0, PLACED.x0[n]);
-    const h = Math.min(y1, PLACED.y1[n]) - Math.max(y0, PLACED.y0[n]);
-    if (w > 0 && h > 0) area += w * h;
+  // a new line shows for web_bubble_seconds and goes; the pointer on the agent brings its last line back; the agent
+  // seen through in the agent view shows what it says for as long as it says it
+  const watched = figure.mesh === WATCHED.mesh;
+  const fresh = session && (watched || FRAME.now - bubble.lineAt < bubble.lasts);
+  bubble.want = bubble.text && (fresh || FRAME.under === id) ? 1 : 0;
+  fade(bubble);
+  bubble.fixed = watched; bubble.mascot = false; bubble.name = ''; bubble.clickable = false;
+  bubble.on = bubble.shown > 0.02 && (watched || (figure.mesh.visible && headOf(bubble, figure.mesh)));
+  if (!bubble.on) return;
+  if (watched) {  // at the bottom of the view, in its middle, the tail pointing down out of it at the one speaking
+    bubble.far = -1;
+    bubble.left = AREA.left; bubble.top = AREA.top; bubble.right = AREA.right; bubble.bottom = AREA.bottom;
+    bubble.hx = (AREA.left + AREA.right) / 2; bubble.hy = AREA.bottom + AREA.height;
   }
-  return area;
+  SHOWN.push(bubble);
 }
-/* The bubble's move tried next, kept inside the view; the best so far is the one that covers the fewest placed boxes,
- * then the one moved least. */
-const MOVE = {dx: 0, dy: 0, cover: Infinity, far: Infinity};
-function tryMove(dx, dy) {
-  const edge = LOOK.edge;
-  dx = Math.min(Math.max(dx, -edge - BOX.x0), edge - BOX.x1);
-  dy = Math.min(Math.max(dy, -edge - BOX.y0), edge - BOX.y1);
-  const cover = covers(dx, dy), far = dx * dx + dy * dy;
-  if (cover < MOVE.cover - 1e-9 || (cover <= MOVE.cover + 1e-9 && far < MOVE.far)) {
-    MOVE.dx = dx; MOVE.dy = dy; MOVE.cover = cover; MOVE.far = far;
-  }
+/* The mascot's words, or an embodied agent's through its figure, said with `say`; where its speaker is was read by
+ * `placeBubble` just before. */
+function heardMascot() {
+  let bubble = bubbleOf(MASCOT_ID);
+  if (!BUBBLE.seen && !bubble) return;
+  bubble ||= take(MASCOT_ID);
+  bubble.seen = FRAME.n;
+  if (BUBBLE.since !== bubble.lineAt) bubble.lineAt = BUBBLE.since;
+  if (BUBBLE.text && BUBBLE.text !== bubble.text) laidOut(bubble, BUBBLE.text);
+  bubble.want = BUBBLE.seen ? 1 : 0;
+  fade(bubble);
+  bubble.fixed = false; bubble.mascot = true; bubble.name = BUBBLE.name; bubble.clickable = Boolean(BUBBLE.click);
+  bubble.on = bubble.shown > 0.02 && BUBBLE.found && Boolean(bubble.text);
+  if (!bubble.on) return;
+  bubble.far = -0.5;  // after the agent view's own, before every agent's: the mascot keeps its place
+  bubble.hx = BUBBLE.x; bubble.hy = BUBBLE.y;
+  bubble.left = BUBBLE.left; bubble.top = BUBBLE.top; bubble.right = BUBBLE.right; bubble.bottom = BUBBLE.bottom;
+  SHOWN.push(bubble);
 }
-/* A bubble set apart from the bubbles placed before it this frame, and inside the view: where it stands, else just
- * above, below, right or left of one placed already, by the overlap and a gap, whichever covers no other bubble and
- * moves it least; one crossing an edge of the view is pulled back inside it. With no free place, it takes the one that
- * covers the least, and the nearer bubble is drawn over it, `layer`. Then its box is added to the placed ones. */
-function apart(mesh, camera) {
-  mesh.updateMatrixWorld();
-  boxOf(mesh, camera);
-  MOVE.cover = MOVE.far = Infinity;
-  tryMove(0, 0);
-  const gap = LOOK.gap;
-  for (let n = 0; n < PLACED.n && MOVE.cover > 0; n++) {
-    tryMove(0, PLACED.y1[n] - BOX.y0 + gap);
-    tryMove(0, PLACED.y0[n] - BOX.y1 - gap);
-    tryMove(PLACED.x1[n] - BOX.x0 + gap, 0);
-    tryMove(PLACED.x0[n] - BOX.x1 - gap, 0);
-  }
-  if (MOVE.dx || MOVE.dy) {
-    // the move in world units, along the screen's right and up: the box's size on the screen is its plane's size
-    RIGHT.set(1, 0, 0).applyQuaternion(camera.quaternion);
-    UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
-    mesh.position.addScaledVector(RIGHT, MOVE.dx / Math.max(1e-6, BOX.x1 - BOX.x0) * mesh.scale.x)
-      .addScaledVector(UP, MOVE.dy / Math.max(1e-6, BOX.y1 - BOX.y0) * mesh.scale.y);
-    mesh.updateMatrixWorld();
-    BOX.x0 += MOVE.dx; BOX.x1 += MOVE.dx; BOX.y0 += MOVE.dy; BOX.y1 += MOVE.dy;
-  }
-  keep(BOX);
-}
-/* The words of the agent seen through in the agent view: at the bottom of the view, in its middle, facing the camera
- * at full brightness, the tail pointing down out of the view at the one speaking. */
-function atBottom(bubble, camera, unit, grow) {
-  const {mesh, drawn} = bubble, along = camera.near * 50, half = along * Math.tan(camera.fov * Math.PI / 360);
-  const size = unit * along * grow;
-  mesh.scale.set(drawn.width * size, drawn.height * size, 1);
-  camera.getWorldDirection(AHEAD);
-  UP.set(0, 1, 0).applyQuaternion(camera.quaternion);
-  mesh.position.copy(camera.position).addScaledVector(AHEAD, along)
-    .addScaledVector(UP, -LOOK.edge * half + mesh.scale.y / 2);
-  bubble.head = 0;
-}
-/* Every bubble is drawn over the map, never hidden by it, so its words can be read: the farthest first and the nearest
- * last, so a nearer bubble covers a farther one, the agent view's own words over them all. `SHOWN` is nearest first. */
-function layer() {
-  const count = SHOWN.length;
-  for (let n = 0; n < count; n++) {
-    SHOWN[n].mesh.renderOrder = SHOWN[n].fixed ? 1000 + count : 1000 + count - 1 - n;
-  }
-}
-/* The bubbles shown this frame, nearest head first, the agent view's own first of all: sorted in place. */
+
+/* The bubbles shown this frame, nearest speaker first, the agent view's own first of all, then the mascot's: sorted
+ * in place. */
 const SHOWN = [];
 function nearestFirst() {
   for (let n = 1; n < SHOWN.length; n++) {
@@ -271,120 +372,204 @@ function nearestFirst() {
     SHOWN[at + 1] = one;
   }
 }
-/* The agent the pointer is over, read once a frame from the 3D map's own pointer, `figureUnder`: its last bubble shows
- * for as long as the pointer stays on it. */
-const HOVER = {id: null, x: 0, y: 0, moved: false};
-const RAY = new THREE.Raycaster(), AT = new THREE.Vector2(), BALL = new THREE.Sphere(), MIDDLE = new THREE.Vector3();
-addEventListener('pointermove', event => {
-  HOVER.x = event.clientX; HOVER.y = event.clientY; HOVER.moved = true;
-}, {passive: true});
-function figureUnder() {
-  if (!HOVER.moved) return HOVER.id;
-  HOVER.moved = false;
-  const area = G.renderer().domElement.getBoundingClientRect();
-  if (!area.width || HOVER.x < area.left || HOVER.x > area.right || HOVER.y < area.top || HOVER.y > area.bottom) {
-    return (HOVER.id = null);
-  }
-  AT.set((HOVER.x - area.left) / area.width * 2 - 1, -(HOVER.y - area.top) / area.height * 2 + 1);
-  RAY.setFromCamera(AT, G.camera());
-  let best = null, nearest = Infinity;
-  for (const [id, figure] of ROAM.figures) {
-    const size = Math.max(0.5, figure.mesh.scale.x), middle = figure.mesh.getWorldPosition(MIDDLE);
-    BALL.set(middle, size);
-    if (!RAY.ray.intersectsSphere(BALL)) continue;
-    const off = RAY.ray.distanceToPoint(middle) / size;
-    if (off < nearest) { nearest = off; best = id; }
-  }
-  return (HOVER.id = best);
-}
-const easeOut = k => 1 + 2.4 * (k - 1) ** 3 + 1.4 * (k - 1) ** 2;  // overshoots a little, then settles
-/* Each frame: every working figure's bubble placed over its head, facing the camera, its tail's point at the head;
- * then, nearest first, each set apart from the others inside the view, and dimmed by how far its agent is. */
-const FRAME = {n: 0};
-export function bubbles3d() {
-  if (!G) return;
-  const camera = G.camera(), now = performance.now(), under = figureUnder(), frame = ++FRAME.n;
-  // a world unit per screen pixel, at a distance of one: the bubbles are the same size on the screen at any distance
-  const perPixel = BUBBLE_SIZES[SIZE.at] * 2 * Math.tan(camera.fov * Math.PI / 360)
-    / (STAGE.height || 1);
-  SHOWN.length = 0;
-  for (const [id, figure] of ROAM.figures) {
-    const said = figure.stage === 'leaving' || figure.done ? null : saying(figure), text = said?.text || '';
-    let bubble = BUBBLES.get(id);
-    if (!text && !bubble) continue;
-    bubble ||= made(id);
-    bubble.seen = frame;
-    // a new line starts its time; the same line growing as it streams is drawn again and keeps its start, its time
-    // set again by its words, `lasts`
-    if (said && said.line !== bubble.line) { bubble.line = said.line; bubble.lineAt = now; }
-    if (text && text !== bubble.text) draw(bubble, text);
-    // a new line shows for web_bubble_seconds and goes; the pointer on the agent brings its last line back; the agent
-    // seen through in the agent view shows what it says for as long as it says it
-    const watched = figure.mesh === WATCHED.mesh;
-    const fresh = text && (watched || now - bubble.lineAt < bubble.lasts), hovered = under === id && bubble.text;
-    const want = bubble.drawn && (fresh || hovered) ? 1 : 0;
-    // by the clock, not by the frame, so it comes and goes in the same time at any frame rate
-    bubble.shown += (want - bubble.shown) * (reduced() ? 1 : 1 - Math.exp(-(now - bubble.at) / LOOK.fade));
-    bubble.at = now;
-    const {mesh, drawn} = bubble;
-    if (mesh.parent !== G.scene()) G.scene().add(mesh);  // a whole reload of the map makes a new scene
-    mesh.visible = bubble.shown > 0.02 && Boolean(drawn) && (watched || figure.mesh.visible);
-    if (!mesh.visible) continue;
-    const k = reduced() ? 1 : Math.min(1, (now - bubble.lineAt) / LOOK.pop);
-    const grow = 0.55 + 0.45 * easeOut(k);
-    mesh.quaternion.copy(camera.quaternion);
-    bubble.fixed = watched;
-    if (watched) atBottom(bubble, camera, perPixel, grow);
-    else {
-      // the tail's point sits just above the figure's head: the plane's middle is moved from it by the point's offset
-      eyeOf(figure.mesh, HEAD, GAZE);
-      HEAD.y += LOOK.lift * figure.mesh.scale.x;
-      HEAD.addScaledVector(SIDE.set(1, 0, 0).applyQuaternion(camera.quaternion), LOOK.aside * figure.mesh.scale.x);
-      // an agent behind the camera says nothing on the screen; one beside the view has its words at the view's edge
-      if (SEEN.copy(HEAD).applyMatrix4(camera.matrixWorldInverse).z >= -camera.near) { mesh.visible = false; continue; }
-      bubble.head = HEAD.distanceTo(camera.position);
-      const unit = perPixel * bubble.head * grow;
-      mesh.scale.set(drawn.width * unit, drawn.height * unit, 1);
-      SHIFT.set((drawn.width / 2 - drawn.tip[0]) * unit, (drawn.tip[1] - drawn.height / 2) * unit, 0)
-        .applyQuaternion(camera.quaternion);
-      mesh.position.copy(HEAD).add(SHIFT);
+/* The boxes of the bubbles placed this frame, where each is settling to, CSS pixels, one array per edge; grown, never
+ * shrunk, when more speak than it holds. */
+const PLACED = {n: 0, x0: new Float64Array(32), y0: new Float64Array(32), x1: new Float64Array(32),
+  y1: new Float64Array(32)};
+function keep(x0, y0, x1, y1) {
+  if (PLACED.n === PLACED.x0.length) {
+    for (const edge of ['x0', 'y0', 'x1', 'y1']) {
+      const more = new Float64Array(PLACED.n * 2);
+      more.set(PLACED[edge]);
+      PLACED[edge] = more;
     }
-    bubble.far = watched ? -1 : bubble.head;
-    mesh.material.opacity = Math.min(1, bubble.shown);
-    SHOWN.push(bubble);
-    if (k < 1 || Math.abs(bubble.shown - want) > 0.02) wake3d(50);
   }
-  // nearest first, so the nearest keeps its place and the farther ones move; the agent view's own words first of all
+  PLACED.x0[PLACED.n] = x0; PLACED.y0[PLACED.n] = y0; PLACED.x1[PLACED.n] = x1; PLACED.y1[PLACED.n] = y1;
+  PLACED.n++;
+}
+/* The move tried for the bubble being placed, kept inside its map; the best so far is the one that covers the least
+ * of the placed boxes, then the one moved least. */
+const MOVE = {x: 0, y: 0, ex: 0, ey: 0, x0: 0, y0: 0, x1: 0, y1: 0, dx: 0, dy: 0, cover: Infinity, far: Infinity};
+function covers(x, y) {
+  const x0 = x - MOVE.ex, x1 = x + MOVE.ex, y0 = y - MOVE.ey, y1 = y + MOVE.ey;
+  let area = 0;
+  for (let n = 0; n < PLACED.n; n++) {
+    const w = Math.min(x1, PLACED.x1[n]) - Math.max(x0, PLACED.x0[n]);
+    const h = Math.min(y1, PLACED.y1[n]) - Math.max(y0, PLACED.y0[n]);
+    if (w > 0 && h > 0) area += w * h;
+  }
+  return area;
+}
+const inside = (at, half, low, high) => high - low < 2 * half ? (low + high) / 2 : Math.min(Math.max(at, low + half),
+  high - half);
+function tryMove(dx, dy) {
+  const x = inside(MOVE.x + dx, MOVE.ex, MOVE.x0, MOVE.x1), y = inside(MOVE.y + dy, MOVE.ey, MOVE.y0, MOVE.y1);
+  dx = x - MOVE.x; dy = y - MOVE.y;
+  const cover = covers(x, y), far = dx * dx + dy * dy;
+  if (cover < MOVE.cover - 1e-6 || (cover <= MOVE.cover + 1e-6 && far < MOVE.far)) {
+    MOVE.dx = dx; MOVE.dy = dy; MOVE.cover = cover; MOVE.far = far;
+  }
+}
+/* A bubble set apart from the bubbles placed before it this frame, inside its map: where it starts, else just above,
+ * below, right or left of one placed already, by the overlap and a gap, whichever covers no other bubble and moves it
+ * least. With no free place it takes the one that covers the least, and the nearer bubble is drawn over it. */
+function apart(bubble, x, y) {
+  const margin = LOOK.margin, gap = LOOK.gap;
+  MOVE.x = x; MOVE.y = y; MOVE.ex = bubble.ex; MOVE.ey = bubble.ey;
+  MOVE.x0 = bubble.left + margin; MOVE.x1 = bubble.right - margin;
+  MOVE.y0 = bubble.top + margin; MOVE.y1 = bubble.bottom - margin;
+  MOVE.cover = MOVE.far = Infinity;
+  tryMove(0, 0);
+  for (let n = 0; n < PLACED.n && MOVE.cover > 0; n++) {
+    tryMove(0, PLACED.y1[n] + gap - (y - bubble.ey));
+    tryMove(0, PLACED.y0[n] - gap - (y + bubble.ey));
+    tryMove(PLACED.x1[n] + gap - (x - bubble.ex), 0);
+    tryMove(PLACED.x0[n] - gap - (x + bubble.ex), 0);
+  }
+}
+/* Every bubble shown, placed: its size, where it starts, above its speaker or at the bottom of the agent view, where it
+ * is pushed to apart from the nearer ones, eased there, and where its tail's tip is. */
+function place() {
   nearestFirst();
   PLACED.n = 0;
   let nearest = Infinity;
-  for (let n = 0; n < SHOWN.length; n++) if (!SHOWN[n].fixed) { nearest = SHOWN[n].head; break; }
+  for (let n = 0; n < SHOWN.length; n++) if (!SHOWN[n].fixed && !SHOWN[n].mascot) { nearest = SHOWN[n].far; break; }
+  const ease = FRAME.still ? 1 : 1 - Math.exp(-(FRAME.now - FRAME.last) / LOOK.settle), margin = LOOK.margin;
   for (let n = 0; n < SHOWN.length; n++) {
-    const bubble = SHOWN[n];
-    if (bubble.fixed) { bubble.mesh.updateMatrixWorld(); keep(boxOf(bubble.mesh, camera)); }
-    else apart(bubble.mesh, camera);
+    const bubble = SHOWN[n], k = FRAME.scale;
+    const pop = FRAME.still ? 1 : Math.min(1, (FRAME.now - bubble.lineAt) / LOOK.pop);
+    bubble.grow = 0.55 + 0.45 * easeOut(pop);
+    if (pop < 1) wake3d(50);
+    // the body's half extents on the screen, turned, with its outline; placed at its full size, so the pop never
+    // moves the others
+    bubble.k = k;
+    bubble.ex = k * (bubble.w / 2 * Math.abs(COS) + bubble.h / 2 * Math.abs(SIN) + LOOK.outline);
+    bubble.ey = k * (bubble.w / 2 * Math.abs(SIN) + bubble.h / 2 * Math.abs(COS) + LOOK.outline);
+    // the agent view's own at the bottom, its tail a short point down out of the view
+    if (bubble.fixed) { bubble.nx = bubble.hx; bubble.ny = bubble.bottom - margin - bubble.ey - LOOK.rise * k / 2; }
+    else { bubble.nx = bubble.hx + LOOK.aside * bubble.ex; bubble.ny = bubble.hy - bubble.ey - LOOK.rise * k; }
+    const x = inside(bubble.nx, bubble.ex, bubble.left + margin, bubble.right - margin);
+    const y = inside(bubble.ny, bubble.ey, bubble.top + margin, bubble.bottom - margin);
+    apart(bubble, x, y);
+    const toX = x + MOVE.dx, toY = y + MOVE.dy;
+    keep(toX - bubble.ex, toY - bubble.ey, toX + bubble.ex, toY + bubble.ey);
+    // eased toward where it is pushed, measured from where it starts, so it follows its speaker at once and settles
+    // apart over a few frames; a bubble just shown is there at once
+    if (!bubble.was) { bubble.ox = toX - bubble.nx; bubble.oy = toY - bubble.ny; }
+    else { bubble.ox += (toX - bubble.nx - bubble.ox) * ease; bubble.oy += (toY - bubble.ny - bubble.oy) * ease; }
+    bubble.x = inside(bubble.nx + bubble.ox, bubble.ex, bubble.left + margin, bubble.right - margin);
+    bubble.y = inside(bubble.ny + bubble.oy, bubble.ey, bubble.top + margin, bubble.bottom - margin);
+    if (Math.abs(bubble.x - toX) > 0.5 || Math.abs(bubble.y - toY) > 0.5) wake3d(50);
+    tipOf(bubble);
     // the farther its agent is than the nearest one talking, the dimmer it is drawn, still solid, fading toward a
     // third; measured from the head, so a bubble moved apart is as bright as its agent is near
-    bubble.mesh.material.color.setScalar(bubble.fixed ? 1
-      : Math.max(LOOK.dimmest, Math.min(1, (nearest / Math.max(1e-6, bubble.head)) ** 1.5)));
-  }
-  layer();
-  for (const [id, bubble] of BUBBLES) {
-    if (bubble.seen === frame) continue;
-    bubble.mesh.removeFromParent();
-    bubble.mesh.geometry.dispose(); bubble.mesh.material.dispose(); bubble.texture.dispose();
-    BUBBLES.delete(id);
+    bubble.dim = bubble.fixed || bubble.mascot ? 1
+      : Math.max(LOOK.dimmest, Math.min(1, (nearest / Math.max(1e-6, bubble.far)) ** 1.5));
+    bubble.z = SHOWN.length - n;  // the nearest drawn over the farther ones
   }
 }
-/* The bubble the ray `caster` meets first, for a click on its words: its agent and how far along the ray, or null. */
-const HITS = [];
-export function bubbleAt(caster) {
-  HITS.length = 0;
-  for (const bubble of BUBBLES.values()) {
-    if (bubble.mesh.visible) THREE.Mesh.prototype.raycast.call(bubble.mesh, caster, HITS);
+/* The tail's tip: at the speaker's head, or where the line from the body to it leaves the map when the head is off
+ * it. */
+function tipOf(bubble) {
+  const x0 = bubble.left + 2, x1 = bubble.right - 2, y0 = bubble.top + 2, y1 = bubble.bottom - 2;
+  const dx = bubble.hx - bubble.x, dy = bubble.hy - bubble.y;
+  let t = 1;
+  if (bubble.hx > x1 && dx > 0) t = Math.min(t, (x1 - bubble.x) / dx);
+  if (bubble.hx < x0 && dx < 0) t = Math.min(t, (x0 - bubble.x) / dx);
+  if (bubble.hy > y1 && dy > 0) t = Math.min(t, (y1 - bubble.y) / dy);
+  if (bubble.hy < y0 && dy < 0) t = Math.min(t, (y0 - bubble.y) / dy);
+  t = Math.max(0, t);
+  bubble.tipX = bubble.x + dx * t; bubble.tipY = bubble.y + dy * t;
+}
+/* The tip in the body's own SVG pixels, from its middle, turned back into its frame, to a quarter pixel: the tail is
+ * drawn again only when this changes, so a bubble that moves with its speaker only moves. */
+function tipInBody(bubble) {
+  const scale = bubble.k * bubble.grow, sx = (bubble.tipX - bubble.x) / scale, sy = (bubble.tipY - bubble.y) / scale;
+  bubble.lx = Math.round((sx * COS + sy * SIN) * 4) / 4;
+  bubble.ly = Math.round((-sx * SIN + sy * COS) * 4) / 4;
+}
+/* The tail as a path in the body's own SVG pixels: from the tip, back to a base of LOOK.base inside the body where the
+ * line from its middle to the tip meets the inner edge of its rounded corners; none when the tip is on the body. */
+function tailOf(bubble) {
+  const w = bubble.w, h = bubble.h, r = Math.min(LOOK.radius, h / 2.4), dx = bubble.lx, dy = bubble.ly;
+  if (Math.abs(dx) <= w / 2 && Math.abs(dy) <= h / 2) return '';
+  const long = Math.hypot(dx, dy), ix = w / 2 - r, iy = h / 2 - r;
+  const s = Math.min(dx ? ix / Math.abs(dx) : Infinity, dy ? iy / Math.abs(dy) : Infinity);
+  const bx = w / 2 + dx * s, by = h / 2 + dy * s, half = Math.min(LOOK.base / 2, 0.35 * long * (1 - s));
+  const nx = -dy / long * half, ny = dx / long * half, round = v => Math.round(v * 10) / 10;
+  return `M${round(w / 2 + dx)},${round(h / 2 + dy)} L${round(bx + nx)},${round(by + ny)} `
+    + `L${round(bx - nx)},${round(by - ny)} Z`;
+}
+/* The frame's writes, in one pass over the pool, each only when it changed. */
+function write() {
+  if (BUBBLE.text !== LAYER.heard) { LAYER.live.textContent = BUBBLE.text; LAYER.heard = BUBBLE.text; }
+  for (let n = 0; n < POOL.length; n++) {
+    const bubble = POOL[n], wrote = bubble.wrote, el = bubble.el;
+    if (bubble.id !== null && bubble.seen !== FRAME.n) bubble.on = false;
+    bubble.was = bubble.on;
+    if (!bubble.on) {
+      if (wrote.shown) { el.style.display = 'none'; wrote.shown = false; }
+      // free once its figure is gone from the map; a figure keeps its bubble through frames it is not heard in, as
+      // while the 3D map has no area in a view switch, so a line that has had its time never comes back
+      if (bubble.id !== null && bubble.seen !== FRAME.n && (bubble.id === MASCOT_ID || !ROAM.figures.has(bubble.id))) {
+        bubble.id = null;
+      }
+      continue;
+    }
+    const laid = bubble.dirty;
+    if (laid) writeBody(bubble);
+    if (!wrote.shown) { el.style.display = ''; wrote.shown = true; }
+    const scale = bubble.k * bubble.grow, x = Math.round(bubble.x * 10) / 10, y = Math.round(bubble.y * 10) / 10;
+    if (x !== wrote.x || y !== wrote.y || scale !== wrote.k) {
+      el.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
+      wrote.x = x; wrote.y = y; wrote.k = scale;
+    }
+    const opacity = Math.round(Math.min(1, bubble.shown) * 100) / 100;
+    if (opacity !== wrote.opacity) { el.style.opacity = opacity; wrote.opacity = opacity; }
+    if (bubble.z !== wrote.z) { el.style.zIndex = bubble.z; wrote.z = bubble.z; }
+    const paper = Math.round(255 * bubble.dim);
+    if (paper !== wrote.paper) {
+      bubble.paper.setAttribute('fill', `rgb(${paper},${paper},${paper})`);
+      wrote.paper = paper;
+    }
+    if (bubble.name !== wrote.name) { el.dataset.name = bubble.name; wrote.name = bubble.name; }
+    if (bubble.clickable !== wrote.clickable) {
+      el.classList.toggle('clickable', bubble.clickable);
+      wrote.clickable = bubble.clickable;
+    }
+    tipInBody(bubble);
+    if (laid || bubble.lx !== wrote.lx || bubble.ly !== wrote.ly) {
+      bubble.tail.setAttribute('d', tailOf(bubble));
+      wrote.lx = bubble.lx; wrote.ly = bubble.ly;
+    }
   }
-  if (!HITS.length) return null;
-  HITS.sort((a, b) => a.distance - b.distance);
-  const id = [...BUBBLES.values()].find(bubble => bubble.mesh === HITS[0].object)?.id;
-  return id ? {id, distance: HITS[0].distance} : null;
+  // the mascot's reply field, figures/ask.js, opens over its head, and closes with its time
+  const box = BUBBLE.el;
+  if (!box || !box.classList.contains('on')) return;
+  if (FRAME.now > BUBBLE.until || !BUBBLE.found) { box.classList.remove('on'); return; }
+  box.style.left = `${Math.round(BUBBLE.x)}px`;
+  box.style.top = `${Math.round(BUBBLE.y)}px`;
+}
+/* Each frame: everything read first (the 3D map's area, the pointer, the speakers' heads and their words), then every
+ * bubble placed, then the DOM written in one pass. The mascot's speaker was read by `placeBubble` just before. */
+export function bubbles3d() {
+  if (!G) return;
+  FRAME.n++;
+  FRAME.last = FRAME.now || performance.now();
+  FRAME.now = performance.now();
+  FRAME.camera = G.camera();
+  FRAME.still = reduced();
+  FRAME.scale = BUBBLE_SIZES[SIZE.at];
+  const area = G.renderer().domElement.getBoundingClientRect();
+  AREA.left = area.left; AREA.top = area.top; AREA.right = area.right; AREA.bottom = area.bottom;
+  AREA.width = area.width; AREA.height = area.height;
+  FRAME.under = figureUnder();
+  SHOWN.length = 0;
+  if (AREA.width) ROAM.figures.forEach(heard);
+  heardMascot();
+  place();
+  write();
+  for (let n = 0; n < SHOWN.length; n++) {
+    if (Math.abs(SHOWN[n].shown - SHOWN[n].want) > 0.02) { wake3d(50); break; }
+  }
 }

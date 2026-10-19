@@ -1,0 +1,1 @@
+uv run metaform orchestration change "$(cat /tmp/fqc-autoticket-spec.md)" ... 'specification={\"path\": \"artifacts/specs-draft/autoticket.md\"}' ... key=fqc-autoticket-held-cap

@@ -536,15 +536,22 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any], session: str
     return False, (['\n'.join(notices)] if notices else []) + [result]
 
 
-def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> None:
+def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> list[str] | None:
     """Publish `fault.raised`, for autoticket to file as a ticket to fix: a module's verb that failed, or feedback;
-    `work_id` names the ticket of the agent whose call it was. A fault that cannot be published changes no answer."""
+    `work_id` names the ticket of the agent whose call it was. Returns the tickets it was filed or counted on, empty
+    while it waits to be filed, or None when no subscriber took it: no project, or autoticket off."""
     try:
         source = context('mcp', folder, project=str(project) if project else None, surface='mcp')
-        if source.project is not None:
-            events.publish('fault.raised', payload, source)
+        if source.project is None:
+            return None
+        taken = [cast(dict[str, Any], one['result']) for one in events.publish('fault.raised', payload, source)
+                 if one.get('status') == 'completed' and isinstance(one.get('result'), dict)
+                 and cast(dict[str, Any], one['result']).get('taken')]
     except Exception as error:  # noqa: BLE001  the caller's answer stands whether or not the fault is filed
         sys.stderr.write(f'The fault could not be published: {error}\n')
+        return None
+    return [str(ticket) for result in taken for ticket in cast(list[Any], result.get('tickets') or [])] \
+        if taken else None
 
 
 def run_skills(given: dict[str, Any]) -> dict[str, Any]:
@@ -1701,9 +1708,13 @@ async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client:
         payload = {'source': 'mcp', 'message': f'{type(error).__name__}: {error}', 'detail': traceback.format_exc(),
                    'reproduce': f'call {name} with {json.dumps(arguments, default=str)[:1000]}',
                    'work_id': os.environ.get('METAFORM_WORK')}
-        await anyio.to_thread.run_sync(_fault, folder, arguments.get('project'), payload)
-        return True, [(f'Error: {type(error).__name__}: {error}\nNext: call {OWN}_feedback and say what you '
-                       'called')], None
+        filed = await anyio.to_thread.run_sync(_fault, folder, arguments.get('project'), payload)
+        if filed is None:
+            step = f'call {OWN}_feedback and say what you called'
+        else:  # the fault carries the message, the traceback and the call, so feedback on it would file it again
+            step = (f'this failure is {"filed for a fix as ticket " + ", ".join(filed) if filed else "recorded for a fix"}'
+                    f'; call {OWN}_feedback only for what this error does not say')
+        return True, [f'Error: {type(error).__name__}: {error}\nNext: {step}'], None
     if os.environ.get('METAFORM_ROLE') == 'system':  # the one agent that follows the active map, `map_moved`
         moved: str | None = None
         with anyio.CancelScope(shield=True):  # its verb's effect landed: a cancel now never loses the result

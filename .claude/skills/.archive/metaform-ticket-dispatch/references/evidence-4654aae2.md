@@ -1,0 +1,1 @@
+3e1e8245 2026-10-18 18:08:11 -0400 Self-healing and autonomy groundwork, and the day's fixes (2026-10-18) ... src/metaform/modules/dispatch/runner.py | 11 +- ... src/metaform/modules/mcp/catalog.py | 8 +- ... src/metaform/modules/mcp/server.py | 51 +++-- ... 409 files changed, 2264 insertions(+), 332 deletions(-)

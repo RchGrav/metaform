@@ -1,0 +1,1 @@
+dispatch/runner.py was last written at 16:55:36Z on 2026-10-18, so only agent sessions started after then receive every memory_ tool in their orchestration:actions binding. ... The GC session of f5edecb3 started at 16:52:37Z on 2026-10-18 ... which accounts for its two-tool memory binding.

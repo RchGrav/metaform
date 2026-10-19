@@ -1,0 +1,1 @@
+The shell dropped the file's final newline; restoring it so the record stays exact.

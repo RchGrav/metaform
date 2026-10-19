@@ -491,6 +491,31 @@ def test_a_burst_of_one_error_is_one_pass_and_counts_each(run, project, monkeypa
     assert len(tickets(store)) == 1 and 'seen 20 times' in tickets(store)[0].note
 
 
+def test_twenty_page_faults_in_one_request_are_one_pass(run, project, monkeypatch):
+    """The page sends the errors of a second in one request; the web server hands them on as one event, one pass."""
+    from metaform.modules.web import server
+    mapped(project)
+    faults = delivered()
+    passes = []
+    real = faults.settle
+
+    def counted(ctx, store, batch):
+        passes.append(len(batch))
+        return real(ctx, store, batch)
+    monkeypatch.setattr(faults, 'settle', counted)
+
+    class Asked:
+        def send(self, status, data):
+            self.answer = (status, data)
+    handler = Asked()
+    handler.fault_raised = lambda named, payload: server.Handler.fault_raised(handler, named, payload)
+    server.Handler.page_faults(handler, {'project': 'proj', 'faults': [
+        {'message': f'TypeError: part {number} of the drawing is undefined', 'where': '/page/app/core/errors.js:77:12'}
+        for number in range(20)]})
+    assert handler.answer == (200, {'taken': 20})
+    assert passes == [20]
+
+
 SIX = ('payment declined by gateway for order', 'database connection pool exhausted waiting on replica',
        'cache stampede detected on shard key', 'websocket handshake rejected by proxy upstream',
        'template render missing variable heading in layout', 'thumbnail resize ran out of memory on image')
@@ -507,6 +532,30 @@ def test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes(ru
     run('map', 'work', 'op=done', f'id={filed[0].id}', 'resolution=Fixed.', 'why=Tested.', cwd=project)
     now = tickets(store)
     assert len(now) == 5 and any('thumbnail' in record.task for record in now)
+
+
+def test_five_held_feedback_tickets_take_no_slot_and_a_web_fault_is_filed(run, project):
+    store = mapped(project)
+    for words in SIX[:5]:
+        raise_fault(project, source='feedback', message=words, reproduce='Read the help.')
+    assert len(tickets(store)) == 5 and all(record.held for record in tickets(store))
+    web_fault(project)
+    assert any("KeyError: 'node 0'" in record.task and not record.held for record in tickets(store))
+
+
+def test_five_dispatch_held_tickets_take_no_slot_and_a_web_fault_is_filed(run, project):
+    """The person's hold on a ticket, map_work hold=true, keeps agents off it as the Backlog's held mark does: holding
+    the five filed tickets files the waiting sixth group, and a later fault is filed too."""
+    store = mapped(project)
+    for words in SIX:
+        raise_fault(project, source='web', message=f'ValueError: {words}', reproduce='GET /api/x')
+    filed = tickets(store)
+    assert len(filed) == 5 and not any('thumbnail' in record.task for record in filed)
+    for record in filed:
+        run('map', 'work', 'op=edit', f'id={record.id}', 'hold=true', cwd=project)
+    assert any('thumbnail' in record.task for record in tickets(store))
+    web_fault(project)
+    assert any("KeyError: 'node 0'" in record.task for record in tickets(store))
 
 
 def test_an_error_from_an_agent_on_an_autoticket_ticket_lands_on_that_ticket(run, project):

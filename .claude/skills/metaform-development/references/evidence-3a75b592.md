@@ -1,0 +1,1 @@
+git add src/metaform/modules/dispatch/__init__.py && git add -f artifacts/specs-draft/autoticket.md && git commit -q -m "Faults file themselves: ... spec adapted so held tickets take no slot (code.scheduler.task#8)"

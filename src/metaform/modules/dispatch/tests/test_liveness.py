@@ -966,6 +966,26 @@ def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize('done', [False, True])
+def test_an_agent_that_exits_after_closing_its_ticket_raises_no_fault(dispatch, done):
+    """An agent can close its ticket and exit before the runner hears the close: only an exit with the ticket still
+    open is a fault."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform.modules.dispatch.runner import EXITED, Session
+
+    if done:
+        dispatch.store.finish_work(dispatch.id, 'closed by the agent before it exited')
+    published = AsyncMock()
+    held = Session(SimpleNamespace(publish_async=published, nouns={}), Store('proj', module='dispatch'),
+                   dispatch.ticket(), 'claude', [])
+    held.how = f'{EXITED} 0'
+    asyncio.run(held.fault_raised())
+    faults = [call for call in published.await_args_list if call.args[0] == 'fault.raised']
+    assert len(faults) == (0 if done else 1)
+
+
 @pytest.mark.parametrize('rest', ['elsewhere', None])
 def test_the_agent_process_finds_this_install_first_on_path(dispatch, monkeypatch, rest):
     from types import SimpleNamespace

@@ -6159,6 +6159,57 @@ def test_board_priority_controls_save_order_with_filters_and_after_reloading(run
     assert problems == []
 
 
+@pytest.mark.req('VIEW-037')
+def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest(run, web, mapped, browser,
+                                                                                 monkeypatch):
+    import time
+    from datetime import UTC, datetime, timedelta
+
+    from metaform import home
+    from metaform.data import Node, Store
+    store = Store('proj')
+    node = Node('element', 'code.alarm.audible')
+    stamp = lambda days: (datetime.now(UTC) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    old, recent = [], []
+    with monkeypatch.context() as clock:
+        clock.setattr(home, 'now', lambda: stamp(10))  # done before board_done_days, 7 by default
+        for number in range(400):
+            old.append(store.add_work(node, None, task=f'old {number}').id)
+            store.finish_work(old[-1], 'built')
+        clock.setattr(home, 'now', lambda: stamp(1))
+        for number in range(5):
+            recent.append(store.add_work(node, None, task=f'recent {number}').id)
+            store.finish_work(recent[-1], 'built')
+    opened_ids = [store.add_work(node, None, task=f'open {number}').id for number in range(20)]
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    shown = {record.id for record in store.work(limit=0).results if record.id not in old}  # the map's own too
+    assert set(opened_ids + recent) <= shown
+    began = time.monotonic()
+    whole = lambda answer: '/api/work?' in answer.url and 'ids=' not in answer.url and 'node=' not in answer.url
+    with page.expect_response(whole) as answered:  # the board's own read of its tickets
+        page.click('#boardBtn')
+    assert {ticket['id'] for ticket in answered.value.json()['results']} == shown  # nothing old crosses the wire
+    page.wait_for_function('count => document.querySelectorAll("#board .card").length === count', arg=len(shown))
+    drawn = time.monotonic() - began
+    assert drawn < 1.0, f'the board took {drawn:.2f} s to draw'
+    page.click('#board .archive-toggle')
+    page.wait_for_function('() => document.querySelectorAll("#board .archive .row").length === 50')
+    assert page.is_hidden('#board .columns') and page.is_visible('#board .archive .more')
+    page.click('#board .archive .more')
+    page.wait_for_function('() => document.querySelectorAll("#board .archive .row").length === 100')
+    listed = page.eval_on_selector_all('#board .archive .row', 'rows => rows.map(row => row.dataset.id)')
+    assert listed == old[:100]
+    assert len(Store('proj').work(open=False, limit=0).results) == 405  # archived, never deleted
+    page.click('#board .archive-toggle')
+    page.click('#board .line-in-sand')  # everything done up to now goes to the Archive in one step
+    page.wait_for_function('count => document.querySelectorAll("#board .card").length === count',
+                           arg=len(store.work(open=True, limit=0).results))
+    assert len(Store('proj').work(open=False, limit=0).results) == 405
+    assert problems == []
+
+
 dispatch_control_port = None  # supplied by the lazy visual-fixture control server below
 ACTIVITY = {}  # what the visual fixtures' runners say a session is doing, by its token; working unless set
 RUNNERS = []  # the stand-in runner processes of the visual fixtures' sessions
@@ -6772,8 +6823,9 @@ def test_what_the_person_last_clicked_is_named_to_their_system_agent_with_their_
             page.fill('input.reply', question)
             page.press('input.reply', 'Enter')
             page.wait_for_function('q => window.__ask.ASKING.pending?.endsWith(q)', arg=question)
-        page.evaluate('''async () => { const {BUBBLE} = await import('/page/app/figures/cut.js'); window.__said = [];
-            new MutationObserver(() => window.__said.push(BUBBLE.text)).observe(BUBBLE.el, {childList: true}); }''')
+        page.evaluate('''() => { window.__said = [];  // the mascot's words, told by the bubbles' status, bubble3d.js
+            new MutationObserver(() => window.__said.push(document.querySelector('#bubbles .heard')
+              ?.textContent)).observe(document.body, {childList: true, subtree: true, characterData: true}); }''')
         page.unroute('**/api/system-chat', hold_call)
         for call in calls:  # answered here: a handler in Python runs only while the test waits on the page
             call.fulfill(json={'work_id': agent.id, 'session_id': session, 'agent': 'claude', 'state': 'running'})

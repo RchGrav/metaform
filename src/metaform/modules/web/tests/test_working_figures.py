@@ -210,13 +210,16 @@ def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
 
 
 @pytest.mark.req('VIEW-005')
-def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_agent_speaks_at_the_bottom(
+def test_word_bubbles_point_at_their_speakers_stay_apart_in_view_and_the_watched_agent_speaks_at_the_bottom(
         run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
-    """code.interface.graphical#81: bubbles stacked only upward, off the top of the view, and were dimmed by how far
-    the stack pushed them; in the agent view the watched agent's words were hidden with its body; and leaving the
-    view held the person's controls until the way back ended. Agents near the top of the view now talk inside it,
-    apart, each as bright as its agent is near; the watched agent's words are at the bottom of its view; and V off
-    gives the controls back at once."""
+    """code.interface.graphical#c7: an agent's bubble was a picture in the scene with its tail drawn at one corner, so
+    once it was moved apart or into the view its tail pointed at another figure, and the mascot's had a fixed tail too.
+    Every bubble is now SVG over the maps, its tail drawn each frame to its speaker's head on the screen: two agents
+    side by side each have a tail on their own head, no bubble covers another, a speaker turned out of the view keeps
+    its bubble in it with the tail toward it, a short line goes after its bubbleSeconds while a long one stays, and
+    the mascot's web_say bubble points at the mascot. Carried over from #81: bubbles stay in view, each as bright as
+    its agent is near, and the watched agent's words are at the bottom of the agent view."""
+    import math
     import time
 
     import metaform.modules.dispatch  # noqa: F401  declares its tables
@@ -224,8 +227,9 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
 
     run('enable', 'dispatch')
     run('set', '--web-bubble-seconds=60')
+    run('set', '--web-mascot=seahorse')
     store = Store('proj')
-    places = ['code.alarm.audible', 'code.alarm.audible', 'code.loop.tick']
+    places = ['code.alarm.audible', 'code.alarm.audible', 'code.loop.tick']  # two agents close together
     tickets = [store.add_work(Node('element', address), 'broken', task='Check it') for address in places]
     for ticket, glyph in zip(tickets, ('owl', 'moth', 'beetle')):
         run('map', 'work', 'op=edit', f'id={ticket.id}', f'glyph={glyph}', cwd=mapped)
@@ -236,75 +240,258 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
             tx.insert('session_lines', {'session_id': f's-{ticket.id}', 'name': 'l1', 'work_id': ticket.id,
                                 'kind': 'agent_message_chunk', 'seq': 1,
                                 'text': f'Reading part {n} of the code to see where each speech bubble goes'})
+    # the person's system agent, in a conversation, so its mascot, the seahorse, is on the map to speak
+    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
+                            held=True)
+    live_session(system.id)
     started(run)
     page, problems, _ = opened(browser, web, plain=True)
-    page.wait_for_function('() => window.metaform.figures().length === 3', timeout=30000)
-    bubbles = """async () => {
+    page.wait_for_function('() => window.metaform.figures().length === 3 && window.metaform.mascot().shown',
+                           timeout=30000)
+    # the bubbles as drawn after `frames` frames: each one's speaker, its tail's tip and its body's box on the page,
+    # its brightness, and its speaker's head on the page as the bubbles measure it, by LOOK.lift
+    bubbles = """async frames => {
         const THREE = await import('three');
         const {G} = await import('/page/app/map3d/graph3d.js');
         const {ROAM} = await import('/page/app/figures/agents.js');
-        const {bubbles3d} = await import('/page/app/figures/bubble3d.js');
+        const {MASCOT} = await import('/page/app/figures/mascot.js');
+        const {bubbles3d, LOOK} = await import('/page/app/figures/bubble3d.js');
+        const {placeBubble} = await import('/page/app/figures/cut.js');
         const {eyeOf} = await import('/page/agents3d.js');
-        const {EYE} = await import('/page/app/figures/eyes.js');
-        const camera = G.camera(), at = new THREE.Vector3(), gaze = new THREE.Vector3(), side = new THREE.Vector3();
-        bubbles3d();
-        const shown = [];
-        G.scene().traverse(o => { if (o.isMesh && o.renderOrder >= 1000 && o.material.map && o.visible) {
-            o.updateMatrixWorld();
-            const a = new THREE.Vector3(-0.5, -0.5, 0).applyMatrix4(o.matrixWorld).project(camera);
-            const b = new THREE.Vector3(0.5, 0.5, 0).applyMatrix4(o.matrixWorld).project(camera);
-            shown.push({box: [a.x, a.y, b.x, b.y], bright: o.material.color.r});
-        }});
-        // where the tail's point sits, as bubbles3d measures it: up and to the right of the head, LOOK.lift and aside
-        const heads = [...ROAM.figures.values()].filter(f => f.mesh !== EYE.mesh).map(f => {
-            eyeOf(f.mesh, at, gaze);
-            at.y += 0.6 * f.mesh.scale.x;
-            at.addScaledVector(side.set(1, 0, 0).applyQuaternion(camera.quaternion), 0.4 * f.mesh.scale.x);
-            return at.distanceTo(camera.position); });
-        return {shown, heads, walking: [...ROAM.figures.values()].some(f => ['arriving', 'going'].includes(f.stage))};
+        for (let n = 0; n < frames; n++) {
+            await new Promise(requestAnimationFrame);
+            placeBubble(); bubbles3d();
+        }
+        const camera = G.camera(), area = G.renderer().domElement.getBoundingClientRect();
+        const at = new THREE.Vector3(), gaze = new THREE.Vector3();
+        const head = mesh => {
+            eyeOf(mesh, at, gaze);
+            at.y += LOOK.lift * mesh.scale.x;
+            const far = at.distanceTo(camera.position);
+            at.project(camera);
+            return {x: area.left + (at.x + 1) / 2 * area.width, y: area.top + (1 - at.y) / 2 * area.height, far};
+        };
+        const shown = [...document.querySelectorAll('#bubbles .wbubble')].filter(el => el.style.display !== 'none')
+          .map(el => {
+            const tail = el.querySelector('[id^="wbubble-tail-"]'), body = el.querySelector('[id^="wbubble-body-"]');
+            const m = (tail.getAttribute('d') || '').match(/^M(-?[0-9.]+),(-?[0-9.]+)/);
+            const tip = m ? new DOMPoint(Number(m[1]), Number(m[2])).matrixTransform(tail.getScreenCTM()) : null;
+            const box = body.getBoundingClientRect(), who = el.dataset.who;
+            const mesh = who === 'mascot' ? MASCOT.mesh : ROAM.figures.get(who)?.mesh;
+            return {who, tip: tip && [tip.x, tip.y], box: [box.left, box.top, box.right, box.bottom],
+                head: mesh ? head(mesh) : null, opacity: Number(el.style.opacity),
+                bright: Number(el.querySelector('.paper').getAttribute('fill').match(/[0-9]+/)[0]) / 255,
+                said: el.querySelector('.said').textContent,
+                lines: [...el.querySelectorAll('.words text')].map(one => one.textContent)};
+          });
+        return {shown, area: [area.left, area.top, area.right, area.bottom],
+            walking: [...ROAM.figures.values()].some(f => ['arriving', 'going'].includes(f.stage))};
     }"""
     end = time.monotonic() + 30
-    while (now := page.evaluate(bubbles))['walking'] or len(now['shown']) < 3:
+    while (now := page.evaluate(bubbles, 1))['walking'] or len(now['shown']) < 3:
         assert time.monotonic() < end, now
         time.sleep(0.2)
-    # the camera held, and moved down so the agents stand near the top of the view, where bubbles stacked up went off
+    # the camera held, and moved down so the agents stand high in the view, their bubbles kept inside it
     page.evaluate("""async () => {
         const THREE = await import('three');
         const {G} = await import('/page/app/map3d/graph3d.js');
         const {ROAM} = await import('/page/app/figures/agents.js');
+        const {LOOK} = await import('/page/app/figures/bubble3d.js');
+        const {eyeOf} = await import('/page/agents3d.js');
         window.metaform.pause3d(true);
-        const camera = G.camera(), mid = new THREE.Vector3(), figures = [...ROAM.figures.values()];
-        for (const f of figures) mid.add(f.mesh.position);
-        const seen = mid.divideScalar(figures.length).applyMatrix4(camera.matrixWorldInverse);
-        const down = 0.8 * -seen.z * Math.tan(camera.fov * Math.PI / 360) - seen.y;
+        const camera = G.camera(), tan = Math.tan(camera.fov * Math.PI / 360), at = new THREE.Vector3();
+        // the highest head two thirds of the way up from the middle of the view
+        let down = Infinity;
+        for (const f of ROAM.figures.values()) {
+            eyeOf(f.mesh, at, new THREE.Vector3());
+            at.y += LOOK.lift * f.mesh.scale.x;
+            const seen = at.applyMatrix4(camera.matrixWorldInverse);
+            down = Math.min(down, 0.65 * -seen.z * tan - seen.y);
+        }
         camera.position.addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion), -down);
         camera.updateMatrixWorld();
+        window.__kept = {position: camera.position.clone(), quaternion: camera.quaternion.clone()};
     }""")
-    placed = page.evaluate(bubbles)
-    boxes = [one['box'] for one in placed['shown']]
-    assert len(boxes) == 3, placed
-    assert all(-1 <= x0 and -1 <= y0 and x1 <= 1 and y1 <= 1 for x0, y0, x1, y1 in boxes), placed
-    assert not any(a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
-                   for n, a in enumerate(boxes) for b in boxes[n + 1:]), placed
+
+    def overlap(a, b):
+        return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+    def apart_in_view(placed):
+        left, top, right, bottom = placed['area']
+        boxes = [one['box'] for one in placed['shown']]
+        assert all(left <= x0 and top <= y0 and x1 <= right and y1 <= bottom for x0, y0, x1, y1 in boxes), placed
+        assert not any(overlap(a, b) for n, a in enumerate(boxes) for b in boxes[n + 1:]), placed
+
+    def on_head(one, area):
+        left, top, right, bottom = area
+        assert left < one['head']['x'] < right and top < one['head']['y'] < bottom, one
+        assert one['tip'] and math.dist(one['tip'], (one['head']['x'], one['head']['y'])) < 6, one
+
+    placed = page.evaluate(bubbles, 40)
+    assert len(placed['shown']) == 3, placed
+    apart_in_view(placed)
+    # every tail's tip on its own speaker's head, the two side by side included
+    for one in placed['shown']:
+        on_head(one, placed['area'])
     # each as bright as its agent is near, against the nearest one talking, however far it was moved apart
-    nearest = min(placed['heads'])
-    assert sorted(one['bright'] for one in placed['shown']) == pytest.approx(
-        sorted(max(1 / 3, (nearest / head) ** 1.5) for head in placed['heads']), abs=0.01), placed
-    page.evaluate("""async () => {
+    nearest = min(one['head']['far'] for one in placed['shown'])
+    for one in placed['shown']:
+        assert one['bright'] == pytest.approx(max(0.33, (nearest / one['head']['far']) ** 1.5), abs=0.01), one
+    # code.interface.graphical#149: the bubbles belong to the maps, over the map and its figures but under every
+    # window. An agent's bubble takes no pointer, so the probe lets it take one to be found at its own centre: there it
+    # is the topmost element over the map, and a window opened over it is the topmost instead
+    stacked = page.evaluate("""async ([who, x, y]) => {
+        const svg = [...document.querySelectorAll('#bubbles .wbubble')].find(el => el.dataset.who === who)
+            .querySelector('svg');
+        svg.style.pointerEvents = 'auto';
+        const before = document.elementFromPoint(x, y)?.closest('svg') === svg;
+        (await import('/page/app/keys/keys.js')).openHelp();
+        const help = document.querySelector('#help'), box = help.getBoundingClientRect();
+        Object.assign(help.style, {transform: 'none', left: `${x - box.width / 2}px`, top: `${y - box.height / 2}px`});
+        const over = document.elementFromPoint(x, y)?.closest('.window')?.id || null;
+        help.hidden = true; help.style.transform = help.style.left = help.style.top = svg.style.pointerEvents = '';
+        return {before, over};
+    }""", [placed['shown'][0]['who'], (placed['shown'][0]['box'][0] + placed['shown'][0]['box'][2]) / 2,
+           (placed['shown'][0]['box'][1] + placed['shown'][0]['box'][3]) / 2])
+    assert stacked == {'before': True, 'over': 'help'}, stacked
+
+    # the camera turned until the agent on its own node is off the right of the view: its bubble stays in the view,
+    # and its tail runs to the view's right edge, toward it
+    alone = tickets[2].id
+    page.evaluate("""async alone => {
+        const {G} = await import('/page/app/map3d/graph3d.js');
         const {ROAM} = await import('/page/app/figures/agents.js');
-        const {followFigure, agentView} = await import('/page/app/figures/eyes.js');
+        const camera = G.camera(), seen = ROAM.figures.get(alone).mesh.position.clone()
+            .applyMatrix4(camera.matrixWorldInverse);
+        const half = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect);
+        camera.rotateY(half + 0.2 - Math.atan2(seen.x, -seen.z));
+        camera.updateMatrixWorld();
+    }""", alone)
+    turned = page.evaluate(bubbles, 40)
+    left, top, right, bottom = turned['area']
+    off = next(one for one in turned['shown'] if one['who'] == alone)
+    assert off['head']['x'] > right, off
+    apart_in_view(turned)
+    middle = ((off['box'][0] + off['box'][2]) / 2, (off['box'][1] + off['box'][3]) / 2)
+    toward = math.atan2(off['head']['y'] - middle[1], off['head']['x'] - middle[0])
+    aimed = math.atan2(off['tip'][1] - middle[1], off['tip'][0] - middle[0])
+    assert off['tip'][0] > right - 8 and abs(toward - aimed) < math.radians(5), off
+
+    # a short line goes after its bubbleSeconds, on auto; a longer one stays until its own time is up
+    page.evaluate("""async () => {
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const camera = G.camera();
+        camera.position.copy(window.__kept.position); camera.quaternion.copy(window.__kept.quaternion);
+        camera.updateMatrixWorld();
         window.metaform.pause3d(false);
-        followFigure([...ROAM.figures.values()][0]);
-        agentView();
     }""")
-    page.wait_for_function("""async () => { const {EYE} = await import('/page/app/figures/eyes.js');
-        return EYE.view && EYE.k >= 1; }""", timeout=30000)
+    lines = {tickets[0].id: 'Done.', tickets[1].id: 'Now reading the tests as well, then the page that draws them all.'}
+    times = page.evaluate("""async lines => {
+        const {D} = await import('/page/app/agents/dispatch.js');
+        const {takeBubbleSeconds} = await import('/page/app/workspace/workspace.js');
+        const {bubbleSeconds} = await import('/page/app/figures/bubble.js');
+        takeBubbleSeconds('auto');
+        for (const [work, text] of Object.entries(lines)) {
+            const session = D.sessions.find(one => one.work_id === work);
+            session.said = {...session.said, text, seq: (session.said?.seq || 1) + 1};
+        }
+        return Object.fromEntries(Object.entries(lines).map(([work, text]) => [work, bubbleSeconds(text, 'auto')]));
+    }""", lines)
+    said = time.monotonic()
+    short, long = times[tickets[0].id], times[tickets[1].id]
+    assert short + 1 < long, times
+
+    def showing():
+        return {one['who']: one['said'] for one in page.evaluate(bubbles, 1)['shown'] if one['opacity'] > 0.5}
+
+    time.sleep(max(0, said + short - 1 - time.monotonic()))
+    assert showing().get(tickets[0].id) == 'Done.', showing()  # still up just before its time
+    time.sleep(max(0, said + short + 0.6 - time.monotonic()))
+    now = showing()
+    assert tickets[0].id not in now and now.get(tickets[1].id) == lines[tickets[1].id], now
+    time.sleep(max(0, said + long + 0.6 - time.monotonic()))
+    assert tickets[1].id not in showing(), showing()
+    # code.interface.graphical#14c: a view switch to 2D and back, the 3D map without an area meanwhile as when the 2D
+    # tab is shown in its place, brings no line back whose time had passed; the next line, below, shows again once
+    # its said.seq changes
+    page.evaluate("""async () => {
+        const {placeBubble} = await import('/page/app/figures/cut.js');
+        const {bubbles3d} = await import('/page/app/figures/bubble3d.js');
+        for (const hidden of [true, false]) {
+            document.querySelector('#big3d').style.display = hidden ? 'none' : '';
+            for (let n = 0; n < 10; n++) { await new Promise(requestAnimationFrame); placeBubble(); bubbles3d(); }
+        }
+    }""")
+    assert not set(lines) & set(showing()), showing()
+
+    # the mascot's status is in the accessibility tree between its lines, apart from its drawn bubble, which comes and
+    # goes, and takes each line said
+    status = page.locator('#bubbles').get_by_role('status')
+    assert status.count() == 1 and status.evaluate('el => getComputedStyle(el).display') != 'none'
+
+    # the mascot's web_say: its bubble's tail on the seahorse's head
+    page.evaluate("""async work => {
+        const {G} = await import('/page/app/map3d/graph3d.js');
+        const {MASCOT} = await import('/page/app/figures/mascot.js');
+        const {mascotEvent} = await import('/page/app/figures/attention.js');
+        const {S} = await import('/page/app/core/reads.js');
+        window.metaform.pause3d(true);
+        const camera = G.camera(), ahead = camera.getWorldDirection(MASCOT.mesh.position.clone());
+        // in front of the eye, below the middle of the view, where its bubble has room above it
+        MASCOT.mesh.position.copy(camera.position).addScaledVector(ahead, 40 * MASCOT.mesh.scale.x);
+        MASCOT.mesh.updateMatrixWorld();
+        mascotEvent({project: S.project, act: 'say', text: 'Over here, look at this one!'});
+        // and an agent says a new line, to be clicked
+        const {D} = await import('/page/app/agents/dispatch.js');
+        const session = D.sessions.find(one => one.work_id === work);
+        session.said = {...session.said, text: 'Looking at the alarm again', seq: session.said.seq + 1};
+    }""", tickets[0].id)
+    spoke = page.evaluate(bubbles, 20)
+    mascot = next(one for one in spoke['shown'] if one['who'] == 'mascot')
+    assert mascot['said'] == '' and mascot['opacity'] > 0.5, mascot  # told once, by the status
+    assert status.text_content() == 'Over here, look at this one!'
+    on_head(mascot, spoke['area'])
+    # a click on an agent's bubble picks that agent, and a click on the mascot's does what it was said with
+    agent = next(one for one in spoke['shown'] if one['who'] != 'mascot')
+    picked = page.evaluate("""async ([x, y]) => (await import('/page/app/figures/ask.js')).figureAt(x, y)""",
+                           [(agent['box'][0] + agent['box'][2]) / 2, (agent['box'][1] + agent['box'][3]) / 2])
+    assert picked == agent['who'], (picked, agent)
+    page.evaluate("""async () => (await import('/page/app/figures/cut.js'))
+        .say('Click me', 5, () => { window.__clicked = true; })""")
+    clickable = next(one for one in page.evaluate(bubbles, 20)['shown'] if one['who'] == 'mascot')
+    page.mouse.click((clickable['box'][0] + clickable['box'][2]) / 2, (clickable['box'][1] + clickable['box'][3]) / 2)
+    assert page.evaluate('window.__clicked') is True
+    assert 'mascot' not in [one['who'] for one in page.evaluate(bubbles, 20)['shown'] if one['opacity'] > 0.5]
+    assert status.count() == 1 and status.text_content() == 'Click me'
+    # a line longer than three lines hold ends its last shown line with an ellipsis, the words before it as said, and
+    # the status tells the whole line
+    long = ('The alarm on the scheduler fired twice because the second runner read the old lease before the first '
+            'one wrote it back, so both took the same ticket and started')
+    assert len(long) == 160
+    page.evaluate("""async line => (await import('/page/app/figures/cut.js')).say(line, 5)""", long)
+    cut = next(one for one in page.evaluate(bubbles, 20)['shown'] if one['who'] == 'mascot')
+    assert len(cut['lines']) == 3 and cut['lines'][-1].endswith('…'), cut['lines']
+    shown = ' '.join(cut['lines'])[:-1].rstrip()
+    assert shown and long.startswith(shown) and len(shown) < len(long), (shown, long)
+    assert status.text_content() == long
+
+    page.evaluate("""async alone => {
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const eyes = await import('/page/app/figures/eyes.js');
+        window.__eyes = eyes;  // read by the synchronous waits below; an async predicate ends a wait at once
+        window.metaform.pause3d(false);
+        eyes.followFigure(ROAM.figures.get(alone));
+        eyes.agentView();
+    }""", alone)
+    page.wait_for_function('() => window.__eyes.EYE.view && window.__eyes.EYE.k >= 1', timeout=30000)
     page.evaluate('window.metaform.pause3d(true)')
-    watched = page.evaluate(bubbles)
-    # its body hidden, its words at the bottom of the view, in its middle, over the others
-    bottom = min(watched['shown'], key=lambda one: one['box'][1])
-    assert -1 <= bottom['box'][1] < -0.9 and abs(bottom['box'][0] + bottom['box'][2]) < 0.05, watched
-    assert bottom['bright'] == 1, watched
+    watched = page.evaluate(bubbles, 20)
+    # its body hidden, its words at the bottom of the view, in its middle, at full brightness, the tail to the edge
+    left, top, right, bottom = watched['area']
+    own = next(one for one in watched['shown'] if one['who'] == alone)
+    assert bottom - own['box'][3] < 0.1 * (bottom - top) / 2, own
+    assert abs((own['box'][0] + own['box'][2]) / 2 - (left + right) / 2) < 0.05 * (right - left) / 2, own
+    assert own['bright'] == 1 and own['tip'][1] > bottom - 4, own
     off = page.evaluate("""async () => {
         const {G} = await import('/page/app/map3d/graph3d.js');
         const {agentView, EYE} = await import('/page/app/figures/eyes.js');
@@ -313,7 +500,7 @@ def test_speech_bubbles_stay_in_view_apart_dimmed_by_distance_and_the_watched_ag
         return {controls: G.controls().enabled, saved: Boolean(EYE.saved)};
     }""")
     assert off == {'controls': True, 'saved': True}, off  # the person's camera at once, while the view eases back
-    page.wait_for_function("""async () => !(await import('/page/app/figures/eyes.js')).EYE.saved""", timeout=30000)
+    page.wait_for_function('() => !window.__eyes.EYE.saved', timeout=30000)
     assert problems == []
 
 

@@ -1,0 +1,1 @@
+A note I send relaying your decision doesn't count as your decision; only a direct `dispatch message` does. So they treated your call as just information from another agent. That's trouble, so I'm filing it, along with the other gap it found, and committing #4.

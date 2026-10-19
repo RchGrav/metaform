@@ -1,0 +1,1 @@
+{"observations":"[{\"entityName\":\"FQC return order: check-in before ticket done\",\"contents\":[\"The order was missed again on graphical#136 (c781ec60, 2026-10-18), whose session had no orchestration check-in tool loaded, so assessment 39ff527a got empty evidence and the corrected candidate and evidence were put in its ticket 2c281129's note.\"]}]"}

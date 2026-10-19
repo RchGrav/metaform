@@ -1,0 +1,1 @@
+User: "We need to add all of these issues to the list of issues and we are going to create a swarm to pick them all up how do the gc;s work right now.. it might be the wrong model .... the gc only picks up one ticket.. we need to kill the gc role". Agent: "One question before I plan it: should the reviewer go too, or stay?"

@@ -1,0 +1,1 @@
+In Playwright, `wait_for_function` with an async predicate returns at once instead of waiting. I replaced the two I had written with `eventually(...)`. The existing mascot step's wait on `ASKING.pending` has the same problem.

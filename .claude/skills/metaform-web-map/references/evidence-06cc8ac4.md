@@ -1,0 +1,2 @@
+Before graphical#12d, clicked3dAt skipped the mascot only when nodeAt3d found no node, which is wider than the hover clickMascot checks, so a mascot click near a node opened the ask field and also recorded that node.
+Run 1 before mascotTakes: the line named element exterior.cook, 0 s before, recorded by the mascot click itself

@@ -1,0 +1,1 @@
+{"tool_use":"Bash","command":"timeout 120 uv run pytest -n 0 src/metaform/modules/mcp/tests/test_mcp.py -k \"failed_verb_whose_fault\" -q","result":"_ test_a_failed_verb_whose_fault_is_filed_names_its_ticket_and_asks_no_feedback_on_it _ ... 1 passed, 115 deselected in 2.44s"}

@@ -1,0 +1,1 @@
+Mutant: /tmp/mutant141/send.js (send.js:187 `if (told) CLICKED.told = true` -> `CLICKED.told = true`) served by page.route from a pytest plugin patching Browser/BrowserContext.new_page: fails at test_web.py:6842 `assert clicked()['told'] is False` (assert True is False)

@@ -1,0 +1,2 @@
+{"action": "create", "reason": "A worker returning a ticket hit a refused argument order, and no skill records the working form of the check-in command.", "evidence": "references/evidence-cf55f48d.md"}
+{"action": "delete", "reason": "Absorbed into the metaform-development umbrella as its Orchestration check-in subsection. No subfiles.", "evidence": "references/evidence-9014e1b6.md", "absorbed_into": "metaform-development"}

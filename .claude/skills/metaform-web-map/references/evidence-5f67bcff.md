@@ -1,0 +1,1 @@
+"e021bccc The click is used up only when its line reaches the system agent; a message to another agent leaves it untold. VIEW-005 draft matches the code" (git log, 5f88bf93 body). Memory: "A review passed #141, the test step for a message sent to another agent. The change touches only the test, and no page code changed."

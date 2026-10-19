@@ -1,0 +1,1 @@
+{"observations":"[{\"entityName\":\"Unread memory notice disagrees with memory_read_unread\",\"contents\":[\"On 2026-10-18 at about 23:20Z in GC session caa9f35e (graphical#136), memory_read_unread with fields=['name','entityType'] listed 13 entities, and view=count afterwards still gave total 12, so a read narrowed to fields does not mark the entities read.\"]}]"}

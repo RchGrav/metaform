@@ -1,0 +1,1 @@
+A copy of send.js without the line 'CLICKED.told = false' in startFailed (now line 97) was served through a route, and the test failed at the resend assertion. I didn't edit the real send.js, because another agent was working in it.

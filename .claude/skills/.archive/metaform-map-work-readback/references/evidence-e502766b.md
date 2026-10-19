@@ -1,0 +1,1 @@
+Error: No record here holds done, resolution, steps_done, steps, outcome; they hold number, said, at. Next: call map_work without it, or with view=full

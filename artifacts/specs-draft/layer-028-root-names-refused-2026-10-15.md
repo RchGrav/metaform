@@ -1,0 +1,11 @@
+# LAYER-028 amendment draft: a layer named a project root is refused
+
+Drafted 2026-10-15 by claude on ticket code.graph.knowledge#12 (b6acc396cf3b485083de6780022b6cf0), for the owner to approve and land in `specifications/02-layers.md` after LAYER-028's `Status:` line and its 2026-10-08 amendment.
+
+The sentence the code now contradicts is LAYER-028's Acceptance: "creating a layer named `code` or `my layer` stores it with a notice". Its Build line "A name given that does not fit is stored as given with a notice that it cannot be used as a root, BASE-044" no longer holds for a project root.
+
+Proposed bullet:
+
+- Amendment, 2026-10-15, ticket code.graph.knowledge#12 (b6acc396cf3b485083de6780022b6cf0): a layer named a project root is refused rather than stored with a notice. `layering.create` and `layering.rename` (src/metaform/data/layering.py `_root`) refuse a name that is one of the roots in `data/roots.json`, `code`, `document`, `media`, `data`, `upstream` or `downstream`, with an error that names this record, and write nothing. Other names that do not fit the segment form are still stored as given with a notice. The acceptance for `code` is now: `metaform map knowledge op=create layer=code ...` fails with "'code' cannot be a layer name: it is a project root, and a layer's name is a namespace root that would collide with the map, LAYER-028." Test: `test_a_layer_named_a_project_root_is_refused_naming_the_rule` in src/metaform/modules/map/tests/test_map.py. The same ticket discarded, STORE-032, the leftover layers `code` and `source_placement` from the metaform project's `main` and `feature-code-alignment-20261013` metaforms; their ops stay in each store's op log.
+
+Not covered by this bullet, for the owner: the reserved procedure root, `logic` in the 2026-10-08 amendment and `prompt` in CTX-080, is not in `roots.json` and is not refused by this guard. A name under a root, such as `code.python`, is also not refused, because the settled `<scope>@<content>` form (CTX-066, line 1123 of 11-context.md) names layers like `code.cpp@best_practices`. The line in 11-context.md that says "no layer is named `code` or under it" needs its "under it" made exact before a guard can follow it.

@@ -1,0 +1,1 @@
+Error: 8 agents are running on this machine across 3 projects, the most dispatch_machine_agents allows (8). It stays in To do and starts by itself when a slot frees. Next: metaform dispatch sessions — then: "The machine's 8 agent slots are all busy, so I'll run the board fix through one of my own subagents instead—that skips the queue and keeps me free to keep chatting with you."

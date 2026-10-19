@@ -2,7 +2,6 @@
  * repair and the spring back. */
 import '/page/app/figures/mascot.js';  // the part before runs first, so the parts run in the page's order
 import {$, reduced, h} from '/page/app/core/dom.js';
-import {onScreen} from '/page/app/graph/checks.js';
 import {ROAM, primaryOf, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {easeBoth, SPOT} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph} from '/page/app/figures/mascot.js';
@@ -13,70 +12,68 @@ import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {AT} from '/page/app/map3d/labels.js';
 import {tintOf, fxLine} from '/page/app/flow/fx3d.js';
 import {V3} from '/page/app/camera/flight.js';
-import {speechBubble, bubbleSeconds} from '/page/app/figures/bubble.js';
+import * as THREE from 'three';
+import {eyeOf} from '/page/agents3d.js';
+import {BUBBLE, bubbleSeconds} from '/page/app/figures/bubble.js';
+import {LOOK} from '/page/app/figures/bubble3d.js';
 
-/* A word bubble over the mascot, in 3D and 2D: a short line in its voice, eased in and out, placed over the figure
- * each frame so it reads at any angle; one at a time, never piled up. `say` shows one for a while; a click on it does
- * what `onClick` says. */
-// `seconds`: web_bubble_seconds, auto or a number, set from the view as the page reads it
-export const BUBBLE = {el: null, text: '', until: 0, click: null, seconds: 'auto'};
+/* A word bubble over the mascot, in 3D and 2D: a short line in its voice, drawn with the agents' bubbles in their layer
+ * over the maps, `bubbles3d` in figures/bubble3d.js, its tail pointing at the speaker; one at a time, never piled up.
+ * `say` shows one for a while; a click on it does what `onClick` says. `BUBBLE` holds the line and where its speaker
+ * is, figures/bubble.js; `bubble` is the box the mascot's reply field opens in, figures/ask.js. */
+export {BUBBLE};
 export function bubble() {
   if (BUBBLE.el) return BUBBLE.el;
-  BUBBLE.el = h('div', {class: 'mascot-bubble', role: 'status', 'aria-live': 'polite'});
-  BUBBLE.el.addEventListener('click', clickBubble);
+  BUBBLE.el = h('div', {class: 'mascot-bubble'});
+  BUBBLE.el.addEventListener('click', event => event.stopPropagation());
   document.body.append(BUBBLE.el);
   return BUBBLE.el;
 }
-/* A click on the bubble does what it was said with, and the bubble goes. */
-function clickBubble(event) {
-  event.stopPropagation();
-  const act = BUBBLE.click;
-  if (act) { hush(); act(); }
-}
-// `who`: an embodied agent's figure, else the mascot
+// `who`: an embodied agent's figure, else the mascot; `name`: the agent speaking through it, named quietly over its
+// words; its own words go unnamed
 export function say(text, seconds = 4, onClick = null, who = null, name = '') {
-  const el = bubble();
-  el.dataset.name = name;  // the agent speaking through it, named quietly over its words; its own words go unnamed
-  Object.assign(BUBBLE, {text, until: performance.now() + seconds * 1000, click: onClick, who});
-  // drawn as a comic speech bubble whose tail tip stands on the speaker; the words stay in the element for readers
-  const drawn = speechBubble(text);
-  drawn.canvas.setAttribute('aria-hidden', 'true');
-  el.replaceChildren(drawn.canvas, h('span', {class: 'said'}, text));
-  el.style.setProperty('--tipx', `${drawn.tip[0]}px`);
-  el.style.setProperty('--tipy', `${drawn.tip[1]}px`);
-  el.classList.add('drawn');
-  el.classList.toggle('clickable', Boolean(onClick));
-  el.classList.add('on');
+  const now = performance.now();
+  Object.assign(BUBBLE, {text, until: now + seconds * 1000, click: onClick, who, name, since: now});
   wake3d(seconds * 1000);
 }
 /* How long a line stays up, by web_bubble_seconds, `bubbleSeconds`. */
 export const readFor = text => bubbleSeconds(text, BUBBLE.seconds);
 export function hush() { BUBBLE.until = 0; BUBBLE.el?.classList.remove('on'); }
-export function placeBubble() {  // over the mascot as it is drawn: the large map's figure, else the 2D one
-  if (!BUBBLE.el) return;
-  if (performance.now() > BUBBLE.until) { BUBBLE.el.classList.remove('on'); return; }
-  const over = speakerAt3d() || speakerAt2d();
-  if (!over) { BUBBLE.el.classList.remove('on'); return; }
-  const {x, y} = over;
-  BUBBLE.at = {x, y};
-  BUBBLE.el.style.left = `${Math.round(x)}px`;
-  BUBBLE.el.style.top = `${Math.round(y)}px`;
+/* Where the speaker is, read each frame before the bubbles are placed, `bubbles3d`: the large map's figure, else the
+ * mascot's 2D glyph. Read while its line shows and for a second after, as it fades; the bubble is not seen while the
+ * reply field is open, which shows the line itself. */
+export function placeBubble() {
+  const now = performance.now();
+  BUBBLE.asking = Boolean(BUBBLE.el?.classList.contains('asking'));
+  BUBBLE.found = now < BUBBLE.until + 1000 && (speakerAt3d() || speakerAt2d());
+  BUBBLE.seen = BUBBLE.found && now < BUBBLE.until && !BUBBLE.asking;
 }
-/* Over the figure that speaks in the 3D map, an embodied agent or else the mascot, when it is in front of the eye and
- * drawn: a body the view sees from inside, its own eyes', `eyesOf`, is hidden and carries no bubble at the eye. */
+/* The head of the figure that speaks in the 3D map, an embodied agent or else the mascot, when it is in front of the
+ * eye and drawn, measured as the agents' bubbles measure theirs: a body the view sees from inside, its own eyes',
+ * `eyesOf`, is hidden and carries no bubble at the eye. */
+const GAZE = new THREE.Vector3();
 function speakerAt3d() {
   const speaker = (BUBBLE.who && ROAM.figures.get(BUBBLE.who)?.mesh) || MASCOT.mesh;
-  if (!G || !speaker?.visible) return null;
-  const area = G.renderer().domElement.getBoundingClientRect(), at = SPOT.copy(speaker.position).project(G.camera());
-  if (!area.width || Math.abs(at.z) >= 1) return null;
-  return {x: area.left + (at.x + 1) / 2 * area.width,
-    y: area.top + (1 - at.y) / 2 * area.height - onScreen(speaker) * 0.6};
+  if (!G || !speaker?.visible) return false;
+  const area = G.renderer().domElement.getBoundingClientRect();
+  eyeOf(speaker, SPOT, GAZE);
+  SPOT.y += LOOK.lift * speaker.scale.x;
+  SPOT.project(G.camera());
+  if (!area.width || Math.abs(SPOT.z) >= 1) return false;
+  BUBBLE.x = area.left + (SPOT.x + 1) / 2 * area.width;
+  BUBBLE.y = area.top + (1 - SPOT.y) / 2 * area.height;
+  BUBBLE.left = area.left; BUBBLE.top = area.top; BUBBLE.right = area.right; BUBBLE.bottom = area.bottom;
+  return true;
 }
 /* Over the mascot's flat glyph on the 2D map. */
 function speakerAt2d() {
-  if (!MASCOT2D.g?.isConnected) return null;
+  if (!MASCOT2D.g?.isConnected) return false;
   const box = MASCOT2D.g.getBoundingClientRect();
-  return box.width ? {x: box.left + box.width / 2, y: box.top} : null;
+  if (!box.width) return false;
+  const map = MASCOT2D.g.ownerSVGElement.getBoundingClientRect();
+  BUBBLE.x = box.left + box.width / 2; BUBBLE.y = box.top;
+  BUBBLE.left = map.left; BUBBLE.top = map.top; BUBBLE.right = map.right; BUBBLE.bottom = map.bottom;
+  return true;
 }
 /* Cut an edge, VIEW-005, a playful mode of the 3D map: X turns scissors on, and a click cuts the join edge the pointer
  * marks, the edge the page's own picking chooses, `EDGE_PICK`. The edge snaps, its halves whipping back, and whatever

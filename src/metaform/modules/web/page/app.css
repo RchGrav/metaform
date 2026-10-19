@@ -802,6 +802,14 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 .agents2d{pointer-events:none}
 .agents2d image{filter:drop-shadow(0 1px 2px color-mix(in srgb, var(--shadow) 45%, transparent))}
 #board .columns{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(240px,1fr));gap:var(--s3);padding:var(--s3) var(--s4) var(--s4);overflow:auto}
+#board .columns[hidden],#board .archive[hidden]{display:none}
+/* the board's Archive: the tickets done before its cutoff, a page at a time */
+#board .archive{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3) var(--s4) var(--s4);overflow:auto}
+#board .archive .since{font:var(--t-sm) var(--sans);color:var(--muted)}
+#board .archive .row{display:grid;grid-template-columns:max-content 1fr max-content max-content;gap:var(--s3);align-items:baseline;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);background:color-mix(in srgb,var(--panel-2) 70%,transparent);cursor:pointer;font:var(--t-sm) var(--sans)}
+#board .archive .row .address,#board .archive .row .when{font:var(--t-xs) var(--mono);color:var(--muted)}
+#board .archive .row .resolution{grid-column:1/-1;color:var(--muted)}
+#board .archive .more{align-self:start}
 #board .column{display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel-2) 70%,transparent);border:1px solid var(--line);border-radius:var(--r-lg)}
 #board .column .head{display:flex;justify-content:space-between;align-items:center;padding:var(--s3) var(--s3) var(--s2);font:600 var(--t-sm) var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 #board .column .tally{min-width:24px;text-align:center;padding:2px 7px;border-radius:var(--r-pill);background:var(--panel);border:1px solid var(--line-2);color:var(--text);font:var(--t-xs) var(--mono)}
@@ -1623,8 +1631,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .map2d g.agents2d{will-change:filter}
 .map2d .flows2d .record{fill:var(--record);stroke:var(--spark);stroke-width:.6px}
 .map2d .flows2d .ring{fill:none;stroke:var(--record);stroke-width:1.4px}
-/* The mascot's word bubble, over the figure wherever it is drawn: eased in and out, one line or two, never in the way
- * unless it has something to click. */
+/* The box the mascot's reply field opens in, over its head wherever it is drawn, figures/ask.js: eased in and out. */
 .mascot-bubble{position:fixed;left:0;top:0;z-index:40;max-width:260px;padding:6px 10px;border-radius:12px;
   background:var(--panel-2);border:1px solid var(--line-2);color:var(--text);font:500 var(--t-sm,13px)/1.35 var(--sans);
   box-shadow:var(--lift-2);pointer-events:none;opacity:0;
@@ -1633,16 +1640,25 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .mascot-bubble::after{content:'';position:absolute;left:50%;bottom:-6px;width:10px;height:10px;margin-left:-5px;
   background:var(--panel-2);border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);transform:rotate(45deg)}
 .mascot-bubble.on{opacity:1;transform:translate(-50%,calc(-100% - 10px)) scale(1)}
-.mascot-bubble.on.clickable{pointer-events:auto;cursor:pointer}
-.mascot-bubble.clickable:hover{border-color:var(--signal)}
-.mascot-bubble.drawn:not(.asking){max-width:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none;
-  transform:translate(calc(-1 * var(--tipx)),calc(-1 * var(--tipy) - 4px)) scale(.92);transform-origin:var(--tipx) var(--tipy)}
-.mascot-bubble.drawn.on:not(.asking){transform:translate(calc(-1 * var(--tipx)),calc(-1 * var(--tipy) - 4px)) scale(1)}
-.mascot-bubble.drawn:not(.asking)::after{display:none}
-.mascot-bubble.drawn canvas{display:block}
-.mascot-bubble.drawn .said{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .mascot-bubble.asking{pointer-events:auto;display:flex;flex-direction:column;gap:6px;max-width:300px}
 .mascot-bubble .reply{width:240px;min-height:28px;padding:0 8px;font:inherit}
+/* Word bubbles, figures/bubble3d.js: what agents and the mascot say, one layer over both maps. Each bubble is placed
+ * by its middle, `transform` written each frame; its SVG body overflows that point, and its tail runs to the speaker.
+ * The ink layer is stroked under the paper, so only the outline's outer half shows, one weight around body and tail.
+ * The bubbles belong to the maps: z-index 1 puts them over both maps and their figures, which stack at auto, and the
+ * met sign, and under everything drawn over a map, its cards and panels (2 and up) and every window, menu and the chat. */
+#bubbles{position:fixed;inset:0;z-index:1;pointer-events:none;contain:strict}
+.wbubble{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0;will-change:transform}
+.wbubble svg{position:absolute;display:block}
+.wbubble .shade{fill:#14161e;opacity:.28}
+.wbubble .ink{fill:#111;stroke:#111;stroke-linejoin:round}
+.wbubble .words{fill:#111;font-weight:800;text-anchor:middle;dominant-baseline:central;letter-spacing:.3px}
+.wbubble.clickable svg{pointer-events:auto;cursor:pointer}
+.wbubble .said,#bubbles .heard{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* Who leads the mascot, said quietly: the agent speaking through it named over its words. */
+.wbubble[data-name]:not([data-name=""])::before{content:attr(data-name);position:absolute;left:calc(var(--w) / -2);
+  bottom:calc(var(--h) / 2 + 8px);white-space:nowrap;font:700 18px/1.3 var(--sans);text-transform:capitalize;
+  letter-spacing:.02em;color:var(--text);opacity:.6}
 @media (prefers-reduced-motion: reduce){.mascot-bubble{transition:none}}
 /* The next step once an intake the page followed finishes, intake.js `offerNext`: one card near the top of the map,
  * below the intake's bar and the agents list, so neither is covered. */
@@ -2297,10 +2313,8 @@ html.frame .viewslot #viewbar{position:static}
 #helpdesk .log{padding:var(--s3) var(--s3) var(--s4);gap:6px;scroll-behavior:auto;overscroll-behavior:contain}
 #helpdesk .log:focus{outline:none}
 #helpdesk .log > *{flex-shrink:0}  /* a long thread scrolls; no row is squeezed to fit, as a clamped thought would be */
-/* Who leads the mascot, said quietly: the agent speaking through it named over its words, and its 2D figure's faint
- * glow while the agent drives it (the 3D figure has a faint ring at its feet). */
-.mascot-bubble[data-name]:not([data-name=""])::before{content:attr(data-name);display:block;margin-bottom:1px;
-  font:600 var(--t-xs)/1.3 var(--sans);text-transform:capitalize;letter-spacing:.02em;opacity:.6}
+/* Who leads the mascot, said quietly: its 2D figure's faint glow while an agent drives it (the 3D figure has a faint
+ * ring at its feet); the agent is named over the words it says through it, `.wbubble[data-name]`. */
 .mascot2d.driven image{filter:drop-shadow(0 0 3px color-mix(in srgb,var(--signal) 70%,transparent))}
 /* An MCP App view in the thread, under the call that showed it; in a panel of its own once popped out; the gallery. */
 #helpdesk .log > .mcpapp,#helpdesk .log > .appgallery{align-self:stretch;display:grid;gap:0;border:1px solid var(--line-2);border-radius:var(--r-lg);
@@ -2555,14 +2569,14 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
  * light inside its top edge, a shade along its foot where the thick pane turns away, and its elevation. It gives up the
  * border it was given, which between its lines and its hairline showed as a second ring; a colored edge that says
  * something, a toast's or a notice's, stays. */
-:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,.mascot-bubble:not(.drawn:not(.asking)),
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,#reviewNotice .notice,.intakebar,.mascot-bubble,
   .wsghost,.voice-ask,.voice-note,.voice-wake,.hovercard,.tip3d,#helpdesk .latest,
   .window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
   background:var(--glass-pop);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);
   box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-2)}
 :root[data-theme$="glass"] :is(.window,#board,#helpdesk,.toast,.banner,.emptystage .card,.nextcard,.sessionpop,.dockmenu){
   box-shadow:inset 0 1px 0 var(--glass-rim),inset 0 -1px 0 var(--glass-pop-under),var(--lift-3)}
-:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble:not(.drawn:not(.asking)),.wsghost,.voice-ask,.voice-note,
+:root[data-theme$="glass"] :is(.surface,.menu,.listbox,.slash,#refPop,.agents,.mascot-bubble,.wsghost,.voice-ask,.voice-note,
   .voice-wake,.hovercard,.tip3d,.window,#board,#helpdesk,.emptystage .card,.nextcard,.sessionpop,.dockmenu){border-color:transparent}
 /* A pane docked into the workspace lies in it as a layout pane does. */
 :root[data-theme$="glass"] :is(.wsbody > .window.docked,.wsbody > #helpdesk){background:transparent;box-shadow:none}

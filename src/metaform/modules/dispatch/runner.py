@@ -172,7 +172,8 @@ STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the
 LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
 # how a session ends when its run is a fault: it crashed, or its agent ended by itself with the ticket open
-FAULTED = ('it failed', 'it did not start', 'the agent ended with exit code')
+EXITED = 'the agent ended with exit code'  # how a session ends when its agent ended by itself
+FAULTED = ('it failed', 'it did not start', EXITED)
 RELEASE_LIMIT = 90.0  # the one wait for a new process to release: its start, and two writes that may each wait on a lock
 RELEASE = ('import json, sys; from metaform.data import Store; from metaform.modules.dispatch import release; '
            "given = json.loads(sys.argv[1]); release(Store(given.pop('project'), module='dispatch'), **given)")
@@ -3535,7 +3536,9 @@ class Session:
     async def fault_raised(self) -> None:
         """A run that crashed, or whose agent ended by itself with its ticket open, is a fault: published as
         `fault.raised` with the ticket it ran, for autoticket to file as a ticket to fix, or to count on this ticket when
-        autoticket filed it. A login the agent needs is the person's, raised to them as its own signal, so no fault."""
+        autoticket filed it. A login the agent needs is the person's, raised to them as its own signal, so no fault. An
+        agent that ended by itself is read against its ticket once: one that closed it and exited before the runner
+        heard the close finished its work, so no fault."""
         if self.probe or self.login_needed or not self.how.startswith(FAULTED):
             return
         tail = '\n'.join(self.stderr_tail)
@@ -3544,6 +3547,8 @@ class Session:
                                                          f'Its last stderr:\n{tail}' if tail else '') if part),
                    'reproduce': f'metaform dispatch start {self.work_id} {self.agent}', 'work_id': self.work_id}
         try:
+            if self.how.startswith(EXITED) and (await asyncio.to_thread(ticket, self.store, self.work_id)).done:
+                return
             await self.ctx.publish_async('fault.raised', payload)
         except Exception as error:  # noqa: BLE001  a fault that cannot be published never keeps the runner up
             sys.stderr.write(f'The fault of work {self.work_id} could not be published: {error}\n')
@@ -4484,7 +4489,7 @@ class Session:
         code = process.returncode
         if not self.ending:
             said = self.tail()
-            await self.end(f'the agent ended with exit code {code}' + (f'; its last stderr: {said}' if said else ''))
+            await self.end(f'{EXITED} {code}' + (f'; its last stderr: {said}' if said else ''))
 
     def changed_elsewhere(self, payload: dict[str, Any]) -> None:
         """map.changed from another process, handed over by the base's listener, BASE-053, acted on only when it can

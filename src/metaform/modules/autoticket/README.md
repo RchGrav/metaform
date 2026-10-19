@@ -44,7 +44,7 @@ A ticket is filed by the module itself, never by a verb: see Filing below.
 
 ## Settings
 
-- `autoticket_open_most`, 5: how many tickets autoticket filed may be open at once; each further kind of error waits as a group and is filed, oldest first, when one of them is done.
+- `autoticket_open_most`, 5: how many tickets autoticket filed may be open and not held at once; each further kind of error waits as a group and is filed, oldest first, when one of them is done. A held ticket waits for the person and takes no place; released, it takes one.
 - `autoticket_similarity`, `0.45`: the Dice coefficient at which two entries are the same kind, onhold's value. A text setting, since number settings are whole numbers, checked to be above 0 and at most 1.
 - `autoticket_capture`, `errors`: `errors` counts the entries holding a level word, ERROR, FATAL, CRITICAL, SEVERE or PANIC, `level=error`, a Python traceback's start or a word ending in Exception, and those a capture rule matches; `rules` counts only those a capture rule matches.
 
@@ -54,7 +54,7 @@ The watched logs and the capture rules are records, kept with `add`, `remove`, `
 
 It subscribes to two topics:
 
-- `fault.raised`, published where Metaform fails in a way no one expected: the web server's `Handler.fault` (a 500, with its traceback), the page's errors through `/api/page-faults` (`core/errors.js` `pageFailed`, and `readFailed` for reads that did not fail with the server's own 500), the MCP server when a module's verb raises, and on every `metaform_feedback`, and dispatch's runner when a run failed, did not start, or its agent ended by itself with the ticket open. Its payload says what failed and where: `source`, `message`, `detail`, `file`, `reproduce`, `work_id` (the ticket of the agent whose call failed) and `count`.
+- `fault.raised`, published where Metaform fails in a way no one expected: the web server's `Handler.fault` (a 500, with its traceback), the page's errors through `/api/page-faults` (`core/errors.js` `pageFailed`, and `readFailed` for reads that did not fail with the server's own 500), the MCP server when a module's verb raises, and on every `metaform_feedback`, and dispatch's runner when a run failed, did not start, or its agent ended by itself with the ticket open. Its payload says what failed and where: `source`, `message`, `detail`, `file`, `reproduce`, `work_id` (the ticket of the agent whose call failed) and `count`. The page's errors of one request come as one event whose `faults` lists them, so they cost one pass. A pass the event ran returns `tickets`, the tickets its faults were filed as or counted on, so the MCP server answers a failed verb with the ticket that will fix it rather than asking for feedback on it.
 - `map.changed`, to file a waiting group when a ticket it filed is done. It acts only on a change naming the `work` table, of kind `ticket`, and of a ticket it filed; one that does not say what it concerns may have closed any, and is looked at once.
 
 It publishes `map.changed` after it makes groups from a log, so an open page shows them, and announces each ticket it files or counts on.
@@ -66,7 +66,7 @@ Faults and log entries are grouped by onhold's method. A fault's fingerprint is 
 - A group never seen before is filed at once as a ticket of kind broken, at the element that owns its file: the one whose `path=` ref names it, else one whose ref ends with the path named (the page names `page/app/...`), else the element citing a file in the deepest folder the two share, else the project's top node. Its task, the `ticket` prompt, holds the message, what raised it, the count, first and last seen, a sample with secrets masked, how to reproduce it, and that the fix must come with a check proving the error no longer happens.
 - A group that recurs while its ticket is open has its line in that ticket's note rewritten: `autoticket group <n>: seen <count> times, first <t>, last <t>: <message>`.
 - A fault raised by an agent working a ticket autoticket filed (`work_id`) is counted on that ticket, never filed anew.
-- At most `autoticket_open_most` tickets it filed are open at once; the rest wait as groups.
+- At most `autoticket_open_most` tickets it filed are open and not held at once; the rest wait as groups. A held ticket starts no agent work, so it takes no place, and faults keep being filed while the person has not read the held ones.
 - Feedback, whose answer is a design choice, and an error whose message names deleting or removing data, are filed held in Backlog, the why at the start of the note. The task also tells the agent to stop and leave the choice to the person when the fix turns out to be one.
 - A group seen again after its ticket is done waits to be filed anew.
 

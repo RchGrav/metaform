@@ -4,7 +4,7 @@ Faults reach it as `fault.raised` events from the web server, the page, the MCP 
 feedback, `faults.py`; log entries from the logs it reads as they grow and never keeps, `sources.py`, one process at a
 time reading each log under a lease, `watch.py`. Both are grouped by the similarity method of onhold's log viewer,
 `grouping.py`. A group never seen before becomes one ticket at once, at the element that owns its file; a recurring one
-is counted on its open ticket; at most `autoticket_open_most` are open at once.
+is counted on its open ticket; at most `autoticket_open_most` that are not held are open at once.
 """
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def _similarity_check(value: Any, folder: Any) -> list[str] | None:
 
 
 settings.number('autoticket_open_most', 5, min=1, max=100, label='Open at most',
-                help='How many tickets autoticket filed may be open at once; each further kind of error waits as a '
-                     'group and is filed when one of them is done.')
+                help='How many tickets autoticket filed may be open and not held at once; each further kind of error '
+                     'waits as a group and is filed when one of them is done. A held ticket takes no place.')
 settings.text('autoticket_similarity', '0.45', check=_similarity_check, label='Similarity',
               help='The Dice coefficient at which two entries are the same kind of error, above 0 and at most 1; '
                    '0.45 is onhold\'s value.')
@@ -289,8 +289,8 @@ MODULE = Module(
             'and keys; Metaform stores no credentials. A log is read as it grows and never kept: each group keeps one '
             'example with secrets masked, its counter, when it was first and last seen, and the agents and tickets at '
             'work when it first appeared. metaform autoticket watch reads them until stopped. At most '
-            'autoticket_open_most tickets it filed are open at once; feedback, and an error whose fix may remove data, '
-            'are filed held for the person.',
+            'autoticket_open_most tickets it filed are open and not held at once; feedback, and an error whose fix may '
+            'remove data, are filed held for the person and take no place.',
     verbs=(
         Verb('add', add, 'Watch a log: a local file, or ssh://<host>/<absolute path>.', nouns=(LOG,),
              examples=(('metaform autoticket add /var/log/app.log', 'Watches a local log from its end now.'),

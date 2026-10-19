@@ -176,6 +176,23 @@ settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful'
                 details='calm only calls your attention and never wanders; playful wanders now and then and nudges a '
                         'node it passes; chaotic does both more often. It never takes the pointer or blocks a click.',
                 label='Mascot mischief', heading='Mascot and agents')
+# The board shows the work in hand, not the project's history: the open tickets and those done in the last few days.
+# Older done tickets stay records at their parts of the map, read with `map work open=false`, the ticket history and the
+# board's Archive; the server reads only what the board shows, so a project with hundreds of done tickets opens at once.
+settings.number('board_done_days', 7, min=0, max=3650,
+                help='Days a done ticket stays on the board; older ones are in its Archive.',
+                details="0 shows no done ticket. Nothing is deleted: an archived ticket is read in the board's "
+                        'Archive, with metaform map work open=false and in its part\'s ticket history.',
+                label='Done tickets stay on the board for', heading='Board')
+# The board's line in the sand: every ticket done before this time is in the Archive, whatever board_done_days says.
+# The board's Line in the sand sets it to now; resetting it brings back the done tickets board_done_days shows.
+settings.text('board_line', '', person_only=True,
+              help="The board's line in the sand: tickets done before this time are in its Archive.",
+              details='Set to now by Line in the sand on the board; empty, board_done_days alone decides. Nothing is '
+                      'deleted either way.',
+              label='Board line in the sand', category='advanced', heading='Board')
+
+
 def _glyph_choices(ctx: Context) -> list[str]:
     """Each agent type dispatch starts, by its dispatch_agent choices, with each character there is."""
     agent = settings.SCHEMA.get('dispatch_agent')

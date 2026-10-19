@@ -1,0 +1,1 @@
+{"tool_use":"Bash","command":"uv run ruff check src/metaform/modules/mcp/server.py src/metaform/modules/autoticket/faults.py src/metaform/modules/mcp/tests/test_mcp.py 2>&1 | head -12","result":"ISC004 Unparenthesized implicit string concatenation in collection\n    --> src/metaform/modules/mcp/tests/test_mcp.py:3609:40 ... help: Did you forget a comma?"}

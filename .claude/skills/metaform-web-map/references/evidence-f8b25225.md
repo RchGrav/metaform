@@ -1,0 +1,1 @@
+Memory entity "Person's last click told to the system agent (graphical#124)": "The browser test test_what_the_person_last_clicked_... clicks the 3D mascot only after swapping the 3D map back to the large area, because the open chat dock covers the mascot in the small area."

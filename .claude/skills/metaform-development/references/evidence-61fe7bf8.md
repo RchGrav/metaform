@@ -1,0 +1,1 @@
+Never `git add -A`, `commit -a` or a whole-tree commit in the shared checkout (metaform-development) vs A ticket completion commits the whole shared tree under the person's git name (metaform-ticket-dispatch)

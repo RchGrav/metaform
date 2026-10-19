@@ -1,0 +1,1 @@
+I dont need to approve every ticket.. that isnt automated..   I didnt ask to approve every ticket, there can be an option if people want to turn that on but the fact that we understand the functionali...  Also errors that happen should be autoraised as tickets, and fixed automatically our goal is to make projects self healing

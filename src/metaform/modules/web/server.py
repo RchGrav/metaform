@@ -233,7 +233,7 @@ ADMIN_ROUTES = frozenset({
     '/api/activate-base',
     '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
-    '/api/mcp-call',
+    '/api/mcp-call', '/api/board-line',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
 ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech-voices')
@@ -1085,9 +1085,18 @@ class Handler(BaseHTTPRequestHandler):
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
         doing(f'the {name} read of {given.get("project", "")}')
+        arguments = {key: value for key, value in given.items() if key not in RESERVED and key != 'board'}
+        board = given.get('board') if name == 'work' else None
+        cutoff = ''
         try:
+            if board is not None:  # the board reads what it shows, or its archive a page at a time, never every ticket
+                cutoff = board_cutoff(given)
+                if board == 'archive':
+                    arguments.update(open='false', done_before=cutoff)
+                else:
+                    arguments.update(done_since=cutoff)
             store = opened(given)
-            found = query_read(store, name, {key: value for key, value in given.items() if key not in RESERVED})
+            found = query_read(store, name, arguments)
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
         if found is None:
@@ -1096,6 +1105,8 @@ class Handler(BaseHTTPRequestHandler):
             found = with_modules(given, found)
         if name == 'work':
             found = with_glyphs(given, found)
+            if board is not None and isinstance(found, Page):
+                found = {**cast(Page[WorkRecord], found).to_dict(), 'cutoff': cutoff}
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def memory_read(self, name: str, given: dict[str, str]) -> None:
@@ -1331,7 +1342,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-new': self.dispatch_new,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
-                  '/api/dispatch-autostart': self.set_dispatch_autostart,
+                  '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
                   '/api/intake-finish': self.intake_finish, '/api/intake-discard': self.intake_discard,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
@@ -1866,13 +1877,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def page_faults(self, given: dict[str, Any]) -> None:
         """The page's errors, core/errors.js: what failed on the page and the reads that failed, those of one second in
-        one request, each with how many times it came. Each is published as a fault, for autoticket to file as a ticket
-        to fix, once the page has its answer."""
+        one request, each with how many times it came. They are published together as one fault event, for autoticket
+        to file each as a ticket to fix in one pass, once the page has its answer."""
         faults, named = given.get('faults'), given.get('project')
         if not isinstance(faults, list) or not named:
             return self.send(400, {'error': "The page's faults are a list, with the project they happened on."})
         taken = [cast(dict[str, Any], one) for one in cast(list[Any], faults)[:PAGE_FAULTS] if isinstance(one, dict)]
         self.send(200, {'taken': len(taken)})
+        raised: list[dict[str, Any]] = []
         for one in taken:
             message, count = str(one.get('message') or '')[:2000], one.get('count')
             if not message:
@@ -1881,13 +1893,15 @@ class Handler(BaseHTTPRequestHandler):
             where = re.sub(r':\d+(?::\d+)?$', '', str(one.get('where') or '') or (framed[0] if framed else ''))
             where = where.lstrip('/')
             read = str(one.get('read') or '')
-            self.fault_raised(named, {
+            raised.append({
                 'source': 'page', 'message': f'{read} could not be read: {message}' if read else message,
                 'detail': str(one.get('stack') or '')[:8000], 'file': where,
                 'count': count if isinstance(count, int) and count > 0 else 1,
                 'reproduce': (f'Open the web page on project {named}: it reads /api/{read}.' if read else
                               f'Open the web page on project {named}' + (f'; the error came from {one["where"]}.'
                                                                          if one.get('where') else '.'))})
+        if raised:
+            self.fault_raised(named, {'faults': raised})
 
     def problem_report(self, given: dict[str, Any]) -> None:
         """A tester's problem report, as `metaform report` makes it, with the page's browser and console errors,
@@ -1990,6 +2004,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.gui.schedule_dispatch(project.project_id, chosen_base(given))
         self.dispatch_autostart(given)
+
+    def board_line(self, given: dict[str, Any]) -> None:
+        """The board's Line in the sand: board_line set to now, so every ticket done up to now is in the Archive and
+        none is deleted; with `line`, set to that, as the Undo puts the one before back. Answers with the line it set
+        and the one before."""
+        project = home.project(str(given.get('project', '')))
+        if project is None:
+            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
+                                   'next': 'metaform list projects'})
+        folder, line = Path(project.path), given.get('line', home.now())
+        if not isinstance(line, str):
+            return self.send(400, {'error': 'The line in the sand is a time as text.'})
+        was = str(settings.value('board_line', folder) or '')
+        try:
+            settings.checked('board_line', line, folder, typed=True)
+            settings.put('board_line', line, folder)
+        except (settings.SettingError, Stop) as error:
+            return self.refuse(error, 400)
+        self.send(200, {'line': line, 'was': was})
 
     def dispatch_agents(self, given: dict[str, Any]) -> None:
         """The agents the page offers to start, VIEW-039: each one's name, whether its start command is found on this
@@ -3060,6 +3093,18 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
     for module, value in added.items():
         data.setdefault(module, value)
     return data
+
+
+def board_cutoff(given: dict[str, str]) -> str:
+    """The time the board's done tickets start at: board_done_days ago, or the board's line in the sand when that is
+    later. A ticket done before it is in the board's Archive; times compare as text, as `home.now` writes them."""
+    project = home.project(given.get('project', ''))
+    if project is None:
+        raise Stop(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
+    folder = Path(project.path)
+    days = int(settings.value('board_done_days', folder))
+    since = datetime.fromtimestamp(time.time() - days * 86400, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return max(since, str(settings.value('board_line', folder) or ''))
 
 
 def with_glyphs(given: dict[str, str], found: Any) -> Any:

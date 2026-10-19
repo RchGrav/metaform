@@ -1,0 +1,1 @@
+{"type":"text","text":"The mascot second-ask fix (9f534c20) has no test yet. Its gap is confirmed: a mascot question waiting on the chat box's failed call stays unsent, and you aren't told."}

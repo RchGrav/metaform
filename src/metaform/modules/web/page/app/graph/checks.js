@@ -299,7 +299,7 @@ function mascotState() {
     holding: MASCOT.holding?.id || null, x: MASCOT.pos.x, y: MASCOT.pos.y, z: MASCOT.pos.z,
     px: MASCOT.mesh ? onScreen(MASCOT.mesh) : 0,
     shown2d: Boolean(MASCOT2D.g?.isConnected), x2d: MASCOT2D.x, y2d: MASCOT2D.y, ...mascotScreen(),
-    bubble: BUBBLE.el?.classList.contains('on') ? BUBBLE.el.textContent : null,
+    bubble: BUBBLE.seen || BUBBLE.el?.classList.contains('on') ? BUBBLE.text : null,
     told: [...ATTN.seen]};
 }
 function at3d(id) {
