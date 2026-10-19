@@ -538,6 +538,8 @@ MODULE = Module(
     verbs=(
         Verb('roles', roles, 'List the roles of the agents Metaform starts, with the prompts each is sent.',
              effect='read'),
+        Verb('specialists', authored.SERVICE.specialists, 'List reusable expertise and role URLs, without duty bodies.',
+             effect='read'),
         Verb('role', role, 'Read one role: what it is for, each prompt it is sent with its text and version, its '
                            'tools and authority, and the agents running as it.',
              nouns=(Noun('name', 'The role: intake, system, sentinel, talk, prep or worker.'),), effect='read'),

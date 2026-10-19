@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from metaform import settings
+from metaform import jev, settings
+from metaform.data import functional_context
 from metaform.module import AgentRoleDefinition, Context, Module, Noun, Provides, Resource, Subscription, Verb
 
 from .bmad import definitions as bmad_definitions
 from .bmad import inspect as bmad_inspect
+from .routing import roles_changed
 from .specifications import change as publish_change
 from .specifications import inspect_change
 from .state import ENDED, SERVICE, TABLES, fingerprint, identity, own, requested, row_for, work_changed, work_read
@@ -47,7 +49,7 @@ ROLE_DUTIES = (
     ('release', 'Prepare the assigned release candidate and materials.', 'orchestration:release'),
     ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'orchestration:role_creator'),
 )
-ROLES = tuple(AgentRoleDefinition(name, purpose, ('orchestration:common', prompt))
+ROLES = tuple(AgentRoleDefinition(name, purpose, ('orchestration:common', prompt), specialist=False)
               for name, purpose, prompt in ROLE_DUTIES)
 
 OBJECT = {'type': 'object', 'additionalProperties': True}
@@ -120,6 +122,23 @@ def specialist_call(ctx: Context) -> Any:
     return SERVICE.delegate(ctx, waiting=True)
 
 
+def route(ctx: Context) -> Any:
+    return SERVICE.route(ctx, str(ctx.nouns['work']), refresh=bool(ctx.nouns.get('refresh')))
+
+
+def credits(ctx: Context) -> Any:
+    refresh = bool(ctx.nouns.get('refresh'))
+    result = jev.openrouter_credits(refresh=refresh, fetch=refresh)
+    if refresh and result['status'] == 'available':
+        roles_changed({'project': ctx.project}, ctx)
+    return result
+
+
+def functionality(ctx: Context) -> Any:
+    store = ctx.require_store()
+    return functional_context(store, store.ticket(str(ctx.nouns['work'])).work)
+
+
 CALL_NOUNS = (ROLE, Noun('task', 'The specialist contribution and relevant context.'), ASSIGNMENT, AT, RESULT,
               WAIT, KEY, CANDIDATE,
               Noun('purpose', 'Purpose of a requested new specialty.', required=False),
@@ -132,15 +151,22 @@ MODULE = Module(
     tables=TABLES, work_read=work_read,
     provides=(Provides('agent.roles', ROLES), Provides('agent.roles', bmad_definitions),
               Provides('orchestration', SERVICE)),
-    subscriptions=(Subscription('map.changed', work_changed),),
+    subscriptions=(Subscription('map.changed', work_changed), Subscription('agent.role.changed', roles_changed)),
     resources=(Resource('metaform://orchestration/assignment/{assignment}', 'Assignment',
                         'Current owner, role, mode, specification and return destination.', 'inspect'),
                Resource('metaform://orchestration/bmad', 'Installed BMAD roles',
                         'Actual installed entry points, versions, menus and managed role calls.', 'bmad')),
     verbs=(
+        Verb('functionality', functionality, 'Read a ticket’s local requirements and dependents as a named graph and Markdown.',
+             effect='read', nouns=(Noun('work', 'Ticket id.'),)),
+        Verb('route', route, 'Select reusable specialist expertise, or refer the ticket to triage.',
+             nouns=(Noun('work', 'Ticket id.'),
+                    Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
+        Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',
+             effect='read', nouns=(Noun('refresh', 'Fetch the current account balance.', 'bool', required=False),)),
         Verb('claim', SERVICE.claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
              nouns=(Noun('work', 'Existing root work id.'),
-                    Noun('role', 'Specialist role name or metaform URI; default implementer. Missing roles are created.', required=False),
+                    Noun('role', 'Reusable specialist name or URI; omitted uses the selected specialist. Missing roles are created.', required=False),
                     RESULT, SPEC, CANDIDATE,
                     Noun('mode', 'Adaptive or strict; absent uses the project default.', required=False),
                     Noun('session', 'Session binding for a local user-issued claim.', required=False),

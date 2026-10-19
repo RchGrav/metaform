@@ -11,6 +11,7 @@ from ..errors import NewerStore, StoreError
 from ..sqlite import SCHEMA_VERSION
 from . import history, prompts
 from .exchange import export_document, import_document
+from .functional import functional_context
 from .ids import as_object, new_id
 from .names import reading, roots, short_name
 from .numbers import parse as parse_reference
@@ -206,6 +207,7 @@ __all__ = [
     'as_object',
     'author',
     'export_document',
+    'functional_context',
     'history',
     'import_document',
     'is_work',

@@ -3621,10 +3621,12 @@ class Session:
         self.runner = self.runner or secrets.token_hex(8)
         from .orchestration import assignment, service
         self.assignment = await asyncio.to_thread(assignment, self.ctx, self.work_id)
-        native = service(self.ctx) is not None
+        owner = service(self.ctx)
+        native = owner is not None
+        if owner is not None and self.role == 'worker' and self.assignment is None:
+            self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id)
         self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
-            'metaform://role/triage' if self.role in ('system', 'intake') and native else
-            'metaform://role/implementer' if self.role == 'worker' and native else None)
+            'metaform://role/triage' if self.role in ('system', 'intake') and native else None)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
                     **({'METAFORM_AUTHORED_ROLE': self.authored_role} if self.authored_role else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
@@ -3726,7 +3728,7 @@ class Session:
         owner = service(self.ctx)
         if owner is not None and not self.prep:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id,
-                role=(self.authored_role or 'implementer').removeprefix('metaform://role/'),
+                role=self.authored_role.removeprefix('metaform://role/') if self.authored_role else None,
                 session_id=str(self.session_id), runner=self.runner)
             self.authored_role = str(cast(dict[str, Any], self.assignment)['authored_role_uri'])
         self.acp.update(authored_role_uri=self.authored_role,

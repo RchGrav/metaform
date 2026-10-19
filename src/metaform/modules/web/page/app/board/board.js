@@ -117,8 +117,8 @@ function card(ticket, place, total) {
     if (await wrote('/api/move', {work_id: ticket.id, column: columnOf(ticket), position})) await renderBoard();
   };
   const open = () => {
-    const element = partAt(ticket.address);
-    if (element) { select(element.id, true); history(element.id); }
+    const project = S.project, base = S.base || '';
+    import('/page/app/board/detail.js').then(({ticketDetail}) => ticketDetail(ticket.id, project, base));
   };
   const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.kind || 'none',
     onclick: open},
@@ -216,6 +216,7 @@ function cardActs(ticket, place, total, move) {
     waiting(ticket) ? h('button', {class: 'btn sm primary start', type: 'button',
       title: 'Start an agent on this ticket', onclick: start}, 'Start agent') : null,
     chatButton({id: ticket.id}, ticketPart(ticket)),
+    h('button', {class: 'btn sm quiet', type: 'button'}, 'Inspect'),
     ticket.done ? null : h('button', {class: 'btn sm quiet cancel', type: 'button',
       title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled', onclick: cancel}, 'Cancel'),
     h('span', {class: 'grow'}),

@@ -597,6 +597,12 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 #task .acts{display:flex;gap:6px}
 /* The floating window messages and a node's work history are read in, VIEW-030 and VIEW-036. */
 #float{width:420px;max-height:75vh}
+#ticketDetail{max-height:85vh;width:min(900px,calc(100vw - 24px))}
+#ticketDetail .body{overflow:auto;gap:var(--s3)}
+#ticketDetail form{display:grid;gap:var(--s3)}
+#ticketDetail label{display:grid;gap:var(--s1)}
+#ticketDetail textarea,#ticketDetail input{width:100%;box-sizing:border-box}
+#ticketDetail .ticket-graph{overflow:auto}
 #float > .body{gap:var(--s3)}
 #float .body .when{font:var(--t-xs) var(--mono);color:var(--muted)}
 .map2d .node.work-question,.map2d .cluster.work-question,.map2d path.work-question{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}

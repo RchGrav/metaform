@@ -64,7 +64,7 @@ function copyByHand(said) {
  * and links to web pages, opened in a new tab. References in the words are linked as everywhere else. */
 const BLOCK_START = /^\s*(```|~~~|#{1,6}\s|>|[-*+]\s|\d{1,3}[.)]\s|([-*_])(\s*\2){2,}\s*$)/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,3}[.)])\s+/;
-function richText(text) {
+export function richText(text) {
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n'), out = [];
   let at = 0;
   while (at < lines.length) {

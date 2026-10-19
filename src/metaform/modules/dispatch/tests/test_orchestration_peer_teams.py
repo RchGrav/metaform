@@ -20,6 +20,15 @@ def test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_o
     b.log, b.node = a.log, Node('element', 'code.ledger')
     a.store.add_element('parts', 'code.ledger')
     b.id = a.store.add_work(b.node, 'unbuilt', task='Review the independent ledger.').id
+    from metaform.module import context
+    from metaform.modules.agents.roles import SERVICE as roles
+    from metaform.modules.orchestration.state import SERVICE
+    ctx = context('orchestration', project_folder, project='proj')
+    roles.publish(ctx, 'runtime_engineering', 'Concurrent runtimes and event delivery.',
+                  'Establish event delivery and runtime ownership through reproducible observations.')
+    for work in (a.id, b.id):
+        SERVICE.ensure(ctx, work, role='runtime_engineering')
+        a.store.move_work(work, 'todo', kept=True)
     gates_a, gates_b = tmp_path / 'a-turns', tmp_path / 'b-turns'
     gates_a.mkdir()
     gates_b.mkdir()
@@ -72,7 +81,7 @@ def test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_o
         ga = next(one for one in assignments if one['work_id'] == a.id)
         gb = next(one for one in assignments if one['work_id'] == b.id)
         assert ga['team_id'] != gb['team_id']
-        assert ga['authored_role_uri'] == gb['authored_role_uri'] == 'metaform://role/implementer'
+        assert ga['authored_role_uri'] == gb['authored_role_uri'] == 'metaform://role/runtime_engineering'
         assert child['team_id'] == ga['team_id']
         discovery = json.loads(command('dispatch', 'peers', env=ea).stdout)['peers']
         assert {one['work_id'] for one in discovery} == {a.id, b.id, child['work_id']}

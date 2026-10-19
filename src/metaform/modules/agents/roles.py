@@ -74,6 +74,15 @@ def _fingerprint(one: dict[str, Any]) -> str:
 class RoleService:
     """Public `agent.role` service. Resolution, binding by orchestration, and delivery are distinct operations."""
 
+    def specialists(self, ctx: Context) -> list[dict[str, Any]]:
+        """Only reusable expertise, with no duty bodies or operational roles in the selection context."""
+        declared = definitions(_own(ctx))
+        counts: dict[str, int] = {}
+        for _, one in declared:
+            counts[one.name] = counts.get(one.name, 0) + 1
+        return [{'name': one.name, 'purpose': one.purpose, 'uri': f'metaform://role/{one.name}', 'provider': owner}
+                for owner, one in declared if one.specialist and counts[one.name] == 1]
+
     def resolve(self, ctx: Context, name: str, *, bindings: dict[str, str] | None = None) -> dict[str, Any]:
         ctx = _own(ctx)
         name = name.removeprefix('metaform://role/')
@@ -93,7 +102,7 @@ class RoleService:
             result['problems'] = [f'Role {name} is claimed by providers: {", ".join(owner for owner, _ in matched)}.']
             return result
         owner, definition = matched[0]
-        result.update(provider=owner, purpose=definition.purpose)
+        result.update(provider=owner, purpose=definition.purpose, specialist=definition.specialist)
         if ctx.store is not None:
             with ctx.store.tables() as tx:
                 key = {'name': name, 'provider': owner}

@@ -107,6 +107,7 @@ CACHE = 'jev.sqlite3'
 CACHE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS answers(key TEXT PRIMARY KEY, answer TEXT NOT NULL, created TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS served(requested TEXT PRIMARY KEY, answered TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS credits(key TEXT PRIMARY KEY, snapshot TEXT NOT NULL);
 """
 # Decisions kept at an Address live in the project's own database beside its counters, given to a database made
 # before them on the first decision kept, as the numbers table is, so the project database's layout version holds.
@@ -168,6 +169,65 @@ def _left() -> float:
     """The seconds the next request may take: DEADLINE, or less when a `within` block ends sooner."""
     until = _until.get()
     return DEADLINE if until is None else min(DEADLINE, until - time.monotonic())
+
+
+def openrouter_credits(*, refresh: bool = False, fetch: bool = True) -> dict[str, Any]:
+    """Account credit observed on demand, cached across processes for 60 seconds; never polled.
+
+    Unknown is distinct from exhausted. The key is never persisted, and cached estimates debit observed Jev costs.
+    The account balance can also change outside Metaform, so every snapshot retains its observation time.
+    """
+    key = os.environ.get('OPENROUTER_API_KEY', '').strip()
+    empty: dict[str, Any] = {'status': 'unknown', 'remaining': None, 'observed_at': None}
+    if not key:
+        return {**empty, 'reason': 'OpenRouter key unavailable.'}
+    ident = hashlib.sha256(key.encode()).hexdigest()
+    lock = home.home() / 'run' / 'jev-credits.lock'
+    home.mkdir_private(lock.parent)
+    with home.file_lock(lock):
+        with _cache(write=False) as db:
+            row = db.execute('SELECT snapshot FROM credits WHERE key=?', (ident,)).fetchone()
+        prior = cast(dict[str, Any], json.loads(row[0])) if row else None
+        if not refresh and prior and time.time() - float(prior['observed_at']) < BREAK:
+            return prior
+        if not fetch:
+            return {**(prior or empty), 'stale': True}
+        snapshot = {**empty, 'observed_at': time.time()}
+        try:
+            remaining = _left()
+            if remaining <= 0:
+                return {**empty, 'reason': 'Credit lookup deadline elapsed.'}
+            request = urllib.request.Request('https://openrouter.ai/api/v1/credits',
+                                              headers={'Authorization': f'Bearer {key}'})
+            with urllib.request.urlopen(request, timeout=min(TIMEOUT, remaining)) as response:
+                data = json.load(response)['data']
+            total, used = float(data['total_credits']), float(data['total_usage'])
+            if not math.isfinite(total) or not math.isfinite(used) or min(total, used) < 0:
+                raise ValueError('Invalid credit figures')
+            balance = max(0.0, total - used)
+            snapshot.update(status='available' if balance > 0 else 'exhausted', remaining=balance,
+                            total_credits=total, total_usage=used, local_cost=0.0)
+        except (OSError, ValueError, KeyError, TypeError):
+            # Provider bodies can contain credentials; report the operation, never its raw response.
+            snapshot['reason'] = 'OpenRouter credit lookup unavailable.'
+        with _cache(write=True) as db:
+            db.execute('INSERT OR REPLACE INTO credits VALUES(?, ?)', (ident, json.dumps(snapshot)))
+        return snapshot
+
+
+def _debit_credit(cfg: Config, cost: float) -> None:
+    if cfg.endpoint.name != 'openrouter' or not math.isfinite(cost) or cost < 0:
+        return
+    ident = hashlib.sha256(cfg.key.encode()).hexdigest()
+    with _cache(write=True) as db:
+        row = db.execute('SELECT snapshot FROM credits WHERE key=?', (ident,)).fetchone()
+        if row:
+            snapshot = json.loads(row[0])
+            if snapshot.get('remaining') is not None:
+                snapshot['remaining'] = max(0.0, float(snapshot['remaining']) - cost)
+                snapshot['local_cost'] = float(snapshot.get('local_cost') or 0) + cost
+                snapshot['status'] = 'available' if snapshot['remaining'] > 0 else 'exhausted'
+                db.execute('UPDATE credits SET snapshot=? WHERE key=?', (json.dumps(snapshot), ident))
 
 
 def _schema_checker() -> bool:
@@ -363,6 +423,7 @@ def _request(cfg: Config, state: Any, questions: Mapping[str, Question]) -> dict
             usage = cast(dict[str, Any], reply.get('usage') or {})
             given = usage.get('cost')
             cost = float(given) if given is not None else int(usage.get('input_tokens') or 0) * INPUT_PRICE
+            _debit_credit(cfg, cost)
             model = str(reply.get('model') or cfg.model)
             raw = cast(dict[str, Any], reply['answers'])
             answers = {name: checked(question, raw[name], model, cost / len(questions))

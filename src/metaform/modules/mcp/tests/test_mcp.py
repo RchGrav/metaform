@@ -3073,7 +3073,7 @@ def chromium():
     """Headless Chromium through Playwright, a dev dependency, for the views in a frame."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as driver:
-        launched = driver.chromium.launch()
+        launched = driver.chromium.launch(executable_path=os.environ.get('METAFORM_CHROMIUM') or None)
         yield launched
         launched.close()
 

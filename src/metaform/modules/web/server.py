@@ -62,6 +62,7 @@ from metaform.data import (
     Store,
     StoreError,
     WorkRecord,
+    functional_context,
     on_base,
     plain,
     prompts,
@@ -144,7 +145,7 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # The page's modulepreload links, with what they were worked out from: the import map and module scripts, and the
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
-DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after',
+DISPATCH_CHANGES = frozenset({'work', 'messages', 'orchestration.routing', 'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after',
                               'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
                               'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
                               'dispatch.raised'})
@@ -156,7 +157,7 @@ DISPATCH_CHANGES = frozenset({'work', 'messages', 'map.glyphs', 'map.ticket_sett
 # runner's own state, working or idle, which starts nothing. A ticket's words, `note`, and its plan and steps, `step`,
 # start nothing either, so an agent editing its note or reporting a step costs the starter no pass (UX review round 1,
 # runaway F3): only `ticket` does, a ticket written, released, freed, done or given a task.
-STARTS = frozenset({'ticket', 'message', 'question'})
+STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'question'})
 UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
                       'dispatch.claims',
                       'dispatch.claim_work', 'dispatch.raised'})
@@ -1139,6 +1140,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.item({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/agent-view':
             return self.agent_view({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/ticket-detail':
+            return self.ticket_detail({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
             return self.memory_read(url.path[len('/api/memory-'):],
                                     {key: values[-1] for key, values in query.items() if key != 't'})
@@ -1717,12 +1720,60 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.send(200, {'results': [edited]})
 
+    def ticket_detail(self, given: dict[str, str]) -> None:
+        try:
+            store = opened(given)
+            work = store.ticket(given.get('work_id', '')).work
+            fields = ticket_fields(store, work)
+            graph = functional_context(store, work)
+            memories: Any = {'entities': [], 'relations': []}
+            try:
+                visible = chosen_layers(given, Path(store.project().path))
+                # Inspecting memories enables their layer for this read; node masks still apply.
+                memory_scope = {**given, 'layers': ','.join([*visible, 'memory'])} if visible else given
+                memories = module_verb(memory_scope, 'memory', 'read_graph',
+                                       {'node': f'{work.node_kind}:{work.node_id}'}, chosen=True)
+            except (Stop, StoreError) as error:
+                memories['unavailable'] = str(error)
+            ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
+            ctx.store = store
+            routing = next((owner.routing_status(ctx, work.id) for _, owner in
+                            chassis.provided(ctx.folder, 'orchestration')), None)
+            self.send(200, {'ticket': {**plain(work), **fields}, 'revision': ticket_revision(fields),
+                            'functionality': graph, 'memories': plain(memories), 'routing': routing})
+        except (Stop, StoreError) as error:
+            self.refuse(error, 404)
+
     def set_ticket(self, given: dict[str, Any]) -> None:
         """Change a ticket's preferred agent, the person's hold or its glyph, at any time. When the agent changes while
         another agent works the ticket, that agent is stopped and the chosen one started on it."""
         work_id = given.get('work_id')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A ticket change names the ticket.'})
+        fields = {key: given[key] for key in TICKET_FIELDS if key in given}
+        if fields:
+            if any(not isinstance(value, str) for value in fields.values()):
+                return self.send(400, {'error': 'Ticket text and kind must be strings.'})
+            if not isinstance(given.get('revision'), str):
+                return self.send(400, {'error': 'Open the ticket before editing its text.'})
+            try:
+                store = opened(given)
+                with store.atomic():
+                    before = ticket_fields(store, store.ticket(work_id).work)
+                    if given['revision'] != ticket_revision(before):
+                        return self.send(409, {'error': 'This ticket changed since you opened it. Reload before saving.'})
+                    edited = store.edit_work(work_id, fields)
+                    after = ticket_fields(store, edited)
+                    revision = ticket_revision(after)
+                    if before != after:
+                        ctx = chassis.context('web', Path(store.project().path), project=store.project_id,
+                                              surface='web')
+                        ctx.store = store
+                        for _, owner in chassis.provided(ctx.folder, 'orchestration'):
+                            owner.ticket_edited(ctx, work_id, revision)
+            except (Stop, StoreError) as error:
+                return self.refuse(error, 400)
+            return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
         changes = {key: given[key] for key in ('agent', 'hold', 'glyph') if key in given}
         if not changes:
             return self.send(400, {'error': 'A ticket change gives an agent, a hold or a glyph.'})
@@ -3209,6 +3260,19 @@ HOST_LIMIT = 2048
 HOST_SERVER = 'metaform'
 # Tokens are estimated from bytes: about four bytes of English text and JSON to a token. An estimate, said as one.
 BYTES_PER_TOKEN = 4
+TICKET_FIELDS = ('title', 'task', 'note', 'kind')
+
+
+def ticket_fields(store: Store, work: WorkRecord) -> dict[str, str]:
+    numbered = store.numbers_of('work', [work.id]).get(work.id)
+    return {'title': str(numbered[1] or '') if numbered else '', 'task': work.task or '',
+            'note': work.note or '', 'kind': work.kind or ''}
+
+
+def ticket_revision(fields: dict[str, str]) -> str:
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+
+
 MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
 MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
                  'delete_relations', 'unjoin', 'lock', 'unlock')  # the person's memory commands, VIEW-031, CTX-023

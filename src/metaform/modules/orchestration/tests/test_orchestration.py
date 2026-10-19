@@ -88,7 +88,7 @@ def test_atomic_gc_claim_race_keeps_one_owner(project):
 
     def take(session):
         try:
-            called = ctx(project, session, work=work.id)
+            called = ctx(project, session, work=work.id, role='gc')
             called.nouns['session'] = session
             return SERVICE.claim(called)
         except (Stop, StoreError):

@@ -551,6 +551,7 @@ class AgentRoleDefinition:
     name: str
     purpose: str
     prompts: tuple[str, ...]
+    specialist: bool = True  # Reusable domain expertise; False for framework/operational responsibilities.
 
 
 @dataclass(frozen=True)

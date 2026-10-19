@@ -27,4 +27,4 @@ The discovery/protocol selection passed 28 tests; six lifecycle tests passed, in
 
 The before/after 60-second idle measurements both recorded 0.03 runner CPU seconds (approximately 0.05% of one core), with zero adapter CPU seconds. The unrelated-event burst test passed with zero reads or scheduled work. Type checks and lint passed. No paid model calls were used.
 
-The browser integration test could not start because Chromium is absent. Installing it was blocked by an HTTP 403 from the browser download endpoint. Protocol checks ran independently.
+The Playwright browser download was blocked by HTTP 403. The installed system Chromium was then found and used through `METAFORM_CHROMIUM=/usr/bin/chromium`; the official-SDK MCP view browser integration passed.

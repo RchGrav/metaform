@@ -488,9 +488,7 @@ def _facts(content: str) -> int:
 
 def _one_fact_each(ctx: Context, observations: list[tuple[str, list[str]]]) -> None:
     """Refuse a write whose observations hold more than one fact each, naming every one, before anything is written,
-    so the agent splits them and sends the call again. The page is the person's and is not checked."""
-    if ctx.surface == 'web':
-        return
+    so the writer splits them and sends the call again, on every surface."""
     compound = [f'{name!r}: {content[:80]!r}' + ('...' if len(content) > 80 else '')
                 for name, contents in observations for content in contents if _facts(content) > 1]
     if compound:

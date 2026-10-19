@@ -13,6 +13,7 @@ import re
 import time
 import uuid
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 from metaform.data import Column, Index, Node, Store, Table, Tables, TableTx, WorkRecord
@@ -28,6 +29,8 @@ from metaform.module import (
     provided,
     surface,
 )
+
+from . import routing
 
 HELP = 'metaform help orchestration'
 ENDED = frozenset(('returned', 'delivered', 'failed', 'stopped', 'transferred'))
@@ -114,7 +117,8 @@ def own(ctx: Context) -> Store:
 # Version 2 adds an assignment's `role_snapshot` and `attempt`; version 3 its `findings_filed`, the tickets its
 # assessment's findings landed on. Each column may be empty or has a default, so version 1's code still reads and
 # writes the tables, STORE-029.
-TABLES = Tables(version=3, compatible_from=1, tables=(
+TABLES = Tables(version=4, compatible_from=1, tables=(
+    routing.TABLE,
     Table('assignments', key=('assignment_id',), columns=(
         Column('assignment_id', required=True), Column('work_id', required=True),
         Column('root_work_id', required=True), Column('team_id', required=True),
@@ -357,6 +361,45 @@ def current_mode(tx: TableTx, assignment: Mapping[str, Any]) -> str:
 class Orchestration:
     """Public provider used by dispatch, MCP context delivery and module UI reads."""
 
+    def route(self, ctx: Context, work_id: str, *, refresh: bool = False) -> dict[str, Any]:
+        return routing.route(ctx, work_id, refresh=refresh)
+
+    def route_pending(self, ctx: Context) -> list[dict[str, Any]]:
+        return routing.pending(ctx)
+
+    def queue_routing(self, ctx: Context, work_ids: list[str]) -> None:
+        routing.queue(ctx, work_ids)
+
+    def routing_waiting(self, ctx: Context) -> bool:
+        return routing.waiting(ctx)
+
+    def selected_specialist(self, ctx: Context, work_id: str) -> str | None:
+        return routing.selected(ctx, work_id)
+
+    def routing_status(self, ctx: Context, work_id: str) -> dict[str, Any] | None:
+        with own(ctx).tables(write=False) as tx:
+            assignment = row_for(tx, work_id=work_id)
+            if assignment:
+                return {'state': assignment['state'], 'role': assignment['authored_role_uri']}
+            row = tx.get('routing', {'work_id': work_id})
+            return {key: row.get(key) for key in ('state', 'role', 'reason')} if row else None
+
+    def ticket_edited(self, ctx: Context, work_id: str, revision: str) -> None:
+        """Keep the operative task current and deliver a reference to its changed requirements once."""
+        store = own(ctx)
+        record = store.ticket(work_id).work
+        with store.tables() as tx:
+            assignment = row_for(tx, work_id=work_id)
+            if assignment and assignment['state'] not in ENDED:
+                body = f'Ticket {work_id}: the user edited its requirements. Read the current ticket before continuing.'
+                direction = {'kind': 'user_direction', 'body': body, 'at': now(), 'revision': revision}
+                assignment = update(tx, assignment, task=record.task or '',
+                    requested_result=record.task if assignment['requested_result'] == assignment['task']
+                    else assignment['requested_result'],
+                    pending_direction=[*(assignment.get('pending_direction') or []), direction])
+                transition(tx, assignment, 'send', {'text': body, 'kind': 'user_direction', 'revision': revision},
+                           f'ticket-edit:{revision}')
+
     def assignment(self, ctx: Context, work_id: str | None = None, session_id: str | None = None,
                    assignment_id: str | None = None) -> dict[str, Any] | None:
         with own(ctx).tables(write=False) as tx:
@@ -432,7 +475,7 @@ class Orchestration:
                                                          'runner': runner}, 'updated': now()})
             return bound_assignment
 
-    def ensure(self, ctx: Context, work_id: str, role: str = 'implementer', session_id: str | None = None,
+    def ensure(self, ctx: Context, work_id: str, role: str | None = None, session_id: str | None = None,
                runner: str | None = None, queue: bool = False) -> dict[str, Any]:
         """Bind a dispatch-admitted root start, including the existing Start-button path.
 
@@ -440,17 +483,20 @@ class Orchestration:
         service call. It reuses that take rather than claiming the work twice.
         """
         store = own(ctx)
+        if role is None and self.assignment(ctx, work_id=work_id) is None:
+            role = routing.route(ctx, work_id).get('role')
+            if role is None:
+                raise Stop(f'Ticket {work_id} needs specialist selection by triage.',
+                           'metaform agents specialists; metaform orchestration claim work=<id> role=<expertise>')
         with store.atomic(), store.tables() as tx:
             assignment = row_for(tx, work_id=work_id)
             if assignment and assignment['state'] in ENDED and not assignment.get('stop') and not store.ticket(work_id).work.done:
                 assignment = update(tx, assignment, state='queued', attempt=int(assignment.get('attempt') or 1) + 1,
                     result=None, evidence=[], candidate=None, last_check_in={'previous_result': assignment['result'],
                         'previous_evidence': assignment['evidence'], 'previous_candidate': assignment['candidate']})
-            if assignment and assignment['authored_role_uri'] == 'metaform://role/gc' and not assignment.get('role_snapshot'):
-                assignment = update(tx, assignment, authored_role_uri='metaform://role/implementer',
-                    pending_direction=[*(assignment.get('pending_direction') or []),
-                        {'kind': 'migration', 'body': 'Legacy coordinator duty replaced by direct specialist ownership.', 'at': now()}])
             if assignment is None:
+                assert role is not None
+                role = role.removeprefix('metaform://role/')
                 record = store.ticket(work_id).work
                 if not record.taken and not record.done:
                     store.take_work(work_id, by=session_id or runner or f'Specialist {work_id}')
@@ -603,7 +649,11 @@ class Orchestration:
         mode = str(ctx.nouns.get('mode') or ctx.setting('orchestration_mode'))
         if mode not in ('adaptive', 'strict'):
             raise Stop('Mode is adaptive or strict.', HELP)
-        role = str(ctx.nouns.get('role') or 'implementer').removeprefix('metaform://role/')
+        chosen = ctx.nouns.get('role') or routing.route(ctx, work_id).get('role')
+        if not chosen:
+            raise Stop(f'Ticket {work_id} needs specialist expertise selected or created by triage.',
+                       'metaform agents specialists; metaform orchestration claim work=<id> role=<expertise>')
+        role = str(chosen).removeprefix('metaform://role/')
         resolution = resolve(ctx, role)
         if resolution.get('problems') and not resolution.get('missing'):
             raise Stop(f'Cannot assign {role}: {resolution["problems"]}', HELP)
@@ -634,7 +684,6 @@ class Orchestration:
                 if not session:
                     transition(tx, assignment, 'launch', {}, 'initial')
         if resolution.get('missing'):
-            from dataclasses import replace
             request_ctx = replace(ctx, nouns={**ctx.nouns, 'task': assignment['task'],
                                              'context': {'assign_in_place': True}})
             request = self.request_role(request_ctx, assignment, role)
@@ -1157,7 +1206,7 @@ def work_read(ctx: Context, record: WorkRecord) -> Any:
     with own(ctx).tables(write=False) as tx:
         held = row_for(tx, work_id=record.id)
         if held is None:
-            return None
+            return tx.get('routing', {'work_id': record.id})
         reviews = tx.rows('assignments', {'reviewed_assignment_id': held['assignment_id']}, limit=0).results
     return {**held, 'independent_assessments': [{key: one.get(key) for key in LINKED} for one in reviews]}
 
@@ -1166,7 +1215,13 @@ def work_changed(payload: dict[str, Any], ctx: Context) -> None:
     """Only completed work rows need result routing; unrelated bursts cause no store reads."""
     if payload.get('project') != ctx.project:
         return
-    if 'work' not in payload.get('tables', ()) or 'orchestration.return' in payload.get('kinds', ()):
+    if 'work' not in payload.get('tables', ()):
+        return
+    if payload.get('base_id'):
+        ctx = replace(ctx, store=Store(str(ctx.project), module='orchestration', base=str(payload['base_id'])))
+    if {'filed', 'ticket', 'note'} & set(payload.get('kinds', ())) and payload.get('work_ids'):
+        routing.queue(ctx, [str(one) for one in payload['work_ids']], invalidate='filed' not in payload['kinds'])
+    if 'orchestration.return' in payload.get('kinds', ()):
         return
     store = own(ctx)
     if 'work_ids' in payload:

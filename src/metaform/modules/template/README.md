@@ -60,7 +60,7 @@ folders so native deployment, MCP and Axiom calls use one source.
 
 The prompts in `resources/prompts.xml`, each an element named for the prompt, and where each is served, MCP-031. A prompt the module sends to an agent is read with `prompt_files.served(resources.files(__name__), name, **fills)` rather than `required`: the home's prompt store keeps it as `<module>:<name>`, the shipped text becoming a version whenever it changes, and an edit saved there (with `metaform agents override`, or `metaform prompts review`) is sent in its place, STORE-044; a shipped change that lands while an edit is sent is kept beside the edit and shown on the agents module's role, `prompts.behind(name)`. Fill places are empty elements, as for `required`, and a prompt on trial (`METAFORM_PROMPTS`) is read first and never stored. A runner that wants to know which versions each turn carried starts `prompt_files.collect()`, takes the `Sent` records from the list as each turn goes, and lets go with `prompt_files.release(list)`; dispatch's runner does, and tells them on `prompt.sent`. A module whose prompt a role is sent is named on that role in the agents module (`ROLES`), so the person sees it there. `instructions` is listed in the instructions agents read under "modules available."; a copy writes its own module name in place of `template`. `prompt_files.module_commands(id)` reads a loaded module's declared slash commands through the public base, returning an empty list when the module is not found.
 
-`rules` holds the module's rules, MCP-031: `<rule why="the reason">One sentence.</rule>` each, a rule an agent keeps while it works with the module and the reason it holds. The MCP server lists the rules of every enabled module at the end of `metaform://glossary`, one line each, `[<module>] <rule> Why: <why>`, so an agent reads each once. A rule without a why stops the module loading. The template's is empty; memory's shows one.
+`rules` holds the module's rules, MCP-031: `<rule why="the reason">One sentence.</rule>` each, a rule an agent keeps while it works with the module and the reason it holds. The MCP server delivers a module’s rules with its first command use in a retained context; discovery lists the module’s commands without repeating those rules. A rule without a why stops the module loading. The template's is empty; memory's shows one.
 
 ## Verbs
 
@@ -117,6 +117,10 @@ A short command sequence that shows the module working.
 ## Authored roles and delivered context
 
 Contribute `AgentRoleDefinition(name, purpose, prompts)` values as `Provides('agent.roles', definitions)`.
+Definitions describe reusable expertise; task IDs, objectives and return destinations belong to assignments.
+`specialist=True` is the default. Set `specialist=False` for framework duties such as triage or generic implementation;
+these are excluded from automatic specialist matching. `agents_specialists` lists names, purposes and role URLs
+without loading duties. JEV chooses from that inventory, and unresolved tickets go to triage for selection or creation.
 Each prompt is its existing prompt-store identity, in delivery order. `metaform agents resolve name=<name>`
 and `metaform://role/<name>` resolve the definition through the enabled provider and its owning renderer.
 An authored role is a responsibility separate from the operational `METAFORM_ROLE`; inspection changes no binding.

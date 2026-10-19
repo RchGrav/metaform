@@ -394,6 +394,14 @@ def test_idle_cpu_evidence(run, home, project_folder, tmp_path):
     """Run the same measurement on the exact base and candidate source; no queries during the idle interval."""
     options = {'orchestration': True} if 'orchestration' in inspect.signature(Dispatch).parameters else {}
     dispatch = Dispatch(run, home, project_folder, tmp_path, **options)
+    if options:
+        from metaform.modules.agents.roles import SERVICE as roles
+        from metaform.modules.orchestration.state import SERVICE
+        ctx = context('orchestration', project_folder, project='proj')
+        roles.publish(ctx, 'timing_engineering', 'Timing systems and countdown alarms.',
+                      'Establish timing behavior through reproducible observations.')
+        SERVICE.ensure(ctx, dispatch.id, role='timing_engineering')
+        dispatch.store.move_work(dispatch.id, 'todo', kept=True)
     dispatch.start('hold')
     try:
         eventually(lambda: dispatch.logged('grandchild'))

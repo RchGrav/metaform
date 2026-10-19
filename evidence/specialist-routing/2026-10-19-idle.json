@@ -1,0 +1,14 @@
+{
+  "label": "specialist-routing",
+  "source": "/workspace/metaform/src/metaform",
+  "interval_seconds": 60.00017824099632,
+  "cpu_seconds": {
+    "runner": 0.010000000000000009,
+    "adapter": 0.0
+  },
+  "cpu_percent_of_one_core": {
+    "runner": 0.016666617155425896,
+    "adapter": 0.0
+  },
+  "native_orchestration": true
+}

@@ -71,9 +71,11 @@ def test_review_reopens_canonical_ticket_without_a_recursive_chain(store, projec
     small_map(store)
     ctx = context('orchestration', project_folder, project='proj')
     work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Keep selection while adjusting time.')
-    ctx.nouns.update(work=work.id)
+    service(ctx, 'agent.role').publish(ctx, 'alarm_engineering', 'Countdown alarm systems.',
+                                     'Verify timing and audible notification behavior.')
+    ctx.nouns.update(work=work.id, role='alarm_engineering')
     assigned = SERVICE.claim(ctx)
-    assert assigned['authored_role_uri'] == 'metaform://role/implementer'
+    assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
     SERVICE.bind(ctx, assigned['assignment_id'], 'worker')
     SERVICE.returned(ctx, work.id, 'Implemented.', evidence=['Control test passed.'], state='delivered')
     review = SERVICE.assessment(ctx, assigned, {'summary': 'Review result.'}, 'one')

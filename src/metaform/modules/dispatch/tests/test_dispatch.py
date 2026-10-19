@@ -249,8 +249,8 @@ def test_a_new_install_runs_full_auto_and_returns_a_dead_runners_ticket_by_itsel
     on and dead runner recovery is automatic."""
     run('enable', 'dispatch')
     shown = run('config', '--show', cwd=project_folder).stdout
-    assert re.search(r'^\s*dispatch_autostart: true$', shown, re.M), shown
-    assert re.search(r'^\s*dispatch_recovery: automatic$', shown, re.M), shown
+    assert re.search(r'^\s*dispatch_autostart: true$', shown, re.MULTILINE), shown
+    assert re.search(r'^\s*dispatch_recovery: automatic$', shown, re.MULTILINE), shown
 
 
 @pytest.mark.kind('fixture')
@@ -5406,7 +5406,7 @@ def paused_by_stop_all(run, home, project_folder, tmp_path):
     works = [made.id, *(made.store.add_work(made.node, 'unbuilt', task=f'Write part {n}.').id for n in (2, 3))]
     owner_ctx = context('orchestration', project_folder, project='proj')
     for work in works:
-        SERVICE.ensure(owner_ctx, work)
+        SERVICE.ensure(owner_ctx, work, role='implementer')  # Explicit fixture duty; no automatic role default.
     run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=project_folder)
     run('dispatch', 'stop-all', '--json', cwd=project_folder)
     return made, works, (lambda work: SERVICE.assignment(owner_ctx, work_id=work)), \

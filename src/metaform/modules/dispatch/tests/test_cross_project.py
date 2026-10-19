@@ -191,7 +191,7 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
 
     def ctx(**nouns):
         return context('orchestration', project_folder, project='proj', session='gc', nouns=nouns)
-    owner.claim(ctx(work=gc_work, session='gc', pm_session='system'))
+    owner.claim(ctx(work=gc_work, role='gc', session='gc', pm_session='system'))
     owner.check_in(ctx(state='returned', summary='The held cap counts only open, not-held tickets.'))
 
     def drain():

@@ -137,7 +137,9 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
 
-# Add authored responsibilities as ordered prompt-store components. These names do not replace METAFORM_ROLE.
+# Add reusable expertise as AgentRoleDefinition(name, purpose, prompts). Set specialist=False for framework duties.
+# Definitions publish metaform://role/<name>; specialists alone enter automatic matching. Tasks stay in assignments.
+# These names do not replace the execution identity METAFORM_ROLE.
 ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(

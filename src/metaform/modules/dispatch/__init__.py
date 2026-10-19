@@ -2239,13 +2239,15 @@ def waits(record: WorkRecord, kept: dict[str, Any] | None, opened: Iterable[str]
     return bool(record.held) or bool(waiting_on(kept, opened))
 
 
-def jev_choices(ctx: Context, store: Store) -> dict[str, dict[str, str]]:
+def jev_choices(ctx: Context, store: Store, eligible: set[str] | None = None) -> dict[str, dict[str, str]]:
     """Jev's choice for each waiting ticket the person gave no agent, H23: its agent, and that agent's model and
     thinking level where Jev is sure of them, among the agents installed here, each described by
     its dispatch_<agent>_strengths, and the options each offered at its last session. Asked for at most dispatch_agents
     tickets, the next in board order, within one bounded wait. Empty with Jev off, unsure, unreachable or failing:
     autostart then chooses as it always has."""
     from metaform import jev
+    if eligible is not None and not eligible:
+        return {}
     try:
         if jev.config(ctx.folder, 'choose_agent') is None:
             return {}
@@ -2254,6 +2256,7 @@ def jev_choices(ctx: Context, store: Store) -> dict[str, dict[str, str]]:
         open_ids = {record.id for record in opened}
         waiting = sorted((record for record in opened
                           if not record.taken and (record.task or '').strip() and not kept.get(record.id, {}).get('hold')
+                          and (eligible is None or record.id in eligible)
                           and not waits(record, kept.get(record.id), open_ids)
                           and not kept.get(record.id, {}).get('agent')),
                          key=lambda record: (record.held, record.position is None, record.position or 0))
@@ -2329,13 +2332,20 @@ def autostart(ctx: Context) -> dict[str, Any]:
         return {'started': [], 'halted': stopped['by']}
     recovered = recover(ctx)
     settle(ctx)  # after recover, which under automatic recovery returns such a ticket to the queue instead
-    from .orchestration import drain
+    from .orchestration import drain, service
+    owner = service(ctx)
+    routed: list[dict[str, Any]] = owner.route_pending(ctx) if owner is not None else []
     continued = drain(ctx)  # restart/reconnect reconciliation of explicitly recorded continuations
     start_raised(ctx, store, asked)  # the person raised these, so they start whether Full Auto is checked or not
     connected = stay_connected(ctx, store, asked)  # the person's own, whether Full Auto is checked or not
     started = start_work(ctx, store, recovered, asked)
     due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None)) if one is not None]
-    return {**started, **connected, **({'continuations': continued} if continued else {}),
+    return {**started, **connected,
+            'more': bool(started.get('more') or owner is not None and owner.routing_waiting(ctx)),
+            **({'specialist_routing': {
+                state: sum(one.get('state') == state for one in routed) for state in ('selected', 'triage')}}
+                if routed else {}),
+            **({'continuations': continued} if continued else {}),
             **({'retry_due': min(due)} if due else {})}
 
 
@@ -2417,7 +2427,15 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
                 **merged_due(retry(ctx, store, opened, asked), start_due), **paused}
     # Jev's choice of agent, model and effort for the tickets the person gave no agent, asked before the transaction
     # below, so no network call is ever made inside it; nothing when Jev is off, H23.
-    picks = jev_choices(ctx, store)
+    from .orchestration import service
+    owner = service(ctx)
+    eligible_roles = None if owner is None else {
+        record.id for record in opened if not record.taken and not record.held and
+        owner.selected_specialist(ctx, record.id)}
+    if owner is not None:
+        owner.queue_routing(ctx, [record.id for record in opened
+                                  if not record.taken and not record.held and record.id not in (eligible_roles or ())])
+    picks = jev_choices(ctx, store) if eligible_roles is None else jev_choices(ctx, store, eligible_roles)
     # The supervisor's retries first, so a session it resumes takes its slot before a new ticket does, and both share
     # the one count of the gate. UX review round 1, 2026-10-17 (dispatch-concurrency F7): a retry handed over in the
     # same pass left its slot to the next pass, which nothing then brought. A ticket's progress is reconciled where its
@@ -2439,6 +2457,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         # and F6)
         candidates = [record for record in open_work
                       if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)
+                      and (eligible_roles is None or record.id in eligible_roles)
                       and not waits(record, kept.get(record.id), open_ids)
                       and not backing_off(backoff.get(record.id), now)]
         # stored rows and live pids alone: a status read inside this transaction would ask every runner from a pool
@@ -3143,6 +3162,12 @@ def start(ctx: Context) -> dict[str, Any]:
     folder = store.project().path
     mcp_server(Path(folder))  # a server the runner could not choose is refused here, the ticket left in To do, BASE-052
     budget_stop(ctx, store, str(work_id))  # a reached token budget is the person's to raise, M01
+    from .orchestration import service
+    owner = service(ctx)
+    if owner is not None and owner.assignment(ctx, work_id=str(work_id)) is None:
+        selected = owner.route(ctx, str(work_id))
+        if not selected.get('role'):
+            return {'state': 'needs_specialist', 'work_id': work_id, 'reason': selected.get('reason')}
     given, notices = launch_permissions(ctx, store, agent)
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():
@@ -3151,11 +3176,8 @@ def start(ctx: Context) -> dict[str, Any]:
         # said before the ticket is taken; the gate counts again at the start. An agent's start is not the person's
         # retry of an agent that keeps failing.
         admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=automatic)
-        if person_asks(ctx):
-            from .orchestration import service
-            owner = service(ctx)
-            if owner is not None:
-                owner.reopen(ctx, str(work_id))
+        if person_asks(ctx) and owner is not None:
+            owner.reopen(ctx, str(work_id))
         store.take_work(work_id, by=reservation)
     started = run_reserved(ctx, reservation, given, asked=asked, auto=automatic)
     return {**started, **{field: value for field, value in given.items() if value},

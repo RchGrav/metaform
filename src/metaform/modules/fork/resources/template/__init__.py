@@ -106,12 +106,15 @@ caller such as a phone bridge.
 """
 from __future__ import annotations
 
-from metaform.module import Module, Pane, ToolbarItem
+from metaform.module import AgentRoleDefinition, Module, Pane, Provides, ToolbarItem
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
+
+# Reusable domain expertise; set specialist=False on framework responsibilities. Tasks stay in assignments.
+ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(
     id='template',
@@ -140,5 +143,5 @@ MODULE = Module(
         Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
              resource='resources/pane.md', area='right'),
     ),
-    provides=(),
+    provides=(Provides('agent.roles', ROLE_DEFINITIONS),),
 )
