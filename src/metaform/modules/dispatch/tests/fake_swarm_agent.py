@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from pathlib import Path
 
@@ -192,7 +193,12 @@ def original_gc(assignment, stage):
         operative = Path('OPERATIVE.md').read_text()
         assert operative == (OPERATIVE if SCENARIO == 'adaptive' else 'Use the original restoration sequence.\n')
         if SCENARIO == 'adaptive':
-            assert corrections and CORRECTION in actual
+            assert assignment['attempt'] == 2
+            if CORRECTION not in actual:
+                Path('candidate.txt').write_text(actual + CORRECTION)
+                actual = Path('candidate.txt').read_text()
+                log(correction_delivered={'work_id': WORK, 'actual': actual, 'candidate': current_candidate()})
+            assert CORRECTION in actual
         log(gc_change_received={'operative': operative, 'pending_direction': assignment['pending_direction'],
                                 'corrections': corrections})
     progress(stage=99)
@@ -232,11 +238,24 @@ def worker(stage):
 
 
 def specialist():
+    if SCENARIO == 'direct':
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        environment = {one['name']: one['value'] for one in MCP_SERVER.get('env', [])}
+        parameters = StdioServerParameters(command=MCP_SERVER['command'], args=MCP_SERVER.get('args', []),
+            cwd=str(Path.cwd()), env={**os.environ, **environment})
+        async def read_duty():
+            async with stdio_client(parameters) as (read, write), ClientSession(read, write) as client:
+                await client.initialize()
+                return await client.read_resource('metaform://role/route_specialist')
+        resource = asyncio.run(read_duty())
+        log(role_resource=resource.model_dump(mode='json'))
+        Path('candidate.txt').write_text(SPECIALIST_RESULT)
     # This is actual context delivery through the functional entry, rather than a fixture reading receipt rows.
     memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
     log(specialist_grounding=memory)
     progress(stage=99)
-    check('returned', SPECIALIST_RESULT, key='specialist-result')
+    check('delivered' if SCENARIO == 'direct' else 'returned', SPECIALIST_RESULT, key='specialist-result')
 
 
 def creator(assignment):
@@ -261,10 +280,7 @@ def gc_requests_role(assignment, stage, text):
                        if one['caller_assignment_id'] == assignment['assignment_id'])
         actual = cli('orchestration', 'inspect')
         log(gc_self_request={'request': request, 'assignment': actual, 'cancelled': CANCELLED.is_set()})
-        assert actual['state'] == 'running' and not CANCELLED.is_set(), (
-            'A GC must remain able to commission the role it has just requested.')
-        commissioned = mcp_call('orchestration_commission', {'request': request['request_id'], 'wait': True})
-        log(gc_self_commission=commissioned)
+        assert request['state'] in ('commissioned', 'published'), 'Missing roles commission automatically.'
         suspend()
         return
     specialist = next(one for one in cli('orchestration', 'team')['members']
@@ -493,7 +509,7 @@ def turn(ident, text):
             raise RuntimeError(f'Unexpected authored role {ROLE!r}.')
         update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': f'{ROLE} turn complete.'}})
     except Exception as error:  # noqa: BLE001  fixture errors become visible assertions in the parent test
-        log(fixture_error=f'{type(error).__name__}: {error}')
+        log(fixture_error=f'{type(error).__name__}: {error}\n{traceback.format_exc()}')
         update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': str(error)}})
     finally:
         send({'jsonrpc': '2.0', 'id': ident, 'result': {

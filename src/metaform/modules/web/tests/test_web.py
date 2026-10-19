@@ -939,7 +939,7 @@ def browser():
     """Headless Chromium through Playwright, a dev dependency; WebGL runs in software, VIEW-012."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as driver:
-        launched = driver.chromium.launch(args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+        launched = driver.chromium.launch(executable_path=os.environ.get('METAFORM_CHROMIUM') or None, args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader',
                                                 '--ignore-gpu-blocklist'])
         new_page = launched.new_page
 

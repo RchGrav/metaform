@@ -334,12 +334,15 @@ export async function main() {
   // The project shown first, VIEW-002: the one the address names; else the project of the folder `metaform web` ran
   // in; else the one this browser showed last; else the first.
   let remembered = null;
-  try { remembered = localStorage.getItem('metaform.project'); } catch (error) { /* storage can be blocked */ }
+  try { remembered = sessionStorage.getItem('metaform.project'); } catch (error) { /* storage can be blocked */ }
   const registered = id => S.projects.some(item => item.id === id);
-  S.project = [new URLSearchParams(location.hash.slice(1)).get('p'), listed.opened, remembered].find(registered)
+  S.project = [new URLSearchParams(location.hash.slice(1)).get('p'), remembered, listed.opened].find(registered)
     || S.projects[0].id;
-  try { localStorage.setItem('metaform.project', S.project); } catch (error) { /* storage can be blocked */ }
-  window.history.replaceState(null, '', '#p=' + encodeURIComponent(S.project));
+  try { sessionStorage.setItem('metaform.project', S.project); } catch (error) { /* storage can be blocked */ }
+  const selected = new URLSearchParams(location.hash.slice(1));
+  if (selected.get('p') !== S.project) selected.delete('b');
+  selected.set('p', S.project);
+  window.history.replaceState(null, '', '#' + selected);
   fillProjects();
   start3D();
   // a project that cannot be read is said by the error surface; the page around it is shown and still listens

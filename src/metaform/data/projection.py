@@ -377,12 +377,13 @@ class Projection:
         self._index()
         return self._by_seq_order(list(self._props_by_element.get(element_id, ())))
 
-    def currents(self, kind: str) -> Iterator[tuple[str, Version]]:
-        """Every current object of a kind, in the order it was written."""
+    def currents(self, kind: str | None, *, layer_id: str | None = None) -> Iterator[tuple[str, Version]]:
+        """Selected current objects in write order; filter before sorting or rendering unrelated layers."""
         self._index()
-        for ident, version in sorted(self._current.items(), key=lambda pair: pair[1].seq):
-            if self.kinds[ident] == kind:
-                yield ident, version
+        selected = ((ident, version) for ident, version in self._current.items()
+                    if (kind is None or self.kinds[ident] == kind) and
+                       (layer_id is None or version.layer_id == layer_id))
+        yield from sorted(selected, key=lambda pair: pair[1].seq)
 
     def addresses(self) -> list[str]:
         """Every current element's address, in order."""

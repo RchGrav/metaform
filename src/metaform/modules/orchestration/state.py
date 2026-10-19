@@ -18,6 +18,7 @@ from metaform.data import Column, Index, Node, Store, Table, Tables, TableTx, Wo
 from metaform.module import (
     Context,
     Stop,
+    agent_caller,
     call,
     context,
     held_role,
@@ -108,13 +109,14 @@ def own(ctx: Context) -> Store:
                  base=None if base is None else base.id, toggled=store.toggled)
 
 
-TABLES = Tables(version=1, tables=(
+TABLES = Tables(version=2, compatible_from=1, tables=(
     Table('assignments', key=('assignment_id',), columns=(
         Column('assignment_id', required=True), Column('work_id', required=True),
         Column('root_work_id', required=True), Column('team_id', required=True),
         Column('gc_assignment_id'), Column('parent_assignment_id'), Column('reviewed_assignment_id'),
         Column('successor_assignment_id'),
-        Column('owner_session_id'), Column('authored_role_uri', required=True),
+        Column('owner_session_id'), Column('authored_role_uri', required=True), Column('role_snapshot', 'json'),
+        Column('attempt', 'int', default=1),
         Column('execution_role', required=True, default='worker'), Column('functional_locations', 'json'),
         Column('task', required=True), Column('requested_result', required=True), Column('candidate', 'json'),
         Column('specification', 'json'), Column('mode', required=True), Column('state', required=True),
@@ -139,7 +141,8 @@ TABLES = Tables(version=1, tables=(
         Column('task', required=True), Column('requested_result', required=True), Column('context', 'json'),
         Column('functional_locations', 'json'), Column('creator_assignment_id'), Column('child_assignment_id'),
         Column('state', required=True), Column('source', 'json'), Column('created', required=True)),
-        indexes=(Index(('gc_assignment_id',)), Index(('caller_assignment_id',)),)),
+        indexes=(Index(('gc_assignment_id',)), Index(('caller_assignment_id',)),
+                 Index(('role', 'state')), Index(('creator_assignment_id', 'state')))),
     Table('changes', key=('change_id',), columns=(
         Column('change_id', required=True), Column('assessment_assignment_id', required=True),
         Column('specification', 'json', required=True), Column('previous_revision', required=True),
@@ -308,7 +311,7 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
     ident = ident or uuid.uuid4().hex
     root = work.id if parent is None else parent['root_work_id']
     team = ident if parent is None else parent['team_id']
-    gc = ident if role == 'gc' and parent is None else parent.get('gc_assignment_id') if parent else None
+    gc = ident if parent is None else parent.get('gc_assignment_id')
     if review is not None:
         gc = review['gc_assignment_id'] or review['assignment_id']
     made = tx.insert('assignments', {'assignment_id': ident, 'work_id': work.id, 'root_work_id': root,
@@ -388,13 +391,19 @@ class Orchestration:
         with own(ctx).tables(write=False) as tx:
             sender = row_for(tx, session_id=sender_session)
             recipient = row_for(tx, session_id=recipient_session)
-        return bool(sender and recipient and sender['authored_role_uri'] == 'metaform://role/gc' and
+        return bool(sender and recipient and sender['gc_assignment_id'] == sender['assignment_id'] and
                     recipient['gc_assignment_id'] == sender['assignment_id'] and
                     sender['team_id'] == recipient['team_id'] and
                     recipient['assignment_id'] != sender['assignment_id'])
 
     def bind(self, ctx: Context, assignment_id: str, session_id: str,
              runner: str | None = None) -> dict[str, Any]:
+        before = self.assignment(ctx, assignment_id=assignment_id)
+        snapshot = (before or {}).get('role_snapshot')
+        if before and not snapshot:
+            snapshot = resolve(ctx, before['authored_role_uri'])
+            if snapshot.get('missing') or snapshot.get('problems'):
+                raise Stop(f'Cannot start {before["authored_role_uri"]}: {snapshot.get("problems")}', HELP)
         with own(ctx).tables() as tx:
             held = row_for(tx, assignment_id=assignment_id)
             if held is None:
@@ -409,7 +418,8 @@ class Orchestration:
             else:
                 tx.insert('sessions', {'session_id': session_id, 'assignment_id': assignment_id,
                                       'runner': runner, 'created': now()})
-            bound_assignment = update(tx, held, owner_session_id=session_id, state='running')
+            bound_assignment = update(tx, held, owner_session_id=session_id, state='running',
+                                      role_snapshot=held.get('role_snapshot') or snapshot)
             for event in tx.rows('transitions', {'assignment_id': assignment_id}, limit=0).results:
                 if event['kind'] == 'launch' and event['state'] == 'pending':
                     tx.update('transitions', {'transition_id': event['transition_id']}, {
@@ -417,7 +427,7 @@ class Orchestration:
                                                          'runner': runner}, 'updated': now()})
             return bound_assignment
 
-    def ensure(self, ctx: Context, work_id: str, role: str = 'gc', session_id: str | None = None,
+    def ensure(self, ctx: Context, work_id: str, role: str = 'implementer', session_id: str | None = None,
                runner: str | None = None, queue: bool = False) -> dict[str, Any]:
         """Bind a dispatch-admitted root start, including the existing Start-button path.
 
@@ -427,10 +437,18 @@ class Orchestration:
         store = own(ctx)
         with store.atomic(), store.tables() as tx:
             assignment = row_for(tx, work_id=work_id)
+            if assignment and assignment['state'] in ENDED and not assignment.get('stop') and not store.ticket(work_id).work.done:
+                assignment = update(tx, assignment, state='queued', attempt=int(assignment.get('attempt') or 1) + 1,
+                    result=None, evidence=[], candidate=None, last_check_in={'previous_result': assignment['result'],
+                        'previous_evidence': assignment['evidence'], 'previous_candidate': assignment['candidate']})
+            if assignment and assignment['authored_role_uri'] == 'metaform://role/gc' and not assignment.get('role_snapshot'):
+                assignment = update(tx, assignment, authored_role_uri='metaform://role/implementer',
+                    pending_direction=[*(assignment.get('pending_direction') or []),
+                        {'kind': 'migration', 'body': 'Legacy coordinator duty replaced by direct specialist ownership.', 'at': now()}])
             if assignment is None:
                 record = store.ticket(work_id).work
                 if not record.taken and not record.done:
-                    store.take_work(work_id, by=session_id or runner or f'GC {work_id}')
+                    store.take_work(work_id, by=session_id or runner or f'Specialist {work_id}')
                 at = record.address or record.receiver_address
                 _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
                 assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
@@ -542,8 +560,19 @@ class Orchestration:
             # Independent assessments remain outside swarm control, but a user's ticket stop also cancels
             # its recorded unfinished assessment continuations so they cannot restart stopped delivery.
             rows = descendants(tx, root, assessments=by == 'user')
+            stopping_ids = {row['assignment_id'] for row in rows}
             changed: list[str] = []
             for row in rows:
+                if row['assignment_id'] != root['assignment_id'] and row['authored_role_uri'] == 'metaform://role/role_creator':
+                    waiters = tx.rows('role_requests', {'creator_assignment_id': row['assignment_id'],
+                                                       'state': 'commissioned'}, limit=0).results
+                    remaining = [row_for(tx, assignment_id=one['caller_assignment_id']) for one in waiters
+                                 if one['caller_assignment_id'] not in stopping_ids]
+                    survivor = next((one for one in remaining if one and not one.get('stop')), None)
+                    if survivor:
+                        update(tx, row, parent_assignment_id=survivor['assignment_id'],
+                               return_to={'assignment_id': survivor['assignment_id']})
+                        continue
                 stop = {'by': by, 'direction': direction, 'at': now()}
                 update(tx, row, state=row['state'] if row['state'] in ENDED else 'stopped',
                        stop=stop, stop_history=[*(row.get('stop_history') or []), stop])
@@ -558,11 +587,18 @@ class Orchestration:
     def claim(self, ctx: Context) -> dict[str, Any]:
         store = own(ctx)
         work_id = str(ctx.nouns['work'])
-        session = ctx.session or os.environ.get('METAFORM_SESSION') or ctx.nouns.get('session')
+        # Claim assigns a specialist. The requesting triage/audit session is not the worker
+        # that will execute it; dispatch binds that session only after actual admission.
+        session = ctx.nouns.get('session')
+        if session and (ctx.surface == 'mcp' or agent_caller() is not None) and session != ctx.session:
+            raise Stop('An agent can bind only its own session. Omit session to dispatch the assigned specialist.', HELP)
         mode = str(ctx.nouns.get('mode') or ctx.setting('orchestration_mode'))
         if mode not in ('adaptive', 'strict'):
             raise Stop('Mode is adaptive or strict.', HELP)
-        resolved_role(ctx, 'gc')
+        role = str(ctx.nouns.get('role') or 'implementer').removeprefix('metaform://role/')
+        resolution = resolve(ctx, role)
+        if resolution.get('problems') and not resolution.get('missing'):
+            raise Stop(f'Cannot assign {role}: {resolution["problems"]}', HELP)
         for _, transport in provided(ctx.folder, 'orchestration.transport'):
             guard = getattr(transport, 'guard_claim', None)
             if guard is not None:
@@ -577,16 +613,24 @@ class Orchestration:
             if record.taken and record.taken_by != session:
                 raise Stop(f'Ticket {work_id} is already taken by {record.taken_by}.', HELP)
             if not record.taken:
-                store.take_work(work_id, by=session or f'GC {work_id}')
+                store.take_work(work_id, by=session or f'Specialist {work_id}')
             at = record.address or record.receiver_address
             _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
-            assignment = new_assignment(tx, record, 'gc', ident=identity('gc', work_id),
+            assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
                 task=record.task or '', result=str(ctx.nouns.get('result') or record.task or ''),
                 locations=places, mode=mode, specification=ctx.nouns.get('specification'),
                 candidate=ctx.nouns.get('candidate'), session=session,
                 return_to={'session_id': ctx.nouns.get('pm_session'), 'kind': 'pm'})
-            if not session:
-                transition(tx, assignment, 'launch', {}, 'initial')
+            if not resolution.get('missing'):
+                assignment = update(tx, assignment, role_snapshot=resolution)
+                if not session:
+                    transition(tx, assignment, 'launch', {}, 'initial')
+        if resolution.get('missing'):
+            from dataclasses import replace
+            request_ctx = replace(ctx, nouns={**ctx.nouns, 'task': assignment['task'],
+                                             'context': {'assign_in_place': True}})
+            request = self.request_role(request_ctx, assignment, role)
+            return {**(self.assignment(ctx, work_id=work_id) or assignment), 'role_request': request}
         return assignment
 
     def delegate(self, ctx: Context, *, waiting: bool = False, handoff: bool = False) -> dict[str, Any]:
@@ -668,18 +712,6 @@ class Orchestration:
             if parent.get('stop'):
                 raise Stop('The requesting assignment was stopped before its role request.', HELP)
             responsible_gc = gc['assignment_id']
-            if gc['state'] in ENDED or store.ticket(gc['work_id']).work.done:
-                # A delivered root stays closed. An independent assessment can still need a new
-                # specialty, so a recorded corrective GC owns this commission and its validation.
-                task_to_gc = (f'Commission specialist role {name} for recorded request {request_id}. '
-                              f'The original caller {parent["assignment_id"]} needs: {task}\n'
-                              'Read the role request, commission the Role Creator, validate the published duty, '
-                              'and deliver this commission continuation. The original ticket stays delivered.')
-                gc = self._correction(tx, store, gc, parent, {
-                    'task': task_to_gc, 'title': f'Commission {name} for continued work',
-                    'kind': 'role_commission', 'role_request_id': request_id,
-                    'caller_assignment_id': parent['assignment_id']}, f'role-request:{request_id}')
-                gc_id = gc['assignment_id']
             made = tx.insert('role_requests', {'request_id': request_id,
                 'caller_assignment_id': parent['assignment_id'], 'gc_assignment_id': gc_id, 'role': name,
                 'purpose': str(ctx.nouns.get('purpose') or ctx.nouns.get('result') or ctx.nouns['task']),
@@ -690,14 +722,34 @@ class Orchestration:
                             'handoff': handoff},
                 'functional_locations': places, 'creator_assignment_id': None,
                 'child_assignment_id': None, 'state': 'requested', 'source': None, 'created': now()})
-            if parent['assignment_id'] != gc['assignment_id']:
-                update(tx, parent, state='waiting')
-                transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
-            transition(tx, gc, 'send', {'kind': 'role_request', 'request': made,
-                'sender_assignment_id': parent['assignment_id'], 'sender_session_id': parent.get('owner_session_id')},
-                request_id)
-            self.wake(tx, gc, request_id)
-            return made
+            update(tx, parent, state='waiting')
+            transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
+            # Concurrent tickets needing the same specialty share one authoring helper. Each
+            # request retains its own caller, task and continuation; publication releases all.
+            for pending in tx.rows('role_requests', {'role': name, 'state': 'commissioned'}, limit=0).results:
+                creator = row_for(tx, assignment_id=pending['creator_assignment_id'])
+                if creator and creator['state'] not in ENDED and not creator.get('stop'):
+                    tx.update('role_requests', {'request_id': request_id}, {
+                        'state': 'commissioned', 'creator_assignment_id': creator['assignment_id']})
+                    return {**made, 'state': 'commissioned', 'creator_assignment_id': creator['assignment_id']}
+            creator = self._commission(tx, store, parent, made)
+            return {**made, 'state': 'commissioned', 'creator_assignment_id': creator['assignment_id']}
+
+    @staticmethod
+    def _commission(tx: TableTx, store: Store, owner: Mapping[str, Any],
+                    request: Mapping[str, Any]) -> dict[str, Any]:
+        task = json.dumps({'request': dict(request), 'requesting_assignment': owner['assignment_id']},
+                          ensure_ascii=False)
+        node, places = location(store, None, owner)
+        work = store.add_work(node, None, task=task, title=f'Create specialist role {request["role"]}')
+        creator = new_assignment(tx, work, 'role_creator', parent=owner, task=task,
+            result=f'Publish {request["role"]} for the recorded requesting worker.', locations=places,
+            mode=current_mode(tx, owner), specification=owner['specification'],
+            return_to={'assignment_id': owner['assignment_id'], 'role_request_id': request['request_id']})
+        tx.update('role_requests', {'request_id': request['request_id']},
+                  {'creator_assignment_id': creator['assignment_id'], 'state': 'commissioned'})
+        transition(tx, creator, 'launch', {'role_request_id': request['request_id']}, 'initial')
+        return creator
 
     def commission(self, ctx: Context) -> dict[str, Any]:
         gc = requested(ctx, ctx.nouns.get('assignment'))
@@ -716,20 +768,7 @@ class Orchestration:
                 raise Stop('Only this request\'s delivery GC commissions its role creation.', HELP)
             if request['creator_assignment_id']:
                 return row_for(tx, assignment_id=request['creator_assignment_id']) or request
-            task = json.dumps({'request': request, 'commissioning_gc': gc['assignment_id']}, ensure_ascii=False)
-            node, places = location(store, None, gc)
-            work = store.add_work(node, None, task=task, title=f'Create specialist role {request["role"]}')
-            creator = new_assignment(tx, work, 'role_creator', parent=gc, task=task,
-                result=f'Publish {request["role"]} for the recorded requesting worker.', locations=places,
-                mode=current_mode(tx, gc), specification=gc['specification'],
-                return_to={'assignment_id': gc['assignment_id'], 'role_request_id': request_id})
-            tx.update('role_requests', {'request_id': request_id},
-                      {'creator_assignment_id': creator['assignment_id'], 'state': 'commissioned'})
-            if bool(ctx.nouns.get('wait')):
-                update(tx, gc, state='waiting')
-                transition(tx, gc, 'suspend', {'reason': 'Waiting for commissioned role creation.'}, request_id)
-            transition(tx, creator, 'launch', {'role_request_id': request_id}, 'initial')
-            return creator
+            return self._commission(tx, store, gc, request)
 
     def publish_role(self, ctx: Context) -> dict[str, Any]:
         creator = requested(ctx, ctx.nouns.get('assignment'))
@@ -745,32 +784,47 @@ class Orchestration:
                   'creator_caller_id': ctx.session or os.environ.get('METAFORM_SESSION')}
         published = service(ctx, 'agent.role').publish(ctx, request['role'],
             str(ctx.nouns.get('purpose') or request['purpose']), str(ctx.nouns['duty']), source=source)
+        published_assignments: list[dict[str, Any]] = []
         with store.atomic(), store.tables() as tx:
-            request = tx.get('role_requests', {'request_id': request_id}) or request
-            if request['child_assignment_id']:
-                return {'role': published, 'assignment': row_for(tx, assignment_id=request['child_assignment_id'])}
-            caller = row_for(tx, assignment_id=request['caller_assignment_id'])
-            if caller is None:
-                raise Stop('The requesting worker assignment is unavailable.', HELP)
-            node, places = location(store, request['functional_locations'][0], caller)
-            work = store.add_work(node, None, task=request['task'], title=request['requested_result'].split('\n')[0])
-            child = new_assignment(tx, work, request['role'], parent=caller,
-                task=request['task'], result=request['requested_result'], locations=places,
-                mode=current_mode(tx, caller), specification=caller['specification'],
-                candidate=caller['candidate'], return_to={'assignment_id': caller['assignment_id'],
-                                                        'role_request_id': request_id})
-            if request['context'].get('handoff') and caller['gc_assignment_id'] != caller['assignment_id'] and \
-                    not caller['reviewed_assignment_id']:
-                child = self._handoff(tx, caller, child)
-            tx.update('role_requests', {'request_id': request_id},
-                      {'state': 'published', 'child_assignment_id': child['assignment_id'], 'source': published})
-            if caller.get('stop'):
-                update(tx, child, state='stopped', stop=caller['stop'])
-            else:
-                transition(tx, child, 'launch', {'role_request_id': request_id}, 'initial')
+            waiting = tx.rows('role_requests', {'creator_assignment_id': creator['assignment_id']}, limit=0).results
+            for request in waiting:
+                if request['child_assignment_id']:
+                    existing = row_for(tx, assignment_id=request['child_assignment_id'])
+                    if existing:
+                        published_assignments.append(existing)
+                    continue
+                caller = row_for(tx, assignment_id=request['caller_assignment_id'])
+                if caller is None:
+                    raise Stop('The requesting worker assignment is unavailable.', HELP)
+                supplied = cast(dict[str, Any], request.get('context') or {})
+                in_place = cast(dict[str, Any], supplied.get('context') or {}).get('assign_in_place')
+                if in_place:
+                    child = update(tx, caller, authored_role_uri=published['uri'], role_snapshot=published,
+                                   state='queued')
+                else:
+                    node, places = location(store, request['functional_locations'][0], caller)
+                    work = store.add_work(node, None, task=request['task'], title=request['requested_result'].split('\n')[0])
+                    child = new_assignment(tx, work, request['role'], parent=caller,
+                        task=request['task'], result=request['requested_result'], locations=places,
+                        mode=current_mode(tx, caller), specification=caller['specification'],
+                        candidate=caller['candidate'], return_to={'assignment_id': caller['assignment_id'],
+                                                                'role_request_id': request['request_id']})
+                    if request['context'].get('handoff') and caller['gc_assignment_id'] != caller['assignment_id'] and \
+                            not caller['reviewed_assignment_id']:
+                        child = self._handoff(tx, caller, child)
+                tx.update('role_requests', {'request_id': request['request_id']},
+                          {'state': 'published', 'child_assignment_id': child['assignment_id'], 'source': published})
+                if caller.get('stop'):
+                    update(tx, child, state='stopped', stop=caller['stop'])
+                else:
+                    transition(tx, child, 'launch', {'role_request_id': request['request_id']}, 'initial')
+                published_assignments.append(child)
         self.returned(ctx, creator['work_id'], {'published_role': published, 'request_id': request_id},
                       evidence=[published], key=identity(request_id, 'published'))
-        return {'role': published, 'assignment': child}
+        with store.tables(write=False) as tx:
+            original = tx.get('role_requests', {'request_id': request_id})
+            child = row_for(tx, assignment_id=original['child_assignment_id']) if original else None
+        return {'role': published, 'assignment': child, 'assignments': published_assignments}
 
     @staticmethod
     def wake(tx: TableTx, owner: Mapping[str, Any], key: str) -> None:
@@ -861,8 +915,9 @@ class Orchestration:
                      for number, finding in enumerate(findings or [])] if reviewed_gc and not superseded else []
             corrections = list({one['assignment_id']: one for one in found if one}.values())
             body = str(result) if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-            packet = {'kind': 'result', 'state': state, 'result': result, 'body': body,
+            packet = {'kind': 'role_publication' if held['authored_role_uri'] == 'metaform://role/role_creator' else 'result', 'state': state, 'result': result, 'body': body,
                       'evidence': returned['evidence'],
+                      'verification': 'evidence supplied' if returned['evidence'] else 'not established',
                       'candidate': returned['candidate'], 'findings': findings, 'superseded': superseded,
                       'corrective_assignments': [{name: correction[name] for name in
                           ('assignment_id', 'work_id', 'team_id', 'state', 'parent_assignment_id')}
@@ -886,22 +941,23 @@ class Orchestration:
                                       f'Responsibility completed by successor {held["assignment_id"]}.',
                                       outcome='failed' if state == 'failed' else 'completed')
                 update(tx, predecessor, result=result, evidence=returned['evidence'], candidate=returned['candidate'])
-            result_key = identity(held['assignment_id'], 'result', key or 'completion')
+            result_key = identity(held['assignment_id'], 'result', str(held.get('attempt') or 1), key or 'completion')
             if parent:
                 transition(tx, parent, 'send', packet, result_key)
-                self.wake(tx, parent, result_key)
+                if held['authored_role_uri'] != 'metaform://role/role_creator':
+                    self.wake(tx, parent, result_key)
             elif route.get('kind') == 'pm':
                 transition(tx, returned, 'user_message', user_packet, result_key)
             touch(tx, returned, 'return')
             if reviewed_gc:
                 transition(tx, returned, 'user_message', {**user_packet, 'kind': 'functional_assessment',
                     'reviewed_assignment_id': reviewed_gc['assignment_id']}, result_key)
-            owns_delivery = held['authored_role_uri'] == 'metaform://role/gc' and \
-                held['gc_assignment_id'] == held['assignment_id']
+            owns_delivery = held['gc_assignment_id'] == held['assignment_id'] and not held['reviewed_assignment_id']
             if owns_delivery and held['parent_assignment_id']:
                 transition(tx, returned, 'user_message', {**user_packet, 'kind': 'functional_correction',
                     'responsible_gc_assignment_id': held['parent_assignment_id']}, result_key)
-            if owns_delivery and state != 'failed':
+            reviews = tx.rows('assignments', {'reviewed_assignment_id': held['assignment_id']}, limit=0).results
+            if owns_delivery and state != 'failed' and len(reviews) < int(ctx.setting('orchestration_reviews')):
                 transition(tx, returned, 'assessment', {'report': packet, 'key': result_key}, result_key)
             return returned
 
@@ -912,7 +968,8 @@ class Orchestration:
         since = str(review['created'])
         directions = cast(list[Mapping[str, Any]], [*(gc.get('pending_direction') or []),
                                                     *(review.get('pending_direction') or [])])
-        if any(one.get('kind') == 'user_direction' and str(one.get('at') or '') >= since for one in directions):
+        if any(one.get('kind') == 'user_direction' and one.get('supersedes') is True
+               and str(one.get('at') or '') >= since for one in directions):
             return True
         tickets = {gc['work_id'], gc['root_work_id']}
         return any(one['source'] == 'user' and str(one['created']) >= since and tickets & set(one['affected_work_ids'])
@@ -948,22 +1005,32 @@ class Orchestration:
     def _correction(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
                     finding: Any, key: str, *, title: str | None = None, task: str | None = None,
                     note: str | None = None) -> dict[str, Any]:
-        ident = identity(assessment['assignment_id'], 'correction', key)
-        existing = row_for(tx, assignment_id=ident)
-        if existing:
-            return existing
-        fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
-            'task': str(finding)}
+        fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {'task': str(finding)}
         if title is None or task is None:
             title, task = finding_text(fields)
-        node, places = location(store, None, gc)
-        work = store.add_work(node, None, task=task, title=title, note=note)
-        made = new_assignment(tx, work, 'gc', ident=ident, parent=gc, task=task, result=task,
-            locations=places, mode=current_mode(tx, gc), specification=gc['specification'], candidate=gc['candidate'],
-            return_to={'assignment_id': gc['assignment_id'], 'assessment_assignment_id': assessment['assignment_id']})
-        made = update(tx, made, gc_assignment_id=ident, team_id=ident)
-        transition(tx, made, 'launch', {'kind': 'functional_correction', 'finding': fields,
-                                      'responsible_gc_assignment_id': gc['assignment_id']}, 'initial')
+        current = row_for(tx, assignment_id=gc['assignment_id']) or dict(gc)
+        record = store.ticket(current['work_id']).work
+        if current.get('stop') or record.outcome == 'cancelled':
+            return current
+        mark = f'Review {assessment["work_id"]} finding {key}'
+        if mark not in (record.note or ''):
+            history = f'{mark}: {task}\n{note or ""}'
+            store.edit_work(record.id, {'note': '\n\n'.join(filter(None, [record.note, history]))})
+        if record.done:
+            store.move_work(record.id, 'todo', kept=True)
+        direction = {'kind': 'review_finding', 'body': task, 'evidence': fields.get('evidence'),
+                     'reviewed_assignment_id': assessment['assignment_id'], 'at': now()}
+        directions = list(current.get('pending_direction') or [])
+        new_attempt = not any(one.get('reviewed_assignment_id') == assessment['assignment_id'] for one in directions)
+        if direction not in directions:
+            directions.append(direction)
+        made = update(tx, current, state='queued', pending_direction=directions,
+                      attempt=int(current.get('attempt') or 1) + int(new_attempt),
+                      evidence=[] if new_attempt else current['evidence'],
+                      last_check_in={'previous_result': current['result'], 'previous_evidence': current['evidence'],
+                                     'previous_candidate': current['candidate']} if new_attempt else current['last_check_in'])
+        transition(tx, made, 'launch', {'resume': True, 'kind': 'functional_correction', 'finding': fields},
+                   identity(assessment['assignment_id'], 'correction'))
         return made
 
     def handoff(self, ctx: Context) -> dict[str, Any]:
@@ -1080,7 +1147,7 @@ def work_changed(payload: dict[str, Any], ctx: Context) -> None:
         record = store.ticket(work_id).work
         if record.done:
             SERVICE.returned(ctx, work_id, record.resolution or '', state='delivered' if
-                             assignment['authored_role_uri'] == 'metaform://role/gc' else 'returned')
+                             assignment['gc_assignment_id'] == assignment['assignment_id'] else 'returned')
 
 
 def fingerprint(content: str) -> str:

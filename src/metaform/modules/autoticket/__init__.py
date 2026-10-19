@@ -19,9 +19,9 @@ from typing import Any
 
 from metaform import prompt_files, settings
 from metaform.data import Column, Index, Table, Tables, WorkRecord
-from metaform.module import Context, Module, Noun, Status, Stop, Subscription, Verb
+from metaform.module import Context, Module, Noun, Provides, Status, Stop, Subscription, Verb
 
-from . import faults, sources
+from . import background, faults, sources
 from .watch import Watch, first_line, ranked, shown, state
 
 SUPPORTED_OS = ('linux', 'macos')  # it follows logs as tail -F does and reaches hosts through ssh and a POSIX shell
@@ -30,6 +30,17 @@ SHIPS_DISABLED = False  # every project files its faults, so it heals with no on
 REMOTE_AGENT = False  # it reads logs on the machine Metaform runs on and through its ssh
 
 HERE = resources.files(__name__)
+
+settings.boolean('autoticket_watch', True, label='Watch project logs', category='automation',
+                 heading='Fault capture', person_only=True,
+                 help='Keep registered log watchers running with the server, independent of browser tabs.')
+
+settings.boolean('autoticket_file', True, label='Create repair tickets', category='automation', heading='Fault capture', person_only=True,
+                 help='Turn captured fault groups into actionable tickets; capture continues when this is off.')
+settings.boolean('autoticket_reopen', True, label='Reopen recurring faults', category='automation', heading='Fault capture', person_only=True,
+                 help='Reopen the same completed repair when its fault returns, preserving its evidence and history.')
+settings.boolean('autoticket_hold_feedback', False, label='Hold feedback for triage', category='automation', person_only=True,
+                 heading='Fault capture', help='Hold new feedback tickets for your decision instead of automatic repair.')
 
 
 def _similarity_check(value: Any, folder: Any) -> list[str] | None:
@@ -289,8 +300,8 @@ MODULE = Module(
             'and keys; Metaform stores no credentials. A log is read as it grows and never kept: each group keeps one '
             'example with secrets masked, its counter, when it was first and last seen, and the agents and tickets at '
             'work when it first appeared. metaform autoticket watch reads them until stopped. At most '
-            'autoticket_open_most tickets it filed are open and not held at once; feedback, and an error whose fix may '
-            'remove data, are filed held for the person and take no place.',
+            'autoticket_open_most tickets it filed are open and not held at once. Feedback holds follow project policy; '
+            'held work takes no place. The server supervises watchers independently of browser tabs.',
     verbs=(
         Verb('add', add, 'Watch a log: a local file, or ssh://<host>/<absolute path>.', nouns=(LOG,),
              examples=(('metaform autoticket add /var/log/app.log', 'Watches a local log from its end now.'),
@@ -313,6 +324,7 @@ MODULE = Module(
              nouns=(Noun('limit', 'How many groups; all when left out.', 'int', required=False),), effect='read'),
     ),
     subscriptions=(Subscription(faults.TOPIC, faults.raised), Subscription('map.changed', faults.freed)),
+    provides=(Provides('project.background', background.start),),
     status=status,
     default='list',
     tables=TABLES,

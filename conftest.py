@@ -41,6 +41,12 @@ def home(tmp_path, monkeypatch):
     # metaform.caller. A command run as its own process gets a terminal of its own instead, `own_terminal`.
     from metaform import caller
     monkeypatch.setattr(caller, '_at_tty', lambda: None)
+    # The fixture models a person's test terminal, not the harness running pytest. Stop host ancestry at
+    # this test process; explicit agent identities and tests' simulated process trees still apply.
+    original_parent = caller._parent
+    test_pid = os.getpid()
+    monkeypatch.setattr(caller, '_parent', lambda pid: 1 if pid == test_pid else original_parent(pid))
+    monkeypatch.setattr(caller, '_leader_agent', lambda pid, own_home: None)
     yield path
     loader.reset()
 
@@ -90,6 +96,10 @@ def run(home, tmp_path, request):
         # from inside that loop, which the chassis refuses, BASE-009; it runs as its own process instead.
         if isolated or os.environ.get('METAFORM_TEST_SUBPROCESS') == '1' or _loop_running():
             # A hung call names itself, well inside the test's own time limit (pyproject.toml).
+            from metaform import caller
+            proof = caller.Vouch() if not any(environment.get(key) for key in caller.IDENTITY) else None
+            if proof is not None:
+                environment.update(proof.environment())
             terminal, ends = own_terminal()  # typed at the person's terminal, as the in-process run stands
             try:
                 result = subprocess.run([sys.executable, '-m', 'metaform', *args], cwd=folder, env=environment,
@@ -98,6 +108,8 @@ def run(home, tmp_path, request):
             except subprocess.TimeoutExpired:
                 raise AssertionError(f'metaform {" ".join(args)} did not finish in {CLI_LIMIT} s') from None
             finally:
+                if proof is not None:
+                    proof.close()
                 for end in ends:
                     os.close(end)
         else:

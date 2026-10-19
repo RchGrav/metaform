@@ -30,6 +30,7 @@ KINDS = ('str', 'int', 'bool', 'list', 'select')
 CATEGORIES: tuple[tuple[str, str, str], ...] = (
     ('general', 'General', 'The project these settings are kept for, and where they apply.'),
     ('agents', 'Agents', 'Which agent works, when agents start, how many at once, and what they may do unasked.'),
+    ('automation', 'Full Auto', 'Project automation policy, worker capacity, recovery and repair gates.'),
     ('budgets', 'Budgets', 'How many tokens and how much money agents may spend, and what happens at the limit.'),
     ('agent_options', 'Agent options', "Each agent's own mode, model and effort, used when it starts."),
     ('map', 'Map and display', 'What the map shows and how the page draws it.'),
@@ -820,16 +821,17 @@ agents_may_set_control = boolean(
             'needs in its ticket. On: an agent may set them, through the person\'s own permission policy like any '
             'other call. Only the person turns this on or off, on the command line or the page; it is a permission '
             'the person holds and can change, never a rule the person cannot get past, CLI-011.',
-                                 label='Agents may change agent control', category='agents', heading='Permissions')
+                                 label='Agents may change agent control', category='automation', heading='Permissions')
 
 agents_ask_first = boolean(
     'agents_ask_first', False, person_only=True,
     help='Ask me before an agent starts, stops, releases or orders work.',
-    details='Off, the default: the person\'s agents start, stop, release and order tickets without asking, so work found '
-            'gets done and a project heals itself (the person\'s decision, 2026-10-18). On: each such act waits on the '
+    details='Off, the default: agents start, release and order tickets within their assigned authority without '
+            'asking. An agent may stop itself or agents it started; stopping another agent requires your actual '
+            'direction. Your own Stop remains available. On: each such act waits on the '
             'person\'s word in the chat or their answer on its card. Acts that cannot be undone, such as clearing or '
             'deleting, ask either way.',
-    label='Ask me before agents act', category='agents', heading='Permissions')
+    label='Ask me before agents act', category='automation', heading='Permissions')
 
 # The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
 # preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
@@ -856,7 +858,7 @@ roles_without_authority = items(
             'and steering agents. The page is the person\'s and is never held. '
             'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
             'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
-                                label='Roles without authority', category='agents', heading='Permissions')
+                                label='Roles without authority', category='automation', heading='Permissions')
 
 gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
                          help='Gemini setup installs a passive reminder after delegation and questioning, or none.',

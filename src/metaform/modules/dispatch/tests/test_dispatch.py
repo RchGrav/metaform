@@ -953,7 +953,7 @@ def test_start_refuses_a_ticket_when_every_agent_slot_is_in_use(dispatch, run):
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
     assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['free'] == 0
     refused = run('dispatch', 'start', other, 'claude', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and 'Every worker slot is in use' in refused.stdout + refused.stderr
     said = refused.stdout + refused.stderr
     # it names what holds the slot and the ticket refused as the person reads them (round 2, held-and-signals F6)
     assert 'held by code.engine#1 "Write notes.txt"' in said and 'code.engine#2 "Another change":' in said, said
@@ -973,7 +973,7 @@ def test_a_runner_reserved_past_the_agent_slots_gives_its_ticket_back(dispatch, 
     dispatch.store.take_work(other, by='dispatch starting 1')
     refused = run('dispatch', 'run', other, 'claude', 'reservation=dispatch starting 1', cwd=dispatch.folder,
                   ok=False, env=dispatch.env('hold'))
-    assert refused.returncode != 0 and 'Every agent slot is in use' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and 'Every worker slot is in use' in refused.stdout + refused.stderr
     assert not dispatch.store.ticket(other).work.taken and len(dispatch.received('session/new')) == 1
     dispatch.stop()
 
@@ -983,7 +983,7 @@ def test_a_runner_reserved_past_the_agent_slots_gives_its_ticket_back(dispatch, 
 def test_summoned_agents_started_at_once_never_pass_the_slots_and_stop_all_ends_every_one(dispatch, run):
     """UX review round 1, 2026-10-17 (dispatch-concurrency F3 and F5, forensic cause 3): eight chats summoned at once
     with two slots all started, since each checked the room and then started, and nothing stopped every agent at once.
-    The one gate admits the person's one plus the two slots; Stop all ends them and turns Full Auto off, so nothing
+    Helpers use their independent bounded capacity; Stop all ends them and turns Full Auto off, so nothing
     starts in their place. Round 2 (spawn-gate F2): eight talks at once about one ticket started three agents writing
     one log; one chat per subject is started, and the other seven are told of it."""
     from metaform.modules import dispatch as module
@@ -1000,20 +1000,22 @@ def test_summoned_agents_started_at_once_never_pass_the_slots_and_stop_all_ends_
     assert len({one['pid'] for one in same}) == 1 and len(module.launches()) == 1, 'by one agent, started once'
     run('dispatch', 'stop-all', '--json', cwd=dispatch.folder)
     eventually(lambda: not module.launches())
-    others = [dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Write part {n}.').id for n in range(8)]
+    others = [dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Write part {n}.').id for n in range(module.HELPERS_MOST + 2)]
     started, refused = talks(others)
-    assert len(started) == 3 and all(one['state'] == 'starting' for one in started), (started, refused)
-    assert len(refused) == 5 and all('Every agent slot is in use' in error for error in refused), refused
-    assert all('dispatch_agents allows 2 agents' in error and 'Ask again when one is free' in error
-               for error in refused), 'the refusal names the limit that binds and what follows'
-    assert len(module.launches()) == 3, 'the ledger holds the three it admitted'
+    assert len(started) == module.HELPERS_MOST and all(one['state'] == 'starting' for one in started), (started, refused)
+    assert len(refused) == 2 and all('helpers active' in error for error in refused), refused
+    assert all('Wait for a helper to finish' in error for error in refused)
+    assert len(module.launches()) == module.HELPERS_MOST, 'helpers have their own bounded capacity'
     for one in started:
         assert Path(one['log']).parent == dispatch.home / 'run' / 'dispatch' / 'logs', 'logs are kept in the home'
         assert Path(one['log']).stat().st_mode & 0o777 == 0o600 or os.name == 'nt', 'and private to their owner'
-    eventually(lambda: len([row for row in dispatch.items('session') if row.extra['state'] == 'running']) == 3)
+    eventually(lambda: len([row for row in dispatch.items('session') if row.extra['state'] == 'running']) == module.HELPERS_MOST)
+    advisor = json.loads(run('dispatch', 'system', '--json', cwd=dispatch.folder, env=dispatch.env('hold')).stdout)
+    assert advisor['state'] == 'starting', 'The user reaches triage even with every helper slot occupied.'
+    eventually(lambda: len([row for row in dispatch.items('session') if row.extra['state'] == 'running']) == module.HELPERS_MOST + 1)
     run('set', '--dispatch-autostart', cwd=dispatch.folder)
     stopped = json.loads(run('dispatch', 'stop-all', '--json', cwd=dispatch.folder).stdout)
-    assert len(stopped['stopped']) == 3 and stopped['failed'] == [], stopped
+    assert len(stopped['stopped']) == module.HELPERS_MOST + 1 and stopped['failed'] == [], stopped
     assert 'proj:dispatch_autostart' in stopped['turned_off']
     eventually(lambda: not module.launches())
     assert not [row for row in dispatch.items('session') if row.extra['state'] == 'running']
@@ -1040,12 +1042,13 @@ def test_the_machine_ceiling_counts_the_agents_of_every_project_of_the_home(disp
                       env=dispatch.env('hold'))
         assert refused.returncode != 0 and 'running on this machine across 1 project' in refused.stderr
         assert 'dispatch_machine_agents' in refused.stderr and not dispatch.ticket().taken
-        # the person can always summon their own system agent, one place beyond the machine's; no other summons
+        # The worker ceiling leaves triage and temporary helpers available.
         from metaform.module import context
         ctx = context('dispatch', dispatch.folder)
         module.admit(ctx, dispatch.store, dispatch.id, 'summoned', persons_own=True)
+        module.admit(ctx, dispatch.store, dispatch.id, 'summoned')
         with pytest.raises(module.Refused, match='dispatch_machine_agents'):
-            module.admit(ctx, dispatch.store, dispatch.id, 'summoned')
+            module.admit(ctx, dispatch.store, dispatch.id, 'worker')
     finally:
         elsewhere.unlink()
     assert run('set', '--dispatch-machine-agents', '65', cwd=dispatch.folder, ok=False).returncode != 0
@@ -1334,23 +1337,16 @@ def test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_unti
 
 
 @pytest.mark.req('VIEW-045')
-def test_summoned_agents_are_one_plus_the_free_agent_slots_and_the_next_issue_waits_for_a_slot(dispatch, run):
-    """One summoned agent is always the person's and more use the free slots: with one slot and no work, two
-    sentinels start and a third waits until one ends."""
+def test_summoned_agents_do_not_consume_the_worker_budget(dispatch, run):
+    """Temporary issue helpers remain available while the project allows only one worker."""
     run('enable', 'workflow', cwd=dispatch.folder)
     run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
     raised = [json.loads(run('dispatch', 'raise', NODE, '--json', '--', f'Issue {n}.', cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout) for n in (1, 2, 3)]
-    assert [one['state'] for one in raised] == ['starting', 'starting', 'queued']
-    assert raised[2]['waiting_on'] == 'a free agent slot'
-    for one in raised[:2]:
-        eventually(lambda one=one: [p for p in dispatch.received('session/prompt') if f"Issue {raised.index(one) + 1}."
-                                    in str(p)] or None)
-    run('dispatch', 'stop', raised[0]['work_id'], cwd=dispatch.folder)
-    eventually(lambda: run('dispatch', 'autostart', '--json', cwd=dispatch.folder, env=dispatch.env('hold')) and
-               [p for p in dispatch.received('session/prompt') if 'Issue 3.' in str(p)] or None)
-    for one in raised[1:]:
-        run('dispatch', 'stop', one['work_id'], cwd=dispatch.folder, ok=False)
+    assert [one['state'] for one in raised] == ['starting'] * 3
+    for number, one in enumerate(raised, 1):
+        eventually(lambda number=number: [p for p in dispatch.received('session/prompt') if f'Issue {number}.' in str(p)])
+    run('dispatch', 'stop-all', cwd=dispatch.folder)
 
 
 @pytest.mark.req('VIEW-045')
@@ -1912,7 +1908,7 @@ def test_the_agents_are_listed_with_whether_each_is_found_here_and_the_default_a
     listed = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)
     assert [(one['agent'], one['label'], one['available'], one['default']) for one in listed['agents']] == \
         [('claude', 'Claude Code', True, True), ('codex', 'Codex', True, False), ('gemini', 'Gemini CLI', True, False)]
-    assert listed['default'] == 'claude' and listed['room'] == 6, 'Claude Code by default, UX review round 1'
+    assert listed['default'] == 'claude' and listed['room'] == 8, 'Claude Code by default, UX review round 1'
     run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=dispatch.folder)
     gemini = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['agents'][2]
     assert (gemini['available'], gemini['path'], gemini['next']) == \
@@ -2934,7 +2930,7 @@ def test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_an
                       ('dispatch', 'stop', later), ('set', '--dispatch-autostart'), ('unset', '--dispatch-autostart')):
             refused = run(*words, cwd=dispatch.folder, env={**agent, **others}, ok=False)
             assert refused.returncode == 2, (words, refused.stdout, refused.stderr)
-            assert 'in no work their word started' in refused.stderr or 'made in no such turn' in refused.stderr \
+            assert 'in no work their word started' in refused.stderr or 'made in no such turn' in refused.stderr or 'An agent stops only the agents it started' in refused.stderr \
                 or words[:3] == ('dispatch', 'start', other) and 'the person stopped the work' in refused.stderr, \
                 refused.stderr  # their message stopped `other`: only their word starts it again
         assert dispatch.store.ticket(held[1]).work.held and running(later) and not running(other)
@@ -3816,18 +3812,16 @@ def test_the_persons_agent_is_the_same_conversation_after_a_switch_to_an_empty_b
     dispatch.start('hold', 'system=true')
     first = dispatch.session().extra
     eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
-    # The person's own agent follows the active base, the map the page shows: nothing pins its runner or its agent's
-    # MCP server, and a switch says it follows (UX review round 2, 2026-10-17, project-scope F1; decision pending
-    # Rich's confirmation). Workers stay pinned, the test above.
-    assert first['base'] is None, first
+    # The advisor retains its original base while another tab navigates elsewhere.
+    assert first['base'] == dispatch.store.active_base().id
     environ = Path(f'/proc/{dispatch.process.pid}/environ')
     if environ.exists():
-        assert b'METAFORM_BASE=' not in environ.read_bytes(), 'its runner is pinned to no base'
+        assert b'METAFORM_BASE=' in environ.read_bytes(), 'its runner retains its starting base'
     said = run('map', 'add-base', 'empty', '--confirm', cwd=dispatch.folder).stdout
-    assert 'Your own agent, Claude Code, follows the switch and reads empty from here.' in said, said
+    assert 'follows the switch' not in said, said
     assert home.active_base('proj').name == 'empty' and not Store('proj').roots(limit=1).entry
     again = module.system(context('dispatch', dispatch.folder, project='proj'))
-    assert (again['state'], again['session_id'], again['base']) == ('running', first['session_id'], 'empty'), again
+    assert (again['state'], again['session_id'], again['base']) == ('running', first['session_id'], 'main'), again
     found = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['sessions']
     assert [one['session_id'] for one in found if one['state'] == 'running'] == [first['session_id']]
     dispatch.stop()
@@ -3955,7 +3949,7 @@ def test_an_edit_of_the_system_prompt_reaches_the_running_system_agent_at_its_ne
     gates.mkdir()
     dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
     [opening] = eventually(lambda: dispatch.received('session/prompt'))
-    assert opening['params']['prompt'][0]['text'].startswith('# Engineering Orchestrator')
+    assert opening['params']['prompt'][0]['text'].startswith('# Front-facing agent')
     (gates / '1').touch()
     prompt_files.save_edit('dispatch:system', 'Edited orchestrator: plans & tickets. <mascot/>')
     run('dispatch', 'message', dispatch.id, 'what', 'next', cwd=dispatch.folder)
@@ -5064,22 +5058,32 @@ def test_the_runner_taking_a_session_over_says_so_once_and_sends_what_the_old_ru
     from metaform.modules.dispatch import runner
     path = module.handed_path('s1')
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'carried': [{'text': 'queued before', 'by': None}, {'text': 'hello', 'by': ''},
+    path.write_text(json.dumps({'carried': [{'text': 'queued before', 'by': None}, {'text': 'hello', 'by': '', 'first': True, 'word': {'id': 'human'},
+                'components': [{'name': 'context'}], 'peers': [['note', 'sender']],
+                'media': [{'type': 'image', 'data': 'example'}]},
                                             {'text': 'from a peer', 'by': 'worker'}]}), encoding='utf-8')
     session = runner.Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
                              dispatch.ticket(), 'claude', ['unused'])
     session.session_id = 's1'
-    noted, turns = [], []
+    noted, turns, metadata = [], [], []
 
     async def note(key, kind, text):
         noted.append((kind, text))
     session.note = note
-    session.turn = lambda text, *rest: turns.append(text)
+    def turn(text, *media, **given):
+        turns.append(text)
+        metadata.append((media, given))
+    session.turn = turn
     asyncio.run(session.taken_over())
     asyncio.run(session.taken_over())
     assert [kind for kind, _ in noted] == ['notice', 'person', 'message']
     assert noted[0][1].startswith('Restarted on updated code') and noted[2][1] == 'From the worker agent: from a peer'
     assert turns == ['queued before', 'hello', 'from a peer'] and not path.exists()
+
+    media, kept = metadata[1]
+    assert media == ({'type': 'image', 'data': 'example'},)
+    assert kept == {'first': True, 'word': {'id': 'human'}, 'components': [{'name': 'context'}],
+                    'peers': [['note', 'sender']]}
 
 
 @pytest.mark.req('VIEW-042')

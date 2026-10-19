@@ -289,7 +289,7 @@ def test_properties_apply_toward_the_leaves_and_are_visible_toward_the_trunk(sto
     for address in ('code.engine', 'code.installer', 'code.installer.script', 'code'):
         store.add_element(layer.name, address)
     store.finish(layer.name)
-    media = knowledge(store, 'media')
+    media = knowledge(store, 'implementation_language')
     store.add_property(media.name, 'code.engine', 'C++')
     store.add_property(media.name, 'code.installer', 'Bash')
     store.finish(media.name)
@@ -365,7 +365,7 @@ def test_the_toggled_layers_are_the_starting_selection(store):
 @pytest.mark.req('MAP-022')
 def test_a_property_attaches_only_to_an_element_and_writes_no_join(home, store):
     _, outer, _ = small_map(store)
-    media = knowledge(store, 'media')
+    media = knowledge(store, 'implementation_language')
     before = dump(store_file(home, store))
     store.add_property(media.name, 'code.timer.kitchen', 'C')
     changed = diff(before, dump(store_file(home, store)))

@@ -78,7 +78,7 @@ def test_manifest_role_source_versions_menu_override_and_managed_call(project_fo
     ticket = store.add_work(Node('element', 'code.timer.kitchen'), None,
                             task='Preserve the timer interaction.', title='Timer delivery')
     gc = SERVICE.claim(context('orchestration', project_folder, project='proj', session='gc',
-                               nouns={'work': ticket.id}))
+                               nouns={'work': ticket.id, 'session': 'gc'}))
     specialist = verb(context('orchestration', project_folder, project='proj', session='gc'),
         'orchestration', 'call', role=entry['name'], task='UX: observe the full timer adjustment.',
         result='Return the observed constraints.', context={'candidate': 'installed-candidate'}, key='bmad-review')

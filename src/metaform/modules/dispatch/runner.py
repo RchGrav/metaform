@@ -768,17 +768,12 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
     # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
-    # The person's own agent is the one runner that follows the active metaform, the map the page shows, and its
-    # agent's MCP server with it: nothing pins it (decision of 2026-10-17, pending Rich's confirmation).
-    if role(ctx.nouns, str(ctx.nouns['id'])) == 'system':
-        os.environ.pop(BASE_VARIABLE, None)
-    else:
-        bound = await asyncio.to_thread(store.bound_base)
-        if bound is not None:
-            os.environ[BASE_VARIABLE] = bound.id
-            store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
-                          write_layer=store.write_layer)
-            ctx = replace(ctx, store=store)
+    bound = await asyncio.to_thread(store.bound_base)
+    if bound is not None:
+        os.environ[BASE_VARIABLE] = bound.id
+        store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
+                      write_layer=store.write_layer)
+        ctx = replace(ctx, store=store)
     agent, work_id = agent_named(ctx.nouns['agent']), ctx.nouns['id']
     command = argv(start_command(ctx, agent))
     resume = str(ctx.nouns['resume']) if ctx.nouns.get('resume') else None
@@ -1267,6 +1262,7 @@ class Session:
         self.opening = False
         self.interrupt_lock = asyncio.Lock()  # cancellation cannot spill into the next queued prompt
         self.pending: deque[str] = deque()  # prompts wait in arrival order while one turn is in flight
+        self.priority_count = 0  # human messages at the front, in arrival order rather than stack order
         self.prompt_versions: deque[list[prompt_files.Sent]] = deque()
         self.prompt_contexts: deque[list[dict[str, Any]]] = deque()
         self.inflight_versions: list[prompt_files.Sent] = []
@@ -1463,7 +1459,12 @@ class Session:
                 or self.session_id is None or code_print() == LOADED:
             return False
         self.handing, self.cut, self.how = True, self.turns > 0, HANDED
-        self.handed_on.extend({'text': text, 'by': None} for text in self.pending)  # their lines are written
+        for number, text in enumerate(self.pending):
+            self.handed_on.append({'text': text, 'by': None, 'first': number < self.priority_count,
+                'word': self.worded[number] if number < len(self.worded) else None,
+                'components': self.prompt_contexts[number] if number < len(self.prompt_contexts) else [],
+                'peers': self.peered[number] if number < len(self.peered) else [],
+                'media': self.voiced[number] if number < len(self.voiced) else []})
         sys.stderr.write(f'Session {self.session_id} on work {self.work_id} is handed to a runner on the code on '
                          f'disk: {error}\n')
         self.ended.set()
@@ -3570,7 +3571,7 @@ class Session:
         native = service(self.ctx) is not None
         self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
             'metaform://role/triage' if self.role in ('system', 'intake') and native else
-            'metaform://role/gc' if self.role == 'worker' and native else None)
+            'metaform://role/implementer' if self.role == 'worker' and native else None)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
                     **({'METAFORM_AUTHORED_ROLE': self.authored_role} if self.authored_role else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
@@ -3622,8 +3623,8 @@ class Session:
         if self.ending:
             return
         row = {key: value for key, value in self.extra('running').items() if key != 'dispatch'}
-        # the metaform this runner stays on, `dispatch`; none for the person's own agent, which follows the active one
-        pinned = None if self.role == 'system' else await asyncio.to_thread(self.store.bound_base)
+        # Every conversation and worker stays on its launch project/base when another browser tab navigates.
+        pinned = await asyncio.to_thread(self.store.bound_base)
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
                    origin=origin(), base=pinned.id if pinned is not None else None)
         def take() -> None:
@@ -3672,7 +3673,7 @@ class Session:
         owner = service(self.ctx)
         if owner is not None and not self.prep:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id,
-                role=(self.authored_role or 'gc').removeprefix('metaform://role/'),
+                role=(self.authored_role or 'implementer').removeprefix('metaform://role/'),
                 session_id=str(self.session_id), runner=self.runner)
             self.authored_role = str(cast(dict[str, Any], self.assignment)['authored_role_uri'])
         self.acp.update(authored_role_uri=self.authored_role,
@@ -3683,7 +3684,7 @@ class Session:
             await asyncio.to_thread(started_well, self.store, self.work_id, self.agent)
         # every runner stays in the metaform it began in, whichever becomes active later, `dispatch`; one started by
         # an older starter, with none named, is bound here to the one it took its ticket in
-        bound = None if self.role == 'system' else await asyncio.to_thread(self.store.bound_base)
+        bound = await asyncio.to_thread(self.store.bound_base)
         if bound is not None:
             self.store = Store(self.store.project_id, base=bound.id, module=self.store.module)
         await self.save_state()
@@ -3785,7 +3786,9 @@ class Session:
                 async with self.lock:
                     await self.note(None, 'message' if by else 'person', f'From the {by} agent: {text}' if by else text)
             if text:
-                self.turn(text)
+                media = cast(list[Any], one.get('media') or [])
+                self.turn(text, *(media[:2]), first=bool(one.get('first')), word=one.get('word'),
+                          peers=one.get('peers'), components=one.get('components'))
 
     async def troubles(self) -> None:
         """The person's system agent takes each feature the person set up that a module says is not working, the
@@ -4019,6 +4022,17 @@ class Session:
         note_id = str(held.get('id'))
         if asked.get('deliver') and note_id in self.queued_peer_ids:
             return {'noted': True, 'queued': True, 'reused': True}
+        if asked.get('deliver'):
+            def prior_delivery() -> str | None:
+                with self.store.tables(write=False) as tx:
+                    prior = tx.get('session_lines', {'session_id': self.session_id, 'name': f'peer:{note_id}'})
+                    if prior:
+                        saved = json.loads(str(prior['text']))
+                        return saved.get('session_states', {}).get(self.session_id)
+                return None
+            state = await asyncio.to_thread(prior_delivery)
+            if state in ('delivered', 'read', 'replied'):
+                return {'noted': True, 'queued': False, 'reused': True, 'state': state}
         sender: dict[str, Any] = held.get('from') or {}
         if asked.get('deliver') and sender.get('node') and self.node is not None and not self.probe:
             # the pulse between the two figures, riding the event the note's line fires
@@ -4033,6 +4047,10 @@ class Session:
                 self.awaiting[note_id] = {'until': time.monotonic() + float(asked['awaiting']) + AWAIT_SPARE,
                                           'held': []}
             return {'noted': True}
+        # The waiting tool may return this reply while note() yields to its store write/event.
+        # unawait records consumed IDs before releasing that wait, so the reply never becomes a second turn.
+        if note_id in self.queued_peer_ids:
+            return {'noted': True, 'queued': False, 'reused': True}
         reply_to = str(held.get('reply_to') or '')
         from .orchestration import note_context
         text = prompt('peer_note', message_context=note_context(held), note=str(held.get('text') or ''))
@@ -4050,6 +4068,7 @@ class Session:
         to the agent as turns after all, so none is lost between the call's last read and its end."""
         waiting = self.awaiting.pop(str(asked.get('id') or ''), None)
         taken = {str(one) for one in cast(list[Any], asked.get('taken') or [])}
+        self.queued_peer_ids.update(taken)
         given = 0
         for note_id, text, marks in cast(list[Any], (waiting or {}).get('held') or []):
             if note_id not in taken:
@@ -4063,11 +4082,19 @@ class Session:
             return
         own = self.session_id
 
-        def marked(tx: Any) -> None:
+        def marked(tx: Any) -> list[dict[str, Any]]:
+            notes: list[dict[str, Any]] = []
             for note_id, sender in marks:
                 for session_id in {own, sender} - {''}:
                     mark_peer(tx, session_id, note_id, self.work_id, state, recipient_session=own)
-        await self.table(marked, fatal=False)
+                row = tx.get('session_lines', {'session_id': own, 'name': f'peer:{note_id}'})
+                if row:
+                    notes.append(json.loads(str(row['text'])))
+            return notes
+        notes = await self.table(marked, fatal=False)
+        from .peering import mark_remote
+        for note in cast(list[dict[str, Any]], notes or []):
+            await asyncio.to_thread(mark_remote, self.store, note, state, own, self.work_id)
 
     def guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
         """Resolve authored duty, current assignment and actual actions at the recipient's next turn boundary."""
@@ -4078,13 +4105,17 @@ class Session:
         from .orchestration import resume_context, snapshots
         components: list[dict[str, Any]] = []
         if self.authored_role and not self.probe:
-            role = resolve_agent_role(Path(self.root), self.authored_role, project=self.store.project_id,
-                                      bindings={'project': self.store.project_id})
+            held = resume_context(self.ctx, self.work_id, self.session_id)
+            role = (held or {}).get('role_snapshot') or resolve_agent_role(
+                Path(self.root), self.authored_role, project=self.store.project_id,
+                bindings={'project': self.store.project_id})
             if role.get('missing') or role.get('problems'):
                 raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
                            'metaform agents roles')
             components += list(role.get('components') or [])
-            held = resume_context(self.ctx, self.work_id, self.session_id)
+            components.append(prompt_files.component('orchestration:role_resource',
+                f'Your assigned duty is {self.authored_role}. Read this Metaform resource before acting; '
+                'it serves the exact version pinned to this assignment.'))
             if held:
                 self.assignment = held
                 keys = ('assignment_id', 'work_id', 'root_work_id', 'team_id', 'gc_assignment_id',
@@ -4112,6 +4143,12 @@ class Session:
                 components.append(prompt_files.component('orchestration:actions',
                     json.dumps(bound, ensure_ascii=False, indent=2)))
         if not self.probe and (self.authored_role or self.role == 'worker'):
+            address = self.at.partition('|')[0]
+            if address:
+                effective = self.store.context(address)
+                components.append(prompt_files.component('map:effective_context', json.dumps({
+                    'address': address, 'applying': [one.to_dict() for one in effective.applying],
+                    'knowledge': list(effective.knowledge)}, ensure_ascii=False)))
             memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
             if memory:
                 memory_component = prompt_files.resolve('memory:instructions')
@@ -4242,19 +4279,23 @@ class Session:
         """Queue one prompt; `first`, the person's own message, goes ahead of every prompt waiting, agents' notes
         among them, so it is never answered after a backlog (2026-10-18: the person's stop waited behind 136 notes)."""
         if self.handing:  # the runner taking the session over sends it
-            self.handed_on.append({'text': text, 'by': None})
+            self.handed_on.append({'text': text, 'by': None, 'first': first, 'word': word,
+                                  'components': components, 'peers': peers,
+                                  'media': [block for block in (audio, image) if block is not None]})
             return
         if self.ending:
             return
-        self.prompt_versions.appendleft([self.sent.pop(0) for _ in range(len(self.sent))]) if first else \
-            self.prompt_versions.append([self.sent.pop(0) for _ in range(len(self.sent))])
+        position = self.priority_count if first else len(self.pending)
+        self.prompt_versions.insert(position, [self.sent.pop(0) for _ in range(len(self.sent))])
         self.replaying = False  # what comes from here on is the session's own, never a replay
         voiced = [block for block in (audio, image) if block is not None]
         peered = list(peers or [])  # the peer notes the turn carries, marked as it is sent and read
         # the person's word, for their system agent's turn their own message starts
         for queue, item in ((self.prompt_contexts, list(components or [])), (self.pending, text),
                             (self.voiced, voiced), (self.peered, peered), (self.worded, word)):
-            cast(deque[Any], queue).appendleft(item) if first else cast(deque[Any], queue).append(item)
+            cast(deque[Any], queue).insert(position, item)
+        if first:
+            self.priority_count += 1
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -4276,6 +4317,7 @@ class Session:
                     current = self.active_turn or ActiveTurn()
                     self.active_turn = current
                     text = self.pending.popleft()
+                    self.priority_count = max(0, self.priority_count - 1)
                     self.inflight_versions = self.prompt_versions.popleft() if self.prompt_versions else []
                     supplied = self.prompt_contexts.popleft() if self.prompt_contexts else []
                     beside = self.voiced.popleft() if self.voiced else []
@@ -4457,6 +4499,16 @@ class Session:
                 return ''
         return text
 
+    async def yield_to_person(self, current: ActiveTurn) -> None:
+        """Yield an advisor's active task after acknowledging human input; preserve queued human messages."""
+        if self.active_turn is not current:
+            return
+        try:
+            await self.interrupt()
+        except Exception as error:  # noqa: BLE001  keep the accepted message and expose adapter failure
+            async with self.lock:
+                await self.note(None, 'notice', f'Your message is queued; the active turn could not yield: {error}')
+
     async def interrupt(self) -> bool:
         """Request cancellation of only the current turn; its response owns completion and queued prompts stay serial."""
         async with self.interrupt_lock:
@@ -4628,7 +4680,10 @@ class Session:
                         await self.note(f'broadcast:{sent}' if sent else None, 'message' if by else 'person',
                                         f'From the {by} agent: {text}' if by else text)
                 if self.handing:  # its line could not be written: the runner taking the session over writes and sends it
-                    self.handed_on.append({'text': text, 'by': by})
+                    word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
+                        if asked.get('word') is True and not by and self.role == 'system' else None
+                    self.handed_on.append({'text': text, 'by': by, 'first': not by, 'word': word,
+                        'components': [], 'peers': [], 'media': [one for one in (audio, image) if one is not None]})
                     await self.reply(writer, {**said, 'sent': True, 'steered': False, 'handed': True})
                     return
                 # Into the turn in flight when the agent offers steering and nothing waits before it, P016; otherwise
@@ -4638,7 +4693,8 @@ class Session:
                 word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
                     if asked.get('word') is True and not by and self.role == 'system' else None
                 current = self.active_turn
-                steered = (await self.steer(text) if self.turns and (not self.pending or not by)
+                steered = (await self.steer(text) if self.turns and self.priority_count == 0
+                           and (not self.pending or not by) and not (not by and self.role == 'system')
                            and current is not None and current.sent and not current.cancel_requested
                            and audio is None and image is None and not self.opening else False)
                 if steered and word is not None and current is not None and current is self.active_turn:
@@ -4650,9 +4706,12 @@ class Session:
                                         'have reached the turn, so it is not sent again. Send it again if it did not.')
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
+                preempt = not by and self.role == 'system' and current is not None
                 self.turn(text, audio, image, word=word, first=not by)
                 await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
                                           'image': image is not None})
+                if preempt and current is not None:
+                    self.spawn(self.yield_to_person(current))
             elif op == 'word':  # the person's word the turn in flight carries, or the word whose work holds the
                 # tickets named, `metaform.module.persons_word`
                 word = self.word_now() or await self.covering(listed(asked, 'tickets'))
@@ -4687,18 +4746,21 @@ class Session:
             elif op == 'interrupt':
                 try:
                     requested = await self.interrupt()
-                    # the turns waiting behind it go too, so the agent waits for the person rather than taking its
-                    # work up again; the notes among them stay in its thread, and come again when sent again
-                    for _, note_id_marks in zip(self.pending, self.peered):
+                    # Drop background continuations, retaining the human FIFO already acknowledged.
+                    keep = self.priority_count
+                    for number, note_id_marks in enumerate(self.peered):
+                        if number < keep:
+                            continue
                         self.queued_peer_ids.difference_update(note_id for note_id, _ in note_id_marks)
                     for queue in (self.pending, self.prompt_versions, self.prompt_contexts, self.voiced, self.peered,
                                   self.worded):
-                        cast(deque[Any], queue).clear()
+                        while len(queue) > keep:
+                            cast(deque[Any], queue).pop()
                     direction = cast(dict[str, Any] | None, asked.get('direction'))
                     if direction and direction.get('body'):
                         from .orchestration import note_context
                         text = prompt('peer_note', message_context=note_context(direction), note=str(direction['body']))
-                        self.turn(text)
+                        self.turn(text, first=direction.get('kind') == 'user_direction')
                     await self.reply(writer, {**said, 'requested': requested})
                 except Exception as error:  # noqa: BLE001  a failed cancel is reported without destroying the session
                     await self.reply(writer, {**said, 'error': f'Could not interrupt the turn: {error}'})
@@ -4765,6 +4827,7 @@ class Session:
             return
         self.ending, self.how = True, how
         self.pending.clear()
+        self.priority_count = 0
         self.voiced.clear()
         self.peered.clear()
         self.worded.clear()

@@ -148,3 +148,10 @@ appending a version with that selection as its parent. An ambiguous or unmatched
 a nonfatal conflict; later explicit user edits remain authoritative. `metaform agents updates` reads the source,
 before/after versions and outcome. Whole skill procedures and legacy library sections retain their existing prompt
 identities, and skill reads and deployment use the selected procedure and library versions.
+
+
+## Project background services
+
+`Provides('project.background', start)` exposes an event-driven service owned by the web supervisor. `start(ctx)` returns an object with `close()`, or `None` when its policy disables it. One instance runs per registered project even with no page open. Module/chassis settings changes refresh it; shutdown closes it. `close()` must release listeners, native watchers and leases. Do not poll for changes or react to unrelated events. Publish failures on `fault.raised`; bounded failure backoff is allowed. Autoticket supplies the built-in supervised log watcher through this contract.
+
+`Store.context(address).knowledge` contains explicitly scoped CEL content with layer, source and attachment provenance. An item inherits only when `extra.instruction` is true. Ordinary evidence remains local. Context selection and masks apply before delivery; functional joins retain their own receivers.

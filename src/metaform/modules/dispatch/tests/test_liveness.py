@@ -264,7 +264,8 @@ def upgraded(dispatch):
 
 
 @pytest.mark.req('MAP-049')
-def test_dead_runner_recovery_defaults_to_manual_and_preserves_ownership(dispatch, run):
+def test_explicit_manual_recovery_preserves_ownership(dispatch, run):
+    run('set', '--dispatch-recovery=manual', cwd=dispatch.folder)
     dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
     eventually(lambda: dispatch.logged('grandchild'))
     dispatch.process.kill()
@@ -428,7 +429,7 @@ def test_after_a_crash_the_supervisor_resumes_no_more_sessions_than_the_slots_an
     from metaform.module import context
     from metaform.modules import dispatch as module
     from metaform.modules.dispatch import recovery
-    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=dispatch.folder)
     monkeypatch.setattr(module, 'RETRY_SECONDS', 0)
     real, runners = subprocess.Popen, []
 
@@ -687,9 +688,6 @@ def test_a_runner_that_cannot_release_its_ticket_says_so_and_how_to_put_it_back(
 
 
 def test_termination_during_adapter_creation_waits_for_startup_resources(dispatch, monkeypatch):
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock, Mock
-
     from metaform.modules.dispatch.runner import TERMINATED, Session
     from metaform.modules.dispatch.tests.test_dispatch import FAKE
 
@@ -700,8 +698,8 @@ def test_termination_during_adapter_creation_waits_for_startup_resources(dispatc
         created, resume = asyncio.Event(), asyncio.Event()
         launch = loop.subprocess_exec
         handler = {}
-        listener = SimpleNamespace(close=Mock())
-        ctx = SimpleNamespace(nouns={}, listen=lambda callback: listener, publish_async=AsyncMock())
+        from metaform.module import context
+        ctx = context('dispatch', dispatch.folder, project='proj')
         held = Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', [sys.executable, str(FAKE)])
 
         async def paused_launch(*args, **kwargs):
@@ -914,8 +912,10 @@ def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart
 
     async def exercise():
         changed = AsyncMock()
-        held = Session(SimpleNamespace(publish_async=changed, nouns={}), Store('proj', module='dispatch'),
-                       dispatch.ticket(), 'claude', [])
+        from metaform.module import context
+        ctx = context('dispatch', dispatch.folder, project='proj')
+        ctx.publish_async = changed
+        held = Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', [])
         held.session_id = 'controlled-turn'
         held.chat_question = 'chat'  # a person's chat session lives between turns; a work session ends at the turn
         held.process = SimpleNamespace(returncode=None)
@@ -948,7 +948,7 @@ def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart
         held.turn('First turn')
         assert (await status())['activity'] == 'working'
         await asyncio.sleep(0)
-        answer.set_result(SimpleNamespace(stop_reason='end_turn'))
+        answer.set_result(SimpleNamespace(stop_reason='end_turn', usage=None))
         await asyncio.gather(*tuple(held.tasks))
         idle = await status()
         assert idle['state'] == 'running' and idle['activity'] == 'idle' and idle['agent_alive'] is True
@@ -958,7 +958,7 @@ def test_working_turn_end_and_resume_publish_activity_without_an_adapter_restart
         held.turn('Resume')
         assert (await status())['activity'] == 'working'
         await asyncio.sleep(0)
-        answer.set_result(SimpleNamespace(stop_reason='end_turn'))
+        answer.set_result(SimpleNamespace(stop_reason='end_turn', usage=None))
         await asyncio.gather(*tuple(held.tasks))
         assert (await status())['activity'] == 'idle'
         assert dispatch.ticket().done is None
@@ -988,7 +988,6 @@ def test_an_agent_that_exits_after_closing_its_ticket_raises_no_fault(dispatch, 
 
 @pytest.mark.parametrize('rest', ['elsewhere', None])
 def test_the_agent_process_finds_this_install_first_on_path(dispatch, monkeypatch, rest):
-    from types import SimpleNamespace
 
     from metaform.modules.dispatch.runner import Session
 
@@ -1006,8 +1005,9 @@ def test_the_agent_process_finds_this_install_first_on_path(dispatch, monkeypatc
             raise OSError('not started')
 
         monkeypatch.setattr(loop, 'subprocess_exec', launch)
-        held = Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'claude',
-                       ['agent'])
+        from metaform.module import context
+        held = Session(context('dispatch', dispatch.folder, project='proj'), Store('proj', module='dispatch'),
+                       dispatch.ticket(), 'claude', ['agent'])
         with pytest.raises(OSError):
             await held.begin()
 

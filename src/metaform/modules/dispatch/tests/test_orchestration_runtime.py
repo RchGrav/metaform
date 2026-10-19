@@ -1,4 +1,4 @@
-"""GC-led orchestration through actual ACP subprocesses, public verbs, capacity leases and recipient prompts."""
+"""Explicit legacy coordinator roles remain usable; new tickets default to direct specialists."""
 from __future__ import annotations
 
 import hashlib
@@ -28,7 +28,16 @@ def swarm(run, home, project_folder, tmp_path, request):
     run('set', '--dispatch-agents', '1', '--dispatch-machine-agents', '1', cwd=project_folder)
     # The fixture adapter completes the explicit result/check-in work itself. An optional after-finish note turn
     # is a separate dispatch contract and would not add evidence to this delivery scenario.
-    run('set', '--dispatch-record-on-finish', 'off', cwd=project_folder)
+    run('set', '--dispatch-record-on-finish', 'off', '--dispatch-autostart', cwd=project_folder)
+    from metaform.module import context
+    from metaform.modules.orchestration.state import SERVICE
+    legacy_ctx = context('orchestration', project_folder, project='proj')
+    legacy = SERVICE.ensure(legacy_ctx, made.id, role='gc')
+    with Store('proj', module='orchestration').tables() as tx:
+        tx.update('assignments', {'assignment_id': legacy['assignment_id']},
+                  {'role_snapshot': resolve_agent_role(project_folder, 'gc', project='proj')})
+    # Seed an explicit previously assigned duty without scheduling a second runner beside Dispatch.start().
+    made.store.move_work(made.id, 'todo', kept=True)
     run('memory', 'create_entities', json.dumps([
         {'name': 'route-grounding', 'entityType': 'functional constraint',
          'observations': ['The caller retains ownership of its requested result.'],
@@ -109,7 +118,8 @@ def pm_evidence(swarm, scenario, expected):
     observed = wait_for(swarm, lambda: next((one for one in swarm.entries() if 'pm_observation' in one), None))
     assert observed['role'] == 'triage'
     assert all(text in observed['pm_observation'] for text in expected)
-    assert observed['capacity']['machine_used'] == observed['capacity']['machine_limit'] == 1
+    assert observed['capacity']['machine_used'] == 0
+    assert observed['capacity']['machine_limit'] == 1
     session = observed['session']
     delivered = [one for one in records('agents', 'receipts') if one['session_id'] == observed['runner_identity']
                  and one['name'].startswith('dispatch:user-update:')]
@@ -157,7 +167,7 @@ def delivery_evidence(swarm, scenario):
 
     logged = swarm.entries()
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
-    assert capacities and all(one['limit'] == one['machine_limit'] == one['used'] == one['machine_used'] == 1
+    assert capacities and all(one['limit'] == one['machine_limit'] == 1 and one['used'] == one['machine_used'] <= 1
                               for one in capacities)
     contexts = [one for one in logged if 'recipient_context' in one]
     assert {one['role'] for one in contexts} >= {'gc', 'implementer', 'functionality'}
@@ -210,7 +220,7 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     assert requested['caller_assignment_id'] == worker['assignment_id']
     assert requested['creator_assignment_id'] == creator['assignment_id'] and len(specialists) == 2
     assert requested['context']['contribution'] == 'Verify functional return behavior.'
-    assert any('gc_commission' in one for one in logged)
+    assert requested['creator_assignment_id'], 'A missing role commissions its helper automatically.'
     received = [one['recipient_context'] for one in logged if one.get('role') == 'route_specialist'
                 and 'recipient_context' in one]
     assert len(received) >= 2 and all('You are the Route Specialist.' in one for one in received)
@@ -243,12 +253,12 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
 
     logged = swarm.entries()
     requested = next(one['gc_self_request'] for one in logged if 'gc_self_request' in one)
-    assert requested['assignment']['state'] == 'running' and requested['cancelled'] is False
+    assert requested['request']['state'] in ('commissioned', 'published')
     assert requested['request']['caller_assignment_id'] == requested['request']['gc_assignment_id'] == \
         root['assignment_id']
     calls = [one for one in logged if one.get('mcp_tool', {}).get('name') in (
         'orchestration_call', 'orchestration_commission')]
-    assert [one['mcp_tool']['name'] for one in calls] == ['orchestration_call', 'orchestration_commission']
+    assert [one['mcp_tool']['name'] for one in calls] == ['orchestration_call']
     assert all(one['role'] == 'gc' and one['mcp_tool']['is_error'] is False and
                one['mcp_tool']['runner_identity'] == one['runner_identity'] for one in calls)
     received = next(one['gc_self_received'] for one in logged if 'gc_self_received' in one)
@@ -256,7 +266,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     assert any(one.get('role') == 'gc' and 'session_loaded' in one for one in logged)
     assert any('fqc_observation' in one for one in logged)
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
-    assert capacities and all(one['limit'] == one['machine_limit'] == one['used'] == one['machine_used'] == 1
+    assert capacities and all(one['limit'] == one['machine_limit'] == 1 and one['used'] == one['machine_used'] <= 1
                               for one in capacities)
     request = records('orchestration', 'role_requests')[0]
     assert request['state'] == 'published' and request['creator_assignment_id'] == creator['assignment_id']
@@ -355,6 +365,9 @@ def test_user_stops_a_suspended_gc_and_its_live_child_without_restarting_pending
 @pytest.mark.parametrize('mode', ['adaptive', 'strict'])
 def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommendation_when_selected(swarm, mode):
     swarm.run('set', '--orchestration-mode', mode, cwd=swarm.folder)
+    with Store('proj', module='orchestration').tables() as tx:
+        root = next(one for one in tx.rows('assignments', limit=0).results if one['work_id'] == swarm.id)
+        tx.update('assignments', {'assignment_id': root['assignment_id']}, {'mode': mode})
     swarm.start(FAKE_SWARM_SCENARIO=mode, FAKE_SWARM_STATE=str(swarm.swarm_state))
     assignments = completed(swarm)
     changes = records('orchestration', 'changes')
@@ -375,18 +388,18 @@ def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommenda
     if mode == 'adaptive':
         assert (swarm.folder / 'OPERATIVE.md').read_text() == change['content']
         assert any('change_order' in one and change['current_revision'] in one for one in contexts)
-        corrections = [one for one in assignments if one['authored_role_uri'] == 'metaform://role/gc'
-                       and one['parent_assignment_id']]
-        assert len(corrections) == 1 and corrections[0]['state'] == 'delivered'
-        assert any(one['reviewed_assignment_id'] == corrections[0]['assignment_id'] for one in assignments)
-        assert any('CORRECTIVE_GC_DELIVERED' in one['text'] for one in notice_lines)
+        root = next(one for one in assignments if one['work_id'] == swarm.id)
+        assert root['attempt'] == 2 and root['state'] == 'delivered'
+        assert not any(one['authored_role_uri'] == 'metaform://role/gc' and one['parent_assignment_id']
+                       for one in assignments), 'Findings repair the original ticket without a coordinator tree.'
+        assert len([one for one in assignments if one['reviewed_assignment_id'] == root['assignment_id']]) == 1
     else:
         assert (swarm.folder / 'OPERATIVE.md').read_text() == change['before_content']
         assert any('recommendation' in one for one in contexts)
         assert not any('correction_delivered' in one for one in logged)
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
     assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
-    pm_evidence(swarm, mode, ['GC_VALIDATED', 'FQC_ACCEPTED', change['reason'], 'C(T)'])
+    pm_evidence(swarm, mode, ['GC_VALIDATED', 'FQC_FINDING', change['reason'], 'C(T)'])
 
 
 @pytest.mark.parametrize('restart', [False, True])

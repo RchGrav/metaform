@@ -12,8 +12,8 @@ function. So one kind of error is one group however often it repeats, and the wo
 raises never make two errors one. A group never seen before is filed as a ticket of kind broken at the element that owns its file, `watch.file_address`;
 a group that recurs while its ticket is open has its count and last seen written in that ticket's note. At most
 `autoticket_open_most` filed tickets are open and not held at once: the rest wait as groups, and the oldest is filed
-when one of those tickets is done or held. A fault raised by an agent working a ticket autoticket filed is counted on that ticket. Feedback,
-whose answer is a design choice, and an error that names deleting or removing data are filed held for the person.
+when one of those tickets is done or held. A fault raised by an agent working a ticket autoticket filed is counted on that ticket. Feedback is held only when the person enables that policy. Recurrences reopen their canonical ticket;
+explicitly cancelled work stays cancelled. Error wording never imposes an approval gate.
 
 Event rules, CLAUDE.md section 2: the faults that arrive while a pass for the same project runs merge into its next
 pass, so a burst costs one pass; and the map.changed subscriber that files a waiting group decides from the event
@@ -22,16 +22,16 @@ alone whether a ticket of this module may have closed, so changes that do not co
 from __future__ import annotations
 
 import json
-import re
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from importlib import resources
+from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, prompt_files, settings
-from metaform.data import Node, Store, StoreError
+from metaform.data import Node, Store, StoreError, WorkRecord
 from metaform.module import Context
 
 from . import entries, grouping
@@ -46,7 +46,6 @@ TITLES = {'web': 'Web server fault', 'page': 'Page error', 'mcp': 'MCP tool fail
 FILING = 'filing '  # a group's work_id while one process files it: `filing <time>`
 FILING_STALE = 60.0  # seconds after which a filing never finished, its process gone, is taken up again
 # the words of a message whose fix may delete or remove data, so the ticket waits for the person
-REMOVES = re.compile(r'\b(?:delet|remov|drop|purg|wip|truncat|eras)\w*', re.IGNORECASE)
 
 
 @dataclass
@@ -195,10 +194,21 @@ def matched(terms: tuple[int, ...], known: list[tuple[int, tuple[int, ...]]], th
     return grouping.first_match(terms[1:], same, threshold)
 
 
+def reopen_fault(store: Store, work_id: str, last_seen: str) -> None:
+    """Reopen a completed canonical issue once, retaining the previous repair's evidence."""
+    with store.atomic():
+        current = store.ticket(work_id).work
+        if current.done and current.outcome != 'cancelled':
+            history = (f'Previous resolution ({current.done}): {current.resolution or "not recorded"}. '
+                       f'Fault recurred at {last_seen}; repair and verify it again.')
+            store.edit_work(work_id, {'note': f'{current.note or ""}\n\n{history}'.strip()})
+            store.move_work(work_id, 'todo', kept=True)
+
+
 def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int, str]) -> int:
     """Each group counted: on its open ticket, its count and last seen written in that ticket's note; raised by an
-    agent working a ticket autoticket filed, counted on that ticket; seen again after its ticket was done, waiting to
-    be filed anew. Then the waiting groups filed while there is room. Returns how many were filed."""
+    agent working a ticket autoticket filed, counted on that ticket; recurrence reopens its canonical ticket unless
+    the person cancelled it or disabled reopening. Waiting new groups file while there is room."""
     with store.tables(write=False) as tx:
         rows = {int(group_id): dict(row) for group_id in touched
                 if (row := tx.get('groups', {'group_id': group_id})) is not None}
@@ -207,7 +217,6 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
     named = {str(row['work_id']) for row in rows.values() if row['work_id']} | agents
     records = {record.id: record for record in store.work(ids=sorted(named), limit=0).results} if named else {}
     notes: dict[str, list[dict[str, Any]]] = {}
-    again: list[int] = []
     for group_id, row in rows.items():
         record = records.get(str(row['work_id']))
         agent = by_agent.get(group_id)
@@ -216,11 +225,13 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
         elif agent in agents and (on := records.get(agent)) is not None and not on.done:
             row['work_id'] = agent
             notes.setdefault(agent, []).append(row)
-        elif record is not None:  # its ticket is done and it came back: a new ticket, `file_waiting`
-            again.append(group_id)
+        elif record is not None:
+            # A recurrence belongs to the same issue. Explicit cancellation is retained; it is not a crash.
+            if record.outcome != 'cancelled' and settings.value('autoticket_reopen', ctx.folder):
+                events.announced(ctx.folder, ctx.surface, reopen_fault, store, record.id, str(row['last_seen']))
+                records[record.id] = store.ticket(record.id).work
+            notes.setdefault(record.id, []).append(row)
     with store.tables() as tx:
-        for group_id in again:
-            tx.update('groups', {'group_id': group_id}, {'work_id': ''})
         for work_id, told in notes.items():
             for row in told:
                 tx.update('groups', {'group_id': int(row['group_id'])}, {'work_id': work_id})
@@ -255,12 +266,14 @@ def file_waiting(ctx: Context, store: Store) -> int:
     """File the waiting groups, oldest first, while fewer than `autoticket_open_most` tickets it filed are open and not
     held: a held ticket waits for the person and starts no agent work, so it takes no slot. Each group is claimed first,
     so two processes never file one group twice. Returns how many were filed."""
+    if not settings.value('autoticket_file', ctx.folder):
+        return 0
     most = int(settings.value('autoticket_open_most', ctx.folder) or 5)
     at = time.time()
     with store.tables(write=False) as tx:
         rows = [dict(row) for row in tx.rows('groups', limit=0).results]
     filed_ids = sorted({str(row['work_id']) for row in rows if row['work_id'] and not filing(row)})
-    records = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
+    records: Sequence[WorkRecord] = store.work(ids=filed_ids, open=True, limit=0).results if filed_ids else []
     kept = holds(store, [record.id for record in records])
     open_now = sum(not record.held and record.id not in kept for record in records)
     waiting = sorted((row for row in rows if row['address'] and waits(row, at)), key=lambda row: int(row['group_id']))
@@ -315,13 +328,10 @@ def waits(row: dict[str, Any], at: float) -> bool:
     return False
 
 
-def held_why(row: dict[str, Any]) -> str | None:
-    """Why a group's ticket waits for the person: feedback asks how Metaform should work, a design choice; an error
-    naming deleting or removing data may be fixed only by deleting or removing data. None when neither."""
-    if row['source'] == 'feedback':
+def held_why(row: dict[str, Any], folder: Any = None) -> str | None:
+    """Only explicit capture policy holds a report. Words in a symptom do not authorize or forbid its remedy."""
+    if row['source'] == 'feedback' and settings.value('autoticket_hold_feedback', folder):
         return prompt_files.text(HERE, 'held_design') or 'Feedback asks how Metaform should work: a design choice.'
-    if REMOVES.search(first_line(str(row['example']))):
-        return prompt_files.text(HERE, 'held_data') or 'Its fix may delete or remove data.'
     return None
 
 
@@ -335,7 +345,7 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
         first=str(row['first_seen']), last=str(row['last_seen']), sample=example,
         source=SOURCES.get(str(row['source']), str(row['source'])),
         reproduce=str(row['reproduce'] or 'not known; the sample above is all that was seen'))
-    why = held_why(row)
+    why = held_why(row, Path(store.project().path))
     note = '\n'.join([*([f'Held for the person: {why}'] if why else []), line(row)])
     title = f'{TITLES.get(str(row["source"]), "Error")}: {first_line(example)}'[:120]
     return store.add_work(Node('element', str(row['address'])), None, kind='broken', title=title, note=note,

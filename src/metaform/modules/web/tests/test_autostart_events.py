@@ -205,3 +205,33 @@ def test_cli_setting_changes_reach_the_server_without_an_open_page(run, home, tm
         assert scheduled.get(timeout=5) == 'proj'
         run('unset', '--dispatch-autostart', cwd=folder)
         assert scheduled.get(timeout=5) == 'proj'
+
+
+def test_new_worker_starts_rotate_projects_and_capacity_release_wakes_waiters(monkeypatch):
+    server = object.__new__(module.Server)
+    server.dispatch_lock, server.listening = threading.Lock(), threading.Lock()
+    server.listeners = set()
+    server.dispatch_pending = {('a', None), ('b', None)}
+    server.capacity_waiters, server.merges_pending = set(), set()
+    server.dispatch_busy, server.dispatch_errors, server.dispatch_last = True, {}, ''
+    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+    monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
+    monkeypatch.setattr(module.events, 'announce', lambda *args: [])
+    monkeypatch.setattr(server, 'watch_backgrounds', lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, 'watch_runners', lambda *args: None)
+    monkeypatch.setattr(server, 'schedule_retry', lambda *args: None)
+    calls = []
+    def start(target, module_id, verb, nouns, **kwargs):
+        assert nouns == {'batch': 1}
+        project = target['project']
+        calls.append(project)
+        return {'more': calls.count(project) == 1, 'capacity_waiting': calls.count(project) == 2}
+    monkeypatch.setattr(module, 'module_verb', start)
+    server.dispatch_waiting()
+    assert calls == ['a', 'b', 'a', 'b']
+    assert server.capacity_waiters == {('a', None), ('b', None)}
+    scheduled = []
+    monkeypatch.setattr(server, 'schedule_dispatch', lambda project, **kwargs: scheduled.append(project))
+    server.changed({'project': 'other', 'tables': ['dispatch.sessions', 'work']})
+    assert scheduled == ['other']
+    assert server.dispatch_pending == {('a', None), ('b', None)}

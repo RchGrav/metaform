@@ -22,6 +22,10 @@ settings.choice('orchestration_mode', ['adaptive', 'strict'], default='adaptive'
                 help='Whether assignments may adapt specifications to serve C(T), or recommend changes.',
                 owner='orchestration', scope='folder')
 
+settings.number('orchestration_reviews', 1, min=0, max=10,
+                label='Automatic reviews per ticket', category='automation', heading='Verification', person_only=True,
+                help='Bound independent reviews of one delivery. Findings reopen that ticket; zero disables automatic reviews.')
+
 ROLE_DUTIES = (
     ('triage', 'Prepare functional tickets and communicate with the user.', 'dispatch:system'),
     ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'orchestration:gc'),
@@ -41,7 +45,7 @@ ROLE_DUTIES = (
     ('synthesizer', 'Reconcile findings into a faithful combined result.', 'orchestration:synthesizer'),
     ('dogfood', 'Expose user-experience failures by using the actual product.', 'orchestration:dogfood'),
     ('release', 'Prepare the assigned release candidate and materials.', 'orchestration:release'),
-    ('role_creator', 'Publish a reusable specialist duty commissioned by the delivery GC.', 'orchestration:role_creator'),
+    ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'orchestration:role_creator'),
 )
 ROLES = tuple(AgentRoleDefinition(name, purpose, ('orchestration:common', prompt))
               for name, purpose, prompt in ROLE_DUTIES)
@@ -123,7 +127,7 @@ CALL_NOUNS = (ROLE, Noun('task', 'The specialist contribution and relevant conte
               Noun('context', 'Context for a missing-role request.', 'json', required=False, schema=OBJECT))
 
 MODULE = Module(
-    id='orchestration', summary='GC-owned swarm assignments, specialist calls and functional change orders.',
+    id='orchestration', summary='Specialist assignments, specialist calls and functional change orders.',
     purpose='Preserves user intent in functionally located work, delivery ownership and durable agent returns.',
     tables=TABLES, work_read=work_read,
     provides=(Provides('agent.roles', ROLES), Provides('agent.roles', bmad_definitions),
@@ -134,8 +138,10 @@ MODULE = Module(
                Resource('metaform://orchestration/bmad', 'Installed BMAD roles',
                         'Actual installed entry points, versions, menus and managed role calls.', 'bmad')),
     verbs=(
-        Verb('claim', SERVICE.claim, 'Claim a root ticket as its delivery GC.', category='coordinate',
-             nouns=(Noun('work', 'Existing root work id.'), RESULT, SPEC, CANDIDATE,
+        Verb('claim', SERVICE.claim, 'Assign a ticket directly to a specialist, creating a missing role first.', category='coordinate',
+             nouns=(Noun('work', 'Existing root work id.'),
+                    Noun('role', 'Specialist role name or metaform URI; default implementer. Missing roles are created.', required=False),
+                    RESULT, SPEC, CANDIDATE,
                     Noun('mode', 'Adaptive or strict; absent uses the project default.', required=False),
                     Noun('session', 'Session binding for a local user-issued claim.', required=False),
                     Noun('pm_session', 'PM session following this ticket.', required=False))),

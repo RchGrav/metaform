@@ -24,7 +24,7 @@ def test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_o
     gates_a.mkdir()
     gates_b.mkdir()
     run('set', '--dispatch-agents', '3', '--dispatch-machine-agents', '3', cwd=project_folder)
-    run('set', '--dispatch-record-on-finish', 'off', cwd=project_folder)
+    run('set', '--dispatch-record-on-finish', 'off', '--dispatch-autostart', cwd=project_folder)
     proof = {'candidate': os.environ.get('METAFORM_CANDIDATE_LABEL', '8c9bf81eaa6876b5dc34766574ebb1eece2a5851'),
              'configured_capacity': 3}
 
@@ -72,7 +72,7 @@ def test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_o
         ga = next(one for one in assignments if one['work_id'] == a.id)
         gb = next(one for one in assignments if one['work_id'] == b.id)
         assert ga['team_id'] != gb['team_id']
-        assert ga['authored_role_uri'] == gb['authored_role_uri'] == 'metaform://role/gc'
+        assert ga['authored_role_uri'] == gb['authored_role_uri'] == 'metaform://role/implementer'
         assert child['team_id'] == ga['team_id']
         discovery = json.loads(command('dispatch', 'peers', env=ea).stdout)['peers']
         assert {one['work_id'] for one in discovery} == {a.id, b.id, child['work_id']}

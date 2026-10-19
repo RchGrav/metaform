@@ -85,6 +85,8 @@ def unconsented() -> str | None:
 def agent() -> str | None:
     """Why this process is known to act for an agent, in a few words; None when nothing says so. It only takes
     authority away: a process it does not name is not, for that, the person's (`unconsented`)."""
+    if vouched():
+        return None  # the verified page command belongs to the person, irrespective of the server's ancestors
     named = [name for name in IDENTITY if os.environ.get(name)]
     if named:
         return f'{named[0]} is set'

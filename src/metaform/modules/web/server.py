@@ -403,6 +403,8 @@ class Server(ThreadingHTTPServer):
         self.listening = threading.Lock()
         self.dispatch_lock = threading.Lock()
         self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
+        self.capacity_waiters: set[tuple[str, str | None]] = set()
+        self.dispatch_last = ''
         self.merges_pending: set[str] = set()  # each project whose merges' timers are set again
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
@@ -421,6 +423,8 @@ class Server(ThreadingHTTPServer):
         # The watch on every runner of the home, dispatch's `dispatch.deaths`: a runner's death, however it comes, is a
         # change announced at once, never one a page finds on its next read (UX review round 2, intake-single-flight F1)
         self.deaths: Any = None
+        self.backgrounds: dict[str, list[Any]] = {}
+        self.background_lock = threading.RLock()
         # the mascot's questions to the open pages waiting for their answer, by id: what it sees, VIEW-005
         self.mascot_waiting: dict[str, dict[str, Any]] = {}
         self.code = code_print()
@@ -549,6 +553,7 @@ class Server(ThreadingHTTPServer):
         such as the removal of one, is not pushed, since a page has nothing of it to read. `own`, the agent starter's
         and the merges' own writes, schedules no dispatch check: a process never reacts to its own writes."""
         if home.project(str(payload.get('project', ''))) is None:
+            self.watch_backgrounds(str(payload.get('project', '')), refresh=True)
             return 0
         deaths = getattr(self, 'deaths', None)  # a server made without __init__, as a test's, has none
         if deaths is not None and runner_change(payload):  # the leases listed, read only when one is new
@@ -556,8 +561,13 @@ class Server(ThreadingHTTPServer):
         if payload.get('flow'):  # where an agent's tool calls reached, drawn on the map as they happen, VIEW-005
             payload = dict(payload)
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
+        if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
+            self.watch_backgrounds(str(payload['project']), refresh=True)
         starts, merges = (False, False) if own else (dispatch_change(payload), merge_change(payload))
         if starts or merges:
+            if runner_change(payload) and getattr(self, 'capacity_waiters', None):
+                with self.dispatch_lock:
+                    self.dispatch_pending.update(getattr(self, 'capacity_waiters', ()))
             self.schedule_dispatch(str(payload['project']), starts=starts, merges=merges)
         return self.push({'topic': 'map.changed', 'payload': payload})
 
@@ -574,6 +584,33 @@ class Server(ThreadingHTTPServer):
         payload = {'project': project_id, 'base_id': None, 'tables': ['web.pages'], 'work_ids': [], 'session_ids': [],
                    'kinds': ['pages'], 'pages': pages}
         threading.Thread(target=events.publish, args=('map.changed', payload, source), daemon=True).start()
+
+    def watch_backgrounds(self, project: str, *, refresh: bool = False) -> None:
+        """One module-owned service per registered project, independent of page subscriptions."""
+        if not hasattr(self, 'backgrounds'):
+            return
+        with self.background_lock:
+            if project in self.backgrounds and not refresh:
+                return
+            previous = self.backgrounds.pop(project, [])
+            for running in previous:
+                running.close()
+            found = home.project(project)
+            if found is None or self.stopping.is_set():
+                return
+            folder = Path(found.path)
+            self.backgrounds[project] = []
+            for owner, start in chassis.provided(folder, 'project.background'):
+                service = start(chassis.context(owner, folder, project=project, surface='web'))
+                if service is not None:
+                    self.backgrounds[project].append(service)
+
+    def close_backgrounds(self) -> None:
+        with self.background_lock:
+            for running in self.backgrounds.values():
+                for service in running:
+                    service.close()
+            self.backgrounds.clear()
 
     def watch_runners(self, folder: Path) -> None:
         """Start the watch on the home's runners, once, from the first folder whose modules provide it."""
@@ -671,7 +708,13 @@ class Server(ThreadingHTTPServer):
         while True:
             with self.dispatch_lock:
                 if self.dispatch_pending:
-                    (project_id, base), starts = self.dispatch_pending.pop(), True
+                    def order(one: tuple[str, str | None]) -> tuple[str, str]:
+                        return one[0], one[1] or ''
+                    ordered = sorted(self.dispatch_pending, key=order)
+                    last = getattr(self, 'dispatch_last', '')
+                    project_id, base = next((one for one in ordered if one[0] > last), ordered[0])
+                    self.dispatch_pending.discard((project_id, base))
+                    self.dispatch_last, starts = project_id, True
                 elif self.merges_pending:
                     project_id, base, starts = next(iter(self.merges_pending)), None, False
                 else:
@@ -689,9 +732,20 @@ class Server(ThreadingHTTPServer):
                 if project is None:
                     continue
                 try:
+                    self.watch_backgrounds(project_id)
                     self.watch_runners(Path(project.path))
-                    started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {},
+                    started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {'batch': 1},
                                           chosen=bool(base))
+                    if isinstance(started, dict):
+                        result = cast(dict[str, Any], started)
+                        with self.dispatch_lock:
+                            if hasattr(self, 'capacity_waiters'):
+                                if result.get('capacity_waiting'):
+                                    self.capacity_waiters.add((project_id, base))
+                                else:
+                                    self.capacity_waiters.discard((project_id, base))
+                            if result.get('more'):
+                                self.dispatch_pending.add((project_id, base))
                     self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
                                         if isinstance(started, dict) else None)
                 except StoreError as error:
@@ -3630,9 +3684,11 @@ def serve(given: argparse.Namespace) -> int:
     ready(server)
     log(f'Process {os.getpid()} started on port {server.port}, code {server.code[:12]}, schema version {SCHEMA_VERSION}')
     for project in home.projects():
+        server.watch_backgrounds(project.project_id)
         server.schedule_dispatch(project.project_id)
     with listener:
         server.run()  # the stop signal ends the process; a hand-over to newer code ends `run`
+    server.close_backgrounds()
     server.vouch.close()
     log(f'Process {os.getpid()} stopped')
     return 0

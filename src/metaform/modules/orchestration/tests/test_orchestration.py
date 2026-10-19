@@ -31,7 +31,9 @@ def root(project, session='gc-one', **nouns):
     store, _ = project
     work = store.add_work(Node('element', NODE), None, task='Preserve countdown and alarm behavior.',
                           title='Timer delivery')
-    return SERVICE.claim(ctx(project, session, work=work.id, **nouns))
+    called = ctx(project, session, work=work.id, role='gc', **nouns)
+    called.nouns['session'] = session
+    return SERVICE.claim(called)
 
 
 class Transport:
@@ -86,7 +88,9 @@ def test_atomic_gc_claim_race_keeps_one_owner(project):
 
     def take(session):
         try:
-            return SERVICE.claim(ctx(project, session, work=work.id))
+            called = ctx(project, session, work=work.id)
+            called.nouns['session'] = session
+            return SERVICE.claim(called)
         except (Stop, StoreError):
             return None
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -134,7 +138,7 @@ def test_new_specialist_gc_commission_publication_reuse_and_original_return(proj
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
     request = SERVICE.delegate(ctx(project, 'worker', role='alarm_domain', task='Review timer alarm timing.',
                                    result='Return alarm constraints.', contribution='Alarm domain diagnosis.'), waiting=True)
-    assert request['state'] == 'requested'
+    assert request['state'] == 'commissioned'
     assert request['gc_assignment_id'] == gc['assignment_id']
     with pytest.raises(Stop, match='delivery GC'):
         SERVICE.commission(ctx(project, 'worker', request=request['request_id']))
@@ -168,19 +172,12 @@ def test_post_delivery_fqc_missing_role_gets_commission_gc_and_retains_original_
     request_ctx = ctx(project, 'fqc', role='focus_observer', task='Observe keyboard focus while changing duration.',
                       context={'interaction': 'duration control with keyboard'}, key='focus-specialist')
     request = SERVICE.delegate(request_ctx, waiting=True)
-    commissioner = SERVICE.assignment(ctx(project), assignment_id=request['gc_assignment_id'])
-    assert commissioner['assignment_id'] != gc['assignment_id']
-    assert commissioner['gc_assignment_id'] == commissioner['team_id'] == commissioner['assignment_id']
-    assert commissioner['parent_assignment_id'] == gc['assignment_id']
-    assert commissioner['root_work_id'] == gc['work_id']
-    assert request['context']['responsible_gc_assignment_id'] == gc['assignment_id']
+    assert request['gc_assignment_id'] == gc['assignment_id']
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
     assert project[0].ticket(gc['work_id']).work.done
     assert SERVICE.delegate(request_ctx, waiting=True)['request_id'] == request['request_id']
-    SERVICE.bind(ctx(project), commissioner['assignment_id'], 'commission-gc')
-    with pytest.raises(Stop, match='delivery GC'):
-        SERVICE.commission(ctx(project, 'gc-one', request=request['request_id']))
-    creator = SERVICE.commission(ctx(project, 'commission-gc', request=request['request_id'], wait=True))
+    creator = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
+    assert creator['parent_assignment_id'] == review['assignment_id']
     SERVICE.bind(ctx(project), creator['assignment_id'], 'creator', runner='creator-runner')
     with monkeypatch.context() as environment:
         environment.setenv('METAFORM_SESSION', 'creator-runner')
@@ -197,7 +194,8 @@ def test_post_delivery_fqc_missing_role_gets_commission_gc_and_retains_original_
     SERVICE.check_in(ctx(project, 'focus-specialist', state='returned', summary='Keyboard focus remains on duration.',
                          evidence=['Tab position stayed on the selected duration control.']))
     return_event = next(one for one in SERVICE.pending(ctx(project)) if one['assignment_id'] == review['assignment_id']
-                        and one['kind'] == 'send' and one['payload'].get('kind') == 'result')
+                        and one['kind'] == 'send' and one['payload'].get('kind') == 'result' and
+                        one['payload'].get('sender_assignment_id') == specialist['assignment_id'])
     assert return_event['payload']['sender_assignment_id'] == specialist['assignment_id']
     assert return_event['payload']['result'] == 'Keyboard focus remains on duration.'
     assert any(one['kind'] == 'launch' and one['assignment_id'] == review['assignment_id']
@@ -247,8 +245,8 @@ def test_fqc_independent_candidate_findings_corrective_gc_continuation(project, 
     assert len(corrections) == 1
     correction = SERVICE.assignment(ctx(project), assignment_id=corrections[0]['assignment_id'])
     assert correction['authored_role_uri'] == 'metaform://role/gc'
-    assert correction['parent_assignment_id'] == gc['assignment_id']
-    assert correction['team_id'] != gc['team_id']
+    assert correction['assignment_id'] == gc['assignment_id']
+    assert correction['team_id'] == gc['team_id']
     assert correction['root_work_id'] == gc['work_id']
     assert any(one['kind'] == 'user_message' and one['payload']['kind'] == 'functional_assessment' for one in pending)
 
@@ -283,7 +281,9 @@ def test_adaptive_publication_actual_spec_user_chat_current_context_and_restart(
     assert len(actual.chat) == 1
 
 
-def test_strict_publication_reads_latest_mode_and_new_user_direction_still_applies(project):
+def test_strict_publication_reads_latest_mode_and_new_user_direction_still_applies(project, monkeypatch):
+    from metaform.modules.orchestration import specifications
+    monkeypatch.setattr(specifications, "agent_caller", lambda: None)
     _, folder = project
     path = folder / 'spec.md'
     path.write_text('Old approach.', encoding='utf-8')
@@ -294,8 +294,9 @@ def test_strict_publication_reads_latest_mode_and_new_user_direction_still_appli
     recommendation = change(ctx(project, 'fqc', content='Better approach.', reason='Preserves the receiving purpose.'))
     assert recommendation['state'] == 'recommendation'
     assert path.read_text() == 'Old approach.'
-    instructed = change(ctx(project, assignment=gc['assignment_id'], content='New user instruction.',
-                             reason='The user changed the requested behavior.', user_instruction='Use this approach.'))
+    instructed = change(context('orchestration', folder, project='proj', surface='web', nouns={
+        'assignment': gc['assignment_id'], 'content': 'New user instruction.',
+        'reason': 'The user changed the requested behavior.', 'user_instruction': 'Use this approach.'}))
     assert instructed['state'] == 'published'
     assert path.read_text() == 'New user instruction.'
     with pytest.raises(Stop, match='advanced'):
@@ -594,27 +595,20 @@ def test_corrective_gc_owns_team_returns_evidence_to_pm_and_receives_independent
     correction, session = actual.launches[-1]
     assert correction['authored_role_uri'] == 'metaform://role/gc'
     assert correction['team_id'] == correction['gc_assignment_id'] == correction['assignment_id']
-    assert correction['team_id'] != gc['team_id']
-    assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
+    assert correction['work_id'] == gc['work_id']
+    assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'running'
     SERVICE.returned(ctx(project), correction['work_id'], 'Duration selection is preserved.', state='delivered',
                      candidate={'revision': 'corrected-b'}, evidence=['Changed duration during active countdown.'])
     actual.running.discard(session)
+    launches = len(actual.launches)
     SERVICE.drain(ctx(project))
-    followup = actual.launches[-1][0]
-    assert followup['authored_role_uri'] == 'metaform://role/functionality'
-    assert followup['reviewed_assignment_id'] == correction['assignment_id']
-    assert followup['team_id'] != correction['team_id']
-    assert 'corrected-b' in followup['task']
-    notice = next(message for _, message in actual.chat if message['kind'] == 'functional_correction')
-    assert 'Duration selection is preserved.' in notice['body']
+    assert len(actual.launches) == launches, 'The configured review budget prevents a recursive review chain.'
+    notice = next(message for _, message in actual.chat if 'Duration selection is preserved.' in message['body'])
     assert 'corrected-b' in notice['body']
     assert 'Changed duration during active countdown.' in notice['body']
     stopped = SERVICE.stopped(ctx(project), work_id=gc['work_id'], by='user')
-    assert {gc['work_id'], review['work_id'], correction['work_id'], followup['work_id']} <= set(stopped)
+    assert {gc['work_id'], review['work_id']} <= set(stopped)
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
-    assert SERVICE.assignment(ctx(project), work_id=review['work_id'])['state'] == 'returned'
-    assert SERVICE.assignment(ctx(project), work_id=correction['work_id'])['state'] == 'delivered'
-    assert SERVICE.assignment(ctx(project), work_id=followup['work_id'])['state'] == 'stopped'
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['stop']['by'] == 'user'
     assert actual.maximum == 1
 
@@ -729,7 +723,7 @@ def test_same_finding_from_two_reviews_at_one_node_gives_one_open_ticket_with_bo
         SERVICE.returned(ctx(project), review['work_id'], 'The selection resets.', evidence=[f'Observed in {name}.'],
                          findings=[{'summary': summary, 'remediation': ['Keep the selection.']}])
     covering = [one for one in project[0].work(node=Node('element', NODE), open=True, limit=0).results
-                if 'Selection resets' in (one.task or '')]
+                if one.id == gc['work_id']]
     assert len(covering) == 1
     assert 'Observed in a.' in covering[0].note and 'Observed in b.' in covering[0].note
 
@@ -744,10 +738,11 @@ def test_finding_given_as_dict_yields_prose_title_and_task(project):
         'verify': 'Count down to zero and hear the alarm.'}])
     launch = next(one for one in SERVICE.pending(ctx(project)) if one['payload'].get('kind') == 'functional_correction')
     work_id = SERVICE.assignment(ctx(project), assignment_id=launch['assignment_id'])['work_id']
-    title, task = project[0].numbers_of('work', [work_id])[work_id][1], project[0].ticket(work_id).work.task
-    assert title == 'The alarm stays silent at zero.'
-    assert '1. Ring the alarm at zero.' in task and 'Verify: Count down to zero' in task
-    assert not set('{}') & set(title + task)
+    title = project[0].numbers_of('work', [work_id])[work_id][1]
+    assert work_id == gc['work_id'] and title == 'Timer delivery'
+    note = project[0].ticket(work_id).work.note
+    assert '1. Ring the alarm at zero.' in note and 'Verify: Count down to zero' in note
+    assert not set('{}') & set(note)
 
 
 def test_assessment_calling_assess_on_its_own_work_queues_nothing(project):
@@ -793,7 +788,7 @@ def test_review_superseded_by_persons_decision_closes_without_filing_work(projec
     gc = root(project)
     SERVICE.returned(ctx(project), gc['work_id'], 'Timer outcome delivered.', state='delivered')
     review = SERVICE.assessment(ctx(project), gc, {'summary': 'Assess the delivered timer.'}, 'decided')
-    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'decision', 'at': implementation.now(),
+    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'decision', 'supersedes': True, 'at': implementation.now(),
                                               'text': 'Keep the alarm as it is.', 'from': {'kind': 'user'}})
     returned = SERVICE.returned(ctx(project), review['work_id'], 'The alarm could be louder.',
                                 findings=[{'summary': 'Make the alarm louder.'}])

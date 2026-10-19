@@ -61,6 +61,19 @@ def test_export_import_export_gives_the_same_document(home, store, monkeypatch, 
 
 
 @pytest.mark.req('STORE-027')
+@pytest.mark.parametrize('prior_version', ['20', '21'])
+def test_import_preserves_the_previous_layout_version(home, store, monkeypatch, tmp_path, prior_version):
+    filled(store)
+    document = export_document(['proj'])
+    document['projects'][0]['bases'][0]['prior_schema_version'] = prior_version
+    move_home(monkeypatch, tmp_path, 'upgraded-import-home')
+
+    import_document(document)
+
+    assert export_document(['proj']) == document
+
+
+@pytest.mark.req('STORE-027')
 @pytest.mark.req('MAP-020')
 def test_an_exported_join_carries_no_relation_and_no_observation_and_a_document_with_them_is_refused(home, store):
     """Relation and observation are removed from export and import with the store."""

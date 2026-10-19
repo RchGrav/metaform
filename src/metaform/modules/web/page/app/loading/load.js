@@ -72,7 +72,7 @@ function itemEntry(item, layer) {
 export async function progressOf() {
   const project = S.project, metaform = S.base;
   let tickets = [];
-  try { tickets = (await read('work', {limit: 0})).results || []; } catch (error) { readFailed(error); return new Map(); }
+  try { tickets = (await read('work', {open: true, limit: 0})).results || []; } catch (error) { readFailed(error); return new Map(); }
   if (S.project !== project || S.base !== metaform) return new Map();  // a late answer for a project the person left
   S.tickets = tickets;
   return progressFrom(tickets);
@@ -191,11 +191,22 @@ async function readProject(wanted) {
   const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
 
-  const active = metaforms.find(item => item.id === wanted) || metaforms.find(item => item.active) || metaforms[0];
+  const hash = new URLSearchParams(location.hash.slice(1));
+  let remembered = null;
+  try { remembered = sessionStorage.getItem('metaform.base.' + project); } catch (error) { /* optional storage */ }
+  const chosen = wanted || (hash.get('p') === project ? hash.get('b') : null) || remembered;
+  const active = metaforms.find(item => item.id === chosen) || metaforms.find(item => item.active) || metaforms[0];
   S.base = active ? active.id : null;
+  rememberBase();
   chooser(metaforms);
   foldHeader();  // the names chosen take their room
   await loadMetaform();
+}
+function rememberBase() {
+  const hash = new URLSearchParams({p: S.project});
+  if (S.base) hash.set('b', S.base);
+  window.history.replaceState(null, '', '#' + hash);
+  try { sessionStorage.setItem('metaform.base.' + S.project, S.base || ''); } catch (error) { /* optional storage */ }
 }
 /* The base chooser, with the base shown chosen: S.bases as read, the active one marked. */
 function chooser(metaforms) {
@@ -274,10 +285,11 @@ $('#removeBase').onclick = removeBase;
  * read with its map. */
 export function toProject(id) {
   S.project = id;
+  S.base = null;
   S.tickets = []; B.tickets = [];  // nothing of the project left behind shows on the next one
   if (!$('#board').hidden) drawBoard();
   location.hash = 'p=' + encodeURIComponent(id);
-  try { localStorage.setItem('metaform.project', id); }
+  try { sessionStorage.setItem('metaform.project', id); }
   catch (error) { /* storage can be blocked; the address keeps it */ }
   Object.assign(LIVE, {layer: null, base: null, seen: ''});
   Object.assign(D, {sessions: []});
@@ -334,4 +346,4 @@ export async function goToProject(id, said = '') {
   return true;
 }
 $('#proj').onchange = () => { toProject($('#proj').value); loadProject(); listen(); };
-$('#mf').onchange = () => { S.base = $('#mf').value; baseButtons(); loadMetaform(); };
+$('#mf').onchange = () => { S.base = $('#mf').value; rememberBase(); baseButtons(); loadMetaform(); };

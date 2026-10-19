@@ -184,7 +184,7 @@ async function intakeStarting(project, work) {
   const now = sessions.findLast(one => one.work_id === work) || null;
   if (!now) return;
   ELSEWHERE.followed.add(key);
-  if (now.state === 'running' || now.state === 'starting') {
+  if (!S.project && (now.state === 'running' || now.state === 'starting')) {
     await goToProject(project, `An intake agent is starting in ${project}; the page follows it there.`);
   } else if (/did not start|failed/.test(String(now.how || ''))) {
     toast(`The intake agent in ${project} did not start: ${String(now.how).replace(/^it (failed|did not start):?\s*/, '')}`);
@@ -215,7 +215,7 @@ async function heardProjects() {
       PROJECTS.again = false;
       const open = PROJECTS.open;
       PROJECTS.open = null;
-      if (open && open !== S.project) {
+      if (open && !S.project) {
         await goToProject(open, `The page went to ${open}, opened from its folder.`);
       } else {
         S.projects = (await getJson('/api/projects')).projects || [];

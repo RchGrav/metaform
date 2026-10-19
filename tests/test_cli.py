@@ -179,10 +179,11 @@ def test_confirm_is_never_a_setting(run):
     (('--dispatch-prompts', 'approve-all', '--confirm'), 'dispatch_prompts', 'ask_all'),
 ])
 def test_a_dispatched_agent_cannot_set_its_own_controls_from_the_cli(run, switches, key, default):
+    run('enable', 'dispatch')
     refused = run('set', *switches, env={'METAFORM_ROLE': 'worker'}, ok=False)
     assert refused.returncode == 2, refused.stdout + refused.stderr
-    assert "A worker agent asks no one: say what you need in your ticket's note" in refused.stderr
-    assert 'Next: metaform map work op=edit' in refused.stderr
+    assert f'{key} is set only by the person, never by an agent.' in refused.stderr
+    assert 'Next:' in refused.stderr
     assert shown(run)[key]['value'] == default
 
 

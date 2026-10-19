@@ -782,6 +782,7 @@ READS: dict[str, frozenset[str]] = {
     'add-element': frozenset({'address', 'name_length', 'name', 'role', 'refs'}),  # refs go to the sources layer
     'add-join': frozenset({'receiver', 'elements', 'purpose', 'ef', 'ifd', 'type'}),
     'add-property': frozenset({'element', 'value', 'refs', 'extra'}),
+    'link-context': frozenset({'element', 'content', 'refs'}),
     'add-item': frozenset({'node', 'value', 'link', 'refs', 'extra', 'read_first', 'always_show', 'task', 'condition'}),
     'add-ref': frozenset({'owner', 'key', 'value'}),
     'add-plan': frozenset({'element', 'join'}),
@@ -795,6 +796,7 @@ READS: dict[str, frozenset[str]] = {
 # the record is, where it attaches, or which layer holds it. A call missing one stops and writes nothing.
 NEEDS: dict[str, tuple[str, ...]] = {
     'create': ('layer',), 'add-element': ('address',), 'add-join': ('receiver', 'elements'),
+    'link-context': ('layer', 'element', 'content'),
     'add-property': ('element',), 'add-item': ('node',), 'add-ref': ('owner',),
     'add-plan': ('layer', 'element'), 'edit': ('id',), 'remove': ('id',),
     'finish': ('layer',), 'discard': ('layer',),
@@ -1081,6 +1083,9 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
         purpose, ef = _empty(ctx, notices, 'purpose', 'ef')
         return store.add_join(name, nouns['receiver'], nouns['elements'], purpose=purpose, ef=ef,
                               **_optional(ctx, 'ifd', 'type'))
+    if op == 'link-context':
+        return store.add_property(name, _element(nouns['element']), nouns['content'],
+                                  refs=nouns.get('refs', ()), extra={'knowledge_root': nouns['content']})
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
@@ -1126,15 +1131,13 @@ def _noun(name: str, help: str, kind: NounKind = 'str', schema: dict[str, Any] |
 
 
 KNOWLEDGE_NOUNS = (
-    _noun('op', 'create, add-element, add-join, add-property, add-item, add-ref, add-plan, edit, remove, finish or '
+    _noun('content', 'link-context: namespace root of meaningful knowledge in this layer; element is its attachment scope.'),
+    _noun('op', 'create, link-context, add-element, add-join, add-property, add-item, add-ref, add-plan, edit, remove, finish or '
                 'discard.',
-          schema={'type': 'string', 'enum': ['create', 'add-element', 'add-join', 'add-property', 'add-item', 'add-ref',
+          schema={'type': 'string', 'enum': ['create', 'link-context', 'add-element', 'add-join', 'add-property', 'add-item', 'add-ref',
                                              'add-plan', 'edit', 'remove', 'finish', 'discard']}),
-    _noun('layer', 'The layer this call works on, by name or id. Name a new layer <scope>@<content>: the address it is '
-                   'about, @, then a short adjective_noun you choose for what the prompt creates; base is the default '
-                   'scope. base@best_practices holds the best practices of the whole project; code.cpp@best_practices '
-                   'those of cpp code. Read in reverse with @ as "for": best practices for cpp code. A workflow layer is '
-                   'named the same way. An object added without a layer goes to a new layer named unnamed-<time>.'),
+    _noun('layer', 'Stable layer name or id. Name it for its purpose or property, such as platformer or code.cpp. '
+                   'link-context explicitly attaches it to a subtree. Legacy scope@content names remain readable.'),
     _noun('variable', 'create: the one question the layer answers.'),
     _noun('mutable', 'create: whether its items change in place.', 'bool'),
     _noun('hideable', 'create: whether it can be hidden.', 'bool'),
@@ -2268,7 +2271,7 @@ MODULE = Module(
                                      'and finish it.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
-                     'operations change one object each; op=finish marks it ready. Knowledge is genre, medium, '
+                     'operations change one object each; op=finish marks it ready. link-context attaches content to an element and its descendants. Mark inherited items with extra.instruction=true; extra.applies_to narrows them to named descendants. Ordinary evidence stays local. Knowledge is genre, medium, '
                      'practice and the like; what the project does, a feature built included, goes on the map in use '
                      'by map refine, which records its reason, evidence and author.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '

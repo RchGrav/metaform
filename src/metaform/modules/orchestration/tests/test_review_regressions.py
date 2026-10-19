@@ -35,7 +35,7 @@ def called(project, session=None, surface='cli'):
 def claim(project):
     work = project[0].add_work(Node('element', NODE), None,
                                task='Preserve countdown and audible alarm.', title='Timer delivery')
-    gc = verb(called(project, 'gc'), 'orchestration', 'claim', work=work.id)
+    gc = verb(called(project, 'gc'), 'orchestration', 'claim', work=work.id, session='gc')
     project[2].running.add('gc')
     return gc
 
@@ -55,7 +55,7 @@ def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
                    task='Establish the audible alarm constraints.', result='Return the alarm constraints.',
                    key='gc-alarm-specialist')
     assert request['caller_assignment_id'] == request['gc_assignment_id'] == gc['assignment_id']
-    assert request['state'] == 'requested'
+    assert request['state'] == 'commissioned'
     assert verb(called(project, 'gc'), 'orchestration', 'call', role='alarm_domain',
                 task='Establish the audible alarm constraints.', result='Return the alarm constraints.',
                 key='gc-alarm-specialist')['request_id'] == request['request_id']
@@ -66,16 +66,11 @@ def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
         'pending': SERVICE.pending(called(project)),
         'suspensions': actual.suspensions,
     }
-    assert any(recipient == gc['assignment_id'] and envelope.get('kind') == 'role_request'
-               and envelope['request']['request_id'] == request['request_id']
-               for recipient, envelope in actual.messages)
-    gc_session = SERVICE.assignment(called(project), assignment_id=gc['assignment_id'])['owner_session_id']
-    creator = verb(called(project, gc_session), 'orchestration', 'commission',
-                   request=request['request_id'], wait=True)
-    SERVICE.drain(called(project))
+    creator = SERVICE.assignment(called(project), assignment_id=request['creator_assignment_id'])
     assert actual.launches[-1][0]['assignment_id'] == creator['assignment_id']
     assert creator['authored_role_uri'] == 'metaform://role/role_creator'
     assert creator['gc_assignment_id'] == gc['assignment_id']
+    assert SERVICE.assignment(called(project), work_id=gc['work_id'])['state'] == 'suspended'
     assert actual.maximum == 1
 
 

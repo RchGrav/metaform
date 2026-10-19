@@ -1,4 +1,4 @@
-# GC-led delivery
+# Specialist delivery
 
 The orchestration module connects authored responsibilities to ordinary work
 records, dispatch sessions and durable continuations. It ships enabled; a
@@ -6,13 +6,9 @@ dispatch provider must be available to run its queued assignments. It contribute
 17 native authored roles through `agent.roles`. An authored role and an adapter's
 operational execution role are recorded separately.
 
-The Liaison/Triage/PM represents user intent, writes functionally located tickets,
-follows delivery and communicates with the user. A GC claims a ticket, coordinates
-its swarm, validates the integrated candidate and closes its ticket when the
-requested outcome is delivered. `functionality` is the independent Functional
-Quality Critic. Its assessment records the reviewed GC and candidate separately
-from swarm membership; findings create corrective GC continuations and reach the
-PM. Completed delivery remains completed when corrective work follows it.
+The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to a specialist (`implementer` by default), with its exact versioned duty at `metaform://role/<name>`. A missing specialty automatically commissions one bounded Role Creator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
+
+An independent `functionality` assessment can inspect the delivered candidate. `orchestration_reviews` bounds automatic reviews per canonical ticket (one by default). Findings reopen that ticket with the repair instruction and verification steps, preserving prior evidence. They do not build recursive coordinator/correction trees. The legacy `gc` role and identity fields remain readable for existing assignments; new work needs no coordinator per ticket.
 
 ## Public operations
 
@@ -22,12 +18,12 @@ or UI. `metaform help orchestration` describes every noun.
 
 | Operation | Result |
 | --- | --- |
-| `claim` | Atomically claim an existing ticket as its delivery GC. |
-| `inspect`, `team` | Read ownership, members, related corrective GCs and independent assessments. |
+| `claim` | Assign an existing ticket to the named specialist, defaulting to implementer. |
+| `inspect`, `team` | Read ownership, members, retained correction history and independent assessments. |
 | `delegate` | Start a specialist contribution while retaining the caller's responsibility. |
 | `call` | Record a specialist call and suspend the caller until its immediate result returns. |
 | `handoff` | Transfer a worker contribution to a recorded successor, retaining work and outstanding returns. A delivery GC keeps its validation responsibility. |
-| `role_requests`, `commission`, `publish_role` | Record a missing specialty, let its GC commission the Role Creator, then publish its versioned duty and continue the original caller's request. |
+| `role_requests`, `commission`, `publish_role` | Inspect an automatically commissioned role request, publish its versioned duty, and continue the original caller. commission remains a compatible idempotent command. |
 | `check-in` | Retain progress, candidate, evidence and recovery context, or return the assigned result. |
 | `assess` | Give a candidate, GC validation or a functional concern to an independent FQC assignment. |
 | `change`, `changes`, `mode` | Publish an operative revision, inspect its delivery, or select adaptive/strict behavior. |
@@ -37,11 +33,7 @@ Generic specialist calls to `functionality` and `role_creator` explain the
 dedicated assessment and GC-commission routes. Ordinary specialists, including
 generated roles, remain callable by workers through their registered identities.
 
-If an independent assessment needs a missing specialty after its reviewed GC has
-delivered, a recorded corrective GC continuation owns that commission. The
-original root remains delivered, the specialist still returns to the requesting
-assessor, and a user stop prevents the continuation from launching. Retrying the
-original call key after publication returns that same commissioned child.
+A missing specialty requested by an assessment uses the same helper path. It preserves the original return route without creating another delivery coordinator. Publication never resumes a caller that the user stopped. Stopping one caller also leaves a shared helper available to other unstopped callers.
 
 ## Runtime ownership and recovery
 

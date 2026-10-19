@@ -535,6 +535,8 @@ def test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes(ru
 
 
 def test_five_held_feedback_tickets_take_no_slot_and_a_web_fault_is_filed(run, project):
+    from metaform import settings
+    settings.put('autoticket_hold_feedback', True, project)
     store = mapped(project)
     for words in SIX[:5]:
         raise_fault(project, source='feedback', message=words, reproduce='Read the help.')
@@ -570,15 +572,15 @@ def test_an_error_from_an_agent_on_an_autoticket_ticket_lands_on_that_ticket(run
     assert 'the store is locked' in note and 'seen 3 times' in note
 
 
-def test_feedback_and_an_error_about_removing_data_are_filed_held_with_why(run, project):
+def test_feedback_and_error_words_do_not_impose_unrequested_approval_gates(run, project):
     store = mapped(project)
     raise_fault(project, source='feedback', message='The map_work help never says what held means.',
                 reproduce='Read map_work help.')
     raise_fault(project, source='web', message='OSError: could not delete the base folder',
                 reproduce='POST /api/remove-base: remove a base from the page.')
     held = tickets(store)
-    assert len(held) == 2 and all(record.held for record in held)
-    assert all('Held for the person' in (record.note or '') for record in held)
+    assert len(held) == 2 and not any(record.held for record in held)
+    assert all('Find its cause and fix it' in record.task for record in held)
 
 
 @pytest.mark.req('QUAL-015')
@@ -600,3 +602,28 @@ def test_a_burst_of_changes_that_do_not_close_an_autoticket_ticket_reads_nothing
                         {'project': 'other', 'tables': ['work'], 'work_ids': ['c'], 'kinds': ['ticket']}):
             faults.freed(payload, ctx)
     assert touched == []
+
+
+def test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled(run, project):
+    from metaform.module import context
+    from metaform.modules.orchestration.state import SERVICE
+
+    store = mapped(project)
+    web_fault(project, 1)
+    [original] = tickets(store)
+    ctx = context('orchestration', project, project='proj')
+    first = SERVICE.ensure(ctx, original.id)
+    SERVICE.bind(ctx, first['assignment_id'], 'repair-one')
+    SERVICE.returned(ctx, original.id, 'Repaired.', evidence=['Reproduction passes.'])
+    assert store.ticket(original.id).work.done
+    web_fault(project, 2)
+    [reopened] = tickets(store)
+    assert reopened.id == original.id
+    assert 'Previous resolution' in reopened.note
+    second = SERVICE.ensure(ctx, reopened.id)
+    assert second['assignment_id'] == first['assignment_id'] and second['attempt'] == 2
+    assert second['evidence'] == [] and second['last_check_in']['previous_evidence']
+    store.finish_work(original.id, 'No longer wanted.', 'User choice.', outcome='cancelled')
+    web_fault(project, 3)
+    assert store.ticket(original.id).work.outcome == 'cancelled'
+    assert tickets(store) == []

@@ -117,7 +117,10 @@ value)` of `metaform.module`, found by kind with `metaform.module.provided(folde
 module id order. A disabled module provides nothing. The voice module finds speech engines this way, each a
 `VoiceEngine(name, summary, sends=, transcribe=, speak=, ready=, formats=)` provided as `voice.engine`; the
 elevenlabs module provides one. The voice module provides `voice`, its own speak and transcribe for a server-side
-caller such as a phone bridge.
+caller such as a phone bridge. A project service can provide `project.background`: a factory taking Context and returning
+an owned object with close(), or None when disabled. The web supervisor starts one per registered project,
+independently of browser subscriptions, and closes it on shutdown or policy refresh. The service uses ctx.listen
+and the existing event bus, filters before reading, and releases every listener, watcher and lease in close().
 """
 from __future__ import annotations
 

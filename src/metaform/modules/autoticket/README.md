@@ -4,7 +4,7 @@ Files every fault Metaform raises, and every error in a project's watched logs, 
 
 ## Purpose
 
-A project heals itself: when something breaks, the system files a ticket and an agent fixes it, with no one reading logs or approving the work. A new kind of error is filed as soon as it appears, while the change that caused it is still small, and a group whose counter stops rising after a fix is evidence that the fix held; a counter that rises again after its ticket is done files a new ticket.
+A project heals itself: when something breaks, the system files a ticket and an agent fixes it, with no one reading logs or approving the work. A new kind of error is filed as soon as it appears, while the change that caused it is still small, and a group whose counter stops rising after a fix is evidence that the fix held; a counter that rises again after completion reopens the same canonical ticket, retaining prior repair evidence. Cancelled tickets remain cancelled.
 
 ## Template version
 
@@ -114,3 +114,6 @@ metaform autoticket watch            # until stopped; run it under hold to keep 
 metaform autoticket list               # each group with its ticket
 metaform map work kind=broken          # the tickets it filed
 ```
+
+
+The web supervisor owns a watcher for every registered project, even with no browser page open. `autoticket_watch`, `autoticket_file`, `autoticket_reopen` and `autoticket_hold_feedback` are independent Full Auto policy controls. Register actual logs with `metaform autoticket add log=<path>`; the watcher never invents paths. Local file rotation and recorded offsets survive reconnects through the existing watch leases. Watcher failures publish an actionable fault and retry with bounded backoff. Error text mentioning removal or deletion does not create an approval gate.

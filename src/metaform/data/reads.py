@@ -9,7 +9,7 @@ structure, STORE-046: the graph in memory answers them.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, cast
 
 from ..errors import StoreError
 from . import operations, rows, versions, views
@@ -287,7 +287,50 @@ def context(tx: Tx, res: Resolver, address: str, limit: int, after: str | None) 
             more = any(each > element_address for each in below)
             next_cursor = element_address if more else None
             break
-    return ContextView(address, tuple(applying), tuple(visible), next_cursor)
+    knowledge = tuple(scoped_knowledge(tx, res, address, prop) for prop in applying
+                      if isinstance((prop.extra or {}).get('knowledge_root'), str))
+    return ContextView(address, tuple(applying), tuple(visible), next_cursor, knowledge)
+
+
+
+def scoped_knowledge(tx: Tx, res: Resolver, address: str, attachment: Property) -> dict[str, Any]:
+    """Expand an explicit knowledge link within its layer and attachment subtree.
+
+    Ordinary items remain local evidence. Only items explicitly marked instruction participate in inheritance;
+    properties and functional knowledge retain their own source addresses, not invented transitive joins.
+    """
+    root = str((attachment.extra or {})['knowledge_root'])
+    def under(here: str | None, scope: str) -> bool:
+        return here is not None and (here == scope or here.startswith(scope + '.'))
+    items: list[dict[str, Any]] = []
+    properties: list[dict[str, Any]] = []
+    elements: list[dict[str, Any]] = []
+    joins_found: list[dict[str, Any]] = []
+    for ident, row in tx.base.currents(None, layer_id=attachment.layer_id):
+        kind = tx.base.kinds[ident]
+        if kind == 'item':
+            item = views.item(tx, ident, row, res.layers)
+            origin = rows.node_address(tx, item.target.kind, item.target.id)
+            extra = item.extra or {}
+            targets = extra.get('applies_to') or [attachment.address]
+            if under(origin, root) and extra.get('instruction') is True and isinstance(targets, list) and any(
+                    isinstance(target, str) and under(target, str(attachment.address)) and under(address, target)
+                    for target in cast(list[Any], targets)):
+                items.append(item.to_dict())
+        elif kind == 'property':
+            prop = views.prop(tx, ident, row, res.layers)
+            if prop.id != attachment.id and under(prop.address, root):
+                properties.append(prop.to_dict())
+        elif kind == 'element':
+            element = views.element(tx, ident, None)
+            if element is not None and under(element.address, root):
+                elements.append(element.to_dict())
+        elif kind == 'join':
+            join = views.join(tx, ident, row, res.layers)
+            if under(join.receiver_address, root):
+                joins_found.append(join.to_dict())
+    return {'via': attachment.id, 'scope': attachment.address, 'source': root, 'layer': attachment.layer,
+            'items': items, 'properties': properties, 'elements': elements, 'joins': joins_found}
 
 
 def reaching_at(tx: Tx, res: Resolver, address: str) -> ContextView:

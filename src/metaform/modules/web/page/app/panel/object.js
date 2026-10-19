@@ -201,6 +201,18 @@ export async function renderObject(id) {
     const kinds = [['Properties that apply here', context.applying],
       ['Properties attached toward the leaves', context.visible]];
     for (const [title, found] of kinds) properties(box, title, found, element);
+    for (const scoped of context.knowledge || []) {
+      const section = h('details', {class: 'scoped-knowledge'},
+        h('summary', {}, `${scoped.layer} · applies from ${scoped.scope}`),
+        h('p', {}, `Source: ${scoped.source}. Layer selection and masks control this context.`));
+      layerItems(section, {layer: scoped.layer, items: scoped.items || []});
+      properties(section, 'Scoped properties', scoped.properties || [], element);
+      for (const join of scoped.joins || []) section.append(h('div', {class: 'join'},
+        h('p', {class: 'meta'}, join.receiver_address || scoped.source),
+        join.purpose ? h('p', {}, join.purpose) : null,
+        join.ef ? h('p', {class: 'fn'}, join.ef) : null));
+      box.append(section);
+    }
   } catch (error) {  // nothing in the layers turned on, such as an intake still being built, is not an error
     if (error.status !== 404) toast(error.message);
   }

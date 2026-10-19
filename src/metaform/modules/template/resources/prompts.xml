@@ -15,6 +15,8 @@
      metaform help agents template and by the full form of the command-line guide. Empty sends nothing.
      Off until the module is enabled. -->
 <instructions>template is active.</instructions>
+<!-- Module authors may use this guidance when adding a project service; it is not a connect notice. -->
+<project_background>Use the project.background provider for a service that must remain available independently of browser tabs. Return an owned service with close(), filter events before reading, and release its listeners and leases on close. Publish failures through fault.raised so the existing repair system can act on them.</project_background>
 <!-- The line under the counts an agent is told at its node, MCP-039, when this module counts what it holds there with
      node_count: what is counted and the command that reads it, with <address> written as it is for the agent to fill,
      such as "Read them: metaform template read node=<address>". Shown once per agent session, with the counts.

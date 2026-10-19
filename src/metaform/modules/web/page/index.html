@@ -51,7 +51,7 @@
           <div class="agent-sessions" aria-label="Agent conversations" hidden></div>
           <button id="broadcastBtn" type="button" role="menuitem" aria-controls="broadcast" title="Tell every agent working on this project something at once, as your own message">Broadcast…</button>
           <div class="label">Settings</div>
-          <div class="menu-field agent-count" title="How many agents work at once, besides the one you summon to chat. Saved as the dispatch_agents setting"><label for="agentCount">Agents at once</label><input id="agentCount" type="number" min="1" step="1"></div>
+          <div class="menu-field agent-count" title="How many ticket workers run in this project. The advisor and temporary helpers have separate capacity. Saved as the dispatch_agents setting"><label for="agentCount">Max project workers</label><input id="agentCount" type="number" min="1" step="1"></div>
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
           <p class="menu-hint">Chats, issues, intakes and the tickets Full Auto starts use the default unless you choose another, on the card or where you start it.</p>
           <div class="menu-field agent-prompts" title="How agents' permission prompts are answered. Saved as the dispatch_prompts setting; every agent reads it at its next prompt, so a change reaches agents already running"><label for="promptsPick">Agent prompts</label><select id="promptsPick" disabled></select><p class="said" id="promptsSaid" role="status"></p></div>
@@ -62,6 +62,7 @@
           <div class="sep" role="separator"></div>
           <button id="stopAllBtn" class="danger" type="button" role="menuitem" title="Stop every agent of this project and turn Full Auto off, so nothing starts in their place. Each can be resumed afterwards">Stop all agents</button>
           <button id="stopHomeBtn" class="danger" type="button" role="menuitem" title="Stop every agent of every project on this machine, and turn Full Auto off in each">Stop all agents on this machine</button>
+          <button id="automationSettingsBtn" type="button" role="menuitem">Full Auto configuration…</button>
           <button id="resetAgentsBtn" class="danger" type="button" role="menuitem" title="After crashes: every ticket a dead agent still holds goes back on the board, and dead sessions are closed. Working agents are left alone; nothing is deleted">Reset agents</button>
         </div>
       </div>
@@ -243,7 +244,7 @@
     <span class="title">Board</span>
     <input class="search" type="search" placeholder="Find a card" aria-label="Find a card">
     <div class="kinds" role="group" aria-label="Kinds shown"></div>
-    <span class="distribute" title="Give the tickets in To do the glyphs of this many agents, in turn: tickets with one glyph are one agent's. A held ticket in Backlog gets none until you release it"><label>Agents <input type="number" min="1" max="17" value="2" aria-label="Agents to distribute the work over"></label><button class="btn sm" type="button">Distribute</button></span>
+    <span class="distribute" title="Give the tickets in To do the glyphs of this many agents, in turn: tickets with one glyph are one agent's. A held ticket in Backlog gets none until you release it"><label>Workers <input type="number" min="1" max="17" value="2" aria-label="Workers to distribute the work over"></label><button class="btn sm" type="button">Distribute</button></span>
     <button class="start-all btn sm" type="button" title="Choose an agent and start the waiting work, one agent per glyph">Start all</button>
     <button class="archive-toggle btn sm" type="button" aria-pressed="false" title="The done tickets older than the board shows: each is still a record at its part of the map">Archive</button>
     <button class="line-in-sand btn sm" type="button" title="Put every ticket done up to now in the Archive; nothing is deleted">Line in the sand</button>

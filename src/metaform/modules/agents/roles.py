@@ -94,6 +94,10 @@ class RoleService:
                     tx.insert('role_sources', row)
                 elif previous != row:
                     tx.update('role_sources', key, row)
+        generated_row = None
+        if owner == 'agents' and ctx.store is not None:
+            with ctx.store.tables(write=False) as tx:
+                generated_row = tx.get('definitions', {'name': name})
         renderers = provided(ctx.folder, 'prompt.render')
         components: list[dict[str, Any]] = []
         problems: list[str] = []
@@ -106,7 +110,13 @@ class RoleService:
                     if supplied is not None:
                         fills.update(cast(dict[str, str], supplied))
             try:
-                one = prompt_files.resolve(reference, **fills)
+                if generated_row and reference.startswith('agents:generated_') and \
+                        'duty' in generated_row['source']:
+                    one = prompt_files.component(reference, generated_row['source']['duty'])
+                    one.update(actual_version_id=generated_row['version_id'],
+                               selected_version_id=generated_row['version_id'])
+                else:
+                    one = prompt_files.resolve(reference, **fills)
             except (OSError, LookupError, StoreError, ValueError) as error:
                 problems.append(f'{reference}: {error}')
                 continue
@@ -130,7 +140,7 @@ class RoleService:
         prompt_name = f'agents:generated_{ctx.require_store().project_id}_{name}'
         version, _ = prompt_files.save_edit(prompt_name, duty, format='text')
         references = ['orchestration:common', prompt_name]
-        row = {'name': name, 'purpose': purpose, 'prompts': references, 'source': dict(source or {}),
+        row = {'name': name, 'purpose': purpose, 'prompts': references, 'source': {**(source or {}), 'duty': duty},
                'version_id': version.version_id, 'at': home.now()}
         with ctx.require_store().tables() as tx:
             previous = tx.get('definitions', {'name': name})

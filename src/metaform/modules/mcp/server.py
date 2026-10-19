@@ -2026,7 +2026,7 @@ def _role_read(reading: Reading, uri: str) -> str | None:
     if uri == ROLE_URI + (catalog.role() or PERSON):
         return role_text(reading.folder, reading.client, reading.session, reading.keyed)
     if uri.startswith(ROLE_URI):
-        found = resolve_agent_role(reading.folder, uri)
+        found = assigned_role(reading.folder, uri, reading.session)
         if found.get('missing'):
             return None
         return '\n\n'.join(part for part in (str(found.get('text') or ''),
@@ -2038,9 +2038,20 @@ def assignment_context(folder: Path, session: str | None = None) -> dict[str, An
     """Current recorded authored responsibility; inspection never changes its execution role or assignment."""
     for owner, service in provided(folder, 'orchestration'):
         ctx = context(owner, folder, session=session)
+        if ctx.store is None:
+            return {}
         held = service.assignment(ctx, session_id=session or ctx.session)
         return cast(dict[str, Any], held or {})
     return {}
+
+
+
+def assigned_role(folder: Path, uri: str, session: str | None = None) -> dict[str, Any]:
+    """Read the exact assigned role version, including after a prompt edit or runner restart."""
+    held = assignment_context(folder, session)
+    if held.get('authored_role_uri') == uri and held.get('role_snapshot'):
+        return cast(dict[str, Any], held['role_snapshot'])
+    return resolve_agent_role(folder, uri)
 
 
 def _project_read(reading: Reading, uri: str) -> str | None:
@@ -2163,7 +2174,7 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
     text, mime = found
     components: list[dict[str, Any]] = []
     if uri.startswith(ROLE_URI) and uri != ROLE_URI + (catalog.role() or PERSON):
-        resolved = await anyio.to_thread.run_sync(resolve_agent_role, folder, uri)
+        resolved = await anyio.to_thread.run_sync(assigned_role, folder, uri, session)
         components = list(resolved.get('components') or [])
         if resolved.get('missing'):
             raise Missing('\n'.join(resolved.get('problems') or []), 'read metaform agents roles')

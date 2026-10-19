@@ -69,9 +69,8 @@ def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any]
     owner = service(ctx)
     row, sender = identity(ctx)
     held = owner.assignment(ctx, session_id=str(row['session_id'])) if owner is not None else None
-    if not held or held['authored_role_uri'] != 'metaform://role/gc' or \
-            held['gc_assignment_id'] != held['assignment_id'] or (team and held['team_id'] != team):
-        raise Stop('Only the recorded GC can direct its own swarm.', 'metaform orchestration team')
+    if not held or held['gc_assignment_id'] != held['assignment_id'] or (team and held['team_id'] != team):
+        raise Stop('Only the recorded delivery owner can direct its own workers.', 'metaform orchestration team')
     return owner, held, sender
 
 

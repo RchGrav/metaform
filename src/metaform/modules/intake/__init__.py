@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
@@ -33,7 +34,22 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
-from metaform.data import Element, GraphPage, Item, Join, Layer, Node, Notice, Store, StoreError, WorkRecord, author
+from metaform.data import (
+    Column,
+    Element,
+    GraphPage,
+    Item,
+    Join,
+    Layer,
+    Node,
+    Notice,
+    Store,
+    StoreError,
+    Table,
+    Tables,
+    WorkRecord,
+    author,
+)
 from metaform.module import (
     Context,
     Module,
@@ -151,6 +167,58 @@ NOTED = 'What the intake noted beside the map'  # the critic layer's variable; t
 # read-back tells it from a part never checked, ticket 97085c0e; never a work record, since a part that works is no work
 CHECKED = 'checked'
 CHECKED_VARIABLE = 'What the intake checked and found doing its job'
+ASSESSMENTS = Tables(version=1, tables=(
+    Table('assessments', key=('node_kind', 'node_id'), columns=(
+        Column('node_kind', required=True), Column('node_id', required=True),
+        Column('condition', required=True), Column('at', required=True), Column('by'),
+        Column('source_item'), Column('evidence', 'json'))),
+    Table('assessment_history', key=('id',), columns=(
+        Column('id', required=True), Column('node_kind', required=True), Column('node_id', required=True),
+        Column('condition', required=True), Column('at', required=True), Column('by'),
+        Column('source_item'), Column('evidence', 'json'))),
+))
+
+
+def assessment_store(store: Store) -> Store:
+    base = store.bound_base() or store.active_base()
+    return Store(store.project_id, module='intake', base=base.id if base else None, toggled=store.toggled)
+
+
+def record_assessment(store: Store, kind: str, ident: str, condition: str, *,
+                      source_item: str | None = None, evidence: Any = None) -> None:
+    with assessment_store(store).tables() as tx:
+        key = {'node_kind': kind, 'node_id': ident}
+        row = {**key, 'condition': condition, 'at': home.now(), 'by': author(),
+               'source_item': source_item, 'evidence': evidence}
+        old = tx.get('assessments', key)
+        if old and all(old.get(name) == row.get(name) for name in ('condition', 'source_item', 'evidence')):
+            return
+        if old:
+            tx.update('assessments', key, row)
+        else:
+            tx.insert('assessments', row)
+        tx.insert('assessment_history', {'id': uuid.uuid4().hex, **row})
+
+
+def migrate_assessments(store: Store) -> int:
+    """Move only intake's routine success markers; keep useful content and the original item history."""
+    layers = store.layers(module='intake', limit=0).results
+    legacy = next((one for one in layers if one.name == CHECKED and one.variable == CHECKED_VARIABLE), None)
+    if legacy is None or legacy.hidden:
+        return 0
+    moved = 0
+    for item in store.layer_items(CHECKED, limit=0).results:
+        if not isinstance(item, Item) or item.value != OK:
+            continue
+        record_assessment(store, item.target.kind, item.target.id, OK, source_item=item.id,
+                          evidence={'refs': [ref.to_dict() for ref in item.refs], 'extra': item.extra})
+        store.remove(item.id)
+        moved += 1
+    graph = store.layer_graph(CHECKED)
+    if not store.layer_items(CHECKED, limit=1).results and not graph.elements and not graph.joins:
+        store.hide(CHECKED)
+    return moved
+
 ID = re.compile(r'\b[0-9a-f]{32}\b')
 
 settings.boolean('intake_sources', True, label='Intake sources layer',
@@ -499,6 +567,7 @@ def start(ctx: Context) -> Any:
     if found is None and (mapped := _active_map(store)) is not None and not ctx.nouns.get('name'):
         active = store.active_base()
         assert active is not None  # _active_map found it
+        migrate_assessments(store)
         _verify(store, active.id)
         notices.append({'where': 'intake', 'message': f'The active metaform {mapped.metaform} has a finished intake. '
                         'What you record now is written onto it: a changed field is refined, a new element or purpose '
@@ -760,19 +829,10 @@ def _condition(ctx: Context, rec: Recording, kind: Literal['element', 'join'], t
 
 
 def _checked(rec: Recording, kind: Literal['element', 'join'], thing: str, ok: bool, notices: Notices) -> None:
-    """Keep an ok as the part's one item of the checked layer, or take it away when another condition replaces it."""
-    store = rec.store
-    if ok:
-        store.layer(CHECKED, 'intake', CHECKED_VARIABLE, kind='layer', mutable=True, hideable=True, ready=True)
-    try:
-        held = [item for item in store.layer_items(CHECKED, Node(kind, thing), limit=0).results
-                if isinstance(item, Item)]
-    except StoreError:  # no checked layer yet, so nothing here was checked
-        return
-    for extra in held[1:] if ok else held:
-        _note(notices, store.remove(extra.id))
-    if ok and not held:
-        _note(notices, store.add_item(CHECKED, Node(kind, thing), OK))
+    """Routine inspection status belongs to provenance, never to functional graph nodes."""
+    del notices
+    migrate_assessments(rec.store)
+    record_assessment(rec.store, kind, thing, OK if ok else 'finding')
 
 
 def _close_work(store: Store, things: set[str], resolution: str) -> None:
@@ -923,13 +983,18 @@ def _findings(store: Store, elements: list[Element], joins: list[Join]) -> dict[
     ids = {element.id for element in elements} | {held.id for held in joins}
     found: dict[str, dict[str, Any]] = {row.node_id: {'condition': row.condition, 'note': row.note}
                                         for row in store.work(open=True, limit=0).results if row.node_id in ids}
+    with assessment_store(store).tables(write=False) as tx:
+        checked = tx.rows('assessments', limit=0).results
+    for row in checked:
+        if row['node_id'] in ids and row['node_id'] not in found and row['condition'] == OK:
+            found[row['node_id']] = {'condition': OK}
+    # Read older packets without mutating them. Their next intake migrates these routine markers.
     try:
-        checked = store.layer_items(CHECKED, limit=0).results
+        for item in store.layer_items(CHECKED, limit=0).results:
+            if isinstance(item, Item) and item.value == OK and item.target.id in ids and item.target.id not in found:
+                found[item.target.id] = {'condition': OK}
     except StoreError:
-        return found
-    for item in checked:
-        if isinstance(item, Item) and item.target.id in ids and item.target.id not in found:
-            found[item.target.id] = {'condition': OK}  # its note, if any, is the critic layer's, read beside it
+        pass
     return found
 
 
@@ -1343,6 +1408,7 @@ def recording(folder: Path) -> bool:
 
 MODULE = Module(
     id='intake',
+    tables=ASSESSMENTS,
     summary='Serve the intake and record its result as it is reasoned.',
     purpose='Serves the intake instructions, records the intake as it is reasoned, and tracks whether this project '
             'has an intake. The intake is agent work: a subagent reads its instructions with the command prompt and '

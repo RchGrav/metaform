@@ -359,7 +359,7 @@ def _validate(document: Any) -> None:
             if isinstance(name, (str, int, float)) and not home.NAME.fullmatch(str(name)):
                 problems.append(f'{where}.base.name: not a base name')  # it names the store's file, STORE-003
             if 'prior_schema_version' in base and base['prior_schema_version'] not in (
-                    '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'):
+                    '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21'):
                 problems.append(f'{where}.prior_schema_version: not a historical layout version')
             if 'unowned_tables' in base:
                 tables.check_unowned(base['unowned_tables'], f'{where}.unowned_tables', problems)

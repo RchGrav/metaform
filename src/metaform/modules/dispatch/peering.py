@@ -21,13 +21,15 @@ import json
 import os
 import secrets
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
+from metaform import events, home
 from metaform.data import Store, StoreError, WorkRecord, parse_reference
-from metaform.module import Context, Stop, provided, work_reads
+from metaform.module import Context, Stop, context, provided, work_reads
 
-from . import held_ticket, session_status, sessions, tell
+from . import base_store, held_ticket, session_status, sessions, tell
 from .signals import mark_peer, own_store
 
 WAIT_MOST = 120  # seconds a question waits for its replies
@@ -59,7 +61,7 @@ def caller(store: Store) -> tuple[WorkRecord | None, dict[str, Any]]:
                  if one.get('runner') == runner and one.get('state') == 'running'), None)
     if mine is None or session_status(own_store(store), mine, done=False)['state'] != 'running':
         raise Stop('Your session is not running here, so it sends no note.', f'metaform dispatch sessions id={work}')
-    return held_ticket(store, str(mine['work_id'])), mine
+    return held_ticket(base_store(store, mine), str(mine['work_id'])), mine
 
 
 def numbered(ctx: Context, record: WorkRecord) -> tuple[str, str]:
@@ -77,11 +79,14 @@ def addresses(record: WorkRecord) -> list[str]:
 
 def side(ctx: Context, record: WorkRecord | None, row: dict[str, Any]) -> dict[str, Any]:
     """One end of a message, with sender identity and assignment relationship supplied by runtime records."""
+    ctx = replace(ctx, store=base_store(ctx.require_store(), row))
     item, title = numbered(ctx, record) if record is not None else (str(row['work_id']), '')
     assignment: dict[str, Any] = {}
     for _, service in provided(ctx.folder, 'orchestration'):
         assignment = service.assignment(ctx, session_id=str(row['session_id'])) or {}
-    return {'work_id': str(row['work_id']), 'item': item, 'title': title, 'agent': str(row['agent']),
+    base = ctx.require_store().bound_base() or ctx.require_store().active_base()
+    return {'project': ctx.require_store().project_id, 'base': base.id if base else None,
+            'work_id': str(row['work_id']), 'item': item, 'title': title, 'agent': str(row['agent']),
             'session_id': str(row['session_id']), 'runner': row.get('runner'),
             'assignment_id': assignment.get('assignment_id'), 'team_id': assignment.get('team_id'),
             'authored_role_uri': assignment.get('authored_role_uri'),
@@ -168,7 +173,7 @@ def working(ctx: Context, store: Store) -> list[dict[str, Any]]:
     try:
         with own_store(store).tables(write=False) as tx:
             for row, status in running.values():
-                record = held_ticket(store, str(row['work_id']))
+                record = held_ticket(base_store(store, row), str(row['work_id']))
                 found.append({**side(ctx, record, row), 'activity': status.get('activity') or 'working',
                               'files': touched(tx, str(row['session_id'])), 'said': said(tx, str(row['session_id'])),
                               '_record': record, '_row': row})
@@ -227,6 +232,36 @@ def on_topic(entry: dict[str, Any], words: list[str]) -> bool:
     return bool(words) and all(word in title for word in words)
 
 
+
+def destination(ctx: Context, project: str | None = None, base: str | None = None) -> Context:
+    """Resolve a registered destination without moving the caller or the home's opened project."""
+    if not project or project == ctx.require_store().project_id:
+        return replace(ctx, store=Store(ctx.require_store().project_id, module='dispatch', base=base)) if base else ctx
+    found = home.project(project)
+    if found is None:
+        raise Stop(f'No registered project {project}.', 'metaform projects')
+    target = context('dispatch', Path(found.path), project=project, surface=ctx.surface,
+                     session=ctx.session, identity=ctx.identity, nouns=dict(ctx.nouns))
+    target.consented = ctx.consented
+    if base:
+        target = replace(target, store=Store(project, module='dispatch', base=base))
+    return target
+
+
+def mark_remote(store: Store, note: dict[str, Any], state: str, recipient_session: str, work_id: str) -> None:
+    """Update the original sender's copy, using the recorded project and base, never the current tab."""
+    sender = cast(dict[str, Any], note.get('from') or {})
+    project = str(sender.get('project') or store.project_id)
+    if project == store.project_id or not sender.get('session_id') or home.project(project) is None:
+        return
+    target = Store(project, module='dispatch', base=sender.get('base'))
+    with target.tables() as tx:
+        mark_peer(tx, str(sender['session_id']), str(note['id']), work_id, state, recipient_session)
+    found = home.project(project)
+    if found is not None:
+        events.announce(Path(found.path), 'cli')
+
+
 def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tuple[str, str, list[dict[str, Any]],
                                                                     dict[str, Any] | None]:
     """Whom a note goes to: the target named, its kind, the agents at work there other than the caller, and the
@@ -236,13 +271,17 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
         raise Stop('A note names whom it goes to, one of: to=<work id or address#n>, at=<Address>, file=<path>, '
                    'topic=<words> or reply=<note id>.', 'metaform dispatch peers')
     (kind, named), = given.items()
-    everyone = [entry for entry in working(ctx, store) if entry['session_id'] != sender_session]
+    source_project = store.project_id
+    target_ctx = destination(ctx, ctx.nouns.get('target_project'))
     answered: dict[str, Any] | None = None
     if kind == 'reply':
         answered = next((one for one in peer_lines(store, work_id) if one.get('id') == named), None)
-        if answered is None or cast(dict[str, Any], answered.get('from') or {}).get('session_id') == sender_session:
+        if answered is None or (cast(dict[str, Any], answered.get('from') or {}).get('session_id') == sender_session
+                               and cast(dict[str, Any], answered.get('from') or {}).get('project', source_project) == source_project):
             raise Stop(f'No note {named} came to your ticket, so there is none to answer.', 'metaform dispatch notes')
         sender = cast(dict[str, Any], answered['from'])
+        target_ctx = destination(ctx, sender.get('project'), sender.get('base'))
+        everyone = working(target_ctx, target_ctx.require_store())
         target = str(sender.get('session_id') or sender.get('work_id'))
         found = [entry for entry in everyone if target in (entry['work_id'], entry['session_id'])]
         if not found and sender.get('assignment_id'):
@@ -253,6 +292,9 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
             raise Stop(f'The agent that sent note {named} is no longer at work in a running session, so the reply would '
                        'reach no one.', 'metaform dispatch peers')
         return named, kind, found, answered
+    store = target_ctx.require_store()
+    everyone = [entry for entry in working(target_ctx, store)
+                if store.project_id != source_project or entry['session_id'] != sender_session]
     if kind == 'to':
         target = named
         reference = parse_reference(named)
@@ -261,7 +303,7 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
             if item is None or item.get('kind') != 'work':
                 raise Stop(f'No ticket is numbered {named}.', 'metaform dispatch peers')
             target = str(item['id'])
-        if target == sender_session:
+        if target == sender_session and store.project_id == source_project:
             raise Stop('That is your own session; a note goes to another agent.', 'metaform dispatch peers')
         found = [entry for entry in everyone if target in (entry['work_id'], entry['session_id'])]
         if not found:
@@ -343,12 +385,13 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     failed: list[dict[str, Any]] = []
     for entry in found:
         if entry.get('_assignment'):
-            for _, owner in provided(ctx.folder, 'orchestration'):
-                owner.queue_message(ctx, entry['_assignment']['assignment_id'], line, key=note_id)
+            target_ctx = destination(ctx, entry.get('project'), entry.get('base'))
+            for _, owner in provided(target_ctx.folder, 'orchestration'):
+                owner.queue_message(target_ctx, entry['_assignment']['assignment_id'], line, key=note_id)
             answer: dict[str, Any] = {'noted': True, 'busy': True, 'pending': True}
         else:
             answer = told(entry['_row'], 'note', line=line, deliver=True)
-        (taken if answer.get('noted') else failed).append({'item': entry['item'], 'agent': entry['agent'],
+        (taken if answer.get('noted') else failed).append({'project': entry.get('project'), 'item': entry['item'], 'agent': entry['agent'],
                                                            'work_id': entry['work_id'], 'session_id': entry['session_id'],
                                                            'pending': bool(answer.get('pending')),
                                                            **({'error': str(answer.get('error') or 'no answer')}
@@ -362,6 +405,8 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
             sender = cast(dict[str, Any], answered.get('from') or {})
             for session_id in {str(answered['_session']), str(sender.get('session_id') or '')} - {''}:
                 mark_peer(tx, session_id, str(answered['id']), work_id, 'replied', str(mine['session_id']))
+    if answered is not None:
+        mark_remote(store, answered, 'replied', str(mine['session_id']), work_id)
     ctx.publish('map.changed', {'project': store.project_id, 'tables': 'dispatch',
                                 'dispatch_tables': ['dispatch.session_lines']})
     if not taken:
@@ -479,6 +524,8 @@ def peers(ctx: Context) -> dict[str, Any]:
     "who else is in this part or file?" before an edit, with the note ready to send them."""
     store = ctx.require_store()
     mine = os.environ.get('METAFORM_SESSION')
+    ctx = destination(ctx, ctx.nouns.get('target_project'))
+    store = ctx.require_store()
     everyone = working(ctx, store)
     given = {name: str(ctx.nouns[name]).strip() for name in ('at', 'file', 'topic')
              if str(ctx.nouns.get(name) or '').strip()}
@@ -500,7 +547,8 @@ def peers(ctx: Context) -> dict[str, Any]:
                                             for entry in found]}
         if others:
             call = 'dispatch_note' if ctx.surface == 'mcp' else 'metaform dispatch note'
-            result['ready'] = f'{call} {kind}={named} wait=60 -- "I am about to change {named}; is there anything I ' \
+            target = f' target_project={ctx.project}' if ctx.nouns.get('target_project') else ''
+            result['ready'] = f'{call}{target} {kind}={named} wait=60 -- "I am about to change {named}; is there anything I ' \
                               'should know first?"'
             result['said'] = (f'{len(others)} other agents are at work with {kind}={named}: '
                               + ', '.join(f'{entry["agent"]} on {entry["item"]}' for entry in others)

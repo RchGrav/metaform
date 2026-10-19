@@ -84,7 +84,7 @@ def change(ctx: Context, runtime: Orchestration) -> dict[str, Any]:
     instruction = ctx.nouns.get('user_instruction')
     word = persons_word(ctx.folder, 'Applying a new user specification instruction', ctx.project) if instruction else None
     person = ctx.consented or ctx.surface not in ('mcp', 'cli') or \
-        (not caller and ctx.surface == 'cli' and agent_caller() is None)
+        (ctx.surface == 'cli' and agent_caller() is None)
     source = 'user' if instruction and (person or word is not None) else 'agent'
     if source == 'user':
         assessment = runtime.assignment(ctx, assignment_id=target, session_id=caller)

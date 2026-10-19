@@ -1286,7 +1286,7 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
     shown = recorded(run, project, 'show')
     by = {entry['namespace_address']: entry for entry in shown['elements']}
     assert (by['code.timer.kitchen']['condition'], by['code.timer.kitchen']['refs']) == \
-        ('ok', [{'key': 'read', 'value': 't.c#L1'}])  # read back from the checked layer, ticket 97085c0e
+        ('ok', [{'key': 'read', 'value': 't.c#L1'}])  # read back from assessment metadata
     assert [(w.address, w.resolution) for w in Store('timer').work(open=False, limit=0).results] == \
         [('code.timer.kitchen', 'Replaced by ok.')]  # ok closed the missing finding and opened no record
     assert [w.condition for w in Store('timer').work(open=True, limit=0).results] == ['trouble']  # the BKN alone
@@ -1294,8 +1294,8 @@ def test_a_verify_pass_writes_conditions_and_refs_onto_the_finished_map_without_
     # a newer condition replaces the ok; this one joins the open trouble ticket on the kitchen's purpose record
     recorded(run, project, 'element', 'code.timer.kitchen', 'condition=MISS', 'note=no snooze')
     by = {entry['namespace_address']: entry for entry in recorded(run, project, 'show')['elements']}
-    assert (by['code.timer.kitchen'].get('condition'), Store('timer').layer_items('checked', limit=0).results) == \
-        (None, ())
+    assert by['code.timer.kitchen'].get('condition') is None
+    assert not any(layer.name == 'checked' for layer in Store('timer').layers(limit=0).results)
     assert [base['name'] for base in json.loads(run('map', 'bases', '--json', cwd=project).stdout)['results']] == ['main']
 
 

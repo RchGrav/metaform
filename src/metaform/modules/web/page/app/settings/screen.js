@@ -117,7 +117,7 @@ async function saveAgentCount(event) {
   const control = event.target;  // kept before the first await
   const count = Number(control.value), was = AUTO.agents ?? 5, most = AUTO.most || count;
   if (!Number.isInteger(count) || count < 1 || count > most) {
-    if (count > most) toast(`Agents at once is at most ${most}.`);
+    if (count > most) toast(`Max project workers is at most ${most}.`);
     control.value = was; return;
   }
   const more = count > was ? await startsNow(count) : 0;
@@ -879,6 +879,12 @@ function afterSetting(key) {
 const rowKey = row => row.dataset.key || `module:${row.dataset.module}`;
 const markCut = expandCut($('#settings .body'), {row: '.setrow', text: ':is(.help, span.label, .unit)', key: rowKey,
   kept: CONFIG.unfolded});
+$('#automationSettingsBtn').onclick = async () => {
+  showAgentMenu(false);
+  await openSettings();
+  CONFIG.page = 'automation';
+  renderSettings();
+};
 $('#allSettingsBtn').onclick = openSettings;
 $('#settingsGearBtn').onclick = openSettings;
 $('#settings .search').addEventListener('input', event => { CONFIG.filter = event.target.value; renderSettings(); });

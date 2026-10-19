@@ -308,6 +308,7 @@ class ContextView(Record):
     applying: tuple[Property, ...]
     visible: tuple[Property, ...]
     next: str | None = None
+    knowledge: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
