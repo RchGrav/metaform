@@ -50,18 +50,15 @@ def checks() -> Any:
     return found
 
 
-def stubbed(*, failing_reports: bool = False, pace: float = 0.0) -> Any:
+def stubbed(*, pace: float = 0.0) -> Any:
     """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and a Jev
     that finds the topic covered with nothing added each round, so the topic goes to synthesis on its sufficiency.
-    `failing_reports` refuses every request for the report, so no model writes it; `pace` slows every seat's turn so
-    the chair acts while the table runs."""
+    `pace` slows every seat's turn so the chair acts while the table runs."""
     base = checks().Stub
 
     class Offline(base):  # type: ignore[misc, valid-type]
         def chat(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
             last = json.dumps(body['messages'][-1]['content'])
-            if failing_reports and REPORT_MARK in last:
-                return 400, {'error': {'message': 'the stub writes no report'}}
             time.sleep(pace)  # a stub's pacing, so the table is still running when the chair acts
             code, answer = super().chat(body)
             asked = sum(1 for one in self.chats if one.get('session_id') == body.get('session_id'))
@@ -332,14 +329,13 @@ def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ide
 
 @needs_engine
 @pytest.mark.timeout(LIMIT + 60)
-def test_hold_and_end_work_from_metaform_and_the_report_is_saved_when_no_model_writes_it(run, home, table,
-                                                                                         monkeypatch):
+def test_hold_and_end_work_from_metaform_and_the_record_is_saved_and_handed_to_the_system_agent(run, home, table,
+                                                                                                 monkeypatch):
     folder, _ = table
-    held = serve(monkeypatch, stubbed(failing_reports=True, pace=0.4))
+    held = serve(monkeypatch, stubbed(pace=0.4))
     heard = Heard()
     try:
-        answer = opened(run, folder, 'seats=' + json.dumps(['stub/vega', 'stub/orion']), 'host=stub/host',
-                        'reporter=stub/vega')
+        answer = opened(run, folder, 'seats=' + json.dumps(['stub/vega', 'stub/orion']), 'host=stub/host')
         holding = json.loads(run('roundtables', 'hold', answer['table'], '--json', cwd=folder).stdout)
         assert holding['state'] == 'held'
         assert heard.told(lambda one: one['kind'] == 'state' and one['payload']['state'] == 'held'), heard.kinds()

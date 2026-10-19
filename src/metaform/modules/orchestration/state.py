@@ -570,7 +570,7 @@ class Orchestration:
             return made
 
     def stopped(self, ctx: Context, session_id: str | None = None, work_id: str | None = None,
-                by: str | None = None, direction: str | None = None) -> list[str]:
+                by: str | None = None, direction: str | None = None, every: bool = False) -> list[str]:
         """Stop the assignment and those it is responsible for. `every`: the person's Stop all, a pause of the whole
         machine that their Full Auto turned on again lifts (dispatch `resume_paused`); without it the stop is of this
         work alone and lasts until it is restarted."""
@@ -594,7 +594,7 @@ class Orchestration:
                         update(tx, row, parent_assignment_id=survivor['assignment_id'],
                                return_to={'assignment_id': survivor['assignment_id']})
                         continue
-                stop = {'by': by, 'direction': direction, 'at': now()}
+                stop = {'by': by, 'direction': direction, 'at': now(), 'every': every}
                 update(tx, row, state=row['state'] if row['state'] in ENDED else 'stopped',
                        stop=stop, stop_history=[*(row.get('stop_history') or []), stop])
                 touch(tx, row, 'stop')

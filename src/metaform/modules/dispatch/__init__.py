@@ -2374,7 +2374,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     # 1, runaway F3: each pass reconciled every open ticket's progress in a write transaction first, 93% of a core
     # under a burst of note edits). A ticket's progress is reconciled where its change is heard, progress.changed.
     opened = store.work(open=True, limit=0).results
-    paused: dict[str, Any] = {}
+    paused = resume_paused(ctx, store, opened)  # the work the person's Stop all paused, first, as retries go first
     backoff = start_backoff(store)
     now = time.time()
     ends = [float(row['next_at']) for row in backoff.values() if not row['handed'] and float(row['next_at']) > now]
@@ -5247,7 +5247,7 @@ def stopped_all(ctx: Context, found: Sequence[Any], person: bool, by: str | None
                 if owner is not None:
                     for assignment in owner.assignments(project_ctx):
                         if not assignment.get('stop'):
-                            owner.stopped(project_ctx, work_id=assignment['work_id'], by='user')
+                            owner.stopped(project_ctx, work_id=assignment['work_id'], by='user', every=True)
                     entry = (halts or {}).get(project.project_id)
                     if entry is not None:  # the work it paused: what was live, never work already ended
                         paused = [one['work_id'] for one in owner.assignments(project_ctx)
