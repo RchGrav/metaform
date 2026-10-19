@@ -3418,6 +3418,11 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
     stopped = halted(store.project_id, asked, pinned(store).get(BASE_VARIABLE))
     if stopped is not None:
         raise Refused(halt_refusal(stopped, called(store, [work_id])[work_id]), 'metaform dispatch sessions')
+    # Full Auto off: agents already running go on, but no ticket agent starts by itself, a GC's launch or delegation,
+    # a retry or the queue (2026-10-18: with it off, every stopped agent was replaced by a GC launch at once)
+    if auto and kind == 'worker' and not ctx.setting('dispatch_autostart'):
+        raise Refused(f'Full Auto is off, so {called(store, [work_id])[work_id]} does not start by itself. '
+                      'Start it yourself, or check Full Auto.', 'metaform dispatch autostart')
     if auto and agent is not None:
         failing = failing_agent(ctx, store.project_id, agent)
         if failing is not None:
@@ -4845,14 +4850,14 @@ def stop(ctx: Context) -> dict[str, Any]:
     dispatched agent stops one only on the person's word, as `start`."""
     may_steer(ctx)
     store = ctx.require_store()
-    word = on_persons_word(ctx, f'Stopping the agent on ticket {ctx.nouns["id"]}', [str(ctx.nouns['id'])])
+    word = on_persons_word(ctx, f'Stopping the agent on ticket {ctx.nouns["id"]}', [str(ctx.nouns['id'])]) if STOP_CONSENT else None
     if intake_id(ctx.nouns['id']) and not ctx.nouns.get('session'):
         starting = intake_under_way(store)
         if starting is not None and starting['state'] == 'starting' and starting['work_id'] == ctx.nouns['id']:
             return ended_launch(store, starting)
     from .orchestration import service
     owner = service(ctx)
-    acting = person_asks(ctx) or word is not None
+    acting = person_asks(ctx) or word is not None or not STOP_CONSENT
     try:
         row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'), gone_ok=True)
     except Stop:
@@ -4942,9 +4947,14 @@ def started_by_caller(row: dict[str, Any]) -> bool:
     return entry is not None and entry.get('by') == me
 
 
+# Off on the person's word, 2026-10-18: a stop refused for want of their consent left them unable to stop their own
+# agents, their system agent among them. While off, every stop and Stop all is taken as the person's.
+STOP_CONSENT = False
+
+
 def may_stop(ctx: Context, row: dict[str, Any]) -> None:
     """An agent stops only the agents it started, and itself; every other agent is the person's to stop, CLI-011."""
-    if person_asks(ctx) or started_by_caller(row):
+    if not STOP_CONSENT or person_asks(ctx) or started_by_caller(row):
         return
     raise PersonsDecision(f'An agent stops only the agents it started; the agent on work {row["work_id"]} is the '
                           "person's to stop.", f'metaform dispatch stop {row["work_id"]}')
@@ -4966,8 +4976,8 @@ def stop_all(ctx: Context) -> dict[str, Any]:
     is the person's alone (UX review round 2: ux-verify-combined F1 and F5, spawn-gate F1). A dispatched agent stops
     them all only on the person's word, as `start`, and then stops as the person does, turning Full Auto off."""
     may_steer(ctx)
-    word = on_persons_word(ctx, 'Stopping every agent')
-    person = person_asks(ctx)
+    word = on_persons_word(ctx, 'Stopping every agent') if STOP_CONSENT else None
+    person = person_asks(ctx) or not STOP_CONSENT
     if not person and word is None and not os.environ.get('METAFORM_SESSION'):
         # neither the person nor an agent that could have started a runner: refused whole, never half run
         raise PersonsDecision("Stopping every agent of this project is the person's decision; this call carries neither "

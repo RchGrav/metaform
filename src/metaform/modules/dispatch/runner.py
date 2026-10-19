@@ -4237,19 +4237,24 @@ class Session:
         self.spawn(asyncio.to_thread(events.quietly, events.publish, 'prompt.sent', payload, self.ctx))
 
     def turn(self, text: str, audio: Any = None, image: Any = None, peers: list[tuple[str, str]] | None = None,
-             word: dict[str, Any] | None = None, components: list[dict[str, Any]] | None = None) -> None:
+             word: dict[str, Any] | None = None, components: list[dict[str, Any]] | None = None,
+             first: bool = False) -> None:
+        """Queue one prompt; `first`, the person's own message, goes ahead of every prompt waiting, agents' notes
+        among them, so it is never answered after a backlog (2026-10-18: the person's stop waited behind 136 notes)."""
         if self.handing:  # the runner taking the session over sends it
             self.handed_on.append({'text': text, 'by': None})
             return
         if self.ending:
             return
-        self.prompt_versions.append([self.sent.pop(0) for _ in range(len(self.sent))])
-        self.prompt_contexts.append(list(components or []))
+        self.prompt_versions.appendleft([self.sent.pop(0) for _ in range(len(self.sent))]) if first else \
+            self.prompt_versions.append([self.sent.pop(0) for _ in range(len(self.sent))])
         self.replaying = False  # what comes from here on is the session's own, never a replay
-        self.pending.append(text)
-        self.voiced.append([block for block in (audio, image) if block is not None])
-        self.peered.append(list(peers or []))  # the peer notes the turn carries, marked as it is sent and read
-        self.worded.append(word)  # the person's word, for their system agent's turn their own message starts
+        voiced = [block for block in (audio, image) if block is not None]
+        peered = list(peers or [])  # the peer notes the turn carries, marked as it is sent and read
+        # the person's word, for their system agent's turn their own message starts
+        for queue, item in ((self.prompt_contexts, list(components or [])), (self.pending, text),
+                            (self.voiced, voiced), (self.peered, peered), (self.worded, word)):
+            cast(deque[Any], queue).appendleft(item) if first else cast(deque[Any], queue).append(item)
         if self.turns == 0:
             self.progress_at = time.monotonic()
         if self.turns:
@@ -4633,9 +4638,9 @@ class Session:
                 word = {'id': secrets.token_hex(8), 'text': text, 'at': stamp()} \
                     if asked.get('word') is True and not by and self.role == 'system' else None
                 current = self.active_turn
-                steered = (await self.steer(text) if self.turns and not self.pending and current is not None
-                           and current.sent and not current.cancel_requested and audio is None and image is None
-                           and not self.opening else False)
+                steered = (await self.steer(text) if self.turns and (not self.pending or not by)
+                           and current is not None and current.sent and not current.cancel_requested
+                           and audio is None and image is None and not self.opening else False)
                 if steered and word is not None and current is not None and current is self.active_turn:
                     current.word = word  # taken into the turn in flight: from here on it acts on the person's word
                 if steered is not False:
@@ -4645,7 +4650,7 @@ class Session:
                                         'have reached the turn, so it is not sent again. Send it again if it did not.')
                     await self.reply(writer, {**said, 'sent': True, 'steered': steered})
                     return
-                self.turn(text, audio, image, word=word)
+                self.turn(text, audio, image, word=word, first=not by)
                 await self.reply(writer, {**said, 'sent': True, 'steered': False, 'audio': audio is not None,
                                           'image': image is not None})
             elif op == 'word':  # the person's word the turn in flight carries, or the word whose work holds the
@@ -4682,6 +4687,13 @@ class Session:
             elif op == 'interrupt':
                 try:
                     requested = await self.interrupt()
+                    # the turns waiting behind it go too, so the agent waits for the person rather than taking its
+                    # work up again; the notes among them stay in its thread, and come again when sent again
+                    for _, note_id_marks in zip(self.pending, self.peered):
+                        self.queued_peer_ids.difference_update(note_id for note_id, _ in note_id_marks)
+                    for queue in (self.pending, self.prompt_versions, self.prompt_contexts, self.voiced, self.peered,
+                                  self.worded):
+                        cast(deque[Any], queue).clear()
                     direction = cast(dict[str, Any] | None, asked.get('direction'))
                     if direction and direction.get('body'):
                         from .orchestration import note_context

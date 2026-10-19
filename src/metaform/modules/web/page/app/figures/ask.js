@@ -162,7 +162,7 @@ export function figureAt(x, y) {
     const off = ray.distanceToPoint(middle) / size;
     if (!best || off < best.off) best = {id, off, distance: ray.origin.distanceTo(middle) - size};
   }
-  const said = bubbleAt(x, y);  // a bubble is drawn over everything, so it takes the click where it shows
+  const said = bubbleAt(x, y);  // a bubble is drawn over the figures, so it takes the click where it shows
   if (said) return said;
   return best?.id || null;
 }

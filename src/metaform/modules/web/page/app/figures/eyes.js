@@ -897,7 +897,8 @@ function followIn3d(figureAt) {
   if (!G || EYE.view || EYE.saved || FLIGHT.on) { FOLLOW.go3d = null; return; }
   const camera = G.camera(), target = G.controls().target, by = FOLLOW3D.by;
   const go = FOLLOW.go3d ||= {at: target.clone(), speed: new THREE.Vector3(), drawn: target.clone()};
-  if (!go.drawn.equals(target)) go.at.copy(target);
+  // the hand moved the turning point: the spring starts again from rest there, or its kept speed sweeps the camera
+  if (!go.drawn.equals(target)) { go.at.copy(target); go.speed.set(0, 0, 0); }
   // `spring`'s step on each axis, worked out in numbers so the follow allocates nothing, CLAUDE.md 4.1
   const fade = Math.exp(-FOLLOW_PACE * passed), still = reduced();
   for (let axis = 0; axis < 3; axis++) {

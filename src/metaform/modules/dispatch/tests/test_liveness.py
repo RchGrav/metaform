@@ -1117,6 +1117,20 @@ def test_a_start_that_keeps_failing_waits_out_its_backoff_then_waits_for_the_per
     assert module.failing_agent(ctx, 'proj', 'claude') is None, 'a changed start command is tried again'
 
 
+def test_with_full_auto_off_no_ticket_agent_starts_by_itself(dispatch, run):
+    """2026-10-18: with Full Auto off, every agent the person stopped was replaced at once by a GC launch or a retry."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with pytest.raises(module.Refused, match='Full Auto is off'):
+        module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude', auto=True)
+    module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude')  # the person's own start
+    module.admit(ctx, dispatch.store, dispatch.id, 'summoned', agent='claude', auto=True)  # their system agent
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    module.admit(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id, 'worker',
+                 agent='claude', auto=True)
+
+
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-045')
 @pytest.mark.skipif(os.name == 'nt', reason='SIGKILL')

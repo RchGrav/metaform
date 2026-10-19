@@ -463,17 +463,26 @@ def test_word_bubbles_point_at_their_speakers_stay_apart_in_view_and_the_watched
     assert page.evaluate('window.__clicked') is True
     assert 'mascot' not in [one['who'] for one in page.evaluate(bubbles, 20)['shown'] if one['opacity'] > 0.5]
     assert status.count() == 1 and status.text_content() == 'Click me'
-    # a line longer than three lines hold ends its last shown line with an ellipsis, the words before it as said, and
-    # the status tells the whole line
+    # code.interface.graphical#14a: a line longer than three lines hold grows the bubble, at the least font size, and
+    # shows every word as said; the status tells the whole line
     long = ('The alarm on the scheduler fired twice because the second runner read the old lease before the first '
             'one wrote it back, so both took the same ticket and started')
     assert len(long) == 160
     page.evaluate("""async line => (await import('/page/app/figures/cut.js')).say(line, 5)""", long)
-    cut = next(one for one in page.evaluate(bubbles, 20)['shown'] if one['who'] == 'mascot')
-    assert len(cut['lines']) == 3 and cut['lines'][-1].endswith('…'), cut['lines']
-    shown = ' '.join(cut['lines'])[:-1].rstrip()
-    assert shown and long.startswith(shown) and len(shown) < len(long), (shown, long)
+    grown = next(one for one in page.evaluate(bubbles, 20)['shown'] if one['who'] == 'mascot')
+    assert len(grown['lines']) > 3 and ' '.join(grown['lines']) == long, grown['lines']
     assert status.text_content() == long
+    apart_in_view(page.evaluate(bubbles, 1))
+    # a line too long even for the grown bubble ends its last shown line with an ellipsis, never silently, and a click
+    # on it opens the whole line in the chat
+    longer = ' '.join([long] * 4)
+    page.evaluate("""async line => (await import('/page/app/figures/cut.js')).say(line, 5)""", longer)
+    cut = next(one for one in page.evaluate(bubbles, 20)['shown'] if one['who'] == 'mascot')
+    shown = ' '.join(cut['lines'])
+    assert shown.endswith('…') and longer.startswith(shown[:-1].rstrip()) and len(shown) < len(longer), cut['lines']
+    page.mouse.click((cut['box'][0] + cut['box'][2]) / 2, (cut['box'][1] + cut['box'][3]) / 2)
+    page.wait_for_function("""line => !document.querySelector('#helpdesk').hidden
+        && document.querySelector('#helpdesk .log').textContent.includes(line)""", arg=longer, timeout=10000)
 
     page.evaluate("""async alone => {
         const {ROAM} = await import('/page/app/figures/agents.js');

@@ -348,7 +348,6 @@ def freed(payload: dict[str, Any], ctx: Context) -> None:
     naming tickets reads whether any of them is one it filed and done or held; one that does not say what it concerns
     may have closed any, so the waiting groups are looked at once. A held ticket released takes a slot and files
     nothing; `file_waiting` reads each ticket's held mark when it counts, so the next pass counts it."""
-    print('FREED', payload.get('tables'), payload.get('kinds'), payload.get('work_ids'))
     store = ctx.store
     if store is None or payload.get('project') not in (None, store.project_id):
         return
