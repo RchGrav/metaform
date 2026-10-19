@@ -156,6 +156,18 @@ Found late on 2026-10-18, while testing intake on another project (flask):
   a clicked answer named without its question (code.interface.graphical#146), and orchestration tools missing or failing
   there (code.server.tool#1c).
 
+## 3c. The board is slow, and the GC model wastes the slots
+
+- **The board took nearly 30 s to open** (2026-10-19). The server answers in 0.12 s, but sends all 430 tickets, 2.1 MB,
+  294 of them done, and the page draws every card. Fix under way: code.interface.graphical#148 (only open and recently
+  done tickets on the board; an Archive view on demand; a "line in the sand" action).
+- **The GC model holds one ticket per agent and doubles every ticket.** Each ticket takes a GC, which owns only that
+  ticket, and then a reviewer (FQC); the reviewer's findings become tickets with their own GC and reviewer. On a machine
+  capped at eight agents the slots fill with coordinators and reviewers and the queue barely moves; the person's own
+  chat was refused for lack of a slot. The owner's decision, 2026-10-19: **remove the GC role**; tickets are taken
+  directly by worker agents, as dispatch did before 4f2966c8, and Full Auto runs as many as there are slots. A swarm of
+  workers then picks up the issue list.
+
 ## 4. Errors do not heal themselves
 
 - The log watcher exists as `modules/autoticket` but ships disabled and is off here. It sends a ranked list on a timer,
