@@ -326,8 +326,22 @@ Use the supplied sender and assignment relationship to distinguish peer informat
      turn, and the inbox is still read with dispatch notes. Drafted 2026-10-19, ticket code.dispatcher.agent#72,
      awaiting the owner's approval of its wording. -->
 <inbox_new>
-<count/> new in your inbox: <items/>. dispatch_notes lists them; dispatch_notes note=&lt;id&gt; gives one whole, dispatch_note reply=&lt;id&gt; answers one, and map_work id=&lt;ticket&gt; reads a ticket's report.
+<count/> new in your inbox: <items/>.
 </inbox_new>
+
+<!-- A helper's first message: the person's system agent started it with dispatch helper and a brief, for quick
+     work it hands off so it stays reachable in the chat. <brief/> is the brief as the system agent wrote it. The helper
+     works on no ticket, is shown on the map and in the agents list like any agent, and ends when its turn ends, its
+     last message read as its result; a one-line report goes to the system agent's inbox. Drafted 2026-10-19, ticket
+     code.dispatcher.agent#78, awaiting the owner's approval of its wording. Must not be deleted: the code requires it;
+     emptied, a helper starts with nothing to do. -->
+<helper>
+The person's system agent started you as a helper with the brief below. Do what it asks, in this project's folder, and nothing beyond it. You work on no ticket: do not take, add or close tickets. The person can watch your thread on the map and send you messages; take theirs as direction.
+When you are done, end your turn with a final message that is your result: what you found or changed, with file paths and the commands that show it. That message is what the system agent reads; your session ends with that turn.
+
+Brief:
+<brief/>
+</helper>
 
 <!-- A conversation about one item the person clicked on the web page: a ticket, a node, a question or an ended session.
      Sent as the first message to the agent started from an item's Chat button on the web page, or with dispatch talk.

@@ -176,7 +176,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     asyncio.run(system.peer_note({'line': result(30, kind='question', ask=True), 'deliver': True}))
     assert 'prompted' in started and list(system.pending) == [''], 'A question starts a turn of its own.'
     [woken] = sent(monkeypatch, system)
-    assert woken.startswith('1 new in your inbox: code.router.assignment#30 question, note gc-30. dispatch_notes'), woken
+    assert woken == '1 new in your inbox: code.router.assignment#30 question, note gc-30.', woken
     assert '\n' not in woken and 'Evidence' not in woken, woken
 
     worker = busy(dispatch)
