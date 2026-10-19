@@ -696,7 +696,7 @@ def create_entities(ctx: Context) -> Any:
     written: list[str] = []
     numbered: list[str] = []
     by = _written(ctx)
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         # Every new memory's title and why are checked before anything is written, so a refusal writes nothing.
         fresh: dict[str, tuple[str | None, str | None]] = {}
@@ -722,6 +722,7 @@ def create_entities(ctx: Context) -> Any:
             if key is not None and (number := _join(tx, name, key, by)) is not None:
                 numbered.append(f'{reference(key.address, number)}  {graph.title(name)}')
             made.append({'name': name, 'entityType': kind, 'observations': observations})
+            authored.append((None, delivery.component('entities', graph.entity(name))))
             written.append(name)
         if written:
             _changed(tx, written)
@@ -768,7 +769,7 @@ def create_relations(ctx: Context) -> Any:
     store, _ = _scope(ctx, given.notices)
     relations = _relations(given)
     made: list[dict[str, Any]] = []
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         for source, target, _ in relations:
             for end in (source, target):
@@ -781,6 +782,7 @@ def create_relations(ctx: Context) -> Any:
             held.add(triple)
             graph.related(tx, *triple)
             made.append({'from': triple[0], 'to': triple[1], 'relationType': triple[2]})
+            authored.append((None, delivery.component('relations', made[-1])))
         if made:
             _changed(tx, [str(one[end]) for one in made for end in ('from', 'to')])
     _layered(store)
@@ -800,7 +802,7 @@ def add_observations(ctx: Context) -> Any:
     results: list[dict[str, Any]] = []
     changed: list[str] = []
     by = _written(ctx)
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         for name, _, _ in observations:
             if name not in graph.entities:
@@ -811,12 +813,14 @@ def add_observations(ctx: Context) -> Any:
             if name in locked:
                 results.append({'entityName': name, 'addedObservations': []})
                 continue
+            before_body = delivery.component('entities', graph.entity(name))
             added = _observe(tx, graph, name, contents, by)
             results.append({'entityName': name, 'addedObservations': added})
             before = len(graph.citations.get(name, []))
             graph.cite(tx, name, cited, by)
             if added or len(graph.citations.get(name, [])) != before:
                 changed.append(name)
+                authored.append((before_body, delivery.component('entities', graph.entity(name))))
         if changed:
             _changed(tx, changed)
     _lock_notice(given, locked, 'observations')
@@ -837,7 +841,7 @@ def delete_entities(ctx: Context) -> Any:
     given = _Given(ctx)
     store, _ = _scope(ctx, given.notices)
     names = given.texts(ctx.nouns.get('entityNames'), 'entityNames')
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, names)
         deleted = [name for name in names if name in graph.entities and name not in locked]
@@ -849,6 +853,9 @@ def delete_entities(ctx: Context) -> Any:
                                           requires=delivery.entity_name(name)) for name in dict.fromkeys(deleted)]
             removed += [delivery.component('deleted_relations', row, name=delivery.relation_name(row),
                                            requires=delivery.relation_name(row)) for row in incident]
+            authored.extend((delivery.component('entities', graph.entity(one['value'])) if
+                             one['kind'] == 'deleted_entities' else delivery.component('relations', one['value']), one)
+                            for one in removed)
             _changed(tx, [*deleted, *(str(row[end]) for row in incident for end in ('from', 'to'))], removed)
         for name in dict.fromkeys(deleted):
             _forget(tx, graph, name)
@@ -866,7 +873,7 @@ def delete_observations(ctx: Context) -> Any:
                  for one in given.objects('deletions', ('entityName', 'observations'))]
     deleted, requested, missing = 0, 0, list[str]()
     changed: list[str] = []
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, [name for name, _ in deletions])
         for name, contents in deletions:
@@ -876,11 +883,15 @@ def delete_observations(ctx: Context) -> Any:
                 continue
             if name in locked:
                 continue
+            before = delivery.component('entities', graph.entity(name))
             for content in dict.fromkeys(contents):
                 count = tx.delete('observations', {'entity': name, 'content': content})
                 deleted += count
                 if count:
                     changed.append(name)
+                    graph.observations[name] = [one for one in graph.observations[name] if one['content'] != content]
+            if name in changed:
+                authored.append((before, delivery.component('entities', graph.entity(name))))
         if changed:
             _changed(tx, changed)
     message = ('Observations deleted successfully' if deleted == requested else
@@ -896,7 +907,7 @@ def delete_relations(ctx: Context) -> Any:
     relations = _relations(given)
     deleted = 0
     removed: list[Row] = []
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         graph = Graph.read(tx)
         locked = _locked(graph, [end for source, target, _ in relations for end in (source, target)])
         for source, target, kind in relations:
@@ -907,6 +918,7 @@ def delete_relations(ctx: Context) -> Any:
                     row = {'from': source, 'to': target, 'relationType': kind}
                     removed.append(delivery.component('deleted_relations', row, name=delivery.relation_name(row),
                                                        requires=delivery.relation_name(row)))
+                    authored.append((delivery.component('relations', row), removed[-1]))
         if removed:
             _changed(tx, [str(one['value'][end]) for one in removed for end in ('from', 'to')], removed)
     message = ('Relations deleted successfully' if deleted == len(relations) else
@@ -1069,7 +1081,7 @@ def orphaned(ctx: Context) -> Any:
 def unjoin(ctx: Context) -> Any:
     """Take one memory join away by its id, an orphaned one included; the entity stays in the graph."""
     store = ctx.require_store()
-    with store.tables() as tx:
+    with delivery.authoring(ctx) as authored, store.tables() as tx:
         held = tx.get('joins', {'join_id': ctx.nouns['id']})
         name = str(held['entity']) if held is not None else ''
         entity = tx.get('entities', {'name': name}) if held is not None else None
@@ -1081,6 +1093,7 @@ def unjoin(ctx: Context) -> Any:
                                              name=f'memory:index:{held["join_id"]}',
                                              requires=delivery.entity_name(name))
             delivery.changed(tx, {(held['receiver'], held['provider'])}, [withdrawal])
+            authored.append((None, withdrawal))
         deleted = tx.delete('joins', {'join_id': ctx.nouns['id']})
     return {'deleted': deleted}
 

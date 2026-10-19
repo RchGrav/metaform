@@ -4245,15 +4245,25 @@ class Session:
                     if self.memory_epoch != pending.get('epoch'):
                         self.memory_epoch = pending.get('epoch')
                         self.memory_queued.clear()
-                    due = [one for one in pending.get('components', []) if one['name'] not in self.memory_queued]
+                    # One pending notice per entry; delivery resolves its latest revision. Rapid edits must not
+                    # fill the runner's queue with obsolete counts for the same memory entry point.
+                    due = [one for one in pending.get('components', [])
+                           if str(one['name']).rsplit(':', 1)[0] not in self.memory_queued]
                     if due:
-                        self.memory_queued.update(str(one['name']) for one in due)
+                        self.memory_queued.update(str(one['name']).rsplit(':', 1)[0] for one in due)
                         self.turn('\n\n'.join(str(one['text']) for one in due), components=due)
                 if not self.memory_again:
                     break
                 payload = None
         finally:
             self.memory_reading = False
+
+    def current_memory_notices(self, queued: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Recheck a notice at delivery: an intervening read, write or layer mask can make it obsolete."""
+        entries = {str(one['name']).rsplit(':', 1)[0] for one in queued}
+        return [one for _, notices in provided(Path(self.root), 'memory.notices')
+                for one in notices(self.ctx).get('components', [])
+                if str(one['name']).rsplit(':', 1)[0] in entries]
 
     def carried(self, taken: list[prompt_files.Sent] | None = None) -> None:
         """The prompt versions served since the last turn went out, told on `prompt.sent` with this session's ids and
@@ -4326,6 +4336,15 @@ class Session:
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
+                    if supplied and all(str(one['name']).startswith('memory:notice:') for one in supplied) \
+                            and not beside and not marks and current.word is None:
+                        self.memory_queued.difference_update(str(one['name']).rsplit(':', 1)[0] for one in supplied)
+                        supplied = await asyncio.to_thread(self.current_memory_notices, supplied)
+                        if not supplied:
+                            async with self.interrupt_lock:
+                                self.active_turn = None
+                            continue
+                        text = '\n\n'.join(str(one['text']) for one in supplied)
                     await self.changed(tables='dispatch', kinds=['session'])
                     if self.ending:
                         break  # stop may arrive while the turn-start event is published
@@ -4756,6 +4775,8 @@ class Session:
                                   self.worded):
                         while len(queue) > keep:
                             cast(deque[Any], queue).pop()
+                    self.memory_queued = {str(one['name']).rsplit(':', 1)[0] for supplied in self.prompt_contexts
+                                          for one in supplied if str(one['name']).startswith('memory:notice:')}
                     direction = cast(dict[str, Any] | None, asked.get('direction'))
                     if direction and direction.get('body'):
                         from .orchestration import note_context
@@ -4828,6 +4849,7 @@ class Session:
         self.ending, self.how = True, how
         self.pending.clear()
         self.priority_count = 0
+        self.memory_queued.clear()
         self.voiced.clear()
         self.peered.clear()
         self.worded.clear()

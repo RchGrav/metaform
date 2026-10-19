@@ -1,6 +1,7 @@
 """Server-owned, event-driven log watch; project navigation never owns its lifetime."""
 from __future__ import annotations
 
+import sys
 import threading
 from typing import Any
 
@@ -30,7 +31,7 @@ class Background:
 
     def run(self) -> None:
         watching: Watch | None = None
-        failed = False
+        errors: list[Exception] = []
         try:
             with self.lock:
                 if self.closed.is_set():
@@ -39,22 +40,32 @@ class Background:
                 self.listener = self.ctx.listen(watching.heard)
             watching.run()
         except Exception as error:  # noqa: BLE001  retry a failed service, never lose the server
-            failed = True
-            self.failures += 1
-            self.ctx.publish('fault.raised', {'source': 'log watcher', 'message': str(error),
-                'reproduce': 'Inspect autoticket logs and restart the watcher; verify a new log entry is captured.'})
+            errors.append(error)
         finally:
-            if watching is not None:
-                watching.release()
+            # A database outage can also fail the final position write. Still close the listener and retry.
+            for resource, method in ((watching, 'release'), (self.listener, 'close')):
+                if resource is not None:
+                    try:
+                        getattr(resource, method)()
+                    except Exception as error:  # noqa: BLE001  one failed cleanup cannot skip the other
+                        errors.append(error)
             with self.lock:
-                if self.listener is not None:
-                    self.listener.close()
-                    self.listener = None
-                if failed and not self.closed.is_set() and self.failures <= 5:
+                self.listener = None
+                self.watching = None
+                if errors:
+                    self.failures += 1
+                if errors and not self.closed.is_set() and self.failures <= 5:
                     # A bounded failure retry is a deadline, not an idle polling loop.
                     self.retry = threading.Timer(min(30, 2 ** self.failures), self.start)
                     self.retry.daemon = True
                     self.retry.start()
+            if errors:
+                try:
+                    self.ctx.publish('fault.raised', {'source': 'log watcher',
+                        'message': '; '.join(dict.fromkeys(str(error) for error in errors)),
+                        'reproduce': 'Inspect autoticket logs and restart the watcher; verify a new log entry is captured.'})
+                except Exception as error:  # noqa: BLE001  reporting may share the unavailable database
+                    sys.stderr.write(f'Could not report log watcher failure: {error}\n')
 
     def close(self) -> None:
         with self.lock:

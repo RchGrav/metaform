@@ -81,3 +81,26 @@ def test_watcher_startup_failure_is_isolated_and_has_bounded_retry(monkeypatch):
         assert timers == [2] and background.failures == 1
     finally:
         background.close()
+
+
+def test_cleanup_failure_still_closes_listener_and_schedules_recovery(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    closed, timers, faults = [], [], []
+    def failed():
+        raise OSError('database temporarily unavailable')
+    watching = SimpleNamespace(run=failed, release=failed, stop=lambda: None, heard=lambda payload: None)
+    monkeypatch.setitem(Background.run.__globals__, 'Watch', lambda *args: watching)
+    monkeypatch.setattr(threading, 'Timer', lambda delay, callback: SimpleNamespace(
+        daemon=False, start=lambda: timers.append(delay), cancel=lambda: None))
+    # Run synchronously so an exception in finally cannot hide as an unhandled thread warning.
+    monkeypatch.setattr(Background, 'start', lambda self: None)
+    background = Background(SimpleNamespace(project='proj', require_store=lambda: None,
+        listen=lambda heard: SimpleNamespace(close=lambda: closed.append(True)),
+        publish=lambda topic, payload: faults.append(payload)))
+    background.run()
+    assert closed == [True] and background.listener is None
+    assert timers == [2] and background.failures == 1
+    assert faults and 'database temporarily unavailable' in faults[0]['message']
+    background.close()

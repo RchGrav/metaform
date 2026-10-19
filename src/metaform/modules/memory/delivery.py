@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -68,6 +70,34 @@ def component(kind: str, value: Any, *, name: str | None = None, requires: str |
 
 def components(whole: Row) -> list[Row]:
     return [component(kind, value) for kind in ('entities', 'relations') for value in whole.get(kind, [])]
+
+
+@contextmanager
+def authoring(ctx: Context) -> Generator[list[tuple[Row | None, Row]]]:
+    """A successful write teaches its author the supplied change, without acknowledging unseen prior content.
+
+    Each pair is the body before and after the mutation. A new body is wholly supplied by the author; an edit is
+    known only if its previous body was already received. Receipts follow commit, in the context epoch that wrote.
+    """
+    changes: list[tuple[Row | None, Row]] = []
+    session = ctx.session if ctx.surface != 'web' else None
+    epoch = agent_context_epoch(ctx.folder, session, project=ctx.project) if session else 0
+    yield changes
+    if not session or not changes:
+        return
+    prepared = prepare_agent_context(ctx.folder, session, [before for before, _ in changes if before],
+                                     project=ctx.project)
+    if prepared['epoch'] != epoch:
+        return
+    previous = cast(dict[str, Row], prepared.get('previous') or {})
+    known: dict[str, Row] = {}
+    for before, after in changes:
+        if before is None or previous.get(before['name'], {}).get('fingerprint') == before['rendered_fingerprint']:
+            known[after['name']] = after
+            previous[after['name']] = {'fingerprint': after['rendered_fingerprint']}
+    if known:
+        record_agent_context(ctx.folder, session, list(known.values()), project=ctx.project, epoch=epoch,
+                             channel='authored')
 
 
 def encounter(ctx: Context, key: Key, *, epoch: int | None = None) -> None:
