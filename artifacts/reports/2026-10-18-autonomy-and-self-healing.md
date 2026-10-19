@@ -246,6 +246,75 @@ it relayed each symptom as it came. Written into its role today ("Be the user's 
 agent is also wanted, to sweep a project periodically, is open; a sweep must be event-driven or user-started, never a
 timer.
 
+## 10. How work should be organised once the GC role is gone
+
+The owner's direction, 2026-10-19:
+- **Remove the GC role.** A GC holds one ticket and adds a coordinator to every piece of work (section 3c). Tickets are
+  taken directly by workers, and Full Auto runs a swarm of them, as many as there are slots, over the issue list.
+- **The ticket writer writes the specialist each ticket needs.** The ticket writer is the user-facing agent (the system
+  agent). For each ticket it writes, it also writes the specialist the work calls for: the role, what that role knows
+  and cares about, and how it judges its work done (for example a 3D graphics engineer for the camera, a test engineer
+  for a flaky test, a security reviewer for an auth change). The worker that takes the ticket works as that specialist.
+  Why: a worker's quality depends on knowing what kind of expert the task needs; the person who understands the
+  request is best placed to say so, and the GC that did this per ticket is being removed.
+- **An agent creates specialists.** A specialist-creating agent builds and keeps a library of specialist definitions:
+  when the ticket writer names a specialist that does not exist yet, this agent writes it once, well, and it is reused
+  by every later ticket that needs it. (The orchestration module has a role creator, `role_creator`, and published
+  roles, `orchestration_publish_role`; these are the pieces to keep or adapt.)
+- **The reviewer: decision pending.** Either keep one review pass per ticket that fixes what it finds in the same run,
+  never filing new tickets about a finding it can fix, or remove it with the GC. Recommended: keep one fixing pass, as
+  the automatic critic in "The quality standard".
+
+## 11. All issues open at 2026-10-19, in one list
+
+Communication and slots
+- Results still reach the system agent twice (code.router.assignment#f).
+- A decision relayed by the system agent does not reach working agents as the person's decision
+  (code.router.assignment#8).
+- Any direction from the person stops a review filing tickets, whatever it was about (code.router.assignment#b).
+- Switching projects ends the agents of the project left (code.dispatcher.agent#5c).
+- A fresh page opens on another project (code.interface.graphical#147).
+- Agents in different projects cannot reach each other (code.gateway.messaging#4).
+- The person's chat bounced when the machine was full: fixed (64755447).
+- The system agent was unreachable while running long work: its prompt now says to stay reachable.
+- All eight machine slots fill with coordinators and reviewers (section 3c; the GC removal).
+
+The board
+- It took 30 s to open; fixed in the tree, awaiting the combined check and a server restart
+  (code.interface.graphical#148). On this project the "Line in the sand" action is what shrinks it.
+- Every map load reads all 2.1 MB of tickets to count progress (code.interface.graphical#14d).
+- Nobody owned the board: written into the system agent's role; the turns and defaults are code.dispatcher.agent#58.
+- Duplicate tickets for one finding (several closed by hand; code.router.assignment#4 stops new ones).
+
+Self-healing
+- Faults file themselves: built (code.scheduler.task#8 and follow-ups #12, #d), awaiting the combined check.
+- Proven fixes and reopening (code.scheduler.task#9), queued.
+- Onboarding does not yet give a project its logging and point the log watcher at it (not filed).
+- The phone check repeats after every server restart though nothing changed (not filed).
+
+Memory and tools
+- Unread notice with nothing behind it (code.store.memory#e); a correct memory marked stale (code.store.memory#f).
+- Orchestration tools missing or failing in another project (code.server.tool#1c).
+- One MCP server per module behind a router, replacing the catalog (proposed, section 6).
+- Agents' memory tools and connect message: fixed today (section 6).
+
+Tests
+- Eight dispatch tests failing since the orchestration merge (code.dispatcher.agent#5b); handoff memory line
+  (code.dispatcher.agent#5a); tune (code.dispatcher.agent#59); memory delete consent (code.store.memory#c); consent form
+  (code.server.tool#1a); no-project connect (code.server.tool#1b); chat message wrapped in an assignment block
+  (code.router.assignment#6); three waits that never wait (code.suite.test#d); flaky last-click steps
+  (code.suite.test#e).
+
+Roundtable mode
+- Engine connection (code.gateway.messaging#3), the stage (code.interface.graphical#131), keeping the answer
+  (code.store.memory#d); bubbles with tails built (code.interface.graphical#c7), awaiting the combined check.
+
+Other
+- Intake ticket left looking untouched when its work ran elsewhere (code.router.assignment#e).
+- A clicked "No" named without its question (code.interface.graphical#146).
+- Spec drafts awaiting the owner: VIEW-035/041 (key 6), MCP-003 (tools by category), VIEW-005 (last click).
+- The repository's loose objects and a stale .git/gc.log block git's own cleanup.
+
 ## Changes made on 2026-10-18 (in this commit)
 
 - 3D map: turns around the selected node, including when grabbed mid-flight; label sizing unchanged.
