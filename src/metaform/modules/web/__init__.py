@@ -179,7 +179,7 @@ settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful'
 # The board shows the work in hand, not the project's history: the open tickets and those done in the last few days.
 # Older done tickets stay records at their parts of the map, read with `map work open=false`, the ticket history and the
 # board's Archive; the server reads only what the board shows, so a project with hundreds of done tickets opens at once.
-settings.number('board_done_days', 0, min=0, max=3650,
+settings.number('board_done_days', 1, min=0, max=3650,
                 help='Days a done ticket stays on the board; older ones are in its Archive.',
                 details="0 shows no done ticket. Nothing is deleted: an archived ticket is read in the board's "
                         'Archive, with metaform map work open=false and in its part\'s ticket history.',

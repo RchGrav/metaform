@@ -6177,7 +6177,7 @@ def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest
 
     from metaform import home
     from metaform.data import Node, Store
-    # board_done_days is 0 by default, every done ticket archived at once; a day keeps the recent ones on the board
+    # a done ticket stays on the board for board_done_days, then goes to the Archive
     home.save(home.path_key(Path(mapped).resolve()), 'web', 'board_done_days', [1], folder=Path(mapped).resolve())
     store = Store('proj')
     node = Node('element', 'code.alarm.audible')
