@@ -35,7 +35,7 @@ def called(project, session=None, surface='cli'):
 def claim(project):
     work = project[0].add_work(Node('element', NODE), None,
                                task='Preserve countdown and audible alarm.', title='Timer delivery')
-    gc = verb(called(project, 'gc'), 'orchestration', 'claim', work=work.id, session='gc')
+    gc = verb(called(project, 'gc'), 'orchestration', 'claim', work=work.id, role='gc', session='gc')
     project[2].running.add('gc')
     return gc
 
@@ -68,7 +68,7 @@ def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
     }
     creator = SERVICE.assignment(called(project), assignment_id=request['creator_assignment_id'])
     assert actual.launches[-1][0]['assignment_id'] == creator['assignment_id']
-    assert creator['authored_role_uri'] == 'metaform://role/role_creator'
+    assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     assert creator['gc_assignment_id'] == gc['assignment_id']
     assert SERVICE.assignment(called(project), work_id=gc['work_id'])['state'] == 'suspended'
     assert actual.maximum == 1
@@ -102,6 +102,6 @@ def test_role_commission_obeys_current_blacklist_without_mutating_work(project, 
     creator = verb(called(project, 'gc'), 'orchestration', 'commission',
                    request=request['request_id'], wait=True)
     assert creator['gc_assignment_id'] == gc['assignment_id']
-    assert creator['authored_role_uri'] == 'metaform://role/role_creator'
+    assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     assert verb(called(project), 'orchestration', 'role_requests', request=request['request_id'])[
         'creator_assignment_id'] == creator['assignment_id']

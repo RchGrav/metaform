@@ -81,7 +81,7 @@ class Transport:
     def needs_specialist(self, ctx: Context, work_id: str) -> None:
         from .board import raised
         raised(ctx, f'specialist:{work_id}', f'Ticket {work_id}: select or create specialist expertise.',
-               work_id=work_id, start=False)
+               work_id=work_id)
 
     def guard_claim(self, ctx: Context, work_id: str) -> None:
         from . import person_asks, starts_held

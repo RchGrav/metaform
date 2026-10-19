@@ -21,15 +21,16 @@ def queue(ctx: Context, work_ids: list[str], *, invalidate: bool = False) -> Non
     if not work_ids:
         return
     eligible = {record.id for record in store.work(ids=work_ids, limit=0).results
-                if is_work(record.condition, record.task) and not record.done}
+                if is_work(record.condition, record.task) and not record.done and not record.held}
     with store.tables() as tx:
         for work_id in work_ids:
             if work_id not in eligible or work_id.startswith('conversation-') or row_for(tx, work_id=work_id):
                 continue
-            if tx.get('routing', {'work_id': work_id}) is None:
+            prior = tx.get('routing', {'work_id': work_id})
+            if prior is None:
                 tx.insert('routing', {'work_id': work_id, 'state': 'pending', 'updated': home.now()})
                 tx.concern(work_id=work_id, kind='orchestration.routing')
-            elif invalidate:
+            elif invalidate or prior['state'] == 'held':
                 tx.update('routing', {'work_id': work_id}, {'state': 'pending', 'role': None,
                                                           'fingerprint': None, 'updated': home.now()})
                 tx.concern(work_id=work_id, kind='orchestration.routing')
@@ -61,7 +62,7 @@ def route(ctx: Context, work_id: str, *, refresh: bool = False) -> dict[str, Any
 
 
 def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
-    from .state import fingerprint, own, service
+    from .state import SERVICE, fingerprint, own, service
     ctx = replace(ctx, module='orchestration')
     store = own(ctx)
     role = selected(ctx, work_id)
@@ -83,6 +84,19 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
                 tx.update('routing', {'work_id': work_id}, {'state': 'closed', 'updated': home.now()})
                 tx.concern(work_id=work_id, kind='orchestration.routing')
         return {'work_id': work_id, 'state': 'closed', 'role': None}
+    if record.held:
+        row = {'work_id': work_id, 'state': 'held', 'role': None,
+               'reason': 'The ticket is held in Backlog.', 'updated': home.now()}
+        with store.tables() as tx:
+            if tx.get('routing', {'work_id': work_id}):
+                tx.update('routing', {'work_id': work_id}, row)
+            else:
+                tx.insert('routing', row)
+        return row
+    with store.tables(write=False) as tx:
+        prior = tx.get('routing', {'work_id': work_id})
+    if prior and prior['state'] == 'creating':
+        return prior  # Publication, not another classification, continues this ticket.
     specialists = service(ctx, 'agent.role').specialists(ctx)
     graph = functional_context(store, record)
     # The graph's markdown repeats its structured fields; neither role bodies nor unrelated memories are sent.
@@ -90,20 +104,22 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
     state = {'title': numbered[1] if numbered else None, 'task': record.task, 'note': record.note,
              'function': {key: value for key, value in graph.items() if key != 'markdown'}}
     digest = fingerprint(json.dumps([state, specialists], sort_keys=True))
-    with store.tables(write=False) as tx:
-        prior = tx.get('routing', {'work_id': work_id})
     if prior and prior['fingerprint'] == digest and prior['state'] != 'pending' and not refresh:
         return prior
     reason = 'No matching specialist is registered.'
-    cfg = jev.config(ctx.folder, 'orchestration.specialist') if specialists else None
+    cfg = jev.config(ctx.folder, 'orchestration.specialist')
     role = None
-    if specialists and cfg is None:
+    create = False
+    if cfg is None:
         reason = 'JEV is unavailable; triage must select expertise.'
     if cfg:
         with jev.within(jev.DEADLINE):
             balance = jev.openrouter_credits() if cfg.endpoint.name == 'openrouter' else {'status': 'available'}
             if balance['status'] != 'available':
                 reason = 'OpenRouter credit is unavailable; triage must select expertise.'
+            elif not specialists:
+                create = True
+                reason = 'No specialist is registered; commission reusable expertise.'
             else:
                 options = {one['uri']: one['purpose'] for one in specialists}
                 options['none'] = 'No listed specialist has the expertise needed for this ticket.'
@@ -114,9 +130,15 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
                 if decision and decision.sure and decision.answer in options and decision.answer != 'none':
                     role = str(decision.answer)
                     reason = 'JEV selected matching reusable expertise.'
+                elif decision and decision.sure and decision.answer == 'none':
+                    create = True
+                    reason = 'JEV found no matching specialist; commission reusable expertise.'
                 else:
                     reason = 'JEV could not select expertise confidently; triage must select or create it.'
-    row = {'work_id': work_id, 'state': 'selected' if role else 'triage', 'fingerprint': digest,
+    if create:
+        # The creator names the expertise. The ticket retains its own assignment and continuation.
+        SERVICE.claim(replace(ctx, nouns={'work': work_id, 'create': True}))
+    row = {'work_id': work_id, 'state': 'creating' if create else 'selected' if role else 'triage', 'fingerprint': digest,
            'role': role, 'reason': reason, 'updated': home.now()}
     with store.tables() as tx:
         current = tx.get('routing', {'work_id': work_id})
@@ -125,7 +147,7 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
         else:
             tx.insert('routing', row)
         tx.concern(work_id=work_id, kind='orchestration.routing')
-    if not role:
+    if not role and not create:
         for _, transport in provided(ctx.folder, 'orchestration.transport'):
             notify = getattr(transport, 'needs_specialist', None)
             if notify:

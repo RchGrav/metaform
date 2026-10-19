@@ -108,19 +108,26 @@ def completed(swarm):
 
 
 def pm_evidence(swarm, scenario, expected):
-    """A newly connected PM is told of the project updates in one inbox line, never their words, which stay readable
-    in the Project updates chat (code.dispatcher.agent#72); a load of its retained context names them again in no line."""
-    wait_for(swarm, lambda: not any(one['state'] == 'running' for one in records('dispatch', 'agent_sessions')))
+    """An available PM gets inbox references, not update bodies; retained context does not announce them again."""
+    wait_for(swarm, lambda: not any(one['state'] == 'running' and one['work_id'] != 'conversation-system'
+                                  for one in records('dispatch', 'agent_sessions')))
     # Session end is recorded before its runner releases admission. Respect the same actual ledger as a launch.
     wait_for(swarm, lambda: json.loads(swarm.run('dispatch', 'agents', '--json', cwd=swarm.folder).stdout)[
         'slots']['machine_used'] == 0)
     environment = swarm.env('ask', FAKE_SWARM_SCENARIO=scenario, FAKE_SWARM_STATE=str(swarm.swarm_state))
     started = json.loads(swarm.run('dispatch', 'system', '--json', cwd=swarm.folder, env=environment).stdout)
-    observed = wait_for(swarm, lambda: next((one for one in swarm.entries() if 'pm_observation' in one), None))
+    # Missing-key fallback may already have connected the PM while workers were active.
+    # Address that available session instead of waiting for it to stop being available.
+    swarm.run('dispatch', 'message', started['work_id'], 'PM_CONNECTED: report current delivery state.',
+              cwd=swarm.folder)
+    observed = wait_for(swarm, lambda: next((one for one in swarm.entries()
+                                            if 'PM_CONNECTED:' in one.get('pm_observation', '')), None))
     assert observed['role'] == 'triage'
-    assert 'new in your inbox' in observed['pm_observation']
+    seen = [one['pm_observation'] for one in swarm.entries()
+            if 'pm_observation' in one and one['session'] == observed['session']]
+    assert any('new in your inbox' in text for text in seen)
     bodies = [text for text in expected if text != 'C(T)']  # C(T) is in every role's instructions too
-    assert not any(text in observed['pm_observation'] for text in bodies), 'No update body reaches its turn.'
+    assert not any(text in turn for text in bodies for turn in seen), 'No update body reaches its turns.'
     updates = '\n'.join(one['text'] for one in records('dispatch', 'session_lines')
                          if str(one['name']).startswith('notification:'))
     assert all(text in updates for text in expected), 'Each update stays whole where it is read.'
@@ -217,7 +224,7 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     requests = records('orchestration', 'role_requests')
     assert len(requests) == 1 and requests[0]['state'] == 'published'
     requested = requests[0]
-    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/role_creator')
+    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/facilitator')
     worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
     specialists = [one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist']
     assert requested['caller_assignment_id'] == worker['assignment_id']
@@ -244,7 +251,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     swarm.start(FAKE_SWARM_SCENARIO='gc-generated', FAKE_SWARM_STATE=str(swarm.swarm_state))
     assignments = completed(swarm)
     root = next(one for one in assignments if one['work_id'] == swarm.id)
-    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/role_creator')
+    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/facilitator')
     specialist = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist')
     critic = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/functionality')
     assert len(assignments) == 4 and root['state'] == 'delivered' and swarm.ticket().done
@@ -267,7 +274,9 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     assert all(one['role'] == 'gc' and one['mcp_tool']['is_error'] is False and
                one['mcp_tool']['runner_identity'] == one['runner_identity'] for one in calls)
     received = next(one['gc_self_received'] for one in logged if 'gc_self_received' in one)
-    assert SPECIALIST_RESULT in received['text'] and 'RETAINED_GC_SPECIALIST_PLAN' not in received['text']
+    # The GC may read the completed result before its queued notice arrives. Its explicit read
+    # must supply the result without requiring the startup prompt to repeat it.
+    assert SPECIALIST_RESULT in received['result'] and 'RETAINED_GC_SPECIALIST_PLAN' not in received['text']
     assert 'RETAINED_GC_SPECIALIST_PLAN' in json.dumps(received['assignment'])
     assert any(one.get('role') == 'gc' and 'session_loaded' in one for one in logged)
     assert any('fqc_observation' in one for one in logged)

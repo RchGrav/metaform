@@ -143,7 +143,7 @@ def test_new_specialist_gc_commission_publication_reuse_and_original_return(proj
     with pytest.raises(Stop, match='delivery GC'):
         SERVICE.commission(ctx(project, 'worker', request=request['request_id']))
     creator = SERVICE.commission(ctx(project, 'gc-one', request=request['request_id']))
-    assert creator['authored_role_uri'] == 'metaform://role/role_creator'
+    assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     SERVICE.bind(ctx(project), creator['assignment_id'], 'creator')
     published = SERVICE.publish_role(ctx(project, 'creator', request=request['request_id'],
         duty='Investigate alarm timing against the requested user outcome. Return evidence to the calling worker.'))

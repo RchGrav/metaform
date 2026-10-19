@@ -3,10 +3,10 @@
 The orchestration module connects authored responsibilities to ordinary work
 records, dispatch sessions and durable continuations. It ships enabled; a
 dispatch provider must be available to run its queued assignments. It contributes
-17 native authored roles through `agent.roles`. An authored role and an adapter's
+native authored responsibilities through `agent.roles`. An authored role and an adapter's
 operational execution role are recorded separately.
 
-The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to a specialist (`implementer` by default), with its exact versioned duty at `metaform://role/<name>`. A missing specialty automatically commissions one bounded Role Creator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
+The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to selected reusable specialist expertise, with its exact versioned duty at `metaform://role/<name>`. A missing specialty automatically commissions one bounded Facilitator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
 
 An independent `functionality` assessment can inspect the delivered candidate. `orchestration_reviews` bounds automatic reviews per canonical ticket (one by default). Findings reopen that ticket with the repair instruction and verification steps, preserving prior evidence. They do not build recursive coordinator/correction trees. The legacy `gc` role and identity fields remain readable for existing assignments; new work needs no coordinator per ticket.
 
@@ -18,7 +18,7 @@ or UI. `metaform help orchestration` describes every noun.
 
 | Operation | Result |
 | --- | --- |
-| `claim` | Assign an existing ticket to the named specialist, defaulting to implementer. |
+| `claim` | Assign existing expertise, or use create=true to have the Facilitator find or create it. |
 | `inspect`, `team` | Read ownership, members, retained correction history and independent assessments. |
 | `delegate` | Start a specialist contribution while retaining the caller's responsibility. |
 | `call` | Record a specialist call and suspend the caller until its immediate result returns. |
@@ -29,7 +29,7 @@ or UI. `metaform help orchestration` describes every noun.
 | `change`, `changes`, `mode` | Publish an operative revision, inspect its delivery, or select adaptive/strict behavior. |
 | `bmad` | Inspect supported project-local BMAD entries, actual source/version/menu and managed call descriptor. |
 
-Generic specialist calls to `functionality` and `role_creator` explain the
+Generic specialist calls to `functionality` and `facilitator` explain the
 dedicated assessment and GC-commission routes. Ordinary specialists, including
 generated roles, remain callable by workers through their registered identities.
 
@@ -133,3 +133,15 @@ The dispatch integration tests additionally use real runner subprocesses and
 fake ACP/MCP fixtures to inspect actual recipient turns, cancellations, loads,
 prompt receipts, configured admission and user/PM messages. Parsing a prompt or
 reading a saved assignment alone is not evidence that the runtime delivered it.
+
+## Specialist selection and facilitation
+
+Read `metaform://specialists` for the current expertise names, purposes and role URLs. The directory excludes system responsibilities and contains no role bodies. JEV selects a listed specialist or confidently selects none. A confident no-match commissions the Facilitator directly; an empty inventory with available JEV configuration does the same without paying for an empty decision. An uncertain result goes to the ticket writer/orchestrator.
+
+Without a JEV key, the ticket writer checks the registry and calls `orchestration_claim work=<id> role=<name>` for a match, or `orchestration_claim work=<id> create=true` to hand the ticket to the Facilitator. The fallback also raises one short board notice and wakes the orchestrator under the existing automation settings. Explicit user stops remain effective.
+
+The Facilitator checks the registry again before authoring. It chooses a reusable domain name when the commission supplies none. Its metaprompt defines the five XML sections: identity, objective, rules, methods and output formatting. Ticket-specific paths, objectives and routing instructions remain in the assignment. The Facilitator publishes with `orchestration_publish_role request=<id> role=<name> purpose=<reusable-purpose> duty=<system_prompt-XML> match_reason=<brief-reason>`. To reuse existing expertise, it omits `duty`; publication never edits an existing role. Concurrent publications with the same name reuse the registered version.
+
+That operation registers the versioned role, binds it to the original ticket, places the ticket in To do and queues its continuation. `column=backlog` instead holds it without queuing a launch. It returns the role identity, match reason, assignment and actual board column, without the prompt body. The Facilitator must report a failed operation as failed; returning a name in chat alone neither registers nor assigns it. User-stopped callers remain stopped. Repeated publication returns the recorded result without launching another worker or revising the role.
+
+The helper runs as `metaform://role/facilitator`, outside worker slots and within existing helper limits. `role_creator` remains resolvable for already recorded assignments. The delivery owner is sessionless while expertise is pending and cannot bind a generic worker before publication.

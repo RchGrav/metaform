@@ -574,7 +574,9 @@ MODULE = Module(
     ),
     subscriptions=(Subscription('prompt.sent', record), Subscription('session.compacted', authored.compacted)),
     provides=(Provides('agent.role', authored.SERVICE), Provides('agent.roles', authored.generated)),
-    resources=(Resource('metaform://role/{name}', 'Authored role',
+    resources=(Resource('metaform://specialists', 'Specialist registry',
+                        'Reusable specialist names, purposes and role URLs, without prompt bodies.', 'specialists'),
+               Resource('metaform://role/{name}', 'Authored role',
                         'The authored responsibility, provider and resolved prompt versions.', 'resolve'),),
     tables=TABLES,
 )

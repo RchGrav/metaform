@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-10-19 — Facilitator handoff
+
+- Confident JEV no-match directly commissions the Facilitator; missing-key and uncertain fallback asks the ticket writer to assign existing expertise or hand off with `claim create=true`.
+- Facilitation uses the registry-first XML metaprompt, selects reusable names, reuses existing roles without editing them, and continues the original ticket after publication.
+- Publication returns compact identity, match and board receipts; To do is the default and Backlog explicitly holds the continuation. Replays do not launch duplicates.
+- `metaform://specialists` exposes the public expertise registry; new helper assignments use `facilitator`, with `role_creator` retained for existing assignments.
+
 ## 2026-10-19
 
 - `orchestration_change` on a ticket given no specification file revises the task of the GC's ticket, its operative specification, where it used to fail on a path of `None`; the earlier task is kept as the change record's `before_content`, and the change is routed and told to the person as a file's is. A `file:` path that does not exist is still refused (code.server.tool#1c).

@@ -250,12 +250,15 @@ def specialist():
 
 
 def creator(assignment):
+    assert 'metaform://specialists' in DUTY and '<metaprompt name="role_creation">' in DUTY
+    assert 'orchestration_publish_role' in DUTY and '<system_prompt>' in DUTY
     request = json.loads(assignment['task'])['request']
     duty = ('You are the Route Specialist. Independently establish route behavior for your immediate caller. '
             'Preserve its functional result across suspension and return candidate-specific evidence. '
             'Your delivery GC retains swarm ownership. Use the public module action bindings you receive.')
     progress(stage=99)
-    cli('orchestration', 'publish_role', request=request['request_id'], duty=duty)
+    cli('orchestration', 'publish_role', request=request['request_id'], role=request['role'] or 'route_specialist',
+        purpose='Diagnose and verify routing behavior.', duty=duty, match_reason='Routing behavior needs domain expertise.')
 
 
 def gc_requests_role(assignment, stage, text):
@@ -281,7 +284,10 @@ def gc_requests_role(assignment, stage, text):
               work_so_far='RETAINED_GC_SPECIALIST_PLAN')
         suspend()
         return
-    assert SPECIALIST_RESULT in str(specialist['result']) and SPECIALIST_RESULT in text
+    # A checkpoint-only resume can arrive after the result has landed in the assignment.
+    # The explicit team read above supplies it; the prompt must not need a duplicate copy.
+    assert SPECIALIST_RESULT in str(specialist['result'])
+    assert SPECIALIST_RESULT in text or f'Resume ticket {assignment["work_id"]}' in text
     assert 'RETAINED_GC_SPECIALIST_PLAN' not in text
     assert 'RETAINED_GC_SPECIALIST_PLAN' in json.dumps(assignment)
     Path('candidate.txt').write_text(str(specialist['result']) + '\n')
@@ -519,7 +525,7 @@ def turn(ident, text):
             worker(held['stage'])
         elif ROLE in ('investigator', 'route_specialist'):
             specialist()
-        elif ROLE == 'role_creator':
+        elif ROLE in ('facilitator', 'role_creator'):
             creator(assignment)
         elif ROLE == 'functionality':
             assessment(assignment)

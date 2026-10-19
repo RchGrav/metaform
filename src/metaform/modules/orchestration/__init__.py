@@ -47,6 +47,8 @@ ROLE_DUTIES = (
     ('synthesizer', 'Reconcile findings into a faithful combined result.', 'orchestration:synthesizer'),
     ('dogfood', 'Expose user-experience failures by using the actual product.', 'orchestration:dogfood'),
     ('release', 'Prepare the assigned release candidate and materials.', 'orchestration:release'),
+    ('facilitator', 'Create or reuse specialist expertise and continue the original ticket.', 'orchestration:role_creator'),
+    # Retained for already recorded assignments; new commissions use facilitator.
     ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'orchestration:role_creator'),
 )
 ROLES = tuple(AgentRoleDefinition(name, purpose, ('orchestration:common', prompt), specialist=False)
@@ -110,6 +112,18 @@ def role_requests(ctx: Context) -> Any:
         return list(tx.rows('role_requests', limit=0).results)
 
 
+def publish_role(ctx: Context) -> Any:
+    published = SERVICE.publish_role(ctx)
+    role = published['role']
+    assignment = published['assignment']
+    return {'role': {key: role.get(key) for key in ('name', 'uri', 'version_id')},
+            'source': published.get('source'), 'match_reason': published.get('match_reason'),
+            'assignment': {key: assignment[key] for key in ('assignment_id', 'work_id', 'state')}
+                if assignment else None,
+            'board_placement': published['board_placement'],
+            'continued': len(published['assignments'])}
+
+
 def change(ctx: Context) -> Any:
     return publish_change(ctx, SERVICE)
 
@@ -159,7 +173,7 @@ MODULE = Module(
     verbs=(
         Verb('functionality', functionality, 'Read a ticket’s local requirements and dependents as a named graph and Markdown.',
              effect='read', nouns=(Noun('work', 'Ticket id.'),)),
-        Verb('route', route, 'Select reusable specialist expertise, or refer the ticket to triage.',
+        Verb('route', route, 'Select expertise, commission missing expertise, or ask the orchestrator to decide.',
              nouns=(Noun('work', 'Ticket id.'),
                     Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
         Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',
@@ -167,6 +181,8 @@ MODULE = Module(
         Verb('claim', SERVICE.claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
              nouns=(Noun('work', 'Existing root work id.'),
                     Noun('role', 'Reusable specialist name or URI; omitted uses the selected specialist. Missing roles are created.', required=False),
+                    Noun('create', 'Have the Facilitator name and publish missing expertise before this ticket starts.',
+                         'bool', required=False),
                     RESULT, SPEC, CANDIDATE,
                     Noun('mode', 'Adaptive or strict; absent uses the project default.', required=False),
                     Noun('session', 'Session binding for a local user-issued claim.', required=False),
@@ -185,11 +201,15 @@ MODULE = Module(
              nouns=CALL_NOUNS),
         Verb('role_requests', role_requests, 'Read specialist-role contributions awaiting their GC commission.',
              effect='read', nouns=(Noun('request', 'Role request id.', required=False),)),
-        Verb('commission', SERVICE.commission, 'Commission the Role Creator for a worker\'s requested specialty.',
+        Verb('commission', SERVICE.commission, 'Commission the Facilitator for a worker\'s requested specialty.',
              nouns=(Noun('request', 'Recorded worker role request.'), ASSIGNMENT, WAIT)),
-        Verb('publish_role', SERVICE.publish_role, 'Publish the commissioned duty and continue the original worker call.',
+        Verb('publish_role', publish_role, 'Publish or reuse expertise and continue the original ticket; return its identity.',
              nouns=(Noun('request', 'Recorded GC commission.'),
-                    Noun('duty', 'Authored specialist duty text.'), ASSIGNMENT,
+                    Noun('duty', 'Reusable XML system prompt; omit to reuse an existing specialist.', required=False),
+                    Noun('role', 'Reusable specialist name or URI; required when the commission has no name.', required=False),
+                    Noun('match_reason', 'Brief reason this expertise fits the ticket.', required=False),
+                    Noun('column', 'Pending board column: todo by default, or backlog when explicitly requested.', required=False),
+                    ASSIGNMENT,
                     Noun('purpose', 'Specialist purpose; absent retains the requested purpose.', required=False))),
         Verb('check-in', SERVICE.check_in, 'Record progress, a blocker, result or delivery and route its continuation.',
              nouns=(Noun('state', 'running, waiting, blocked, returned, delivered or failed.'),

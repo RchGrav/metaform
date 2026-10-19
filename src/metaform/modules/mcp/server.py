@@ -2138,6 +2138,8 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
         components = [one]
     elif uri == project_uri(folder):
         components = [prompt_files.component('map:project_glossary', text)]
+    elif uri == 'metaform://specialists':
+        components = [prompt_files.component('agents:specialists', text)]
     elif uri == ROLE_URI + (catalog.role() or PERSON):
         components = [prompt_files.component('mcp:role_' + (catalog.role() or PERSON), text)]
     if components:

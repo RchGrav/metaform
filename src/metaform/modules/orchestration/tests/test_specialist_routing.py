@@ -139,3 +139,220 @@ def test_openrouter_credit_is_cached_debited_and_explicitly_refreshed(home, monk
     assert jev.openrouter_credits(refresh=True)['remaining'] == 6
     assert len(calls) == 2
     assert b'fixture-private-key' not in (home / jev.CACHE).read_bytes()
+
+
+def test_confident_none_commissions_facilitator_and_publication_continues_original_ticket(case, monkeypatch):
+    from metaform.modules.dispatch import capacity_kind
+    from metaform.modules.orchestration import publish_role
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    expert(ctx)
+    decisions = []
+    monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
+
+    def choose(*args, **kwargs):
+        decisions.append(True)
+        return SimpleNamespace(sure=True, answer='none')
+    monkeypatch.setattr(jev, 'pick_one', choose)
+    assert SERVICE.route(ctx, work.id)['state'] == 'creating'
+    owner = SERVICE.assignment(ctx, work_id=work.id)
+    assert owner['state'] == 'waiting' and owner['owner_session_id'] is None
+    assert SERVICE.routing_status(ctx, work.id) == {'state': 'creating', 'role': None}
+    assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating'
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
+    creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
+    assert creator['authored_role_uri'] == 'metaform://role/facilitator'
+    assert capacity_kind(ctx, creator['work_id'], 'worker') == 'helper'
+    assert creator['task'].count(work.task) == 1
+    assert 'markdown' not in creator['task']
+    with pytest.raises(Stop, match='waiting for its specialist'):
+        SERVICE.bind(ctx, owner['assignment_id'], 'premature-worker')
+    SERVICE.bind(ctx, creator['assignment_id'], 'facilitator')
+    duty = '<system_prompt><role_and_identity>You are a timer diagnostics specialist.</role_and_identity></system_prompt>'
+    writer = context('orchestration', ctx.folder, project='proj', session='facilitator', nouns={
+        'request': request['request_id'], 'role': 'timer_diagnostics',
+        'purpose': 'Diagnose timer behavior.', 'duty': duty})
+    result = publish_role(writer)
+    assert result['role']['uri'] == 'metaform://role/timer_diagnostics'
+    assert result['assignment']['work_id'] == work.id
+    assert result['assignment']['assignment_id'] == owner['assignment_id']
+    assert result['assignment']['state'] == 'queued'
+    assert result['continued'] == 1 and 'system_prompt' not in json.dumps(result)
+    assert SERVICE.route(ctx, work.id)['role'] == result['role']['uri']
+    bound = SERVICE.bind(ctx, owner['assignment_id'], 'specialist')
+    assert duty in bound['role_snapshot']['text']
+    assert bound['task'] == work.task and not store.ticket(work.id).work.done
+    assert len(decisions) == 1
+    replay = publish_role(writer)
+    assert replay['role']['version_id'] == result['role']['version_id']
+    with own(ctx).tables(write=False) as tx:
+        launches = [one for one in tx.rows('transitions', {'assignment_id': owner['assignment_id']}, limit=0).results
+                    if one['kind'] == 'launch']
+        creator_result = tx.get('assignments', {'assignment_id': creator['assignment_id']})['result']
+    assert len(launches) == 1 and 'system_prompt' not in json.dumps(creator_result)
+
+
+@pytest.mark.parametrize('existing', [True, False])
+def test_no_jev_key_ticket_writer_assigns_expertise_or_hands_to_facilitator(case, monkeypatch, existing):
+    from metaform import home
+    ctx, _, work = case
+    if existing:
+        expert(ctx)
+    home.save(str(ctx.folder), 'chassis', 'jev', ['true'])
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('Missing key must not call JEV'))
+    assert SERVICE.route(ctx, work.id)['state'] == 'triage'
+    ctx.nouns.update(work=work.id, **({'role': 'alarm_engineering'} if existing else {'create': True}))
+    assigned = SERVICE.claim(ctx)
+    if existing:
+        assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
+        assert assigned['state'] == 'queued'
+    else:
+        assert assigned['state'] == 'waiting'
+        creator = SERVICE.assignment(ctx, assignment_id=assigned['role_request']['creator_assignment_id'])
+        assert creator['authored_role_uri'] == 'metaform://role/facilitator'
+        assert SERVICE.claim(ctx)['role_request']['request_id'] == assigned['role_request']['request_id']
+
+
+def test_uncertain_none_goes_to_ticket_writer_without_commissioning(case, monkeypatch):
+    ctx, _, work = case
+    expert(ctx)
+    monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
+    monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: SimpleNamespace(sure=False, answer='none'))
+    assert SERVICE.route(ctx, work.id)['state'] == 'triage'
+    assert SERVICE.assignment(ctx, work_id=work.id) is None
+
+
+def test_empty_inventory_commissions_without_paying_for_an_empty_choice(case, monkeypatch):
+    ctx, _, work = case
+    monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
+    monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('There is nothing to choose'))
+    assert SERVICE.route(ctx, work.id)['state'] == 'creating'
+
+
+def test_facilitators_choose_names_independently_and_reuse_already_published_expertise(case):
+    from metaform.modules.orchestration import publish_role
+    ctx, store, work = case
+    second = store.add_work(Node('element', 'code.alarm.audible'), None, task='Measure audible alarm behavior.')
+    requests = []
+    for record in (work, second):
+        ctx.nouns = {'work': record.id, 'create': True}
+        requests.append(SERVICE.claim(ctx)['role_request'])
+    assert requests[0]['creator_assignment_id'] != requests[1]['creator_assignment_id']
+    registered = expert(ctx)  # Expertise becomes available after the commissions.
+    for number, request in enumerate(requests):
+        session = f'facilitator-{number}'
+        SERVICE.bind(ctx, request['creator_assignment_id'], session)
+        writer = context('orchestration', ctx.folder, project='proj', session=session, nouns={
+            'request': request['request_id'], 'role': registered['uri']})
+        result = publish_role(writer)
+        assert result['role']['version_id'] == registered['version_id']
+        assert result['assignment']['work_id'] in (work.id, second.id)
+    assert ROLES.resolve(ctx, registered['name'])['version_id'] == registered['version_id']
+
+
+def test_fallback_wakes_orchestrator_once_with_a_short_reference(case, run, dispatch_runners):
+    import sys
+
+    ctx, _, work = case
+    run('enable', 'dispatch')
+    run('set', '--dispatch-autostart', cwd=ctx.folder)
+    from metaform.modules.dispatch import signals
+    from metaform.modules.dispatch.orchestration import Transport
+    starts = []
+
+    # Signal publication can reload enabled module packages. Observe the real callback across
+    # that reload instead of patching a function on the now-discarded module instance.
+    def trace(frame, event, arg):
+        if event == 'call' and frame.f_code.co_name == 'stay_connected' and \
+                frame.f_globals.get('__name__') == 'metaform.modules.dispatch':
+            starts.append(True)
+    previous = sys.getprofile()
+    sys.setprofile(trace)
+    try:
+        Transport().needs_specialist(ctx, work.id)
+        Transport().needs_specialist(ctx, work.id)
+    finally:
+        sys.setprofile(previous)
+    assert len(starts) == 1
+    needs = [row for row in signals.rows(ctx.require_store()) if row.get('signal') == 'board-needs']
+    assert len(needs) == 1
+    assert work.task not in json.dumps(needs)
+
+
+def test_facilitator_reuses_without_editing_and_respects_backlog_placement(case):
+    from metaform.modules.orchestration import publish_role
+    from metaform.modules.orchestration.state import own
+    ctx, store, work = case
+    ctx.nouns.update(work=work.id, create=True)
+    assigned = SERVICE.claim(ctx)
+    request = assigned['role_request']
+    registered = expert(ctx)
+    SERVICE.bind(ctx, request['creator_assignment_id'], 'facilitator')
+    writer = context('orchestration', ctx.folder, project='proj', session='facilitator', nouns={
+        'request': request['request_id'], 'role': registered['uri'], 'duty': 'Do not overwrite existing expertise.',
+        'column': 'backlog', 'match_reason': 'The registered role covers countdown alarm behavior.'})
+    result = publish_role(writer)
+    assert result['source'] == 'existing'
+    assert result['board_placement'] == {'status': 'done', 'column': 'backlog', 'work_id': work.id}
+    assert store.ticket(work.id).work.held and not store.ticket(work.id).work.taken
+    assert ROLES.resolve(ctx, registered['name'])['version_id'] == registered['version_id']
+    assert 'Do not overwrite' not in ROLES.resolve(ctx, registered['name'])['text']
+    with own(ctx).tables(write=False) as tx:
+        events = tx.rows('transitions', {'assignment_id': assigned['assignment_id']}, limit=0).results
+    assert not any(one['kind'] == 'launch' for one in events)
+    assert publish_role(writer)['board_placement']['column'] == 'backlog'
+
+
+def test_specialist_registry_resource_has_names_and_urls_without_role_bodies(case):
+    import asyncio
+
+    from metaform.modules.mcp import server
+    ctx, _, _ = case
+    registered = expert(ctx)
+    text = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
+    assert registered['uri'] in text and 'Reliable countdown alarms' in text
+    assert 'Diagnose timing' not in text and 'metaform://role/implementer' not in text
+    again = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
+    assert registered['uri'] not in again
+    newer = ROLES.publish(ctx, 'timer_diagnostics', 'Diagnose countdown timing.', 'Measure timer behavior.')
+    changed = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
+    assert newer['uri'] in changed
+    server.compaction_state(ctx.folder, 'facilitator')
+    restored = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
+    assert newer['uri'] in restored
+
+
+def test_automatic_creation_waits_for_a_held_ticket_to_be_released(case, monkeypatch):
+    ctx, store, work = case
+    routing.queue(ctx, [work.id])
+    store.move_work(work.id, 'backlog', kept=True)
+    with monkeypatch.context() as waiting:
+        waiting.setattr(jev, 'config', lambda *a: pytest.fail('A held ticket must not spend on routing'))
+        assert SERVICE.route_pending(ctx)[0]['state'] == 'held'
+        assert not SERVICE.routing_waiting(ctx)
+        assert SERVICE.assignment(ctx, work_id=work.id) is None
+    store.move_work(work.id, 'todo', kept=True)
+    routing.queue(ctx, [work.id])
+    monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
+    assert SERVICE.route_pending(ctx)[0]['state'] == 'creating'
+
+
+def test_facilitator_receives_the_complete_xml_workflow_through_role_resolution(case):
+    from xml.etree import ElementTree
+    ctx, _, _ = case
+    role = ROLES.resolve(ctx, 'facilitator')
+    assert not role['problems']
+    duty = role['components'][-1]['text']
+    workflow = ElementTree.fromstring(duty)
+    assert workflow.tag == 'metaprompt'
+    assert len(workflow.findall('./workflow/step')) == 6
+    assert {section.attrib['tag'] for section in workflow.findall('./required_sections/section')} == {
+        'role_and_identity', 'context_and_objective', 'core_rules_and_constraints',
+        'key_skills_and_behaviors', 'output_formatting'}
+    assert 'metaform://specialists' in duty and 'orchestration_publish_role' in duty
+    assert '<system_prompt>' in workflow.find('system_prompt_template').text
+    assert '<result>' in workflow.find('./output_format/template').text

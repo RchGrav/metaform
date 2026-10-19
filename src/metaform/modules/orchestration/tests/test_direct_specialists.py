@@ -62,7 +62,7 @@ def test_missing_root_role_continues_original_ticket_and_pins_duty(store, projec
     assert rebound['role_snapshot'] == original
     from metaform.modules.mcp.server import assigned_role
     assert assigned_role(project_folder, bound['authored_role_uri'], 'resumed-specialist') == original
-    assert creator['authored_role_uri'] == 'metaform://role/role_creator'
+    assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     with own(ctx).tables(write=False) as tx:
         assert len(tx.rows('assignments', limit=0).results) == 2
 

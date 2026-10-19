@@ -2343,7 +2343,8 @@ def autostart(ctx: Context) -> dict[str, Any]:
     return {**started, **connected,
             'more': bool(started.get('more') or owner is not None and owner.routing_waiting(ctx)),
             **({'specialist_routing': {
-                state: sum(one.get('state') == state for one in routed) for state in ('selected', 'triage')}}
+                state: sum(one.get('state') == state for one in routed)
+                for state in ('selected', 'creating', 'triage', 'held')}}
                 if routed else {}),
             **({'continuations': continued} if continued else {}),
             **({'retry_due': min(due)} if due else {})}
@@ -3516,7 +3517,8 @@ def capacity_kind(ctx: Context, work_id: str, kind: str) -> str:
         return kind
     from .orchestration import assignment
     held = assignment(ctx, work_id)
-    return 'helper' if held and held['authored_role_uri'] == 'metaform://role/role_creator' else kind
+    return 'helper' if held and held['authored_role_uri'] in (
+        'metaform://role/facilitator', 'metaform://role/role_creator') else kind
 
 
 HELPERS_MOST = 8  # separate bounded helper capacity; the deduplicated user advisor remains reachable

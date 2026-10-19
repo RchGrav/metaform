@@ -13,7 +13,8 @@ from metaform.modules.orchestration.state import SERVICE
 pytestmark = pytest.mark.kind('simulation')
 
 
-def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, home, project_folder, tmp_path, monkeypatch):
+@pytest.mark.parametrize("named", [True, False])
+def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, home, project_folder, tmp_path, monkeypatch, named):
     live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     fake = Path(__file__).with_name('fake_swarm_agent.py')
     for agent in ('claude', 'codex', 'gemini'):
@@ -23,7 +24,7 @@ def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, hom
     for name, value in live.env('ask', FAKE_SWARM_SCENARIO='direct', FAKE_SWARM_STATE=str(tmp_path / 'state')).items():
         if name.startswith('FAKE_'):
             monkeypatch.setenv(name, value)
-    ctx = context('orchestration', project_folder, project='proj', nouns={'work': live.id, 'role': 'route_specialist'})
+    ctx = context('orchestration', project_folder, project='proj', nouns={'work': live.id, **({'role': 'route_specialist'} if named else {'create': True})})
     assigned = SERVICE.claim(ctx)
     try:
         SERVICE.drain(ctx)
@@ -35,7 +36,7 @@ def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, hom
             return assignments if len(assignments) == 3 and all(one['state'] in ('returned', 'delivered') for one in assignments) else None
         assignments = eventually(finished, limit=120)
         assert {one['authored_role_uri'] for one in assignments} == {
-            'metaform://role/role_creator', 'metaform://role/route_specialist', 'metaform://role/functionality'}
+            'metaform://role/facilitator', 'metaform://role/route_specialist', 'metaform://role/functionality'}
         root = SERVICE.assignment(ctx, work_id=live.id)
         assert root['assignment_id'] == assigned['assignment_id']
         assert root['evidence'] and root['candidate']['sha256']

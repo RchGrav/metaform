@@ -116,6 +116,8 @@ class RoleService:
         if owner == 'agents' and ctx.store is not None:
             with ctx.store.tables(write=False) as tx:
                 generated_row = tx.get('definitions', {'name': name})
+            if generated_row:
+                result['version_id'] = generated_row['version_id']
         renderers = provided(ctx.folder, 'prompt.render')
         components: list[dict[str, Any]] = []
         problems: list[str] = []
