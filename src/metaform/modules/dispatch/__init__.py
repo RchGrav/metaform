@@ -350,11 +350,14 @@ settings.choice('dispatch_recovery', ['manual', 'automatic'], 'automatic', label
 # runner, the agent's adapter and its own Metaform MCP server, about half a gigabyte or more.
 AGENTS_MOST = 17
 settings.number('dispatch_agents', 5, min=1, max=AGENTS_MOST, person_only=True,
-                help='Maximum simultaneous ticket workers in this project.',
-                details='Includes worker retries, reviews and active forks. Triage, conversations, intake and '
-                        'temporary role creation use separate capacity, so a full queue never blocks user control. '
-                        'dispatch_machine_agents bounds workers across every project.',
-                label='Max workers in this project', category='automation', heading='Dispatch and capacity', unit='workers',
+                help='How many ticket workers Full Auto may start in this project; a ticket you start runs whatever '
+                     'the count.',
+                details='Full Auto, the queue, worker retries, recovery and agents\' own forks start a worker only '
+                        'while fewer than this many run. A ticket you start, or your system agent starts at your '
+                        'word, runs whatever the count, within the day\'s budget, your stops and '
+                        'dispatch_machine_agents, and counts toward the total Full Auto sees. Triage, conversations, '
+                        'intake and temporary role creation use separate capacity.',
+                label='Workers Full Auto may start', category='automation', heading='Dispatch and capacity', unit='workers',
                 essential=30)
 # The ceiling across every project of this Metaform home, UX review round 1, 2026-10-17 (dispatch-concurrency F4,
 # runaway-and-load F2): each project's dispatch_agents counted only its own, so two projects ran twice the agents, and
@@ -2149,7 +2152,8 @@ def ticket_settings(ctx: Context) -> dict[str, dict[str, Any]]:
         kept: dict[str, dict[str, Any]] = {
             str(row['work_id']): {'glyph': row['glyph']} for row in tx.rows('glyphs', limit=0).results}
         for row in tx.rows('ticket_settings', limit=0).results:
-            kept.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
+            kept.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
+                                                            epic=row['epic'], agents=row['agents'])
         for row in tx.rows('eligible', limit=0).results:
             kept.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
         for row in tx.rows('after', limit=0).results:
@@ -2165,6 +2169,34 @@ def after_of(store: Store, work_id: str) -> dict[str, Any]:
     except StoreError:
         return {}
     return {'after_work': row['works']} if row is not None else {}
+
+
+def epic_of(store: Store, work_id: str) -> str | None:
+    """The epic a ticket belongs to, whose worktree and branch it shares, as the map module keeps it; None for a
+    ticket in none, for an epic itself, or where the map keeps nothing."""
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': work_id})
+    except StoreError:
+        return None
+    epic = str(row['epic']) if row is not None and row['epic'] else None
+    return epic if epic != work_id else None
+
+
+def agents_of(store: Store, work_id: str) -> int:
+    """How many agents work on a ticket at once, as the map module keeps it: one where it keeps none."""
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': work_id})
+    except StoreError:
+        return 1
+    return int(row['agents'] or 1) if row is not None else 1
+
+
+def epics(kept: dict[str, dict[str, Any]]) -> set[str]:
+    """The epics among the tickets `ticket_settings` read: each marked so, or named by a child. No agent works an epic
+    itself; its work is its children."""
+    return {str(held['epic']) for held in kept.values() if held.get('epic')}
 
 
 def fix_in_force(store: Store, work_id: str) -> bool:
@@ -3542,19 +3574,21 @@ def what_follows(ctx: Context, kind: str) -> str:
 
 
 def admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
-          asked: int | None = None, agent: str | None = None, auto: bool = False, persons_own: bool = False) -> None:
+          asked: int | None = None, agent: str | None = None, auto: bool = False, persons_own: bool = False,
+          limited: bool = False) -> None:
     """Apply the gate against current settings, including calls made inside a long-lived runner."""
     with home.registry_scope(fresh=True):
         _admit(ctx, store, work_id, kind, besides=besides, asked=asked, agent=agent, auto=auto,
-               persons_own=persons_own)
+               persons_own=persons_own, limited=limited)
 
 
 def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int | None = None,
            asked: int | None = None, agent: str | None = None, auto: bool = False,
-           persons_own: bool = False) -> None:
+           persons_own: bool = False, limited: bool = False) -> None:
     """Refuse a start the gate has no room for, saying which limit binds and what follows: a halt newer than the start
     was asked for, `halted`; an agent that keeps failing, for an automatic start, `failing_agent`; the machine's
-    agents, dispatch_machine_agents; the project's slots, dispatch_agents; the day's budget. Run under the gate's
+    agents, dispatch_machine_agents; the project's slots, dispatch_agents, for an automatic or `limited` start; the
+    day's budget. Run under the gate's
     lock, `start_runner` and `admit_self`, so a halt written under it is seen by every start after it."""
     stopped = halted(store.project_id, asked, pinned(store).get(BASE_VARIABLE))
     if stopped is not None:
@@ -3580,11 +3614,16 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
                       f'this machine across {held["projects"]} project{"" if held["projects"] == 1 else "s"}, the most '
                       f'dispatch_machine_agents allows ({held["machine_limit"]}). {what_follows(ctx, kind)}',
                       'metaform dispatch sessions')
-    if kind == 'worker' and held['free'] <= 0:
+    # dispatch_agents is how many workers Full Auto may start: a start the person makes, or their system agent makes at
+    # their word, runs whatever the count and still counts toward it (2026-10-19: the person had to raise the limit to
+    # start one emergency ticket). `limited` binds a start nobody asked for that is not Full Auto's.
+    if kind == 'worker' and (auto or limited) and held['free'] <= 0:
         names = called(store, [*held['holding'][:5], work_id])
         holders = ', '.join(names[one] for one in held['holding'][:5]) or 'agents the person summoned'
-        raise Refused(f'Every worker slot is in use: dispatch_agents allows {_agents(held["limit"])} at once, held by '
-                      f'{holders}. {names[work_id]}: {what_follows(ctx, kind)}', 'metaform dispatch sessions')
+        raise Refused(f'Every slot Full Auto may fill is in use: dispatch_agents lets it start '
+                      f'{_agents(held["limit"])} at once, held by {holders}. {names[work_id]}: '
+                      f'{what_follows(ctx, kind)}{" Starting it yourself runs it now." if auto else ""}',
+                      'metaform dispatch sessions')
     if kind != 'worker' and not persons_own and held['room'] <= 0:
         raise Refused(f'The project has {HELPERS_MOST} helpers active. Wait for a helper to finish; worker limits '
                       'do not block the advisor.', 'metaform dispatch sessions')
@@ -3722,7 +3761,8 @@ def admit_self(ctx: Context, store: Store, work_id: str, kind: str) -> None:
                 raise Refused(halt_refusal(stopped, called(store, [work_id])[work_id]), 'metaform dispatch sessions')
             return
         personal = bool(ctx.nouns.get('system')) and not any(ctx.nouns.get(key) for key in ('talk', 'sentinel', 'intake', 'prep'))
-        admit(ctx, store, work_id, kind, besides=os.getpid(), persons_own=personal)
+        # started outside the gate, so nothing says the person asked for it
+        admit(ctx, store, work_id, kind, besides=os.getpid(), persons_own=personal, limited=True)
         _recorded(os.getpid(), {'pid': os.getpid(), 'born': identity(os.getpid()) or '', 'project': store.project_id,
                                 'work_id': work_id, 'agent': str(ctx.nouns.get('agent') or ''), 'kind': kind,
                                 'started': time.time(), 'asked': time.time_ns(),
@@ -3793,7 +3833,7 @@ def fork_capacity(ctx: Context, store: Store, work_id: str, agent: str) -> Path:
     """
     from .recovery import identity
     with home.file_lock(admit_lock()):
-        admit(ctx, store, work_id, 'worker', agent=agent)
+        admit(ctx, store, work_id, 'worker', agent=agent, limited=True)  # the agent's own fork, never the person's
         token = secrets.token_hex(16)
         path = ledger() / f'{os.getpid()}-fork-{token}.json'
         temporary = path.with_suffix('.tmp')
@@ -6212,15 +6252,24 @@ def resume(ctx: Context) -> dict[str, Any]:
         worker = True
     if worker and running(store, work_id) is not None:
         raise Stop(f'Another agent is at work on work {work_id}.', f'metaform dispatch sessions id={work_id}')
+    # an agent's resume without the person's word is automatic, as its start is, so dispatch_agents binds it; the
+    # word is only read here, an agent's resume needing none
+    try:
+        word = on_persons_word(ctx, f'Resuming the agent on ticket {work_id}', [work_id])
+    except PersonsDecision:
+        word = None
+    automatic = not person_asks(ctx) and word is None
     # a worker's resume and a conversation's alike go through the gate, which refuses past the slots, VIEW-039
     if assignment and owner is not None and person_asks(ctx):
         admit(ctx, held, work_id, 'worker' if worker else 'summoned', agent=agent)
         owner.reopen(ctx, work_id)
     started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume',
-                           ctx=ctx)
+                           ctx=ctx, auto=automatic)
     if started.get('state') == 'running' and silent(row, started.get('pid')):
         return held_session(row, int(started['pid']))
-    return {**said, 'state': 'starting', **started, 'conversation': not worker}
+    return {**said, 'state': 'starting', **started, 'conversation': not worker,
+            **(on_word(ctx, word, f'resumed {agent_label(agent)} on ticket {ticket_label(held, work_id)}', [work_id])
+               if word else {})}
 
 
 def intake(ctx: Context) -> dict[str, Any]:

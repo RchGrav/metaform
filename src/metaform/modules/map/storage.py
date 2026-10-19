@@ -486,6 +486,7 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         # moved to done on the board is a done, and a ticket that closes only with proof is not closed on a move
         return _landed(tx, row, row["resolution"], notices)
     _ticket_changed(tx, work_id)
+    reopened = row["done"] is not None and column != "done"
     if proof is not None and column in ("todo", "backlog"):
         # given back, its fix has not held or is not yet given: no landed fix is kept, nor its resolution
         tx.execute("UPDATE work SET resolution=NULL WHERE work_id=?", (work_id,))
@@ -507,6 +508,10 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
             (int(column == "backlog"), work_id),
         )
     del row
+    if column == "done":
+        _epic_closed(tx, work_id)
+    elif reopened:
+        _epic_reopened(tx, work_id)
     if kept:
         return work_record(tx, _work_row(tx, work_id), tuple(notices))
     moved = work_record(tx, _work_row(tx, work_id))
@@ -575,7 +580,43 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         tables = tx.tables()
         if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
             tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
+    _epic_closed(tx, work_id)
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
+
+
+def _epic_of(tx: Tx, work_id: str) -> str | None:
+    """The epic a ticket belongs to, the `epic` its settings name, or None."""
+    row = tx.tables().get("ticket_settings", {"work_id": work_id})
+    return str(row["epic"]) if row is not None and row["epic"] else None
+
+
+def _epic_closed(tx: Tx, work_id: str) -> None:
+    """A child's done closes its epic once every child naming it is done, so the person's request reads finished and
+    the epic's one worktree goes to review and merge once: completed when any child completed, else as its children
+    ended. An epic closed by hand before then stays as it is."""
+    epic = _epic_of(tx, work_id)
+    if epic is None:
+        return
+    children = [str(row["work_id"]) for row in tx.tables().rows("ticket_settings", {"epic": epic}, limit=0).results]
+    ended = tx.execute(
+        f"SELECT done, outcome FROM work WHERE work_id IN ({', '.join('?' * len(children))})", children).fetchall()
+    if not ended or any(row["done"] is None for row in ended):
+        return
+    held = tx.execute("SELECT done FROM work WHERE work_id=?", (epic,)).fetchone()
+    if held is None or held["done"] is not None:
+        return
+    outcomes = {str(row["outcome"] or "completed") for row in ended}
+    finish_work(tx, epic, f"Every one of its {len(ended)} child tickets is done.",
+                outcome="completed" if "completed" in outcomes else sorted(outcomes)[0])
+
+
+def _epic_reopened(tx: Tx, work_id: str) -> None:
+    """A child moved back out of Done reopens its epic, so the epic's worktree is reviewed and merged again only once
+    every child is done again."""
+    epic = _epic_of(tx, work_id)
+    held = tx.execute("SELECT done FROM work WHERE work_id=?", (epic,)).fetchone() if epic else None
+    if epic is not None and held is not None and held["done"] is not None:
+        move_work(tx, epic, "todo", kept=True)
 
 
 def prove_work(tx: Tx, work_id: str) -> WorkRecord:
@@ -1443,8 +1484,10 @@ TABLES = Tables(
     # tickets each ticket waits on, `after`, in a table of its own, read by dispatch's agent starter (UX review round 1,
     # 2026-10-17), so version 9 still reads and writes the store; 18: whether a ticket closes only with proof and when
     # its fix landed, `proof` and `landed` in ticket_settings, columns version 9 never names (code.scheduler.task#9,
-    # 2026-10-19), so it still reads and writes the store
-    version=18,
+    # 2026-10-19), so it still reads and writes the store; 19: the epic a ticket belongs to and how many agents work on
+    # it at once, `epic` and `agents` in ticket_settings (code.dispatcher.agent#7a, 2026-10-19), columns version 9
+    # never names
+    version=19,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1455,9 +1498,11 @@ TABLES = Tables(
     ), Table(
         # each ticket's preferred agent and the person's hold, which hides it from agents and automatic starts
         'ticket_settings', place='metaform', key=('work_id',),
-        # and whether it closes only with proof, `proof`, and when its fix landed while it is watched, `landed`
+        # and whether it closes only with proof, `proof`, and when its fix landed while it is watched, `landed`; the
+        # epic it belongs to, `epic`, which closes once every child naming it is done and whose worktree its children
+        # share; and how many agents work on it at once, `agents`, one when none is set
         columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
-                 Column('proof', 'int', default=0), Column('landed')),
+                 Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int')),
     ), Table(
         'eligible', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('agents', 'json', required=True)),

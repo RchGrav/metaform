@@ -1231,9 +1231,10 @@ WORK_READS: dict[str, frozenset[str]] = {
                        'hold'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title'}),
+                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
-                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title'}),
+                       'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title',
+                       'epic', 'agents'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
@@ -1560,7 +1561,9 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
         eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
         after = {work_id: tx.get('after', {'work_id': work_id}) for work_id in work_ids}
     kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold']),
-                      **({'proof': True, 'landed': row['landed']} if row['proof'] else {})}
+                      **({'proof': True, 'landed': row['landed']} if row['proof'] else {}),
+                      **({'epic': row['epic']} if row['epic'] else {}),
+                      **({'agents': row['agents']} if row['agents'] else {})}
             for work_id, row in found.items() if row is not None}
     for work_id, row in eligible.items():
         if row is not None:
@@ -1795,6 +1798,14 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
         changes['agent'] = agent
     if 'hold' in nouns:
         changes['hold'] = 1 if nouns['hold'] else 0
+    if 'epic' in nouns:
+        changes['epic'] = _epic(store, work_id, nouns['epic'])
+    if 'agents' in nouns:  # how many agents work on it at once; one, the default, is kept as none
+        agents = nouns['agents']
+        if isinstance(agents, bool) or not isinstance(agents, int) or agents < 1:
+            raise Stop(f'A ticket\'s agents is how many agents work on it at once, a whole number from 1; {agents!r} '
+                       'is not one.', 'metaform map work op=edit id=<id> agents=2')
+        changes['agents'] = agents if agents > 1 else None
     if not changes and 'eligible' not in nouns and 'after_work' not in nouns:
         return
     with store.tables() as tx:
@@ -1824,6 +1835,30 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
                 kept = sorted({str(one) for one in cast(list[str], waits)} - {work_id})
                 if tx.update('after', {'work_id': work_id}, {'works': kept}) is None:
                     tx.insert('after', {'work_id': work_id, 'works': kept})
+
+
+def _epic(store: Store, work_id: str, given: Any) -> str | None:
+    """The epic a ticket is put in, as `epic` takes it: true makes the ticket an epic itself, kept as its own id, so no
+    agent starter takes it before its children are written; a work id or `<address>#<n>` makes it that epic's child;
+    '', false or none takes it out. One level only: an epic is no child, and a child is no epic."""
+    if given in (None, '', False, 'false'):
+        return None
+    if given in (True, 'true'):
+        return work_id
+    epic = _work_id(store, str(given))
+    if epic == work_id:
+        return work_id
+    store.ticket(epic)  # a ticket that does not exist is refused by the store, with its own words
+    with store.tables(write=False) as tx:
+        held = tx.get('ticket_settings', {'work_id': epic})
+        children = tx.rows('ticket_settings', {'epic': work_id}, limit=0).results
+    if held is not None and held['epic'] and held['epic'] != epic:
+        raise Stop(f'{given} is itself a child of epic {held["epic"]}; an epic holds tickets, not other epics.',
+                   f'metaform map work op=edit id={work_id} epic={held["epic"]}')
+    if any(row['work_id'] != work_id for row in children):
+        raise Stop(f'Ticket {work_id} is an epic with tickets of its own, so it cannot be put in another epic.',
+                   'metaform map work op=edit id=<child> epic=<another epic>')
+    return epic
 
 
 def _glyphed(store: Store, result: Any) -> Any:
@@ -2013,8 +2048,15 @@ WORK_NOUNS = (
                         'automatically until each of them is done. [] waits on none.', 'json',
           {'type': 'array', 'items': {'type': 'string'}}),
     _noun('agents', 'distribute: how many agents, from 1 to 17; the tickets that start by themselves, in To do, not '
-                    'held, not waiting on another, are given the first that many glyphs in turn, in board order.',
+                    'held, not waiting on another, are given the first that many glyphs in turn, in board order. '
+                    'add and edit: how many agents work on this ticket at once, 1 by default; Full Auto starts up to '
+                    'that many in its one worktree, each told of the others. On an epic, how many work on its '
+                    'tickets at once.',
           'int'),
+    _noun('epic', 'add and edit: true makes this ticket an epic, one request the person made: no agent works it '
+                  'itself, it closes once every ticket in it is done, and those tickets share its worktree and branch, '
+                  'so they are reviewed and merged together. A work id or <address>#<n> puts this ticket in that '
+                  'epic; \'\' takes it out.'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
                 'questions, knowledge layers and modules\' memories. '

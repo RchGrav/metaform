@@ -117,7 +117,7 @@ async function saveAgentCount(event) {
   const control = event.target;  // kept before the first await
   const count = Number(control.value), was = AUTO.agents ?? 5, most = AUTO.most || count;
   if (!Number.isInteger(count) || count < 1 || count > most) {
-    if (count > most) toast(`Max project workers is at most ${most}.`);
+    if (count > most) toast(`Full Auto workers is at most ${most}.`);
     control.value = was; return;
   }
   const more = count > was ? await startsNow(count) : 0;
@@ -125,7 +125,7 @@ async function saveAgentCount(event) {
     const said = more === null ? 'Full Auto is on and the agent slots could not be read, so this may start '
       + 'agents on waiting tickets at once.' : `Full Auto is on, so this starts ${more} more agent`
       + `${more === 1 ? '' : 's'} now, one for each waiting ticket the new slots allow.`;
-    if (!await confirmAct({title: `Allow ${count} agents at once?`, text: said, verb: 'Yes, allow them',
+    if (!await confirmAct({title: `Let Full Auto start up to ${count} agents?`, text: said, verb: 'Yes, let it',
       cancel: 'Keep it as it is'})) { control.value = was; return; }
   }
   control.disabled = true;
@@ -135,7 +135,7 @@ async function saveAgentCount(event) {
     else {
       Object.assign(AUTO, saved);
       control.value = saved.agents;
-      toast(`Agents at once: ${saved.agents}.`);
+      toast(`Full Auto may start ${saved.agents} agent${saved.agents === 1 ? '' : 's'}.`);
     }
   } finally { control.disabled = false; }
 }

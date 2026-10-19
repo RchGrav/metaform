@@ -139,6 +139,7 @@ Start an agent on a ticket through ACP, follow it, message it and stop it.
 | `dispatch_cancel` | Cancel a ticket, the person's own: its agent's turn is cancelled with session/cancel, its session ends, and the ticket is closed with the outcome cancelled, never completed. Refused to an agent while agents_may_set_control is off. | remove, open world |
 | `dispatch_fork` | Fork a running agent's session into a side conversation that keeps everything it knows, where its agent offers session/fork; its thread is a child of the session's. | write, open world |
 | `dispatch_handoff` | Read a ticket handed to you by its id: the ticket, the node it is at and the counts there with the calls that read them, and one line saying to work it with map_work. Its reads are named as tool calls, with metaform:// links to the node and the ticket. | read |
+| `dispatch_helper` | Start a helper agent with a brief and no ticket, for the person's system agent: a figure on the map, steered and stopped like any agent, outside the worker slots. It reports one line to the system agent's inbox when done and ends. | write, open world |
 | `dispatch_intake` | Start an agent on this project's intake, recording the map as it follows the intake prompt. An open page follows it. It counts as a summoned agent; one intake runs at a time. | write, open world |
 | `dispatch_interrupt` | Interrupt the turn of the agent working a ticket, keeping its conversation open. | write, open world |
 | `dispatch_link` | Link a file to the element whose functionality it realizes: its path added to the element's refs in the sources layer, which places it on the map. Optional `ref`, the ref's name, and `why`. | write |
@@ -266,18 +267,18 @@ Bring a question to a table of agents at an Address, through the Roundtable 2 en
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `roundtables_open` | Open a table on a question at an Address, with its seats in speaking order. | write, open world |
+| `roundtables_open` | Open a table on a question, with its seats in speaking order. | write, open world |
 | `roundtables_comment` | As the chair, say something to the table at its next gap between turns. | write, open world |
 | `roundtables_hold` | As the chair, hold the table after the turn in flight. | write, open world |
 | `roundtables_continue` | As the chair, run a held table again. | write, open world |
 | `roundtables_advance` | As the chair, end the topic's discussion after its fewest rounds, for its synthesis, rankings and summary. | write, open world |
 | `roundtables_reseat` | As the chair, bring a seat that left or failed back to the table. | write, open world |
-| `roundtables_end` | As the chair, end the table: its report is written and saved here. | write, open world |
-| `roundtables_status` | A table: its state, seats, spend, answer and whether its report is saved. | read |
+| `roundtables_end` | As the chair, end the table: its record is saved here and the person's system agent writes its report. | write, open world |
+| `roundtables_status` | A table: its state, seats, spend, answer, its saved record and its report once written. | read |
 | `roundtables_tables` | Every table of the project, newest first. | read |
 | `roundtables_events` | A table's events after a cursor, as its follower told them. | read |
 | `roundtables_follow` | Start a table's follower again when it stopped before the table ended. | write, open world |
-| `roundtables_adopt` | Adopt an idea of an ended table: a ticket at the part it concerns, the table its source. | write |
+| `roundtables_adopt` | Adopt an idea of an ended table as a ticket, the table its source. | write |
 
 ### orchestration
 

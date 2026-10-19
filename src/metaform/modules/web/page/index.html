@@ -51,7 +51,7 @@
           <div class="agent-sessions" aria-label="Agent conversations" hidden></div>
           <button id="broadcastBtn" type="button" role="menuitem" aria-controls="broadcast" title="Tell every agent working on this project something at once, as your own message">Broadcast…</button>
           <div class="label">Settings</div>
-          <div class="menu-field agent-count" title="How many ticket workers run in this project. The advisor and temporary helpers have separate capacity. Saved as the dispatch_agents setting"><label for="agentCount">Max project workers</label><input id="agentCount" type="number" min="1" step="1"></div>
+          <div class="menu-field agent-count" title="How many ticket workers Full Auto may start in this project. A ticket you start runs whatever the count. The advisor and temporary helpers have separate capacity. Saved as the dispatch_agents setting"><label for="agentCount">Full Auto workers</label><input id="agentCount" type="number" min="1" step="1"></div>
           <div class="menu-field default-agent"><span class="name">Default agent</span><div id="defaultAgentPick"></div></div>
           <p class="menu-hint">Chats, issues, intakes and the tickets Full Auto starts use the default unless you choose another, on the card or where you start it.</p>
           <div class="menu-field agent-prompts" title="How agents' permission prompts are answered. Saved as the dispatch_prompts setting; every agent reads it at its next prompt, so a change reaches agents already running"><label for="promptsPick">Agent prompts</label><select id="promptsPick" disabled></select><p class="said" id="promptsSaid" role="status"></p></div>

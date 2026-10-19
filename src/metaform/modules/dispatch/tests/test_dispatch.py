@@ -989,21 +989,48 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
 
 
 @pytest.mark.req('VIEW-039')
-def test_start_refuses_a_ticket_when_every_agent_slot_is_in_use(dispatch, run):
-    """Found 2026-10-16: Start all started 46 agents with six slots, since only autostart counted them. The slots are
-    the runners that run now, UX review round 1, 2026-10-17: a runner at work holds the one slot."""
-    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+def test_dispatch_agents_refuses_an_automatic_start_and_never_the_persons(dispatch, run, dispatch_runners,
+                                                                           monkeypatch):
+    """dispatch_agents is how many workers Full Auto may start. 2026-10-19: the person had to raise it to start one
+    emergency ticket, since every start was refused past it. With the one slot held, Full Auto's start is refused,
+    the person's runs, and the person's counts toward the total Full Auto sees."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=dispatch.folder)
     other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Another change').id
-    dispatch.start('hold')
+    third = dispatch.store.add_work(dispatch.node, 'unbuilt', task='A third change').id
+    dispatch.start('hold', FAKE_ACP_LOAD='1')
     eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
     assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['free'] == 0
-    refused = run('dispatch', 'start', other, 'claude', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and 'Every worker slot is in use' in refused.stdout + refused.stderr
-    said = refused.stdout + refused.stderr
+    ctx = context('dispatch', dispatch.folder)
+    with pytest.raises(module.Refused) as refused:
+        module.admit(ctx, dispatch.store, other, 'worker', auto=True)
+    said = str(refused.value)
+    assert 'Every slot Full Auto may fill is in use' in said and 'Starting it yourself runs it now.' in said, said
     # it names what holds the slot and the ticket refused as the person reads them (round 2, held-and-signals F6)
     assert 'held by code.engine#1 "Write notes.txt"' in said and 'code.engine#2 "Another change":' in said, said
-    assert not re.search('[0-9a-f]{32}', said.split('\nNext:')[0]), said
-    assert not dispatch.store.ticket(other).work.taken
+    assert not re.search('[0-9a-f]{32}', said), said
+    started = json.loads(run('dispatch', 'start', other, 'claude', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_WORK=other)).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    assert started['state'] == 'starting'
+    eventually(lambda: dispatch.store.ticket(other).work.taken_by == 'claude fake-session-2')
+    assert json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['slots']['used'] == 2
+    with pytest.raises(module.Refused, match='Every slot Full Auto may fill is in use'):
+        module.admit(ctx, dispatch.store, third, 'worker', auto=True)
+    dispatch.stop()
+    # a worker's resume is a start too: an agent's without the person's word is bound, the person's runs
+    assert dispatch.process.wait(30) == 0
+    resuming = context('dispatch', dispatch.folder, nouns={'id': dispatch.id})
+    with monkeypatch.context() as patched:
+        patched.setattr(module, 'person_asks', lambda ctx: False)
+        with pytest.raises(module.Refused, match='Every slot Full Auto may fill is in use'):
+            module.resume(resuming)
+    resumed = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((resumed, dispatch.folder, dispatch.log))
+    assert (resumed['state'], resumed['session_id']) == ('starting', 'fake-session-1')
+    eventually(lambda: dispatch.received('session/load'))
     dispatch.stop()
 
 
@@ -1018,7 +1045,7 @@ def test_a_runner_reserved_past_the_agent_slots_gives_its_ticket_back(dispatch, 
     dispatch.store.take_work(other, by='dispatch starting 1')
     refused = run('dispatch', 'run', other, 'claude', 'reservation=dispatch starting 1', cwd=dispatch.folder,
                   ok=False, env=dispatch.env('hold'))
-    assert refused.returncode != 0 and 'Every worker slot is in use' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and 'Every slot Full Auto may fill is in use' in refused.stdout + refused.stderr
     assert not dispatch.store.ticket(other).work.taken and len(dispatch.received('session/new')) == 1
     dispatch.stop()
 
@@ -2014,6 +2041,74 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+def test_a_helper_runs_its_brief_on_no_ticket_outside_the_worker_slots_seen_live_and_ended_by_stop_all(
+        dispatch, run, dispatch_runners):
+    """code.dispatcher.agent#78: the person's system agent hands quick work to a helper Metaform can see, never to its
+    harness's own background subagents (four ran unseen on 2026-10-19). The helper is a session like any agent's: its
+    brief in its state, its thread live in the sessions read, no ticket written or taken, and Stop all ends it. A
+    worker slot is not needed: dispatch_agents bounds what Full Auto starts, and a helper is started on purpose. An
+    agent other than the system agent is refused."""
+    from metaform.modules import dispatch as module
+    brief = 'Find why the page freezes on a node click and report the cause.'
+    refused = run('dispatch', 'helper', '--', brief, cwd=dispatch.folder, ok=False,
+                  env={'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'some-runner'})
+    assert refused.returncode != 0 and 'person or their system agent' in refused.stdout + refused.stderr
+    run('set', '--dispatch-agents', '1', cwd=dispatch.folder)
+    worker = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
+                            env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((worker, dispatch.folder, dispatch.log))
+    eventually(lambda: module.free_slots(module.runner_context(dispatch.store), dispatch.store) == 0)
+    started = json.loads(run('dispatch', 'helper', '--json', '--', brief, cwd=dispatch.folder,
+                             env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work_id = started['work_id']
+    assert started['helper'] and work_id.startswith('helper-') and started['state'] == 'starting', started
+    eventually(lambda: [one for one in dispatch.received('session/prompt')
+                        if brief in one['params']['prompt'][0]['text']])
+    def live():  # its thread as it works: the fake's tool call is in it while the session still runs
+        got = read(run, dispatch, work_id)
+        return got if any(line['kind'] == 'tool_call' for line in got['lines']) else None
+    found = eventually(live)
+    [session] = found['sessions']
+    assert session['state'] == 'running' and found['states'][session['session_id']]['brief'] == brief, found
+    assert found['states'][session['session_id']]['role'] == 'helper'
+    assert [one.id for one in dispatch.store.work(open=True, limit=0).results] == [dispatch.id], 'no ticket is written'
+    stopped = json.loads(run('dispatch', 'stop-all', '--json', cwd=dispatch.folder).stdout)
+    assert work_id in {one['work_id'] for one in stopped['stopped']} and stopped['failed'] == [], stopped
+    ended = eventually(lambda: got if (got := read(run, dispatch, work_id)['sessions'])[0]['state'] == 'ended' else None)
+    assert ended[0]['how'] == 'stopped by the person', ended
+
+
+def test_a_helper_that_finishes_its_brief_puts_one_line_in_the_system_agents_inbox_and_ends(dispatch, run,
+                                                                                          dispatch_runners):
+    """code.dispatcher.agent#78: once its brief's turn ends, a helper tells the person's system agent in one inbox line,
+    named by the helper and its result's state, never its words, with where its whole result is read; its session
+    ends, giving its place back, and stays readable with its brief."""
+    from metaform.module import context
+    from metaform.modules.dispatch.orchestration import update_entries, user_updates
+    brief = 'Check that the README names every dispatch verb.'
+    started = json.loads(run('dispatch', 'helper', '--json', '--', brief, cwd=dispatch.folder,
+                             env=dispatch.env('plain')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work_id = started['work_id']
+    def over():  # its session row, once written, reads ended
+        got = read(run, dispatch, work_id)
+        return got if got['sessions'] and got['sessions'][0]['state'] == 'ended' else None
+    ended = eventually(over)
+    [session] = ended['sessions']
+    assert session['how'] == 'its brief is done' and ended['states'][session['session_id']]['brief'] == brief, ended
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    waiting = eventually(lambda: user_updates(ctx))
+    [(_, said, wakes)] = update_entries(ctx, waiting)
+    assert said == f'helper {work_id[len("helper-"):][:8]} done' and not wakes, said
+    from metaform.data import Store
+    from metaform.modules.dispatch.orchestration import UPDATES
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        [note] = [row['text'] for row in tx.rows('session_lines', {'session_id': UPDATES}, limit=0).results
+                  if str(row['name']).startswith('notification:')]
+    assert '\n' not in note and brief[:40] in note and f'dispatch sessions id={work_id}' in note, note
 
 
 @pytest.mark.req('VIEW-045')

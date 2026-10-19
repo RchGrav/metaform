@@ -1,0 +1,3 @@
+Assistant text in the window: "The person's manual start was admitted; the failure was only the fake agent's duplicate session id in a separate log."
+Assistant check-in summary: "dispatch_agents now binds only automatic (auto=True) and unasked (limited=True: forks, runners outside the gate) worker starts; the person's starts run past it but still count toward Full Auto's total."
+Assistant text: "**Your call:** \"Start all\" on the board still starts only as many tickets as there are free slots."

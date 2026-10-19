@@ -327,13 +327,15 @@ def update_entries(ctx: Context, idents: list[str]) -> list[tuple[str, str, bool
             line = tx.get('session_lines', {'session_id': UPDATES, 'name': f'about:{ident}'})
             with contextlib.suppress(ValueError, TypeError):
                 about[ident] = json.loads(str(line['text'])) if line is not None else {}
-    works = sorted({str(one.get('work_id')) for one in about.values() if one.get('work_id')})
+    from . import helper_id, helper_item
+    works = sorted({str(one.get('work_id')) for one in about.values() if one.get('work_id')
+                    and not helper_id(one.get('work_id'))})
     named: dict[str, Any] = store.numbers_of('work', works) if works else {}
     entries: list[tuple[str, str, bool]] = []
     for ident in idents:
         held = about.get(ident) or {}
         work, update, state = str(held.get('work_id') or ''), str(held.get('kind') or 'update'), str(held.get('state') or '')
-        item = str(named[work][0]) if work in named else 'project'
+        item = str(named[work][0]) if work in named else helper_item(work) if helper_id(work) else 'project'
         entries.append((ident, f'{item} {inbox_what(update, state, False, ident, "")}', inbox_wakes(update, state, False)))
     return entries
 

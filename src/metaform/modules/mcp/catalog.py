@@ -52,7 +52,8 @@ CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
     'intake': ('intake_prompt', 'intake_schema', 'intake_start', 'intake_element', 'intake_purpose', 'intake_show',
                'intake_remove', 'intake_finish', 'intake_status'),
     'steer': ('dispatch_start', 'dispatch_agents', 'dispatch_sessions', 'dispatch_message', 'dispatch_wait',
-              'dispatch_stop', 'dispatch_talk', 'dispatch_system', 'dispatch_intake', 'dispatch_signals',
+              'dispatch_stop', 'dispatch_talk', 'dispatch_system', 'dispatch_intake', 'dispatch_helper',
+              'dispatch_signals',
               'dispatch_resume', 'dispatch_interrupt', 'dispatch_cancel', 'dispatch_broadcast',
               'dispatch_broadcasts', 'dispatch_autostart', 'dispatch_stop-all', 'dispatch_propose', 'dispatch_claim',
               'dispatch_claims', 'dispatch_merges', 'dispatch_review', 'dispatch_prep', 'dispatch_fork',
@@ -106,10 +107,11 @@ BESIDE_TOOLS = ('dispatch_peers', 'dispatch_note', 'dispatch_notes')
 ASSIGNED_TOOLS = ('orchestration_check-in', 'orchestration_assess')
 # The tools listed beside whichever category is open for a role whose prompt sends it to them: the system agent's
 # mascot and eyes lines name the web module's body tools, dispatch's MASCOT_VERBS and EYES_VERBS, which sat behind the
-# show category, so the agent was told to use tools it was not listed (2026-10-18).
+# show category, so the agent was told to use tools it was not listed (2026-10-18). Its prompt sends it to
+# dispatch_helper for work it hands off, so that is listed beside too (code.dispatcher.agent#78).
 ROLE_BESIDE: dict[str, tuple[str, ...]] = {
     'system': ('web_say', 'web_go', 'web_point', 'web_emote', 'web_look', 'web_see', 'web_turn', 'web_come',
-               'web_embody', 'web_viewing', 'web_capture')}
+               'web_embody', 'web_viewing', 'web_capture', 'dispatch_helper')}
 
 assert set(CATEGORY_TOOLS) == set(CATEGORY_NAMES), 'one entry for each category the chassis names'
 

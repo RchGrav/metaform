@@ -107,13 +107,14 @@ export function figures(tickets) {
   const live = liveWork();
   setFocus('work', tickets.filter(ticket => !ticket.done && !conversing(ticket)
     && (ticket.taken || live.has(ticket.id))).map(ticketNode));
-  figures2d(tickets);
   flowTickets(tickets);  // a work record written lands on its node as a record, `FLOW`
+  const drawn = helpers(live, tickets);
+  figures2d(drawn);
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
   if (!home) return;
   const view = depthView();  // what the depth shows with the branches just opened, worked out once for every ticket
-  for (const ticket of tickets) {
+  for (const ticket of drawn) {
     // a part held deeper than the depth is worked at the node that holds it, VIEW-051
     const figure = ROAM.figures.get(ticket.id);
     const target = holderOf(ticket.held ? talkTarget(ticket, data) : ticketNode(ticket), view);
@@ -129,10 +130,19 @@ export function figures(tickets) {
     }
   }
   for (const [id, figure] of ROAM.figures) {
-    if (!figure.child && !tickets.some(ticket => ticket.id === id)) figure.done = true;
+    if (!figure.child && !drawn.some(ticket => ticket.id === id)) figure.done = true;
   }
   childFigures(data, home);
   wake3d();
+}
+/* The tickets with a figure, and a helper the system agent started, dispatch helper, for each one working: it holds no
+ * ticket, so it stands in as one at the map's primary element, the DE, where every figure comes from, and is drawn on
+ * both maps as a ticket's agent is until its session ends. */
+function helpers(live, tickets) {
+  const de = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id;
+  const working = de ? [...live].filter(id => String(id).startsWith('helper-')) : [];
+  return working.length ? [...tickets, ...working.map(id => ({id, node_kind: 'element', node_id: de, held: false,
+    done: null}))] : tickets;
 }
 /* An agent's own subagents, P016, each a figure of its own while it runs: the native child sessions its agent reports,
  * never a ticket. It walks out to the node its parent works at and works there beside it, waits there while its state

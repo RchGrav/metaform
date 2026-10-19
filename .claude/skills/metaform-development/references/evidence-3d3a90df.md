@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"no I mean for workers why are they not receiving worktrees"}]}}
+{"type":"tool_result","content":"  dispatch_worktrees: false\nsrc/metaform/modules/dispatch/__init__.py:380:settings.boolean('dispatch_worktrees', False, person_only=True,"}

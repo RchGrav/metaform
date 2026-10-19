@@ -19,7 +19,7 @@ import {wrote} from '/page/app/board/history.js';
 import {narrowPage} from '/page/app/dock/place.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
-import {isIntake, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
+import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
@@ -255,6 +255,7 @@ export function sessionTask(session, state = D.states?.[session.session_id]) {
   const ticket = ticketOf(session.work_id);
   const conversation = isSystemState(state, session.work_id) ? 'Conversation with your system agent'
     : isIntake(session.work_id) ? 'The intake'
+    : isHelper(session.work_id) ? `Helper: ${state?.brief || 'starting'}`
     : state?.about ? `Conversation about ${state.about.replace(/^[^:]+:/, '')}`
     : ticket?.held ? 'Conversation' : null;
   return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;
@@ -336,7 +337,8 @@ export function drawThreadBar(session) {
   // gives
   fill(bar.querySelector('.source'), sourceChip(chat.source));
   const task = ticket ? ticket.task || ticket.note || ''
-    : isIntake(target) ? `The intake of ${S.project}: it records the map as it reads the project.` : '';
+    : isIntake(target) ? `The intake of ${S.project}: it records the map as it reads the project.`
+    : isHelper(target) ? `A helper your system agent started. Its brief: ${DOCK.state?.brief || ''}` : '';
   const said = bar.querySelector('.task');
   bar.dataset.key = target;  // the task opened stays open while this thread is shown, `expandCut`
   if (said.textContent !== task) said.textContent = task;

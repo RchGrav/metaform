@@ -1,0 +1,2 @@
+Bash: "f=src/metaform/modules/dispatch/__init__.py && sed -i \"s/    if kind == 'worker' and (auto or limited) and held\\['free'\\] <= 0:/    if kind == 'worker' and held['free'] <= 0:  # PROBE/\" $f && grep -c \"# PROBE\" $f; timeout 300 uv run pytest -n 0 ... ; sed -i ... restore"
+Bash output: "1\n ... AssertionError: metaform dispatch start 09bc8cde0e6744e28ef9cd532e5f6e5e claude --json failed (2):"

@@ -1,0 +1,4 @@
+{"tool":"Edit","file_path":"/home/rich/metaform/src/metaform/modules/dispatch/tests/test_dispatch.py","old_string":"    eventually(lambda: dispatch.store.ticket(other).work.taken_by == 'claude fake-session-1')","new_string":"    eventually(lambda: dispatch.store.ticket(other).work.taken_by == 'claude fake-session-2')"}
+Bash (new test run): "1 passed, 194 deselected in 8.72s"
+Bash (gate line reverted probe): "AssertionError: metaform dispatch start 09bc8cde0e6744e28ef9cd532e5f6e5e claude --json failed (2):"
+memory_create_entities observation: "_admit refuses a worker past dispatch_agents only when auto=True or limited=True."

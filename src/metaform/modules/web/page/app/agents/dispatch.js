@@ -119,10 +119,11 @@ export function startWindow(title, tickets, all = false) {
     startAll.textContent = counted ? said.label : 'Start all';
     $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
     startAll.disabled = !shown.length || !agent || !counted || !said.count;
-    // a ticket's Start past the free slots is off, with why, UX review round 1 (web-gui-controls F10)
-    const free = counted && HARNESS.free !== undefined ? HARNESS.free : null;
-    fill($('#dispatch .tickets'), shown.map((ticket, place) => h('div', {class: 'ticket', 'data-id': ticket.id},
-      conditionLabel(ticket), startButton(ticket, agent, pick, free !== null && place >= free),
+    // a ticket's own Start is off, with why, only while the machine is full: dispatch_agents bounds what Full Auto
+    // starts, never the person's start (code.dispatcher.agent#79); UX review round 1 (web-gui-controls F10)
+    const full = counted && HARNESS.slots ? HARNESS.slots.machine_free <= 0 : false;
+    fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
+      conditionLabel(ticket), startButton(ticket, agent, pick, full),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
     drawPermissions(agent);
   };
@@ -204,8 +205,11 @@ export function startAllLabel(offered) {
   const count = Math.min(free, offered);
   const machine = slots && slots.machine_free < Math.max(0, slots.limit - slots.used)
     ? `; this machine runs ${slots.machine_used} of the ${slots.machine_limit} it allows` : '';
-  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} agent slots `
-    + `free${machine}.${free ? '' : ' A ticket can start once an agent finishes or is stopped.'} `
+  // a ticket's own Start runs past Full Auto's slots, so with none free the person is sent to it, not told to wait
+  const own = slots && slots.machine_free > 0 ? ' Start a ticket on its own to run it now.'
+    : ' A ticket can start once an agent finishes or is stopped.';
+  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} Full Auto `
+    + `slots free${machine}.${free ? '' : own} `
     + `${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
 }
 /* Start all: the agent chosen started on each ticket offered that is not started yet, one after another, up to the
@@ -254,7 +258,7 @@ async function startAllTickets(tickets, pick, startAll) {
   toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (failed ? ` ${failed} could not start; retry their tickets.` : '')
-    + (waiting ? ` ${waiting} wait in To do for a free agent slot; ` + (AUTO.value
+    + (waiting ? ` ${waiting} wait in To do for a free Full Auto slot, or start each on its own; ` + (AUTO.value
       ? 'with Full Auto checked they start as agents finish.'
       : 'they wait until you start them or check Full Auto.') : ''));
   await renderBoard();
@@ -272,7 +276,8 @@ function startButton(ticket, agent, pick, full = false) {
   return h('button', {class: 'btn primary start', type: 'button',
     disabled: !agent || !allowsAgent(ticket, agent) || full,
     title: !allowsAgent(ticket, agent) ? `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`
-      : full ? 'Every free agent slot is taken by the tickets above; it can start once an agent finishes or is stopped'
+      : full ? 'This machine runs the most agents dispatch_machine_agents allows; it can start once one finishes or is '
+        + 'stopped'
       : 'Start the agent chosen above on this ticket', onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches

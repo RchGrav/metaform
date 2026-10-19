@@ -326,9 +326,12 @@ def server_environment(**own: str) -> list[EnvVariable]:
 def role(nouns: dict[str, Any], work_id: str) -> str:
     """What a session's agent is, from the nouns its runner was started with, BASE-052: an intake agent, one of the
     agents the person summons (the sentinel on an issue, a talk, the system agent), a merge preparation, or a worker
-    on its ticket. The nouns decide and not the session's flags, since intake and the summoned agents run as prep too."""
+    on its ticket, or a helper the system agent started with a brief. The nouns and the work id decide and not the
+    session's flags, since intake, helpers and the summoned agents run as prep too."""
     if intake_id(work_id):
         return 'intake'
+    if helper_id(work_id):
+        return 'helper'
     if nouns.get('system'):
         return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'
     return 'prep' if nouns.get('prep') else 'worker'
@@ -841,6 +844,9 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
                        f'metaform dispatch stop {other["work"]}' if other.get('work') else 'metaform dispatch sessions')
         held_in = await asyncio.to_thread(intake_store, store, work_id) or store
         return await moved_on(store, await Session(ctx, held_in, None, agent, command, resumed, prep=True, system=True,
+                                                   work_id=work_id, resume=resume).run())
+    if helper_id(work_id):  # a helper the system agent started with a brief: no ticket; its session is its record
+        return await moved_on(store, await Session(ctx, store, None, agent, command, resumed, prep=True,
                                                    work_id=work_id, resume=resume).run())
     if ctx.nouns.get('system'):  # the person's system agent, the +1: talks with them in the project's folder
         # on its held ticket; with no map, or on a ticket a map cleared since took with it, on no ticket, PROJ-026
@@ -3599,8 +3605,10 @@ class Session:
     async def begin(self) -> None:
         if self.ending:
             return
-        if self.node is None and self.ctx.nouns.get('intake') and not self.resume:
+        if self.node is None and (self.ctx.nouns.get('intake') or self.role == 'helper') and not self.resume:
             self.request = await asyncio.to_thread(self.asked_for)
+            if self.role == 'helper':  # kept in its state, so its session read shows what it was asked, afterwards too
+                self.acp['brief'] = self.request
         if self.resume:  # the thread goes on where it ended: its lines keep their names and their order
             await asyncio.to_thread(self.continue_thread)
             await asyncio.to_thread(self.covers_kept)  # and the work the person's word started goes on
@@ -3746,6 +3754,8 @@ class Session:
             return
         if self.node is None and self.ctx.nouns.get('intake'):  # the intake, served as it is, VIEW-045 and BASE-039
             text = await asyncio.to_thread(intake_prompt, self.ctx, self.request)
+        elif self.role == 'helper':  # the brief the system agent wrote, under the helper's own instructions
+            text = prompt('helper', brief=self.request)
         elif self.system and self.ctx.nouns.get('sentinel'):  # the person raised an issue: the sentinel skill, VIEW-045
             address = str(self.ctx.nouns['sentinel'])
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
@@ -4056,6 +4066,8 @@ class Session:
                 self.acp['prompts'] = held['prompts']
             if isinstance(held.get('opening'), dict):  # the system prompt the conversation holds, `reopened`
                 self.acp['opening'] = held['opening']
+            if held.get('brief'):  # a helper resumed keeps the brief it was started with, `helper_done`
+                self.acp['brief'] = held['brief']
             carried =[key for key in CARRIED if held.get(key) not in (None, [], '')]
             self.acp.update({key: held[key] for key in carried})
             self.acp['before_resume'] = carried
@@ -4576,6 +4588,10 @@ class Session:
             if self.turns == 0:
                 self.idle.set()
         await self.changed(tables='dispatch', kinds=['session'])  # readers now see idle after the queue drained
+        # A helper whose turns are drained has done its brief; one the person interrupted waits for what they say.
+        if self.turns == 0 and not self.ending and self.role == 'helper' and not self.interrupted:
+            await self.helper_done(reason)
+            return
         if self.turns == 0 and not self.ending and not self.prep:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if self.turns or self.ending:  # a message can arrive while the ticket is read
@@ -4595,6 +4611,29 @@ class Session:
             async with self.lock:
                 if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
                     await self.raise_signal('stopped-open', stop_reason=reason, steps=record.steps_done)
+
+    async def helper_done(self, reason: str) -> None:
+        """A helper's brief is done: one line goes to the person's system agent's inbox, as a project update every
+        system conversation takes, running now or started later, and the session ends, giving its place back. The
+        result itself stays in its thread, read on demand; a turn that did not end normally is reported failed, which
+        is the one kind that wakes the system agent."""
+        state = 'done' if reason == 'end_turn' else 'failed'
+        named = helper_item(self.work_id)
+        brief = ' '.join(str(self.acp.get('brief') or '').split())
+        text = (f'{named[0].upper()}{named[1:]} {"finished" if state == "done" else f"stopped ({reason})"}: '
+                f'{brief[:117] + "..." if len(brief) > 120 else brief}. Its result is in its thread: '
+                f'metaform dispatch sessions id={self.work_id}')
+        message = {'text': text, 'work_id': self.work_id, 'kind': 'result', 'state': state,
+                   'from': {'item': named, 'agent': self.agent, 'session_id': self.session_id,
+                            'work_id': self.work_id}}
+        from .orchestration import TRANSPORT
+        try:
+            await asyncio.to_thread(TRANSPORT.notify_user, self.ctx, message,
+                                    f'helper:{self.session_id}:{time.time_ns()}')
+        except Exception as error:  # noqa: BLE001  the session ends whatever the report meets
+            sys.stderr.write(f'Could not report helper {self.work_id} to the system agent: {error}\n')
+        if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
+            await self.end('its brief is done' if state == 'done' else f'its brief stopped: {reason}')
 
     async def ticket_done(self) -> None:
         """A worker's ticket is done: once per session, the agent first gets one more turn to record what it learned

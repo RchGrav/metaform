@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"workers only measn the numbner of agents which can be autostarted"}]}}
+{"type":"text","text":"The code doesn't work that way today. In `dispatch/__init__.py:3564`, the limit refuses every start, including ones you make by hand. ... I filed `code.dispatcher.agent#79`."}
