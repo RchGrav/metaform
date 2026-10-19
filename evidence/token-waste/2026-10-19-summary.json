@@ -1,0 +1,228 @@
+{
+  "audit_date": "2026-10-19",
+  "baseline": "5f76ec7",
+  "integration_base": "55edb8c",
+  "paid_model_calls_during_audit": 0,
+  "recorded_claude_usage": {
+    "tokens": 487729367,
+    "input": 39732,
+    "output": 12728466,
+    "cache_read": 4138747859,
+    "cache_write": 61085248,
+    "thought": 0,
+    "rows": 5414,
+    "unmetered_rows": 7,
+    "sessions": 302,
+    "raw_tokens": 4212601305,
+    "reported_cost_by_currency": {
+      "USD": 1758.7518
+    }
+  },
+  "recorded_daily_claude_usage": {
+    "2026-10-12 claude": {
+      "tokens": 324337,
+      "input": 36,
+      "output": 7293,
+      "cache_read": 894802,
+      "cache_write": 227526,
+      "thought": 0,
+      "rows": 8,
+      "unmetered_rows": 0,
+      "sessions": 4,
+      "raw_tokens": 1129657,
+      "reported_cost_by_currency": {
+        "USD": 2.1467
+      }
+    },
+    "2026-10-13 claude": {
+      "tokens": 9797061,
+      "input": 892,
+      "output": 336855,
+      "cache_read": 82029362,
+      "cache_write": 1256369,
+      "thought": 0,
+      "rows": 57,
+      "unmetered_rows": 0,
+      "sessions": 10,
+      "raw_tokens": 83623478,
+      "reported_cost_by_currency": {
+        "USD": 37.4784
+      }
+    },
+    "2026-10-14 claude": {
+      "tokens": 58012200,
+      "input": 6524,
+      "output": 2503778,
+      "cache_read": 449151449,
+      "cache_write": 10586621,
+      "thought": 0,
+      "rows": 698,
+      "unmetered_rows": 0,
+      "sessions": 62,
+      "raw_tokens": 462248372,
+      "reported_cost_by_currency": {
+        "USD": 247.5196
+      }
+    },
+    "2026-10-15 claude": {
+      "tokens": 202716896,
+      "input": 15742,
+      "output": 5904213,
+      "cache_read": 1764366945,
+      "cache_write": 20360080,
+      "thought": 0,
+      "rows": 915,
+      "unmetered_rows": 0,
+      "sessions": 73,
+      "raw_tokens": 1790646980,
+      "reported_cost_by_currency": {
+        "USD": 707.8008
+      }
+    },
+    "2026-10-16 claude": {
+      "tokens": 51976967,
+      "input": 3460,
+      "output": 1136587,
+      "cache_read": 448288438,
+      "cache_write": 6007996,
+      "thought": 0,
+      "rows": 411,
+      "unmetered_rows": 0,
+      "sessions": 19,
+      "raw_tokens": 455436481,
+      "reported_cost_by_currency": {
+        "USD": 188.5819
+      }
+    },
+    "2026-10-17 claude": {
+      "tokens": 650583,
+      "input": 78,
+      "output": 13024,
+      "cache_read": 3053385,
+      "cache_write": 332138,
+      "thought": 0,
+      "rows": 20,
+      "unmetered_rows": 0,
+      "sessions": 2,
+      "raw_tokens": 3398625,
+      "reported_cost_by_currency": {
+        "USD": 3.5288
+      }
+    },
+    "2026-10-18 claude": {
+      "tokens": 139122212,
+      "input": 11100,
+      "output": 2267931,
+      "cache_read": 1174890377,
+      "cache_write": 19353457,
+      "thought": 0,
+      "rows": 3009,
+      "unmetered_rows": 0,
+      "sessions": 122,
+      "raw_tokens": 1196522865,
+      "reported_cost_by_currency": {
+        "USD": 480.147
+      }
+    },
+    "2026-10-19 claude": {
+      "tokens": 25129111,
+      "input": 1900,
+      "output": 558785,
+      "cache_read": 216073101,
+      "cache_write": 2961061,
+      "thought": 0,
+      "rows": 296,
+      "unmetered_rows": 7,
+      "sessions": 23,
+      "raw_tokens": 219594847,
+      "reported_cost_by_currency": {
+        "USD": 91.5486
+      }
+    }
+  },
+  "system_agent_cost_concentration": {
+    "sessions": 8,
+    "tokens": 97754724,
+    "cache_read": 902419808,
+    "reported_usd": 350.47354977500004
+  },
+  "camera_issue_cost_concentration": {
+    "root": "5decae95491d4e928076d200000dad5a",
+    "task": "Why: turning the 3D map should turn it around the thing the person is looking at. Today the pivot, the orbit controls' target, lands on the selected node's name",
+    "tickets": 46,
+    "weighted_tokens": 67927287,
+    "cache_read": 573654429,
+    "reported_usd": 235.2015
+  },
+  "waste_ledger": {
+    "method": "Exact completed tool result text, identical tool and arguments, same Claude session; exclude all sessions with a retained compaction notice; minimum 64 characters. Extra copies only.",
+    "caveat": "A retained UI tool record is not a final provider prompt trace; missing compaction evidence and provider-side truncation prevent certifying billed token waste.",
+    "excluded_sessions_with_compaction": 2,
+    "duplicate_tool_result_candidates": {
+      "copies": 18,
+      "chars": 7473,
+      "sessions": 9,
+      "by_tool": {
+        "metaform_catalog": {
+          "copies": 12,
+          "chars": 6031,
+          "utf8_bytes": 6031
+        },
+        "memory_read_unread": {
+          "copies": 6,
+          "chars": 1442,
+          "utf8_bytes": 1442
+        }
+      }
+    },
+    "delivered_duplicate_schema": {
+      "receipts": 146,
+      "chars": 3432919,
+      "channels": {
+        "acp_prompt": 146
+      }
+    },
+    "delivered_peer_wrapper": {
+      "receipts": 30,
+      "chars": 53674
+    },
+    "confirmed_redundant_delivered_chars": 3486593,
+    "illustrative_cost": {
+      "3": {
+        "assumed_characters_per_token": 3,
+        "estimated_tokens": 1162197.6666666667,
+        "initial_cache_write_usd_at_6_25_per_million": 7.263735416666667,
+        "each_complete_reread_usd_at_0_50_per_million": 0.5810988333333333,
+        "initial_plus_100_rereads_usd": 65.37361875
+      },
+      "4": {
+        "assumed_characters_per_token": 4,
+        "estimated_tokens": 871648.25,
+        "initial_cache_write_usd_at_6_25_per_million": 5.4478015625,
+        "each_complete_reread_usd_at_0_50_per_million": 0.435824125,
+        "initial_plus_100_rereads_usd": 49.0302140625
+      },
+      "5": {
+        "assumed_characters_per_token": 5,
+        "estimated_tokens": 697318.6,
+        "initial_cache_write_usd_at_6_25_per_million": 4.35824125,
+        "each_complete_reread_usd_at_0_50_per_million": 0.3486593,
+        "initial_plus_100_rereads_usd": 39.22417125
+      }
+    }
+  },
+  "implementation_commit": "17983a5",
+  "verification": {
+    "focused_tests_passed": 90,
+    "explicit_idle_test_passed": 1,
+    "focused_idle_skip_rerun_separately": 1,
+    "additional_adapter_checks_passed_initially": 21,
+    "offline_notification_assertion_updated_and_recheck_passed": 1,
+    "ruff": "passed",
+    "targeted_pyright": "passed",
+    "idle_seconds": 60,
+    "runner_cpu_seconds": 0.03,
+    "fixture_adapter_cpu_seconds": 0.0,
+    "repository_wide_green_run_claimed": false
+  }
+}
