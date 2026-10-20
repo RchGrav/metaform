@@ -660,7 +660,7 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 @pytest.mark.parametrize('statuses', ['in_progress,completed', 'in_progress,failed'])
 def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
     """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
-    forgotten, all but the category its AI tool still lists, and the compacted line naming the ticket and its node is
+    forgotten, all but the tools' guides and the category its AI tool still lists, and the compacted line naming the ticket and its node is
     left for the agent's next tool call, else the next turn opens with it, said once, after the directive and the links
     to the agent's instruction blocks, which come first; in_progress and failed change nothing, and nothing is sent on the signal
     itself."""
