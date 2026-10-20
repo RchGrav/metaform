@@ -26,7 +26,7 @@ from typing import Any, cast
 
 from metaform import events, home
 from metaform.data import Store, StoreError
-from metaform.module import Context, Stop, child_environment, context, surface
+from metaform.module import Context, Stop, child_environment, code_print, context, surface
 
 from .citations import Checker, rework, root_of
 
@@ -70,16 +70,29 @@ class Folders:
 
     def __init__(self, root: Path) -> None:
         self.root = root
+        self.rooted = root.resolve()
         self.wanted: dict[str, set[str]] = {}  # each folder holding cited files, relative to the root: their names
         self.wake_read, self.wake_write = os.pipe()
         os.set_blocking(self.wake_read, False)
 
     def want(self, paths: set[str]) -> None:
-        """Watch the folders of these cited files, as well as those already watched."""
+        """Watch the folders of these cited files, as well as those already watched. A citation whose folder is not
+        under the root, an absolute path or one that climbs out with `..`, is not watched: the nearest folder above it
+        is another project's, or the folder that holds the projects, whose every write woke the watcher (one watcher
+        made 137,473 passes in 28 hours, woken by writes to the home folder, 2026-10-20)."""
         for path in paths:
             folder, _, name = path.replace('\\', '/').rpartition('/')
+            if not self.within(folder):
+                continue
             self.wanted.setdefault(folder, set()).add(name)
         self.arm()
+
+    def within(self, folder: str) -> bool:
+        """Whether a folder named relative to the root stays under it."""
+        try:
+            return (self.root / folder).resolve().is_relative_to(self.rooted)
+        except OSError:
+            return False
 
     def target(self, folder: str) -> str:
         """The folder watched for one that holds cited files: itself, else the nearest one above it that exists."""
@@ -280,7 +293,8 @@ def watch(ctx: Context) -> dict[str, Any]:
         except home.Held:
             raise Stop('The citation watcher already runs for this project.', 'metaform memory watch') from None
         home.write_private(run_file(project), json.dumps(
-            {'pid': os.getpid(), 'project': project, 'folder': str(ctx.folder), 'started': _now()}))
+            {'pid': os.getpid(), 'project': project, 'folder': str(ctx.folder), 'started': _now(),
+             'code': code_print()}))  # the code it runs, so `web start` on newer code replaces it, `stale`
 
         def stopped(number: int, frame: Any) -> None:
             raise KeyboardInterrupt  # SIGTERM, from a process manager, stops it as Ctrl-C does
@@ -324,9 +338,33 @@ def watch(ctx: Context) -> dict[str, Any]:
     return {'state': 'stopped', 'passes': passes}
 
 
+def stale(project: str) -> int | None:
+    """The process of a watcher that runs this project on code older than the code on disk, or None: one that was
+    started before an upgrade keeps the old code in memory, reads a store the new code moved on as an error on every
+    change it hears, and never works a citation out again (2026-10-20, four watchers a day old). Nothing is read from a
+    record with no `code`, written before this; such a watcher is replaced too."""
+    if not watching(project):
+        return None
+    try:
+        found: Any = json.loads(run_file(project).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    record = cast(dict[str, Any], found) if isinstance(found, dict) else {}
+    pid = record.get('pid')
+    return int(pid) if isinstance(pid, int) and record.get('code') != code_print() else None
+
+
 def _ensure(store: Store, folder: Path) -> int | None:
-    """Start a project's watcher, detached, when its memories cite files and none runs: its process id, or None."""
+    """Start a project's watcher, detached, when its memories cite files and none runs: its process id, or None. A
+    watcher on code older than the code on disk is ended first, `stale`, and the system's own wait on its lock says when
+    it has gone; the new one then runs the new code."""
     project = str(store.project_id)
+    old = stale(project)
+    if old is not None:
+        with contextlib.suppress(OSError):
+            os.kill(old, signal.SIGTERM)  # it ends as on Ctrl-C and lets go of its lock
+        with contextlib.suppress(OSError), home.file_lock(lock_file(project)):
+            pass
     if watching(project) or not _cited(store):
         return None
     log = run_file(project).with_suffix('.log')

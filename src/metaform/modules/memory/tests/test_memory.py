@@ -1083,6 +1083,48 @@ def test_the_watcher_wakes_for_a_change_to_a_cited_file_and_never_for_a_change_e
         watcher.close()
 
 
+def test_the_watcher_never_watches_a_folder_outside_its_project_root(tmp_path):
+    """A citation of a file outside the project, by an absolute path or one that climbs out with `..`, is not watched:
+    the folder watched for it would be another project's, or the folder that holds the projects, whose every write woke
+    the watcher (137,473 passes in 28 hours, 2026-10-20). Cited files under the root are watched as before."""
+    import sys
+
+    from metaform.modules.memory.watch import folders
+    if sys.platform == 'win32':
+        return  # the watcher runs where the system says a file changed: Linux, macOS and BSD
+    root = tmp_path / 'project'
+    (root / 'sub').mkdir(parents=True)
+    (tmp_path / 'other').mkdir()
+    watcher = folders(root)
+    try:
+        watcher.want({'sub/cited.py', 'missing/later.py', '../other/theirs.py', str(tmp_path / 'other' / 'abs.py'),
+                      '../../../../etc/hosts'})
+        assert set(watcher.wanted) == {'sub', 'missing'}, watcher.wanted
+        assert watcher.target('missing') == ''  # a folder not there yet is heard through the root, never above it
+    finally:
+        watcher.close()
+
+
+def test_web_start_replaces_a_memory_watcher_running_older_code(tmp_path, monkeypatch):
+    """A watcher started before an upgrade keeps the old code in memory: it read the moved-on store as an error on every
+    change it heard and worked nothing out (four watchers a day old, 2026-10-20). Its record names the code it runs;
+    `stale` names its process when that differs from the code on disk, and only while it holds the project's lock."""
+    import importlib
+    import json
+
+    watch = importlib.import_module('metaform.modules.memory.watch')  # the package's `watch` is the verb, not this module
+    monkeypatch.setattr(watch, 'run_file', lambda project: tmp_path / f'{project}.json')
+    monkeypatch.setattr(watch, 'watching', lambda project: True)
+    (tmp_path / 'proj.json').write_text(json.dumps({'pid': 4242, 'code': 'older'}))
+    assert watch.stale('proj') == 4242
+    (tmp_path / 'proj.json').write_text(json.dumps({'pid': 4242, 'code': watch.code_print()}))
+    assert watch.stale('proj') is None, 'the code on disk: nothing to replace'
+    (tmp_path / 'proj.json').write_text(json.dumps({'pid': 4242}))  # a record from before the code was written
+    assert watch.stale('proj') == 4242
+    monkeypatch.setattr(watch, 'watching', lambda project: False)
+    assert watch.stale('proj') is None, 'no watcher holds the lock: nothing to replace'
+
+
 @pytest.mark.req('CTX-026')
 @pytest.mark.req('CTX-027')
 def test_functional_memory_prompt_preserves_selected_edits_placeholders_and_source_history(run, mapped):
