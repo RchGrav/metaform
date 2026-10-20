@@ -11,6 +11,7 @@ from metaform.modules.dispatch.tests.test_dispatch import NODE, Dispatch, eventu
 pytestmark = pytest.mark.kind('simulation')
 
 
+@pytest.mark.cli_process  # two CLI calls run at once, one waiting for the other's reply: in-process runs share one
 def test_live_project_routing_and_reply_keep_original_sessions(run, home, project_folder, tmp_path):
     first = Dispatch(run, home, project_folder, tmp_path)
     other_folder = tmp_path / 'other'
@@ -28,8 +29,10 @@ def test_live_project_routing_and_reply_keep_original_sessions(run, home, projec
         with Store(project, module='dispatch').tables(write=False) as tx:
             return next((row for row in tx.rows('agent_sessions', limit=0).results if row['state'] == 'running'), None)
     def command(runner, row, *words):
-        return json.loads(run('dispatch', 'note', '--json', *words, cwd=runner.folder, env={
-            'METAFORM_ROLE': 'worker', 'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']}).stdout)
+        done = run('dispatch', 'note', '--json', *words, cwd=runner.folder, env={
+            'METAFORM_ROLE': 'worker', 'METAFORM_WORK': runner.id, 'METAFORM_SESSION': row['runner']})
+        assert done.returncode == 0, done.stderr
+        return json.loads(done.stdout)
     try:
         first.start('hold', 'system=true')
         second.start('hold')
@@ -206,7 +209,8 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
     transport.notify_user(context('dispatch', project_folder, project='proj'), {**told[0], 'message_id': told[0]['id']},
                           told[0]['id'])
     line = told[0]
-    assert {one['id'] for one in told} == {line['id']} and 'held cap' in line['text']
+    assert {one['id'] for one in told} == {line['id']}
+    assert line['text'].endswith(' complete') and 'held cap' not in line['text'], 'a completion is a reference, never its words'
     Session = importlib.import_module(f'{module.__name__}.runner').Session
 
     def session(session_id='system'):
@@ -220,8 +224,9 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
         for one in told:
             await first.peer_note({'line': one, 'deliver': True})
     asyncio.run(received())
-    assert [one[0] for one in first.inbox] == [line['id']] and not first.pending, 'one inbox entry, no turn'
-    assert 'held cap' not in first.inbox[0][2], 'the inbox names it by ticket and kind, never its words'
+    # a routine result never enters the inbox and starts no turn: it is counted toward the status line the agent is
+    # woken with at most every fifteen minutes (2026-10-20)
+    assert not first.inbox and not first.pending and first.digest_count == 1, 'counted, never named, no turn'
 
     # handed to a runner on newer code; the new runner replays its notes and updates into one inbox entry
     path = module.handed_path('system')
@@ -234,7 +239,7 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
         await taken.replay_peers()
         await taken.updates_due()
     asyncio.run(resumed())
-    assert [one[0] for one in taken.inbox] == [line['id']] and not taken.pending
+    assert not taken.inbox and not taken.pending, 'the replay puts nothing in the inbox and starts no turn'
     asyncio.run(taken.peer_marked([(line['id'], '')], 'delivered'))  # the turn carrying its inbox line went out
 
     # the conversation ends; an update arrives while no system agent runs, and the next conversation starts
@@ -246,7 +251,7 @@ def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, 
     second = session('system-2')
     asyncio.run(second.updates_due())
     gc_item = live.store.numbers_of('work', [gc_work])[gc_work][0]
-    assert second.inbox == [('offline-1', '', f'Ticket {gc_item.rpartition("#")[2]} — done', True)], second.inbox
+    assert gc_item and second.inbox == [] and not second.pending, 'a routine update is counted, never named'
 
     async def accepted():  # the turn carrying its inbox line went out
         second.inflight_updates = ['offline-1']
@@ -355,13 +360,13 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
         assert sent['to'][0]['project'] == 'other' and sent['to'][0]['session_id'] == b['session_id'], sent
         # the note waits in B's inbox: no turn of its own, and B's next turn names it in one line, never its words
         run('dispatch', 'message', second.id, '--', 'Anything new?', cwd=second.folder)
-        turn = json.dumps(eventually(lambda: given(second, 'new in your inbox')))
-        assert 'Intake fails on an empty folder.' not in turn and 'Anything new?' in turn, turn
+        turn = json.dumps(eventually(lambda: given(second, 'Anything new?')))
+        assert 'Intake fails on an empty folder.' not in turn and 'new in your inbox' not in turn, turn
         reply = command(second, b, f'reply={sent["note"]}', '--', 'Filed here as a ticket.')
         assert reply['to'][0]['project'] == 'proj' and reply['to'][0]['session_id'] == a['session_id'], reply
         run('dispatch', 'message', first.id, '--', 'Anything new?', cwd=first.folder)
-        turn = json.dumps(eventually(lambda: given(first, 'new in your inbox')))
-        assert 'Filed here as a ticket.' not in turn, turn
+        turn = json.dumps(eventually(lambda: given(first, 'Anything new?')))
+        assert 'Filed here as a ticket.' not in turn and 'new in your inbox' not in turn, turn
         for runner in (first, second):  # both sides in the person's chat of each project, the sender named
             shown = eventually(lambda runner=runner: (found := chat(runner)).keys() >= {sent['note'], reply['note']}
                                and found)
@@ -369,8 +374,8 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
                 'Intake fails on an empty folder.'
             assert shown[reply['note']]['from']['project'] == 'other' and \
                 shown[reply['note']]['reply_to'] == sent['note']
-        # A's session ends: B's next reply is not refused but waits for A's next session, a new conversation here,
-        # whose opening turn names it in its inbox line
+        # A's session ends: B's next reply is not refused but waits for A's next session, a new conversation here; a
+        # routine note is counted toward the status line and never named, so the opening turn carries none of it
         first.close()
         again = command(second, b, f'reply={sent["note"]}', '--', 'It is fixed now.')
         assert again['to'][0]['project'] == 'proj' and again['to'][0]['turn'] == 'when its next session starts'
@@ -378,7 +383,7 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
         first.start('plain', 'system=true')
         c = eventually(lambda: live('proj', but=(a['session_id'],)))
         opening = json.dumps(eventually(lambda: first.received('session/prompt')[before:]))
-        assert 'new in your inbox' in opening and 'It is fixed now.' not in opening, opening
+        assert 'new in your inbox' not in opening and 'It is fixed now.' not in opening, opening
         # and the other way: no system session runs in B's project, so the note waits for its next one
         second.close()
         later = command(first, c, 'target_project=other', 'to=system', '--', 'Its help text is stale too.')
@@ -386,7 +391,7 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
         before = len(second.received('session/prompt'))
         second.start('plain', 'system=true')
         opening = json.dumps(eventually(lambda: second.received('session/prompt')[before:]))
-        assert 'new in your inbox' in opening and 'Its help text is stale too.' not in opening, opening
+        assert 'new in your inbox' not in opening and 'Its help text is stale too.' not in opening, opening
     finally:
         first.close()
         second.close()
