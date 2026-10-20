@@ -270,14 +270,22 @@ export function drawAgentSessions() {
   const dock = $('#helpdesk .stopped-agents'), menu = $('#agentbox .agent-sessions');
   dock.hidden = !stopped.length;
   menu.hidden = !D.sessions.length;
+  // the signals by session, mapped once: filtering every signal for every session made each redraw cost sessions
+  // times signals, 1,119 by 642 on every event the page heard (2026-10-20)
+  const signalsOf = new Map();
+  for (const one of D.signals || []) {
+    const held = signalsOf.get(one.session_id);
+    if (held) held.push(one); else signalsOf.set(one.session_id, [one]);
+  }
   const row = forget => session => ({key: session.session_id,
     text: JSON.stringify([session.state, session.how, agentName(session.agent), glyphOf(session.work_id), sessionTask(session),
       assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
-      D.signals?.filter(one => one.session_id === session.session_id)]),
+      signalsOf.get(session.session_id) || null]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
-  keyedFill(menu, D.sessions.map(row(false)));
+  keyedFill(menu, D.sessions.slice(-MENU_MOST).map(row(false)));  // the latest; older ones are read at their node
 }
+const MENU_MOST = 40;
 function sessionRow(session, forget = false) {
   const state = D.states?.[session.session_id], notification = notificationState(state);
   const stopped = stoppedByPerson(session), name = agentName(session.agent), task = sessionTask(session);

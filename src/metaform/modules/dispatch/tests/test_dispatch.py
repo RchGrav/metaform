@@ -1563,9 +1563,11 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
     read_from = ('FROM "dispatch.lines"', 'FROM "dispatch.session_lines"', 'FROM "dispatch.signals"')
     lines = [sql for sql in executed if any(table in sql for table in read_from)]
     assert len(lines) == 2 and all(' WHERE ' in sql for sql in lines), lines
-    assert len(read['sessions']) == 40 and [one['signal'] for one in read['signals']] == ['stopped-open']
-    assert read['states'] == {f'ended-{number}': {'about': 'system' if number < 2 else None, 'intake': None}
-                              for number in range(40)}
+    # the agents key lists each ticket's latest session and those begun in the last two days, 2026-10-20: these 40 of
+    # one ticket, four days old, show as their latest alone; every one stays readable by its id, at its node
+    assert [one['session_id'] for one in read['sessions']] == ['ended-39']
+    assert [one['signal'] for one in read['signals']] == ['stopped-open']
+    assert read['states'] == {'ended-39': {'about': None, 'intake': None}}
     executed.clear()
     assert read_sessions(ctx)['states'] == read['states']
     assert len([sql for sql in executed if any(table in sql for table in read_from)]) == 1, executed  # the signals
