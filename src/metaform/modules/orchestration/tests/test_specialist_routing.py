@@ -443,10 +443,10 @@ def test_facilitator_receives_the_complete_xml_workflow_through_role_resolution(
     duty = role['components'][-1]['text']
     workflow = ElementTree.fromstring(duty)
     assert workflow.tag == 'metaprompt'
-    assert len(workflow.findall('./workflow/step')) == 6
-    assert {section.attrib['tag'] for section in workflow.findall('./required_sections/section')} == {
-        'role_and_identity', 'context_and_objective', 'core_rules_and_constraints',
-        'key_skills_and_behaviors', 'output_formatting'}
+    # the owner's design of 2026-10-20: assign a listed specialist, else create one and return to assign it
+    assert [one.attrib['name'] for one in workflow.findall('./procedure')] == ['assign_specialist', 'create_specialist']
+    assert [one.attrib['name'] for one in workflow.findall('./procedure/part')] == [
+        'name', 'short_description', 'key_skills_and_behaviors']
     assert 'metaform://specialists' in duty and 'orchestration_publish_role' in duty
     assert '<system_prompt>' in workflow.find('system_prompt_template').text
     assert '<result>' in workflow.find('./output_format/template').text
