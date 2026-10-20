@@ -337,13 +337,19 @@ def windowless(env: dict[str, str]) -> dict[str, str]:
     return {name: value for name, value in env.items() if name not in DESKTOP}
 
 
+# The variables that hold Jev's key, `jev.ENDPOINTS`: an MCP server started without them has no Jev, so every routing
+# decision an agent asks for through it fell to the Facilitator (2026-10-20: the person's Codex workers' servers).
+JEV_KEYS = ('OPENROUTER_API_KEY', 'TYPESAFE_API_KEY')
+
+
 def server_environment(**own: str) -> list[EnvVariable]:
-    """The runner's METAFORM_* variables, METAFORM_HOME among them when set, named for the MCP server it asks the agent
-    to start: Codex gives an MCP server only a short list of the adapter's variables, so a home that is not named here
-    would be lost and the server would open another one. The session's identity is `own`, never one this runner
-    inherited, BASE-052."""
+    """The runner's METAFORM_* variables, METAFORM_HOME among them when set, and Jev's key when the runner has one,
+    named for the MCP server it asks the agent to start: Codex gives an MCP server only a short list of the adapter's
+    variables, so a home that is not named here would be lost and the server would open another one, and a key not
+    named here leaves the server without Jev. The session's identity is `own`, never one this runner inherited,
+    BASE-052."""
     return [EnvVariable(name=name, value=value) for name, value in sorted(child_environment(**own).items())
-            if name.startswith('METAFORM_')]
+            if name.startswith('METAFORM_') or (name in JEV_KEYS and value)]
 
 
 def role(nouns: dict[str, Any], work_id: str) -> str:

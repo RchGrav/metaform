@@ -140,7 +140,7 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
                 reason = 'No specialist is registered; Facilitator is creating reusable expertise.'
             else:
                 options = {one['uri']: one['purpose'] for one in specialists}
-                options['none'] = 'No listed specialist has the expertise needed for this ticket.'
+                options['none'] = 'None of the listed specialists fits: send the ticket to the Facilitator to create a new specialist.'
                 question = prompt_files.served(resources.files('metaform.modules.orchestration'), 'choose_specialist')
                 decision = jev.pick_one(ctx.folder, question, options, state,
                                        title='Select specialist expertise', why='Match expertise to the functional work.',
