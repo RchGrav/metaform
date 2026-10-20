@@ -432,9 +432,10 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     named, kind, found, answered = chosen(ctx, store, work_id, str(mine['session_id']))
     now = time.time()
     note_id = secrets.token_hex(8)
+    summary = ' '.join(str(ctx.nouns.get('summary') or '').split())  # the sender's one phrase, shown in the receiver's turn
     line: dict[str, Any] = {
         'id': note_id, 'kind': 'user_direction' if decision else 'question' if wait else 'peer', 'at': stamp(now),
-        'epoch': now, 'text': text, 'ask': wait > 0,
+        'epoch': now, 'text': text, 'ask': wait > 0, **({'summary': summary} if summary else {}),
         'reply_to': answered.get('id') if answered else None, 'target': {kind: named},
         'from': side(ctx, record, mine),
         'to': [{key: value for key, value in entry.items() if not key.startswith('_')

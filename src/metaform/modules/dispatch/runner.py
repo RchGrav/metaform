@@ -272,6 +272,25 @@ INBOX_SHOWN = 10  # the inbox entries the one inbox line names before it counts 
 TRIAGE_DIGEST = 15 * 60
 
 
+PHRASE = 160  # the characters a note's phrase is cut to; a note this short is its own phrase and is given whole
+
+
+def inbox_phrase(held: dict[str, Any], note_id: str) -> str:
+    """What a note's receiver is given in its turn: the sender's summary phrase, `dispatch note summary=`, else the
+    note's first words cut to PHRASE, with the read that gives the whole when the receiver needs more. A short note
+    with no summary is its own phrase and is given whole. Every message works like an inbox: the phrase is in the turn,
+    the body stays in the thread, so no agent's context is filled by what it did not ask for (the person's rule,
+    2026-10-20)."""
+    text = ' '.join(str(held.get('text') or '').split())
+    summary = ' '.join(str(held.get('summary') or '').split())
+    if not summary and len(text) <= PHRASE:
+        return text
+    phrase = summary or f'{text[:PHRASE].rsplit(" ", 1)[0]}…'
+    sender = cast(dict[str, Any], held.get('from') or {})
+    who = str(sender.get('item') or sender.get('work_id') or sender.get('agent') or 'a peer')
+    return f'{who}: {phrase} (the whole: dispatch_notes note={note_id})'
+
+
 def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
     """A note to the person's system agent as its inbox keeps it: the sender's ticket and what the note is, never its
     words, and whether it needs the person."""
@@ -4315,7 +4334,7 @@ class Session:
                 return {'noted': True, 'queued': False, 'steered': True}
             self.turn(text, peers=marks, first=True)
             return {'noted': True, 'queued': True, 'busy': busy}
-        self.turn(text, peers=marks)
+        self.turn(inbox_phrase(held, note_id), peers=marks)  # the phrase; the whole waits in the thread
         return {'noted': True, 'queued': True, 'busy': busy}
 
     def unawait(self, asked: dict[str, Any]) -> dict[str, Any]:

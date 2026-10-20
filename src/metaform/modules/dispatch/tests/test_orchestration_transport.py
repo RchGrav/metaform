@@ -134,6 +134,36 @@ def test_peer_wire_carries_only_message_and_keeps_details_available(
 
 
 @pytest.mark.kind('fixture')
+def test_a_note_reaches_its_receiver_as_a_summary_phrase_and_the_whole_stays_in_the_thread(dispatch, monkeypatch):
+    """Every message works like an inbox (the person's rule, 2026-10-20): a receiver's turn carries the sender's summary
+    phrase, else the note's first words, with the read that gives the whole; a short note is given whole."""
+    import asyncio
+
+    worker = busy(dispatch)
+    worker.session_id, worker.spoken = 'recipient', True
+    body = 'The selection breaks when the pointer leaves the pane. ' * 20
+    sender = {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude', 'item': 'code.map.select#3'}
+    to = [{'session_id': 'recipient', 'work_id': worker.work_id}]
+    asyncio.run(worker.peer_note({'line': {'id': 'n-long', 'kind': 'peer', 'text': body, 'from': sender, 'to': to},
+                                  'deliver': True}))
+    asyncio.run(worker.peer_note({'line': {'id': 'n-said', 'kind': 'peer', 'text': f'Also: {body}', 'from': sender,
+                                           'to': to, 'summary': 'Selection breaks on pointer leave; needs your pane change.'},
+                                  'deliver': True}))  # other words: the same words from one sender arrive once
+    asyncio.run(worker.peer_note({'line': {'id': 'n-short', 'kind': 'peer', 'text': 'Done with dom.js.', 'from': sender,
+                                           'to': to}, 'deliver': True}))
+    lines = '\n\n'.join(worker.pending).split('\n\n')  # notes that arrive while a turn waits join it, one line each
+    assert len(lines) == 3, lines
+    assert lines[0].startswith('code.map.select#3: The selection breaks when the pointer leaves the pane.') \
+        and lines[0].endswith('… (the whole: dispatch_notes note=n-long)') and len(lines[0]) < 260, lines[0]
+    assert lines[1] == 'code.map.select#3: Selection breaks on pointer leave; needs your pane change. ' \
+        '(the whole: dispatch_notes note=n-said)', lines[1]
+    assert lines[2] == 'Done with dom.js.', lines[2]
+    with worker.store.tables(write=False) as tx:
+        kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:n-long'})['text'])
+    assert kept['text'] == body, 'the whole stays in the thread, read on demand'
+
+
+@pytest.mark.kind('fixture')
 def test_first_peer_turn_still_initializes_a_fresh_context(dispatch, monkeypatch):
     worker = busy(dispatch)
     worker.spoken = False

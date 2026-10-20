@@ -7144,6 +7144,10 @@ MODULE = Module(
                     Noun('decision', 'true when the note relays the person\'s decision from their message in this turn: '
                                      'each recipient gets it as the person\'s direction, with that message. Only the '
                                      'person\'s own system agent sends one.', kind='bool', required=False),
+                    Noun('summary', 'One phrase saying what the note is and what it needs. Every message works like an '
+                                    'inbox: the receiver\'s turn carries this phrase, and it reads the whole with '
+                                    'dispatch notes note=<id> only when it needs more. Without one, the note\'s first '
+                                    'words stand in.', required=False),
                     Noun('text', 'The note.', many=True)),
              examples=((('metaform dispatch note file=src/metaform/modules/web/page/app/core/dom.js wait=60 -- "I am '
                          'about to change css(); anything I should know?"'),
