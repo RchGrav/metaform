@@ -1171,8 +1171,8 @@ def tool_named(text: str, folder: Path) -> str:
 
 
 def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) -> str:
-    """What a tool's result carries the first time in the session it is called, and again only once what it says has
-    changed, MCP-039, as the counts at a node are given: the rules of its module the first time any of the module's
+    """What a tool's first successful result carries once per session, MCP-039:
+    the rules of its module the first time any of the module's
     tools is called, from the module's prompts.xml, and the tool's own guide, from its declaration, for the call's `op`
     alone when the tool has ops. A line given already in the session, with this tool or another, is not given again,
     `Given`. Each heading is the mcp module's `module_guide` and `tool_guide` prompt; an empty one leaves that part out.
@@ -1197,16 +1197,13 @@ def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) 
     rules = [f'{said} Why: {why}' for said, why in prompt_files.module_rules(listed.module)] \
         if listed.module != OWN else []
     heading = prompt_files.module('mcp', 'module_guide', module=listed.module) if rules else None
-    if heading:
-        text = heading + '\n' + '\n'.join(rules)
-        if ctx.seen(f'guide:module:{listed.module}', _digest(text)) != _digest(text) and (new := given.new(rules)):
-            parts.append(heading + '\n' + '\n'.join(new))
+    if heading and ctx.seen(f'guide:module:{listed.module}', True) is None and (new := given.new(rules)):
+        parts.append(heading + '\n' + '\n'.join(new))
     said = listed.guide(op)
     heading = prompt_files.module('mcp', 'tool_guide', tool=listed.name) if said else None
     if heading:
-        text = heading + '\n' + said
-        key = f'guide:tool:{listed.name}' + (f':op={op}' if op else '')
-        if ctx.seen(key, _digest(text)) != _digest(text) and (new := given.new(said.split('\n'))):
+        key = f'guide:tool:{listed.name}'
+        if ctx.seen(key, True) is None and (new := given.new(said.split('\n'))):
             parts.append(heading + '\n' + '\n'.join(new).strip('\n'))
     given.keep()
     return '\n\n'.join(parts)
@@ -1252,7 +1249,7 @@ def tool_guide(folder: Path, name: str, op: str | None, session: str | None) -> 
     if not said:
         return prompt_files.module('mcp', 'tool_guide', tool=name) or name
     text = (prompt_files.module('mcp', 'tool_guide', tool=name) or '') + '\n' + said
-    record_shown(session, f'guide:tool:{name}' + (f':op={op}' if op else ''), _digest(text))
+    record_shown(session, f'guide:tool:{name}', True)
     given = Given(session)
     given.new(said.split('\n'))
     given.keep()
@@ -2852,13 +2849,13 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             fired = await anyio.to_thread.run_sync(events.announce, folder, 'mcp')
-        if listed is not None:  # what the list cut, before the result of its first use in the session, wrong calls too
+        if listed is not None and not error:  # errors carry only the error and its next step
             op = given.get('op') if isinstance(given.get('op'), str) else None
             if op is None and listed.verb is not None and ops_of(listed.verb) and 'id' in given:
                 op = 'read'  # a record named by id with no op is read, which no op's own help is for
             guide = await anyio.to_thread.run_sync(guided, listed, client, session, op)
             blocks = [guide, *blocks] if guide else blocks
-        if shape is not None and shape.view == 'triage' and shape.given and listed is not None and \
+        if not error and shape is not None and shape.view == 'triage' and shape.given and listed is not None and \
                 listed.verb is not None and looks_up(listed.verb) and session is not None and \
                 await anyio.to_thread.run_sync(record_shown, session, 'announce:triage', 1) is None:
             note = prompt_files.module('mcp', 'triage_note')

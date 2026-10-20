@@ -199,13 +199,11 @@ class Transport:
         sender.setdefault('agent', 'orchestration')
         sender.setdefault('session_id', '')
         body = envelope.get('text') or envelope.get('body') or envelope.get('summary')
-        # Older check-ins kept the message inside report. Read that sentence, never serialize the report and
-        # routing envelope into a prompt. Structured detail is retained for an explicit inspect/notes read.
-        if body is None and isinstance(envelope.get('report'), dict):
-            body = envelope['report'].get('summary') or envelope.get('kind')
         if body is None:
             raise ValueError('An agent message requires a message body.')
-        line = {**envelope, 'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
+        # Keep message identity and routing, never assignment snapshots, context or reports.
+        line = {**{key: envelope[key] for key in MESSAGE_FIELDS if key in envelope},
+                'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
                 'text': str(body), 'at': envelope.get('at') or home.now(),
                 'kind': envelope.get('kind') or 'continuation',
                 'to': [{'work_id': row['work_id'], 'session_id': row['session_id'], 'agent': row['agent'],
@@ -226,6 +224,9 @@ class Transport:
         from .signals import add_line, own_store
         body = message if isinstance(message, str) else str(message.get('text') or message.get('body') or
                                                           message.get('summary') or '')
+        if isinstance(message, dict) and (message.get('update') or message.get('kind')) in (
+                'result', 'role_publication', 'functional_assessment', 'functional_correction') and message.get('state') in ('returned', 'delivered', 'completed'):
+            body = inbox_status(message)
         if not body:
             raise ValueError('A user notification requires an actual message body.')
         message_id = str(message.get('message_id') or change_id) if isinstance(message, dict) else change_id
@@ -253,8 +254,8 @@ class Transport:
                     add_line(tx, UPDATES, UPDATES, f'about:{message_id}', 'about', json.dumps(
                         {key: message.get(key) for key in ('work_id', 'kind', 'state')}, ensure_ascii=False), seq + 2)
                 tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
-        # The authored summary stays in the durable update/note for an explicit read. The system agent's automatic
-        # inbox render uses only ticket + status metadata. A failed relay can retry the same id.
+        # Updates retain message ids and ticket status. Completion reports remain on their tickets.
+        # A failed relay can retry the same id.
         from . import sessions, system_sessions
         running = [row for row in sessions(ctx.require_store()) if row['state'] == 'running']
         route: dict[str, Any] = (message.get('return_to') or {}) if isinstance(message, dict) else {}
@@ -263,7 +264,8 @@ class Transport:
             ctx.require_store(), running)
         delivered_pm: list[dict[str, Any]] = []
         for pm in pms:  # `update` keeps the update's own kind, which the system agent's inbox names it by
-            envelope = {**(message if isinstance(message, dict) else {}), 'id': message_id, 'text': body,
+            envelope = {**({key: message[key] for key in MESSAGE_FIELDS if key in message}
+                           if isinstance(message, dict) else {}), 'id': message_id, 'text': body,
                         'kind': 'project_update', 'update': message.get('kind') if isinstance(message, dict) else None}
             delivered_pm.append(self.send(ctx, {'work_id': pm['work_id'], 'owner_session_id': pm['session_id'],
                                                 'assignment_id': None}, envelope))
@@ -271,6 +273,12 @@ class Transport:
 
 
 TRANSPORT = Transport()
+
+
+# Authenticated routing and delivery metadata remain available through dispatch_notes.
+MESSAGE_FIELDS = ('work_id', 'assignment_id', 'sender_assignment_id', 'sender_session_id', 'team_id',
+                  'change_id', 'transition_id', 'return_to', 'state', 'update', 'ask', 'reply_to',
+                  'decision', 'board', 'epoch')
 
 
 CARRIED = ('delivered', 'read', 'replied')
@@ -298,6 +306,14 @@ def inbox_status(held: dict[str, Any]) -> str:
     """
     sender = cast(dict[str, Any], held.get('from') or {})
     item = str(sender.get('item') or held.get('work_id') or sender.get('work_id') or '')
+    if not held.get('ask') and (held.get('update') or held.get('kind')) in (
+            'result', 'role_publication', 'functional_assessment', 'functional_correction') and held.get('state') in (
+                'returned', 'delivered', 'completed'):
+        if '#' not in item:
+            body = str(held.get('text') or held.get('body') or '')
+            if body.endswith(' complete') and '#' in body and '\n' not in body:
+                return body
+        return f'{item} complete'
     number = item.rpartition('#')[2] if '#' in item else item
     label = f'Ticket {number}' if number else str(sender.get('agent') or 'Project')
     what = inbox_what(str(held.get('update') or held.get('kind') or ''), str(held.get('state') or ''),

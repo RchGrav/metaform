@@ -4180,6 +4180,14 @@ class Session:
         if self.ending or self.session_id is None or not isinstance(line, dict):
             return {'noted': False, 'error': 'The session has not started or is ending.'}
         held, busy = cast(dict[str, Any], line), bool(self.turns)
+        if not held.get('ask') and (held.get('update') or held.get('kind')) in (
+                'result', 'role_publication', 'functional_assessment', 'functional_correction') and held.get('state') in (
+                    'returned', 'delivered', 'completed'):
+            from .orchestration import MESSAGE_FIELDS, inbox_status
+            # Completion reports belong to their ticket, including when an older sender supplies a full copy.
+            held = {**{key: held[key] for key in MESSAGE_FIELDS if key in held},
+                    **{key: held[key] for key in ('id', 'from', 'to', 'at', 'kind') if key in held},
+                    'text': inbox_status(held)}
         note_id = str(held.get('id'))
         if asked.get('deliver') and note_id in self.queued_peer_ids:
             return {'noted': True, 'queued': True, 'reused': True}
@@ -4191,10 +4199,10 @@ class Session:
                         saved = json.loads(str(prior['text']))
                         return saved.get('session_states', {}).get(self.session_id)
                 return None
-            state = await asyncio.to_thread(prior_delivery)
-            if state in ('delivered', 'read', 'replied'):
-                return {'noted': True, 'queued': False, 'reused': True, 'state': state}
-        sender: dict[str, Any] = held.get('from') or {}
+            prior_state = await asyncio.to_thread(prior_delivery)
+            if prior_state in ('delivered', 'read', 'replied'):
+                return {'noted': True, 'queued': False, 'reused': True, 'state': prior_state}
+        sender = cast(dict[str, Any], held.get('from') or {})
         # the same words from the same sender as a note still waiting for its turn, under another note's id, reach
         # it once: marked delivered, never a second turn
         said_key = said_as(held)

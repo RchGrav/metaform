@@ -102,30 +102,35 @@ def busy(dispatch):
 
 
 @pytest.mark.kind('fixture')
-def test_peer_wire_carries_only_message_and_keeps_details_available(dispatch, monkeypatch):
-    """A result with large routing/context fields reaches an established recipient verbatim, once, without a
-    context rebuild; its metadata stays readable and a relayed user direction retains queue priority."""
+@pytest.mark.parametrize('completion_kind', ['result', 'role_publication', 'functional_assessment',
+                                            'functional_correction'])
+@pytest.mark.parametrize('completion_state', ['returned', 'delivered', 'completed'])
+def test_peer_wire_carries_only_message_and_keeps_details_available(
+        dispatch, monkeypatch, completion_kind, completion_state):
+    """A completion reaches its recipient once as a ticket reference. Routing survives without report copies."""
     import asyncio
 
     worker = busy(dispatch)
     worker.session_id, worker.spoken = 'recipient', True
     detail = 'FULL TICKET AND EVIDENCE ' * 1000
     line = {'id': 'brief-result', 'text': 'Fixed selection. Three interaction checks pass.',
-            'kind': 'result', 'state': 'returned', 'candidate': detail, 'evidence': [detail],
-            'from': {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude'},
+            'kind': completion_kind, 'state': completion_state, 'candidate': detail, 'evidence': [detail],
+            'from': {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude',
+                     'item': 'code.dispatcher.agent#7d'},
             'to': [{'session_id': 'recipient', 'work_id': worker.work_id}],
             'context_components': [{'name': 'irrelevant', 'text': detail}]}
     asyncio.run(worker.peer_note({'line': line, 'deliver': True}))
-    assert list(worker.pending) == [line['text']]
+    assert list(worker.pending) == ['code.dispatcher.agent#7d complete']
     assert list(worker.prompt_contexts) == [[]]
     with worker.store.tables(write=False) as tx:
         kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:brief-result'})['text'])
-    assert kept['evidence'] == [detail] and kept['from']['session_id'] == 'sender'
+    assert not {'evidence', 'candidate', 'context_components'} & kept.keys()
+    assert kept['from']['session_id'] == 'sender'
 
     def no_context(*args):
         pytest.fail('A message must not rebuild the assignment or append its context.')
 
-    assert sent(monkeypatch, worker, guide=no_context) == [line['text']]
+    assert sent(monkeypatch, worker, guide=no_context) == ['code.dispatcher.agent#7d complete']
 
 
 @pytest.mark.kind('fixture')
@@ -230,7 +235,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     the person's system agent and puts no body and no memory notice in its conversation; the person's next message
     carries one 'new in your inbox' line naming each by ticket and kind, the turn after it none; the inbox lists them
     all, one short line each, and gives one whole on request. A question still wakes it, as that one line alone, and a
-    worker still receives a result whole. Memory changes cause no read in any session."""
+    worker receives only the completion reference. Memory changes cause no read in any session."""
     import asyncio
 
     from metaform.modules.dispatch import board, origin, peering, runner
@@ -265,7 +270,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
 
     async def burst():
         for number in range(20):
-            update = 'functional_assessment' if number % 2 else 'result'
+            update = 'progress' if number % 2 else 'result'
             await system.peer_note({'line': result(number, update=update), 'deliver': True})
             system.changed_elsewhere({**MEMORY_CHANGED, 'session_ids': ['r-sys']})
         await system.board()
@@ -282,8 +287,8 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     prompts = sent(monkeypatch, system)
     head, line = prompts[0].removeprefix(prompt_files.module('mcp', 'connect_rules') + '\n\n').split('\n\n')
     assert head == 'What is new?' and '\n' not in line, prompts[0]
-    assert line.startswith('23 new in your inbox: Ticket 0 — done, Ticket 1 — '
-                           'assessment, ') and 'and 13 more' in line, line
+    assert line.startswith('23 new in your inbox: code.router.assignment#0 complete, Ticket 1 — '
+                           'progress, ') and 'and 13 more' in line, line
     assert 'Evidence' not in line and 'held cap' not in line and 'memories' not in line and len(line) < 600, line
     assert prompts[1] == 'And now?', 'Nothing new since the line was carried: no line.'
 
@@ -293,9 +298,10 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     assert sum(one['kind'] == 'board' for one in listed) == 3
     first = next(one for one in listed if one['note'] == 'gc-19')['summary']
     assert len(first) <= 300 and 'Evidence' not in first, first
-    assert first == 'Ticket 19 — assessment'
-    whole = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'note': 'gc-7'}))['notes']
-    assert whole[0]['text'] == result(7)['text'], 'One item is given whole on request.'
+    assert first == 'Ticket 19 — progress'
+    whole = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'note': 'gc-6'}))['notes']
+    assert whole[0]['text'] == 'code.router.assignment#6 complete'
+    assert 'evidence' not in whole[0], 'Completion reports remain on their tickets.'
 
     started.clear()
     system.spoken = True  # its turns went out, as the agent's ACP connection says
@@ -308,7 +314,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     worker = busy(dispatch)
     worker.session_id = 'w'
     asyncio.run(worker.peer_note({'line': result(40), 'deliver': True}))
-    assert rest in worker.pending[0], 'A worker still receives the result whole.'
+    assert worker.pending[0] == 'code.router.assignment#40 complete'
     assert not worker.inbox
 
 
@@ -493,3 +499,63 @@ def test_idle_cpu_evidence(run, home, project_folder, tmp_path):
     finally:
         dispatch.stop()
         dispatch.close()
+
+
+@pytest.mark.kind('fixture')
+def test_transport_drops_assignment_copies_but_keeps_authenticated_routes(dispatch, monkeypatch):
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = {'assignment_id': 'recipient-assignment'}
+    row = {'state': 'running', 'session_id': 'recipient', 'work_id': 'work', 'agent': 'claude'}
+    delivered = []
+    monkeypatch.setattr(orchestration, '_row', lambda *args: row)
+    monkeypatch.setattr(module, 'tell', lambda target, command, **fields: delivered.append(fields['line']) or
+                        {'noted': True})
+    source = {'assignment_id': 'sender-assignment', 'session_id': 'sender', 'agent': 'codex'}
+    envelope = {'message_id': 'message', 'text': 'code.dispatcher.agent#7d complete', 'from': source,
+                'sender_assignment_id': 'sender-assignment', 'sender_session_id': 'sender',
+                'return_to': {'session_id': 'lead'}, 'state': 'completed', 'kind': 'result',
+                'assignment': {'role_snapshot': 'private role' * 1000},
+                'context_components': [{'text': 'context' * 1000}], 'report': {'body': 'ticket report'}}
+    assert orchestration.TRANSPORT.send(ctx, held, envelope)['accepted']
+    [line] = delivered
+    assert line['text'] == envelope['text'] and line['from'] == source
+    assert line['sender_assignment_id'] == 'sender-assignment'
+    assert line['return_to'] == {'session_id': 'lead'}
+    assert line['to'][0]['assignment_id'] == 'recipient-assignment'
+    assert not {'assignment', 'context_components', 'report'} & line.keys()
+    assert len(json.dumps(line)) < 800
+
+
+@pytest.mark.kind('fixture')
+def test_completion_inbox_names_the_ticket_without_its_report():
+    from metaform.modules.dispatch.orchestration import inbox_status
+
+    assert inbox_status({'update': 'result', 'state': 'completed',
+                         'from': {'item': 'code.dispatcher.agent#7d'},
+                         'text': 'Private report'}) == 'code.dispatcher.agent#7d complete'
+
+    assert inbox_status({'kind': 'role_publication', 'state': 'completed', 'work_id': 'opaque-id',
+                         'body': 'code.dispatcher.agent#7d complete'}) == 'code.dispatcher.agent#7d complete'
+
+
+@pytest.mark.kind('fixture')
+def test_delivered_completion_notification_stores_only_ticket_reference(dispatch, monkeypatch):
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    message = {'message_id': 'delivered-completion', 'kind': 'functional_correction', 'state': 'delivered',
+               'work_id': 'opaque-id', 'from': {'item': 'code.dispatcher.agent#7d'},
+               'body': 'Private report', 'report': {'body': 'Private report'},
+               'assignment': {'role_snapshot': 'Private role'}}
+    result = orchestration.TRANSPORT._notify_user(ctx, message, 'change')
+    assert result['text'] == 'code.dispatcher.agent#7d complete'
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        rows = tx.rows('session_lines', {'session_id': orchestration.UPDATES}, limit=0).results
+    stored = json.dumps(rows)
+    assert 'Private report' not in stored and 'Private role' not in stored
+    assert 'code.dispatcher.agent#7d complete' in stored

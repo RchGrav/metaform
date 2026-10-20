@@ -68,11 +68,13 @@ def test_missing_root_role_continues_original_ticket_and_pins_duty(store, projec
 
 
 def test_review_reopens_canonical_ticket_without_a_recursive_chain(store, project_folder):
+    from metaform import settings
     small_map(store)
     ctx = context('orchestration', project_folder, project='proj')
     work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Keep selection while adjusting time.')
     service(ctx, 'agent.role').publish(ctx, 'alarm_engineering', 'Countdown alarm systems.',
                                      'Verify timing and audible notification behavior.')
+    settings.put('orchestration_reviews', 1, project_folder)
     ctx.nouns.update(work=work.id, role='alarm_engineering')
     assigned = SERVICE.claim(ctx)
     assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'

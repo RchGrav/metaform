@@ -73,8 +73,9 @@ def peek(session: str | None, key: str) -> Any:
 
 
 # What a compaction leaves in place: what the AI tool itself holds rather than the agent's context, such as the tools it
-# lists after a category was opened, so it is not taken from the record when the agent's context is compacted.
-KEPT_THROUGH_COMPACTION = ('catalog:',)
+# lists after a category was opened. Automatic guide delivery also lasts the whole session; an agent can read a
+# needed guide explicitly after compaction instead of receiving it again with an unrelated successful result.
+KEPT_THROUGH_COMPACTION = ('catalog:', 'guide:')
 
 
 def forget(session: str | None, keep: tuple[str, ...] = KEPT_THROUGH_COMPACTION) -> int:

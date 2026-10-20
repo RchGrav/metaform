@@ -206,27 +206,7 @@ Return the prepared candidate/materials, validation evidence and remaining actio
 </metaprompt>
 ]]></role_creator>
 
-<!-- A delivered assignment envelope with responsibility, team, functional location and the immediate return destination. -->
-<assignment>
-Assignment context:
-<assignment/>
 
-Available action bindings from the active modules and adapter:
-<actions/>
-
-Perform the assigned work using your delivered role and the current operative specification. Read applicable functional grounding and unread memories. Return through the recorded destination.
-</assignment>
-
-<!-- A recorded blocker assessment envelope for independent functional assessment. -->
-<blocker_assessment>
-Functional assessment triggered by an observed blocker or poor behavior.
-<report/>
-
-Current assignment, specification and mode:
-<assignment/>
-
-Evaluate through the functional graph and full design. Return your finding and, under the active mode, publish the specification adaptation/change order or return the recommendation. The responsible GC receives your result.
-</blocker_assessment>
 
 <!-- An operative change order envelope carrying the actual sender, scope, revision and rationale. -->
 <change_order>

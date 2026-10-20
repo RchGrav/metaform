@@ -120,7 +120,8 @@ def test_capacity_one_nested_call_releases_parent_and_returns_to_immediate_worke
     actual.running.discard(child_session)
     Orchestration().drain(ctx(project))
     assert actual.messages[-1][0] == worker['assignment_id']
-    assert 'Alarm uses current duration.' in actual.messages[-1][1]['result']
+    assert actual.messages[-1][1]['body'].endswith(' complete')
+    assert 'result' not in actual.messages[-1][1]
     assert not project[0].ticket(gc['work_id']).work.done
     assert actual.maximum == 1
     worker_now = SERVICE.assignment(ctx(project), assignment_id=worker['assignment_id'])
@@ -197,7 +198,8 @@ def test_post_delivery_fqc_missing_role_gets_commission_gc_and_retains_original_
                         and one['kind'] == 'send' and one['payload'].get('kind') == 'result' and
                         one['payload'].get('sender_assignment_id') == specialist['assignment_id'])
     assert return_event['payload']['sender_assignment_id'] == specialist['assignment_id']
-    assert return_event['payload']['result'] == 'Keyboard focus remains on duration.'
+    assert return_event['payload']['body'].endswith(' complete')
+    assert 'result' not in return_event['payload']
     assert any(one['kind'] == 'launch' and one['assignment_id'] == review['assignment_id']
                for one in SERVICE.pending(ctx(project)))
     assert not any(one['kind'] == 'launch' and one['assignment_id'] == gc['assignment_id']
@@ -216,7 +218,8 @@ def test_fqc_independent_candidate_findings_corrective_gc_continuation(project, 
     assert review['team_id'] != gc['team_id']
     assert review['parent_assignment_id'] is None
     assert review['reviewed_assignment_id'] == gc['assignment_id']
-    assert 'Countdown integration test passes.' in review['task']
+    assert review['evidence'] == ['Countdown integration test passes.']
+    assert gc['assignment_id'] in review['task']
     assert SERVICE.same_team(ctx(project), gc['work_id'], review['work_id'])  # coordinated reference claim only
     SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
     assert not SERVICE.owns(ctx(project), 'gc-one', 'fqc')
@@ -240,7 +243,8 @@ def test_fqc_independent_candidate_findings_corrective_gc_continuation(project, 
     assert result['state'] == 'returned'
     pending = SERVICE.pending(ctx(project))
     gc_return = [one for one in pending if one['assignment_id'] == gc['assignment_id'] and one['kind'] == 'send']
-    assert gc_return[0]['payload']['evidence'] == ['Observed selection reset.']
+    assert 'evidence' not in gc_return[0]['payload']
+    assert SERVICE.assignment(ctx(project), work_id=review['work_id'])['evidence'] == ['Observed selection reset.']
     corrections = [one for one in pending if one['payload'].get('kind') == 'functional_correction']
     assert len(corrections) == 1
     correction = SERVICE.assignment(ctx(project), assignment_id=corrections[0]['assignment_id'])
@@ -372,6 +376,8 @@ def test_unrelated_change_burst_reads_no_assignment(project, monkeypatch):
 
 
 def test_public_board_completion_with_mixed_write_routes_child_and_gc_assessment(project):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     from metaform import changes
     gc = root(project, candidate={'revision': 'board-candidate'})
     child = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Keep the timer selection.'))
@@ -396,7 +402,9 @@ def test_public_board_completion_with_mixed_write_routes_child_and_gc_assessment
                   one['payload'].get('sender_assignment_id') == child['assignment_id'] and
                   one['payload'].get('kind') == 'result')
     assert result['assignment_id'] == gc['assignment_id']
-    assert result['payload']['evidence'] == ['Selected control remains selected after duration changes.']
+    assert 'evidence' not in result['payload']
+    assert SERVICE.assignment(ctx(project), work_id=child['work_id'])['evidence'] == [
+        'Selected control remains selected after duration changes.']
     SERVICE.check_in(ctx(project, 'gc-one', state='running', summary='GC integrated and validated the outcome.',
         candidate={'revision': 'board-candidate'}, evidence=['Countdown, alarm and adjustment interaction passed.']))
     _, gc_events = changes.announced(project[1], 'cli', finish_with_settings_write,
@@ -405,8 +413,10 @@ def test_public_board_completion_with_mixed_write_routes_child_and_gc_assessment
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
     pending = SERVICE.pending(ctx(project))
     assessment = next(one for one in pending if one['kind'] == 'assessment')
-    assert assessment['payload']['report']['candidate'] == {'revision': 'board-candidate'}
-    assert assessment['payload']['report']['evidence'] == ['Countdown, alarm and adjustment interaction passed.']
+    assert assessment['payload']['report'] == {}
+    retained = SERVICE.assignment(ctx(project), work_id=gc['work_id'])
+    assert retained['candidate'] == {'revision': 'board-candidate'}
+    assert retained['evidence'] == ['Countdown, alarm and adjustment interaction passed.']
     assert project[0].ticket(gc['work_id']).work.done
     # Replayed mixed events cannot re-close work, duplicate its result, or create another assessment.
     before = [one['transition_id'] for one in pending]
@@ -444,12 +454,15 @@ def test_repeated_result_key_from_distinct_specialist_calls_reaches_worker(proje
         children.append(child['assignment_id'])
     returns = [envelope for recipient, envelope in actual.messages if recipient == worker['assignment_id'] and
                envelope.get('sender_assignment_id') in children]
-    assert [one['result'] for one in returns] == ['Observed result 0.', 'Observed result 1.']
+    assert len(returns) == 2
+    assert all(one['body'].endswith(' complete') and 'result' not in one for one in returns)
     assert len({one['transition_id'] for one in returns}) == 2
     assert actual.maximum == 1
 
 
 def test_gc_delivery_closes_root_and_restart_activates_fqc_once(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     gc = root(project)
     SERVICE.returned(ctx(project, 'gc-one'), gc['work_id'], 'Timer outcome delivered.',
                      state='delivered', candidate={'revision': 'integrated-candidate'},
@@ -460,11 +473,13 @@ def test_gc_delivery_closes_root_and_restart_activates_fqc_once(project, monkeyp
     assessment, _ = actual.launches[0]
     assert assessment['authored_role_uri'] == 'metaform://role/functionality'
     assert assessment['team_id'] != gc['team_id']
-    assert 'integrated-candidate' in assessment['task']
-    assert 'Actual countdown and alarm interactions passed.' in assessment['task']
-    assert 'Timer outcome delivered.' in actual.chat[0][1]['body']
-    assert actual.chat[0][1]['body'] == 'Timer outcome delivered.'
-    assert actual.chat[0][1]['evidence'] == ['Actual countdown and alarm interactions passed.']
+    assert gc['work_id'] in assessment['task']
+    assert gc['assignment_id'] in assessment['task']
+    assert actual.chat[0][1]['body'].endswith(' complete')
+    assert 'evidence' not in actual.chat[0][1]
+    retained = SERVICE.assignment(ctx(project), work_id=gc['work_id'])
+    assert retained['candidate'] == {'revision': 'integrated-candidate'}
+    assert retained['evidence'] == ['Actual countdown and alarm interactions passed.']
     SERVICE.returned(ctx(project), gc['work_id'], 'Duplicate completion event.', state='delivered')
     Orchestration().drain(ctx(project))
     assert len(actual.launches) == 1
@@ -493,7 +508,7 @@ def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(pr
     assert actual.maximum == 1
     assert len(actual.launches) == 1
     assert actual.launches[0][0]['authored_role_uri'] == 'metaform://role/functionality'
-    assert 'Candidate working tree and trace retained.' in actual.launches[0][0]['task']
+    assert actual.launches[0][0]['last_check_in']['work_so_far'] == 'Candidate working tree and trace retained.'
 
 
 def test_workflow_revision_preserves_frozen_history_variables_and_return_route(project, run):
@@ -625,6 +640,8 @@ def test_workflow_recovery_follows_successor_and_newer_source_without_reopening_
 
 
 def test_corrective_gc_owns_team_returns_evidence_to_pm_and_receives_independent_assessment(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     gc = root(project)
     SERVICE.returned(ctx(project), gc['work_id'], 'Initial timer delivered.', state='delivered')
     actual = transport(monkeypatch, project)
@@ -645,10 +662,11 @@ def test_corrective_gc_owns_team_returns_evidence_to_pm_and_receives_independent
     launches = len(actual.launches)
     SERVICE.drain(ctx(project))
     assert len(actual.launches) == launches, 'The configured review budget prevents a recursive review chain.'
-    notice = next(message for _, message in actual.chat if 'Duration selection is preserved.' in message['body'])
-    assert notice['body'] == 'Duration selection is preserved.'
-    assert notice['candidate'] == {'revision': 'corrected-b'}
-    assert notice['evidence'] == ['Changed duration during active countdown.']
+    assert actual.chat[-1][1]['body'].endswith(' complete')
+    assert 'candidate' not in actual.chat[-1][1]
+    retained = SERVICE.assignment(ctx(project), work_id=correction['work_id'])
+    assert retained['candidate'] == {'revision': 'corrected-b'}
+    assert retained['evidence'] == ['Changed duration during active countdown.']
     stopped = SERVICE.stopped(ctx(project), work_id=gc['work_id'], by='user')
     assert {gc['work_id'], review['work_id']} <= set(stopped)
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
@@ -698,7 +716,7 @@ def test_worker_handoff_keeps_return_route_and_closes_transferred_work_once(proj
     assert not project[0].ticket(worker['work_id']).work.done
     SERVICE.returned(ctx(project), investigation['work_id'], 'Alarm trace retained.')
     routes = SERVICE.pending(ctx(project), [successor['work_id']])
-    assert any(one['kind'] == 'send' and one['payload'].get('result') == 'Alarm trace retained.' for one in routes)
+    assert any(one['kind'] == 'send' and one['payload'].get('work_id') == investigation['work_id'] for one in routes)
     SERVICE.bind(ctx(project), successor['assignment_id'], 'integrator')
     final = SERVICE.handoff(ctx(project, 'integrator', role='verifier', task='Verify the integrated timer.'))
     SERVICE.returned(ctx(project), final['work_id'], 'Timer integration verified.', evidence=['Alarm remains audible.'])
@@ -706,8 +724,7 @@ def test_worker_handoff_keeps_return_route_and_closes_transferred_work_once(proj
     assert project[0].ticket(successor['work_id']).work.done
     assert not project[0].ticket(gc['work_id']).work.done
     routes = SERVICE.pending(ctx(project), [gc['work_id']])
-    received = [one for one in routes if one['kind'] == 'send' and one['payload'].get('result') ==
-                'Timer integration verified.']
+    received = [one for one in routes if one['kind'] == 'send' and one['payload'].get('work_id') == final['work_id']]
     assert len(received) == 1
     SERVICE.returned(ctx(project), final['work_id'], 'Duplicate return.')
     assert len(SERVICE.pending(ctx(project), [gc['work_id']])) == len(routes)
@@ -854,7 +871,8 @@ def test_result_sent_twice_reaches_its_recipient_once(project, monkeypatch):
     assert sorted(envelope.get('body') or envelope['id'] for _, envelope in actual.messages) == [
         'Alarm rings at zero.', 'b1', 'n1', 'n2']
     # one work's result once, but two works' alike results both reach the person
-    assert [message['body'] for _, message in actual.chat] == ['Timer outcome delivered.'] * 2
+    assert len(actual.chat) == 2
+    assert all(message['body'].endswith(' complete') and 'result' not in message for _, message in actual.chat)
 
 
 def test_review_closes_unfiled_only_for_a_direction_about_its_part(project, monkeypatch):
@@ -933,6 +951,8 @@ def test_a_decision_the_system_agent_relays_by_note_reaches_the_gc_as_the_person
 
 
 def test_a_tickets_read_shows_its_gc_steps_result_and_linked_assessment(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     """The board shows whether work was done: the steps and result of a ticket's GC assignment are on that ticket,
     and its read links the assessment that reviewed it, by assignment and ticket, with its state and result."""
     store, folder = project
@@ -970,3 +990,26 @@ def test_a_tickets_read_shows_the_open_ticket_its_reviews_finding_was_folded_int
     read = work_reads(folder, store.ticket(gc['work_id']).work, project='proj')['orchestration']
     assert [one['findings_filed'] for one in read['independent_assessments']] == [[covering.id]]
     assert 'related_corrections' not in read
+
+
+def test_default_delivery_keeps_report_on_ticket_and_not_in_notifications(project, monkeypatch):
+    from metaform import settings
+    from metaform.modules.orchestration import claim
+    assert settings.value('orchestration_reviews', project[1]) == 0
+    work = project[0].add_work(Node('element', NODE), None, task='Preserve alarm behavior.', title='Alarm')
+    called = ctx(project, 'owner', work=work.id, role='implementer')
+    called.nouns['session'] = 'owner'
+    assigned = claim(called)
+    assert set(assigned) == {'assignment_id', 'state'}
+    SERVICE.returned(ctx(project), work.id, 'Measured alarm remains audible.', evidence=['Alarm at zero.'])
+    pending = SERVICE.pending(ctx(project))
+    assert not any(one['kind'] == 'assessment' for one in pending)
+    notice = next(one['payload'] for one in pending if one['kind'] == 'user_message')
+    item = project[0].numbers_of('work', [work.id])[work.id][0]
+    assert notice['body'] == f'{item} complete'
+    assert not {'report', 'result', 'candidate', 'evidence', 'role_snapshot'} & notice.keys()
+    assert project[0].ticket(work.id).work.resolution == 'Measured alarm remains audible.'
+    actual = transport(monkeypatch, project)
+    SERVICE.drain(ctx(project))
+    assert actual.launches == []
+    assert actual.chat[0][1]['body'] == f'{item} complete'

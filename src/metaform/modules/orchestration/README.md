@@ -8,7 +8,7 @@ operational execution role are recorded separately.
 
 The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to selected reusable specialist expertise, with its exact versioned duty at `metaform://role/<name>`. A missing specialty automatically commissions one bounded Facilitator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
 
-An independent `functionality` assessment can inspect the delivered candidate. `orchestration_reviews` bounds automatic reviews per canonical ticket (one by default). Findings reopen that ticket with the repair instruction and verification steps, preserving prior evidence. They do not build recursive coordinator/correction trees. The legacy `gc` role and identity fields remain readable for existing assignments; new work needs no coordinator per ticket.
+An independent `functionality` assessment can inspect the delivered candidate. `orchestration_reviews` bounds automatic reviews per canonical ticket (zero by default, enabled by the person). Findings reopen that ticket with the repair instruction and verification steps, preserving prior evidence. They do not build recursive coordinator/correction trees. The legacy `gc` role and identity fields remain readable for existing assignments; new work needs no coordinator per ticket.
 
 ## Public operations
 
@@ -145,3 +145,5 @@ The Facilitator checks the registry again before authoring. It chooses a reusabl
 That operation registers the versioned role, binds it to the original ticket, places the ticket in To do and queues its continuation. `column=backlog` instead holds it without queuing a launch. It returns the role identity, match reason, assignment and actual board column, without the prompt body. The Facilitator must report a failed operation as failed; returning a name in chat alone neither registers nor assigns it. User-stopped callers remain stopped. Repeated publication returns the recorded result without launching another worker or revising the role.
 
 The helper runs as `metaform://role/facilitator`, outside worker slots and within existing helper limits. `role_creator` remains resolvable for already recorded assignments. The delivery owner is sessionless while expertise is pending and cannot bind a generic worker before publication.
+
+Completion messages contain only `<address>#<n> complete`. Read the report on the ticket and its assignment evidence explicitly. Claim returns only assignment identity and state. Startup uses MCP tool discovery without duplicating tool schemas in the assignment prompt.

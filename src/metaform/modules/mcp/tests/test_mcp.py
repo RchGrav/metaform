@@ -826,8 +826,7 @@ def test_clear_project_is_a_caution_tool_while_the_chassis_is_on_the_surface(run
     declared = tools['metaform_clear_project']
     assert declared.input_schema['properties'].keys() == {'project'}  # no confirm an agent could give
     assert declared.annotations.destructive_hint is True
-    guided = refused.content[0].text  # the rest of its description comes with its first use, MCP-039
-    assert 'backup is made first' in guided and 'metaform restore project' in guided
+    assert not any(GUIDED.match(block.text) for block in refused.content)
     assert refused.is_error is True
     said = '\n'.join(text(refused))
     assert 'Clearing proj removes' in said and 'main holds one open ticket' in said
@@ -1831,7 +1830,8 @@ def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_modu
                   for name in ('memory_read_graph', 'memory_note')]
         settings = await client.call_tool('metaform_set', {})
         return tools, first, second, memory, settings
-    tools, first, second, memory, settings = session(home, mapped, check)
+    tools, first, second, memory, settings = session(
+        home, mapped, check, env={'METAFORM_SESSION': 'guide-once'})
     work = tools['map_work']
     assert 'op=plan' not in work.description and len(work.description) <= 200
     assert all(len(one.get('description', '').encode()) <= 80 for one in work.input_schema['properties'].values())
@@ -1840,12 +1840,35 @@ def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_modu
         first.content[0].text
     assert guide.startswith('How to use map_work, given once in this session:')
     assert 'op=plan' in guide and text(first)[-1] == text(second)[-1]
-    assert not any(GUIDED.match(block.text) for block in second.content)
+    assert not any(block.text.startswith('How to use map_work') for block in second.content), blocks(second)
     rule = prompt_files.module_rules('memory')[0][0]
     assert sum(rule in block.text for one in memory for block in one.content) == 1  # the module's rules, once
     named = {one['name'] for one in settings.structured_content['settings']}
     assert 'write_layer' in named and 'dispatch_prompts' not in named and len(json.dumps(
         tools['metaform_set'].input_schema)) < 600  # listed when called, not in the schema
+
+
+@pytest.mark.req('MCP-039')
+def test_tool_errors_carry_only_error_and_fix_and_later_ops_do_not_repeat_guides(run, home, mapped):
+    """A failed first call does not spend guidance. Successful calls share one tool receipt across ops."""
+    async def check(client, init):
+        failed = await called(client, 'map_work', {'op': 'unknown'})
+        first = await called(client, 'map_work', {})
+        later = await called(client, 'map_work', {'op': 'add', 'address': 'code.timer.kitchen',
+                                                  'title': 'Guide regression', 'task': 'Check guidance'})
+        failed_again = await called(client, 'map_work', {'op': 'unknown'})
+        return failed, first, later, failed_again
+
+    failed, first, later, failed_again = session(
+        home, mapped, check, env={'METAFORM_SESSION': 'guide-errors-and-ops'})
+    for answer in (failed, failed_again):
+        assert answer.is_error
+        assert len(answer.content) == 1
+        assert blocks(answer)[0].startswith('Error: ')
+        assert '\nNext: ' in blocks(answer)[0]
+    assert not first.is_error and not later.is_error
+    assert any(GUIDED.match(block.text) for block in first.content)
+    assert not any(GUIDED.match(block.text) for block in later.content)
 
 
 @pytest.mark.req('MCP-004')
@@ -3872,7 +3895,7 @@ def test_a_configured_restricted_worker_keeps_its_ticket_schema_and_guides(run, 
     assert not {'column', 'glyph', 'agents', 'held', 'title', 'task', 'links'} & work_schema.keys()
     read, taken, _, _, where, handed, peers = (blocks(result) for result in results)
     assert read[0].splitlines()[1:] == [line for line in read[0].splitlines()[1:] if line.startswith('id: ')]
-    assert 'A work record is attached to one element or join' in taken[0]  # its details, with its first write
+    assert not any(GUIDED.match(block) for block in taken)  # the earlier read received the tool's guide
     assert 'metaform://metaform/terms' not in transcript and 'metaform://metaform' in said
     assert 'memory_read_unread node=element:code.timer.kitchen' in '\n'.join(read)  # the exact functional entry
     assert 'Maintain relevant project knowledge at code.timer.kitchen' in '\n'.join(handed)
@@ -4044,11 +4067,11 @@ def test_a_lookup_result_is_trimmed_counted_filtered_or_whole_as_the_call_asks(r
 
 
 @pytest.mark.req('MCP-039')
-def test_each_guide_comes_once_until_the_agent_says_its_context_was_compacted(run, home, mapped):
+def test_each_guide_comes_once_per_session_even_when_context_was_compacted(run, home, mapped):
     """The person's own session: the connect message says why to use Metaform with a line per category, the catalog's
     line, the order to read the glossaries before beginning work, the compaction line and the project; a guide comes
     once, with no glossary pointer, since it was told at connect; a second glossary read is one line, and
-    compacted=true, or reading metaform://runtime/compaction-state, has each come again at its next use."""
+    compaction leaves automatic guide receipts intact, while explicit reads remain available."""
     from metaform import prompt_files
     from metaform.module import agent_opening
 
@@ -4073,7 +4096,7 @@ def test_each_guide_comes_once_until_the_agent_says_its_context_was_compacted(ru
     assert 'How to use map_where' not in second
     assert glossary[0].lstrip().startswith('@STATE_INIT') and glossary[1].startswith('metaform://metaform is unchanged')
     assert forgot[0].startswith(opening + '\n\nMetaform forgot what it gave you once in this session')
-    assert 'How to use map_where' in '\n'.join(again)
+    assert 'How to use map_where' not in '\n'.join(again)
     assert state.startswith(opening + '\n\nMetaform forgot what it gave you once in this session, ')
     assert ' 0 pieces' not in state
 

@@ -542,7 +542,7 @@ class Orchestration:
             result['continuations'] = [one for one in returns if one['state'] == 'pending']
             children = tx.rows('assignments', {'parent_assignment_id': held['assignment_id']}, limit=0).results
             result['returned_children'] = [{key: child[key] for key in (
-                'assignment_id', 'work_id', 'authored_role_uri', 'state', 'candidate', 'result', 'evidence')}
+                'assignment_id', 'work_id', 'authored_role_uri', 'state')}
                 for child in children if child['state'] in ENDED and child['result'] is not None]
             return result
 
@@ -989,15 +989,16 @@ class Orchestration:
             if current_gc.get('stop'):
                 raise Stop('The delivery ticket was stopped before its assessment.', HELP)
             node, places = location(store, None, gc)
-            task = json.dumps({'reviewed_work': gc['work_id'], 'report': dict(report),
-                               'candidate': report.get('candidate') or gc['candidate'],
-                               'evidence': report.get('evidence') or gc['evidence']}, ensure_ascii=False)
+            task = (f'Assess ticket {gc["work_id"]}. Read its report on the ticket and candidate evidence '
+                    f'through orchestration_inspect assignment={gc["assignment_id"]}.')
             work = store.add_work(node, None, task=task, title=f'Functional assessment of {gc["work_id"]}')
             made = new_assignment(tx, work, 'functionality', ident=ident, review=gc,
                 task=task, result='Assess actual functionality, constraints and interactions against C(T).',
                 locations=places, mode=current_mode(tx, gc), specification=gc['specification'],
                 candidate=report.get('candidate') or gc['candidate'],
                 return_to={'assignment_id': gc['assignment_id'], 'kind': 'assessment'})
+            made = update(tx, made, evidence=report.get('evidence') or gc['evidence'],
+                          last_check_in=dict(report))
             transition(tx, made, 'launch', {'reviewed_assignment_id': gc['assignment_id']}, 'initial')
             for event in tx.rows('transitions', {'assignment_id': gc['assignment_id']}, limit=0).results:
                 if event['kind'] == 'assessment' and event['payload'].get('key') == key:
@@ -1060,20 +1061,13 @@ class Orchestration:
             if filed:
                 returned = update(tx, returned, findings_filed=list(dict.fromkeys(
                     landed for landed, _ in filed if landed)))
-            corrections = list({one['assignment_id']: one for _, one in filed if one}.values())
-            body = str(result) if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-            packet = {'kind': 'role_publication' if held['authored_role_uri'] in FACILITATORS else 'result', 'state': state, 'result': result, 'body': body,
-                      'evidence': returned['evidence'],
-                      'verification': 'evidence supplied' if returned['evidence'] else 'not established',
-                      'candidate': returned['candidate'], 'findings': findings, 'superseded': superseded,
-                      'corrective_assignments': [{name: correction[name] for name in
-                          ('assignment_id', 'work_id', 'team_id', 'state', 'parent_assignment_id')}
-                          for correction in corrections],
+            numbered = store.numbers_of('work', [work_id]).get(work_id)
+            item = numbered[0] if numbered else work_id
+            packet = {'kind': 'role_publication' if held['authored_role_uri'] in FACILITATORS else 'result',
+                      'state': state, 'body': f'{item} complete',
                       'sender_assignment_id': held['assignment_id'],
                       'sender_session_id': held['owner_session_id'], 'work_id': work_id,
                       'return_to': held['return_to']}
-            # The author's summary is the notification. Candidate and evidence remain in the durable assignment
-            # and packet, available through inspect, rather than appended again to every message.
             user_packet = packet
             route: dict[str, Any] = held['return_to'] or {}
             parent = row_for(tx, assignment_id=route.get('assignment_id'))
@@ -1107,7 +1101,7 @@ class Orchestration:
                     'responsible_gc_assignment_id': held['parent_assignment_id']}, result_key)
             reviews = tx.rows('assignments', {'reviewed_assignment_id': held['assignment_id']}, limit=0).results
             if owns_delivery and state != 'failed' and len(reviews) < int(ctx.setting('orchestration_reviews')):
-                transition(tx, returned, 'assessment', {'report': packet, 'key': result_key}, result_key)
+                transition(tx, returned, 'assessment', {'report': {}, 'key': result_key}, result_key)
             return returned
 
     @staticmethod

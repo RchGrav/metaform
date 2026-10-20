@@ -37,7 +37,7 @@ def claim(project):
                                task='Preserve countdown and audible alarm.', title='Timer delivery')
     gc = verb(called(project, 'gc'), 'orchestration', 'claim', work=work.id, role='gc', session='gc')
     project[2].running.add('gc')
-    return gc
+    return SERVICE.assignment(called(project), assignment_id=gc['assignment_id'])
 
 
 def snapshot(project):

@@ -1,0 +1,184 @@
+{
+  "before": {
+    "tokenizer": "tiktoken:o200k_base",
+    "segments": [
+      {
+        "name": "claim_response",
+        "characters": 9549,
+        "tokens": 1945
+      },
+      {
+        "name": "worker_first_prompt",
+        "characters": 6090,
+        "tokens": 1214
+      },
+      {
+        "name": "worker_role_read",
+        "characters": 3756,
+        "tokens": 656
+      },
+      {
+        "name": "worker_result",
+        "characters": 86,
+        "tokens": 16
+      },
+      {
+        "name": "reviewer_first_prompt",
+        "characters": 6897,
+        "tokens": 1433
+      },
+      {
+        "name": "reviewer_role_read",
+        "characters": 5399,
+        "tokens": 925
+      },
+      {
+        "name": "reviewer_result",
+        "characters": 28,
+        "tokens": 5
+      },
+      {
+        "name": "completion_delivery",
+        "characters": 86,
+        "tokens": 16
+      }
+    ],
+    "first_prompt": {
+      "name": "worker_first_prompt",
+      "characters": 6090,
+      "tokens": 1214
+    },
+    "ticket_text_tokens": 6210
+  },
+  "after": {
+    "tokenizer": "tiktoken:o200k_base",
+    "segments": [
+      {
+        "name": "claim_response",
+        "characters": 73,
+        "tokens": 23
+      },
+      {
+        "name": "worker_first_prompt",
+        "characters": 6047,
+        "tokens": 1201
+      },
+      {
+        "name": "worker_role_read",
+        "characters": 3756,
+        "tokens": 656
+      },
+      {
+        "name": "worker_result",
+        "characters": 86,
+        "tokens": 16
+      },
+      {
+        "name": "completion_delivery",
+        "characters": 29,
+        "tokens": 7
+      }
+    ],
+    "first_prompt": {
+      "name": "worker_first_prompt",
+      "characters": 6047,
+      "tokens": 1201
+    },
+    "ticket_text_tokens": 1903
+  },
+  "scope": "Deterministic simulated ticket text, not actual model billed tokens. Includes claim response, worker prompt, role resource read, fixed result, completion body, optional reviewer prompt, reviewer role read and fixed reviewer result. Excludes tool schemas, host system prompts, cached context, reasoning and unspecified tool calls. No paid model calls. No installed agent logs or receipts read.",
+  "normalization": "Random 16-64 digit hex ids zeroed, preserving character lengths. ISO timestamps normalized.",
+  "baseline": {
+    "orchestration_override": null,
+    "git_ref": "dbb73e61eb8102b6abcd13a824a8a5e5e7425777",
+    "captured_measurement": "scripts/measurements/agent-context-7d.json",
+    "replay_limit": "Captured before counts include uncommitted startup work present when this assignment began. Current unrelated prompt-address migration prevents replaying that mixed initial tree. Pinned git-ref mode measures the coherent committed baseline instead."
+  },
+  "source_sha256": {
+    "before": {
+      "src/metaform/modules/orchestration/state.py": "af367af47c33935ce33b9228efd223fc54588f35b4bc519ca486de996f4bda59",
+      "src/metaform/modules/orchestration/__init__.py": "188ad3ea766958ebbd422deb942880b505cadb2880fb63eb78e0ec576c586b51",
+      "src/metaform/modules/orchestration/resources/prompts.xml": "221bd75014ac19cb7ffa31cc58e349233789654c0d77730b1d93b394bc99b9ca",
+      "src/metaform/modules/dispatch/orchestration.py": "5c54bb36c87d1f52a2a345100f68faf99088682bb515d80a580c8c2dcf0aafbd",
+      "src/metaform/modules/dispatch/resources/prompts.xml": "f603ca9cbb918425799c6a35c76c691ae014a942b16a2de06c628bd720d65216",
+      "src/metaform/modules/dispatch/runner.py": "11398fb5fdf6fd8e311c8a1a5345bf0109099303133e66eda20890c731cda758"
+    },
+    "after": {
+      "src/metaform/modules/orchestration/state.py": "ce0070d23408be569e7180cc9043796ca66fcd4385c4366cf103c74df8a67c01",
+      "src/metaform/modules/orchestration/__init__.py": "7120002e0f21a064b3cb08f891043979be6d0ada415d4201e86f85361e1a9871",
+      "src/metaform/modules/orchestration/resources/prompts.xml": "7d5ae16371b66e17f181d915b2cb46134ce941ace60c35cb890d7ddfb1776131",
+      "src/metaform/modules/dispatch/orchestration.py": "fb2890aa3b4fd16a854753270d75cd3dba9862cfb21a7d16cbdde6fb1ad09bf9",
+      "src/metaform/modules/dispatch/resources/prompts.xml": "bde77a795f30ebb69145a55490c2705a6da04c66ad0202a155c2b483f4e87994",
+      "src/metaform/modules/dispatch/runner.py": "7d7fbc89cb8b0bdcefbf2ed35597b4c03beb5cae712bf079dcd9d2ad8a3b483d"
+    }
+  },
+  "first_prompt_scope": "Rendered ACP first text block. Includes channel startup, rules, context checkpoint. Typed resource links excluded. Startup already omitted embedded tools JSON before edits.",
+  "billed_ticket_tokens": {
+    "before": null,
+    "after": null,
+    "reason": "Requires model execution. Fixture measures delivered text only."
+  },
+  "savings": {
+    "first_prompt_tokens": 13,
+    "ticket_text_tokens": 4307,
+    "ticket_text_percent": 69.36
+  },
+  "segment_savings": [
+    {
+      "name": "claim_response",
+      "before_tokens": 1945,
+      "after_tokens": 23,
+      "saved_tokens": 1922,
+      "saved_percent": 98.82
+    },
+    {
+      "name": "worker_first_prompt",
+      "before_tokens": 1214,
+      "after_tokens": 1201,
+      "saved_tokens": 13,
+      "saved_percent": 1.07
+    },
+    {
+      "name": "worker_role_read",
+      "before_tokens": 656,
+      "after_tokens": 656,
+      "saved_tokens": 0,
+      "saved_percent": 0.0
+    },
+    {
+      "name": "worker_result",
+      "before_tokens": 16,
+      "after_tokens": 16,
+      "saved_tokens": 0,
+      "saved_percent": 0.0
+    },
+    {
+      "name": "reviewer_first_prompt",
+      "before_tokens": 1433,
+      "after_tokens": 0,
+      "saved_tokens": 1433,
+      "saved_percent": 100.0
+    },
+    {
+      "name": "reviewer_role_read",
+      "before_tokens": 925,
+      "after_tokens": 0,
+      "saved_tokens": 925,
+      "saved_percent": 100.0
+    },
+    {
+      "name": "reviewer_result",
+      "before_tokens": 5,
+      "after_tokens": 0,
+      "saved_tokens": 5,
+      "saved_percent": 100.0
+    },
+    {
+      "name": "completion_delivery",
+      "before_tokens": 16,
+      "after_tokens": 7,
+      "saved_tokens": 9,
+      "saved_percent": 56.25
+    }
+  ]
+}

@@ -24,7 +24,7 @@ settings.choice('orchestration_mode', ['adaptive', 'strict'], default='adaptive'
                 help='Whether assignments may adapt specifications to serve C(T), or recommend changes.',
                 owner='orchestration', scope='folder')
 
-settings.number('orchestration_reviews', 1, min=0, max=10,
+settings.number('orchestration_reviews', 0, min=0, max=10,
                 label='Automatic reviews per ticket', category='automation', heading='Verification', person_only=True,
                 help='Bound independent reviews of one delivery. Findings reopen that ticket; zero disables automatic reviews.')
 
@@ -128,6 +128,11 @@ def change(ctx: Context) -> Any:
     return publish_change(ctx, SERVICE)
 
 
+def claim(ctx: Context) -> dict[str, Any]:
+    assigned = SERVICE.claim(ctx)
+    return {key: assigned[key] for key in ('assignment_id', 'state')}
+
+
 def delegate(ctx: Context) -> Any:
     return SERVICE.delegate(ctx)
 
@@ -178,7 +183,7 @@ MODULE = Module(
                     Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
         Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',
              effect='read', nouns=(Noun('refresh', 'Fetch the current account balance.', 'bool', required=False),)),
-        Verb('claim', SERVICE.claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
+        Verb('claim', claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
              nouns=(Noun('work', 'Existing root work id.'),
                     Noun('role', 'Reusable specialist name or URI; omitted uses the selected specialist. Missing roles are created.', required=False),
                     Noun('create', 'Have the Facilitator name and publish missing expertise before this ticket starts.',
