@@ -222,7 +222,7 @@ function sizeBehind(width, height) {
 }
 function drawBehind(renderer) {
   const scene = G.scene(), camera = G.camera(), glass = [], was = renderer.getRenderTarget();
-  scene.traverseVisible(object => { if (object.material?.userData.back) glass.push(object); });
+  scene.traverseVisible(object => { if (object.material?.userData?.back) glass.push(object); });
   if (!glass.length) return;
   const moving = scene.children.filter(child => child.visible && !mapPart(child));
   if (!behindChanged(scene, camera)) return;
