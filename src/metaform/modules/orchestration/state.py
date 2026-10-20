@@ -387,6 +387,70 @@ class Orchestration:
     def selected_specialist(self, ctx: Context, work_id: str) -> str | None:
         return routing.selected(ctx, work_id)
 
+    def creator_running(self, ctx: Context, work_id: str) -> bool:
+        """Whether the creator a ticket's routing waits on, state creating, is at work: a commissioned request of the
+        ticket's assignment names a creator assignment that is running. One commissioned and never launched, as Full
+        Auto off leaves it, or one that ended, is not."""
+        with own(ctx).tables(write=False) as tx:
+            caller = row_for(tx, work_id=work_id)
+            if caller is None:
+                return False
+            for request in tx.rows('role_requests', {'caller_assignment_id': caller['assignment_id']}, limit=0).results:
+                if request['state'] != 'commissioned' or not request.get('creator_assignment_id'):
+                    continue
+                creator = row_for(tx, assignment_id=str(request['creator_assignment_id']))
+                if creator is not None and creator['state'] == 'running':
+                    return True
+        return False
+
+    def select_registered(self, ctx: Context, work_id: str, role_uri: str, reason: str) -> bool:
+        """Jev's pick of registered expertise for a ticket whose routing waited on a creator that does not run: each
+        waiting in-place request is published from the registry, as the Facilitator's publication does it, the creator
+        it waited on is stopped and its ticket cancelled, and the original ticket continues on its own assignment with
+        its launch. False when no request waits or the role is not a registered specialist. 2026-10-20: a ticket sat for
+        hours at 'Facilitator is selecting expertise' with no Facilitator running and Jev able to choose."""
+        store = own(ctx)
+        registered = resolve(ctx, role_uri.removeprefix('metaform://role/'))
+        if registered.get('missing') or registered.get('problems') or not registered.get('specialist'):
+            return False
+        released = False
+        with store.atomic(), store.tables() as tx:
+            caller = row_for(tx, work_id=work_id)
+            if caller is None:
+                return False
+            for request in tx.rows('role_requests', {'caller_assignment_id': caller['assignment_id']}, limit=0).results:
+                if request['state'] != 'commissioned' or not role_options(request).get('assign_in_place'):
+                    continue
+                creator_id = request.get('creator_assignment_id')
+                creator = row_for(tx, assignment_id=str(creator_id)) if creator_id else None
+                if creator is not None and creator['state'] == 'running':
+                    continue  # the Facilitator is at work: its publication continues this ticket
+                caller = update(tx, caller, authored_role_uri=registered['uri'], role_snapshot=registered,
+                                state='queued')
+                receipt = {'source': 'existing', 'match_reason': reason, 'by': 'jev'}
+                tx.update('role_requests', {'request_id': request['request_id']}, {
+                    'state': 'published', 'role': registered['name'], 'child_assignment_id': caller['assignment_id'],
+                    'source': registered, 'context': {**request['context'], 'publication': receipt}})
+                if creator is not None and creator['state'] not in ENDED:
+                    stop = {'by': 'routing', 'direction': None, 'at': now(), 'every': False}
+                    update(tx, creator, state='stopped', stop=stop,
+                           stop_history=[*(creator.get('stop_history') or []), stop])
+                    for event in tx.rows('transitions', {'assignment_id': creator['assignment_id']}, limit=0).results:
+                        if event['state'] == 'pending':
+                            tx.update('transitions', {'transition_id': event['transition_id']},
+                                      {'state': 'cancelled', 'updated': now()})
+                    if not store.ticket(str(creator['work_id'])).work.done:
+                        store.finish_work(str(creator['work_id']), 'Not needed: registered expertise was selected for '
+                                          'the ticket it was commissioned for.', outcome='cancelled')
+                if tx.get('routing', {'work_id': work_id}):
+                    tx.update('routing', {'work_id': work_id}, {'state': 'selected', 'role': registered['uri'],
+                                                                 'reason': reason, 'updated': now()})
+                tx.concern(work_id=work_id, kind='orchestration.routing')
+                if not caller.get('stop'):
+                    transition(tx, caller, 'launch', {'role_request_id': request['request_id']}, 'initial')
+                released = True
+        return released
+
     def routing_status(self, ctx: Context, work_id: str) -> dict[str, Any] | None:
         with own(ctx).tables(write=False) as tx:
             assignment = row_for(tx, work_id=work_id)

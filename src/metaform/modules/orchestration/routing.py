@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from importlib import resources
 from typing import Any
 
@@ -69,14 +70,24 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
     with store.tables(write=False) as tx:
         prior = tx.get('routing', {'work_id': work_id})
         assigned = row_for(tx, work_id=work_id)
+    # A creating route waits for its creator's publication, not another classification, while that creator runs. One
+    # whose creator does not run (commissioned with Full Auto off, or ended) is stuck: it is routed again when the
+    # ticket or the registry changed, or STUCK_AFTER has passed, so Jev, available now, can select registered
+    # expertise; with nothing matching it keeps waiting, and no second creator is commissioned (2026-10-20: a ticket
+    # sat for hours at 'Facilitator is selecting expertise').
+    stuck = False
+    waiting: dict[str, Any] | None = None
     if role or assigned:
         status = {'state': 'selected', 'role': role} if role else SERVICE.routing_status(ctx, work_id)
         assert status is not None
-        if prior and prior['state'] in ('pending', 'triage'):
-            with store.tables() as tx:
-                tx.update('routing', {'work_id': work_id}, {**status, 'reason': None, 'updated': home.now()})
-                tx.concern(work_id=work_id, kind='orchestration.routing')
-        return {'work_id': work_id, **status}
+        if not role and status.get('state') == 'creating' and not SERVICE.creator_running(ctx, work_id):
+            stuck, waiting = True, {'work_id': work_id, **status}
+        else:
+            if prior and prior['state'] in ('pending', 'triage'):
+                with store.tables() as tx:
+                    tx.update('routing', {'work_id': work_id}, {**status, 'reason': None, 'updated': home.now()})
+                    tx.concern(work_id=work_id, kind='orchestration.routing')
+            return {'work_id': work_id, **status}
     try:
         record = store.ticket(work_id).work
     except StoreError:
@@ -87,7 +98,7 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
                 tx.update('routing', {'work_id': work_id}, {'state': 'closed', 'updated': home.now()})
                 tx.concern(work_id=work_id, kind='orchestration.routing')
         return {'work_id': work_id, 'state': 'closed', 'role': None}
-    if record.held or record.taken:
+    if record.held or (record.taken and not stuck):  # a stuck ticket is held by the owner that waits: routed again
         row = {'work_id': work_id, 'state': 'held' if record.held else 'assigned', 'role': None,
                'reason': 'The ticket is held in Backlog.' if record.held else 'The ticket already has an owner.',
                'updated': home.now()}
@@ -97,8 +108,11 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
             else:
                 tx.insert('routing', row)
         return row
-    if prior and prior['state'] == 'creating':
-        return prior  # Publication, not another classification, continues this ticket.
+    if prior and prior['state'] == 'creating' and not stuck:
+        stuck = not SERVICE.creator_running(ctx, work_id)  # a creating row of a ticket with no assignment yet
+        if not stuck:
+            return prior  # Publication, not another classification, continues this ticket.
+    waiting = waiting or prior
     specialists = service(ctx, 'agent.role').specialists(ctx)
     graph = functional_context(store, record)
     # The graph's markdown repeats its structured fields; neither role bodies nor unrelated memories are sent.
@@ -107,6 +121,8 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
              'function': {key: value for key, value in graph.items() if key != 'markdown'}}
     digest = fingerprint(json.dumps([state, specialists], sort_keys=True))
     cached = bool(prior and prior['fingerprint'] == digest and not refresh)
+    if stuck and prior and prior['fingerprint'] == digest and not _stale(prior):
+        return waiting or prior  # asked again only on a change or after STUCK_AFTER: never twice for the same state
     if cached and prior and prior['state'] not in ('pending', 'triage'):
         return prior
     # Upgrade old advisory-only decisions without paying to classify the same ticket again.
@@ -136,6 +152,13 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
                     reason = 'JEV found no matching specialist; Facilitator is selecting or creating expertise.'
                 else:
                     reason = 'JEV could not select expertise confidently; Facilitator is selecting expertise.'
+    if stuck and not role:  # nothing registered matches: it keeps waiting for its creator, asked again later
+        with store.tables() as tx:
+            if tx.get('routing', {'work_id': work_id}):
+                tx.update('routing', {'work_id': work_id}, {'fingerprint': digest, 'updated': home.now()})
+        return waiting or {'work_id': work_id, 'state': 'creating', 'role': None, 'reason': reason}
+    if stuck and role and not SERVICE.select_registered(ctx, work_id, role, reason):
+        return waiting or {'work_id': work_id, 'state': 'creating', 'role': None, 'reason': reason}
     if not role:
         # The creator names the expertise. The ticket retains its own assignment and continuation.
         SERVICE.claim(replace(ctx, nouns={'work': work_id, 'create': True}))
@@ -151,6 +174,18 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
     return row
 
 
+STUCK_AFTER = 15 * 60  # seconds a creating route waits before it is looked at again, when its creator does not run
+
+
+def _stale(row: dict[str, Any]) -> bool:
+    """Whether a routing row was last written STUCK_AFTER ago or more."""
+    try:
+        written = datetime.strptime(str(row.get('updated') or ''), '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=UTC)
+    except ValueError:
+        return True
+    return (datetime.now(UTC) - written).total_seconds() >= STUCK_AFTER
+
+
 def pending(ctx: Context, limit: int = 1) -> list[dict[str, Any]]:
     from .state import own
     with own(ctx).tables(write=False) as tx:
@@ -158,7 +193,10 @@ def pending(ctx: Context, limit: int = 1) -> list[dict[str, Any]]:
         rows = list(tx.rows('routing', {'state': 'triage'}, limit=count).results)
         if len(rows) < count:
             rows.extend(tx.rows('routing', {'state': 'pending'}, limit=count - len(rows)).results)
-    return [route(ctx, str(row['work_id'])) for row in rows]
+        # a creating route left STUCK_AFTER ago: looked at again, `route`, which keeps it when its creator runs
+        stale = [row for row in tx.rows('routing', {'state': 'creating'}, limit=0).results if _stale(row)]
+    return [route(ctx, str(row['work_id'])) for row in rows] + [
+        route(ctx, str(row['work_id']), refresh=True) for row in stale[:count]]
 
 
 def waiting(ctx: Context) -> bool:

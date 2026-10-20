@@ -194,6 +194,60 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
     assert len(launches) == 1 and 'system_prompt' not in json.dumps(creator_result)
 
 
+def test_a_route_stuck_at_creating_with_no_creator_running_is_routed_again_and_jevs_pick_continues_the_ticket(
+        case, monkeypatch):
+    """2026-10-20: a ticket sat for hours at 'Facilitator is selecting expertise'. Jev was off when it was routed, so a
+    creator was commissioned; Full Auto off never launched it; and a creating route was never looked at again once Jev
+    was on. A creating route whose creator does not run is asked again after STUCK_AFTER, or when the ticket or the
+    registry changed, never twice for the same state. When Jev picks registered expertise, the waiting request is
+    published from the registry as the Facilitator's publication does it in place, the creator is stopped with its
+    ticket cancelled, and the original ticket continues on its own assignment with its launch."""
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    expert(ctx)
+    answers = ['none']
+    asked = []
+    monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
+    monkeypatch.setattr(jev, 'pick_one', lambda *a, **k: asked.append(True) or SimpleNamespace(sure=True,
+                                                                                               answer=answers[-1]))
+    assert SERVICE.route(ctx, work.id)['state'] == 'creating'
+    owner = SERVICE.assignment(ctx, work_id=work.id)
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
+    creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
+    assert creator['state'] != 'running', 'commissioned and never launched'
+    assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating' and len(asked) == 1, \
+        'the same state is never asked twice'
+    with own(ctx).tables() as tx:  # STUCK_AFTER ago
+        tx.update('routing', {'work_id': work.id}, {'updated': '2026-10-20T00:00:00Z'})
+    assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating' and len(asked) == 2
+    with own(ctx).tables(write=False) as tx:
+        assert len(tx.rows('role_requests', limit=0).results) == 1, 'no second creator is commissioned'
+        assert not _stale_row(tx.get('routing', {'work_id': work.id}))
+    answers.append('metaform://role/alarm_engineering')
+    with own(ctx).tables() as tx:
+        tx.update('routing', {'work_id': work.id}, {'updated': '2026-10-20T00:00:00Z'})
+    [routed] = SERVICE.route_pending(ctx)  # the agent starter's pass finds the stale creating route
+    assert routed['state'] == 'selected' and routed['role'] == 'metaform://role/alarm_engineering', routed
+    assert SERVICE.routing_status(ctx, work.id)['state'] != 'creating'
+    assigned = SERVICE.assignment(ctx, work_id=work.id)
+    assert assigned['assignment_id'] == owner['assignment_id'] and assigned['state'] == 'queued'
+    assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
+        launches = [one for one in tx.rows('transitions', {'assignment_id': owner['assignment_id']}, limit=0).results
+                    if one['kind'] == 'launch' and one['state'] == 'pending']
+    assert request['state'] == 'published' and request['context']['publication']['by'] == 'jev'
+    assert launches, 'the original ticket continues'
+    gone = SERVICE.assignment(ctx, assignment_id=creator['assignment_id'])
+    assert gone['state'] == 'stopped' and store.ticket(creator['work_id']).work.outcome == 'cancelled'
+
+
+def _stale_row(row):
+    return routing._stale(row)
+
+
 @pytest.mark.parametrize('existing', [True, False])
 def test_no_jev_key_preserves_writer_assignment_or_automatically_hands_to_facilitator(case, monkeypatch, existing):
     from metaform import home
