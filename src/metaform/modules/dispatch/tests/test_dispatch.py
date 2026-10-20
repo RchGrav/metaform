@@ -676,12 +676,13 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     assert init['session']['compaction'] == {}
     eventually(lambda: dispatch.received('session/prompt'))
     runner = next(one for one in dispatch.logged('runner') if one)
-    shown.swap(runner, 'guide:tool:map_work', 'given')
-    shown.swap(runner, 'catalog:open', 'memory')
+    shown.swap(runner, 'guide:tool:map_work', 'given')  # a tool's guide lasts the whole session, KEPT_THROUGH_COMPACTION
+    shown.swap(runner, 'catalog:open', 'memory')  # what the AI tool itself holds, the category it lists, stays too
+    shown.swap(runner, 'brief:code.engine', 'given')  # a node's summary: given again at its next use after a compaction
     (gates / '1').touch()
     completed = statuses.endswith('completed')
     if completed:
-        eventually(lambda: shown.peek(runner, 'guide:tool:map_work') is None)
+        eventually(lambda: shown.peek(runner, 'brief:code.engine') is None)
         left = eventually(lambda: shown.peek(runner, COMPACTED_KEY))
         assert left.startswith(opening) and f'ticket {dispatch.id} at ' in left
     assert len(dispatch.received('session/prompt')) == 1, 'the signal itself sends nothing'
@@ -690,7 +691,8 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     assert said.startswith(opening) is completed
     assert said.endswith('go on') and (f'ticket {dispatch.id} at ' in said) is completed
     assert shown.peek(runner, 'catalog:open') == 'memory'
-    assert (shown.peek(runner, 'guide:tool:map_work') is None) is completed
+    assert shown.peek(runner, 'guide:tool:map_work') == 'given', 'an agent reads a guide again on purpose, never fed it'
+    assert (shown.peek(runner, 'brief:code.engine') is None) is completed
     assert shown.peek(runner, COMPACTED_KEY) == ('' if completed else None)  # said by the turn, so no call says it
     (gates / '2').touch()
     dispatch.stop()

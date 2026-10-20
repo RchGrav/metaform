@@ -4689,11 +4689,11 @@ class Session:
                             text = await asyncio.to_thread(self.guidance, text, supplied)
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
-                        if line:  # said once, by whichever comes first, ahead of what comes again: an agent that lost
-                            text = f'{line}\n\n{text}'  # its context reads its instruction links and ticket first
-                        if compacted and self.epoch_moved is not None:
-                            await self.epoch_moved.wait()
                         text = await asyncio.to_thread(self.rules, text)
+                        if line:  # said once, by whichever comes first, ahead of what comes again, the rules among
+                            text = f'{line}\n\n{text}'  # them: an agent that lost its context reads its
+                        if compacted and self.epoch_moved is not None:  # instruction links and ticket first
+                            await self.epoch_moved.wait()
                         text = await asyncio.to_thread(self.context_checkpoint, text)
                         self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
                         self.inflight_peers = marks
