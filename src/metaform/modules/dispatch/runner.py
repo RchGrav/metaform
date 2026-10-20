@@ -3664,8 +3664,10 @@ class Session:
                 self.how = SUSPENDED
                 self.ended.set()
                 return
+        # the intake runs the Canonical Intake and nothing else: it was handed the triage duty with the system agent,
+        # and read its prompt as its own (the person, 2026-10-20: the intake said 'triage duty loaded')
         self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
-            'metaform://role/triage' if self.role in ('system', 'intake') and native else None)
+            'metaform://role/triage' if self.role == 'system' and native else None)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
                     **({'METAFORM_AUTHORED_ROLE': self.authored_role} if self.authored_role else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
