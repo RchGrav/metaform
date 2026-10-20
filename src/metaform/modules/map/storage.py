@@ -207,6 +207,8 @@ def add_work(
     _number(tx, "work", work_id, target_kind, thing, _titled(title, task, note))
     _ticket_changed(tx, work_id)
     _ticket_changed(tx, work_id, kind="filed")  # new on the board: dispatch's `board.changed` reads it, no other change
+    if stage in ("trouble", "broken", "missing"):
+        _ticket_changed(tx, work_id, kind="marker")
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
@@ -260,6 +262,9 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
             value = _work_text(value, key, notices)
         tx.execute(f"UPDATE work SET {key}=? WHERE work_id=?", (value, work_id))
     after = _work_row(tx, work_id)
+    if after["done"] is None and after["condition"] in ("trouble", "broken", "missing") and \
+            after["condition"] != before["condition"]:
+        _ticket_changed(tx, work_id, kind="marker")
     if after["done"] is None:  # an edit never leaves an open record shown nowhere; the transaction rolls back
         _shown(str(after["condition"]), after["task"])
     return work_record(tx, after, tuple(notices))

@@ -1,15 +1,17 @@
 """What the board needs from the person's system agent, which owns it (the "Own the board" paragraph of the <system>
-prompt): a ticket filed that can never start, a ticket that repeats an open one, a ticket whose runner died, and a
-ticket an agent finished, whose work may clear fault lights. Each is kept as one signal, `BOARD`, raised once while
+prompt): a fault marker, a ticket filed that can never start, a ticket that repeats an open one, a ticket whose runner
+died, and a ticket an agent finished, whose work may clear fault lights. Each is kept as one signal, `BOARD`, raised once while
 Full Auto is on, and the system agent takes every one waiting into its inbox, `Session.board`: a note in its thread
 saying it whole, named by ticket and kind in the one inbox line its next turn carries (2026-10-19: one board turn listed
 30 tickets in full); while none runs, one is started for them as dispatch_stay_connected's starter starts it, and its
-opening turn carries the line. Nothing here runs on a timer: each comes from the change that made it.
+opening turn carries the line. Marker notices alone never start a system agent. Nothing here runs on a timer:
+each comes from the change that made it.
 """
 from __future__ import annotations
 
 import os
 import re
+from dataclasses import replace
 from typing import Any, cast
 
 from metaform.data import Store, StoreError
@@ -43,9 +45,32 @@ def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: 
 
 
 def waiting(store: Store) -> bool:
-    """Whether anything the board needs waits for the system agent, read through the signals' index alone."""
+    """Whether a board need may start an absent system agent. Marker notices wait for its next conversation."""
     from .signals import rows
-    return any(value.get('signal') == BOARD for value in rows(store))
+    return any(value.get('signal') == BOARD and not str(value.get('signal_key') or '').startswith('marker:')
+               for value in rows(store))
+
+
+def markers(payload: dict[str, Any], ctx: Context, named: list[Any]) -> None:
+    """A named marker transition queues attention without starting a system conversation."""
+    if not ctx.setting('dispatch_autostart'):
+        return
+    from . import MARKERS, prompt
+    held = ctx.require_store()
+    if payload.get('project') and payload['project'] != held.project_id:
+        return
+    store = Store(held.project_id, base=payload['base_id']) if payload.get('base_id') else held
+    try:
+        found = [record for record in store.work(ids=[str(one) for one in named], limit=0).results
+                 if record.done is None and record.condition in MARKERS]
+        numbered = store.numbers_of('work', [record.id for record in found])
+    except StoreError:
+        return
+    for record in found:
+        ref = numbered[record.id][0] if record.id in numbered else record.id
+        said = prompt('marker_triage', ticket=ref, condition=record.condition)
+        raised(replace(ctx, store=store), f'marker:{record.id}:{record.condition}', said,
+               work_id=record.id, start=False)
 
 
 def _plain(title: str | None) -> str:
@@ -54,14 +79,19 @@ def _plain(title: str | None) -> str:
 
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:
-    """map.changed: a ticket filed, the change's kind `filed`, that can never start, having no task and no trouble,
+    """map.changed: marker transitions, kind `marker`, queue evidence-only triage from any producer. A ticket filed,
+    the change's kind `filed`, that can never start, having no task and no trouble,
     broken or missing marker its agent could start from, or whose title repeats an open ticket's. Decided from the
     event first, so every other change reads nothing; then only the tickets it names are read, and the open tickets'
     titles only for a filing. The page's and the intake's own records are theirs by design (a stage drawn on a node),
     and the system agent's own filings are its own writes, so none of those raises anything."""
     kinds: Any = payload.get('kinds')
     named: Any = payload.get('work_ids')
-    if not isinstance(kinds, list) or 'filed' not in kinds or not isinstance(named, list) or not named:
+    if not isinstance(kinds, list) or not isinstance(named, list) or not named:
+        return
+    if 'marker' in kinds:
+        markers(payload, ctx, cast(list[Any], named))
+    if 'filed' not in kinds:
         return
     if ctx.surface == 'web' or os.environ.get('METAFORM_ROLE') in ('intake', 'system'):
         return
