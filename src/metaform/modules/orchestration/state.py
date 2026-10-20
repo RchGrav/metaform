@@ -389,7 +389,7 @@ class Orchestration:
             if assignment:
                 requests = tx.rows('role_requests', {'caller_assignment_id': assignment['assignment_id']}, limit=0).results
                 if any(one['state'] == 'commissioned' and role_options(one).get('assign_in_place') for one in requests):
-                    return {'state': 'creating', 'role': None}
+                    return {'state': 'creating', 'role': None, 'reason': 'Facilitator is selecting expertise.'}
                 return {'state': assignment['state'], 'role': assignment['authored_role_uri']}
             row = tx.get('routing', {'work_id': work_id})
             return {key: row.get(key) for key in ('state', 'role', 'reason')} if row else None
@@ -499,9 +499,9 @@ class Orchestration:
         store = own(ctx)
         if role is None and self.assignment(ctx, work_id=work_id) is None:
             role = routing.route(ctx, work_id).get('role')
-            if role is None:
-                raise Stop(f'Ticket {work_id} needs specialist selection by triage.',
-                           'metaform agents specialists; metaform orchestration claim work=<id> role=<expertise>')
+            if role is None and self.assignment(ctx, work_id=work_id) is None:
+                raise Stop(f'Ticket {work_id} is not available for specialist assignment.',
+                           f'metaform orchestration route work={work_id}')
         with store.atomic(), store.tables() as tx:
             assignment = row_for(tx, work_id=work_id)
             if assignment and assignment['state'] in ENDED and not assignment.get('stop') and not store.ticket(work_id).work.done:
@@ -673,8 +673,8 @@ class Orchestration:
                     return pending
             chosen = routed.get('role')
         if not chosen:
-            raise Stop(f'Ticket {work_id} needs specialist expertise selected or created by triage.',
-                       'metaform agents specialists; metaform orchestration claim work=<id> role=<expertise>')
+            raise Stop(f'Ticket {work_id} is not available for specialist assignment.',
+                       f'metaform orchestration route work={work_id}')
         role = str(chosen).removeprefix('metaform://role/')
         # A sessionless delivery owner holds the ticket until the creator names real expertise.
         # It is never launched as a generic worker; publication replaces its role before launch.

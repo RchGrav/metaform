@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-10-20 — Automatic specialist fallback
+
+- Missing JEV keys, unavailable credits/providers and uncertain decisions directly commission the Facilitator instead of leaving a triage notice.
+- The event-driven starter recovers existing triage entries in bounded passes without repeating unchanged cached selection calls. Existing ownership, user stops and Backlog holds are preserved.
+- Ticket inspection names the Facilitator while selection is pending; prompts no longer require the user-facing agent to relay fallback tickets.
+
 ## 2026-10-19 — Facilitator handoff
 
 - Confident JEV no-match directly commissions the Facilitator; missing-key and uncertain fallback asks the ticket writer to assign existing expertise or hand off with `claim create=true`.
