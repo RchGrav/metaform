@@ -3176,7 +3176,7 @@ def start(ctx: Context) -> dict[str, Any]:
     budget_stop(ctx, store, str(work_id))  # a reached token budget is the person's to raise, M01
     from .orchestration import service
     owner = service(ctx)
-    if owner is not None and owner.assignment(ctx, work_id=str(work_id)) is None:
+    if owner is not None:
         selected = owner.route(ctx, str(work_id))
         if not selected.get('role'):
             return {'state': 'needs_specialist', 'work_id': work_id, 'reason': selected.get('reason')}

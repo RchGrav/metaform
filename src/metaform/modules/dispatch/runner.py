@@ -3648,6 +3648,15 @@ class Session:
         native = owner is not None
         if owner is not None and self.role == 'worker' and self.assignment is None:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id)
+        if owner is not None and self.role == 'worker' and self.assignment is not None:
+            status = await asyncio.to_thread(owner.routing_status, self.ctx, self.work_id)
+            if status and status['state'] == 'creating':
+                # Publication owns the continuation. A direct or older launch must not open an adapter
+                # for the sessionless owner, then count its expected binding refusal as a failed run.
+                from .orchestration import SUSPENDED
+                self.how = SUSPENDED
+                self.ended.set()
+                return
         self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
             'metaform://role/triage' if self.role in ('system', 'intake') and native else None)
         identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
