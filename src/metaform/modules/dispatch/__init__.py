@@ -2364,6 +2364,16 @@ def autostart(ctx: Context) -> dict[str, Any]:
 MARKERS = {'trouble': 'This part is marked trouble: it does not do its job. Fix it as the note says.',
            'broken': 'This part is marked broken: it does not do its job. Fix it as the note says.',
            'missing': 'This part is marked missing: it should exist and does not. Build it as the note says.'}
+# The system healing itself: a ticket of kind or condition broken, filed by autoticket from a fault the system saw or
+# marked by the person. Its agent thinks at the highest level its AI tool offers, under the person's own choice for the
+# ticket or the agent, and no other ticket starts while one is being healed; healing tickets start first. A fault
+# healed at a low thought level, with other agents starting around it, made the system worse (2026-10-20).
+HEALING_EFFORT = 'xhigh'
+
+
+def healing(record: WorkRecord) -> bool:
+    """Whether a ticket is the system healing a fault of its own, which starts first, alone, at `HEALING_EFFORT`."""
+    return record.condition == 'broken' or record.kind == 'broken'
 
 
 def marker_task(record: WorkRecord) -> str:
@@ -2477,7 +2487,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         rows = [row for row in sessions(store, verify=False)
                 if row['state'] != 'running' or runner_of(row.get('pid')) in (row['work_id'], SERVED)]
         active = [row for row in rows if row['state'] == 'running']
-        candidates.sort(key=board_order)
+        candidates.sort(key=lambda record: (not healing(record), *board_order(record)))  # healing first
         glyph = {work_id: held.get('glyph') for work_id, held in kept.items()}
         occupied = {glyph.get(row['work_id']) for row in active} - {None}
         busy = {row['work_id'] for row in active}
@@ -2492,6 +2502,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
             store.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
         taken = [record for record in taken if record not in stale]
         occupied.update(glyph.get(record.id) for record in taken)
+        # the system is healing a fault of its own: no other ticket starts until that ticket is done
+        mending = any(healing(record) for record in open_work if record.id in busy or record in taken)
         # The slots as the gate counts them, the runners that run now in the project and on the machine, less the
         # reservations another pass made that have not started their runner yet, so two passes at once reserve one
         # slot once; the gate counts again at each start, so a start reserved past them gives its ticket back.
@@ -2501,6 +2513,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         for record in candidates:
             if capacity == 0:
                 break
+            if mending and not healing(record):
+                continue  # work waits while the system heals itself
             mark = glyph.get(record.id)
             if mark is not None and mark in occupied:
                 continue
@@ -2545,6 +2559,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
             capacity -= 1
             if mark:
                 occupied.add(mark)
+            if healing(record):
+                mending = True  # the rest of this pass starts no other work either
     for record in stale:
         publish(ctx, 'not-smooth', work_id=record.id, key=record.taken_by or '', reason='startup reservation expired')
         publish(ctx, 'requeue', work_id=record.id, key=record.taken_by or '', reason='startup reservation expired')
@@ -2558,6 +2574,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         try:
             given = {key: value for key, value in picks.get(record.id, {}).items()
                      if key != 'agent' and picks[record.id].get('agent') == agent}
+            if healing(record) and not ticket_options(store, record.id).get('thought_level'):
+                given['thought_level'] = HEALING_EFFORT  # over Jev's pick; the person's own choices still win
             started.append(run_reserved(context('dispatch', ctx.folder, project=ctx.project,
                                          nouns={'id': record.id, 'agent': agent,
                                                 **({'chosen': json.dumps(given)} if given else {})}), reservation,
@@ -5762,7 +5780,10 @@ def handoff_parts(ctx: Context, work_id: str, *, session: str | None = None,
     node = str(read.get('address') or ' and '.join(
         f'{name}={value}' for name, value in (('receiver', read.get('receiver_address')),
                                               ('provider', read.get('provider_address'))) if value))
-    return f"{work_line(work_id, ctx.folder, node)}\n\n" + '\n'.join(lines) + '\n', links
+    opening = work_line(work_id, ctx.folder, node)
+    if read.get('condition') == 'broken' or read.get('kind') == 'broken':  # the system healing itself, `healing`
+        opening = f"{prompt('heal')}\n\n{opening}"
+    return f"{opening}\n\n" + '\n'.join(lines) + '\n', links
 
 
 def peers_line(ctx: Context, store: Store, work_id: str, session: str | None) -> str:

@@ -145,6 +145,17 @@ Work ticket <work_id/> with map_work and your delivered authored role. Use the s
 Maintain relevant project knowledge at <node/> according to the shared memory instructions. Keep progress, outcome and evidence in the ticket and result records.
 </work_record>
 
+<!-- The sentence that opens the first turn of an agent healing a fault of the system's own: a ticket of kind or
+     condition broken, filed by autoticket from an error the system saw, or marked broken by the person. The runner
+     sends it once, ahead of the work sentence, to that agent alone; a worker on any other ticket never gets it. It
+     says why the healer's work is different: the system holds every other start while it heals, so a half fix costs
+     everyone; the cause is wanted, not the symptom, since a symptom hidden comes back as the next fault; and when the
+     healer is blocked it falls back on the frozen core of the feature, C(T): a receiver's purpose served by a
+     provider through an encounter, which it may restore or re-provide but never redefine. Empty sends nothing. -->
+<heal>
+You are healing a fault the system found in itself; the ticket's note holds its evidence. Every other start waits until you are done, so finish the repair rather than leave it half made. Reproduce the fault from its evidence, find its cause, and fix the cause: a symptom hidden by throttling, capping or switching a feature off comes back as the next fault. When something blocks you, fall back on the feature's frozen core, C(T): each receiver's purpose must still be served by a provider through an encounter, so restore that encounter or serve the purpose by another provider, and never change what the feature is for. Verify against the fault's own evidence before you close.
+</heal>
+
 <!-- The request to link entry-point files, sent to every ticket worker once: at the end of the first prompt its
      runner sends it (the ticket's hand-off), never as a turn of its own, and not again when the session is resumed,
      since its conversation already holds it. Not sent to the system agent, the intake, prep or probe sessions. It

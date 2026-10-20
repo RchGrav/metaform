@@ -5195,6 +5195,31 @@ def test_autostart_takes_jevs_sure_agent_and_options_only_where_the_person_chose
                         (unsure, 'codex', None)]
 
 
+def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(dispatch, run, monkeypatch):
+    """2026-10-20: the system healing a fault of its own at a low thought level, with other agents starting around it,
+    made things worse. A ticket of kind broken starts before any other, nothing else starts while it is being healed,
+    its agent is asked for the highest thought level unless the person set one for the ticket, and its hand-off opens
+    with the healer's own sentence."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    broken = dispatch.store.add_work(dispatch.node, 'broken', kind='broken', note='It never sounds.').id
+    run('set', '--dispatch-autostart', '--dispatch-agents', '4', cwd=dispatch.folder)
+    launched = []
+    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: launched.append(
+        (ctx.nouns['id'], ctx.nouns.get('chosen'))) or {'work_id': ctx.nouns['id']})
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched == [(broken, json.dumps({'thought_level': module.HEALING_EFFORT}))], launched
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched[1:] == [], 'nothing else starts while the system heals itself'
+    handed = module.handoff_text(context('dispatch', dispatch.folder, project='proj'), broken)
+    assert handed.startswith(module.prompt('heal')) and 'C(T)' in handed, handed[:200]
+    assert not module.handoff_text(context('dispatch', dispatch.folder, project='proj'), dispatch.id).startswith(
+        module.prompt('heal')), 'a worker on any other ticket never gets the healer\'s sentence'
+    dispatch.store.finish_work(broken, 'Healed.')
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert [one[0] for one in launched[1:]] == [dispatch.id], launched
+
+
 @pytest.mark.req('MAP-058')
 def test_autostart_starts_as_before_when_jev_is_off_or_fails(dispatch, run, monkeypatch):
     from metaform import jev
