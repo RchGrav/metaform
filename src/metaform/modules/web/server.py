@@ -1202,6 +1202,8 @@ class Handler(BaseHTTPRequestHandler):
                 found = {**cast(dict[str, Any], found), 'cutoff': cutoff, 'board': on,
                          'results': [one for one in listed
                                      if str(cast(dict[str, Any], one.get('map') or {}).get('board') or '') == on]}
+            if str(given.get('full') or '').lower() not in ('1', 'true'):
+                found = brief_work(found)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def memory_read(self, name: str, given: dict[str, str]) -> None:
@@ -3408,6 +3410,34 @@ def board_cutoff(given: dict[str, str]) -> str:
                      if one.get('name') == on), '')
         return max(since, line)
     return max(since, str(settings.value('board_line', folder) or ''))
+
+
+BRIEF = 600  # characters of a ticket's task, note and resolution a page list read carries
+BRIEF_FIELDS = ('task', 'note', 'resolution')
+
+
+def brief_work(found: Any) -> Any:
+    """A page work read's records with their task, note and resolution cut to BRIEF characters, marked `brief`: the
+    card, the list and the figure show their first words, and the detail dialog reads the whole ticket by id,
+    `ticket_detail`; `full=true` reads them whole. One ticket's task of 2 MB and the notes of 94 made the board's read
+    4.5 MB, parsed on the page at every render (2026-10-20)."""
+    data: Any = found.to_dict() if isinstance(found, Page) else found
+    if not isinstance(data, dict):
+        return cast(Any, found)
+    results = cast(dict[str, Any], data).get('results')
+    if not isinstance(results, list):
+        return cast(dict[str, Any], data)
+    cut: list[Any] = []
+    for one in cast(list[Any], results):
+        if isinstance(one, dict):
+            record = cast(dict[str, Any], one)
+            long = [name for name in BRIEF_FIELDS if isinstance(record.get(name), str) and len(record[name]) > BRIEF]
+            if long:
+                record = {**record, **{name: str(record[name])[:BRIEF] + '…' for name in long}, 'brief': True}
+            cut.append(record)
+        else:
+            cut.append(one)
+    return {**cast(dict[str, Any], data), 'results': cut}
 
 
 def with_glyphs(given: dict[str, str], found: Any) -> Any:
