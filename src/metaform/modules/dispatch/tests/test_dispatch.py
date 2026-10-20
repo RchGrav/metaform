@@ -2709,10 +2709,13 @@ def test_the_system_agent_runs_on_its_own_agent_setting_not_the_workers_default(
     monkeypatch.setattr(module, 'converse', lambda ctx, store, held, agent, words, **kw: started.append(agent)
                         or {'work_id': held, 'agent': agent, 'state': 'starting'})
     run('set', '--dispatch-agent', 'codex', cwd=dispatch.folder)
-    module.system(context('dispatch', dispatch.folder, project='proj'))
-    run('set', '--dispatch-system-agent', 'claude', cwd=dispatch.folder)
-    module.system(context('dispatch', dispatch.folder, project='proj'))
-    assert started == ['codex', 'claude'], started
+    module.system(context('dispatch', dispatch.folder, project='proj'))  # Claude, whatever the workers' default
+    run('set', '--dispatch-system-agent', 'codex', cwd=dispatch.folder)
+    module.system(context('dispatch', dispatch.folder, project='proj'))  # the person's own choice for it
+    run('set', '--dispatch-system-agent', 'default', cwd=dispatch.folder)
+    run('set', '--dispatch-agent', 'gemini', cwd=dispatch.folder)
+    module.system(context('dispatch', dispatch.folder, project='proj'))  # default follows the default agent
+    assert started == ['claude', 'codex', 'gemini'], started
 
 
 @pytest.mark.req('BASE-052')

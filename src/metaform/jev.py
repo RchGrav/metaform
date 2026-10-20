@@ -417,6 +417,11 @@ def _request(cfg: Config, state: Any, questions: Mapping[str, Question]) -> dict
     if _left() <= 0:  # the caller's time is spent; the endpoint is not at fault, so Jev stays on
         log.info('Jev was not asked: the time the caller allowed is spent.')
         return None
+    if cfg.endpoint.name == 'openrouter' and openrouter_credits(fetch=False).get('status') == 'exhausted':
+        # the account's last observed credit is spent: nothing is sent, and every caller keeps its plain fallback;
+        # the snapshot is refreshed by the callers that observe credit, `openrouter_credits`, never by a clock
+        log.info('Jev was not asked: OpenRouter credit is exhausted.')
+        return None
     with _span(cfg) as span:
         try:
             reply = post(cfg, body)

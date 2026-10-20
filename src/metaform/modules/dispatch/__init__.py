@@ -730,9 +730,9 @@ def system_agent_choices(ctx: Any = None) -> list[str]:
 # An agent per purpose, the person's decision of 2026-10-20: setting the default agent for tickets changed who triaged
 # for them too, which is not what they meant. With Jev on, Jev chooses the agent, model and thinking level of an
 # ordinary ticket; these settings choose for the purposes Jev is not asked about, and stand when Jev is off or unsure.
-settings.choice('dispatch_system_agent', system_agent_choices, AGENT_DEFAULT, person_only=True,
+settings.choice('dispatch_system_agent', system_agent_choices, 'claude', person_only=True,
                 help='The agent that is your system agent, the one you talk to in the chat and that triages for you: '
-                     'one installed here, or default to use the default agent.',
+                     'Claude unless you choose another installed here, or default to follow the default agent.',
                 details='Kept apart from the default agent, so changing which agent works tickets never changes who '
                         'triages for you. The chat picker on the page chooses the agent of one conversation; this one '
                         'starts when none is chosen, and when Stay connected brings your system agent back.',
@@ -2304,6 +2304,10 @@ def jev_choices(ctx: Context, store: Store, eligible: set[str] | None = None) ->
         return {}
     try:
         if jev.config(ctx.folder, 'choose_agent') is None:
+            return {}
+        # Jev via OpenRouter is asked only while the account has credit: observed here, cached for a minute across
+        # processes, and read again at the request itself; with none observed, autostart chooses as it always has
+        if str(ctx.setting('jev_endpoint')) == 'openrouter' and jev.openrouter_credits().get('status') == 'exhausted':
             return {}
         kept = ticket_settings(ctx)
         opened = store.work(open=True, limit=0).results

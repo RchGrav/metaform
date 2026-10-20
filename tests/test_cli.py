@@ -174,7 +174,7 @@ def test_confirm_is_never_a_setting(run):
 
 @pytest.mark.req('CLI-011')
 @pytest.mark.parametrize('switches,key,default', [
-    (('--jev',), 'jev', False),
+    (('--jev',), 'jev', True),
     (('--agents-may-set-control',), 'agents_may_set_control', False),
     (('--dispatch-prompts', 'approve-all', '--confirm'), 'dispatch_prompts', 'ask_all'),
 ])

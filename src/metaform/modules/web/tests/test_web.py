@@ -11267,7 +11267,7 @@ def test_a_persons_write_from_an_agents_process_is_refused_whatever_origin_it_se
                 sender = under_claude(home, '-c', FORGED, str(port))
                 said = sender.communicate(timeout=60)[0]
             assert said.startswith('403 ') and "is the person's to do on the page" in said, said
-            assert settings.value('jev', mapped) is False
+            assert settings.state('jev', mapped) == 'default', 'the forged write changed nothing'
         # person-consent F1: the same write re-parented to init passed every guard; the page's key now stops it
         out = home.parent / 'reparented.out'
         under_claude(home, '-c', REPARENTED, str(port), str(out), FORGED).communicate(timeout=60)
@@ -11276,12 +11276,12 @@ def test_a_persons_write_from_an_agents_process_is_refused_whatever_origin_it_se
             assert time.monotonic() < deadline, 'the re-parented sender did not answer'
             time.sleep(0.05)
         assert out.read_text().startswith('403 ') and 'carries no key' in out.read_text(), out.read_text()
-        assert settings.value('jev', mapped) is False
+        assert settings.state('jev', mapped) == 'default', 'the re-parented write changed nothing'
         given = under_claude(home, '-c', FETCHED, str(port)).communicate(timeout=60)[0]
         assert 'metaform_page_' not in given, given  # an agent's process is served the page without a key
-        status, saved = setting_write(port, '/api/settings', key='jev', value=True)  # the person, from this process
+        status, saved = setting_write(port, '/api/settings', key='jev', value=False)  # the person, from this process
         assert status == 200, saved
-        assert settings.value('jev', mapped) is True
+        assert settings.value('jev', mapped) is False
     finally:
         os.kill(int(ready['pid']), 15)  # the stop signal, as metaform web stop sends it; its parent then ends
         server.communicate(timeout=30)

@@ -895,11 +895,15 @@ def _fake_jev(monkeypatch, project_folder):
 
 
 @pytest.mark.req('BASE-004')
-def test_jev_is_off_by_default_and_every_decision_is_none(home, project_folder, monkeypatch):
-    from metaform import jev
+def test_jev_is_on_by_default_and_off_sends_nothing_with_every_decision_none(home, project_folder, monkeypatch):
+    """Jev via OpenRouter is on by default (the person's decision, 2026-10-20: it costs pennies and chooses the agent,
+    model and thinking level); the code asks it only with a key and credit. Turned off, nothing is sent."""
+    from metaform import jev, settings
 
     def refuse(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
         raise AssertionError('nothing is sent while jev is off')
+    assert settings.value('jev', project_folder) is True
+    settings.put('jev', False, project_folder)
     monkeypatch.setenv('OPENROUTER_API_KEY', 'test-key')
     monkeypatch.setattr(jev, 'post', refuse)
     assert jev.choose_agent(project_folder, {'id': 't1', 'task': 'x'}, {'claude': 'best'}) is None

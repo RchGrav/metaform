@@ -866,9 +866,11 @@ gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool',
                                  'off keeps global instructions alone. Apply changes with metaform provision gemini '
                                  'or metaform install gemini.')
 
-# Jev, the optional decision service, CHANGE-ORDER-2026-10-07 item 6 (P185): off until the person turns it on, since
-# it sends project text over the network. The decision points `metaform.jev` offers other modules, each named in
-# jev_decisions; a module's own decision point is named `<module>.<point>`.
+# Jev via OpenRouter, the decision model, CHANGE-ORDER-2026-10-07 item 6 (P185): on by default since 2026-10-20, the
+# person's decision, because it costs pennies and chooses the agent, model and thinking level for each ticket; the code
+# decides whether to ask it at all from its own checks, the key in the environment and OpenRouter credit left, so with
+# neither nothing is sent. The decision points `metaform.jev` offers other modules, each named in jev_decisions; a
+# module's own decision point is named `<module>.<point>`.
 JEV_DECISIONS = ('choose_agent', 'start_order', 'rank_items', 'triage', 'intake_coverage', 'session_drift')
 MODULE_DECISION = re.compile(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*')
 
@@ -882,20 +884,21 @@ def _check_jev_decisions(names: Any, folder: Path) -> list[str] | None:
 
 
 jev = boolean(
-    'jev', False, person_only=True,
-    help='Let Metaform ask Jev, a decision model reached over the network, for typed decisions.',
-    details='Off, the default: no decision is asked and every caller keeps its plain fallback. On: the decision '
-            'points named in jev_decisions send the text they decide about to the endpoint jev_endpoint names, '
-            'OpenRouter or TypeSafe, and act on the answer only when it is sure enough, jev_confidence. The key is read '
-            'from the environment, OPENROUTER_API_KEY or TYPESAFE_API_KEY, and never stored; with no key nothing is '
-            'sent. A decision that is acted on is kept at the Address it concerns, with its question, choices, answer, '
-            'reason, model and cost. No decision hides anything from the person. Only the person turns this on, since '
-            'it sends project text to a third party.',
-              label='Ask Jev for decisions', category='integrations', heading='Jev')
+    'jev', True, person_only=True,
+    help='Ask Jev via OpenRouter, a decision model that costs pennies, for typed decisions: which agent, model and '
+         'thinking level work a ticket, and the other decision points.',
+    details='On, the default: the decision points named in jev_decisions send the text they decide about to the '
+            'endpoint jev_endpoint names, OpenRouter or TypeSafe, and act on the answer only when it is sure enough, '
+            'jev_confidence. Jev is asked only while its key is in the environment, OPENROUTER_API_KEY or '
+            'TYPESAFE_API_KEY, never stored, and on OpenRouter only while the account has credit: with no key or no '
+            'credit nothing is sent and every caller keeps its plain fallback. A decision that is acted on is kept at the '
+            'Address it concerns, with its question, choices, answer, reason, model and cost. No decision hides anything '
+            'from the person. Off: nothing is asked.',
+              label='Ask Jev via OpenRouter for decisions', category='integrations', heading='Jev via OpenRouter')
 
 jev_endpoint = choice('jev_endpoint', ['openrouter', 'typesafe'], 'openrouter', person_only=True,
                       help='Where Jev is asked: OpenRouter with OPENROUTER_API_KEY, or TypeSafe with TYPESAFE_API_KEY.',
-                      label='Jev endpoint', category='integrations', heading='Jev')
+                      label='Jev endpoint', category='integrations', heading='Jev via OpenRouter')
 
 # The model, the decision points and the confidence decide which agent runs a ticket, how agents are watched and what
 # reaches the person first, and what project text is sent, so only the person sets them, CLI-011.
@@ -905,7 +908,7 @@ jev_model = text('jev_model', '', person_only=True,
                  details='An answer is cached under the model asked and the model that answered; when a name such as '
                          'typesafe/jev-1.13 starts answering as a newer snapshot, the answers of the older one are '
                          'asked again.',
-                 label='Jev model', category='integrations', heading='Jev')
+                 label='Jev model', category='integrations', heading='Jev via OpenRouter')
 
 jev_decisions = items('jev_decisions', choices=list(JEV_DECISIONS), beyond_choices=True, check=_check_jev_decisions,
                       person_only=True,
