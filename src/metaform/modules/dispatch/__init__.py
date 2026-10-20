@@ -379,7 +379,9 @@ settings.number('dispatch_rework_limit', 3, min=0, person_only=True, label='Rewo
                 details='Counts worker runners that send a prompt and end with the ticket open. Person stops and idle '
                         'resumes do not count. A completed step or ticket clears the streak. Explicit starts and '
                         'resumes remain available; dispatch.rework-limit announces the pause.')
-settings.boolean('dispatch_worktrees', False, person_only=True,
+# On by default since 2026-10-20, the person's decision: agents work in worktrees, each feature is its own commit, never
+# combined with another, and every feature is committed and its worktree cleaned up.
+settings.boolean('dispatch_worktrees', True, person_only=True,
                  help='Each ticket\'s agent works in a git worktree of its own, and done '
                  'work waits for review, then merges into the active dev branch, VIEW-044. Finished tickets commit '
                  'their own files and push the branch upstream with either choice.')
