@@ -9966,6 +9966,39 @@ def test_starting_an_agent_from_the_board_says_what_happened_above_the_board(run
 
 @pytest.mark.req('VIEW-044')
 @pytest.mark.kind('fixture')
+def test_a_named_board_is_made_in_the_picker_and_a_card_moves_to_it_and_back(run, web, mapped, browser):
+    """The person's need of 2026-10-20: a board gets a name, a new one is made from the board's picker, and a ticket is
+    moved from one board to another with its card's selector; each board shows its own tickets, and a move is one
+    change the page hears as a change to that ticket."""
+    from metaform.data import Node, Store
+    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), None, task='A quieter alarm').id
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#boardBtn')
+    card = f'#board .card[data-id="{work}"]'
+    page.wait_for_selector(card)
+    assert [one.text_content() for one in page.locator('#board .boards option').all()] == ['Board', 'New board…']
+    page.once('dialog', lambda dialog: dialog.accept('Later'))
+    page.select_option('#board .boards', index=1)
+    page.wait_for_selector('#board .boards option[value="Later"]', state='attached')  # an option of a closed select
+    assert page.locator('#board .boards').input_value() == 'Later'
+    page.wait_for_function(f'() => !document.querySelector({card!r})')  # the new board holds nothing yet
+    page.select_option('#board .boards', '')
+    page.wait_for_selector(f'{card} select.board-of')
+    page.select_option(f'{card} select.board-of', 'Later')
+    page.wait_for_function(f'() => !document.querySelector({card!r})')  # it left the first board
+    page.select_option('#board .boards', 'Later')
+    page.wait_for_selector(card)
+    with Store('proj', module='map').tables(write=False) as tx:
+        assert tx.get('ticket_settings', {'work_id': work})['board'] == 'Later'
+    page.select_option(f'{card} select.board-of', '')
+    page.wait_for_function(f'() => !document.querySelector({card!r})')  # back to the first board
+    page.select_option('#board .boards', '')
+    page.wait_for_selector(card)
+    assert not problems, problems
+
+
 def test_a_waiting_merge_shows_review_and_review_asks_about_help_in_a_support_window(run, web, mapped, browser):
     """VIEW-044: done work that waits shows Review.; Review takes it over for good and asks whether an agent should help
     prepare the code; Yes opens the support window at the lower right, waiting for the next available agent."""

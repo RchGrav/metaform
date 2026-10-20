@@ -247,9 +247,9 @@ function boardSelect(ticket) {
   const current = String(ticket.map?.board || '');
   const moveTo = async event => {
     event.stopPropagation();
-    const board = event.currentTarget.value;
+    const select = event.currentTarget, board = select.value;  // currentTarget is gone once the handler awaits
     if (board === current) return;
-    if (!(await wrote('/api/set-ticket', {work_id: ticket.id, board}))) event.currentTarget.value = current;
+    if (!(await wrote('/api/ticket', {work_id: ticket.id, board}))) select.value = current;
   };
   return h('select', {class: 'board-of', title: 'Move to another board', 'aria-label': 'The board this ticket is on',
     onclick: event => event.stopPropagation(), onchange: moveTo},
@@ -385,11 +385,12 @@ export async function drawBoards() {
   if (B.board && !B.boards.some(one => one.name === B.board)) B.board = '';  // a board removed meanwhile
   fill(box, [h('option', {value: ''}, `Board${B.boards.length ? ' (first)' : ''}`),
     ...B.boards.map(one => h('option', {value: one.name}, `${one.name} · ${one.open}`)),
-    h('option', {value: '\u0000new'}, 'New board…')]);
+    h('option', {value: '', 'data-new': '1'}, 'New board…')]);
   box.value = B.board;
 }
+const NEW_BOARD = Symbol('new board');
 async function chooseBoard(value) {
-  if (value === '\u0000new') {
+  if (value === NEW_BOARD) {
     const name = (window.prompt('Name the new board') || '').trim();
     $('#board .boards').value = B.board;
     if (!name) return;
@@ -401,7 +402,10 @@ async function chooseBoard(value) {
   try { localStorage.setItem(BOARD_KEY(S.project), value); } catch (error) { /* a browser that keeps nothing */ }
   await renderBoard();
 }
-$('#board .boards').onchange = event => chooseBoard(event.currentTarget.value);
+$('#board .boards').onchange = event => {
+  const chosen = event.currentTarget.selectedOptions[0];
+  chooseBoard(chosen?.dataset.new ? NEW_BOARD : event.currentTarget.value);
+};
 document.addEventListener('metaform:boards', () => { if (!$('#board').hidden) drawBoards(); });
 export async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
