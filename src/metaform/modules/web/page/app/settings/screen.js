@@ -146,7 +146,7 @@ $('#bubbleSeconds').onchange = async event => {
   const done = await posted('/api/settings', {key: 'web_bubble_seconds', value: chosen});
   if (!done.ok) { control.value = was; toast(done.body.error || 'That was not kept.'); return; }
   takeBubbleSeconds(chosen === 'auto' ? chosen : Number(chosen));
-  toast(chosen === 'auto' ? 'Word bubbles stay up by their words.' : `Word bubbles stay up ${chosen} s.`);
+  toast(chosen === 'auto' ? 'Speech bubbles stay up longer for longer lines.' : `Speech bubbles stay up ${chosen} s.`);
 };
 /* Stop all agents: every agent of the project, or of every project on this machine, ends as the person's stop ends
  * it, and Full Auto is turned off first, so nothing starts in their place. Asked first, with the count.

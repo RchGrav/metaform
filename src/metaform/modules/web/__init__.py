@@ -131,7 +131,7 @@ settings.number('web_pulse_ms', 3000, min=200, max=30000, scope='global',
                         'the flow bunches about this pace and never pulses in step, in the 3D and the 2D map.',
                 label='Pulse length', category='advanced', heading='Flow')
 settings.choice('web_bubble_seconds', ['auto', '3', '5', '10', '15', '20', '30', '60'], 'auto', scope='global',
-                help="How long a word bubble stays up after each new line: auto, by its words, or seconds.",
+                help="How long a speech bubble stays up after each new line: auto, longer for longer lines, or a fixed number of seconds.",
                 details='Auto shows a line 3 s and half a second for each wait in it: each vowel, y, digit and stop or '
                         'pause mark, a vowel pair said as one sound counted once. The next line brings the bubble '
                         'back; between lines it fades out. Also in the Agents menu.',
