@@ -258,11 +258,11 @@ This section specifies the addressed-context design, the system's key innovation
 
 ## Memory
 
-### CTX-020 A memory records what happened in the work, and it is kept in the memory graph
+### CTX-020 A memory is what an agent writes because it will help other agents, kept in the memory graph at an Address
 
-- Requirement: A memory records what happened in the work (what was done, tried or decided, what was found broken, what was fixed, and the lessons learned), and it is kept only in the memory graph.
+- Requirement: Memory is the standard MCP memory server, with an Address on the map to hang each memory at. An agent writes a memory because it will help other agents working there. Memory has no tie to tickets and holds no history of tickets or work: a ticket's disposition is recorded on the ticket.
 - What this means:
-  - Memory is the history of the work, told by the agents who did it. A finding about what the project is, as opposed to what happened to it, is knowledge. Knowledge goes to a knowledge layer, CTX-021, not here.
+  - Agents keep memory as the standard server's prompt keeps its graph: create what helps, update what changed, delete what no longer helps. Nothing in a ticket's flow writes or requires a memory.
   - The graph is the MCP reference memory server's, as LAYER-013 gives it. Entities have `name`, `entityType` and `observations`. Relations have `from`, `to` and a `relationType` written in active voice. Each observation holds one fact. The tools are memory's: `create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes` and `open_nodes`.
   - A memory is recorded at the Address it concerns. Under the Join rule that is the RE whose goal the work served, as memory's rule already says (`src/metaform/modules/memory/resources/prompts.xml:26`).
   - Whether a finding is memory or knowledge is the agent's call. Metaform never checks or sorts it (decision 25).
@@ -272,6 +272,7 @@ This section specifies the addressed-context design, the system's key innovation
 - Acceptance: `create_entities` at a node followed by `read_graph` there returns the entity with its observations in order (existing, `src/metaform/modules/memory/tests/test_memory.py`). The definition reaches agents as CTX-026's acceptance checks.
 - Relates to: LAYER-012 (amends: the variable of a memory layer made from now on, recommended), LAYER-013, STORE-018, STORE-020, BASE-040, CTX-021, CTX-026.
 - Status: confirmed, 2026-10-15, in conversation with the owner. The graph and its operations are confirmed and built.
+- Amendment, 2026-10-19, the owner in conversation with the system agent: memory is the standard memory server with an Address to hang memories at; the earlier wording, memory as "the history of the work", led agents to write work logs, and is replaced. The forced record-on-finish turn is removed by ticket code.dispatcher.agent#80.
 
 ### CTX-021 Knowledge is what is true of the project, and it is written to knowledge layers, never to memory
 
