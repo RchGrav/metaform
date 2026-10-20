@@ -24,10 +24,9 @@ from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
-PROMPT_SCHEMA_VERSION = '6'  # the prompt database's own layout, apart from the store's, STORE-029
-# Version 6 completes canonical identities after the working-tree version 5.
-# Earlier clients can still create legacy names, so they must not write this store.
-PROMPT_COMPATIBLE_FROM = '6'
+PROMPT_SCHEMA_VERSION = '7'  # the prompt database's own layout, apart from the store's, STORE-029
+# Version 7 merges duplicate canonical identities and retains name and ID aliases.
+PROMPT_COMPATIBLE_FROM = '4'
 # prompt_shipped: the text a module ships now, kept beside the edit it is behind while that edit is the newest version,
 # one row for each edit; never served from here, only shown, ticket 3a1306bd (2026-10-15)
 SHIPPED_TABLE = """CREATE TABLE IF NOT EXISTS prompt_shipped(
@@ -72,6 +71,10 @@ CREATE TABLE IF NOT EXISTS prompt_uses(
   PRIMARY KEY(project_id, base_id, layer_id)
 );
 CREATE INDEX IF NOT EXISTS prompt_uses_by_version ON prompt_uses(version_id);
+CREATE TABLE IF NOT EXISTS prompt_aliases(
+  alias TEXT PRIMARY KEY,
+  prompt_id TEXT NOT NULL REFERENCES prompts(prompt_id)
+);
 """ + SHIPPED_TABLE + '\n' + MERGE_TABLE + '\n'
 FORMATS = ('xml', 'markdown', 'text')
 
@@ -95,34 +98,106 @@ def _address(name: str) -> str:
     return name
 
 
+def _merge(db: sqlite3.Connection, source: str, target: str) -> None:
+    """Keep version identities and lineage while ordering both histories by write time."""
+    versions = db.execute('SELECT version_id FROM prompt_versions WHERE prompt_id IN (?,?) '
+                          'ORDER BY created,rowid', (source, target)).fetchall()
+    if versions:
+        selected = db.execute('SELECT prompt_id FROM prompt_versions WHERE version_id=?', versions[-1]).fetchone()[0]
+        db.execute('UPDATE prompts SET format=(SELECT format FROM prompts WHERE prompt_id=?) WHERE prompt_id=?',
+                   (selected, target))
+    # Negative temporary numbers avoid UNIQUE(prompt_id, number) collisions during the move.
+    for number, (version_id,) in enumerate(versions, 1):
+        db.execute('UPDATE prompt_versions SET number=? WHERE version_id=?', (-number, version_id))
+    db.execute('UPDATE prompt_versions SET prompt_id=? WHERE prompt_id=?', (target, source))
+    for number, (version_id,) in enumerate(versions, 1):
+        db.execute('UPDATE prompt_versions SET number=? WHERE version_id=?', (number, version_id))
+    for (migration,) in db.execute('SELECT migration_id FROM prompt_merges WHERE prompt_id=?', (source,)).fetchall():
+        identity = migration
+        while db.execute('SELECT 1 FROM prompt_merges WHERE prompt_id=? AND migration_id=?',
+                         (target, identity)).fetchone():
+            identity += ':' + source
+        db.execute('UPDATE prompt_merges SET prompt_id=?,migration_id=? WHERE prompt_id=? AND migration_id=?',
+                   (target, identity, source, migration))
+    db.execute('UPDATE prompt_aliases SET prompt_id=? WHERE prompt_id=?', (target, source))
+    db.execute('INSERT OR REPLACE INTO prompt_aliases VALUES (?,?)', (source, target))
+    db.execute('DELETE FROM prompts WHERE prompt_id=?', (source,))
+
+
+def _compatibility(db: sqlite3.Connection) -> None:
+    """Keep the old SQL surface writable for processes whose prompt code is already loaded."""
+    if db.execute("SELECT type FROM sqlite_master WHERE name='prompts'").fetchone()[0] == 'view':
+        return
+    db.execute('ALTER TABLE prompts RENAME TO prompt_records')
+    # Aliases project the canonical ID, so old readers and writers share the same version history.
+    db.execute("""CREATE VIEW prompts AS
+        SELECT * FROM prompt_records
+        UNION SELECT r.prompt_id,a.alias,r.format,r.created FROM prompt_records r
+              JOIN prompt_aliases a ON a.prompt_id=r.prompt_id
+        UNION SELECT prompt_id,substr(name,8),format,created FROM prompt_records
+              WHERE name LIKE 'prompt.%:%'
+        UNION SELECT prompt_id,'skill:'||substr(name,14),format,created FROM prompt_records
+              WHERE name LIKE 'prompt.skill.%'
+        UNION SELECT prompt_id,'logic.skill.'||substr(name,14),format,created FROM prompt_records
+              WHERE name LIKE 'prompt.skill.%'
+        UNION SELECT prompt_id,substr(name,15),format,created FROM prompt_records
+              WHERE name LIKE 'prompt.skills:%'
+        UNION SELECT prompt_id,'workflow-logic',format,created FROM prompt_records
+              WHERE name='prompt.skills:workflow-prompt'
+        UNION SELECT prompt_id,'skills:workflow-logic',format,created FROM prompt_records
+              WHERE name='prompt.skills:workflow-prompt'
+        UNION SELECT prompt_id,'prompt-lexicalization',format,created FROM prompt_records
+              WHERE name='prompt.workflow:prompt-lexicalization'""")
+    db.execute("""CREATE TRIGGER prompts_insert INSTEAD OF INSERT ON prompts BEGIN
+        INSERT INTO prompt_records(prompt_id,name,format,created) VALUES(NEW.prompt_id,
+          CASE WHEN NEW.name LIKE 'prompt.%' THEN NEW.name
+               WHEN NEW.name='prompt-lexicalization' THEN 'prompt.workflow:prompt-lexicalization'
+               WHEN NEW.name IN ('workflow-logic','skills:workflow-logic') THEN 'prompt.skills:workflow-prompt'
+               WHEN NEW.name IN ('axiom-language','metaform-system','namespace-rules','workflow-prompt',
+                    'metaform-tools','delexicalization-rules','lib_axiom','lib_metaform','lib_workflow','lib_quality')
+                    THEN 'prompt.skills:'||NEW.name
+               WHEN NEW.name LIKE 'skill:%' THEN 'prompt.skill.'||substr(NEW.name,7)
+               WHEN NEW.name LIKE 'logic.skill.%' THEN 'prompt.skill.'||substr(NEW.name,13)
+               WHEN instr(NEW.name,':')>0 THEN 'prompt.'||NEW.name ELSE NEW.name END,
+          NEW.format,NEW.created);
+        END""")
+    db.execute("""CREATE TRIGGER prompts_update INSTEAD OF UPDATE ON prompts BEGIN
+        UPDATE prompt_records SET name=NEW.name,format=NEW.format,created=NEW.created
+          WHERE prompt_id=OLD.prompt_id;
+        END""")
+    db.execute("""CREATE TRIGGER prompts_delete INSTEAD OF DELETE ON prompts BEGIN
+        DELETE FROM prompt_records WHERE prompt_id=OLD.prompt_id;
+        END""")
+    db.execute("INSERT OR REPLACE INTO meta VALUES ('prompt_compatibility','7')")
+
+
 def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Upgrade layout and canonical prompt addresses atomically, preserving every immutable version."""
-    if found not in ('1', '2', '3', '4', '5'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1 through 5.',
+    """Merge legacy names atomically; newer selections win without losing any version."""
+    if found not in ('1', '2', '3', '4', '5', '6'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates prompt versions 1 through 6.',
                          'install the Metaform release that wrote it')
     db.execute('BEGIN IMMEDIATE')
     try:
         at = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if at in (('1',), ('2',), ('3',), ('4',), ('5',)):  # read again inside the lock: another process may have upgraded it first
+        if at != (PROMPT_SCHEMA_VERSION,):
             if at == ('1',):
                 db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
             db.execute(SHIPPED_TABLE)
             db.execute(MERGE_TABLE)
-            renames: list[tuple[str, str]] = []
-            names = {row[0] for row in db.execute('SELECT name FROM prompts')}
-            targets: set[str] = set()
-            for name in sorted(names):
-                target = _address(name)
-                if target == name:
+            db.execute('CREATE TABLE IF NOT EXISTS prompt_aliases(alias TEXT PRIMARY KEY, '
+                       'prompt_id TEXT NOT NULL REFERENCES prompts(prompt_id))')
+            for source, name in db.execute('SELECT prompt_id,name FROM prompts ORDER BY name').fetchall():
+                target_name = _address(name)
+                if target_name == name:
                     continue
-                if target in names or target in targets:
-                    # both exist, an old-code process wrote the legacy name after the new one was made: the new
-                    # address is the one read, the legacy row stays as it is with every version (2026-10-20: refusing
-                    # here stopped every agent start)
-                    continue
-                targets.add(target)
-                renames.append((target, name))
-            db.executemany('UPDATE prompts SET name=? WHERE name=?', renames)
+                target = db.execute('SELECT prompt_id FROM prompts WHERE name=?', (target_name,)).fetchone()
+                identity = source if target is None else target[0]
+                if target is None:
+                    db.execute('UPDATE prompts SET name=? WHERE prompt_id=?', (target_name, source))
+                else:
+                    _merge(db, source, identity)
+                db.execute('INSERT OR REPLACE INTO prompt_aliases VALUES (?,?)', (name, identity))
+            _compatibility(db)
             sqlite.stamp(db, PROMPT_SCHEMA_VERSION, PROMPT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:
@@ -174,6 +249,14 @@ class PromptUse(Record):
 def _db(*, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
     with sqlite.opened(home.home() / 'prompts.sqlite3', PROMPT_SCHEMA, write=write,
                        version=PROMPT_SCHEMA_VERSION, compatible=PROMPT_COMPATIBLE_FROM, upgrade=_upgrade) as db:
+        if db.execute("SELECT value FROM meta WHERE key='prompt_compatibility'").fetchone() is None:
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                _compatibility(db)
+                db.execute('COMMIT')
+            except BaseException:
+                db.execute('ROLLBACK')
+                raise
         db.row_factory = sqlite3.Row
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
         try:
@@ -189,13 +272,15 @@ def _version(row: sqlite3.Row, notices: tuple[Notice, ...] = ()) -> PromptVersio
                          row['parent_id'], row['text'], row['origin'], row['created'], notices)
 
 
-_VERSION = ('SELECT v.*, p.name, p.format FROM prompt_versions v JOIN prompts p ON p.prompt_id = v.prompt_id '
+_VERSION = ('SELECT v.*, p.name, p.format FROM prompt_versions v JOIN prompt_records p ON p.prompt_id = v.prompt_id '
             'WHERE v.prompt_id=? ')
 
 
 def _prompt_row(db: sqlite3.Connection, prompt: str) -> sqlite3.Row:
-    found = db.execute('SELECT * FROM prompts WHERE name=?', (prompt,)).fetchone() or \
-        db.execute('SELECT * FROM prompts WHERE prompt_id=?', (prompt,)).fetchone()
+    found = db.execute('SELECT * FROM prompt_records WHERE name=?', (_address(prompt),)).fetchone() or \
+        db.execute('SELECT * FROM prompt_records WHERE prompt_id=?', (prompt,)).fetchone() or \
+        db.execute('SELECT p.* FROM prompt_records p JOIN prompt_aliases a ON a.prompt_id=p.prompt_id WHERE a.alias=?',
+                   (prompt,)).fetchone()
     if found is None:
         raise StoreError(f'No prompt {prompt}.', 'metaform prompts')
     return found
@@ -225,8 +310,9 @@ def add_prompt(name: str, format: str, text: str, *, origin: str = 'edited') -> 
     """Create a prompt and its version 1."""
     if format not in FORMATS:
         raise StoreError(f'{format} is not a prompt format: {", ".join(FORMATS)}.', 'metaform prompts')
+    name = _address(name)
     with _db(write=True) as db:
-        if db.execute('SELECT 1 FROM prompts WHERE name=?', (name,)).fetchone():
+        if db.execute('SELECT 1 FROM prompt_records WHERE name=?', (name,)).fetchone():
             raise StoreError(f'There is already a prompt {name}.', f'metaform prompt {name}')
         return _create(db, name, format, text, origin)
 
@@ -262,8 +348,9 @@ def save_prompt(name: str, text: str, *, format: str = 'text', parent: int | Non
     """
     if format not in FORMATS:
         raise StoreError(f'{format} is not a prompt format: {", ".join(FORMATS)}.', 'metaform prompts')
+    name = _address(name)
     with _db(write=True) as db:
-        record = db.execute('SELECT * FROM prompts WHERE name=?', (name,)).fetchone()
+        record = db.execute('SELECT * FROM prompt_records WHERE name=?', (name,)).fetchone()
         if record is not None:
             newest = _newest(db, record['prompt_id'])
             assert newest is not None
@@ -315,9 +402,9 @@ def merge_selected(prompt: str, migration_id: str,
 def prompt_merges(prompt: str | None = None) -> list[dict[str, Any]]:
     """Selected-source migration evidence, including exact input/output versions and conflicts left untouched."""
     with _db() as db:
-        sql = ('SELECT m.*, p.name FROM prompt_merges m JOIN prompts p ON p.prompt_id=m.prompt_id'
+        sql = ('SELECT m.*, p.name FROM prompt_merges m JOIN prompt_records p ON p.prompt_id=m.prompt_id'
                + (' WHERE p.name=?' if prompt else '') + ' ORDER BY m.created,m.migration_id')
-        rows = db.execute(sql, (prompt,) if prompt else ()).fetchall()
+        rows = db.execute(sql, (_address(prompt),) if prompt else ()).fetchall()
     return [{'name': row['name'], 'migration_id': row['migration_id'], 'state': row['state'],
              'before_version_id': row['before_version_id'], 'after_version_id': row['after_version_id'],
              'created': row['created'], **json.loads(row['details'])} for row in rows]
@@ -326,14 +413,15 @@ def prompt_merges(prompt: str | None = None) -> list[dict[str, Any]]:
 def shipped(name: str, format: str, text: str) -> PromptVersion:
     """The version to serve of a module's shipped prompt: made version 1 when first served, and the shipped text
     again as the next version when it has changed and nobody has saved an edit since, STORE-044."""
+    name = _address(name)
     with _db() as db:
-        found = db.execute('SELECT * FROM prompts WHERE name=?', (name,)).fetchone()
+        found = db.execute('SELECT * FROM prompt_records WHERE name=?', (name,)).fetchone()
         newest = _newest(db, found['prompt_id']) if found is not None else None
     if found is None:
         if format not in FORMATS:
             raise StoreError(f'{format} is not a prompt format: {", ".join(FORMATS)}.', 'metaform prompts')
         with _db(write=True) as db:
-            if db.execute('SELECT 1 FROM prompts WHERE name=?', (name,)).fetchone() is None:
+            if db.execute('SELECT 1 FROM prompt_records WHERE name=?', (name,)).fetchone() is None:
                 return _create(db, name, format, text, 'shipped')
         return shipped(name, format, text)  # another writer made it first, as two agents starting at once do
     assert newest is not None
@@ -374,7 +462,7 @@ def edits() -> dict[str, str]:
     """Every prompt whose newest version is an edit, by name, with that version's text: what is sent in place of the
     shipped text, read in one pass, STORE-044."""
     with _db() as db:
-        rows = db.execute("SELECT p.name, v.text FROM prompts p JOIN prompt_versions v ON v.prompt_id = p.prompt_id "
+        rows = db.execute("SELECT p.name, v.text FROM prompt_records p JOIN prompt_versions v ON v.prompt_id = p.prompt_id "
                           "WHERE v.origin='edited' AND v.number = (SELECT MAX(number) FROM prompt_versions n "
                           'WHERE n.prompt_id = p.prompt_id)').fetchall()
     return {str(row['name']): str(row['text']) for row in rows}
@@ -388,8 +476,9 @@ def store_path() -> Path:
 def behind(prompt: str) -> Behind | None:
     """The shipped text the served edit of a prompt is behind, when its newest version is an edit and its module now
     ships a text the edit was not made over; None otherwise, and for a prompt the store does not hold."""
+    prompt = _address(prompt)
     with _db() as db:
-        record = db.execute('SELECT * FROM prompts WHERE name=?', (prompt,)).fetchone()
+        record = db.execute('SELECT * FROM prompt_records WHERE name=?', (prompt,)).fetchone()
         newest = _newest(db, record['prompt_id']) if record is not None else None
         if newest is None or newest['origin'] != 'edited':
             return None
@@ -402,7 +491,7 @@ def prompts() -> tuple[Prompt, ...]:
     """Every prompt with its newest version number; the list is the table, so it is read whole, STORE-005."""
     with _db() as db:
         rows = db.execute('SELECT p.*, (SELECT MAX(number) FROM prompt_versions v WHERE v.prompt_id = p.prompt_id) '
-                          'AS newest FROM prompts p ORDER BY p.name').fetchall()
+                          'AS newest FROM prompt_records p ORDER BY p.name').fetchall()
         return tuple(Prompt(row['prompt_id'], row['name'], row['format'], row['created'], int(row['newest']))
                      for row in rows)
 
@@ -447,6 +536,6 @@ def use_of(project_id: str, base_id: str, layer_id: str) -> PromptVersion | None
                            (project_id, base_id, layer_id)).fetchone()
         if found is None:
             return None
-        row = db.execute('SELECT v.*, p.name, p.format FROM prompt_versions v JOIN prompts p '
+        row = db.execute('SELECT v.*, p.name, p.format FROM prompt_versions v JOIN prompt_records p '
                          'ON p.prompt_id = v.prompt_id WHERE v.version_id=?', (found[0],)).fetchone()
         return _version(row)

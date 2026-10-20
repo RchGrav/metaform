@@ -177,8 +177,8 @@ def test_a_prompt_store_at_layout_2_is_upgraded_in_place_and_keeps_its_versions(
     prompts.shipped('practices', 'markdown', 'shipped')
     db = sqlite3.connect(home / 'prompts.sqlite3')
     try:
-        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('6',)
-        assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('6',)
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('7',)
+        assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('4',)
         assert db.execute('SELECT COUNT(*) FROM prompt_shipped').fetchone() == (1,)
     finally:
         db.close()
@@ -216,7 +216,8 @@ def test_legacy_copy_renames_preserve_all_history_and_layer_uses(home, tmp_path,
     assert prompts.behind(selected.name).text == 'New shipped.'
     assert prompts.prompt_version(selected.name).version_id == 'override'
     with sqlite3.connect(home / 'prompts.sqlite3') as db:
-        assert dict(db.execute('SELECT * FROM meta')) == {'schema_version': '6', 'compatible_from': '6'}
+        assert dict(db.execute('SELECT * FROM meta')) == {
+            'schema_version': '7', 'compatible_from': '4', 'prompt_compatibility': '7'}
     with sqlite3.connect(legacy) as db:
         assert db.execute('SELECT name FROM prompts').fetchone()[0] == old_name
 
@@ -234,11 +235,73 @@ def test_prompt_address_conflict_preserves_both_histories_and_upgrades_other_nam
             db.execute('INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?)',
                        (f'version-{number}', str(number), 1, None, f'body-{number}', 'shipped', 'created'))
     assert prompts.prompt_version('prompt.dispatch:work').text == 'body-1'
-    assert prompts.prompt_version('dispatch:work').text == 'body-0'
+    assert prompts.prompt_version('dispatch:work').text == 'body-1'
+    assert {v.version_id for v in prompts.prompt_versions('dispatch:work')} == {'version-0', 'version-1'}
+    assert prompts.prompt_version('0').text == 'body-1'
     assert prompts.prompt_version('prompt.memory:orient').text == 'body-2'
     with sqlite3.connect(path) as db:
-        assert [r[0] for r in db.execute('SELECT name FROM prompts ORDER BY name')] == [
-            'dispatch:work', 'prompt.dispatch:work', 'prompt.memory:orient']
+        assert [r[0] for r in db.execute('SELECT name FROM prompt_records ORDER BY name')] == [
+            'prompt.dispatch:work', 'prompt.memory:orient']
         assert db.execute('SELECT COUNT(*) FROM prompt_versions').fetchone()[0] == 3
-        assert dict(db.execute('SELECT * FROM meta')) == {'schema_version': '6', 'compatible_from': '6'}
+        assert dict(db.execute('SELECT * FROM meta')) == {
+            'schema_version': '7', 'compatible_from': '4', 'prompt_compatibility': '7'}
     assert prompts.prompt_version('prompt.dispatch:work').version_id == 'version-1'
+
+
+@pytest.mark.req('CTX-082')
+def test_duplicate_names_keep_newest_override_and_roles_resolve(home, project_folder):
+    from metaform.data import prompts
+    from metaform.module import resolve_agent_role
+    home.mkdir(parents=True, exist_ok=True)
+    path = home / 'prompts.sqlite3'
+    with sqlite3.connect(path) as db:
+        db.executescript(prompts.PROMPT_SCHEMA)
+        db.executemany('INSERT INTO meta VALUES (?,?)', [('schema_version', '6'), ('compatible_from', '6')])
+        for identity, name in [('old', 'orchestration:common'), ('new', 'prompt.orchestration:common')]:
+            db.execute('INSERT INTO prompts VALUES (?,?,?,?)', (identity, name, 'text', 'created'))
+        db.executemany('INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?)', [
+            ('new-first', 'new', 1, None, 'Canonical first.', 'shipped', '2026-10-19T01:00:00Z'),
+            ('old-first', 'old', 1, None, 'Legacy first.', 'shipped', '2026-10-19T02:00:00Z'),
+            ('old-latest', 'old', 2, 'old-first', 'Latest selected instructions.', 'edited', '2026-10-20T01:00:00Z')])
+        db.execute("INSERT INTO prompt_uses VALUES ('project','base','layer','old-latest')")
+    for name in ('orchestration:common', 'prompt.orchestration:common', 'old'):
+        selected = prompts.prompt_version(name)
+        assert selected.version_id == 'old-latest'
+        assert selected.text == 'Latest selected instructions.'
+        assert selected.name == 'prompt.orchestration:common'
+    versions = prompts.prompt_versions('orchestration:common')
+    assert [one.version_id for one in versions] == ['old-latest', 'old-first', 'new-first']
+    assert versions[0].parent_id == 'old-first'
+    assert prompts.layers_by_prompt_version('old-latest')[0].layer_id == 'layer'
+    resolved = resolve_agent_role(project_folder, 'functionality')
+    assert not resolved['problems'], resolved
+    assert resolved['components'][0]['text'] == 'Latest selected instructions.'
+    # Legacy write callers also use the canonical identity and cannot split histories again.
+    written = prompts.save_prompt('orchestration:common', 'Later override.')
+    assert prompts.prompt_version('prompt.orchestration:common').version_id == written.version_id
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM prompt_records WHERE name='orchestration:common'").fetchone()[0] == 0
+
+
+def test_already_loaded_legacy_sql_reads_and_writes_canonical_history(home):
+    from metaform import sqlite
+    from metaform.data import prompts
+    first = prompts.shipped('prompt.memory:instructions', 'text', 'Canonical instructions.')
+    path = home / 'prompts.sqlite3'
+    # A process at layout 4 retains its exact old SQL after the new process upgrades the store.
+    with sqlite.opened(path, '', write=True, version='4', compatible='2') as db:
+        identity = db.execute('SELECT prompt_id FROM prompts WHERE name=?', ('memory:instructions',)).fetchone()[0]
+        assert identity == first.prompt_id
+        selected = db.execute('SELECT v.text FROM prompt_versions v JOIN prompts p ON p.prompt_id=v.prompt_id '
+                              'WHERE v.prompt_id=? ORDER BY v.number DESC LIMIT 1', (identity,)).fetchone()
+        assert selected[0] == 'Canonical instructions.'
+        db.execute('BEGIN IMMEDIATE')
+        db.execute('INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?)',
+                   ('old-process-version', identity, 2, first.version_id, 'Old process edit.', 'edited', 'later'))
+        db.execute("INSERT INTO prompts VALUES ('old-created','dispatch:legacy_new','text','later')")
+        db.execute("INSERT INTO prompt_versions VALUES ('old-created-v1','old-created',1,NULL,'Old new prompt.',"
+                   "'shipped','later')")
+        db.execute('COMMIT')
+    assert prompts.prompt_version('memory:instructions').text == 'Old process edit.'
+    assert prompts.prompt_version('prompt.memory:instructions').version_id == 'old-process-version'
+    assert prompts.prompt_version('prompt.dispatch:legacy_new').text == 'Old new prompt.'
