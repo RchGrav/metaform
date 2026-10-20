@@ -345,6 +345,13 @@ Keep routine summaries to one to three short sentences. Send completion notices 
 <count/> new in your inbox: <items/>.
 </inbox_new>
 
+<!-- The status line the person's system agent is woken with at most every fifteen minutes, and only when ticket status
+     changed since its last: routine entries, a ticket complete, progress, a board item finished, are counted and never
+     named, so the agent is told to check and is given nothing, since every token of its context counts. <count/> is
+     how many changes were counted. The agent reads what it chooses with dispatch_sessions thread=false and
+     dispatch_notes. Empty sends nothing. -->
+<inbox_digest>Ticket status changed <count/> times since your last status line. Check the tickets that matter with dispatch_sessions thread=false and dispatch_notes; nothing is given here.</inbox_digest>
+
 <!-- A helper's first message: the person's system agent started it with dispatch helper and a brief, for quick
      work it hands off so it stays reachable in the chat. <brief/> is the brief as the system agent wrote it. The helper
      works on no ticket, is shown on the map and in the agents list like any agent, and ends when its turn ends, its
