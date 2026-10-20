@@ -16,15 +16,18 @@
      puts them at the head of that turn, and metaform_catalog compacted=true and metaform://runtime/compaction-state
      answer with them first. Write no link here. Empty sends the links alone. -->
 <connect_directive>
-Read the applicable instruction resources linked below whose contents are due in this context. They supply shared project terms, your responsibilities and memory instructions. Components already delivered unchanged in this context are omitted by the delivery service.
+Read the instruction resources linked below. They supply shared project terms, your responsibilities and memory instructions. Components already delivered unchanged in this context are omitted by the delivery service.
 </connect_directive>
 <!-- The rules every agent works by, served whole and exactly as written at metaform://rules, the first link of every
-     agent's connect message and of its first turn after each compaction. Empty serves an empty resource. -->
+     agent's connect message and of its first turn after each compaction. A dispatched agent's runner also puts this
+     text at the head of the agent's first turn in each context epoch; the receipt ledger leaves it out while the
+     epoch holds it unchanged, so it comes again only after a compaction or an edit. Empty serves an empty resource
+     and sends nothing. -->
 <connect_rules>
 Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; route decisions that require the user through the PM. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
 
 Follow these strict output constraints for all tickets, and text, user facing text must speak plainly in proper english, all tickets and agent communication must take this form.
-To the user, write plain, proper English in full sentences; rules 1 to 6 apply to tickets and messages between agents.
+Rules 1 to 6 apply to all text, the user's included. To the user, sentences stay grammatical English: no filler, every technical detail kept.
 1. Strip all filler words, pleasantries, preambles, and post-summaries (e.g., no "Sure, I can help with that", "In conclusion").
 2. Drop articles ("a", "an", "the"), conjunctions, and hedging language wherever possible.
 3. Use short, primitive sentences (3-6 words) or direct fragments.
