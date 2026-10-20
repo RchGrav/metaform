@@ -1271,6 +1271,9 @@ class Session:
         # ACP's compaction signal said the agent's context was compacted, so its next turn opens with `compacted`, the
         # line that says what it works on and that what Metaform gave it once comes again, CTX-045 and CTX-046.
         self.recompacted = False
+        # set once the compaction's `session.compacted` has gone out, which starts the agent's next context epoch; the
+        # turn after a compaction waits for it, so the rules it carries are counted in the new epoch
+        self.epoch_moved: asyncio.Event | None = None
         self.permissions: dict[str, dict[str, Any]] = {}  # each permission request asked, by its request id
         self.patches: dict[str, tuple[Any, dict[str, Any]]] = {}  # a running call's diffs, worked out once each
         self.named: set[str] = set()  # the lines kept for something, such as one tool call, changed in place
@@ -1955,6 +1958,7 @@ class Session:
         if kind == 'compaction_update':  # ACP's session compaction, which this SDK's schema does not know either
             if update.get('status') == 'completed' and not self.replaying and not child:
                 self.recompacted = True  # here, as the wire is read, so a turn sent after it always carries the line
+                self.epoch_moved = asyncio.Event()
                 self.spawn(self.compacted())
             return  # in_progress, failed, cancelled and any other status change nothing: the context is as it was
         if kind not in ('subagent_spawned', 'subagent_state_update') or not child:
@@ -1975,12 +1979,17 @@ class Session:
         when the compaction falls inside a long turn; else the next turn opens with it, and the rest waits for the call
         that needs it. `session.compacted` says it on the bus, for a module that keeps more per session, and the thread
         keeps a line of it."""
-        gone = await asyncio.to_thread(forget_shown, self.runner)
-        if self.recompacted:  # not said yet by a turn sent since
-            await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, self.compaction_line())
-        await self.ctx.publish_async('session.compacted', {
-            'project': self.store.project_id, 'work_id': self.work_id, 'session': self.runner,
-            'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp'})
+        moved = self.epoch_moved
+        try:
+            gone = await asyncio.to_thread(forget_shown, self.runner)
+            if self.recompacted:  # not said yet by a turn sent since
+                await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, self.compaction_line())
+            await self.ctx.publish_async('session.compacted', {
+                'project': self.store.project_id, 'work_id': self.work_id, 'session': self.runner,
+                'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp'})
+        finally:
+            if moved is not None:
+                moved.set()
         async with self.lock:
             await self.flush()
             await self.note(None, 'notice', f'{self.name} compacted its context; Metaform gives again what it '
@@ -4320,6 +4329,23 @@ class Session:
         self.inflight_context = {'epoch': prepared['epoch'], 'components': list(by_name.values())}
         return text
 
+    def rules(self, text: str) -> str:
+        """The rules every agent works by, metaform://rules, at the head of its first turn in each context epoch. The
+        receipt ledger leaves them out while the epoch holds them unchanged, so they come again only after compaction.
+        Without a runner id there is no ledger to count them against, so nothing is sent rather than every turn."""
+        if self.probe or self.runner is None:
+            return text
+        rules = prompt_files.resolve('mcp:connect_rules')
+        if not rules.get('text'):
+            return text
+        prepared = prepare_agent_context(Path(self.root), self.runner, [rules], project=self.store.project_id)
+        if not prepared['components']:
+            return text
+        held = self.inflight_context
+        self.inflight_context = {'epoch': prepared['epoch'], 'components': [
+            *(held['components'] if held and held['epoch'] == prepared['epoch'] else []), *prepared['components']]}
+        return f'{prepared["text"]}\n\n{text}'
+
     def context_checkpoint(self, text: str) -> str:
         """Piggyback one retention check on the first actual turn of a start/resume, never a separate model call."""
         if self.probe or self.context_checked:
@@ -4560,6 +4586,9 @@ class Session:
                             self.inflight_context = None
                         if line:  # said once, by whichever comes first, ahead of what comes again: an agent that lost
                             text = f'{line}\n\n{text}'  # its context reads its instruction links and ticket first
+                        if compacted and self.epoch_moved is not None:
+                            await self.epoch_moved.wait()
+                        text = await asyncio.to_thread(self.rules, text)
                         text = await asyncio.to_thread(self.context_checkpoint, text)
                         self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
                         self.inflight_peers = marks

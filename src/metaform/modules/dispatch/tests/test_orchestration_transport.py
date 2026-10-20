@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from metaform import prompt_files
 from metaform.data import Store
 from metaform.module import Stop, context
 from metaform.modules.dispatch.tests.test_dispatch import UNCONCERNED, Dispatch, eventually
@@ -72,6 +73,7 @@ def sent(monkeypatch, session, guide=None):
 
     async def prompt(session_id, prompt):
         prompts.append(prompt[0].text)
+        session.context_delivered()  # what the connection's observer does once the prompt is sent
         return SimpleNamespace(stop_reason='end_turn', usage=None)
 
     async def nothing(*args, **kwargs):
@@ -172,6 +174,44 @@ def test_startup_checkpoint_is_small_and_retained_key_is_not_repeated_on_resume(
 
 
 @pytest.mark.kind('fixture')
+def test_rules_reach_an_agent_once_per_context_epoch(dispatch, monkeypatch):
+    """The output rules head the first turn, are left out while the epoch holds them, and come again once after the
+    agent's context is compacted."""
+    import asyncio
+
+    rules = prompt_files.module('mcp', 'connect_rules')
+    worker = busy(dispatch)
+    worker.runner = 'rules-test'
+    worker.turn('First task.')
+    worker.turn('Second task.')
+    first, second = sent(monkeypatch, worker)
+    assert first == f'{rules}\n\nFirst task.' and second == 'Second task.'
+
+    worker.recompacted, worker.epoch_moved = True, asyncio.Event()  # as ACP's completed compaction_update sets them
+    monkeypatch.setattr(worker, 'compaction_line', lambda: '')
+    from metaform.modules.dispatch import runner
+    forget = runner.forget_shown
+
+    def slow_forget(session):  # the bus is late, as it can be: the turn must still wait for the new epoch
+        time.sleep(0.5)
+        return forget(session)
+
+    monkeypatch.setattr(runner, 'forget_shown', slow_forget)
+    queued = worker.prompted
+
+    async def compaction_then_turns():
+        worker.spawn(worker.compacted())  # the new epoch starts on the bus while the next turn is already waiting
+        await queued()
+
+    worker.turns = 1  # still in a turn, so these queue
+    worker.turn('After compaction.')
+    worker.turn('Later still.')
+    monkeypatch.setattr(worker, 'prompted', compaction_then_turns)
+    again, later = sent(monkeypatch, worker)
+    assert again.count(rules) == 1 and again.endswith('After compaction.') and later == 'Later still.'
+
+
+@pytest.mark.kind('fixture')
 def test_compaction_does_not_rebuild_assignment_or_actions(dispatch, monkeypatch):
     worker = busy(dispatch)
     worker.spoken, worker.recompacted = True, True
@@ -240,7 +280,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     system.turn('What is new?', first=True, typed=True)
     system.turn('And now?', first=True, typed=True)
     prompts = sent(monkeypatch, system)
-    head, line = prompts[0].split('\n\n')
+    head, line = prompts[0].removeprefix(prompt_files.module('mcp', 'connect_rules') + '\n\n').split('\n\n')
     assert head == 'What is new?' and '\n' not in line, prompts[0]
     assert line.startswith('23 new in your inbox: Ticket 0 — done, Ticket 1 — '
                            'assessment, ') and 'and 13 more' in line, line
