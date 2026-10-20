@@ -24,7 +24,7 @@ MODULE = HERE.parent
 FAKE = HERE / 'fake_agent.py'
 ROOT = Path(__file__).parents[5]
 PUBLIC = {'metaform.module', 'metaform.settings', 'metaform.data', 'metaform.events',
-          'metaform.prompt_files', 'metaform.home', 'metaform.jev'}  # Jev, the decision service
+          'metaform.prompt_files', 'metaform.home', 'metaform.jev', 'metaform.skills'}  # Jev, the decision service
 NODE = 'code.engine'
 LINKED = 'code.store'
 UNRELATED = 'code.ledger'  # a node a ticket neither is nor links
@@ -326,7 +326,7 @@ def test_a_worker_s_first_turn_tells_the_prompt_versions_it_carried_and_agents_k
         return json.loads(found.stdout) if found.returncode == 0 else None
     sent = eventually(kept)
     assert (sent['role'], sent['agent'], sent['work_id']) == ('worker', 'claude', dispatch.id)
-    assert {'name': 'dispatch:work', 'versions': [1]} in sent['prompts']
+    assert {'name': 'prompt.dispatch:work', 'versions': [1]} in sent['prompts']  # the canonical prompt identity
     dispatch.stop()
 
 
@@ -379,8 +379,10 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     blocks = prompt['params']['prompt']
     assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
     given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with map_work')
-    assert given.startswith(f'{{"address": "{NODE}", ') and handed, \
-        "the node's effective context first, then the memory prompt, then the work sentence, CTX-028"
+    # the startup checkpoint every agent opens with, then the node's effective context, then the memory prompt, then
+    # the work sentence, CTX-028
+    assert given.startswith('Retain this context key') and f'{{"address": "{NODE}", ' in given and handed, \
+        "the checkpoint, the node's effective context, the memory prompt, then the work sentence, CTX-028"
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of the work, CTX-028'
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()
@@ -1024,8 +1026,8 @@ def test_dispatch_agents_refuses_an_automatic_start_and_never_the_persons(dispat
     resuming = context('dispatch', dispatch.folder, nouns={'id': dispatch.id})
     with monkeypatch.context() as patched:
         patched.setattr(module, 'person_asks', lambda ctx: False)
-        with pytest.raises(module.Refused, match='Every slot Full Auto may fill is in use'):
-            module.resume(resuming)
+        with pytest.raises(module.Refused, match='Full Auto is off|Every slot Full Auto may fill is in use'):
+            module.resume(resuming)  # an automatic resume is refused: by Full Auto off, else by the slots
     resumed = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
                              env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
     dispatch_runners.append((resumed, dispatch.folder, dispatch.log))
@@ -2107,7 +2109,7 @@ def test_a_helper_that_finishes_its_brief_puts_one_line_in_the_system_agents_inb
     ctx = context('dispatch', dispatch.folder, project='proj')
     waiting = eventually(lambda: user_updates(ctx))
     [(_, said, wakes)] = update_entries(ctx, waiting)
-    assert said == f'helper {work_id[len("helper-"):][:8]} done' and not wakes, said
+    assert said == f'Ticket helper {work_id[len("helper-"):][:8]} — done' and not wakes, said
     from metaform.data import Store
     from metaform.modules.dispatch.orchestration import UPDATES
     with Store('proj', module='dispatch').tables(write=False) as tx:
@@ -2493,9 +2495,9 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         assert states(a, sent['note']) == {other.id: 'queued'}
         (b_gates / '1').touch()  # B's turn ends; the note is its next turn
         [got] = eventually(lambda: [text for text in prompts(b_session)[1:] if 'dom.js' in text])
-        assert 'Message from another agent:' in got and 'I am changing dom.js css()' in got
-        assert f'"session_id": "{a_session}"' in got and '"kind": "peer"' in got
-        assert f'dispatch_note reply={sent["note"]}' in got
+        # the note's words alone reach B, no framing and no envelope: its sender and route are read with dispatch notes
+        assert 'I am changing dom.js css()' in got and 'Message from another agent' not in got
+        assert a_session not in got and '"kind"' not in got  # the reply route too is read with dispatch notes
         eventually(lambda: states(a, sent['note']) == {other.id: 'delivered'})
         (b_gates / '2').touch()
         eventually(lambda: states(a, sent['note']) == {other.id: 'read'})
@@ -2508,7 +2510,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
                                   env={**os.environ, 'METAFORM_HOME': str(dispatch.home), **a},
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         [question] = eventually(lambda: [text for text in prompts(b_session) if 'May I change' in text])
-        assert '"kind": "question"' in question
+        assert '"kind"' not in question and 'reply with dispatch_note reply=' in question  # its words, and how to reply
         asked = re.search(r'reply=([0-9a-f]{16})', question).group(1)
         run('dispatch', 'note', f'reply={asked}', '--', 'Yes, go ahead', cwd=dispatch.folder, env=b)
         out, err = asking.communicate(timeout=LIMIT)
@@ -3331,11 +3333,10 @@ def test_what_the_board_needs_waits_in_the_system_agents_inbox_while_full_auto_i
 
         run('dispatch', 'message', dispatch.id, '--', 'What is new?', cwd=dispatch.folder)
         told = eventually(lambda: found[1] if len(found := prompts()) == 2 else None)
-        head, line = told.split('\n\n')
-        assert head == 'What is new?' and line.startswith('4 new in your inbox: '), told
-        for kind, work_id in (('taskless', stage), ('duplicate', again), ('died', first), ('finished', again)):
-            assert f'{item(work_id)} board {kind}' in line, line
-        assert 'no task' not in line and 'repeats' not in line and 'fault lights' not in line, line
+        # what the board needs is routine: counted toward the status line, never named on the person's turn, and read
+        # with dispatch notes (2026-10-20)
+        assert told == 'What is new?', told
+        assert 'no task' not in told and 'repeats' not in told and 'fault lights' not in told, told
         eventually(lambda: read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
 
         # Full Auto off: nothing is raised, so no turn comes
@@ -4224,9 +4225,9 @@ def test_an_edit_of_the_system_prompt_reaches_the_running_system_agent_at_its_ne
     gates.mkdir()
     dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
     [opening] = eventually(lambda: dispatch.received('session/prompt'))
-    assert opening['params']['prompt'][0]['text'].startswith('# Front-facing agent')
+    assert '# Front-facing agent' in opening['params']['prompt'][0]['text']  # after the startup checkpoint
     (gates / '1').touch()
-    prompt_files.save_edit('dispatch:system', 'Edited orchestrator: plans & tickets. <mascot/>')
+    prompt_files.save_edit('prompt.dispatch:system', 'Edited orchestrator: plans & tickets. <mascot/>')  # canonical name
     run('dispatch', 'message', dispatch.id, 'what', 'next', cwd=dispatch.folder)
     (gates / '2').touch()
     [renewed] = eventually(lambda: told(dispatch))
