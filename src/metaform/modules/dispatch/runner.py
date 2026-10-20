@@ -789,6 +789,7 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
             sys.stderr.write(traceback.format_exc())
         raise
     finally:
+        leave_ledger()
         let_lease_go(lease)
 
 
@@ -5160,6 +5161,8 @@ class Session:
             if self.took or self.recorded:
                 await self.release(how)
         finally:
+            if helper_id(self.work_id):
+                await asyncio.to_thread(leave_ledger)
             self.over.set()
             if release:
                 self.ended.set()

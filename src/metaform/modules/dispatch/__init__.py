@@ -180,8 +180,8 @@ TABLES = Tables(version=18, compatible_from=5, tables=(  # 5: agents do not ask;
                    Column('state', required=True), Column('reason'), Column('ready', 'real', required=True),
                    Column('deadline', 'real', required=True), Column('seq', 'int', required=True)),
           indexes=(Index(('state',)),)),
-    # An issue raised and not yet talking: waiting for its node or a slot, oldest first, or, with `started`, its
-    # sentinel launched and its session not made yet, which holds a slot all the same, VIEW-045.
+    # An issue waiting for its node, oldest first, or, with `started`, its sentinel launched before its
+    # session is made, VIEW-045.
     Table('raised', key=('work_id',),
           columns=(Column('work_id', required=True), Column('node', required=True), Column('agent', required=True),
                    Column('started', 'real'), Column('seq', 'int', required=True), Column('asked')),
@@ -3473,7 +3473,7 @@ def _runs(pid: int, born: str) -> bool:
     now = identity(pid)
     if now is None:
         return True
-    if now != born:
+    if not now or now != born:
         return False
     if sys.platform.startswith('linux'):
         try:
@@ -3502,6 +3502,11 @@ def launches() -> list[dict[str, Any]]:
             with contextlib.suppress(OSError):
                 path.unlink()
             continue
+        subject = str(entry.get('subject') or '')
+        if subject.startswith('sentinel='):
+            entry['kind'] = 'sentinel'
+        elif subject == 'system':
+            entry['kind'] = 'advisor'
         found.append(entry)
     return found
 
@@ -3513,8 +3518,11 @@ def primary_advisor(words: Sequence[str]) -> bool:
 
 
 def launch_kind(words: Sequence[str]) -> str:
-    """`summoned` for a runner the person summons, a chat, the system agent, a sentinel, an intake or a merge
-    preparation; `worker` for a ticket's agent."""
+    """Sentinels and the person's advisor have independent admission; other chats are summoned, tickets workers."""
+    if any(word.startswith('sentinel=') for word in words):
+        return 'sentinel'
+    if primary_advisor(words):
+        return 'advisor'
     return 'summoned' if any(word.startswith(SUMMONS) for word in words) else 'worker'
 
 
@@ -3522,6 +3530,10 @@ def capacity_kind(ctx: Context, work_id: str, kind: str) -> str:
     """Only recorded role-creation assignments and the helpers the system agent starts, `helper`, are exempt helpers;
     ordinary delegated work consumes slots. dispatch_agents bounds what Full Auto starts by itself, and a helper is
     started on purpose, to get round a full queue when it has to (the owner's ruling, 2026-10-19)."""
+    if ctx.nouns.get('sentinel'):
+        return 'sentinel'
+    if ctx.nouns.get('system') and not any(ctx.nouns.get(key) for key in ('talk', 'intake', 'prep')):
+        return 'advisor'
     if helper_id(work_id):
         return 'helper'
     if kind != 'worker':
@@ -3538,7 +3550,7 @@ HELPERS_MOST = 8  # separate bounded helper capacity; the deduplicated user advi
 def slots(ctx: Context, store: Store, *, besides: int | None = None) -> dict[str, Any]:
     """Project and machine worker capacity, plus the project's independent temporary helper bound.
 
-    Triage has separate admission. Old runners absent from the ledger are counted from verified live session rows.
+    Sentinels and triage have separate admission. Unledgered runners count from verified live session rows.
     `besides` excludes the runner handing over or admitting itself. `room` is the remaining helper capacity.
     """
     entries = [entry for entry in launches() if entry['pid'] != besides]
@@ -3550,11 +3562,11 @@ def slots(ctx: Context, store: Store, *, besides: int | None = None) -> dict[str
                 and runner_of(pid) == row['work_id']:
             known.add(pid)
             unledgered = {'pid': pid, 'project': store.project_id, 'work_id': row['work_id'],
-                          'kind': 'summoned' if summoned(row) or helper_id(row['work_id']) else 'worker'}
+                          'kind': 'helper' if helper_id(row['work_id']) else launch_kind(command_line(pid))}
             own.append(unledgered)
             entries.append(unledgered)
     workers = [entry for entry in own if entry.get('kind') == 'worker']
-    called = [entry for entry in own if entry.get('kind') != 'worker']
+    called = [entry for entry in own if entry.get('kind') not in ('worker', 'sentinel', 'advisor')]
     limit, most = int(ctx.setting('dispatch_agents')), int(ctx.setting('dispatch_machine_agents'))
     used = len(workers)
     machine_used = sum(entry.get('kind') == 'worker' for entry in entries)
@@ -3566,11 +3578,6 @@ def slots(ctx: Context, store: Store, *, besides: int | None = None) -> dict[str
             'helpers': len(called), 'helper_limit': HELPERS_MOST,
             'projects': len({entry.get('project') for entry in entries}),
             'holding': [str(entry.get('work_id')) for entry in workers]}
-
-
-def summon_room(ctx: Context, store: Store) -> int:
-    """How many more agents the person may summon now, as the gate counts, `slots`."""
-    return int(slots(ctx, store)['room'])
 
 
 def launch_holds(store: Store, row: dict[str, Any]) -> bool:
@@ -3659,7 +3666,7 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
                       f'{_agents(held["limit"])} at once, held by {holders}. {names[work_id]}: '
                       f'{what_follows(ctx, kind)}{" Starting it yourself runs it now." if auto else ""}',
                       'metaform dispatch sessions')
-    if kind != 'worker' and not persons_own and held['room'] <= 0:
+    if kind not in ('worker', 'sentinel', 'advisor') and not persons_own and held['room'] <= 0:
         raise Refused(f'The project has {HELPERS_MOST} helpers active. Wait for a helper to finish; worker limits '
                       'do not block the advisor.', 'metaform dispatch sessions')
     found = over_budget(ctx, store, work_id=work_id if kind == 'worker' and not ticketless(work_id) else None)
@@ -4400,8 +4407,7 @@ def footprint(store: Store) -> dict[str, int] | None:
 
 
 def start_raised(ctx: Context, store: Store, asked: int | None = None) -> list[str]:
-    """Start the sentinel of each queued issue whose node is no longer in use, oldest first, while there is room to
-    summon an agent, VIEW-045."""
+    """Start each queued sentinel whose node is no longer in use, oldest first, VIEW-045."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:  # read first: a pass with nothing queued writes nothing, so it never makes a
         held = [dict(row) for row in tx.rows('raised', by=('seq',), limit=0).results]  # cleared project's base again
@@ -4417,13 +4423,11 @@ def start_raised(ctx: Context, store: Store, asked: int | None = None) -> list[s
     waiting = [row for row in held if row['started'] is None]
     started: list[str] = []
     for row in waiting:
-        if summon_room(ctx, store) <= 0:
-            break
         if in_use(store, row['node']):
             continue
         try:
             launch(ctx, store, row['work_id'], row['node'], row['agent'], asked=asked)
-        except Stop:  # the gate found no room, or the day's budget reached: it waits for the next pass
+        except Stop:  # a halt, failing agent or reached budget waits for the next pass
             break
         started.append(row['work_id'])
     return started
@@ -4502,8 +4506,8 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
     """The person raises an issue on a node, a sentinel starts on it with their words, investigates,
     and brings proposals to the page's chat; the person chooses one or talks it through, and the chosen one becomes
     held tickets. The issue is held on a ticket of its own at the node, so the chat has a place and the report is
-    kept; no worker takes it. An issue on a node other work is using, or raised when every agent slot is taken,
-    waits; its sentinel starts when the work is complete and a slot is free."""
+    kept; no worker takes it. An issue on a node other work is using waits until that work is complete.
+    Agent capacity never delays its sentinel."""
     store = ctx.require_store()
     given: Any = ctx.nouns['text']
     words = [str(word) for word in cast(list[Any], given)] if isinstance(given, (list, tuple)) else [str(given)]
@@ -4519,14 +4523,14 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
                     note=text, held=True, hold=True)
     work_id = str(cast(dict[str, Any], made)['id'] if isinstance(made, dict) else made.id)
     busy = in_use(store, node)
-    if busy or summon_room(ctx, store) <= 0:
+    if busy:
         with Store(store.project_id, module='dispatch').tables() as tx:
             tx.insert('raised', {'work_id': work_id, 'node': node, 'agent': agent, 'seq': time.time_ns()})
         return {'state': 'queued', 'work_id': work_id, 'node': node,
-                'waiting_on': busy or 'a free agent slot', 'conversation': True}
+                'waiting_on': busy, 'conversation': True}
     try:
         return launch(ctx, store, work_id, node, agent)
-    except Stop as error:  # the gate found no room or the day's budget reached: the issue waits in the queue
+    except Stop as error:  # a halt, failing agent or reached budget leaves the issue queued
         return {'state': 'queued', 'work_id': work_id, 'node': node, 'waiting_on': str(error), 'conversation': True}
 
 
