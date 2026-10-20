@@ -543,9 +543,9 @@ MODULE = Module(
         Verb('role', role, 'Read one role: what it is for, each prompt it is sent with its text and version, its '
                            'tools and authority, and the agents running as it.',
              nouns=(Noun('name', 'The role: intake, system, sentinel, talk, prep or worker.'),), effect='read'),
-        Verb('resolve', authored.resolve, 'Resolve authored responsibilities and actual selected prompt components '
+        Verb('resolve', authored.resolve, "Resolve a role's responsibilities and the prompt components actually selected "
                                           'without changing an agent assignment.',
-             nouns=(Noun('name', 'The authored role name or URI from an enabled module provider.'),),
+             nouns=(Noun('name', 'The role name or URI from an enabled module provider.'),),
              effect='read'),
         Verb('receipts', authored.inspect_receipts, 'Read context delivery fingerprints and versions, without bodies.',
              nouns=(SESSION,), effect='read'),

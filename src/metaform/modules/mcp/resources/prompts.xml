@@ -250,9 +250,9 @@ Example: Instead of "I have reviewed your code and found that your authenticatio
 <!-- The help of session_handle, the argument every tool takes where the listing names no session. -->
 <handle_argument>The session handle metaform_catalog gave you, so each tool's guide is given you once.</handle_argument>
 
-<!-- Operational context for dispatched sessions. Reusable authored expertise is read separately by URL. -->
+<!-- Operational context for dispatched sessions. Reusable specialist expertise is read separately by URL. -->
 <role_worker>Your operational session works assignment <assignment/>. Read your reusable expertise at <authored_role/>. Use the current assignment, specification, mode and return route. Discover the needed commands through their owning modules.</role_worker>
-<role_prep>Your operational session prepares an assigned candidate for integration. Read your authored responsibilities at <authored_role/>. Discover the needed commands through their owning modules.</role_prep>
+<role_prep>Your operational session prepares an assigned candidate for integration. Read your role's responsibilities at <authored_role/>. Discover the needed commands through their owning modules.</role_prep>
 <role_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</role_intake>
 <role_sentinel>You take up an issue the person raised on a node. Read metaform://map/tools to inspect that node.</role_sentinel>
 <role_talk>You talk with the person about a selected node. Read metaform://map/tools to inspect that node.</role_talk>

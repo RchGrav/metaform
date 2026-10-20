@@ -5,111 +5,102 @@ description: You are developing Metaform itself in its own repository. This is t
 
 # Developing Metaform
 
-This repository is Metaform, a context engineering tool: it engineers the
-context to install itself, the context of every sub-agent, and true
-prompt-chained workflows enhanced by the Inference Metaform. You are not using
-it on a project; you are building it. Everything below is the map of what already decides how this repo works.
-Do not freestyle over it.
+This repository builds Metaform itself. Read current project instructions before
+changing code. Use this index to locate ownership, semantics and verification.
 
-## Where it came from
+## Governing instructions and semantics
 
-`tempo/` is TEMPO, the earliest precursor to what Metaform is now: a recursive
-artifact-improvement engine with a normative spec, a deterministic skeleton
-that owns routing, gates, ledger and loop, inference only at the seams, a
-harness skill that points at the method instead of restating it, and the rule
-that every gate must name its silent failure or die. Read it to understand the
-intent behind the chassis rules, not as a component to integrate. Its live copy
-is the sibling folder `~/tempo`; the copy here is untracked.
+- Read `AGENTS.md`, then `CLAUDE.md` and `README.md` at the repository root.
+  They establish working rules, architecture and product purpose. Keep changes
+  within the assignment.
+- The semantic foundation is the `IMMUTABLE SEMANTIC FORMULAS (DO NOT PARAPHRASE)`
+  section under `Retain in context, do not discard or compact.` in `AGENTS.md`
+  and `CLAUDE.md`. The runtime glossary is the `<glossary>` element in
+  `src/metaform/modules/mcp/resources/prompts.xml`. Read these definitions
+  exactly, including RE, OP, PE, Join, IFD, EF and C(T). Do not replace them
+  with synonyms or require a separate foundation block.
+- Read `CLAUDE.md` sections `Architecture`, `Structure` and `Instructing agents`
+  before changing execution paths or prompts. Use existing events and filter
+  handlers before reads. Module-owned prompts belong in that module's
+  `resources/prompts.xml`. Follow current delivery contracts rather than
+  copying developer instructions into runtime prompts.
+- Prompts, examples and instruction files are product text. When one is wrong or
+  incomplete, refine it as you refine code, or route the fix to an agent that
+  can make it; never leave a fault standing because a person wrote the text.
+  The one fixed text is the Canonical Intake (`prompt.intake:intake.axiom`,
+  `prompt_files.FIXED`): its semantics work like a formula and are not edited.
+- Use the Metaform map as the memory index. Read applicable unread knowledge at
+  the assigned functionality. Link implementation entry points there. Keep
+  progress in work records and maintained project knowledge in memory.
 
-## The rules of working here
+## Requirements
 
-- `CLAUDE.md` and `AGENTS.md` at the repository root. They are the highest
-  instruction: no added conditions or gates in prompts or prompted code, no
-  inverted intent when told to remove something, the blacklist is dynamic,
-  Rich's wording is preserved verbatim, tests are written failing first to
-  enforce the design, and passing tests prove only that a test passed.
-- The `<MetaformFoundation>` block in `CLAUDE.md` is the semantic core every
-  expert on this platform must hold. Keep it verbatim in prompts for agents
-  building the platform; never place it in the runtime's own prompts.
+Start at `specifications/00-index.md`. Follow the records relevant to the
+assignment and compare them with current implementation and project instructions.
+`CLAUDE.md` identifies requirement records separately from build logs and reviews.
+Historical design documents do not establish current file ownership. Resolve
+consequential conflicts through the assignment's responsible roles.
 
-## The specification is the source
+## Current implementation ownership
 
-`docs/SPEC.md`, indexed from `specifications/00-index.md`. Sections that decide
-the shape of the chassis:
+Paths below are relative to the repository root.
 
-- 1 to 8: Type identity, OP join roles (hard dependency, property, supportive),
-  strict typology, the namespace, encounter propagation, one foundation with
-  outside-in knowledge.
-- 9: inference amortization and the nonce. The chassis owns nonce registration,
-  `.agentid/nonce`, assignment-scoped commands and cleanup. Entering a nonce
-  changes the CLI; only that context's commands exist; the main menu shows only
-  in the project's main folder; `begin <nonce>` is for delegated step-wise
-  work in a dedicated folder; done cleans the nonce up.
-- 12: chassis customization and built-in guidance. Every feature carries help
-  at the level of "what has to be done to use it". The skill page lists every
-  loaded module and every available workflow; the installed skill is the base
-  information pointing at `metaform skill`.
-- 13: startup and onboarding, and first-run provisioning: an unfamiliar harness
-  gets the provisioning notice and menu, keyed on the harness binary's parent
-  folder in `provisioning.json`, `/tmp` ignored, until it says done.
-- 14: contextual help and menus. This is the chassis's main job. `--help` is
-  contextual with a status section on top. Every menu is only what needs to be
-  done. The user's menu is the main admin menu; an agent can assign itself that
-  nonce and say complete to return. Metaform's own features are dynamically
-  loaded modules. Installed or in wheel form, it all works the same.
-- 15: provenance, prompt objects, porting through medium change. Every
-  produced record has one producer holding the prompt revision, the binding
-  map and the answer; prompts store variables as references; a medium is a
-  transitive property join whose applicability set decides which knowledge
-  is re-inferenced in a port; the base shape is never medium-conditioned.
-  Written in a declarative register, not Rich's verbatim words, on his
-  instruction.
+- `src/metaform/cli.py` is the CLI entry point. `src/metaform/loader.py` loads
+  modules. `src/metaform/module.py` defines `Module`, `Verb` and `Noun` records.
+  A declaration drives CLI commands, help and MCP tools. `src/metaform/docs.py`
+  produces help. `src/metaform/context.py` supplies command context.
+  `src/metaform/results.py` presents results across surfaces.
+- `src/metaform/settings.py` owns shared settings declarations.
+  `src/metaform/home.py` owns the home registry.
+  `src/metaform/data/` exposes shared storage.
+  `src/metaform/events.py` and `src/metaform/changes.py` supply existing change
+  notifications. Reuse these mechanisms rather than adding polling.
+- Feature owners live under `src/metaform/modules/`. Read the owning module's
+  declaration in `__init__.py`, its `README.md` and relevant implementation.
+  Declarations may delegate to `manifest.py`. Inspect the actual module before
+  changing its commands, settings or prompts.
+- Functional map operations belong to `src/metaform/modules/map/`.
+  Intake belongs to `src/metaform/modules/intake/`.
+  Memory belongs to `src/metaform/modules/memory/`.
+  Agent roles and context delivery belong to `src/metaform/modules/agents/`.
+  Agent processes belong to `src/metaform/modules/dispatch/`.
+  Assignment orchestration belongs to `src/metaform/modules/orchestration/`.
+  Workflows belong to `src/metaform/modules/workflow/`.
+- `src/metaform/modules/mcp/server.py` serves MCP. Its module declarations
+  determine tools and resources. `src/metaform/modules/mcp/resources/prompts.xml`
+  holds MCP guidance and glossary text.
+- `src/metaform/modules/web/server.py` serves the web GUI.
+  `src/metaform/modules/web/page/` holds the page.
+- `src/metaform/modules/fork/resources/template/` is the new-module template.
+  Read its `__init__.py`, `README.md`, `resources/prompts.xml` and `CHANGELOG.md`.
+  New module capabilities must appear in the template and its changelog so
+  modules created through fork receive the supported contract.
+- `src/metaform/prompt_files.py` reads module prompts.
+  `src/metaform/skill/SKILL.md` is the installed base skill.
 
-Companion specifications: `feature-briefs/*-specification.md` and
-`docs/next-version.md` (handoff and continuity, nonce issuance and cleanup).
+## Verification
 
-## Where the chassis lives in the code
+Follow `AGENTS.md` testing guidance. Match checks to change risk. Do not add
+implementation-mirroring tests for reversible, low-impact edits. For behavior
+changes, use meaningful requirement or regression checks. Run applicable checks,
+then stop unless changes, failures or unresolved concerns require more evidence.
 
-- `src/metaform/cli.py`: the entrypoint, launcher commands, help and starting
-  page. `src/metaform/registry.py`: module discovery from the package,
-  `~/.metaform/modules` and `<project>/.metaform/modules`; `visible()` scopes
-  commands to the bound assignment or mode.
-- `src/metaform/continuation.py`: nonce publish, `begin`, marker, retire.
-  `src/metaform/onboarding.py`: skill text, guide state, MCP instructions.
-  `src/metaform/installation.py`: launcher, harness registration, skills.
-- `src/metaform/mcp_server.py` and `portable_mcp.py`: the MCP surface.
-  `src/metaform/harness.py`: how drive runs an external agent.
-- `src/metaform/data/modules/*.json`: every module manifest; the catalog, help
-  and menus derive from these. `src/metaform/data/roles/` and
-  `data/semantics/`: the authored prompts. `data/chassis.json`: the chassis's
-  own built-in account. `data/skills/metaform/SKILL.md`: the base skill.
-- `src/metaform/intake.py`, `workflow.py`, `models.py`, `read_model.py`,
-  `properties.py`, `knowledge.py`: intake, the workflow engine, revisions,
-  reads, applicability, storage.
-- `src/metaform/coarse.py`: expands a coarse intake contribution
-  (`urn:metaform:schema:coarse-intake:2`: notable elements by namespace
-  position with one EF, joins with the receiver's OP and optional `combined`)
-  into storage. The intake prompt `data/roles/runtime/intake.md` is Rich's
-  seven-section prompt with no components; its shape is the shape every
-  operation prompt takes. Nothing gates an answer: the contract describes and
-  never rejects, the expansion makes the answer fit and records mismatches,
-  receipts carry nothing back to the agent. Tests:
-  `tests/test_coarse_intake_contract.py`.
-- `src/metaform/viewer.py` with `templates/explorer.html` and
-  `static/explorer.js`: the workbench, built to `docs/workbench-brief.md`.
+`CLAUDE.md` lists current commands. `pyproject.toml` defines test discovery and
+markers. `.github/workflows/checks.yml` defines CI checks. Tests live in `tests/`
+and module-local `tests/` folders. Use an existing test file for focused runs:
 
-## What is open
+```bash
+uv sync --extra dev
+uv run pyright
+uv run ruff check src tests conftest.py
+uv run pytest -n 0 src/metaform/modules/mcp/tests/test_upgrade.py
+uv run pytest -q
+uv run pytest -q -m browser
+```
 
-- `docs/repair-backlog.md` and `docs/repair-spec.md`: the reconciled repair
-  inventory and the decisions still with Rich. R01 and R02 are the help gap
-  that sections 12 and 14 now specify.
-- `docs/current-work.md`: the state of the checkout.
-- The workbench acceptance: a real intake run through the page with a real
-  agent, judged by Rich.
-
-## How work is verified
-
-`.venv/bin/python -m pytest -q tests` for the suite and `npm run test:browser`
-for the page. A test exists to protect a requirement of the design; write it
-failing first. Screenshots and traces are evidence; Rich's judgment is the
-acceptance.
+The focused run above covers MCP upgrades. Select tests for the actual change.
+Default pytest discovery includes chassis and module tests, excludes browser
+checks. The browser command selects browser checks. Read `conftest.py` for test
+home isolation and fixtures. Documentation-only changes need reference and
+instruction consistency checks, not runtime correctness claims. Record checks,
+results and remaining limits in the assignment.

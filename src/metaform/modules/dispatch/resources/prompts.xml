@@ -131,7 +131,7 @@ Use the project evidence and your judgment to resolve ordinary work choices and 
      Sent as the first message to every agent dispatch starts on a ticket, and returned by dispatch handoff with the
      ticket's id. Must not be deleted: the code requires it. -->
 <work>
-Work ticket <work_id/> with map_work and your delivered authored role. Use the supplied current assignment and specification. <record/>
+Work ticket <work_id/> with map_work and the specialist role you were given. Use the supplied current assignment and specification. <record/>
 </work>
 
 <!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the

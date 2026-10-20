@@ -57,7 +57,7 @@ ROLES = tuple(AgentRoleDefinition(name, purpose, ('prompt.orchestration:common',
 OBJECT = {'type': 'object', 'additionalProperties': True}
 ARRAY = {'type': 'array', 'items': OBJECT}
 ASSIGNMENT = Noun('assignment', 'Recorded assignment; omitted uses the calling agent.', required=False)
-ROLE = Noun('role', 'Registered authored role name or URI.')
+ROLE = Noun('role', 'Registered specialist role name or URI.')
 RESULT = Noun('result', 'Requested contribution returned to the immediate caller.', required=False)
 AT = Noun('at', 'Existing functional element address; absent inherits the parent location.', required=False)
 KEY = Noun('key', 'Stable call or result identity used when retrying the same operation.', required=False)
