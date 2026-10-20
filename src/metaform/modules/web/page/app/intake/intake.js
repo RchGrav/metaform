@@ -96,7 +96,7 @@ export function drawIntake() {
     : launching ? `Starting${since ? ` · since ${ago(since) === 'now' ? 'just now' : `${ago(since)} ago`}` : ''}`
     : recording ? `Recording ${LIVE.layer} · ${following() ? `${plural(parts, 'part')} so far` : 'in a base of its own'}`
     : firstWait || (activity === 'working' ? 'Reading the project'
-      : activity === 'idle' && INTAKE.session?.session_id ? 'Idle · its turn has ended, and nothing is being recorded'
+      : activity === 'idle' && INTAKE.session?.session_id ? 'Up and waiting for you · nothing is being recorded until you say more'
         : 'Starting');
   bar.classList.toggle('asks', INTAKE.waiting > 0);
   const said = (INTAKE.signals || []).map(signalChip);
