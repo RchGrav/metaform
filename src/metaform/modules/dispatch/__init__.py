@@ -2564,12 +2564,20 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         # The slots as the gate counts them, the runners that run now in the project and on the machine, less the
         # reservations another pass made that have not started their runner yet, so two passes at once reserve one
         # slot once; the gate counts again at each start, so a start reserved past them gives its ticket back.
-        capacity = max(0, free_slots(ctx, store) - sum(1 for record in taken if record.id not in launching))
+        held_slots = slots(ctx, store)
+        capacity = max(0, int(held_slots['free']) - sum(1 for record in taken if record.id not in launching))
         if ctx.nouns.get('batch'):
             capacity = min(capacity, max(1, int(ctx.nouns['batch'])))
+        # Helpers, the Facilitator that gives a ticket its specialist among them, have their own room, `HELPERS_MOST`,
+        # as the start gate counts them, `capacity_kind`: a full worker queue never keeps a ticket from getting the
+        # specialist it needs before it is active (the owner's ruling, 2026-10-20).
+        room = max(0, int(held_slots['room']))
         for record in candidates:
-            if capacity == 0:
+            if capacity == 0 and room == 0:
                 break
+            helper = capacity_kind(ctx, record.id, 'worker') == 'helper'
+            if (room if helper else capacity) == 0:
+                continue
             if mending and not healing(record):
                 continue  # work waits while the system heals itself
             mark = glyph.get(record.id)
@@ -2617,7 +2625,10 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
                 store.edit_work(record.id, {'task': marker_task(record)})
             store.take_work(record.id, by=reservation)
             reserved.append((record, agent, reservation))
-            capacity -= 1
+            if helper:
+                room -= 1
+            else:
+                capacity -= 1
             if mark:
                 occupied.add(mark)
             if healing(record):
