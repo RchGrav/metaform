@@ -6222,6 +6222,42 @@ def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest
     assert problems == []
 
 
+@pytest.mark.req('VIEW-037')
+def test_a_board_of_500_tickets_opens_in_time_and_a_move_makes_no_other_card_again(run, web, mapped, browser):
+    """A board of hundreds of open tickets draws in time, and a click redraws only the cards whose shown fields changed:
+    a move renumbers the places below it, and every card made again for that held the page (2026-10-20, 400 of 500
+    cards made again per move)."""
+    import time
+
+    from metaform.data import Node, Store
+    store = Store('proj')
+    nodes = [Node('element', address) for address in ('code.timer.kitchen', 'code.alarm.audible', 'code.loop.tick')]
+    task = ('Hold the tick to one second at [[dish timer|code.timer.kitchen]]: the loop in src/timer/loop.py drifts '
+            '40 ms a minute under load, VIEW-037 and MAP-046 name the stage it shows. Ticket {ref} found the cause; '
+            'measure, fix, prove with a test.\nNote {number}: keep the loop small.')
+    with store.atomic():
+        ids = [store.add_work(nodes[number % 3], ['broken', None, 'trouble'][number % 3], links=[nodes[(number + 1) % 3]],
+                              task=task.format(ref=f'{number:08x}', number=number),
+                              kind=[None, 'broken', 'flawed', 'enhancement'][number % 4]).id for number in range(500)]
+    started(run)
+    page, problems, _ = opened(browser, web)
+    page.wait_for_function('() => window.metaform.loaded()')
+    began = time.monotonic()
+    page.click('#boardBtn')
+    page.wait_for_function('() => document.querySelectorAll("#board .card").length >= 500', timeout=30000)
+    drawn = time.monotonic() - began
+    assert drawn < 5.0, f'the board of 500 tickets took {drawn:.2f} s to draw'
+    page.evaluate('for (const box of document.querySelectorAll("#board .card")) box.kept = true')
+    moved = f'#board .card[data-id="{ids[1]}"]'
+    page.click(f'{moved} .priority button[title="Move down"]')
+    page.wait_for_function('id => [...document.querySelectorAll(\'#board .column[data-column="todo"] .card\')]'
+                           '.findIndex(box => box.dataset.id === id) === 2', arg=ids[1])
+    page.wait_for_timeout(1500)  # past the live stream's read of the tickets the move renumbered
+    made = page.evaluate('[...document.querySelectorAll("#board .card")].filter(box => !box.kept).length')
+    assert made == 0, f'a move made {made} cards again'
+    assert problems == []
+
+
 dispatch_control_port = None  # supplied by the lazy visual-fixture control server below
 ACTIVITY = {}  # what the visual fixtures' runners say a session is doing, by its token; working unless set
 RUNNERS = []  # the stand-in runner processes of the visual fixtures' sessions

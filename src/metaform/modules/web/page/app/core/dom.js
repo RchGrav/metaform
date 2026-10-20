@@ -61,7 +61,8 @@ export const fill = (node, ...children) => put(node, children);
 /* Fill a node with these children, leaving in place each one already there in its place, so a text being typed into
  * keeps its text, its cursor and the focus. */
 export function keepFill(node, kids) {
-  for (const child of [...node.childNodes]) if (!kids.includes(child)) child.remove();
+  const kept = new Set(kids);  // a Set, so a list of hundreds is not searched once per child
+  for (const child of [...node.childNodes]) if (!kept.has(child)) child.remove();
   kids.forEach((kid, index) => {
     if (node.childNodes[index] !== kid) node.insertBefore(kid, node.childNodes[index] || null);
   });

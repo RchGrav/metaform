@@ -9,7 +9,7 @@ import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
 import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
-import {B, KINDS, BOARD, conditionLabel, partAt, nodeChip, linked, taskWords, ago, unshown}
+import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago}
   from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, history, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
@@ -112,9 +112,16 @@ function holdButton(kept, change) {
       : 'Hold it: hidden from agents and automatic starts',
     onclick: event => change({hold: !kept.hold}, event.target)}, kept.hold ? 'Release hold' : 'Hold');
 }
-function card(ticket, place, total) {
-  const move = async position => {
-    if (await wrote('/api/move', {work_id: ticket.id, column: columnOf(ticket), position})) await renderBoard();
+/* A card's node chips: the part it is assigned and those it links for reference. */
+const assignedOf = ticket => ({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
+  ends: [ticket.receiver_address, ticket.provider_address]});
+function card(ticket, place, total, find) {
+  // the place counted when it is clicked, not when it was made: a card a move elsewhere left as it was is not made again
+  const move = async (to, by = 0) => {
+    const column = columnOf(ticket);
+    const at = B.tickets.filter(one => columnOf(one) === column).sort(cardOrder).findIndex(one => one.id === ticket.id);
+    const position = to ?? Math.max(0, at + by);
+    if (await wrote('/api/move', {work_id: ticket.id, column, position})) await renderBoard();
   };
   const open = () => {
     const project = S.project, base = S.base || '';
@@ -124,9 +131,8 @@ function card(ticket, place, total) {
     onclick: open},
     cardTop(ticket),
     h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
-    h('div', {class: 'nodes'}, nodeChip({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
-      ends: [ticket.receiver_address, ticket.provider_address]}, 'assigned'),
-      ...(ticket.links || []).map(link => nodeChip(link, 'ref'))),
+    h('div', {class: 'nodes'}, nodeChip(assignedOf(ticket), 'assigned', find),
+      ...(ticket.links || []).map(link => nodeChip(link, 'ref', find))),
     cardProgress(ticket),
     cardEnded(ticket),
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
@@ -221,51 +227,67 @@ function cardActs(ticket, place, total, move) {
       title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled', onclick: cancel}, 'Cancel'),
     h('span', {class: 'grow'}),
     h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
-      [['Top', 'Move to top', 0, place === 0], ['↑', 'Move up', place - 1, place === 0],
-        ['↓', 'Move down', place + 1, place === total - 1]].map(([text, label, position, disabled]) =>
+      [['Top', 'Move to top', 0, 0, place === 0], ['↑', 'Move up', null, -1, place === 0],
+        ['↓', 'Move down', null, 1, place === total - 1]].map(([text, label, to, by, disabled]) =>
         h('button', {class: 'btn sm quiet', type: 'button', title: label, 'aria-label': label, disabled,
-          onclick: event => { event.stopPropagation(); move(position); }}, text))));
+          onclick: event => { event.stopPropagation(); move(to, by); }}, text))));
 }
-function shownOnBoard(box) {
-  const words = $('#board .search').value.trim().toLowerCase();
-  box.hidden = B.off.has(box.dataset.kind) || Boolean(words && !box.textContent.toLowerCase().includes(words));
+function shownOnBoard(box, words) {
+  const hidden = B.off.has(box.dataset.kind) || Boolean(words && !box.textContent.toLowerCase().includes(words));
+  if (box.hidden !== hidden) box.hidden = hidden;  // a card that stays as it was is not written
 }
-/* The board's order of cards in a column: by their position, else as they were read. */
-const cardOrder = (one, two) => (one.position ?? 1e9) - (two.position ?? 1e9)
-  || B.tickets.indexOf(one) - B.tickets.indexOf(two);
-/* The board's columns, made once, each with its cards' list and its tally; and the map the cards' names were drawn
- * from, so a map read again or changed draws every card again. */
+const searched = () => $('#board .search').value.trim().toLowerCase();
+/* The board's order of cards in a column: by their position, else as they were read; the sort is stable, so cards
+ * with no position keep the order of `B.tickets`. */
+const cardOrder = (one, two) => (one.position ?? 1e9) - (two.position ?? 1e9);
+/* The board's columns, made once, each with its cards' list and its tally. */
 const COLUMNS = new Map();
-const DRAWN = {elements: null, generation: 0};
-/* Everything a card shows, past its ticket: a card whose ticket and these are as they were keeps its node. */
-function cardText(ticket, place, total, shared) {
+/* A ticket's fields as a card compares them: its place in the column, which a move above it renumbers, is not shown,
+ * nor the age the server counts in seconds, which differs on every read; the page shows its own, `ago`. */
+const unshownOnCard = (key, value) => (key === 'position' || key === 'age_seconds' ? undefined : value);
+/* Everything a card shows: a card whose text is as it was keeps its node. Of its place only whether it is first or
+ * last shows, on its order buttons; its chips' names are the names drawn, so a node renamed draws only its cards. */
+function cardText(ticket, place, total, shared, find) {
   const status = ticket.done ? null : ticketStatus(ticket), ended = endedStatus(ticket);
-  return JSON.stringify([shared, ticket, place, total, Boolean(waiting(ticket)), status, ended,
+  return JSON.stringify([shared, ticket, place === 0, place === total - 1, Boolean(waiting(ticket)), status, ended,
     waitsOn(ticket).map(handleOf), ROAM.figures.get(ticket.id)?.glyph || null,
     ago(ticket.done || ticket.taken || ticket.created),
     Boolean(ticket.taken && !ticket.done && D.sessions.some(one => one.work_id === ticket.id
-      && one.state === 'running'))], unshown);
+      && one.state === 'running')),
+    chipShown(assignedOf(ticket), find), (ticket.links || []).map(link => chipShown(link, find))], unshownOnCard);
+}
+/* The part at each address of the map shown, the first one there as `partAt` finds it, made once a draw. */
+function addressIndex() {
+  const index = new Map();
+  for (const entry of S.elements.values()) if (!index.has(entry.element.address)) index.set(entry.element.address,
+    entry.element);
+  return address => index.get(address);
 }
 export function drawBoard() {
   // A card is drawn again only when what it shows changed, so an event that changes one ticket, or none, rebuilds
   // one card, or none, not all of them: every card drawn anew on each agent event, five or six times as an agent
-  // started, held the page for seconds and the browser called it not responding (2026-10-19). A card made again keeps
-  // open what the person opened.
-  const folds = root => [...root.querySelectorAll('.card details')]
-    .map(box => [`${box.closest('.card').dataset.id} ${box.className}`, box]);
-  const opened = new Set(folds($('#board')).filter(([, box]) => box.open).map(([key]) => key));
+  // started, held the page for seconds and the browser called it not responding (2026-10-19). A move renumbers the
+  // places below it, and each map op counted up a number in every card's text, so one move or one op still made
+  // every card again: 400 of 500 per move (2026-10-20). A card made again keeps open what the person opened.
+  const opened = new Set([...$('#board').querySelectorAll('.card details[open]')]
+    .map(box => `${box.closest('.card').dataset.id} ${box.className}`));
   fill($('#board .kinds'), [...KINDS, 'none'].map(kindToggle));
   if (!COLUMNS.size) fill($('#board .columns'), BOARD.map(([column, title]) => columnBox(column, title)));
-  if (DRAWN.elements !== S.elements) { DRAWN.elements = S.elements; DRAWN.generation++; }
-  const shared = JSON.stringify([DRAWN.generation, B.names, HARNESS.agents, HARNESS.default]);
+  const shared = JSON.stringify([HARNESS.agents, HARNESS.default]), find = addressIndex();
   for (const [column, {cards, tally}] of COLUMNS) {
     const tickets = B.tickets.filter(ticket => columnOf(ticket) === column).sort(cardOrder);
     tally.textContent = String(tickets.length);
     keyedFill(cards, tickets.map((ticket, place) => ({key: ticket.id,
-      text: cardText(ticket, place, tickets.length, shared), make: () => card(ticket, place, tickets.length)})));
+      text: cardText(ticket, place, tickets.length, shared, find),
+      make: () => card(ticket, place, tickets.length, find)})));
   }
-  for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box);
-  for (const [key, box] of folds($('#board'))) if (opened.has(key)) box.open = true;
+  const words = searched();
+  for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box, words);
+  if (opened.size) {
+    for (const box of $('#board').querySelectorAll('.card details')) {
+      if (opened.has(`${box.closest('.card').dataset.id} ${box.className}`)) box.open = true;
+    }
+  }
   $('#board .start-all').disabled = D.starting || !B.tickets.some(startsByItself);
 }
 /* A kind shown or hidden on the board. */
@@ -421,7 +443,10 @@ async function distribute() {
 }
 $('#board .distribute button').onclick = distribute;
 $('#board .distribute input').addEventListener('input', event => { event.target.dataset.chosen = '1'; });
-$('#board .search').oninput = () => { for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box); };
+$('#board .search').oninput = () => {
+  const words = searched();
+  for (const box of $('#board').querySelectorAll('.card')) shownOnBoard(box, words);
+};
 $('#board .add').onclick = () => {
   const first = S.selected && S.elements.has(S.selected) ? S.selected : [...S.elements.keys()][0];
   if (first) giveWork(first); else toast('Add a card once the project has a map.');

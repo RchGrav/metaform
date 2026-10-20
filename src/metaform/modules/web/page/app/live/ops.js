@@ -93,7 +93,6 @@ export async function appliedOps() {
     if (layer === false) continue;  // not in view: nothing to draw
     if (!applyOp(op, layer)) return false;
     mine ||= concernsSelected(op);
-    if (op.kind === 'element' || op.kind === 'join') B.names++;  // the board's cards name their nodes
   }
   const byAddress = addressesNow();
   for (const entry of S.elements.values()) entry.parent = holderOf(entry.element, byAddress);

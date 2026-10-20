@@ -14,9 +14,8 @@ import {named} from '/page/app/task/task.js';
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 /* The board's tickets, the kinds hidden, and cutoff: the time its done tickets start at, as the server's board read
- * gives it, board_done_days ago or the archive cutoff; a ticket done before it is in the Archive. names: counted up
- * as element or join ops are applied to the map shown, so the cards draw the names those ops gave, `drawBoard`. */
-export const B = {tickets: [], off: new Set(), cutoff: '', names: 0};
+ * gives it, board_done_days ago or the archive cutoff; a ticket done before it is in the Archive. */
+export const B = {tickets: [], off: new Set(), cutoff: ''};
 /* A ticket's fields as the page compares them, with the age the server counts in seconds left out: it differs on
  * every read, and the page shows its own, `ago`. A JSON.stringify replacer. */
 export const unshown = (key, value) => (key === 'age_seconds' ? undefined : value);
@@ -45,15 +44,23 @@ export const ago = text => {
   return !isFinite(seconds) ? '' : seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
     : seconds < 86400 ? `${Math.floor(seconds / 3600)}h` : `${Math.floor(seconds / 86400)}d`;
 };
-export const partAt = address => [...S.elements.values()].map(entry => entry.element)
-  .find(element => element.address === address);
-export function nodeChip(target, role) {
-  const element = target.address ? partAt(target.address) : null;
+export function partAt(address) {
+  for (const entry of S.elements.values()) if (entry.element.address === address) return entry.element;
+  return undefined;
+}
+/* The node a chip selects and the name it shows, `find` the part at an address: the board passes one index of the
+ * map's addresses made once a draw, so its cards do not each search the whole map. */
+export function chipShown(target, find = partAt) {
+  const element = target.address ? find(target.address) : null;
   const key = target.kind === 'join' ? 'p:' + target.id : element?.id || target.id;
-  const end = address => (address ? partAt(address) : null) ? named(partAt(address)) : address;
+  const end = address => (address ? find(address) : null) ? named(find(address)) : address;
   const ends = target.ends?.[0] ? `${end(target.ends[0])} → ${end(target.ends[1])}` : 'a join';
   const name = element ? named(element) : target.kind === 'join' ? joinOf('p:' + target.id)?.name || ends
     : target.address || target.id;
+  return [key, name];
+}
+export function nodeChip(target, role, find = partAt) {
+  const [key, name] = chipShown(target, find);
   const title = `${role === 'assigned' ? 'Assigned' : 'For reference'}: ${target.address || target.id}`;
   return h('button', {class: `node ${role}`, title, onclick: event => { event.stopPropagation(); select(key, true); }},
     name);
