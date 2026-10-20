@@ -237,7 +237,7 @@ ADMIN_ROUTES = frozenset({
     '/api/activate-base',
     '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
-    '/api/mcp-call', '/api/board-line',
+    '/api/mcp-call', '/api/board-line', '/api/board-add',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
 ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech-voices')
@@ -1128,6 +1128,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.lookup(query.get('project', [''])[-1], list(dict.fromkeys(query.get('refs', [''])[-1].split())))
         if url.path == '/api/merges':
             return self.list_merges({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/boards':
+            return self.list_boards({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/markdown':
             return self.markdown({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/xml':
@@ -1171,7 +1173,7 @@ class Handler(BaseHTTPRequestHandler):
         if name not in query_reads():
             return self.send(404, {'error': f'No read {name}.'})
         doing(f'the {name} read of {given.get("project", "")}')
-        arguments = {key: value for key, value in given.items() if key not in RESERVED and key != 'board'}
+        arguments = {key: value for key, value in given.items() if key not in RESERVED and key not in ('board', 'on')}
         board = given.get('board') if name == 'work' else None
         cutoff = ''
         try:
@@ -1193,6 +1195,12 @@ class Handler(BaseHTTPRequestHandler):
             found = with_glyphs(given, found)
             if board is not None and isinstance(found, Page):
                 found = {**cast(Page[WorkRecord], found).to_dict(), 'cutoff': cutoff}
+            if board is not None and isinstance(found, dict):  # one named board's tickets, '' the first board's
+                on = str(given.get('on') or '')
+                listed = cast(list[dict[str, Any]], cast(dict[str, Any], found).get('results') or [])
+                found = {**cast(dict[str, Any], found), 'cutoff': cutoff, 'board': on,
+                         'results': [one for one in listed
+                                     if str(cast(dict[str, Any], one.get('map') or {}).get('board') or '') == on]}
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
     def memory_read(self, name: str, given: dict[str, str]) -> None:
@@ -1429,6 +1437,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
+                  '/api/board-add': self.add_board,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
                   '/api/intake-finish': self.intake_finish, '/api/intake-discard': self.intake_discard,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
@@ -1741,7 +1750,9 @@ class Handler(BaseHTTPRequestHandler):
             ctx.store = store
             routing = next((owner.routing_status(ctx, work.id) for _, owner in
                             chassis.provided(ctx.folder, 'orchestration')), None)
+            numbered = store.numbers_of('work', [work.id]).get(work.id)
             self.send(200, {'ticket': {**plain(work), **fields}, 'revision': ticket_revision(fields),
+                            'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
                             'functionality': graph, 'memories': plain(memories), 'routing': routing})
         except (Stop, StoreError) as error:
             self.refuse(error, 404)
@@ -1776,9 +1787,9 @@ class Handler(BaseHTTPRequestHandler):
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
-        changes = {key: given[key] for key in ('agent', 'hold', 'glyph') if key in given}
+        changes = {key: given[key] for key in ('agent', 'hold', 'glyph', 'board') if key in given}
         if not changes:
-            return self.send(400, {'error': 'A ticket change gives an agent, a hold or a glyph.'})
+            return self.send(400, {'error': 'A ticket change gives an agent, a hold, a glyph or a board.'})
         try:
             edited = plain(module_verb(given, 'map', 'work', {'op': 'edit', 'id': work_id, **changes}, chosen=True))
         except (Stop, StoreError) as error:
@@ -1801,6 +1812,25 @@ class Handler(BaseHTTPRequestHandler):
     def list_merges(self, given: dict[str, str]) -> None:
         """The merges waiting for review, VIEW-044, for the page's Review notice."""
         self.send(200, merges_waiting(given))
+
+    def list_boards(self, given: dict[str, str]) -> None:
+        """The project's named boards with their open tickets, `map boards`, for the board's picker."""
+        try:
+            self.send(200, plain(module_verb(given, 'map', 'boards', {}, chosen=bool(chosen_base(given)))))
+        except (Stop, StoreError) as error:
+            self.refuse(error, 400)
+
+    def add_board(self, given: dict[str, Any]) -> None:
+        """Make a named board, `map boards op=add`, the person's need of 2026-10-20: work for a new effort moves to that
+        effort's board instead of piling up on the one board."""
+        name = given.get('name')
+        if not isinstance(name, str) or not name.strip():
+            return self.send(400, {'error': 'A board has a name.'})
+        try:
+            made = module_verb(given, 'map', 'boards', {'op': 'add', 'name': name.strip()}, chosen=bool(chosen_base(given)))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
 
     def review_merge(self, given: dict[str, Any]) -> None:
         """The person clicked Review: the merge is theirs and its countdown is cancelled for good, VIEW-044."""
@@ -2166,6 +2196,16 @@ class Handler(BaseHTTPRequestHandler):
         folder, line = Path(project.path), given.get('line', home.now())
         if not isinstance(line, str):
             return self.send(400, {'error': 'The archive cutoff is a time as text.'})
+        board = given.get('board')
+        if isinstance(board, str) and board:  # a named board keeps its own line, `map boards op=line`
+            try:
+                done = cast(dict[str, Any], module_verb(given, 'map', 'boards', {
+                    'op': 'line', 'name': board, **({'line': line} if 'line' in given else {})},
+                    chosen=bool(chosen_base(given))))
+            except (Stop, StoreError) as error:
+                return self.refuse(error, 400)
+            return self.send(200, {'line': str(done.get('line') or ''), 'was': str(done.get('was') or ''),
+                                   'board': board})
         was = str(settings.value('board_line', folder) or '')
         try:
             settings.checked('board_line', line, folder, typed=True)
@@ -3330,6 +3370,15 @@ def board_cutoff(given: dict[str, str]) -> str:
     folder = Path(project.path)
     days = int(settings.value('board_done_days', folder))
     since = datetime.fromtimestamp(time.time() - days * 86400, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    on = str(given.get('on') or '')
+    if on:  # a named board keeps its own archive line, `map boards op=line`
+        try:
+            listed = cast(dict[str, Any], module_verb(given, 'map', 'boards', {}, chosen=bool(chosen_base(given))))
+        except (Stop, StoreError):
+            listed = {}
+        line = next((str(one.get('line') or '') for one in cast(list[dict[str, Any]], listed.get('boards') or [])
+                     if one.get('name') == on), '')
+        return max(since, line)
     return max(since, str(settings.value('board_line', folder) or ''))
 
 
@@ -3362,7 +3411,8 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
             held: dict[str, dict[str, Any]] = {
                 str(row['work_id']): {'glyph': row['glyph']} for row in rows('glyphs', 'work_id', {})}
             for row in rows('ticket_settings', 'work_id', {}):
-                held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']))
+                held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
+                                                                board=row.get('board') or '')
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
             # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every

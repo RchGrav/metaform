@@ -1228,13 +1228,13 @@ REFINE_NOUNS = (
 WORK_READS: dict[str, frozenset[str]] = {
     'glyphs': frozenset(),
     'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'open', 'limit', 'after',
-                       'hold'}),
+                       'hold', 'board'}),
     'read': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents'}),
+                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents', 'board'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
                        'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title',
-                       'epic', 'agents'}),
+                       'epic', 'agents', 'board'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
@@ -1423,6 +1423,11 @@ def work(ctx: Context) -> Any:
             kept = _settings(store, [record.id for record in found.results])
             found = found._replace(results=tuple(record for record in found.results
                                                  if not kept.get(record.id, {}).get('hold')))
+        if 'board' in nouns:  # one named board's tickets, '' the first board's
+            kept = _settings(store, [record.id for record in found.results])
+            wanted = str(nouns.get('board') or '')
+            found = found._replace(results=tuple(record for record in found.results
+                                                 if str(kept.get(record.id, {}).get('board') or '') == wanted))
         listed = plain(_glyphed(store, found))
         # Each says whether it is open or done, so a list asked for done and open records alike can be read and
         # filtered by it, where `done` is a time.
@@ -1563,6 +1568,7 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
     kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold']),
                       **({'proof': True, 'landed': row['landed']} if row['proof'] else {}),
                       **({'epic': row['epic']} if row['epic'] else {}),
+                      **({'board': row['board']} if row.get('board') else {}),
                       **({'agents': row['agents']} if row['agents'] else {})}
             for work_id, row in found.items() if row is not None}
     for work_id, row in eligible.items():
@@ -1787,6 +1793,64 @@ def _claim(ctx: Context, store: Store, work_id: str, by: Any) -> None:
                f'{agent or "an unidentified agent"} cannot claim it.', f'metaform map work id={work_id}')
 
 
+def _board(store: Store, name: Any) -> str | None:
+    """A ticket's board as given: '' or none is the project's first board; a name must be a board map boards lists."""
+    wanted = str(name or '').strip()
+    if not wanted:
+        return None
+    with store.tables(write=False) as tx:
+        if tx.get('boards', {'name': wanted}) is None:
+            raise Stop(f'There is no board named {wanted!r}.', f'metaform map boards op=add name="{wanted}"')
+    return wanted
+
+
+def boards(ctx: Context) -> dict[str, Any]:
+    """The project's named boards, the person's need of 2026-10-20: a board gets a name, a new one can be made, a past
+    one opened again, and a ticket moved from one board to another with map work op=edit id= board=, so work for a new
+    effort goes to that effort's board. The first board has no name and is always there. Each board keeps its own
+    Archive behind its line; nothing is deleted. op list, the default, gives each board with its open tickets; add
+    makes one; line puts every ticket done up to now on that board in its Archive; remove takes away a board no
+    ticket is on."""
+    store = ctx.require_store()
+    op = str(ctx.nouns.get('op') or 'list')
+    name = str(ctx.nouns.get('name') or '').strip()
+    if op == 'list':
+        with store.tables(write=False) as tx:
+            named = [dict(row) for row in tx.rows('boards', by=('created',), limit=0).results]
+            settings_rows = list(tx.rows('ticket_settings', limit=0).results)
+        on = {str(row['work_id']): str(row['board'] or '') for row in settings_rows}
+        opened = [record.id for record in store.work(open=True, limit=0).results]
+        counts: dict[str, int] = {}
+        for work_id in opened:
+            counts[on.get(work_id, '')] = counts.get(on.get(work_id, ''), 0) + 1
+        return {'boards': [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None},
+                           *({'name': str(row['name']), 'first': False, 'open': counts.get(str(row['name']), 0),
+                              'line': row.get('line'), 'created': row['created']} for row in named)]}
+    if op not in ('add', 'line', 'remove'):
+        raise Stop(f'No op {op!r}: list, add, line or remove.', 'metaform help map boards')
+    if not name:
+        raise Stop('Name the board.', f'metaform map boards op={op} name=<name>')
+    with store.tables() as tx:
+        held = tx.get('boards', {'name': name})
+        if op == 'add':
+            if held is not None:
+                raise Stop(f'There is a board named {name!r} already.', 'metaform map boards')
+            tx.insert('boards', {'name': name, 'created': home.now(), 'line': None})
+            return {'board': name, 'state': 'added'}
+        if held is None:
+            raise Stop(f'There is no board named {name!r}.', 'metaform map boards')
+        if op == 'line':
+            was = held.get('line')
+            line = str(ctx.nouns.get('line') or '').strip() or home.now()  # a time given puts an earlier line back
+            tx.update('boards', {'name': name}, {'line': line})
+            return {'board': name, 'state': 'archived', 'line': line, 'was': was}
+        if tx.rows('ticket_settings', {'board': name}, limit=1).results:
+            raise Stop(f'Tickets are still on the board {name!r}: move them first with map work op=edit id= board=.',
+                       f'metaform map work board="{name}"')
+        tx.delete('boards', {'name': name})
+        return {'board': name, 'state': 'removed'}
+
+
 def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice]) -> None:
     """Write a ticket's settings, when given, in the map module's own tables, STORE-045."""
     changes: dict[str, Any] = {}
@@ -1800,6 +1864,8 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
         changes['hold'] = 1 if nouns['hold'] else 0
     if 'epic' in nouns:
         changes['epic'] = _epic(store, work_id, nouns['epic'])
+    if 'board' in nouns:
+        changes['board'] = _board(store, nouns['board'])
     if 'agents' in nouns:  # how many agents work on it at once; one, the default, is kept as none
         agents = nouns['agents']
         if isinstance(agents, bool) or not isinstance(agents, int) or agents < 1:
@@ -2057,6 +2123,8 @@ WORK_NOUNS = (
                   'itself, it closes once every ticket in it is done, and those tickets share its worktree and branch, '
                   'so they are reviewed and merged together. A work id or <address>#<n> puts this ticket in that '
                   'epic; \'\' takes it out.'),
+    _noun('board', 'add and edit: the named board the ticket is on, as map boards lists them; \'\' puts it back on '
+                   'the project\'s first board. list: only the tickets on that board, \'\' for the first board.'),
     _noun('id', 'The work record id, for edit, take, plan, step, move and done. Given with no op, it reads that one '
                 'ticket with the where read of its node and of each node it links: their refs, open work and open '
                 'questions, knowledge layers and modules\' memories. '
@@ -2282,6 +2350,14 @@ MODULE = Module(
                                                            'and the nodes it links.')),
 ),
              person_decides=releases, page=RELEASE_PAGE),
+        Verb('boards', boards, 'The project\'s named boards: list them with their open tickets, add one, archive a '
+                               'board\'s done tickets, or remove a board no ticket is on. The first board has no name. '
+                               'A ticket is moved to a board with map work op=edit id=<id> board=<name>.',
+             nouns=(Noun('op', 'list, the default; add; line, which puts every ticket done up to now on the board in '
+                               'its Archive; or remove.', required=False),
+                    Noun('name', 'The board\'s name, for add, line and remove.', required=False),
+                    Noun('line', 'line: the archive cutoff as a time, instead of now; an undo puts the one before '
+                                 'back.', required=False))),
         Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',
              nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),

@@ -607,7 +607,7 @@ def _epic_closed(tx: Tx, work_id: str) -> None:
         return
     outcomes = {str(row["outcome"] or "completed") for row in ended}
     finish_work(tx, epic, f"Every one of its {len(ended)} child tickets is done.",
-                outcome="completed" if "completed" in outcomes else sorted(outcomes)[0])
+                outcome="completed" if "completed" in outcomes else min(outcomes))
 
 
 def _epic_reopened(tx: Tx, work_id: str) -> None:
@@ -1486,8 +1486,10 @@ TABLES = Tables(
     # its fix landed, `proof` and `landed` in ticket_settings, columns version 9 never names (code.scheduler.task#9,
     # 2026-10-19), so it still reads and writes the store; 19: the epic a ticket belongs to and how many agents work on
     # it at once, `epic` and `agents` in ticket_settings (code.dispatcher.agent#7a, 2026-10-19), columns version 9
-    # never names
-    version=19,
+    # never names; 20: the named board a ticket is on, `board` in ticket_settings, and the project's named boards with
+    # each its own archive cutoff, `boards` (the person's need, 2026-10-20), a column and a table version 9 never names;
+    # 21: their indexes, by board and by created
+    version=21,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1501,8 +1503,18 @@ TABLES = Tables(
         # and whether it closes only with proof, `proof`, and when its fix landed while it is watched, `landed`; the
         # epic it belongs to, `epic`, which closes once every child naming it is done and whose worktree its children
         # share; and how many agents work on it at once, `agents`, one when none is set
+        # and the named board the ticket is on, `board`, none for the project's first board (2026-10-20)
         columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
-                 Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int')),
+                 Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int'),
+                 Column('board')),
+        indexes=(Index(('board',)),),
+    ), Table(
+        # the project's named boards besides its first: each with its own archive cutoff, `line`, the time before
+        # which its done tickets are in its Archive; a ticket names its board in ticket_settings (the person's need,
+        # 2026-10-20: work for a new effort moves to that effort's board instead of piling up on the one board)
+        'boards', place='metaform', key=('name',),
+        columns=(Column('name', required=True), Column('created', required=True), Column('line')),
+        indexes=(Index(('created',)),),
     ), Table(
         'eligible', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('agents', 'json', required=True)),

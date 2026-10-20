@@ -233,12 +233,28 @@ function cardActs(ticket, place, total, move) {
     h('button', {class: 'btn sm quiet', type: 'button'}, 'Inspect'),
     ticket.done ? null : h('button', {class: 'btn sm quiet cancel', type: 'button',
       title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled', onclick: cancel}, 'Cancel'),
+    B.boards.length ? boardSelect(ticket) : null,
     h('span', {class: 'grow'}),
     h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
       [['Top', 'Move to top', 0, 0, place === 0], ['↑', 'Move up', null, -1, place === 0],
         ['↓', 'Move down', null, 1, place === total - 1]].map(([text, label, to, by, disabled]) =>
         h('button', {class: 'btn sm quiet', type: 'button', title: label, 'aria-label': label, disabled,
           onclick: event => { event.stopPropagation(); move(to, by); }}, text))));
+}
+/* Move to another board: the ticket's board, chosen among the project's; the change is one write every open page
+ * hears as a change to this ticket, and the card leaves this board on the next draw. */
+function boardSelect(ticket) {
+  const current = String(ticket.map?.board || '');
+  const moveTo = async event => {
+    event.stopPropagation();
+    const board = event.currentTarget.value;
+    if (board === current) return;
+    if (!(await wrote('/api/set-ticket', {work_id: ticket.id, board}))) event.currentTarget.value = current;
+  };
+  return h('select', {class: 'board-of', title: 'Move to another board', 'aria-label': 'The board this ticket is on',
+    onclick: event => event.stopPropagation(), onchange: moveTo},
+  h('option', {value: '', selected: current === ''}, 'Board (first)'),
+  ...B.boards.map(one => h('option', {value: one.name, selected: current === one.name}, one.name)));
 }
 function shownOnBoard(box, words) {
   const hidden = B.off.has(box.dataset.kind) || Boolean(words && !box.textContent.toLowerCase().includes(words));
@@ -339,8 +355,10 @@ async function dropCard(event, cards, column) {
  * written with the same condition and note on an element and on a purpose record it holds or receives is drawn once,
  * at the element. */
 export function boardTickets(records) {
-  // done before the board's cutoff, it is in the Archive: the tickets the map holds are not all the board's
-  records = records.filter(ticket => ticket.is_work && (!ticket.done || ticket.done >= B.cutoff));
+  // done before the board's cutoff, it is in the Archive: the tickets the map holds are not all the board's; and only
+  // the tickets on the board shown, the first board's being those on no named board
+  records = records.filter(ticket => ticket.is_work && (!ticket.done || ticket.done >= B.cutoff)
+    && String(ticket.map?.board || '') === B.board);
   const finding = ticket => !ticket.task && ticket.condition
     ? [ticket.condition, ticket.note || '', Boolean(ticket.done)].join('\n') : null;
   const atElements = new Set(records.filter(ticket => ticket.node_kind === 'element' && finding(ticket))
@@ -350,15 +368,52 @@ export function boardTickets(records) {
   return records.filter(ticket => !(ticket.done && (ticket.resolution || '').startsWith('Replaced by '))
     && !repeated(ticket));
 }
+/* The named boards, the person's need of 2026-10-20: a board gets a name, a new one can be made, a past one opened
+ * again, and a ticket moved from one board to another, so work for a new effort goes to that effort's board. The first
+ * board has no name. The choice is kept per project in this browser alone; the boards and what is on them are the
+ * project's, read from the server. */
+const BOARD_KEY = project => `metaform.board.${project}`;
+export async function drawBoards() {
+  const box = $('#board .boards');
+  if (B.boardsOf !== S.project) {
+    B.boardsOf = S.project;
+    let kept = '';
+    try { kept = localStorage.getItem(BOARD_KEY(S.project)) || ''; } catch (error) { kept = ''; }
+    B.board = kept;
+  }
+  try { B.boards = ((await read('boards')).boards || []).filter(one => !one.first); } catch (error) { B.boards = []; }
+  if (B.board && !B.boards.some(one => one.name === B.board)) B.board = '';  // a board removed meanwhile
+  fill(box, [h('option', {value: ''}, `Board${B.boards.length ? ' (first)' : ''}`),
+    ...B.boards.map(one => h('option', {value: one.name}, `${one.name} · ${one.open}`)),
+    h('option', {value: '\u0000new'}, 'New board…')]);
+  box.value = B.board;
+}
+async function chooseBoard(value) {
+  if (value === '\u0000new') {
+    const name = (window.prompt('Name the new board') || '').trim();
+    $('#board .boards').value = B.board;
+    if (!name) return;
+    const made = await wrote('/api/board-add', {name});
+    if (!made) return;
+    value = name;
+  }
+  B.board = value;
+  try { localStorage.setItem(BOARD_KEY(S.project), value); } catch (error) { /* a browser that keeps nothing */ }
+  await renderBoard();
+}
+$('#board .boards').onchange = event => chooseBoard(event.currentTarget.value);
+document.addEventListener('metaform:boards', () => { if (!$('#board').hidden) drawBoards(); });
 export async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
   // Distribute's count starts at Agents at once, dispatch_agents, until the person changes it here
   const count = $('#board .distribute input');
   if (!count.dataset.chosen && AUTO.agents) count.value = String(AUTO.agents);
   const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
+  await drawBoards();
+  if (S.project !== project) return;
   let found;
   // the server reads what the board shows, the open tickets and those done since its cutoff, never every ticket
-  try { found = await read('work', {limit: 0, board: 'shown'}); }
+  try { found = await read('work', {limit: 0, board: 'shown', on: B.board}); }
   catch (error) { toast(error.message); return; }
   if (S.project !== project || S.base !== metaform) return;  // a later choice's read draws its own tickets
   B.cutoff = found.cutoff || '';
@@ -373,7 +428,7 @@ async function renderArchive(after = null) {
   const list = $('#board .archive .rows'), more = $('#board .archive .more');
   const project = S.project, metaform = S.base;
   let found;
-  try { found = await read('work', {limit: ARCHIVE_PAGE, board: 'archive', ...(after ? {after} : {})}); }
+  try { found = await read('work', {limit: ARCHIVE_PAGE, board: 'archive', on: B.board, ...(after ? {after} : {})}); }
   catch (error) { toast(error.message); return; }
   if (S.project !== project || S.base !== metaform) return;
   const rows = (found.results || []).filter(ticket => ticket.is_work).map(archiveRow);
@@ -406,11 +461,12 @@ $('#board .archive .more').onclick = event => renderArchive(event.currentTarget.
 /* Archive done tickets: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
  * line that was before back. */
 $('#board .line-in-sand').onclick = async () => {
-  const set = await wrote('/api/board-line', {});
+  const board = B.board;  // the board shown keeps its own Archive and line
+  const set = await wrote('/api/board-line', {board});
   if (!set) return;
   await renderBoard();
   undoable('Everything done up to now is in the Archive.', async () => {
-    const back = await wrote('/api/board-line', {line: set.was});
+    const back = await wrote('/api/board-line', {line: set.was, board});
     await renderBoard();
     return Boolean(back);
   });

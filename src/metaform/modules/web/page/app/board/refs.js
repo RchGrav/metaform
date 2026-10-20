@@ -15,7 +15,9 @@ import {named} from '/page/app/task/task.js';
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 /* The board's tickets, the kinds hidden, and cutoff: the time its done tickets start at, as the server's board read
  * gives it, board_done_days ago or the archive cutoff; a ticket done before it is in the Archive. */
-export const B = {tickets: [], off: new Set(), cutoff: ''};
+// board: the named board shown, '' the project's first; boards: the named boards, as /api/boards lists them;
+// boardsOf: the project the choice and the list were made for (the person's need, 2026-10-20)
+export const B = {tickets: [], off: new Set(), cutoff: '', board: '', boards: [], boardsOf: ''};
 /* A ticket's fields as the page compares them, with the age the server counts in seconds left out: it differs on
  * every read, and the page shows its own, `ago`. A JSON.stringify replacer. */
 export const unshown = (key, value) => (key === 'age_seconds' ? undefined : value);

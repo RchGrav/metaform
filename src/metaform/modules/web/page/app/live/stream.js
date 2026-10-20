@@ -270,6 +270,8 @@ export async function changed(event) {
   } else if (WS.active && !threadOnly(event.payload)) WS.refresh();
   // the agent recording an intake has gone: what is building is read at once, so its bar goes, and no map is read
   if (allTables(named, table => table === 'intake.recorder')) return recordingNow().catch(error => toast(error.message));
+  // the project's named boards changed, here or elsewhere: the board's picker reads them again if it is open
+  if (Array.isArray(named) && named.includes('map.boards')) document.dispatchEvent(new CustomEvent('metaform:boards'));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
   if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
     document.dispatchEvent(new CustomEvent('metaform:settings', {detail: named}));  // the tables it names

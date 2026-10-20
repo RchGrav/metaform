@@ -227,7 +227,7 @@ export async function settled(after = LIVE.drawn + SPACING) {
  * of the items at an address and their titles and whys, MCP-037. A change to these alone adds or removes no node and
  * no link, so the map, its layers' items and its memories are not read again for it. */
 const TICKET_TABLES = new Set(['work', 'work_links', 'work_steps', 'messages', 'map.glyphs', 'map.ticket_settings',
-  'map.question_work', 'map.numbered', 'map.numbering']);
+  'map.question_work', 'map.numbered', 'map.numbering', 'map.boards']);
 /* Whether a change can change a node's brief: what is numbered at an address, the memory, the work and the messages
  * counted in it, or the map itself, a change naming no tables or one of the map's own. An agent's thread does not. */
 const BRIEF_TABLES = new Set(['work', 'work_links', 'work_steps', 'messages', 'map.numbered', 'map.numbering']);
