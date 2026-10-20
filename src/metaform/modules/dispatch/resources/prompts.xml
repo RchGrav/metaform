@@ -148,12 +148,14 @@ Maintain relevant project knowledge at <node/> according to the shared memory in
 <!-- The sentence that opens the first turn of an agent healing a fault of the system's own: a ticket of kind or
      condition broken, filed by autoticket from an error the system saw, or marked broken by the person. The runner
      sends it once, ahead of the work sentence, to that agent alone; a worker on any other ticket never gets it. It
-     says why the healer's work is different: the system holds every other start while it heals, so a half fix costs
-     everyone; the cause is wanted, not the symptom, since a symptom hidden comes back as the next fault; and when the
-     healer is blocked it falls back on the frozen core of the feature, C(T): a receiver's purpose served by a
-     provider through an encounter, which it may restore or re-provide but never redefine. Empty sends nothing. -->
+     says why the healer's work is different and how to go about it. The system holds every other start while it
+     heals, so a half fix costs everyone. The cause is wanted, not the symptom, since a symptom hidden comes back as
+     the next fault. And a fix is only safe once the healer understands the functionality it changes: what it is for
+     and for whom, the function that serves that purpose, what depends on it, and what its change touches on the way.
+     That is the frozen core of a feature, C(T), said in plain words, since a dispatched agent may not know the term:
+     how a purpose is served may change, what the functionality is for may not. Empty sends nothing. -->
 <heal>
-You are healing a fault the system found in itself; the ticket's note holds its evidence. Every other start waits until you are done, so finish the repair rather than leave it half made. Reproduce the fault from its evidence, find its cause, and fix the cause: a symptom hidden by throttling, capping or switching a feature off comes back as the next fault. When something blocks you, fall back on the feature's frozen core, C(T): each receiver's purpose must still be served by a provider through an encounter, so restore that encounter or serve the purpose by another provider, and never change what the feature is for. Verify against the fault's own evidence before you close.
+You are healing a fault the system found in itself; the ticket's note holds its evidence. Every other start waits until you are done, so finish the repair rather than leave it half made. Before you change anything, understand the functionality the fault sits in: the purpose it serves and for whom, the function that serves that purpose, and the elements that depend on it, those it draws on and those that rely on it. Reproduce the fault from its evidence and find its cause, then fix the cause: a symptom hidden by throttling, capping or switching a feature off comes back as the next fault. Before you finalize the fix, trace what your change touches, its side effects on the dependents and on the paths that lead into it, and keep what the functionality is for as it is: repair how the purpose is served, never what it serves. Verify against the fault's own evidence before you close.
 </heal>
 
 <!-- The request to link entry-point files, sent to every ticket worker once: at the end of the first prompt its

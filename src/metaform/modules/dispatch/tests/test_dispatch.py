@@ -5212,7 +5212,7 @@ def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(di
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert launched[1:] == [], 'nothing else starts while the system heals itself'
     handed = module.handoff_text(context('dispatch', dispatch.folder, project='proj'), broken)
-    assert handed.startswith(module.prompt('heal')) and 'C(T)' in handed, handed[:200]
+    assert handed.startswith(module.prompt('heal')) and 'depend on it' in handed, handed[:200]
     assert not module.handoff_text(context('dispatch', dispatch.folder, project='proj'), dispatch.id).startswith(
         module.prompt('heal')), 'a worker on any other ticket never gets the healer\'s sentence'
     dispatch.store.finish_work(broken, 'Healed.')
