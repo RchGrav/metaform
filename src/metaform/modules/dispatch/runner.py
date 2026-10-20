@@ -1249,7 +1249,7 @@ class Session:
                                     'spent': None, 'auth': None, 'auth_methods': [],
                                     # the files it read and wrote through the runner, P019, the latest first, and an
                                     # intake agent's first call and record, M04
-                                    'files': [], 'intake': None, 'ticket_git': None,
+                                    'files': [], 'intake': None, 'ticket_git': None, 'tool_windows': {},
                                     # how the person chose this session's permission requests are answered, one of
                                     # dispatch_prompts' choices over the launch's and the project's, `answering`
                                     'prompts': None,
@@ -1695,6 +1695,7 @@ class Session:
                 for field in ('content', 'locations'):  # an update that carries either replaces it whole, as ACP says
                     if field in data:
                         known[field] = data[field]
+                await self.track_tool_files(ident, known)
                 title = known.get('title') or known.get('kind') or 'A tool call'
                 await self.note(f'tool:{ident}', kind, f'{title} ({known.get("status", "pending")})')
                 detail = await self.tool_detail({**known, 'toolCallId': ident, 'title': title})
@@ -2065,6 +2066,21 @@ class Session:
             calls = cast(dict[str, dict[str, Any]], held.setdefault('tools', {}))
             known = calls.setdefault(str(data.get('toolCallId', '')), {})
             known.update({field: data[field] for field in ('title', 'kind', 'status') if data.get(field)})
+            for field in ('content', 'locations'):
+                if field in data:
+                    known[field] = data[field]
+            await self.track_tool_files(f'{child}:{data.get("toolCallId", "")}', known)
+            if known.get('status') == 'completed' and not known.get('commit_recorded'):
+                detail = await self.tool_detail({**known, 'toolCallId': f'{child}:{data.get("toolCallId", "")}'})
+                if detail is not None:
+                    paths = [str(one['path']) for one in detail['diffs']]
+                    if known.get('kind') in ('edit', 'delete', 'move'):
+                        paths += [str(one['path']) for one in detail['locations']]
+                    await self.changed_files(paths)
+                known['commit_recorded'] = True
+            if known.get('status') in ('completed', 'failed'):
+                known.pop('content', None)
+                known.pop('locations', None)
             await self.child_note(child, f'tool:{data.get("toolCallId")}', kind,
                                   f'{known.get("title") or known.get("kind") or "A tool call"} '
                                   f'({known.get("status", "pending")})')
@@ -3637,7 +3653,7 @@ class Session:
             self.acp['ticket_git'] = {'started': time.time_ns(),
                                       'peers': await asyncio.to_thread(self.commit_peers),
                                       'baseline': await asyncio.to_thread(capture_state, self.folder),
-                                      'files': {}, 'written_at': {}, 'result': None}
+                                      'files': {}, 'written_at': {}, 'tool_windows': {}, 'result': None}
         # The server the agent is asked to start is the one AI tools are registered with, chosen at the project's root
         # and not in a worktree, run by this interpreter; none is asked for when no module provides one, MCP-010.
         server = await asyncio.to_thread(mcp_server, Path(self.root))
@@ -4102,6 +4118,8 @@ class Session:
             held = cast(dict[str, Any], before)
             self.acp['touched'] = list(held.get('touched') or [])
             self.acp['ticket_git'] = held.get('ticket_git')
+            ticket_git: dict[str, Any] = held.get('ticket_git') or {}
+            self.acp['tool_windows'] = held.get('tool_windows', ticket_git.get('tool_windows', {}))
             if held.get('prompts') in PROMPTS:  # the person's choice for this session holds when it goes on
                 self.acp['prompts'] = held['prompts']
             if isinstance(held.get('opening'), dict):  # the system prompt the conversation holds, `reopened`
@@ -4728,10 +4746,87 @@ class Session:
         if paths:
             await self.save_state()
 
+    async def track_tool_files(self, ident: str, call: dict[str, Any]) -> None:
+        """Observe tool edits without relying on ACP filesystem writes or diff content.
+
+        A shared checkout cannot identify the author of simultaneous shell writes. Persist
+        execution windows before taking snapshots so peers can refuse ambiguous attribution.
+        """
+        held = self.acp['ticket_git']
+        if self.folder != self.root or call.get('kind') in ('read', 'search', 'fetch', 'think'):
+            return
+        windows = self.acp['tool_windows']
+        if held is not None:
+            held['tool_windows'] = windows
+        terminal = call.get('status') in ('completed', 'failed')
+        if ident not in windows:
+            if terminal:  # A completed-only notification provides no before-write evidence.
+                return
+            windows[ident] = {'started': time.time_ns(), 'ended': None,
+                              'peers': await asyncio.to_thread(self.commit_peers)}
+            await self.save_state()
+            if held is not None:
+                call['git_before'] = await asyncio.to_thread(capture_state, self.folder)
+            return
+        window = windows[ident]
+        if not terminal or window['ended'] is not None:
+            return
+        after = await asyncio.to_thread(capture_state, self.folder) if held is not None else {}
+        window['ended'] = time.time_ns()
+        await self.save_state()
+        if held is None:
+            return
+        before = call.pop('git_before', None)
+        if before is None or '' in before or '' in after:
+            return
+        changed = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
+        if not changed:
+            return
+        ambiguous = False  # Parent calls and native children share this ticket's ownership.
+        peer_paths: set[str] = set()
+        with self.store.tables(write=False) as tx:
+            for row in tx.rows('agent_sessions', limit=0).results:
+                if row['session_id'] == self.session_id or row['session_id'] in self.children:
+                    continue
+                state = tx.get('session_lines', {'session_id': row['session_id'], 'name': 'state'})
+                legacy_overlap = (row['state'] == 'running' or row['session_id'] in window['peers']
+                                  or window['started'] <= int(row['seq']) * 1_000_000 <= window['ended'])
+                if state is None:
+                    ambiguous |= legacy_overlap
+                    continue
+                peer = json.loads(str(state['text']))
+                if not peer.get('cwd'):
+                    ambiguous |= legacy_overlap
+                    continue
+                if peer.get('cwd') != self.folder:
+                    continue
+                evidence: dict[str, Any] = peer.get('ticket_git') or {}
+                peer_paths.update(path for path, when in evidence.get('written_at', {}).items()
+                                  if window['started'] <= when <= window['ended'])
+                peer_windows = peer.get('tool_windows', evidence.get('tool_windows'))
+                if peer_windows is None:
+                    ambiguous |= legacy_overlap
+                    continue
+                ambiguous |= any(other['started'] <= window['ended']
+                                 and (legacy_overlap if other['ended'] is None
+                                      else other['ended'] >= window['started'])
+                                 for other in peer_windows.values())
+        changed -= peer_paths
+        if changed and ambiguous:
+            held['attribution_error'] = 'Overlapping tool executions prevent safe shell-edit attribution.'
+            await self.save_state()
+            return
+        for path in changed:
+            held['files'][path] = after[path] if path in after else await asyncio.to_thread(
+                file_fingerprint, self.folder, path)
+            held.setdefault('written_at', {})[path] = window['ended']
+        await self.save_state()
+
     def commit_peers(self) -> list[str]:
         with self.store.tables(write=False) as tx:
             return [str(row['session_id']) for row in tx.rows('agent_sessions', limit=0).results
-                    if row['state'] == 'running' and row['session_id'] != self.session_id]
+                    if row['state'] == 'running' and row['session_id'] != self.session_id
+                    and row['session_id'] not in self.children]
 
     def commit_overlaps(self, files: set[str]) -> set[str]:
         """Refuse writes from overlapping sessions, including peers that have already ended."""
@@ -4741,7 +4836,7 @@ class Session:
             return overlaps
         with self.store.tables(write=False) as tx:
             for row in tx.rows('agent_sessions', limit=0).results:
-                if row['session_id'] == self.session_id:
+                if row['session_id'] == self.session_id or row['session_id'] in self.children:
                     continue
                 state = tx.get('session_lines', {'session_id': row['session_id'], 'name': 'state'})
                 if state is None:
@@ -4764,7 +4859,7 @@ class Session:
         """Commit attributable linked files once, before completion releases the shared checkout."""
         held = self.acp['ticket_git']
         if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
-                or (held['result'] is not None and not held['result']['why']):
+                or (held['result'] is not None and held['result']['committed'] and not held['result']['why']):
             return
         index = await self.places()
         files = {path: fingerprint for path, fingerprint in held['files'].items()
@@ -4774,8 +4869,10 @@ class Session:
         overlaps = await asyncio.to_thread(self.commit_overlaps, set(files))
         try:
             result = ({'committed': None, 'pushed': False, 'conflict': False,
-                       'why': 'Other sessions changed the same files: ' + ', '.join(sorted(overlaps))}
-                      if overlaps else await asyncio.to_thread(complete_ticket, self.folder, self.work_id, title,
+                       'why': held.get('attribution_error') or
+                       'Other sessions changed the same files: ' + ', '.join(sorted(overlaps))}
+                      if overlaps or held.get('attribution_error') else await asyncio.to_thread(
+                                                              complete_ticket, self.folder, self.work_id, title,
                                                               files, held['baseline']))
         except (OSError, subprocess.SubprocessError) as error:
             result = {'committed': None, 'pushed': False, 'conflict': False, 'why': str(error)}
@@ -5264,7 +5361,8 @@ class Session:
                     await self.conn.close()
             # An adapter can exit after closing its ticket but before returning its final prompt response.
             held_git = self.acp['ticket_git']
-            if self.role == 'worker' and held_git is not None and held_git['result'] is None:
+            if self.role == 'worker' and held_git is not None and (held_git['result'] is None
+                    or not held_git['result']['committed'] or held_git['result']['why']):
                 try:
                     record = await asyncio.to_thread(ticket, self.store, self.work_id)
                     if await asyncio.to_thread(work_over, self.store, record):

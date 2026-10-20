@@ -146,3 +146,190 @@ def test_legacy_peer_present_at_start_stays_a_conflict_after_ending(dispatch):
     with made.store.tables() as tx:
         tx.update('agent_sessions', {'session_id': 'legacy'}, {'state': 'ended'})
     assert made.commit_overlaps({'owned.py'}) == {'owned.py'}
+
+
+def test_shell_edit_commits_without_acp_diff_and_retries_empty_result(dispatch, monkeypatch):
+    from types import SimpleNamespace
+
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.acp['ticket_git'] = {'baseline': capture_state(dispatch.folder), 'files': {}, 'result': None}
+    made.sources = {'owned.py': [{'kind': 'element', 'id': 'owned', 'address': 'code.owned'}]}
+
+    async def note(*args):
+        pass
+
+    monkeypatch.setattr(made, 'note', note)
+
+    async def update(status):
+        data = {'sessionUpdate': 'tool_call' if status == 'in_progress' else 'tool_call_update',
+                'toolCallId': 'shell', 'kind': 'execute', 'status': status, 'title': 'exec_command'}
+        await made.session_update('test', SimpleNamespace(model_dump=lambda **kwargs: data))
+
+    async def scenario():
+        await made.commit_done()  # An empty first attempt must not suppress the later edit.
+        await update('in_progress')
+        (dispatch.folder / 'owned.py').write_text('shell edit\n')
+        await update('completed')
+        await made.commit_done()
+
+    asyncio.run(scenario())
+    assert made.acp['ticket_git']['result']['committed']
+    assert git(dispatch.folder, 'show', '--format=', '--name-only', 'HEAD').stdout.strip() == 'owned.py'
+    assert git(dispatch.folder, 'show', 'HEAD:owned.py').stdout == 'shell edit\n'
+
+
+def test_shell_snapshot_excludes_known_concurrent_peer_write(dispatch):
+    import time
+
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.session_id = 'ours'
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
+    made.sources = {'owned.py': [{'kind': 'element', 'id': 'owned', 'address': 'code.owned'}]}
+    call = {'kind': 'execute', 'status': 'in_progress'}
+
+    async def scenario():
+        await made.track_tool_files('shell', call)
+        (dispatch.folder / 'owned.py').write_text('own edit\n')
+        (dispatch.folder / 'peer.py').write_text('peer edit\n')
+        peer = {'cwd': made.folder, 'ticket_git': {'tool_windows': {}, 'written_at': {'peer.py': time.time_ns()}}}
+        with made.store.tables() as tx:
+            tx.insert('agent_sessions', {'session_id': 'peer', 'work_id': 'peer-work', 'agent': 'codex',
+                                         'state': 'running', 'started': '2026-10-20T00:00:00Z', 'seq': 1})
+            tx.insert('session_lines', {'session_id': 'peer', 'work_id': 'peer-work', 'name': 'state',
+                                       'kind': 'state', 'text': json.dumps(peer), 'seq': 1})
+        call['status'] = 'completed'
+        await made.track_tool_files('shell', call)
+        await made.commit_done()
+
+    asyncio.run(scenario())
+    assert set(made.acp['ticket_git']['files']) == {'owned.py'}
+    assert made.acp['ticket_git']['result']['committed']
+    assert git(dispatch.folder, 'show', '--format=', '--name-only', 'HEAD').stdout.strip() == 'owned.py'
+    assert git(dispatch.folder, 'show', 'HEAD:peer.py').stdout == 'before\n'
+    assert (dispatch.folder / 'peer.py').read_text() == 'peer edit\n'
+
+
+def test_overlapping_shell_windows_refuse_ambiguous_ownership(dispatch):
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.session_id = 'ours'
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
+    call = {'kind': 'execute', 'status': 'in_progress'}
+
+    async def scenario():
+        await made.track_tool_files('shell', call)
+        (dispatch.folder / 'owned.py').write_text('unknown writer\n')
+        peer = {'cwd': made.folder, 'ticket_git': {'tool_windows': {
+            'peer-shell': {'started': made.acp['ticket_git']['tool_windows']['shell']['started'], 'ended': None}}}}
+        with made.store.tables() as tx:
+            tx.insert('agent_sessions', {'session_id': 'peer', 'work_id': 'peer-work', 'agent': 'codex',
+                                         'state': 'running', 'started': '2026-10-20T00:00:00Z', 'seq': 1})
+            tx.insert('session_lines', {'session_id': 'peer', 'work_id': 'peer-work', 'name': 'state',
+                                       'kind': 'state', 'text': json.dumps(peer), 'seq': 1})
+        call['status'] = 'completed'
+        await made.track_tool_files('shell', call)
+
+    asyncio.run(scenario())
+    assert made.acp['ticket_git']['files'] == {}
+    assert 'Overlapping' in made.acp['ticket_git']['attribution_error']
+
+
+def test_idle_peer_with_window_journal_allows_shell_attribution(dispatch):
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.session_id = 'ours'
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'tool_windows': {}, 'result': None}
+    peer = {'cwd': made.folder, 'ticket_git': {'files': {}, 'written_at': {}, 'tool_windows': {}}}
+    with made.store.tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'idle-peer', 'work_id': 'peer-work', 'agent': 'codex',
+                                     'state': 'running', 'started': '2026-10-20T00:00:00Z', 'seq': 1})
+        tx.insert('session_lines', {'session_id': 'idle-peer', 'work_id': 'peer-work', 'name': 'state',
+                                   'kind': 'state', 'text': json.dumps(peer), 'seq': 1})
+    call = {'kind': 'execute', 'status': 'in_progress'}
+
+    async def scenario():
+        await made.track_tool_files('shell', call)
+        (dispatch.folder / 'owned.py').write_text('own edit\n')
+        call['status'] = 'completed'
+        await made.track_tool_files('shell', call)
+
+    asyncio.run(scenario())
+    assert set(made.acp['ticket_git']['files']) == {'owned.py'}
+    assert not made.acp['ticket_git'].get('attribution_error')
+
+
+@pytest.mark.parametrize('active_shell', [False, True])
+def test_ticketless_peer_journal_distinguishes_idle_from_shell_overlap(dispatch, active_shell):
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.session_id = 'ours'
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
+    peer = session_for(dispatch)
+    peer.session_id = 'system-peer'
+    assert peer.acp['ticket_git'] is None
+    assert peer.acp['tool_windows'] == {}
+    with made.store.tables() as tx:
+        tx.insert('agent_sessions', {'session_id': peer.session_id, 'work_id': peer.work_id, 'agent': 'codex',
+                                     'state': 'running', 'started': '2026-10-20T00:00:00Z', 'seq': 1})
+    call = {'kind': 'execute', 'status': 'in_progress'}
+    peer_call = {'kind': 'execute', 'status': 'in_progress'}
+
+    async def scenario():
+        await peer.save_state()
+        await made.track_tool_files('shell', call)
+        if active_shell:
+            await peer.track_tool_files('system-shell', peer_call)
+        (dispatch.folder / 'owned.py').write_text('shell edit\n')
+        call['status'] = 'completed'
+        await made.track_tool_files('shell', call)
+        if active_shell:
+            peer_call['status'] = 'completed'
+            await peer.track_tool_files('system-shell', peer_call)
+
+    asyncio.run(scenario())
+    if active_shell:
+        assert made.acp['ticket_git']['files'] == {}
+        assert 'Overlapping' in made.acp['ticket_git']['attribution_error']
+        assert peer.acp['tool_windows']['system-shell']['ended'] is not None
+    else:
+        assert set(made.acp['ticket_git']['files']) == {'owned.py'}
+        assert not made.acp['ticket_git'].get('attribution_error')
+
+
+def test_native_child_shell_commits_while_parent_delegation_is_open(dispatch, monkeypatch):
+    from types import SimpleNamespace
+
+    initialize(dispatch.folder)
+    made = session_for(dispatch)
+    made.session_id = 'ours'
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
+    made.sources = {'owned.py': [{'kind': 'element', 'id': 'owned', 'address': 'code.owned'}]}
+    made.children['child'] = {'flow': None, 'tools': {}}
+    parent_call = {'kind': 'other', 'status': 'in_progress', 'title': 'Delegate task'}
+
+    async def note(*args):
+        pass
+
+    monkeypatch.setattr(made, 'note', note)
+    monkeypatch.setattr(made, 'child_note', note)
+
+    async def child_update(status):
+        data = {'sessionUpdate': 'tool_call' if status == 'in_progress' else 'tool_call_update',
+                'toolCallId': 'shell', 'kind': 'execute', 'status': status, 'title': 'exec_command'}
+        await made.session_update('child', SimpleNamespace(model_dump=lambda **kwargs: data))
+
+    async def scenario():
+        await made.track_tool_files('delegate', parent_call)
+        await child_update('in_progress')
+        (dispatch.folder / 'owned.py').write_text('child shell edit\n')
+        await child_update('completed')
+        parent_call['status'] = 'completed'
+        await made.track_tool_files('delegate', parent_call)
+        await made.commit_done()
+
+    asyncio.run(scenario())
+    assert made.acp['ticket_git']['result']['committed']
+    assert git(dispatch.folder, 'show', '--format=', '--name-only', 'HEAD').stdout.strip() == 'owned.py'
+    assert git(dispatch.folder, 'show', 'HEAD:owned.py').stdout == 'child shell edit\n'

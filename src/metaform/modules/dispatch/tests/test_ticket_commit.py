@@ -227,3 +227,12 @@ def test_rejected_push_never_merges_peer_staging_into_history(repo, tmp_path):
     assert git(repo, 'show', 'HEAD:peer.txt') == 'base'
     assert git(repo, 'show', ':peer.txt') == 'private peer stage'
     assert (repo / 'peer.txt').read_text() == 'private peer stage\n'
+
+
+def test_capture_state_detects_rewrites_of_already_dirty_files(repo):
+    (repo / 'own.txt').write_text('first edit\n')
+    before = merge.capture_state(repo)
+    (repo / 'own.txt').write_text('second edit\n')
+    after = merge.capture_state(repo)
+    assert before.keys() == after.keys()
+    assert before['own.txt'] != after['own.txt']

@@ -45,7 +45,7 @@ def capture_state(folder: str | Path) -> dict[str, str]:
     found = git(folder, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames')
     if found.returncode:
         return {'': 'not a git checkout'}
-    return {entry[3:]: hashlib.sha256(entry.encode('utf-8')).hexdigest()
+    return {entry[3:]: file_fingerprint(folder, entry[3:])
             for entry in found.stdout.split('\0') if entry}
 
 
