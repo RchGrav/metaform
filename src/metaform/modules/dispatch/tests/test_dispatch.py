@@ -4090,9 +4090,9 @@ def test_the_persons_agent_is_the_same_conversation_after_a_switch_to_an_empty_b
     eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
     # The advisor retains its original base while another tab navigates elsewhere.
     assert first['base'] == dispatch.store.active_base().id
-    environ = Path(f'/proc/{dispatch.process.pid}/environ')
-    if environ.exists():
-        assert b'METAFORM_BASE=' in environ.read_bytes(), 'its runner retains its starting base'
+    # /proc/<pid>/environ is the environment the runner was started with, never what it pins for itself and its
+    # children after it starts; what it retains shows in the base its session records, above, and below, where a
+    # switch of the active base leaves the conversation where it began
     said = run('map', 'add-base', 'empty', '--confirm', cwd=dispatch.folder).stdout
     assert 'follows the switch' not in said, said
     assert home.active_base('proj').name == 'empty' and not Store('proj').roots(limit=1).entry

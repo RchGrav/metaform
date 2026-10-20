@@ -823,8 +823,8 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
     # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
-    bound = await asyncio.to_thread(store.bound_base)
-    if bound is not None:
+    bound = await asyncio.to_thread(store.bound_base) or await asyncio.to_thread(store.active_base)
+    if bound is not None:  # named by its starter, else the one active now: pinned, so a switch made later never moves it
         os.environ[BASE_VARIABLE] = bound.id
         store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
                       write_layer=store.write_layer)
