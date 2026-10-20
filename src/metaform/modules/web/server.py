@@ -683,9 +683,11 @@ class Server(ThreadingHTTPServer):
         threading.Thread(target=self.dispatch_waiting, daemon=True).start()
 
     def schedule_merges(self, project: str) -> None:
-        """Set one timer for each merge waiting for review, at its deadline, VIEW-044; nothing polls, QUAL-015."""
-        ok, data = run_dispatch(project, 'merges', [])
-        for row in cast(list[dict[str, Any]], data.get('merges') or []) if ok else []:
+        """Set one timer for each merge waiting for review, at its deadline, VIEW-044; nothing polls, QUAL-015. Read in
+        this process, `merges_waiting`: a subprocess here ran on every merge-related change."""
+        with chassis.request_scope(fresh=True):
+            data = merges_waiting({'project': project})
+        for row in cast(list[dict[str, Any]], data.get('merges') or []):
             key = (project, str(row['work_id']))
             if key in self.merge_timers:
                 continue
@@ -1798,8 +1800,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def list_merges(self, given: dict[str, str]) -> None:
         """The merges waiting for review, VIEW-044, for the page's Review notice."""
-        ok, data = run_dispatch(str(given.get('project', '')), 'merges', [], chosen_base(given))
-        self.send(200, data if ok else {'merges': []})
+        self.send(200, merges_waiting(given))
 
     def review_merge(self, given: dict[str, Any]) -> None:
         """The person clicked Review: the merge is theirs and its countdown is cancelled for good, VIEW-044."""
@@ -3738,6 +3739,18 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
                           module=module_id)
     with on_base(chosen_base(given) if chosen else None):  # a module's own stores, and what it starts, on that base too
         return chassis.call(verb.run, ctx)
+
+
+def merges_waiting(given: dict[str, Any]) -> dict[str, Any]:
+    """The merges waiting for review, as `metaform dispatch merges` reads them, in this process. The page's Review
+    notice and the server's own merge timers ask on every merge-related change, and a subprocess for each, `run_dispatch`,
+    cost a Python start, 0.6 s of a core, for an answer that is usually empty (2026-10-20). Dispatch off the project's
+    surface, or a store that cannot be read, means no merge waits."""
+    try:
+        found = module_verb(given, 'dispatch', 'merges', {}, chosen=bool(chosen_base(given)))
+    except (Stop, StoreError):
+        return {'merges': []}
+    return cast(dict[str, Any], found) if isinstance(found, dict) else {'merges': []}
 
 
 def role_choices(given: dict[str, Any]) -> dict[str, Any]:
