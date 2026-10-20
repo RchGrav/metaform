@@ -154,7 +154,7 @@ def test_new_specialist_gc_commission_publication_reuse_and_original_return(proj
     assert specialist['return_to']['assignment_id'] == worker['assignment_id']
     resolution = implementation.resolve(ctx(project), 'alarm_domain')
     assert not resolution['problems']
-    assert resolution['components'][-1]['name'] == 'agents:generated_proj_alarm_domain'
+    assert resolution['components'][-1]['name'] == 'prompt.agents:generated_proj_alarm_domain'
     duty_version = resolution['components'][-1]['actual_version_id']
     reused = SERVICE.delegate(ctx(project, 'worker', role='alarm_domain', task='Review a second alarm.', key='reuse'))
     assert reused['authored_role_uri'] == specialist['authored_role_uri']

@@ -232,10 +232,11 @@ def test_compaction_does_not_rebuild_assignment_or_actions(dispatch, monkeypatch
 @pytest.mark.kind('fixture')
 def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_one_line(dispatch, monkeypatch, run):
     """code.dispatcher.agent#72: a burst of 20 GC results, reviews, board needs and memory changes starts no turn in
-    the person's system agent and puts no body and no memory notice in its conversation; the person's next message
-    carries one 'new in your inbox' line naming each by ticket and kind, the turn after it none; the inbox lists them
-    all, one short line each, and gives one whole on request. A question still wakes it, as that one line alone, and a
-    worker receives only the completion reference. Memory changes cause no read in any session."""
+    the person's system agent and puts no body and no memory notice in its conversation. Routine entries (a result that
+    needs no decision, progress, a board item finished) never enter the inbox and are never named on a turn: they stay
+    in their threads, listed by dispatch notes one short line each (2026-10-20: routine lines flooded the system agent).
+    The person's next message carries no inbox line. A question still wakes it, as one line alone, and a worker receives
+    only the completion reference. Memory changes cause no read in any session."""
     import asyncio
 
     from metaform.modules.dispatch import board, origin, peering, runner
@@ -279,18 +280,15 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
                      work_id=dispatch.id, start=False)
     asyncio.run(burst())
     assert 'prompted' not in started and not system.pending, 'A burst must start no turn of the system agent.'
-    assert len(system.inbox) == 23
+    assert not system.inbox, 'Routine results and board items stay in their threads: none enters the inbox.'
 
     system.turns = 1  # the person writes; their message is the turn that goes anyway
     system.turn('What is new?', first=True, typed=True)
     system.turn('And now?', first=True, typed=True)
     prompts = sent(monkeypatch, system)
-    head, line = prompts[0].removeprefix(prompt_files.module('mcp', 'connect_rules') + '\n\n').split('\n\n')
-    assert head == 'What is new?' and '\n' not in line, prompts[0]
-    assert line.startswith('23 new in your inbox: code.router.assignment#0 complete, Ticket 1 — '
-                           'progress, ') and 'and 13 more' in line, line
-    assert 'Evidence' not in line and 'held cap' not in line and 'memories' not in line and len(line) < 600, line
-    assert prompts[1] == 'And now?', 'Nothing new since the line was carried: no line.'
+    assert prompts[0].removeprefix(prompt_files.module('mcp', 'connect_rules') + '\n\n') == 'What is new?', \
+        'Routine entries are never named on a turn: no inbox line, no body, no memory notice.'
+    assert prompts[1] == 'And now?', prompts[1]
 
     monkeypatch.setattr(peering, 'caller', lambda store: (None, peering.sessions(store, dispatch.id)[0]))
     listed = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'limit': 30}))['notes']
@@ -452,6 +450,36 @@ def test_a_delivery_the_person_started_launches_with_full_auto_off(dispatch, mon
         orchestration.Transport().launch(ctx, {'work_id': dispatch.id, 'assignment_id': 'a',
                                                'persons_start': persons}, 'transition')
     assert asked == [False, True], 'only a delivery nobody asked for waits on Full Auto'
+
+
+@pytest.mark.kind('fixture')
+def test_a_delivery_whose_runners_keep_ending_without_a_session_is_handed_over_and_started_no_more(dispatch,
+                                                                                                    monkeypatch):
+    """2026-10-20: a launch stayed pending while each runner it started ended at once, and every pass of the agent
+    starter started another, 783 on one ticket. A launch counts its starts in its delivery; past dispatch_retries starts
+    with no session made, the delivery fails with a handed-over signal naming why, and no runner starts again."""
+    import metaform.modules.dispatch as package
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    started: list[int] = []
+    monkeypatch.setattr(package, 'launches', list)
+    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: None)
+    monkeypatch.setattr(package, 'admit', lambda *args, **_: None)
+    monkeypatch.setattr(package, 'start_runner', lambda *args, **_: started.append(1) or {'pid': 1})
+    held = {'work_id': dispatch.id, 'assignment_id': 'a', 'persons_start': True}
+    delivery: dict[str, object] = {}
+    for attempt in range(3):  # the first start and dispatch_retries, 2, more
+        dispatch.store.move_work(dispatch.id, 'todo', kept=True)
+        delivery = orchestration.Transport().launch(ctx, {**held, 'continuation': {'delivery': delivery}}, 'transition')
+        assert delivery['state'] == 'queued' and delivery['attempts'] == attempt + 1, delivery
+    assert len(started) == 3
+    dispatch.store.move_work(dispatch.id, 'todo', kept=True)
+    failed = orchestration.Transport().launch(ctx, {**held, 'continuation': {'delivery': delivery}}, 'transition')
+    assert failed['state'] == 'failed' and 'none made a session' in str(failed['problem']), failed
+    assert len(started) == 3, 'past the limit no runner starts'
+    [handed] = [one for one in package.read_signals(ctx)['signals'] if one['signal'] == 'handed-over']
+    assert handed['work_id'] == dispatch.id and '3 runners were started' in handed['reason'], handed
 
 
 @pytest.mark.skipif(not os.environ.get('METAFORM_IDLE_EVIDENCE'), reason='Explicit 60-second CPU evidence run.')
