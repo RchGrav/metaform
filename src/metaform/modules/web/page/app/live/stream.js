@@ -319,7 +319,8 @@ export async function changed(event) {
  * changed, the ops since the drawn sequence, or else the layers and the map again. Each is read only when a change in
  * the batch says it may have changed it. */
 async function readAgain() {
-  await settled();
+  await settled(0);  // a change to tickets alone waits only for the person's hands to leave the map
+  if (LIVE.whole) await settled();  // a whole reload is paced: at most one every SPACING
   LIVE.again = false;
   if (!LIVE.whole && S.whole && !LIVE.layer) { await ticketsChanged(); return; }
   LIVE.whole = false;

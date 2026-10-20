@@ -208,13 +208,18 @@ async function reselect() {
   }
 }
 /* Agents write several times a second. The whole map is read again at most once every SPACING, and nothing is drawn
- * while the person is zooming or dragging, so nothing moves under their hands; the changes in between are read
- * together. */
+ * while the person is zooming or dragging the map, so nothing moves under their hands; the changes in between are read
+ * together. A press on a control, a select, button or field, is not a hand on anything: what it does is what the
+ * person is waiting to see, so it delays nothing (2026-10-20: a board move took 3 to 6 s to show, each click on the
+ * board's selector pushing the wait back by QUIET, behind a whole reload's SPACING). A card or the map held and dragged
+ * still holds every redraw until QUIET after it is let go. */
 const QUIET = 800, SPACING = 3000;
 const HANDS = {at: 0, down: false};
+const onControl = event => event.target instanceof Element
+  && event.target.closest('select, button, input, textarea, label') !== null;
 addEventListener('wheel', () => { HANDS.at = performance.now(); }, {passive: true, capture: true});
-addEventListener('pointerdown', () => { HANDS.down = true; HANDS.at = performance.now(); }, true);
-addEventListener('pointerup', () => { HANDS.down = false; HANDS.at = performance.now(); }, true);
+addEventListener('pointerdown', event => { if (!onControl(event)) { HANDS.down = true; HANDS.at = performance.now(); } }, true);
+addEventListener('pointerup', () => { if (HANDS.down) HANDS.at = performance.now(); HANDS.down = false; }, true);
 export async function settled(after = LIVE.drawn + SPACING) {
   for (;;) {
     const now = performance.now();
