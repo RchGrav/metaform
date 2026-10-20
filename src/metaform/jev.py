@@ -23,7 +23,7 @@ keep the decision there as a numbered item with its title and why, MCP-037, read
 Only a decision a person or an agent acts on is kept: a view such as an order of items is not knowledge, and keeping it
 would fill a node with bookkeeping and push its latest item out of its brief. So `choose_agents` keeps each ticket's
 agent, model and thinking level at the ticket's Address, `intake_coverage` is kept at the trunk only when a part is
-missing, `session_drift` only when it finds drift, and `rank_items`, `triage` and the start order never.
+missing, and `rank_items`, `triage` and the start order never.
 
 As the change order decided: Jev decides and code owns every threshold; an answer that is not sure goes back to the
 caller, which keeps its own behaviour; no answer gates an agent's inference or hides anything from the person.
@@ -36,8 +36,8 @@ data that can argue for its own answer (#adversarial-content), so no decision ev
 nor does it count reliably (#counting), so where a judgement is a share of many things, each thing is its own question
 and code adds up the answers.
 
-The decision points other modules call, `choose_agents` (with `start_order`), `rank_items`, `triage`,
-`intake_coverage` and `session_drift`, each turned off one by one with the setting `jev_decisions`, take what Jev is
+The decision points other modules call, `choose_agents` (with `start_order`), `rank_items`, `triage` and
+`intake_coverage`, each turned off one by one with the setting `jev_decisions`, take what Jev is
 asked from `<jev>` in the chassis's `resources/prompts.xml`. A request has a deadline, `within(seconds)` bounds every
 request made inside its block together, and a failed request turns Jev off for the process for a minute, so an outage
 costs one wait, not one per caller.
@@ -1113,14 +1113,6 @@ def intake_coverage(folder: Path, parts: Mapping[str, str], outline: str, *, add
     return keep(folder, (replace(found, answer=missing), identity), address if missing else None, project)
 
 
-DRIFT = ('conclusions', 'off_task', 'repeating')
-PLACES = {'conclusions': 'calls.<call>', 'off_task': 'calls.<call>', 'repeating': 'steps.<window>'}  # what each asks of
-CALLS = 20  # the latest tool calls judged, one question each
-LATER = 3  # calls after a conclusion is read before whether its source was opened is asked
-WINDOW = 6  # filed steps judged together for repeats, as artifacts/jev-experiments/e5_spin.py measured
-WINDOWS = 6  # the latest windows of steps sent
-OFF_TASK = 0.6  # the share of calls judged, surely, not to serve the task at which the session is off task
-UNREAD = 0.5  # the share of conclusions read, surely, with no later read of their source at which it is conclusion-reading
 # What a tool call reads, judged in code so Jev judges what the agent does with it, not file names: a report, review,
 # log, note or plan by its name and a text extension, any .log, or anything under a folder of conclusions. A source
 # file is never a conclusion, whatever it is named.
@@ -1138,84 +1130,3 @@ def call_kind(call: str) -> str:
     if METAFORM.search(call):
         return 'metaform'
     return 'conclusion' if CONCLUSION.search(call) else 'other'
-
-
-def _windows(steps: Sequence[str]) -> dict[str, list[str]]:
-    """The latest steps in windows of WINDOW, the last one full, named by where each starts; none when the steps fill
-    no more than one window, since a repeat needs something earlier to repeat."""
-    kept = list(steps)[-WINDOW * WINDOWS:]
-    if len(kept) <= WINDOW:
-        return {}
-    windows: dict[str, list[str]] = {}
-    start = 0
-    for end in reversed(range(len(kept), 0, -WINDOW)):
-        windows[f'w{start}'] = kept[start:end]
-        start = end
-    return windows
-
-
-def session_drift(folder: Path, session: str, calls: Sequence[str], task: str, *, steps: Sequence[str] = (),
-                  address: str | None = None, project: str | None = None) -> Decision | None:
-    """Whether an agent session reads conclusions in place of the AUE's source, strays from its task, or repeats
-    work: `calls` its recent tool calls, each one line, its title and input, oldest first; `task` the ticket's task;
-    `steps` the steps it filed on the ticket, the work record's said lines, oldest first.
-
-    Jev does not count, https://docs.typesafe.ai/model-jaggedness/jev-1.13.md#counting, so each thing is asked on its
-    own, every question in one request over one state: per call (the latest CALLS), whether it serves the task; per
-    conclusion read with LATER calls after it, whether a later call opens the source it describes; per window of
-    steps, whether it repeats work already reported, as e5_spin.py found on the four tickets that looped. Code adds
-    up the sure answers and owns the thresholds: off task at OFF_TASK of the calls, conclusion-reading at UNREAD of
-    the conclusions read, repeating when the latest window is surely a repeat. Each is True, False, or None when too
-    few answers are sure or, for repeats, no steps were given.
-
-    The answer maps 'conclusions', 'off_task' and 'repeating' to those. Kept at `address` only when one is True. This
-    tells what dispatch_spin_calls cannot: that count is of tool calls since the last step filed, and never compares
-    what the calls or steps do. Fallback when None: that count alone, as today."""
-    cfg = config(folder, 'session_drift')
-    recent = list(calls)[-CALLS:]
-    windows = _windows(steps)
-    if cfg is None or not (recent or windows):
-        return None
-    named = {f'c{n}': {'call': call, 'kind': call_kind(call)} for n, call in enumerate(recent)}
-    read = [name for n, name in enumerate(named) if named[name]['kind'] == 'conclusion' and len(named) - n - 1 >= LATER]
-    meaning = {part: {'true': _wording('session_drift', f'{part}/true'),
-                      'false': _wording('session_drift', f'{part}/false')} for part in DRIFT}
-    questions: dict[str, Question] = {}
-    for part, things in (('off_task', list(named)), ('conclusions', read), ('repeating', list(windows))):
-        for thing in things:
-            path = PLACES[part].split('.')[0] + f'.{thing}'
-            questions[f'{part}__{thing}'] = Question('noul', _wording('session_drift', f'{part}/ask', item=path),
-                                                     meaning[part])
-    state: dict[str, Any] = {'task': task, 'calls': named}
-    if windows:
-        state['steps'] = windows
-    answers = asked(cfg, state, questions)
-    if answers is None:
-        return None
-
-    def of(part: str) -> list[Answer]:
-        return [answer for name, answer in answers.items() if name.startswith(f'{part}__')]
-
-    def share_no(part: str, threshold: float) -> bool | None:
-        """Whether the share of sure no answers reaches `threshold`; None when fewer than half are sure."""
-        sure = [answer for answer in of(part) if answer.confidence >= cfg.floor]
-        if not sure or len(sure) * 2 < len(of(part)):
-            return None
-        return sum(float(answer.value) < 0.5 for answer in sure) / len(sure) >= threshold
-
-    latest = answers.get(f'repeating__{next(reversed(windows))}') if windows else None
-    found: dict[str, bool | None] = {
-        'conclusions': False if not read else share_no('conclusions', UNREAD),
-        'off_task': share_no('off_task', OFF_TASK) if named else None,
-        'repeating': None if latest is None or latest.confidence < cfg.floor else float(latest.value) >= 0.5}
-    unsure = tuple(part for part in DRIFT if of(part) and found[part] is None)
-    model, cost, cached = _summed(answers)
-    decision = Decision('yes_no', _wording('session_drift', 'title', session=session), _wording('session_drift', 'why'),
-                        '\n'.join(_wording('session_drift', f'{part}/ask', item=PLACES[part]) for part in DRIFT),
-                        DRIFT, found, min(answer.confidence for answer in answers.values()), not unsure,
-                        '\n'.join(_noul_reason(name, answer, meaning[name.split('__')[0]]['true'],
-                                               meaning[name.split('__')[0]]['false'])
-                                  for name, answer in answers.items()), model, cost, cached, unsure,
-                        {name: float(answer.value) for name, answer in answers.items()})
-    drifted = any(found.values())
-    return keep(folder, (decision, _identity(cfg, state, questions, model)), address if drifted else None, project)

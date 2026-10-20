@@ -990,11 +990,11 @@ def test_jev_answers_that_break_the_schema_and_failures_leave_the_fallback(home,
     def down(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
         raise OSError('HTTP 529 from openrouter')
     monkeypatch.setattr(jev, 'post', down)
-    assert jev.session_drift(project_folder, 's1', ['Read README.md'], 'Fix the parser.') is None
+    assert jev.triage(project_folder, {'m1': 'yes: may I spend $40?'}) is None
 
 
 @pytest.mark.req('BASE-004')
-def test_jev_triage_coverage_and_drift_read_their_answers(home, project_folder, monkeypatch):
+def test_jev_triage_and_coverage_read_their_answers(home, project_folder, monkeypatch):
     from metaform import jev, settings
     sent = _fake_jev(monkeypatch, project_folder)
     sorted_to = jev.triage(project_folder, {'m1': 'yes: may I spend $40?', 'm2': 'no: the test failed',
@@ -1003,18 +1003,10 @@ def test_jev_triage_coverage_and_drift_read_their_answers(home, project_folder, 
     assert set(sent[-1]['state']['messages']) == {'m1', 'm2'}  # a question to the person is never sent to be judged
     covered = jev.intake_coverage(project_folder, {'src': 'yes: code', 'docs': 'no: guides'}, '# Map')
     assert covered is not None and covered.answer == ['docs']
-    calls = ['Read artifacts/REVIEW.md', 'Edit src/a.py yes', 'Read src/b.py', 'Read docs/c.md', 'Read src/d.py']
-    drift = jev.session_drift(project_folder, 's1', calls, 'Fix the parser.', address='code.a')
-    assert drift is not None and drift.item == 'code.a#1'
-    assert drift.answer == {'conclusions': True, 'off_task': True, 'repeating': None}  # 4 of 5 calls surely off
-    questions = sent[-1]['questions']
-    assert len(questions) == len(calls) + 1  # a question per call, and one for the one conclusion read
-    assert not any('Most' in question['instructions'] for question in questions.values())  # Jev never counts
-    assert [call['kind'] for call in sent[-1]['state']['calls'].values()] == ['conclusion', 'other', 'other', 'other',
-                                                                             'other']
+    assert jev.call_kind('Read artifacts/REVIEW.md') == 'conclusion'
     assert jev.call_kind('Read src/metaform/data/log.py') == 'other'  # a source file is never a conclusion
     settings.put('jev_decisions', ['triage'], project_folder)  # a decision point left out asks nothing
-    assert jev.session_drift(project_folder, 's2', ['Read a.py'], 'Fix a.') is None
+    assert jev.intake_coverage(project_folder, {'src': 'yes: code'}, '# Map') is None
 
 
 @pytest.mark.req('BASE-004')
@@ -1063,27 +1055,6 @@ def test_jev_within_bounds_a_decision_split_into_many_requests(home, project_fol
         assert jev.rank_items(project_folder, 'code.a', items, {'address': 'code.a'}) is None
     assert len(sent) == 2 and time.monotonic() - started < 1.5  # the third is never sent
     assert jev.config(project_folder) is not None  # time spent by the caller is no fault of Jev's
-
-
-@pytest.mark.req('BASE-004')
-def test_jev_finds_an_agent_repeating_its_steps_from_their_meaning(home, project_folder, monkeypatch):
-    from metaform import jev
-    sent = _fake_jev(monkeypatch, project_folder)
-    fake = jev.post
-
-    def repeats(cfg: Any, body: dict[str, Any]) -> dict[str, Any]:
-        reply = fake(cfg, body)
-        for name, question in body['questions'].items():
-            if '`steps.' in question['instructions']:
-                reply['answers'][name] = {'type': 'noul', 'noul': 0.95}
-        return reply
-    monkeypatch.setattr(jev, 'post', repeats)
-    steps = [f'Re-verified the parser, step {n}.' for n in range(12)]
-    drift = jev.session_drift(project_folder, 's1', ['Read src/a.py yes'], 'Fix the parser.', steps=steps)
-    assert drift is not None and drift.answer['repeating'] is True and drift.answer['off_task'] is False
-    windows = sent[-1]['state']['steps']
-    assert list(windows) == ['w0', 'w6'] and all(len(window) == 6 for window in windows.values())
-    assert len(sent) == 1 and sum('`steps.' in q['instructions'] for q in sent[-1]['questions'].values()) == 2
 
 
 @pytest.mark.req('MCP-037')

@@ -5278,32 +5278,6 @@ def test_autostart_starts_as_before_when_jev_is_off_or_fails(dispatch, run, monk
     assert launched == [(dispatch.id, 'codex')]
 
 
-@pytest.mark.req('BASE-057')
-def test_jevs_drift_check_raises_the_drift_signal_naming_what_drifted(dispatch, monkeypatch):
-    """H23: with Jev on, a worker's recent tool calls and filed steps are judged by session_drift; a sure drift
-    raises the drift signal at the ticket, naming what drifted, and one judged clean clears it."""
-    from metaform import jev
-    from metaform.module import context
-    from metaform.modules.dispatch import runner
-    from metaform.modules.dispatch.signals import rows
-    answers = [{'conclusions': False, 'off_task': True, 'repeating': None},
-               {'conclusions': False, 'off_task': False, 'repeating': False}]
-    judged = []
-
-    def drift(folder, session, calls, task, **kw):
-        judged.append((list(calls), task))
-        return decided(answers[len(judged) - 1])
-    monkeypatch.setattr(jev, 'session_drift', drift)
-    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
-    session = runner.Session(ctx, dispatch.store, dispatch.ticket(), 'claude', ['unused'])
-    session.calls.extend(['Read report.md {"path": "artifacts/report.md"}', 'Read src/engine.py'])
-    asyncio.run(session.drift())
-    [raised] = [one for one in rows(dispatch.store, dispatch.id) if one['signal'] == 'drift']
-    assert raised['drifted'] == ['off_task'] and judged[0] == (list(session.calls), 'Write notes.txt')
-    asyncio.run(session.drift())
-    assert not [one for one in rows(dispatch.store, dispatch.id) if one['signal'] == 'drift']
-
-
 @pytest.mark.req('STORE-029')
 def test_a_runner_the_store_outgrew_hands_its_session_and_what_it_was_sent_to_the_code_on_disk(dispatch, monkeypatch):
     """code.dispatcher.agent#48: a store at a layout past the runner's code refuses a line; with the code on disk

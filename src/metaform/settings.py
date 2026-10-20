@@ -871,7 +871,7 @@ gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool',
 # decides whether to ask it at all from its own checks, the key in the environment and OpenRouter credit left, so with
 # neither nothing is sent. The decision points `metaform.jev` offers other modules, each named in jev_decisions; a
 # module's own decision point is named `<module>.<point>`.
-JEV_DECISIONS = ('choose_agent', 'start_order', 'rank_items', 'triage', 'intake_coverage', 'session_drift')
+JEV_DECISIONS = ('choose_agent', 'start_order', 'rank_items', 'triage', 'intake_coverage')
 MODULE_DECISION = re.compile(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*')
 
 

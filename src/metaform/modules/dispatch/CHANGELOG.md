@@ -1,5 +1,9 @@
 # Changelog
 
+## The session drift check is gone (2026-10-20)
+
+- Removed the Jev `session_drift` decision and the runner's drift check with it: every ten tool calls it sent Jev the task and the last twenty calls with one yes/no question per call, per conclusion read and per step window. A classifier cannot judge from a call's title and 400 characters of its input whether the work needed it; the answers it gave were near coin flips and raised nothing, and the asking spent the OpenRouter credit. The `drift` signal is no longer raised; the spin count, `dispatch_spin_calls`, stands as the signal that an agent may be looping.
+
 ## GC-led swarm orchestration
 
 - Bound authored GC, specialist and independent functionality responsibilities through public role resolution while retaining the existing operational execution role and configured controls.

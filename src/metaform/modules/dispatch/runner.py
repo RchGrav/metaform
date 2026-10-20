@@ -1153,11 +1153,8 @@ def traced(attributes: dict[str, Any], started_ns: int, error: str | None = None
 # What a tool call reaches for: a Metaform tool by its MCP name, mcp__metaform__map_node or metaform_map_node as hosts
 # show it, or the command line, metaform map node. The tool is <module>_<verb>, a verb's dashes as written.
 METAFORM_TOOL = re.compile(r'(?i)(?:mcp__metaform__|metaform[_ ])(?P<module>[a-z][a-z0-9]*)[_ ](?P<verb>[a-z][a-z0-9_-]*)')
-DRIFT_EVERY = 10  # tool calls between two asks of Jev whether a worker has drifted, when Jev's session_drift is on
-
-
 def call_line(call: dict[str, Any]) -> str:
-    """One tool call as one line, its title and its input, as Jev's session_drift reads calls."""
+    """One tool call as one line, its title and its input, as the intake's call signals read it, `call_kind`."""
     raw = call.get('rawInput')
     return f'{call.get("title") or call.get("kind") or "tool"} {json.dumps(raw, ensure_ascii=False)[:400] if raw else ""}'.strip()
 
@@ -1448,9 +1445,6 @@ class Session:
         self.intake_timer: asyncio.TimerHandle | None = None
         self.withheld: list[str] = []  # what the intake agent's server leaves out, dispatch_intake_withheld
         self.effects: dict[tuple[str, str], str] | None = None  # each Metaform tool's effect, read when needed
-        self.calls: deque[str] = deque(maxlen=jev.CALLS)  # the latest tool calls, one line each, for Jev's drift check
-        self.drift_at = 0  # the fresh calls counted when Jev was last asked about drift
-        self.drifting = False  # a drift check is in flight
         self.paused_runs: set[str] = set()  # the workflow runs this worker's ticket paused on the person, H03
         self.workflow_reading = False
         self.workflow_again = False  # a change to its runs came while they were read: read once more after
@@ -1500,7 +1494,7 @@ class Session:
                                         f'Step {record.steps_done} of ticket {self.work_id}: {said or ""}'.strip())
             self.progress_steps = record.steps_done
             self.progress_at = time.monotonic()
-            self.progress_calls = self.failed_count = self.drift_at = 0
+            self.progress_calls = self.failed_count = 0
             self.failed_input = None
             self.spinning = False
             for signal in ('spinning-calls', 'spinning-time', 'repeated-failure'):
@@ -1756,11 +1750,6 @@ class Session:
                 if self.intake is not None and (fresh or known.get('status') in ('completed', 'failed')):
                     await self.intake_call(line, known.get('status') == 'completed', ident)
                 if fresh and not self.prep and not self.ending:
-                    self.calls.append(line)
-                    if self.progress_calls + 1 - self.drift_at >= DRIFT_EVERY and \
-                            await asyncio.to_thread(jev.config, Path(self.root), 'session_drift') is not None:
-                        self.drift_at = self.progress_calls + 1
-                        self.spawn(self.drift())
                     self.progress_calls += 1
                     if self.progress_calls >= self.ctx.setting('dispatch_spin_calls'):
                         await self.raise_signal('spinning-calls', calls=self.progress_calls)
@@ -2793,33 +2782,6 @@ class Session:
             await self.changed(tables='dispatch', kinds=['session'])
 
     # ------------------------------------------------------------------ Jev's drift check, H23
-
-    async def drift(self) -> None:
-        """Ask Jev, every DRIFT_EVERY tool calls of a worker, whether it reads conclusions in place of the source,
-        strays from its ticket or repeats work, when jev is on and its session_drift decision is chosen; a sure yes
-        raises the drift signal, which names what drifted. With Jev off, unsure or unreachable, nothing is raised and
-        the spinning signals stand as before."""
-        if self.drifting or self.node is None or self.system or self.prep or self.probe:
-            return
-        self.drifting = True
-        try:
-            record = await asyncio.to_thread(ticket, self.store, self.work_id)
-            steps = [step.said for step in record.said if step.said]
-            folder, calls, task = Path(self.root), list(self.calls), record.task or record.note or ''
-
-            def asked() -> Any:
-                with jev.within(jev.DEADLINE):
-                    return jev.session_drift(folder, self.session_id or self.work_id, calls, task, steps=steps,
-                                             address=self.at or None, project=self.store.project_id)
-            decision = await asyncio.to_thread(asked)
-            found = cast(dict[str, Any], decision.answer) if decision is not None else {}
-            drifted = sorted(part for part, value in found.items() if value is True)
-            await self.raise_signal('drift', key='jev', active=bool(drifted), drifted=drifted or None,
-                                    reason=decision.reason[:400] if decision is not None and drifted else None)
-        except Exception as error:  # noqa: BLE001  a decision that fails changes nothing
-            sys.stderr.write(f'Could not ask Jev about drift: {error}\n')
-        finally:
-            self.drifting = False
 
     async def permission(self, request: str, **changes: Any) -> None:
         """A permission request's line, kept at its latest: waiting, answered, unmatched or cancelled."""

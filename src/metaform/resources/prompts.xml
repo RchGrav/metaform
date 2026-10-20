@@ -96,7 +96,7 @@ Your task:
      Each child of <jev> is one decision point other modules call, named as in the setting jev_decisions; turn one off
      there rather than deleting it here. In each: <title> and <why> are what the decision is kept under at its Address,
      read by agents and the person at metaform://<address>#<n>, when the code keeps it (choose_agent always, at the
-     ticket's Address; intake_coverage when a part is missing; session_drift when it finds something; rank_items,
+     ticket's Address; intake_coverage when a part is missing; rank_items,
      triage and start_order never); <ask> is the question Jev reads, sent exactly as written; <true> and <false> say
      what a yes and a no mean, and Jev reads them literally, so boundary cases belong there. Every question is about
      one thing, never a share of many, since Jev does not count: the code asks it once per thing and adds up the
@@ -140,25 +140,6 @@ Your task:
 <true>An element in `map` stands for this part, for what it does, or for a collection that holds it.</true>
 <false>Nothing in `map` stands for this part or for what it does.</false>
 </intake_coverage>
-<session_drift>
-<title>Session <session/> checked for conclusion-reading, drift and repeats</title>
-<why>An agent that acts on earlier conclusions in place of the AUE inherits their errors, one that strays spends the person's budget on work nobody asked for, and one that repeats itself spends it on nothing.</why>
-<conclusions>
-<ask>Do later calls in `calls` open the source that the document read in `<item/>` describes?</ask>
-<true>A later call opens, runs or changes the files, nodes or data the document describes.</true>
-<false>No later call opens what the document describes; the agent goes on from the document alone.</false>
-</conclusions>
-<off_task>
-<ask>Does the call `<item/>` read or change what the work in `task` needs?</ask>
-<true>It opens, runs or changes something the work in `task` needs, including reading to understand it.</true>
-<false>It touches files, nodes or questions the work in `task` does not need.</false>
-</off_task>
-<repeating>
-<ask>Do the steps in `<item/>` repeat work or checks already reported earlier in `steps`?</ask>
-<true>The steps re-read, re-verify or re-state the same things without new results.</true>
-<false>Each step adds something new toward the work in `task`.</false>
-</repeating>
-</session_drift>
 </jev>
 <!-- The intake agent's first words when `metaform start` starts the intake in a folder that holds code, CLI-041.
      Sent to the intake agent dispatch starts, as what the person asked for, after the intake procedure. <project/> takes

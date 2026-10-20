@@ -113,7 +113,7 @@ export const easeBoth = k => k * k * (3 - 2 * k);  // from rest to rest
  * a faint trail on the way, footprints, ripples or hop marks, that fades within seconds, `MARKS`. */
 export const STIFF = {dart: 40, roll: 30, walk: 26, hover: 24, flutter: 30, flap: 20, glide: 14, float: 10, pulse: 12,
   swim: 14, creep: 18, hop: 22};
-export const RESTLESS = ['spinning-calls', 'repeated-failure', 'drift'];
+export const RESTLESS = ['spinning-calls', 'repeated-failure'];
 export const ACTS = {perch: 4.5, peek: 3, poke: 1.6, nudge: 2.2, circle: 0};  // how long each act lasts, in seconds
 // The wait before a figure's next act with its node, by its temper: a serious one keeps to its task and plays now and
 // then, about every 25 seconds; a mischievous one about every 6.
