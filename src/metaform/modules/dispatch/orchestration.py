@@ -110,6 +110,18 @@ class Transport:
         status = owner.routing_status(ctx, work) if owner is not None else None
         if status and status.get('state') == 'creating':
             return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}
+        # A launch counts the runners it started in its delivery, `attempts`. Past dispatch_retries starts with no
+        # session made, the delivery is handed to the person with a signal and started no more: the system stops its
+        # own loop and says why, rather than start a runner on every pass (2026-10-20).
+        previous = cast(dict[str, Any], (held.get('continuation') or {}).get('delivery') or {})
+        attempts = int(previous.get('attempts') or 0)
+        if attempts > int(ctx.setting('dispatch_retries')) and not previous.get('session_id'):
+            from .signals import publish
+            reason = (f'{attempts} runners were started on this delivery and none made a session'
+                      + (f' (the last said: {previous["problem"]})' if previous.get('problem') else ''))
+            publish(ctx, 'handed-over', work_id=work, key=f'launch:{transition_id}',
+                    reason=f'{reason}. It waits for you.', next=f'metaform dispatch start {work}')
+            return {'state': 'failed', 'problem': reason, 'attempts': attempts}
         created = held.get('continuation', {}).get('created')
         if isinstance(created, str):
             asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)
@@ -124,7 +136,8 @@ class Transport:
             if running is not None:
                 if row and row['state'] == 'running':
                     return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner')}
-                return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid']}
+                return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid'],
+                        'attempts': attempts}
             agent = agent_named(str((row or {}).get('agent') or ctx.setting('dispatch_agent')))
             launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
             words = [f'assignment={held["assignment_id"]}']
@@ -152,7 +165,7 @@ class Transport:
                             if took:
                                 given_back_reservation(store, work, by)
                             raise
-                        return {'state': 'queued', 'reservation': transition_id, **made}
+                        return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
             # Unknown context retention creates a new registered context with the retained work and current brief.
             # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
             admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=auto)
@@ -176,7 +189,7 @@ class Transport:
                     if not current.taken and not current.done:
                         store.take_work(work, by=previous or f'GC {held["gc_assignment_id"]}')
                 raise
-            return {'state': 'queued', 'reservation': transition_id, **made}
+            return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
 
     def suspend(self, ctx: Context, held: dict[str, Any], reason: str) -> dict[str, Any]:
         from . import tell
