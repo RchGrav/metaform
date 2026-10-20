@@ -14,7 +14,7 @@ import {named} from '/page/app/task/task.js';
 /* The board, VIEW-037: the project's tickets as a classic kanban board, one column for each place a ticket can be,
  * a card for each ticket. A card dragged to a column moves its ticket there and to the place it was dropped. */
 /* The board's tickets, the kinds hidden, and cutoff: the time its done tickets start at, as the server's board read
- * gives it, board_done_days ago or the line in the sand; a ticket done before it is in the Archive. names: counted up
+ * gives it, board_done_days ago or the archive cutoff; a ticket done before it is in the Archive. names: counted up
  * as element or join ops are applied to the map shown, so the cards draw the names those ops gave, `drawBoard`. */
 export const B = {tickets: [], off: new Set(), cutoff: '', names: 0};
 /* A ticket's fields as the page compares them, with the age the server counts in seconds left out: it differs on

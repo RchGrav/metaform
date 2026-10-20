@@ -373,7 +373,7 @@ $('#board .archive-toggle').onclick = async () => {
   if (showing) await renderArchive();
 };
 $('#board .archive .more').onclick = event => renderArchive(event.currentTarget.dataset.after || null);
-/* Line in the sand: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
+/* Archive done tickets: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
  * line that was before back. */
 $('#board .line-in-sand').onclick = async () => {
   const set = await wrote('/api/board-line', {});

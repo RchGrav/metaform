@@ -184,13 +184,13 @@ settings.number('board_done_days', 1, min=0, max=3650,
                 details="0 shows no done ticket. Nothing is deleted: an archived ticket is read in the board's "
                         'Archive, with metaform map work open=false and in its part\'s ticket history.',
                 label='Done tickets stay on the board for', heading='Board')
-# The board's line in the sand: every ticket done before this time is in the Archive, whatever board_done_days says.
-# The board's Line in the sand sets it to now; resetting it brings back the done tickets board_done_days shows.
+# The board's archive cutoff: every ticket done before this time is in the Archive, whatever board_done_days says.
+# The board's Archive done tickets sets it to now; resetting it brings back the done tickets board_done_days shows.
 settings.text('board_line', '', person_only=True,
-              help="The board's line in the sand: tickets done before this time are in its Archive.",
-              details='Set to now by Line in the sand on the board; empty, board_done_days alone decides. Nothing is '
+              help="The board's archive cutoff: tickets done before this time are in its Archive.",
+              details='Set to now by Archive done tickets on the board; empty, board_done_days alone decides. Nothing is '
                       'deleted either way.',
-              label='Board line in the sand', category='advanced', heading='Board')
+              label='Board archive cutoff', category='advanced', heading='Board')
 
 
 def _glyph_choices(ctx: Context) -> list[str]:

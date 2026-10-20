@@ -2155,7 +2155,7 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch_autostart(given)
 
     def board_line(self, given: dict[str, Any]) -> None:
-        """The board's Line in the sand: board_line set to now, so every ticket done up to now is in the Archive and
+        """The board's Archive done tickets: board_line set to now, so every ticket done up to now is in the Archive and
         none is deleted; with `line`, set to that, as the Undo puts the one before back. Answers with the line it set
         and the one before."""
         project = home.project(str(given.get('project', '')))
@@ -2164,7 +2164,7 @@ class Handler(BaseHTTPRequestHandler):
                                    'next': 'metaform list projects'})
         folder, line = Path(project.path), given.get('line', home.now())
         if not isinstance(line, str):
-            return self.send(400, {'error': 'The line in the sand is a time as text.'})
+            return self.send(400, {'error': 'The archive cutoff is a time as text.'})
         was = str(settings.value('board_line', folder) or '')
         try:
             settings.checked('board_line', line, folder, typed=True)
@@ -3321,7 +3321,7 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
 
 
 def board_cutoff(given: dict[str, str]) -> str:
-    """The time the board's done tickets start at: board_done_days ago, or the board's line in the sand when that is
+    """The time the board's done tickets start at: board_done_days ago, or the board's archive cutoff when that is
     later. A ticket done before it is in the board's Archive; times compare as text, as `home.now` writes them."""
     project = home.project(given.get('project', ''))
     if project is None:
