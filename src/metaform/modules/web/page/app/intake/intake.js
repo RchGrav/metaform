@@ -40,7 +40,7 @@ export async function readIntake(signals = []) {
   INTAKE.agent = session?.agent || null;
   INTAKE.waiting = session ? signals.filter(one => WAITS_ON_PERSON.includes(one.signal) && one.active !== false
     && one.work_id === session.work_id).length : 0;
-  // what the intake's guard and its runner say of it, such as no first record yet or reading earlier conclusions
+  // what the intake's guard and its runner say of it, such as no first record yet
   INTAKE.signals = session ? signals.filter(one => one.active !== false && one.work_id === session.work_id
     && !WAITS_ON_PERSON.includes(one.signal)) : [];
   drawIntake();
@@ -50,15 +50,9 @@ export async function readIntake(signals = []) {
 /* The signals an intake's session raises, said in words on its bar: [words, status class, why]. A signal not named here
  * is said by its own name. */
 const NO_RECORD = 'The intake has read for a while and recorded nothing: open its chat to see what it is doing.';
-const READS_CONCLUSIONS = 'It reads earlier reports and notes in place of the project itself, and inherits their '
-  + 'errors.';
 const INTAKE_SIGNALS = {
   'no-first-record': ['No record yet', 'input_required', NO_RECORD],
   'first-record-late': ['No record yet', 'input_required', NO_RECORD],
-  'intake-conclusions': ['Reading conclusions', 'input_required', 'It reached for a report, review, log or notes drawn '
-    + 'earlier in place of the project itself, and would inherit their errors.'],
-  'conclusion-reading': ['Reading conclusions', 'input_required', READS_CONCLUSIONS],
-  conclusions: ['Reading conclusions', 'input_required', READS_CONCLUSIONS],
   silent: ['Silent', 'waiting', 'It has said nothing for a while.'],
   'spinning-calls': ['Repeating calls', 'failed', 'It makes the same calls again and again.'],
   'spinning-time': ['Long turn', 'waiting', 'Its turn has run long.'],

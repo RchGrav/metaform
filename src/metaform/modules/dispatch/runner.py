@@ -79,7 +79,7 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from metaform import home, jev, prompt_files
+from metaform import home, prompt_files
 from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
 from metaform.module import (
     COMPACTED_KEY,
@@ -1154,7 +1154,7 @@ def traced(attributes: dict[str, Any], started_ns: int, error: str | None = None
 # show it, or the command line, metaform map node. The tool is <module>_<verb>, a verb's dashes as written.
 METAFORM_TOOL = re.compile(r'(?i)(?:mcp__metaform__|metaform[_ ])(?P<module>[a-z][a-z0-9]*)[_ ](?P<verb>[a-z][a-z0-9_-]*)')
 def call_line(call: dict[str, Any]) -> str:
-    """One tool call as one line, its title and its input, as the intake's call signals read it, `call_kind`."""
+    """One tool call as one line, its title and its input, as the intake's call timing reads it."""
     raw = call.get('rawInput')
     return f'{call.get("title") or call.get("kind") or "tool"} {json.dumps(raw, ensure_ascii=False)[:400] if raw else ""}'.strip()
 
@@ -2746,11 +2746,11 @@ class Session:
 
     async def intake_call(self, line: str, completed: bool, ident: str = '') -> None:
         """An intake agent's tool call, under the session's lock: its first Metaform call and its first record timed
-        from its first turn, and a reach for earlier conclusions, a withheld tool or a report, review, log or notes
-        file, signalled at the session."""
+        from its first turn. It raises no light: the 'reading conclusions' pill, one per report, review, log or notes
+        file the intake opened, judged from the file's name alone, filled the intake's bar with noise and judged
+        nothing (the person, 2026-10-20)."""
         if self.intake is None or self.probe:
             return
-        kind = jev.call_kind(line)
         if self.effects is None:
             found = await asyncio.to_thread(surface, Path(self.root))
             self.effects = {(module.id, verb.name.replace('-', '_')): verb.effect for module in found
@@ -2758,11 +2758,7 @@ class Session:
             self.effects.update({(module, verb.replace('_', '-')): effect
                                  for (module, verb), effect in list(self.effects.items())})
         reached = withheld_named(line, self.withheld, self.effects)
-        if reached or kind == 'conclusion':
-            await self.raise_signal('intake-conclusions', key=ident or hashlib.sha256(line.encode()).hexdigest()[:16],
-                                    tool=line[:200], withheld=reached or None,
-                                    reason='a withheld tool' if reached else 'a file of earlier conclusions')
-        if kind != 'metaform' or reached or not self.intake_began:  # a withheld tool is not served: no call made
+        if not tools_named(line) or reached or not self.intake_began:  # a withheld tool is not served: no call made
             return
         took = round(time.monotonic() - self.intake_began, 1)
         changed = False

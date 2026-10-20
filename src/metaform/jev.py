@@ -1111,22 +1111,3 @@ def intake_coverage(folder: Path, parts: Mapping[str, str], outline: str, *, add
     found, identity = got
     missing = [key for key in parts if key not in found.unsure and found.probabilities[key] < 0.5]
     return keep(folder, (replace(found, answer=missing), identity), address if missing else None, project)
-
-
-# What a tool call reads, judged in code so Jev judges what the agent does with it, not file names: a report, review,
-# log, note or plan by its name and a text extension, any .log, or anything under a folder of conclusions. A source
-# file is never a conclusion, whatever it is named.
-CONCLUSION = re.compile(
-    r'(?i)(?:^|[\s/\\"\'=:])(?:artifacts|reports|reviews|logs|handoff[^/\\\s]*)[/\\]'
-    r'|\.log\b'
-    r'|(?<![A-Za-z0-9])(?:reports?|reviews?|summar(?:y|ies)|findings|notes|handoffs?|plans?)(?![A-Za-z])'
-    r'[^/\\\s]*\.(?:md|txt|json)\b')
-METAFORM = re.compile(r'(?i)metaform(?:://|_|\s|__)|\bmcp__metaform')
-
-
-def call_kind(call: str) -> str:
-    """What one tool call, given as its title and input, reads: 'metaform' (the map, a node's brief, memories or
-    items), 'conclusion' (a report, review, log, note or other conclusion drawn earlier) or 'other'."""
-    if METAFORM.search(call):
-        return 'metaform'
-    return 'conclusion' if CONCLUSION.search(call) else 'other'

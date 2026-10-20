@@ -1003,8 +1003,6 @@ def test_jev_triage_and_coverage_read_their_answers(home, project_folder, monkey
     assert set(sent[-1]['state']['messages']) == {'m1', 'm2'}  # a question to the person is never sent to be judged
     covered = jev.intake_coverage(project_folder, {'src': 'yes: code', 'docs': 'no: guides'}, '# Map')
     assert covered is not None and covered.answer == ['docs']
-    assert jev.call_kind('Read artifacts/REVIEW.md') == 'conclusion'
-    assert jev.call_kind('Read src/metaform/data/log.py') == 'other'  # a source file is never a conclusion
     settings.put('jev_decisions', ['triage'], project_folder)  # a decision point left out asks nothing
     assert jev.intake_coverage(project_folder, {'src': 'yes: code'}, '# Map') is None
 
