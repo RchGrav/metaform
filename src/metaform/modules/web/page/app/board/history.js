@@ -19,7 +19,7 @@ export async function ticketsOf(id) { return (await read('work', {node: targetOf
 export async function history(id) {
   let tickets, dispatched = [];
   try { tickets = await ticketsOf(id); } catch (error) { toast(error.message); return; }
-  try { dispatched = (await read('dispatch-sessions')).sessions || []; } catch (error) { toast(error.message); }
+  try { dispatched = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { toast(error.message); }
   Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
   $('#float .title').textContent = `Work history · ${calledOf(id)}`;
   fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => historyTicket(ticket, dispatched))
