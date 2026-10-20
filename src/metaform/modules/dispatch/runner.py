@@ -172,7 +172,7 @@ END_LIMIT = 10.0  # the one wait for a cancelled turn to end, and for the agent 
 LINE_LIMIT = 64 * 1024 * 1024  # the longest line read from the agent
 CHUNKS = ('agent_message_chunk', 'agent_thought_chunk', 'user_message_chunk')
 # The prompts the person's system agent's conversation opens with that an edit reaches while it runs, `reopened`.
-REOPENED = ('dispatch:system', 'dispatch:mascot')
+REOPENED = ('prompt.dispatch:system', 'prompt.dispatch:mascot')
 STREAM_EVERY = 0.4  # seconds between writes of text still being written, so the page shows it as it grows
 LINES_EVERY = 0.25  # at most one `dispatch.session_lines` event per this many seconds; the rows are written at once
 TERMINATED = 'the runner was terminated'  # how a session ends on SIGTERM; its runner takes no next ticket
@@ -4313,7 +4313,7 @@ class Session:
         if not self.probe:
             communication = prompt_files.module('dispatch', 'communication')
             if communication:
-                components.append(prompt_files.component('dispatch:communication', communication))
+                components.append(prompt_files.component('prompt.dispatch:communication', communication))
         if self.authored_role and not self.probe:
             held = resume_context(self.ctx, self.work_id, self.session_id)
             role = (held or {}).get('role_snapshot') or resolve_agent_role(
@@ -4322,7 +4322,7 @@ class Session:
             if role.get('missing') or role.get('problems'):
                 raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
                            'metaform agents roles')
-            components.append(prompt_files.component('orchestration:role_resource',
+            components.append(prompt_files.component('prompt.orchestration:role_resource',
                 prompt('role_resource', role=self.authored_role)))
             if held:
                 self.assignment = held
@@ -4335,21 +4335,21 @@ class Session:
                     'knowledge': list(effective.knowledge)}, ensure_ascii=False)))
             memory = memory_text(Path(self.root), self.store.project_id, self.at.partition('|')[0] or None)
             if memory:
-                memory_component = prompt_files.resolve('memory:instructions')
+                memory_component = prompt_files.resolve('prompt.memory:instructions')
                 memory_component.update(text=memory, bindings={'project': self.store.project_id,
                                                                'element': self.at.partition('|')[0]})
                 memory_component['rendered_fingerprint'] = hashlib.sha256(memory.encode()).hexdigest()
                 components.append(memory_component)
                 self.sent[:] = [replace(one, rendered_text=memory,
                                         rendered_fingerprint=memory_component['rendered_fingerprint'],
-                                        bindings=memory_component['bindings']) if one.name == 'memory:instructions'
+                                        bindings=memory_component['bindings']) if one.name == 'prompt.memory:instructions'
                                 else one for one in self.sent]
         # an agent that changes a design takes out the code the change leaves behind, dispatch_remove_superseded
         if not self.probe and (self.authored_role or self.role == 'worker') \
                 and self.option('dispatch_remove_superseded', True):
             said = prompt_files.module('dispatch', 'remove_superseded') or ''
             if said:
-                components.append(prompt_files.component('dispatch:remove_superseded', said))
+                components.append(prompt_files.component('prompt.dispatch:remove_superseded', said))
         prepared = prepare_agent_context(Path(self.root), self.runner, [*components, *supplied],
                                          project=self.store.project_id)
         due = list(prepared['components'])
@@ -4369,7 +4369,7 @@ class Session:
         Without a runner id there is no ledger to count them against, so nothing is sent rather than every turn."""
         if self.probe or self.runner is None:
             return text
-        rules = prompt_files.resolve('mcp:connect_rules')
+        rules = prompt_files.resolve('prompt.mcp:connect_rules')
         if not rules.get('text'):
             return text
         prepared = prepare_agent_context(Path(self.root), self.runner, [rules], project=self.store.project_id)
@@ -4390,7 +4390,7 @@ class Session:
         if not check:
             self.context_checked = True
             return text
-        marker = prompt_files.component('dispatch:context_retention', prompt('context_retention', key=check['marker']))
+        marker = prompt_files.component('prompt.dispatch:context_retention', prompt('context_retention', key=check['marker']))
         prepared = prepare_agent_context(Path(self.root), self.runner, [marker], project=self.store.project_id)
         held = self.inflight_context
         self.inflight_context = {'epoch': prepared['epoch'], 'components': [

@@ -177,8 +177,68 @@ def test_a_prompt_store_at_layout_2_is_upgraded_in_place_and_keeps_its_versions(
     prompts.shipped('practices', 'markdown', 'shipped')
     db = sqlite3.connect(home / 'prompts.sqlite3')
     try:
-        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('4',)
-        assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('2',)
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == ('6',)
+        assert db.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone() == ('6',)
         assert db.execute('SELECT COUNT(*) FROM prompt_shipped').fetchone() == (1,)
     finally:
         db.close()
+
+
+@pytest.mark.req('CTX-082')
+@pytest.mark.parametrize(('old_name', 'new_name'), [
+    ('dispatch:work', 'prompt.dispatch:work'),
+    ('skill:sentinel', 'prompt.skill.sentinel'),
+    ('logic.skill.sentinel', 'prompt.skill.sentinel'),
+    ('skills:workflow-logic', 'prompt.skills:workflow-prompt'),
+    ('workflow-logic', 'prompt.skills:workflow-prompt'),
+    ('prompt-lexicalization', 'prompt.workflow:prompt-lexicalization'),
+])
+def test_legacy_copy_renames_preserve_all_history_and_layer_uses(home, tmp_path, old_name, new_name):
+    """Upgrade an isolated legacy copy before exposing canonical serving to a newer client."""
+    from metaform.data import prompts
+    home.mkdir(parents=True, exist_ok=True)
+    legacy = tmp_path / 'legacy.sqlite3'
+    with sqlite3.connect(legacy) as db:
+        db.executescript(prompts.PROMPT_SCHEMA)
+        db.executemany('INSERT INTO meta VALUES (?,?)', [('schema_version', '4'), ('compatible_from', '2')])
+        db.execute("INSERT INTO prompts VALUES ('identity',?,'xml','created')", (old_name,))
+        db.executemany('INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?)', [
+            ('shipped', 'identity', 1, None, 'Shipped.', 'shipped', 'first'),
+            ('override', 'identity', 2, 'shipped', 'My override.', 'edited', 'second')])
+        db.execute("INSERT INTO prompt_uses VALUES ('project','base','layer','override')")
+        db.execute("INSERT INTO prompt_shipped VALUES ('override','New shipped.','seen')")
+    with sqlite3.connect(legacy) as source, sqlite3.connect(home / 'prompts.sqlite3') as target:
+        source.backup(target)
+    selected = prompts.prompt_version(new_name)
+    assert (selected.prompt_id, selected.version_id, selected.text) == ('identity', 'override', 'My override.')
+    assert [one.version_id for one in prompts.prompt_versions(selected.name)] == ['override', 'shipped']
+    assert prompts.layers_by_prompt_version('override')[0].layer_id == 'layer'
+    assert prompts.behind(selected.name).text == 'New shipped.'
+    assert prompts.prompt_version(selected.name).version_id == 'override'
+    with sqlite3.connect(home / 'prompts.sqlite3') as db:
+        assert dict(db.execute('SELECT * FROM meta')) == {'schema_version': '6', 'compatible_from': '6'}
+    with sqlite3.connect(legacy) as db:
+        assert db.execute('SELECT name FROM prompts').fetchone()[0] == old_name
+
+
+@pytest.mark.req('CTX-082')
+def test_prompt_address_conflict_preserves_both_histories_and_upgrades_other_names(home):
+    from metaform.data import prompts
+    home.mkdir(parents=True, exist_ok=True)
+    path = home / 'prompts.sqlite3'
+    with sqlite3.connect(path) as db:
+        db.executescript(prompts.PROMPT_SCHEMA)
+        db.executemany('INSERT INTO meta VALUES (?,?)', [('schema_version', '4'), ('compatible_from', '2')])
+        for number, name in enumerate(('dispatch:work', 'prompt.dispatch:work', 'memory:orient')):
+            db.execute('INSERT INTO prompts VALUES (?,?,?,?)', (str(number), name, 'text', 'created'))
+            db.execute('INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?)',
+                       (f'version-{number}', str(number), 1, None, f'body-{number}', 'shipped', 'created'))
+    assert prompts.prompt_version('prompt.dispatch:work').text == 'body-1'
+    assert prompts.prompt_version('dispatch:work').text == 'body-0'
+    assert prompts.prompt_version('prompt.memory:orient').text == 'body-2'
+    with sqlite3.connect(path) as db:
+        assert [r[0] for r in db.execute('SELECT name FROM prompts ORDER BY name')] == [
+            'dispatch:work', 'prompt.dispatch:work', 'prompt.memory:orient']
+        assert db.execute('SELECT COUNT(*) FROM prompt_versions').fetchone()[0] == 3
+        assert dict(db.execute('SELECT * FROM meta')) == {'schema_version': '6', 'compatible_from': '6'}
+    assert prompts.prompt_version('prompt.dispatch:work').version_id == 'version-1'

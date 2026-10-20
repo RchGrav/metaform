@@ -14,7 +14,8 @@ pytestmark = pytest.mark.kind('fixture')
 
 
 def source_of(name):
-    owner, colon, component = name.partition(':')
+    owner, component = prompt_files.split_address(name)
+    colon = bool(owner)
     if not colon:
         source = prompt_files.shipped('skills', name)
         assert source is not None
@@ -73,7 +74,7 @@ def test_every_requested_source_merge_uses_selected_parent_and_preserves_registe
 
 
 def test_new_context_fill_places_remain_operational_after_selected_merge(home):
-    name = 'mcp:role_worker'
+    name = 'prompt.mcp:role_worker'
     current, format = source_of(name)
     seed_selected(name, before_of(name, current), format)
     selected = prompt_files.resolve(name, assignment='assignment actual-7', authored_role='metaform://role/verifier',
@@ -85,7 +86,7 @@ def test_new_context_fill_places_remain_operational_after_selected_merge(home):
 
 
 def test_ambiguous_or_unmatched_custom_selection_is_reported_and_not_changed(home):
-    name = 'skills:lib_quality'
+    name = 'prompt.skills:lib_quality'
     current, format = source_of(name)
     old = before_of(name, current)
     _, selected = seed_selected(name, old + '\n' + old, format)
@@ -97,7 +98,7 @@ def test_ambiguous_or_unmatched_custom_selection_is_reported_and_not_changed(hom
 
 
 def test_concurrent_resolvers_append_only_one_migration_version(home):
-    name = 'skills:workflow-logic'
+    name = 'prompt.skills:workflow-prompt'
     current, format = source_of(name)
     seed_selected(name, before_of(name, current), format)
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -107,7 +108,7 @@ def test_concurrent_resolvers_append_only_one_migration_version(home):
     assert len(prompts.prompt_merges(name)) == 1
 
 
-@pytest.mark.parametrize('name', ['mcp:role_worker', 'skill:workflow-builder', 'workflow-logic', 'metaform-tools'])
+@pytest.mark.parametrize('name', ['prompt.mcp:role_worker', 'prompt.skill.workflow-builder', 'prompt.skills:workflow-prompt', 'prompt.skills:metaform-tools'])
 def test_explicit_user_edit_before_first_serving_stays_newer_than_shipped_migration(home, name):
     current, format = source_of(name)
     intentional = before_of(name, current) + '\nThis is an explicit newer instruction.'
@@ -118,7 +119,7 @@ def test_explicit_user_edit_before_first_serving_stays_newer_than_shipped_migrat
     assert len(prompts.prompt_versions(name)) == 2
 
 
-@pytest.mark.parametrize(('name', 'library'), [('workflow-logic', 'lib_workflow'), ('metaform-tools', 'lib_metaform')])
+@pytest.mark.parametrize(('name', 'library'), [('prompt.skills:workflow-prompt', 'lib_workflow'), ('prompt.skills:metaform-tools', 'lib_metaform')])
 def test_legacy_selected_skill_section_reaches_the_actual_library_and_deployment(home, name, library):
     current, format = source_of(name)
     _, selected = seed_selected(name, before_of(name, current), format)
@@ -130,20 +131,21 @@ def test_legacy_selected_skill_section_reaches_the_actual_library_and_deployment
     assert 'User-authored register stays exact.' in files[f'references/{library}.md'].decode('utf-8')
 
 
-@pytest.mark.parametrize('name', ['workflow-logic', 'skill:workflow-builder'])
+@pytest.mark.parametrize('name', ['prompt.skills:workflow-prompt', 'prompt.skill.workflow-builder'])
 def test_prompt_review_explicit_edit_uses_the_same_selected_version_gate(home, tmp_path, name):
     current, format = source_of(name)
-    _, selected = seed_selected(name, before_of(name, current), format)
+    seed_selected(name, before_of(name, current), format)
     entries = prompt_review.catalog()
     found = next(one for one in entries if one.key == name or one.key == f'store:{name}')
-    if name.startswith('skill:'):
-        copy = tmp_path / 'procedure.axiom'
-        copy.write_text(current, encoding='utf-8')
-        found = dataclasses.replace(found, source=copy)
-    intentional = selected.text + '\nNewer explicit review direction.'
+    copy = tmp_path / ('procedure.axiom' if name.startswith('prompt.skill.') else 'prompts.xml')
+    copy.write_text(current if name.startswith('prompt.skill.') else found.source.read_text('utf-8'),
+                    encoding='utf-8')
+    found = dataclasses.replace(found, source=copy)
+    intentional = prompt_files.readable(prompts.prompt_version(name)) + '\nNewer explicit review direction.'
     prompt_review.save_edit(found, intentional)
     latest = prompts.prompt_version(name)
-    actual = prompt_files.served_text(name, current)
+    actual = (prompt_files.served_text(name, current) if name.startswith('prompt.skill.')
+              else prompt_files.resolve(name)['text'])
     assert actual == intentional
     assert latest.number == 4 and latest.parent_id == prompts.prompt_version(name, 3).version_id
     assert prompts.prompt_version(name).version_id == latest.version_id
@@ -151,7 +153,7 @@ def test_prompt_review_explicit_edit_uses_the_same_selected_version_gate(home, t
 
 @pytest.mark.parametrize('historical_format', ['text', 'xml'])
 def test_selected_skill_procedure_is_the_file_deployed_and_read_by_the_harness(home, historical_format):
-    name = 'skill:workflow-builder'
+    name = 'prompt.skill.workflow-builder'
     current, _ = source_of(name)
     old = before_of(name, current)
     prompts.shipped(name, 'text', old)

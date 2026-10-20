@@ -1,7 +1,7 @@
 <!-- The workflow module's prompts: the text Metaform sends to agents for this module.
      Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
      An empty element inside a prompt, such as <run/>, marks a place the code fills in: <run/> the run id of the call or assignment; <project/> the project that holds its run record;
-     <axiom-language/>, <metaform-system/>, <namespace-rules/>, <workflow-logic/>, <metaform-tools/> and <delexicalization-rules/> the prompt store's
+     <axiom-language/>, <metaform-system/>, <namespace-rules/>, <workflow-prompt/>, <metaform-tools/> and <delexicalization-rules/> the prompt store's
      newest copy of that section, and each matching -version element its version number; <libs/> the libs a skill requires; <skill/> the skill;
      <input/> the input given to a skill; <found/> what stopped a paused run; <workflow/> and <task/> the procedure and task given to workflow scan; <result/> the skill a slash command runs.
      Comments are never sent. -->
@@ -82,14 +82,14 @@
      Returned by metaform_instructions with module workflow, read at metaform://instructions/workflow or runs metaform instructions workflow; sent at connect in place of connect while connect_instructions is full.
      Empty sends nothing. Off when the module is disabled or left out of the folder's modules setting. -->
 <instructions>workflow is active. Each command's summary says what it does. workflow libs and lib serve the reference libs, each loaded once per agent: skip a lib whose marker is already in your context. Details: metaform help workflow.</instructions>
-<!-- How an agent carries out one subroutine: follow its logic, use call, handoff or parallel, and finish with complete or fail. <run/> is the call's run id.
+<!-- How an agent carries out one subroutine: follow its prompt, use call, handoff or parallel, and finish with complete or fail. <run/> is the call's run id.
      Returned as the instructions field of every workflow run, call and resume.
      Always sent with a step; empty sends an empty field. Must not be removed: the code requires it. -->
 <execution>
 Interpret this selected Axiom subroutine using its bound arguments, saved variables, current assignment and operative specification/mode. Follow its conditions, routing, loops, Retry, Catch and verification. Reconcile an observed blocker or limiting specification through the assignment's functional assessment route.
 Use workflow call for a same-agent subroutine and workflow handoff where the selected procedure calls for another agent. Supply run <run/> and current variables. For Parallel, workflow parallel records the independent calls and their return continuations.
 Use workflow complete with RETURN and final variables to deliver the result; use workflow fail for a named error and its authored handling. A handoff's bound assignment starts its recipient through dispatch and routes the result to its caller/GC. A returned run ID identifies the persisted continuation; completion activates that route.
-If a published adaptation changes this run's operative logic, use the supplied successor run/revision and recorded progress. Preserve the earlier frozen run as history rather than treating its old text as the current specification.
+If a published adaptation changes this run's operative prompt, use the supplied successor run/revision and recorded progress. Preserve the earlier frozen run as history rather than treating its old text as the current specification.
 </execution>
 <!-- What an agent is told once it has paused run <run/> on the person with workflow pause: end its turn, since nothing starts again by itself, VIEW-042.
      Returned as the next field of workflow pause, once per pause. Must not be removed: the code requires it. -->
@@ -143,9 +143,9 @@ Their answer: <answer/>
 <commands>
   <scan verb="skill" name="scan" summary="which libs a task needs. Called by every other skill first; callable alone.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></scan>
-  <write_workflow verb="skill" name="write_workflow" summary="author a workflow from a goal: a workflow element, its subroutines, the logic that attaches it to elements, and the call that starts a run.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
+  <write_workflow verb="skill" name="write_workflow" summary="author a workflow from a goal: a workflow element, its subroutines, the prompt that attaches it to elements, and the call that starts a run.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></write_workflow>
-  <import_workflow verb="skill" name="import_workflow" summary="turn an existing prompt, SOP, checklist or agent playbook into workflow logic: delexicalize it, cut it into subroutines one per step, keep every word.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
+  <import_workflow verb="skill" name="import_workflow" summary="turn an existing prompt, SOP, checklist or agent playbook into workflow prompt: delexicalize it, cut it into subroutines one per step, keep every word.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></import_workflow>
   <workflow_efficiency verb="skill" name="workflow_efficiency" summary="where a workflow spends inference it need not. Reports; changes nothing.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></workflow_efficiency>

@@ -6,7 +6,7 @@ An empty element inside it marks a place the code fills with what it supplies
 under that element's name. No prompt's words are written in Python.
 
 A prompt `served` goes through the home's prompt store, STORE-044, under the
-name `<owner>:<element>`, the owner a module's id or `chassis`: the text a
+name `prompt.<owner>:<element>`, the owner a module's id or `chassis`: the text a
 module ships becomes a version when it changes, and an edit saved in the store
 is what is sent in its place. Each prompt served is added to the list `collect`
 started in that context, so a runner knows which versions each turn carried.
@@ -43,7 +43,7 @@ TRIAL = 'METAFORM_PROMPTS'  # a prompts.xml whose non-empty prompts are read bef
 
 @dataclass(frozen=True)
 class Sent:
-    """One prompt served: its store name, `<owner>:<element>` or `<owner>:<file>`, and the version sent, its number
+    """One prompt served: its store name, `prompt.<owner>:<element>` or `prompt.<owner>:<file>`, and the version sent, its number
     and id in the prompt store and whether it was the module's shipped text or an edit; a prompt on trial, read from
     the METAFORM_PROMPTS file, has no number and origin `trial`."""
     name: str
@@ -265,7 +265,7 @@ def merge_selected_updates(name: str, *, retry: bool = False) -> dict[str, Any] 
     def transform(version: PromptVersion) -> tuple[str, list[str]]:
         # Older prompt review saved whole skill files with format=xml, though their consumers read them literally.
         # Follow that actual source contract instead of parsing Axiom or legacy library sections as XML.
-        xml = version.format == 'xml' and not name.startswith('skill:') and not update.get('source_component')
+        xml = version.format == 'xml' and not name.startswith('prompt.skill.') and not update.get('source_component')
         if xml:
             try:
                 rendered(version.text)
@@ -332,7 +332,7 @@ _LAST: list[list[Sent]] = []
 def text(folder: Traversable, name: str, **fills: str) -> str | None:
     """The prompt `name` in the `resources/prompts.xml` of this package folder, or None when there is none; a prompt
     on trial under the same name, in the file `METAFORM_PROMPTS` names, is read first, and an edit saved in the prompt
-    store under `<owner>:<name>` is sent in place of the file's text, so an edit of any prompt reaches its agents."""
+    store under `prompt.<owner>:<name>` is sent in place of the file's text, so an edit of any prompt reaches its agents."""
     trial = os.environ.get(TRIAL)
     found = None
     if trial and os.path.isfile(trial):
@@ -342,7 +342,7 @@ def text(folder: Traversable, name: str, **fills: str) -> str | None:
             found = None
     if found is None:
         found = _element(folder, name)
-        edit = None if found is None else _edits().get(f'{owner(folder)}:{name}')
+        edit = None if found is None else _edits().get(address(owner(folder), name))
         if edit is not None:  # an edit saved in the store is sent in place of the file's text, STORE-044
             try:
                 return rendered(edit, **fills)
@@ -375,6 +375,21 @@ def module(identifier: str, name: str, **fills: str) -> str | None:
     return None if found is None else text(found.path, name, **fills)
 
 
+def address(identifier: str, name: str) -> str:
+    """A module prompt or skill procedure's canonical store address, CTX-082."""
+    return f'prompt.skill.{name}' if identifier == 'skill' else f'prompt.{identifier}:{name}'
+
+
+def split_address(name: str) -> tuple[str, str]:
+    """Read a canonical prompt address without accepting retired module names."""
+    if name.startswith('prompt.skill.'):
+        return 'skill', name[len('prompt.skill.'):]
+    if not name.startswith('prompt.'):
+        return '', ''
+    identifier, separator, element = name[len('prompt.'):].partition(':')
+    return (identifier, element) if separator else ('', '')
+
+
 def owner(folder: Traversable) -> str:
     """Who ships the prompts of this package folder, as the prompt store and `metaform prompts review` name them: the
     module's id, its folder's name, or `chassis` for Metaform's own."""
@@ -393,7 +408,7 @@ def _element(folder: Traversable, name: str) -> ET.Element | None:
         if why is not None and why not in _TOLD:
             _TOLD.add(why)
             sys.stderr.write(f'{why}.\n')
-        found = _last_shipped(f'{owner(folder)}:{name}', name)
+        found = _last_shipped(address(owner(folder), name), name)
     return found
 
 
@@ -511,16 +526,16 @@ def checked(name: str, text: str, shipped_text: str) -> tuple[str, list[str]]:
 # Served as shipped and never kept in the prompt store or edited: the Canonical Intake, STORE-044 (03-storage.md),
 # and the line that tells an intake agent where its schema is, served with it as part of it, BASE-039. An edit of one
 # would never be sent, so `save_edit` refuses it.
-FIXED = {'intake:intake.axiom': 'the Canonical Intake, served as shipped and never kept in the prompt store or edited, '
+FIXED = {'prompt.intake:intake.axiom': 'the Canonical Intake, served as shipped and never kept in the prompt store or edited, '
                                 'STORE-044',
-         'intake:schema_pointer': 'served with the Canonical Intake as part of it, as shipped and never kept in the '
+         'prompt.intake:schema_pointer': 'served with the Canonical Intake as part of it, as shipped and never kept in the '
                                   'prompt store, BASE-039 and STORE-044'}
 
 
 def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 'text',
               shipped_text: str | None = None) -> tuple[PromptVersion, list[str]]:
     """Save an edit of the prompt `name` as its next version, the one gate every surface saves through: for a prompt a
-    module ships in its prompts.xml, `<owner>:<element>`, the plain text is encoded for that form, so it is always
+    module ships in its prompts.xml, `prompt.<owner>:<element>`, the plain text is encoded for that form, so it is always
     sent as written, and the shipped text is registered first, so the edit has it as its parent, STORE-044. Any
     other prompt is stored as given. Returns the version, with the store's own notices, and the gate's notices for
     the person, as sentences.
@@ -537,7 +552,7 @@ def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 
                 selected_source = _source(str(source_component))
                 if selected_source is not None:
                     _selected_update(prompts.shipped(name, 'text', rendered(selected_source)))
-            elif name.startswith('skill:'):
+            elif name.startswith('prompt.skill.'):
                 file = resources.files('metaform').joinpath(*str(update['source']).split('/')[2:])
                 if file.is_file():
                     _selected_update(prompts.shipped(name, format, file.read_text('utf-8').strip()))
@@ -555,10 +570,10 @@ def newest_id(name: str) -> str:
 
 
 def _source(name: str) -> str | None:
-    """The text a module ships for `<owner>:<element>` as a version holds it, the form `save_edit` encodes an edit
+    """The text a module ships for `prompt.<owner>:<element>` as a version holds it, the form `save_edit` encodes an edit
     for; None for any other name, or one whose module is not loaded here."""
-    owner_, colon, element = name.partition(':')
-    if not (colon and element) or owner_ == 'skill' or '.' in element:
+    owner_, element = split_address(name)
+    if not (owner_ and element) or owner_ == 'skill' or '.' in element:
         return None
     try:
         return shipped(owner_, element)
@@ -633,7 +648,7 @@ def resolve(name: str, /, **fills: str) -> dict[str, Any]:
     Generated duties need no XML element. An invalid override is identified separately from the actual fallback;
     when current shipped text has no stored version yet, its content identity names that source snapshot honestly.
     """
-    identifier, _, element = name.partition(':')
+    identifier, element = split_address(name)
     folder = _folder(identifier)
     if folder is not None and element and '.' not in element and _element(folder, element) is not None:
         return _resolved(folder, element, **fills)
@@ -647,7 +662,7 @@ def resolve(name: str, /, **fills: str) -> dict[str, Any]:
 
 
 def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]:
-    key = f'{owner(folder)}:{name}'
+    key = address(owner(folder), name)
     trial = os.environ.get(TRIAL)
     if trial and os.path.isfile(trial):
         held = _parsed(Path(trial))
@@ -659,10 +674,18 @@ def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]
         raise LookupError(f'{folder / "resources" / FILE} has no prompt {name}.')
     from .data import prompts
     source = body(found)
-    selected = prompts.shipped(key, 'xml', source)
+    from .errors import StoreError
+    try:
+        existing = prompts.prompt_version(key)
+    except StoreError:
+        existing = None
+    if existing is not None and existing.format != 'xml':
+        selected = prompts.shipped(key, existing.format, rendered(source))
+    else:
+        selected = prompts.shipped(key, 'xml', source)
     selected, notices = _selected_update(selected)
     try:
-        text = rendered(selected.text, **fills)
+        text = rendered(selected.text, **fills) if selected.format == 'xml' else selected.text
     except ValueError as error:
         problem = f'Prompt {key} version {selected.number} is {error}; its shipped text is sent.'
         actual = next((one for one in prompts.prompt_versions(key)
@@ -705,7 +728,7 @@ def resolve_text(name: str, text: str) -> dict[str, Any]:
 
 def served_text(name: str, text: str) -> str:
     """A prompt kept whole in a file, read by the caller as `text`, as the prompt store serves it under `name`, the
-    name `metaform prompts review` gives it (`intake:intake.axiom`, `skill:<name>`), STORE-044: the text when it is
+    name `metaform prompts review` gives it (`prompt.intake:intake.axiom`, `prompt.skill.<name>`), STORE-044: the text when it is
     the newest version, else the edit saved in its place. The caller fills it as it fills the file."""
     resolved = resolve_text(name, text)
     for notice in resolved['notices']:

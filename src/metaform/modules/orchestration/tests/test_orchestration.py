@@ -519,8 +519,8 @@ def test_workflow_revision_preserves_frozen_history_variables_and_return_route(p
     run('enable', 'workflow', cwd=folder)
     old = '@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n'
     new = '@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN FALSE\n'
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', old)
-    catalog.submit_logic(store, NODE, 'procedures', 'outer', old)
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', old)
+    catalog.submit_prompt(store, NODE, 'procedures', 'outer', old)
     lookup = lambda address, name: catalog.lookup(store, address, name)
     caller = executor.start(store, f'({{ok}}) := {NODE}.outer(target=7)', {}, None, lookup,
                             {'project': 'proj', 'folder': str(folder)})
@@ -529,16 +529,16 @@ def test_workflow_revision_preserves_frozen_history_variables_and_return_route(p
     state = runs.held(store, original).value
     state['frames'][-1]['variables'] = executor.pack({'target': 7, 'steps_completed': 2})
     runs.save(store, original, state)
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', new)
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', new)
     revision_ctx = workflow_context('workflow', folder, project='proj', nouns={
         'run': original, 'change': 'change-workflow', 'address': NODE, 'name': 'inspect',
         'layer': 'procedures', 'revision': '2'})
     moved = revise(revision_ctx)
-    assert executor.view(store, moved['run'])['logic']['content'] == new
+    assert executor.view(store, moved['run'])['prompt']['content'] == new
     assert executor.view(store, moved['run'])['variables']['steps_completed'] == 2
     history = runs.read(store, original)
     assert history.state == 'cancelled'
-    assert history.value['frames'][-1]['call']['logic']['content'] == old
+    assert history.value['frames'][-1]['call']['prompt']['content'] == old
     assert history.result['successor'] == moved['run']
     assert revise(revision_ctx)['run'] == moved['run']
     result = executor.complete(store, moved['run'], 'RETURN TRUE', {'target': 7})
@@ -553,7 +553,7 @@ def test_workflow_adaptation_keeps_user_pause_and_binds_operative_successor(proj
     run('enable', 'workflow', cwd=folder)
     old = '@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n'
     new = old + '# Preserve the current selection.\n'
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', old)
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', old)
     lookup = lambda address, name: catalog.lookup(store, address, name)
     original = executor.start(store, f'({{ok}}) := {NODE}.inspect(target=7)', {}, None, lookup,
                               {'project': 'proj', 'folder': str(folder)})
@@ -583,7 +583,7 @@ def test_workflow_recovery_follows_successor_and_newer_source_without_reopening_
     old = '@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n'
     proposed = old + '# Preserve selection during duration adjustment.\n'
     newer = old + '# Newer direction: preserve selection and keyboard focus.\n'
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', old)
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', old)
     lookup = lambda address, name: catalog.lookup(store, address, name)
     original = executor.start(store, f'({{ok}}) := {NODE}.inspect(target=7)', {}, None, lookup,
                               {'project': 'proj', 'folder': str(folder)})
@@ -598,7 +598,7 @@ def test_workflow_recovery_follows_successor_and_newer_source_without_reopening_
         result = invoke(ctx, module_id, operation, **nouns)
         if operation == 'revise' and not advanced:
             advanced.append(result['run'])
-            catalog.submit_logic(store, NODE, 'procedures', 'inspect', newer)
+            catalog.submit_prompt(store, NODE, 'procedures', 'inspect', newer)
             if crash:
                 raise OSError('Controller ended after the frozen successor committed.')
         return result
@@ -620,7 +620,7 @@ def test_workflow_recovery_follows_successor_and_newer_source_without_reopening_
     assert recovered['state'] == 'completed'
     current = SERVICE.context(ctx(project), work_id=gc['work_id'])['specification']
     assert current['revision'] == '3'
-    assert executor.view(store, current['run'])['logic']['content'] == newer
+    assert executor.view(store, current['run'])['prompt']['content'] == newer
     assert runs.read(store, advanced[0]).state == 'cancelled'
     orders = [one['payload'] for one in SERVICE.pending(called) if one['kind'] == 'send' and
               one['payload'].get('change_id') == recorded['change_id']]
@@ -681,14 +681,14 @@ def test_workflow_successor_retains_completed_branch_and_active_child_returns(pr
     store, folder = project
     run('enable', 'workflow', cwd=folder)
     old = '@STATE_INIT:\n {target} := PARAM\n@RETURN:\n RETURN TRUE\n'
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', old)
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', old)
     lookup = lambda address, name: catalog.lookup(store, address, name)
     original = executor.start(store, f'{{ok}} := {NODE}.inspect(target=7)', {}, None, lookup,
                               {'project': 'proj', 'folder': str(folder)})
     children = executor.parallel(store, original, [f'{{first}} := {NODE}.inspect(target=1)',
         f'{{second}} := {NODE}.inspect(target=2)'], {'target': 7, 'progress': 'kept'}, lookup)
     assert executor.complete(store, children[0], 'RETURN TRUE', {}) == {'caller': original, 'state': 'waiting'}
-    catalog.submit_logic(store, NODE, 'procedures', 'inspect', old + '# Keep the selected duration.\n')
+    catalog.submit_prompt(store, NODE, 'procedures', 'inspect', old + '# Keep the selected duration.\n')
     successor = revise(workflow_context('workflow', folder, project='proj', nouns={
         'run': original, 'change': 'parallel-revision', 'address': NODE, 'name': 'inspect',
         'layer': 'procedures', 'revision': '2'}))['run']

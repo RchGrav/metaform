@@ -18,7 +18,7 @@ Every design decision goes into this spec when it is decided, in the record that
 
 - The owner's design, drawn into requirements and settled in conversation, is carried by the records here. TRACE.md maps every requirement to them.
 - `../src/metaform/modules/intake/resources/intake.xml`: the current intake procedure, the digital typology intake as its author wrote it, served by the intake module, BASE-039, with its schema `metaform.axiom` beside it. Earlier intakes are in the history.
-- The owner's design of workflows, 2026-10-03: the `workflow` root, logic requirements called by address and name, control flow, handoffs to a fresh agent, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
+- The owner's design of workflows, 2026-10-03: the `workflow` root, prompt requirements called by address and name, control flow, handoffs to a fresh agent, workflow layers, ingest and authoring, and what is left to build. It is carried by the workflow records in sections 01, 02 and 04. How an address and its prefixes carry inference is carried by section 01.
 - `code_quality_standards.md`: the quality bar, carried by section 7.
 
 ## Sections

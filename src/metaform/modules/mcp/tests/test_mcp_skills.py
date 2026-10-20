@@ -40,14 +40,14 @@ def test_skill_tool_survives_disabled_workflow_and_separates_discovery_from_addr
     assert not error
     assert 'sentinel' in {one['name'] for one in json.loads(blocks[-1])['skills']}
     loaded = []
-    for name in ('sentinel', 'logic.skill.sentinel'):
+    for name in ('sentinel', 'prompt.skill.sentinel'):
         error, blocks = server.run_chassis(folder, 'skills', {'op': 'load', 'name': name})
         assert not error, blocks
         loaded.append(json.loads(blocks[-1]))
     assert loaded[0] == loaded[1]
     assert loaded[0]['procedure'] and loaded[0]['libs']
     error, blocks = server.run_chassis(folder, 'skills', {
-        'op': 'read', 'name': 'logic.skill.sentinel', 'path': 'SKILL.md'})
+        'op': 'read', 'name': 'prompt.skill.sentinel', 'path': 'SKILL.md'})
     assert not error and 'sentinel' in json.loads(blocks[-1])['text']
     for arguments in ({'op': 'load'}, {'op': 'read', 'name': 'sentinel'},
                       {'op': 'read', 'name': 'sentinel', 'path': '../prompts.xml'}, {'op': 'missing'}):
@@ -132,7 +132,7 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
             role = (await client.read_resource('metaform://role/person')).contents[0].text
             assert 'metaform://role/person' in init.instructions and 'write-workflow' in role  # whole, BASE-059
             assert 'write-workflow' in described and 'sentinel' not in role
-            loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'logic.skill.sentinel'})
+            loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'prompt.skill.sentinel'})
             assert not loaded.is_error, loaded
             assert loaded.structured_content['name'] == 'sentinel'
             assert loaded.structured_content['libs']
@@ -157,7 +157,7 @@ def test_real_wire_serves_skills_and_injects_fallback_at_initialize_and_discover
                 read, write, client_info=Implementation(name='claude-code', version='1')) as client:
             await client.initialize()
             assert 'Skills:' not in (await client.read_resource('metaform://role/person')).contents[0].text
-            loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'logic.skill.sentinel'})
+            loaded = await client.call_tool('metaform_skills', {'op': 'load', 'name': 'prompt.skill.sentinel'})
             assert not loaded.is_error
     asyncio.run(native())
     monkeypatch.setattr(probe, 'CLIENT', {'name': 'claude-code', 'version': '1'})

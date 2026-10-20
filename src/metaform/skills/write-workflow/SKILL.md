@@ -1,8 +1,8 @@
 ---
 name: write-workflow
-description: "author a workflow from a goal: a workflow element, its subroutines, the logic that attaches it to elements, and the call that starts a run."
+description: "author a workflow from a goal: a workflow element, its subroutines, the prompt that attaches it to elements, and the call that starts a run."
 metadata:
-  ing.metaform.address: "logic.skill.write-workflow"
+  ing.metaform.address: "prompt.skill.write-workflow"
   ing.metaform.discover: "true"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

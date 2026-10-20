@@ -11,6 +11,7 @@ edit, so the person sees their edit is behind and can merge or drop it.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from collections.abc import Callable, Generator, Mapping
@@ -23,10 +24,10 @@ from .. import home, sqlite
 from ..errors import StoreError
 from .records import Notice, Record
 
-PROMPT_SCHEMA_VERSION = '4'  # the prompt database's own layout, apart from the store's, STORE-029
-# 2 renamed the column code at 1 reads, STORE-029; 3 adds prompt_shipped, which code at 2 never reads, so 2 still
-# reads and writes a file at 3
-PROMPT_COMPATIBLE_FROM = '2'
+PROMPT_SCHEMA_VERSION = '6'  # the prompt database's own layout, apart from the store's, STORE-029
+# Version 6 completes canonical identities after the working-tree version 5.
+# Earlier clients can still create legacy names, so they must not write this store.
+PROMPT_COMPATIBLE_FROM = '6'
 # prompt_shipped: the text a module ships now, kept beside the edit it is behind while that edit is the newest version,
 # one row for each edit; never served from here, only shown, ticket 3a1306bd (2026-10-15)
 SHIPPED_TABLE = """CREATE TABLE IF NOT EXISTS prompt_shipped(
@@ -75,19 +76,53 @@ CREATE INDEX IF NOT EXISTS prompt_uses_by_version ON prompt_uses(version_id);
 FORMATS = ('xml', 'markdown', 'text')
 
 
+def _address(name: str) -> str:
+    """The canonical identity of a legacy module or skill prompt, CTX-082."""
+    if name == 'prompt-lexicalization':
+        return 'prompt.workflow:prompt-lexicalization'
+    if name in ('skills:workflow-logic', 'prompt.skills:workflow-logic'):
+        return 'prompt.skills:workflow-prompt'
+    if name in ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-logic',
+                'workflow-prompt', 'metaform-tools', 'delexicalization-rules',
+                'lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality'):
+        return 'prompt.skills:' + ('workflow-prompt' if name == 'workflow-logic' else name)
+    if name.startswith('skill:'):
+        return 'prompt.skill.' + name[6:]
+    if name.startswith('logic.skill.'):
+        return 'prompt.skill.' + name[len('logic.skill.'):]
+    if re.fullmatch(r'[A-Za-z_][\w.-]*:.+', name) and not name.startswith('prompt.'):
+        return 'prompt.' + name
+    return name
+
+
 def _upgrade(db: sqlite3.Connection, path: Path, found: str) -> None:
-    """Version 2 names base_id, 3 keeps shipped text behind edits, and 4 records selected-source migrations."""
-    if found not in ('1', '2', '3'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1, 2 and 3.',
+    """Upgrade layout and canonical prompt addresses atomically, preserving every immutable version."""
+    if found not in ('1', '2', '3', '4', '5'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only prompt versions 1 through 5.',
                          'install the Metaform release that wrote it')
     db.execute('BEGIN IMMEDIATE')
     try:
         at = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if at in (('1',), ('2',), ('3',)):  # read again inside the lock: another process may have upgraded it first
+        if at in (('1',), ('2',), ('3',), ('4',), ('5',)):  # read again inside the lock: another process may have upgraded it first
             if at == ('1',):
                 db.execute('ALTER TABLE prompt_uses RENAME COLUMN metaform_id TO base_id')
             db.execute(SHIPPED_TABLE)
             db.execute(MERGE_TABLE)
+            renames: list[tuple[str, str]] = []
+            names = {row[0] for row in db.execute('SELECT name FROM prompts')}
+            targets: set[str] = set()
+            for name in sorted(names):
+                target = _address(name)
+                if target == name:
+                    continue
+                if target in names or target in targets:
+                    # both exist, an old-code process wrote the legacy name after the new one was made: the new
+                    # address is the one read, the legacy row stays as it is with every version (2026-10-20: refusing
+                    # here stopped every agent start)
+                    continue
+                targets.add(target)
+                renames.append((target, name))
+            db.executemany('UPDATE prompts SET name=? WHERE name=?', renames)
             sqlite.stamp(db, PROMPT_SCHEMA_VERSION, PROMPT_COMPATIBLE_FROM)
         db.execute('COMMIT')
     except BaseException:

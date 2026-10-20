@@ -8,7 +8,7 @@ import pytest
 from metaform.data import Store
 from metaform.data.records import plain
 from metaform.modules.workflow import executor, runs
-from metaform.modules.workflow.binding import Logic
+from metaform.modules.workflow.binding import Prompt
 from metaform.modules.workflow.element import ElementValue
 
 pytestmark = [pytest.mark.req('BASE-051'), pytest.mark.req('MAP-056'), pytest.mark.kind('fixture')]
@@ -24,11 +24,11 @@ def store(run, project_folder):
 
 
 def lookup(address, name):
-    return Logic('logic', name, name, SCRIPT), ElementValue({'address': address})
+    return Prompt('prompt', name, name, SCRIPT), ElementValue({'address': address})
 
 
 def begin(store):
-    return executor.start(store, '({ok}, {issues}) := workflow.quality.code.improve(target=this)',
+    return executor.start(store, '({ok}, {issues}) := prompt.workflow.quality.code.improve(target=this)',
                           {'secret': 'caller history'}, ElementValue({'address': 'code.timer'}), lookup,
                           {'project': 'proj', 'folder': '/tmp', 'metaform': None, 'layers': []})
 
@@ -36,12 +36,12 @@ def begin(store):
 def test_same_agent_nested_calls_restore_values_and_callee_this(store):
     word = begin(store)
     first = executor.view(store, word)
-    assert first['this'].address == 'workflow.quality.code'
+    assert first['this'].address == 'prompt.workflow.quality.code'
     assert first['arguments']['target'].address == 'code.timer'
     variables = {**first['variables'], 'attempt': 2}
-    executor.call(store, word, '({ok}, {issues}) := workflow.review.code.review(target={target})', variables, lookup)
+    executor.call(store, word, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})', variables, lookup)
     child = executor.view(store, word)
-    assert child['this'].address == 'workflow.review.code'
+    assert child['this'].address == 'prompt.workflow.review.code'
     assert 'attempt' not in child['variables']
     resumed = executor.complete(store, word, 'RETURN (TRUE, [])', {})
     assert resumed['variables']['attempt'] == 2 and resumed['variables']['ok'] is True
@@ -52,7 +52,7 @@ def test_same_agent_nested_calls_restore_values_and_callee_this(store):
 
 def test_fresh_handoff_redeems_in_another_process_with_only_callee_context(store):
     parent = begin(store)
-    child = executor.call(store, parent, '({ok}, {issues}) := workflow.review.code.review(target={target})',
+    child = executor.call(store, parent, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})',
                           {**executor.view(store, parent)['variables'], 'private': 'caller only'}, lookup, fresh=True)
     script = 'import json, sys; from metaform.data import Store; from metaform.data.records import plain; ' \
              'from metaform.modules.workflow.executor import view; ' \
@@ -61,7 +61,7 @@ def test_fresh_handoff_redeems_in_another_process_with_only_callee_context(store
     visible = json.loads(result.stdout)
     assert 'private' not in visible['variables'] and 'secret' not in result.stdout
     assert visible['arguments']['target']['address'] == 'code.timer'
-    assert visible['logic']['content'] == SCRIPT
+    assert visible['prompt']['content'] == SCRIPT
     assert executor.view(store, parent)['state'] == 'waiting'
     with pytest.raises(Exception, match='waiting'):
         executor.complete(store, parent, 'RETURN TRUE', {})
@@ -74,7 +74,7 @@ def test_fresh_handoff_redeems_in_another_process_with_only_callee_context(store
 
 def test_error_propagates_unchanged_to_caller_and_then_orchestrator(store):
     parent = begin(store)
-    executor.call(store, parent, '{fixed} := workflow.quality.code.fix(target={target})',
+    executor.call(store, parent, '{fixed} := prompt.workflow.quality.code.fix(target={target})',
                   executor.view(store, parent)['variables'], lookup)
     resumed = executor.fail(store, parent, 'SourceUnreadable', 'src/timer.py')
     assert resumed['error'] == {'name': 'SourceUnreadable', 'message': 'src/timer.py'}
@@ -85,8 +85,8 @@ def test_error_propagates_unchanged_to_caller_and_then_orchestrator(store):
 
 def test_parallel_waits_for_every_branch_and_preserves_every_error(store):
     parent = begin(store)
-    words = executor.parallel(store, parent, ['{a} := workflow.review.code.review(target={target})',
-                                      '{b} := workflow.review.code.review(target={target})'],
+    words = executor.parallel(store, parent, ['{a} := prompt.workflow.review.code.review(target={target})',
+                                      '{b} := prompt.workflow.review.code.review(target={target})'],
                               executor.view(store, parent)['variables'], lookup)
     assert executor.fail(store, words[0], 'FirstFailed', 'first') == {'caller': parent, 'state': 'waiting'}
     resumed = executor.complete(store, words[1], 'RETURN TRUE', {})
@@ -100,11 +100,11 @@ def test_parallel_waits_for_every_branch_and_preserves_every_error(store):
 
 def test_failed_return_binding_keeps_child_available_to_correct(store):
     parent = begin(store)
-    executor.call(store, parent, '({ok}, {issues}) := workflow.review.code.review(target={target})',
+    executor.call(store, parent, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})',
                   executor.view(store, parent)['variables'], lookup)
     with pytest.raises(ValueError):
         executor.complete(store, parent, 'RETURN (TRUE,)', {})
-    assert executor.view(store, parent)['logic']['name'] == 'review'
+    assert executor.view(store, parent)['prompt']['name'] == 'review'
     assert executor.complete(store, parent, 'RETURN (TRUE, [])', {})['variables']['ok'] is True
 
 
@@ -119,8 +119,8 @@ def test_tuple_values_and_read_only_element_views_roundtrip(home):
 
 def test_parallel_bad_return_keeps_branch_open_for_correction(store):
     parent = begin(store)
-    words = executor.parallel(store, parent, ['({a}, {b}) := workflow.review.code.review(target={target})',
-                                      '{c} := workflow.review.code.review(target={target})'],
+    words = executor.parallel(store, parent, ['({a}, {b}) := prompt.workflow.review.code.review(target={target})',
+                                      '{c} := prompt.workflow.review.code.review(target={target})'],
                               executor.view(store, parent)['variables'], lookup)
     with pytest.raises(ValueError):
         executor.complete(store, words[0], 'RETURN (TRUE,)', {})
@@ -132,11 +132,11 @@ def test_parallel_bad_return_keeps_branch_open_for_correction(store):
 
 def test_caller_can_run_its_catch_handler_and_use_its_return(store):
     parent = begin(store)
-    executor.call(store, parent, '{fixed} := workflow.quality.code.fix(target={target})',
+    executor.call(store, parent, '{fixed} := prompt.workflow.quality.code.fix(target={target})',
                   executor.view(store, parent)['variables'], lookup)
     failed = executor.fail(store, parent, 'FixFailed', 'The issue remains.')
     assert failed['error']['name'] == 'FixFailed'
-    executor.call(store, parent, '{fixed} := workflow.quality.code.diagnose(target={target})',
+    executor.call(store, parent, '{fixed} := prompt.workflow.quality.code.diagnose(target={target})',
                   failed['variables'], lookup)
     recovered = executor.complete(store, parent, 'RETURN "diagnosed cause"', {})
     assert recovered['variables']['fixed'] == 'diagnosed cause'
@@ -145,7 +145,7 @@ def test_caller_can_run_its_catch_handler_and_use_its_return(store):
 
 def test_a_run_record_keeps_its_lifecycle_its_parent_and_its_result(store):
     parent = begin(store)
-    child = executor.call(store, parent, '({ok}, {issues}) := workflow.review.code.review(target={target})',
+    child = executor.call(store, parent, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})',
                           executor.view(store, parent)['variables'], lookup, fresh=True)
     assert (runs.read(store, parent).state, runs.read(store, child).state) == ('waiting', 'running')
     assert runs.read(store, child).value['parent'] == parent and runs.read(store, child).kind == 'call'
@@ -168,7 +168,7 @@ def test_a_run_paused_on_the_person_takes_no_step_until_they_answer(store):
     paused = executor.view(store, word)
     assert (paused['state'], paused['message']) == ('input_required', 'Which fix lands?')
     for step in (lambda: executor.complete(store, word, 'RETURN TRUE', {}),
-                 lambda: executor.call(store, word, '{fixed} := workflow.quality.code.fix(target={target})', {},
+                 lambda: executor.call(store, word, '{fixed} := prompt.workflow.quality.code.fix(target={target})', {},
                                        lookup),
                  lambda: executor.pause(store, word, 'again?')):
         with pytest.raises(Exception, match='paused on the person'):
@@ -183,9 +183,9 @@ def test_a_run_paused_on_the_person_takes_no_step_until_they_answer(store):
 
 def test_cancel_ends_a_run_and_every_run_below_it_and_its_caller_catches_it(store):
     parent = begin(store)
-    child = executor.call(store, parent, '({ok}, {issues}) := workflow.review.code.review(target={target})',
+    child = executor.call(store, parent, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})',
                           executor.view(store, parent)['variables'], lookup, fresh=True)
-    grandchild = executor.call(store, child, '{fixed} := workflow.quality.code.fix(target={target})',
+    grandchild = executor.call(store, child, '{fixed} := prompt.workflow.quality.code.fix(target={target})',
                                executor.view(store, child)['variables'], lookup, fresh=True)
     cancelled = executor.cancel(store, child, 'superseded')
     assert cancelled == {'run': child, 'state': 'cancelled', 'cancelled': [child, grandchild], 'resume': parent}
@@ -217,15 +217,17 @@ def test_status_vocabulary_maps_every_state_and_refuses_moves_out_of_an_end():
 
 def test_runs_kept_at_version_2_are_upgraded_keeping_their_states_and_dated(run, project_folder):
     """Version 3 adds message and updated, and version 4 ticket and session: every version 2 row keeps its state,
-    and each is dated by its close or else its creation; the new columns may be empty, so version 1's code still reads
-    the tables."""
+    and each is dated by its close or else its creation. Version 7 raises compatibility for the prompt rename."""
     from dataclasses import replace
 
     from metaform.data import Tables
     from metaform.data.tables import TableTx, ensure, project_store, project_transaction
     from metaform.modules.workflow.catalog import TABLES
     declared = Tables(version=2, compatible_from=1, tables=tuple(
-        replace(table, columns=tuple(column for column in table.columns if column.name not in ('message', 'updated', 'ticket', 'session')))
+        replace(table,
+                columns=tuple(column for column in table.columns
+                              if column.name not in ('message', 'updated', 'ticket', 'session')),
+                indexes=tuple(index for index in table.indexes if 'ticket' not in index.columns))
         if table.name == 'runs' else table for table in TABLES.tables))
     path = project_store('proj', 'workflow')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -244,14 +246,14 @@ def test_runs_kept_at_version_2_are_upgraded_keeping_their_states_and_dated(run,
     assert dated == {'a': '2026-10-01T00:00:00Z', 'b': '2026-10-02T00:00:00Z'}
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:workflow'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (4, 1)
+    assert (recorded['version'], recorded['compatible_from']) == (TABLES.version, TABLES.compatible_from)
 
 
 def test_a_child_that_returned_cannot_then_be_cancelled_and_its_caller_keeps_the_value(store):
     """A child's return reaches its caller in the transaction that closes it, so a cancel after it is refused and the
     caller never holds both its value and the error cancelled."""
     parent = begin(store)
-    child = executor.call(store, parent, '({ok}, {issues}) := workflow.review.code.review(target={target})',
+    child = executor.call(store, parent, '({ok}, {issues}) := prompt.workflow.review.code.review(target={target})',
                           executor.view(store, parent)['variables'], lookup, fresh=True)
     assert executor.complete(store, child, 'RETURN (TRUE, [])', {}) == {'resume': parent}
     with pytest.raises(Exception, match=f'No open workflow run {child} in project proj: it is completed'):
@@ -272,7 +274,7 @@ def test_only_the_person_answers_a_paused_run_and_a_held_role_cancels_none(run, 
     """MAP-050 as amended 2026-10-08 and BASE-052: an agent pauses a run, and the person answers it; a worker neither
     answers it nor cancels it, and a refusal names the person's answer command for the agent to hand on."""
     word = begin(store)
-    executor.pause(store, word, 'The target code.timer.kitchen is gone from the map and the logic names no other.')
+    executor.pause(store, word, 'The target code.timer.kitchen is gone from the map and the prompt names no other.')
     refused = run('workflow', 'complete', 'RETURN TRUE', f'run={word}', cwd=project_folder, ok=False)
     assert 'paused on the person' in refused.stderr and f'workflow answer run={word}' in refused.stderr
     for key in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK'):

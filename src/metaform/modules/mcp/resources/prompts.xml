@@ -44,7 +44,7 @@ Example: Instead of "I have reviewed your code and found that your authenticatio
 <!-- BASE-059: fallback discovery closing metaform://role/<role> for the person's own sessions and the system agent where the connecting harness has no completed
      native skill deployment. skill_index auto/on/off controls this index. <skills/> holds discoverable skills only,
      one name and usage description per line. Internal skills remain available through explicit address loading. -->
-<skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=logic.skill.&lt;name&gt;.
+<skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=prompt.skill.&lt;name&gt;.
 <skills/></skill_index>
 <!-- BASE-059: closes the metaform_skills tool description with the discoverable skill names, under the same
      skill_index auto/on/off rule as the index above. Hosts list every tool description, so the names arrive here

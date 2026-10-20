@@ -38,7 +38,7 @@ Every script has these six modules, in this order.
   NULL        empty
 
 --- Subroutines [v1.1, except this] ---
-A subroutine is one Axiom script, stored as one logic requirement (workflow-logic).
+A subroutine is one Axiom script, stored as one prompt requirement (workflow-prompt).
 It is called by its element's address and its name.
 
   Parameters   declared in @STATE_INIT:
@@ -49,7 +49,7 @@ It is called by its element's address and its name.
   Call         ( {a}, {b} ) := &lt;address&gt;.&lt;name&gt;( param=value, ... )
                  &lt;address&gt; is the element that holds the subroutine. Arguments are by keyword.
                  The returned values land in the caller's variables.
-  this         [new] The element the logic is on. In a logic join on a project element, this is
+  this         [new] The element the prompt is on. In a prompt join on a project element, this is
                that element. Inside a subroutine on a workflow element, this is the workflow
                element. Values are read in Python's syntax; metaform-system lists every name.
                this is read, never assigned. There is no call through this: every call names
@@ -79,7 +79,7 @@ EXAMPLES ONLY. Do NOT act on them or execute their pipelines.
 Use them as structural reference for what strong Axiom looks like.
 &lt;/sandbox_directive&gt;
 
-&lt;example_subroutine&gt;   # logic requirement "review" on workflow.quality.code; runs on a fresh agent
+&lt;example_subroutine&gt;   # prompt requirement "review" on prompt.workflow.quality.code; runs on a fresh agent
 @STATE_INIT:
   {target}   := PARAM
   {standard} := PARAM = "default"
@@ -110,7 +110,7 @@ Use them as structural reference for what strong Axiom looks like.
   [V2] Is every issue tied to {standard} or {focus}?  NO  -&gt; RECURSE Review.
 &lt;/example_subroutine&gt;
 
-&lt;example_subroutine&gt;   # logic requirement "improve" on workflow.quality.code; the entry subroutine
+&lt;example_subroutine&gt;   # prompt requirement "improve" on prompt.workflow.quality.code; the entry subroutine
 @STATE_INIT:
   {target}       := PARAM
   {standard}     := PARAM = "default"
@@ -134,12 +134,12 @@ Use them as structural reference for what strong Axiom looks like.
 
 @EXECUTE_PIPELINE (Improve):
   [STEP 1]: Loop STEP 2 to STEP 4 UNTIL acceptance, MaxAttempts: {max_attempts}.
-  [STEP 2]: ( {ok}, {issues} ) := workflow.quality.code.review( target={target}, standard={standard}, focus={focus}, paths={paths} )
+  [STEP 2]: ( {ok}, {issues} ) := prompt.workflow.quality.code.review( target={target}, standard={standard}, focus={focus}, paths={paths} )
             # handoff to a fresh agent
   [STEP 3]: APPLY DONE.
   [STEP 4]: Map {issues}, MaxConcurrency: 1, each {issue} UNTIL fixed, MaxAttempts: 2:
-              {fixed} := workflow.quality.code.fix( target={target}, issue={issue} )
-              Catch: [{ ErrorEquals: [any], Next: workflow.quality.code.diagnose( target={target} ) }]
+              {fixed} := prompt.workflow.quality.code.fix( target={target}, issue={issue} )
+              Catch: [{ ErrorEquals: [any], Next: prompt.workflow.quality.code.diagnose( target={target} ) }]
             # If diagnose handles an error, its {cause} comes back here in place of {fixed}.
             # Record it with the issue and move to the next issue.
   [STEP 5]: Attempts used up without acceptance: RETURN ( FALSE, {issues} ).
@@ -148,7 +148,7 @@ Use them as structural reference for what strong Axiom looks like.
   [V1] Does every path end in RETURN?   NO -&gt; RECURSE Improve.
 &lt;/example_subroutine&gt;
 
-&lt;example_element_logic&gt;   # logic join on a project element, in a knowledge layer
+&lt;example_element_prompt&gt;   # prompt join on a project element, in a knowledge layer
 @STATE_INIT:
   {ok}     := NULL
   {issues} := NULL
@@ -165,7 +165,7 @@ Use them as structural reference for what strong Axiom looks like.
   EXECUTE_PIPELINE( Run )
 
 @EXECUTE_PIPELINE (Run):
-  [STEP 1]: ( {ok}, {issues} ) := workflow.quality.code.improve( target=this, focus=this.provides,
+  [STEP 1]: ( {ok}, {issues} ) := prompt.workflow.quality.code.improve( target=this, focus=this.provides,
                                                                   paths=this.refs.get("path") )
             # this.provides: the joins this element serves, i.e. what it is for
             # this.refs.get("path"): its file paths, or None if it has none
@@ -173,7 +173,7 @@ Use them as structural reference for what strong Axiom looks like.
 
 @VERIFY:
   [V1] Did the call pass this, not a written-out address?   NO -&gt; RECURSE Run.
-&lt;/example_element_logic&gt;</axiom-language>
+&lt;/example_element_prompt&gt;</axiom-language>
 <!-- The map as a procedure sees it: namespace roots, element roles, joins, knowledge layers, and every value a procedure can read from this.
      Seeded into the prompt store; agents receive the store copy, inside lib_metaform. An edit saved in the prompt editor replaces this text for good.
      Until then, a change saved here reaches the store the next time workflow serves a lib, a step or the lexicalize script. Must not be removed: the code requires it. -->
@@ -183,7 +183,7 @@ Use them as structural reference for what strong Axiom looks like.
   - Each element sits under a namespace root. Project roots: code, media, document, data,
     upstream, downstream. Addresses follow namespace-rules.
   - Read an address backwards to name the element: code.engine.game -&gt; "game engine code".
-  - An element can be named but not built yet. You may attach logic to any named element,
+  - An element can be named but not built yet. You may attach prompts to any named element,
     built or not.
   - The map is changed only by refinement or correction runs, with provenance. You do not change
     it here.
@@ -200,7 +200,7 @@ Roles: every element carries one
 Joins
   - Joins connect elements, like database joins. A purpose join records one encounter: a
     receiver's purpose served by a provider's function. The receiver owns the join. It runs one way.
-  - A join can hold logic, not only a purpose.
+  - A join can hold prompts, not only a purpose.
   - A purpose join's fields:
       purpose    the Operative Purpose: why the receiver needs this. Held by the receiver.
       ef         the Encounter Function: how the provider serves that purpose in this encounter.
@@ -214,16 +214,16 @@ Knowledge layers
   - The metaform layer holds only the metaform. Knowledge layers lie over the map and switch on
     and off.
   - A knowledge layer has the same structure as the metaform, with more freedom in what it holds:
-    guidance, properties, logic at an element, and roots the metaform does not have, such as workflow.
+    guidance, properties, prompts at an element, and roots the metaform does not have, such as prompt.
   - "Workflow layer" means a knowledge layer that holds a workflow. It is not a layer type.
   - Switching a layer off removes what it holds from that point on. An agent keeps what it
     has already read; it only loses what it has not read yet.
 
-Element logic
-  - Logic can sit on any element, in a named logic join, in a knowledge layer. This is
-    element logic. Subroutines do not have to live on a workflow element; a workflow element is
-    useful because it belongs to no project, so its logic can be called from anywhere.
-  - this is the element the logic is on. In element logic, it is the element carrying
+Element prompts
+  - A prompt can sit on any element, in a named prompt join, in a knowledge layer. This is
+    element prompts. Subroutines do not have to live on a workflow element; a workflow element is
+    useful because it belongs to no project, so its prompts can be called from anywhere.
+  - this is the element the prompt is on. In element prompts, it is the element carrying
     the join. Inside a subroutine on a workflow element, it is that workflow element, so a
     subroutine reaches a project element only through the arguments it is called with.
   - Values are read in Python's syntax. Ids never appear.
@@ -272,29 +272,29 @@ Element logic
       - A missing key raises an error. .get(key) gives None instead:
         this.require.get("&lt;provider address&gt;").
       - A field with no value is None.
-      - this is read, never assigned. Logic changes the map only through the calls it makes.
+      - this is read, never assigned. A prompt changes the map only through the calls it makes.
       - There is no call through this. Every call names an element's address.
       - The element's extra is not addressable.
 
-  - Element logic calls workflow subroutines and passes this and this values as arguments.
+  - Element prompts call workflow subroutines and passes this and this values as arguments.
     This lexicalizes the workflow: a generic subroutine now speaks directly to one element.
     (Workflow ingest does the reverse: it delexicalizes, turning named elements into
     {Element_A}, {Element_B} parameters.)
   - Passing this hands the element to the subroutine: in
-    workflow.quality.code.review( target=this ), target is the caller's element inside review,
-    and this is workflow.quality.code.
+    prompt.workflow.quality.code.review( target=this ), target is the caller's element inside review,
+    and this is prompt.workflow.quality.code.
   - Use this values only where the workflow needs them to fit a specific element.</metaform-system>
 <!-- Where the namespace rules are written: a pointer to the intake procedure's rules, read with metaform intake prompt.
      Seeded into the prompt store; agents receive the store copy, inside lib_metaform. An edit saved in the prompt editor replaces this text for good.
      Until then, a change saved here reaches the store the next time workflow serves a lib, a step or the lexicalize script. Must not be removed: the code requires it. -->
 <namespace-rules>The namespace rules are the intake procedure's &lt;namespace_rules&gt;, the one place they are written, with their reading and validity examples: read them with metaform intake prompt, or resource metaform://intake/procedure.</namespace-rules>
-<!-- The rules every stored procedure follows: what a logic record holds, one step per subroutine, parameters, acceptance, loop limits, errors, hand-offs, returns and storage.
+<!-- The rules every stored procedure follows: what a prompt record holds, one step per subroutine, parameters, acceptance, loop limits, errors, hand-offs, returns and storage.
      Seeded into the prompt store; agents receive the store copy, inside lib_workflow. An edit saved in the prompt editor replaces this text for good.
      Until then, a change saved here reaches the store the next time workflow serves a lib, a step or the lexicalize script. Must not be removed: the code requires it. -->
-<workflow-logic>RECORD
-  LOGIC := {
-    type:      "logic",
-    logic_id:  assigned when submitted; survives moves and refinement,
+<workflow-prompt>RECORD
+  PROMPT := {
+    type:      "prompt",
+    prompt_id:  assigned when submitted; survives moves and refinement,
     name:      the subroutine's function name, unique on its element,
     content:   Axiom (axiom-language)
   }
@@ -302,26 +302,26 @@ Element logic
   CALL FORM   ( {a}, {b} ) := &lt;workflow address&gt;.&lt;name&gt;( param=value, ... )
 
 # --- Workflow elements ---
-+&gt; workflow is not a project root. It exists only in knowledge layers. Intake never creates, traces or
-   decomposes anything under it, and no project owns a workflow element.
-+&gt; A workflow element is an address for reusable logic. It holds its canonical name, its logic requirements,
++&gt; prompt is not a project root. It exists only in knowledge layers. Intake never creates, traces or
+   decomposes anything under it. Workflows live under prompt.workflow; no project owns a workflow element.
++&gt; A workflow element is an address for reusable prompts. It holds its canonical name, its prompt requirements,
    and, if any, the knowledge layers selected to go with it.
-+&gt; Its address follows namespace-rules; reversed, it names the workflow: workflow.quality.code -&gt; "code quality
++&gt; Its address follows namespace-rules; reversed, it names the workflow: prompt.workflow.quality.code -&gt; "code quality
    workflow". It names a functional kind of workflow, never a project, tool or genre.
 +&gt; It is written into a knowledge layer. Which one is organization: it may have a layer of its own or share one.
    In a layer of its own, the workflow can be turned off without turning off the knowledge that goes with it.
-+&gt; A logic requirement is one subroutine. Logic requirements are unordered; order exists only in the calls
++&gt; A prompt requirement is one subroutine. Prompt requirements are unordered; order exists only in the calls
    between them. A call can reach any workflow's subroutines, so workflows compose.
 
 # --- Subroutines ---
-+&gt; Each step is a subroutine: one logic requirement on the workflow element.
++&gt; Each step is a subroutine: one prompt requirement on the workflow element.
 +&gt; Each subroutine is a complete Axiom script with all six modules (axiom-language).
 +&gt; Each subroutine declares its parameters with PARAM in its own @STATE_INIT, and ends with RETURN of a value
    or a tuple, or with a call to the next subroutine.
-+&gt; The entry subroutine is named. Logic requirements are unordered, so nothing else marks it.
++&gt; The entry subroutine is named. Prompt requirements are unordered, so nothing else marks it.
 +&gt; Elements a subroutine works on are parameters. The caller passes them.
 +&gt; A workflow subroutine's content names what it works on by its parameters; metaform addresses and
-   project-specific names belong in element logic or in the run's arguments.
+   project-specific names belong in element prompts or in the run's arguments.
 +&gt; Inside a workflow subroutine, this is the workflow element itself. Read the project element the subroutine
    works on from its parameter, e.g. {target}.require, never from this.
 +&gt; A subroutine whose work depends on the artifact takes the element's refs, such as its paths, as a parameter
@@ -350,13 +350,13 @@ Element logic
 # --- Returns ---
 +&gt; A return is a value in the prompt. The caller may route on it, insert it into the next prompt, or
    ignore it. Nothing is stored unless the workflow says to store it.
-+&gt; A return goes back to whatever made the call: element logic or another subroutine.
++&gt; A return goes back to whatever made the call: element prompts or another subroutine.
 
 # --- Storage ---
 +&gt; SUBMIT the workflow element into the knowledge layer given for it, with the knowledge layers selected
    to go with it (metaform-tools: submit workflow).
-+&gt; SUBMIT each subroutine's LOGIC on the workflow element (metaform-tools: submit logic).
-+&gt; EXPORT `&lt;workflow name&gt;.metaform` from the stored workflow, never separately (metaform-tools: export workflow).</workflow-logic>
++&gt; SUBMIT each subroutine's PROMPT on the workflow element (metaform-tools: submit prompt).
++&gt; EXPORT `&lt;workflow name&gt;.metaform` from the stored workflow, never separately (metaform-tools: export workflow).</workflow-prompt>
 <!-- The commands a procedure may use, and the rule never to invent a command that is not listed.
      Seeded into the prompt store; agents receive the store copy, inside lib_metaform. An edit saved in the prompt editor replaces this text for good.
      Until then, a change saved here reaches the store the next time workflow serves a lib, a step or the lexicalize script. Must not be removed: the code requires it. -->
@@ -372,8 +372,8 @@ stop that step, record it in the ticket's note, carry on with what does not depe
   list layers            metaform map layers
   list workflows         metaform workflow list
   submit workflow        metaform workflow submit &lt;address&gt; &lt;layer&gt; name="&lt;canonical name&gt;" selected='["&lt;layer&gt;"]' provenance='{"prompt":"&lt;prompt version&gt;","model":"&lt;model&gt;","role":"&lt;role&gt;"}'
-  submit logic           metaform workflow add_logic &lt;address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
-  submit element logic   metaform workflow add_logic &lt;element address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
+  submit prompt           metaform workflow add_prompt &lt;address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
+  submit element prompts   metaform workflow add_prompt &lt;element address&gt; &lt;layer&gt; &lt;name&gt; "&lt;Axiom content&gt;"
   export workflow        metaform workflow export &lt;address&gt; &lt;layer&gt; file="&lt;workflow name&gt;.metaform"
   run                    metaform workflow run "&lt;entry call&gt;" element=&lt;caller element address&gt; variables='{"name":"value"}'
   call                   metaform workflow call "&lt;call&gt;" run=&lt;caller run id&gt; variables='{"name":"value"}'
@@ -399,7 +399,7 @@ stop that step, record it in the ticket's note, carry on with what does not depe
 # its examples included, at the version its heading shows.
 
 ## Which dialect
-- A workflow subroutine (a logic requirement on a workflow element) is axiom-language, below:
+- A workflow subroutine (a prompt requirement on a workflow element) is axiom-language, below:
   YIELD returns control to @ROUTER; RECURSE &lt;Pipeline&gt; re-runs it; a script with one pipeline routes directly.
 - A standalone script or a skill is Axiom-OS 2.0: `#! AXIOM/2.0` header, YIELD ends, RECURSE(max=N),
   every @MATCH has `| [*]`, runtime text bound as &lt;&lt;DATA: ...&gt;&gt;, optional modules @BUDGET @FALLBACK @PRIORITY
@@ -423,15 +423,15 @@ stop that step, record it in the ticket's note, carry on with what does not depe
 
 ## metaform-tools · version <metaform-tools-version/>
 <metaform-tools/></lib_metaform>
-<!-- The lib of rules for procedures: headings, then <workflow-logic/> and <delexicalization-rules/> with their version numbers, filled from the prompt store.
+<!-- The lib of rules for procedures: headings, then <workflow-prompt/> and <delexicalization-rules/> with their version numbers, filled from the prompt store.
      Returned by workflow lib lib_workflow, and sent before any skill whose # requires: line names it.
      Must not be empty: workflow libs reads its first line as the lib's marker. Off when the module is disabled. -->
 <lib_workflow># lib_workflow · the rules every workflow follows
-# Load once per agent. Marker: [lib_workflow loaded]. Sources: the stored workflow-logic and
+# Load once per agent. Marker: [lib_workflow loaded]. Sources: the stored workflow-prompt and
 # delexicalization-rules sections, each whole, at the version its heading shows. Requires lib_axiom and lib_metaform.
 
-## workflow-logic · version <workflow-logic-version/>
-<workflow-logic/>
+## workflow-prompt · version <workflow-prompt-version/>
+<workflow-prompt/>
 
 ## delexicalization-rules · version <delexicalization-rules-version/>
 <delexicalization-rules/></lib_workflow>
@@ -454,7 +454,7 @@ stop that step, record it in the ticket's note, carry on with what does not depe
 5. @EXECUTE_PIPELINE (Name): Use ∇(Isolate) and Δ(Synthesize) to break down analytical steps.
 6. @VERIFY: Boolean self-check before outputting.
 
-Optional modules (include when the logic calls for them):
+Optional modules (include when the prompt calls for them):
  7. @IMPORT (name): Pull a script from {Vault}.
  8. @MACRO name(args): Reusable step template.
  9. @LOOP (max=N): Bounded iteration with an exit condition. Unbounded loops are FORBIDDEN.
@@ -499,10 +499,10 @@ INTERPRETER CONTRACT (prepended by `/export --standalone`):
 ## The compile, lint, test, explain, optimize commands (what "optimize" means)
 --- CORE ---
 
-1. `/compile [User Logic]`
+1. `/compile [User Prompt]`
     Action: Translate plain-text logic into a STRONG Axiom script. Runs Compile_Chain (draft -&gt; auto-lint -&gt; auto-fix up to 2 passes -&gt; score -&gt; store in {History}). Output ends with a one-line lint score.
 2. `/wizard`
-    Action: Enter interactive mode. Ask 4 sequential questions, ONE at a time: 1. Core objective, 2. Inputs/Variables, 3. Conditions/Logic Gates, 4. Strict Constraints. Accept `/back` (previous question) and `/abort`. After answer 4, auto-trigger `/compile`.
+    Action: Enter interactive mode. Ask 4 sequential questions, ONE at a time: 1. Core objective, 2. Inputs/Variables, 3. Conditions/Prompt Gates, 4. Strict Constraints. Accept `/back` (previous question) and `/abort`. After answer 4, auto-trigger `/compile`.
 3. `/usecases`
     Action: Display a numbered menu of templates: 1. Data Triage Router, 2. Hallucination Guardrail, 3. Iterative Refinement Loop, 4. Zero-Bias Analyzer, 5. Context Isolation, 6. Red-Team Loop, 7. Multi-Agent Debate, 8. Background Research Pipeline. Ask which to load. Loading compiles the template, lints it, and saves it to {Vault}.
 4. `/register [Tone/Level]`

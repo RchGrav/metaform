@@ -47,9 +47,9 @@ def test_native_responsibility_inventory_and_selected_identity(project_folder, m
         assert [one['name'] for one in resolved['components']] == list(definition.prompts)
         assert all(one['actual_version_id'] and one['rendered_fingerprint'] for one in resolved['components'])
     assert os.environ['METAFORM_ROLE'] == 'worker'
-    prompts.save_prompt('dispatch:system', 'User register retained. <mascot/>')
+    prompts.save_prompt('prompt.dispatch:system', 'User register retained. <mascot/>')
     triage = resolve_agent_role(project_folder, 'triage', bindings={'mascot': 'Chirping.'})
-    assert triage['components'][-1]['name'] == 'dispatch:system'
+    assert triage['components'][-1]['name'] == 'prompt.dispatch:system'
     assert 'User register retained.' in triage['components'][-1]['text']
 
 
@@ -139,12 +139,12 @@ print(json.dumps(prepare_agent_context(p,'stable-runner',c)))
 def test_changed_duty_and_actual_fallback_versions(project_folder):
     original = resolve_agent_role(project_folder, 'gc')
     record_agent_context(project_folder, 'gc-context', original['components'])
-    saved, _ = prompt_files.save_edit('orchestration:gc', 'Custom GC duty retaining delivery ownership.')
+    saved, _ = prompt_files.save_edit('prompt.orchestration:gc', 'Custom GC duty retaining delivery ownership.')
     changed = resolve_agent_role(project_folder, 'gc')
     due = prepare_agent_context(project_folder, 'gc-context', changed['components'])
-    assert [one['name'] for one in due['components']] == ['orchestration:gc']
+    assert [one['name'] for one in due['components']] == ['prompt.orchestration:gc']
     assert due['components'][0]['actual_version_id'] == saved.version_id
-    bad = prompts.save_prompt('orchestration:gc', '<unclosed>')
+    bad = prompts.save_prompt('prompt.orchestration:gc', '<unclosed>')
     fallback = resolve_agent_role(project_folder, 'gc')
     assert not fallback['problems'] and fallback['notices']
     duty = fallback['components'][-1]
@@ -175,7 +175,7 @@ def test_content_is_not_repeated_under_an_alias_or_after_version_reversion(proje
 
 def test_startup_proof_survives_resume_and_missing_proof_reopens_only_on_demand(project_folder):
     from metaform.modules.agents.roles import confirm_context
-    instruction = prompt_files.component('test:duty', 'A retained duty that must not be dumped.')
+    instruction = prompt_files.component('prompt.test:duty', 'A retained duty that must not be dumped.')
     record_agent_context(project_folder, 'retained', [instruction])
     first = begin_agent_context_check(project_folder, 'retained')
     ctx = context('agents', project_folder, session='retained',
@@ -203,11 +203,11 @@ def test_memory_instruction_body_is_shared_between_inline_and_resource(project_f
     from metaform.modules.mcp.server import memory_text
     text = memory_text(project_folder)
     assert text
-    component = prompt_files.component('memory:instructions', text)
+    component = prompt_files.component('prompt.memory:instructions', text)
     record_agent_context(project_folder, 'memory-context', [component], channel='first_turn')
     second, _ = read_resource(project_folder, 'metaform://memory', 'memory-context')
     assert text not in second
-    receipt = prepare_agent_context(project_folder, 'memory-context', [component])['previous']['memory:instructions']
+    receipt = prepare_agent_context(project_folder, 'memory-context', [component])['previous']['prompt.memory:instructions']
     assert receipt['channel'] == 'first_turn'
 
 

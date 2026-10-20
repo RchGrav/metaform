@@ -40,7 +40,7 @@ def drain(ctx: Context, work_ids: list[str] | None = None) -> list[dict[str, Any
 
 def render(ctx: Context, name: str, bindings: dict[str, str]) -> dict[str, str] | None:
     """Owner-supplied fill values also used when an authored role resolves dispatch's selected PM prompt."""
-    if name != 'dispatch:system':
+    if name != 'prompt.dispatch:system':
         return None
     from . import mascot_line
     return {'project': str(ctx.project or ''), 'mascot': mascot_line(ctx.folder), **bindings}

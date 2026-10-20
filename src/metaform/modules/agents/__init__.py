@@ -62,12 +62,12 @@ class Role:
 
 # Sent to an agent of any role that dispatch runs, after its own.
 ANY = (
-    Sends('dispatch:context_retention', 'once per context epoch, to establish the retained startup key'),
-    Sends('dispatch:context_checkpoint', 'on the first necessary turn of a start or resume'),
-    Sends('dispatch:role_resource', 'when an authored role is assigned, and as a link after compaction'),
-    Sends('dispatch:communication', 'once per context epoch, with the initial instructions'),
-    Sends('dispatch:timer', 'as a turn when a timer the agent set with dispatch timer is due'),
-    Sends('dispatch:workflow_answered', 'as a turn, or into the turn in flight, when a workflow run it paused is '
+    Sends('prompt.dispatch:context_retention', 'once per context epoch, to establish the retained startup key'),
+    Sends('prompt.dispatch:context_checkpoint', 'on the first necessary turn of a start or resume'),
+    Sends('prompt.dispatch:role_resource', 'when an authored role is assigned, and as a link after compaction'),
+    Sends('prompt.dispatch:communication', 'once per context epoch, with the initial instructions'),
+    Sends('prompt.dispatch:timer', 'as a turn when a timer the agent set with dispatch timer is due'),
+    Sends('prompt.dispatch:workflow_answered', 'as a turn, or into the turn in flight, when a workflow run it paused is '
                                         'answered'),
 )
 
@@ -76,47 +76,47 @@ ANY = (
 ROLES = (
     Role('intake', 'Maps the AUE into its elements and purpose records from its source, when the person starts an '
                    'intake.', True, (
-        Sends('intake:intake.axiom', 'first turn: the intake procedure, with what the person asked for; the '
+        Sends('prompt.intake:intake.axiom', 'first turn: the intake procedure, with what the person asked for; the '
                                      "folder's intake_file setting serves its own file in its place"),
-        Sends('intake:schema_pointer', "added to the first turn when the intake does not name its schema's URI"),
-        Sends('dispatch:intake_first_record', 'once, when the agent makes no Metaform call in time'),
+        Sends('prompt.intake:schema_pointer', "added to the first turn when the intake does not name its schema's URI"),
+        Sends('prompt.dispatch:intake_first_record', 'once, when the agent makes no Metaform call in time'),
     )),
     Role('system', "The person's own agent in the project's folder: talks with them and acts for them, owns the "
                    'board so every ticket moves, waits on a decision put to them, or is closed, and speaks as their '
                    'mascot when they chose one.', True, (
-        Sends('dispatch:system', 'first turn, and again ahead of the next turn once an edit of it is saved'),
-        Sends('dispatch:mascot', 'filled into the first turn while the person has a mascot and the web module is on, '
+        Sends('prompt.dispatch:system', 'first turn, and again ahead of the next turn once an edit of it is saved'),
+        Sends('prompt.dispatch:mascot', 'filled into the first turn while the person has a mascot and the web module is on, '
                                  'and again with dispatch:system once an edit of either is saved'),
-        Sends('dispatch:system_changed', 'ahead of the next turn after an edit of dispatch:system or dispatch:mascot '
+        Sends('prompt.dispatch:system_changed', 'ahead of the next turn after an edit of dispatch:system or dispatch:mascot '
                                          'is saved while its conversation runs, with the prompt as it now reads'),
-        Sends('dispatch:setup_trouble', 'as its next turn, for each feature a module says is not working'),
-        Sends('dispatch:wave_ready', 'as its next turn, when tickets of the work the person\'s word covers are '
+        Sends('prompt.dispatch:setup_trouble', 'as its next turn, for each feature a module says is not working'),
+        Sends('prompt.dispatch:wave_ready', 'as its next turn, when tickets of the work the person\'s word covers are '
                                      'free to start'),
     )),
     Role('sentinel', 'Takes up an issue the person raised on a node, following the sentinel skill.', True, (
-        Sends('skills:served', 'first turn: the skill whole, its libraries first', True),
-        Sends('skill:sentinel', 'filled into the first turn: the skill\'s procedure', True),
-        Sends('skills:assignment_input', 'filled into the first turn: the node, the ticket and the report, bound as '
+        Sends('prompt.skills:served', 'first turn: the skill whole, its libraries first', True),
+        Sends('prompt.skill.sentinel', 'filled into the first turn: the skill\'s procedure', True),
+        Sends('prompt.skills:assignment_input', 'filled into the first turn: the node, the ticket and the report, bound as '
                                          'data', True),
     )),
     Role('talk', 'Talks with the person about something they clicked on the map; it works no ticket.', True, (
-        Sends('dispatch:talk', 'first turn', True),
-        Sends('dispatch:eyes', 'filled into the first turn while the web module offers a body and eyes', True),
+        Sends('prompt.dispatch:talk', 'first turn', True),
+        Sends('prompt.dispatch:eyes', 'filled into the first turn while the web module offers a body and eyes', True),
     )),
     Role('prep', 'Prepares a merge under review for the person, in its worktree.', False, (
-        Sends('dispatch:prep', 'first turn', True),
-        Sends('dispatch:decide', 'as the answer to a question it puts, since it may not ask the person'),
+        Sends('prompt.dispatch:prep', 'first turn', True),
+        Sends('prompt.dispatch:decide', 'as the answer to a question it puts, since it may not ask the person'),
     )),
     Role('worker', 'Works one ticket at its node, handed to it by dispatch.', False, (
-        Sends('dispatch:work', 'first turn, after the brief of its node', True),
-        Sends('dispatch:work_record', 'filled into the first turn while the memory module is on', True),
-        Sends('dispatch:retry', 'first turn of a session resumed to retry the ticket'),
-        Sends('dispatch:on_ticket_done', 'as a turn when its ticket is done, as dispatch_record_on_finish says'),
-        Sends('dispatch:on_stopped_open', 'as a turn when it stopped with its ticket open, as dispatch_record_on_stop '
+        Sends('prompt.dispatch:work', 'first turn, after the brief of its node', True),
+        Sends('prompt.dispatch:work_record', 'filled into the first turn while the memory module is on', True),
+        Sends('prompt.dispatch:retry', 'first turn of a session resumed to retry the ticket'),
+        Sends('prompt.dispatch:on_ticket_done', 'as a turn when its ticket is done, as dispatch_record_on_finish says'),
+        Sends('prompt.dispatch:on_stopped_open', 'as a turn when it stopped with its ticket open, as dispatch_record_on_stop '
                                           'says'),
-        Sends('dispatch:on_failure', 'as a turn after a turn that ended in an error, as dispatch_record_on_failure '
+        Sends('prompt.dispatch:on_failure', 'as a turn after a turn that ended in an error, as dispatch_record_on_failure '
                                      'says'),
-        Sends('dispatch:decide', 'as the answer to a question it puts, since it may not ask the person'),
+        Sends('prompt.dispatch:decide', 'as the answer to a question it puts, since it may not ask the person'),
     )),
 )
 assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record for each of the code\'s roles'
@@ -156,7 +156,7 @@ class Unread(Exception):
 def _shipped(ctx: Context, name: str) -> tuple[str | None, str | None]:
     """The text a prompt's module ships now, as a version holds it, and None; or None and why the name does not
     resolve. Unread when it cannot be told from here."""
-    owner, _, rest = name.partition(':')
+    owner, rest = prompt_files.split_address(name)
     if not rest:
         return None, f'{name} is not a prompt name: <module>:<element>, <module>:<file> or skill:<name>.'
     if owner == 'skill':  # a skill is read through the workflow module, never by importing the skill registry
@@ -184,12 +184,12 @@ FIXED = prompt_files.FIXED
 
 
 def _format(name: str) -> str:
-    if name.startswith('agents:generated_'):
+    if name.startswith('prompt.agents:generated_'):
         try:
             return prompts.prompt_version(name).format
         except StoreError:
             return 'text'
-    return 'xml' if '.' not in name.partition(':')[2] and not name.startswith('skill:') else 'text'
+    return 'xml' if '.' not in name.partition(':')[2] and not name.startswith('prompt.skill.') else 'text'
 
 
 def _held(name: str, shipped: str) -> dict[str, Any]:
@@ -246,7 +246,7 @@ def _prompt(ctx: Context, sends: Sends) -> dict[str, Any]:
         return {**one, 'resolves': None, 'problem': str(unread), **stored}
     if shipped is None:
         return {**one, 'resolves': False, 'problem': problem}
-    owner, _, element = sends.name.partition(':')
+    owner, element = prompt_files.split_address(sends.name)
     written = prompt_files.problem_of(owner, element) if _format(sends.name) == 'xml' else None
     # a prompt written wrong in its file: still sent as it last read, and named until it is corrected
     return {**one, 'resolves': True, **_held(sends.name, shipped), **({'file_problem': written} if written else {})}

@@ -6048,23 +6048,43 @@
  "voice": null,
  "web": null,
  "workflow": {
-  "version": 5,
-  "compatible_from": 1,
+  "version": 7,
+  "compatible_from": 7,
   "tables": {
-   "logic_versions": {
+   "migrations": {
     "place": "metaform",
     "key": [
-     "logic_id",
-     "number"
+     "name"
     ],
     "columns": {
-     "content": [
+     "at": [
       "text",
       "TEXT",
       true,
       null
      ],
-     "logic_id": [
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "prompt_versions": {
+    "place": "metaform",
+    "key": [
+     "prompt_id",
+     "number"
+    ],
+    "columns": {
+     "content": [
       "text",
       "TEXT",
       true,
@@ -6079,6 +6099,12 @@
      "number": [
       "int",
       "INTEGER",
+      true,
+      null
+     ],
+     "prompt_id": [
+      "text",
+      "TEXT",
       true,
       null
      ]

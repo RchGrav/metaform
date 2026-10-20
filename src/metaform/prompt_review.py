@@ -51,7 +51,7 @@ class Entry:
 
     @property
     def key(self) -> str:
-        return f'{self.owner}:{self.name}'
+        return self.name if self.owner == 'store' else prompt_files.address(self.owner, self.name)
 
 
 _ELEMENT = re.compile(r'(?:<!--(?P<comment>.*?)-->\s*)?<(?P<name>[a-z_-]+)(?:\s[^>]*)?>(?P<body>.*?)</(?P=name)>', re.DOTALL)
@@ -107,7 +107,7 @@ def catalog() -> list[Entry]:
     for item in registered():  # prompts kept anywhere else, registered with the review
         entries.append(_registered_entry(item))
     # prompts that live only in the store: written by agents or saved from the GUI, named without an owner
-    for name in sorted(n for n in saved if ':' not in n):
+    for name in sorted(n for n in saved if ':' not in n and not n.startswith('prompt.skill.')):
         version = store.prompt_version(name)
         first = version.text.splitlines()[0] if version.text else ''
         purpose = first[len('Purpose:'):].strip() if first.lower().startswith('purpose:') else ''
@@ -133,8 +133,8 @@ def register(key: str, source: str, *, element: str = '', purpose: str = '', use
     """Register a prompt kept anywhere: `key` is owner:name, `source` the file that holds it, `element` the XML
     element inside it when the file holds several, `purpose` what it is for, `used` where the system reads it."""
     import json
-    if ':' not in key:
-        raise Stop('A registered prompt is named owner:name, as fork:handoff.', 'metaform prompt register')
+    if not all(prompt_files.split_address(key)):
+        raise Stop('A registered prompt is named prompt.<owner>:<name>, as prompt.fork:handoff.', 'metaform prompt register')
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         raise Stop(f'{path} is not a file.', 'metaform prompt register')
@@ -147,7 +147,7 @@ def register(key: str, source: str, *, element: str = '', purpose: str = '', use
 
 
 def _registered_entry(item: dict[str, str]) -> Entry:
-    owner, name = item['key'].split(':', 1)
+    owner, name = prompt_files.split_address(item['key'] if item['key'].startswith('prompt.') else 'prompt.' + item['key'])
     source = Path(item['source'])
     text = source.read_text(encoding='utf-8') if source.is_file() else '(the source file is gone)'
     if item.get('element') and source.is_file():

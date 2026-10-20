@@ -8,7 +8,7 @@
 @STATE_INIT:
   {Report}          := [User's failure description]
   {Component}       := NULL
-  {Failure_Class}   := NULL        // UI_RENDER | LOGIC_FLAW | API_TIMEOUT | MISSING_CONTEXT | INTENT_MISMATCH | UNHANDLED_EXCEPTION | STATE_MUTATION | RACE_CONDITION
+  {Failure_Class}   := NULL        // UI_RENDER | PROMPT_FLAW | API_TIMEOUT | MISSING_CONTEXT | INTENT_MISMATCH | UNHANDLED_EXCEPTION | STATE_MUTATION | RACE_CONDITION
   {Severity}        := NULL        // CRITICAL_BLOCKER | DEGRADED_PERFORMANCE | MINOR_COSMETIC
   {Evidence}        := []          // what the investigation found, each fact with where it was found
   {Repro_Steps}     := NULL

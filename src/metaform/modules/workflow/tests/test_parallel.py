@@ -9,7 +9,7 @@ import pytest
 
 from metaform.data import Store
 from metaform.modules.workflow import executor
-from metaform.modules.workflow.binding import Logic
+from metaform.modules.workflow.binding import Prompt
 from metaform.modules.workflow.element import ElementValue
 
 pytestmark = [pytest.mark.req('BASE-051'), pytest.mark.kind('fixture')]
@@ -19,9 +19,9 @@ def test_simultaneous_branch_returns_keep_all_results(home, run, project_folder)
     run('enable', 'workflow')
     store = Store('proj', module='workflow')
     script = '@STATE_INIT:\n@CONSTRAINT:\n'
-    lookup = lambda address, name: (Logic('logic', name, name, script), ElementValue({'address': address}))
-    parent = executor.start(store, 'workflow.quality.code.run()', {}, None, lookup, {})
-    words = executor.parallel(store, parent, [f'{{result{i}}} := workflow.quality.code.branch()' for i in range(4)],
+    lookup = lambda address, name: (Prompt('prompt', name, name, script), ElementValue({'address': address}))
+    parent = executor.start(store, 'prompt.workflow.quality.code.run()', {}, None, lookup, {})
+    words = executor.parallel(store, parent, [f'{{result{i}}} := prompt.workflow.quality.code.branch()' for i in range(4)],
                               {}, lookup)
     ready = home / 'return-now'
     code = '''import json, sys, time

@@ -285,11 +285,11 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                   'properties': {'id': _text('The project id: lowercase letters, digits, - and _. Without it, the '
                                              "folder's name.")}}),
     'skills': (('List discoverable skills, load a skill with fresh libs, or read one of its files. '
-                'A name or logic.skill.<name> address loads internal skills too. Always available.'),
+                'A name or prompt.skill.<name> address loads internal skills too. Always available.'),
                {'type': 'object', 'additionalProperties': False, 'properties': {
                    'op': {'type': 'string', 'enum': ['list', 'load', 'read'],
                           'description': 'list by default, load the procedure and libs, or read one file.'},
-                   'name': _text('The skill name or logic.skill.<name> address, required for load and read.'),
+                   'name': _text('The skill name or prompt.skill.<name> address, required for load and read.'),
                    'path': _text('The relative skill file path, required for read.'),
                    'all': {'type': 'boolean', 'description': 'Include internal skills in an administrative list.'},
                    'project': PROJECT}}),

@@ -163,10 +163,10 @@ def test_a_served_prompt_comes_from_the_prompt_store_and_an_edit_there_is_sent_i
     sent = prompt_files.collect()
     try:
         assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada & welcome.'
-        assert prompts.prompt_version('mine:greet').text == 'Hello <who /> &amp; welcome.'
-        prompts.save_prompt('mine:greet', 'Hi <who/>.')
+        assert prompts.prompt_version('prompt.mine:greet').text == 'Hello <who /> &amp; welcome.'
+        prompts.save_prompt('prompt.mine:greet', 'Hi <who/>.')
         assert prompt_files.served(folder, 'greet', who='Ada') == 'Hi Ada.'
-        prompts.save_prompt('mine:greet', 'Hi <who>.')  # not well formed: the shipped text is sent
+        prompts.save_prompt('prompt.mine:greet', 'Hi <who>.')  # not well formed: the shipped text is sent
         assert prompt_files.served(folder, 'greet', who='Ada') == 'Hello Ada & welcome.'
         trial = tmp_path / 'trial.xml'
         trial.write_text('<prompts><greet>Trial <who/>.</greet></prompts>', encoding='utf-8')
@@ -175,11 +175,11 @@ def test_a_served_prompt_comes_from_the_prompt_store_and_an_edit_there_is_sent_i
     finally:
         prompt_files.release(sent)
     assert [(one.name, one.number, one.origin) for one in sent] == [
-        ('mine:greet', 1, 'shipped'), ('mine:greet', 2, 'edited'), ('mine:greet', 1, 'shipped'),
-        ('mine:greet', None, 'trial')]
+        ('prompt.mine:greet', 1, 'shipped'), ('prompt.mine:greet', 2, 'edited'), ('prompt.mine:greet', 1, 'shipped'),
+        ('prompt.mine:greet', None, 'trial')]
     assert sent[2].selected_version_id != sent[2].version_id
     assert sent[2].problems and sent[2].rendered_fingerprint == sent[0].rendered_fingerprint
-    assert prompts.prompt_version('mine:greet').number == 3
+    assert prompts.prompt_version('prompt.mine:greet').number == 3
     with pytest.raises(LookupError):
         prompt_files.served(folder, 'nothing')
 
@@ -222,17 +222,17 @@ def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_
         '<prompts><greet>Hello <who/> &amp; welcome.</greet></prompts>', encoding='utf-8')
     shipped = 'Hello <who /> &amp; welcome.'  # as a version holds the file's element
     assert prompt_files.plain(shipped) == 'Hello <who /> & welcome.'
-    version, said = prompt_files.save_edit('mine:greet', 'Write <address>: <task> & cite <ref/>, <who/>.',
+    version, said = prompt_files.save_edit('prompt.mine:greet', 'Write <address>: <task> & cite <ref/>, <who/>.',
                                            shipped_text=shipped)
     assert version.text == 'Write &lt;address&gt;: &lt;task&gt; &amp; cite &lt;ref/&gt;, <who />.'
-    assert said == [('<ref/> is sent as written, for no fill place of mine:greet is written so; its fill places are '
+    assert said == [('<ref/> is sent as written, for no fill place of prompt.mine:greet is written so; its fill places are '
                      '<who/>.')]
     assert prompt_files.served(folder, 'greet', who='Ada') == 'Write <address>: <task> & cite <ref/>, Ada.'
-    assert prompt_files.plain(prompts.prompt_version('mine:greet').text) == \
+    assert prompt_files.plain(prompts.prompt_version('prompt.mine:greet').text) == \
         'Write <address>: <task> & cite <ref/>, <who />.'
-    assert prompts.prompt_version('mine:greet', 1).origin == 'shipped'  # the edit's parent is the shipped text
+    assert prompts.prompt_version('prompt.mine:greet', 1).origin == 'shipped'  # the edit's parent is the shipped text
     with pytest.raises(ValueError, match='Canonical Intake'):
-        prompt_files.save_edit('intake:intake.axiom', 'x')
+        prompt_files.save_edit('prompt.intake:intake.axiom', 'x')
 
 
 def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
@@ -240,10 +240,10 @@ def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
     as written; a save that would not be sent is never stored."""
     from metaform import prompt_files
     from metaform.data import prompts
-    run('prompt', 'save', 'chassis:work_reminder', 'Hand work on & name its node <here/>.')
+    run('prompt', 'save', 'prompt.chassis:work_reminder', 'Hand work on & name its node <here/>.')
     assert prompt_files.chassis('work_reminder') == 'Hand work on & name its node <here/>.'  # what is sent
-    stored = prompts.prompt_version('chassis:work_reminder')
+    stored = prompts.prompt_version('prompt.chassis:work_reminder')
     assert stored.format == 'xml' and stored.text == 'Hand work on &amp; name its node &lt;here/&gt;.'
-    assert run('prompt', 'chassis:work_reminder').stdout == 'Hand work on & name its node <here/>.'
-    refused = run('prompt', 'save', 'intake:intake.axiom', 'x', ok=False)
+    assert run('prompt', 'prompt.chassis:work_reminder').stdout == 'Hand work on & name its node <here/>.'
+    refused = run('prompt', 'save', 'prompt.intake:intake.axiom', 'x', ok=False)
     assert refused.returncode == 2 and 'never be sent' in refused.stderr

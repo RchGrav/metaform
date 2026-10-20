@@ -10,7 +10,7 @@ from metaform import skills as skill_registry
 from metaform.data import Store, prompts
 from metaform.modules.mcp.server import run_tool
 from metaform.modules.workflow import MODULE, PACKAGE, SKILLS, _about, executor, runs
-from metaform.modules.workflow.binding import Logic
+from metaform.modules.workflow.binding import Prompt
 from metaform.modules.workflow.element import ElementValue
 
 pytestmark = [pytest.mark.req('MCP-034'), pytest.mark.kind('fixture')]
@@ -27,14 +27,14 @@ def read(run, folder, *words):
 
 def test_lib_serves_the_newest_stored_shared_section(run, project_folder):
     served = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
-    stored = prompts.prompt_version('metaform-tools')
-    assert stored.text in served and 'metaform workflow submit' in served
+    stored = prompts.prompt_version('prompt.skills:metaform-tools')
+    assert prompt_files.rendered(stored.text) in served and 'metaform workflow submit' in served
     assert '<<TO FILL:' not in served, 'no tool is left as a placeholder; the section only states the rule for one'
     edited = stored.text + '\nAn edit saved in the prompt store.'
     assert 'in place of the shipped text' not in served
-    prompts.add_prompt_version('metaform-tools', edited, stored.number)
+    prompts.add_prompt_version('prompt.skills:metaform-tools', edited, stored.number)
     after = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
-    assert edited in after  # a person's edit is served, and said: an override of the shipped file is never silent
+    assert prompt_files.rendered(edited) in after  # a person's edit is served, and said: an override of the shipped file is never silent
     assert after.rstrip().endswith('in place of the shipped text: metaform-tools.')
 
 
@@ -81,9 +81,9 @@ def test_assignment_serves_each_lib_once_then_skill_then_input_and_closes(run, p
 def test_complete_on_a_call_without_return_is_refused_with_a_next_step(run, project_folder):
     script = '@STATE_INIT:\n {target} := PARAM\n'
     store = Store('proj', module='workflow')
-    word = executor.start(store, '{ok} := workflow.quality.code.review(target=this)', {},
+    word = executor.start(store, '{ok} := prompt.workflow.quality.code.review(target=this)', {},
                           ElementValue({'address': 'code.timer'}),
-                          lambda address, name: (Logic('logic', name, name, script), ElementValue({'address': address})),
+                          lambda address, name: (Prompt('prompt', name, name, script), ElementValue({'address': address})),
                           {'project': 'proj', 'folder': str(project_folder), 'metaform': None, 'layers': []})
     refused = run('workflow', 'complete', f'run={word}', cwd=project_folder, ok=False)
     assert refused.returncode != 0
@@ -133,5 +133,5 @@ def test_workflow_lib_names_built_transport_without_the_kit_unbuilt_claim(run, p
     served = run('workflow', 'lib', 'lib_workflow', cwd=project_folder).stdout
     tools = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
     assert 'not built' not in served.lower()
-    for verb in ('list', 'submit', 'add_logic', 'export', 'run', 'call', 'handoff', 'parallel', 'complete', 'fail'):
+    for verb in ('list', 'submit', 'add_prompt', 'export', 'run', 'call', 'handoff', 'parallel', 'complete', 'fail'):
         assert f'metaform workflow {verb}' in tools

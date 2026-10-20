@@ -17,8 +17,9 @@ from metaform.module import Context, Module, Noun, Stop, Verb, held_role, projec
 
 from . import catalog, executor, runs
 from . import preprocess as preprocessing
-from .binding import Logic, Lookup, destination
+from .binding import Lookup, Prompt, destination
 from .element import ElementValue, Value, element_value
+from .migration import DATA
 from .revisions import revise
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
@@ -52,12 +53,13 @@ SKILLS = ('scan', 'write_workflow', 'import_workflow', 'workflow_efficiency', 'p
 
 def _prompts() -> None:
     skill_registry.seed()
-    prompts.shipped('prompt-lexicalization', 'text', prompt_files.required(PACKAGE, 'prompt-lexicalization'))
+    prompts.shipped(prompt_files.address('workflow', 'prompt-lexicalization'), 'text',
+                    prompt_files.required(PACKAGE, 'prompt-lexicalization'))
 
 
 def lexicalize(ctx: Context) -> dict[str, Any]:
     _prompts()
-    return {'prompt': prompts.prompt_version('prompt-lexicalization').text,
+    return {'prompt': prompts.prompt_version(prompt_files.address('workflow', 'prompt-lexicalization')).text,
             'inputs': {'Prompt_Text': ctx.nouns['text'],
                        'MAP_READ': 'metaform map where <address>; over MCP, map_where',
                        'PROMPT_STORE': ('metaform prompt save <name> <text>; over MCP, metaform_save_prompt with name '
@@ -97,10 +99,10 @@ def submit(ctx: Context) -> Any:
                                    n.get('name_length', 2), n.get('selected', ()), n.get('provenance'))
 
 
-def add_logic(ctx: Context) -> Any:
+def add_prompt(ctx: Context) -> Any:
     n = ctx.nouns
     with _correctable(f'metaform map where {n["address"]}'):
-        result = catalog.submit_logic(ctx.require_store(), n['address'], n['layer'], n['name'], n['content'],
+        result = catalog.submit_prompt(ctx.require_store(), n['address'], n['layer'], n['name'], n['content'],
                                       n.get('provenance'))
     return {'address': n['address'], 'layer': n['layer'], 'name': result.name, 'content': result.content}
 
@@ -149,10 +151,10 @@ def _values(data: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _lookup(store: Store) -> Lookup:
-    def lookup(address: str, name: str) -> tuple[Logic, Any]:
-        if address == 'logic.skill':
+    def lookup(address: str, name: str) -> tuple[Prompt, Any]:
+        if address == 'prompt.skill':
             one = skill_registry.get(name)
-            return (Logic('skill', f'{one.address}@{one.version}', one.name, skill_registry.procedure(one.name)),
+            return (Prompt('skill', f'{one.address}@{one.version}', one.name, skill_registry.procedure(one.name)),
                     ElementValue(one.metadata()))
         return catalog.lookup(store, address, name)
     return lookup
@@ -186,7 +188,7 @@ def _store(runs_store: Store, word: str) -> Store:
 def _shown(runs_store: Store, word: str) -> dict[str, Any]:
     _prompts()
     result = executor.view(runs_store, word)
-    if result['logic']['type'] == 'skill':
+    if result['prompt']['type'] == 'skill':
         result['libs'] = skill_registry.libraries(skill_registry.get(result['address']))
     result['instructions'] = prompt_files.served(PACKAGE, 'execution', run=word)
     return result
@@ -427,7 +429,7 @@ def _assignment(held: Store, word: str) -> str:
     skill = skill_registry.get(str(value['skill'])).name
     return prompt_files.served(
         PACKAGE, 'assignment', libs=served,
-        skill=prompt_files.served_text(f'skill:{skill}', skill_registry.procedure(skill)),
+        skill=prompt_files.served_text(prompt_files.address('skill', skill), skill_registry.procedure(skill)),
         input='\n\n'.join(one for one in bound if one), run=word, project=held.project_id)
 
 
@@ -478,7 +480,7 @@ def run_open(folder: Path) -> bool:
 
 MODULE = Module(
     id='workflow', summary='Write, import and run reusable Axiom subroutines.',
-    purpose='Stores reusable Axiom logic in ordinary knowledge layers and transports calls, parameters and '
+    purpose='Stores reusable Axiom prompts in ordinary knowledge layers and transports calls, parameters and '
             'returns for the agent interpreter, keeping each run\'s state in a run record reached by its run id. '
             'Details: metaform help workflow.',
     details='The agent interprets Choice, Parallel, Map, Retry, Catch and verification from the stored Axiom. '
@@ -488,13 +490,13 @@ MODULE = Module(
             'answer, on the command line; cancel ends a run and the runs below it; runs lists the open runs. A run is '
             'running, waiting on its handoffs, input_required, completed, failed or cancelled, the status vocabulary '
             'of metaform.data.status, each mapped to an MCP Tasks and an A2A task state. '
-            'Workflow logic can sit on any element, including an element held by a purpose. '
+            'Workflow prompts can sit on any element, including an element held by a purpose. '
             'Selected and masked knowledge layers '
-            'decide what callable logic is available. The skills write_workflow and import_workflow write and import '
+            'decide which callable prompts are available. The skills write_workflow and import_workflow write and import '
             'workflows; lexicalize serves the prompt-lexicalization script with its inputs. lib, libs, skill, skills '
             'and scan serve the libs and skills; assign hands a skill to a fresh agent by run id, and complete closes '
             'it.',
-    tables=catalog.TABLES, node_read=catalog.node_read,
+    tables=catalog.TABLES, data=DATA, node_read=catalog.node_read,
     verbs=(
         Verb('lexicalize', lexicalize, 'Read the prompt-lexicalization script with a prompt as input, to tie its names '
                                        'to map addresses.',
@@ -512,7 +514,7 @@ MODULE = Module(
                     Noun('selected', 'Knowledge layers selected to go with this workflow, by name or id.', 'json',
                          required=False, schema={'type': 'array', 'items': {'type': 'string'}}),
                     PROVENANCE)),
-        Verb('add_logic', add_logic, 'Record a named Axiom subroutine on a workflow element or any other project '
+        Verb('add_prompt', add_prompt, 'Record a named Axiom subroutine on a workflow element or any other project '
                                      'element.',
              nouns=(ADDRESS, LAYER, Noun('name', 'The subroutine name.'), Noun('content', 'Verbatim Axiom.'), PROVENANCE)),
         Verb('history', history, 'Read every saved version of one named Axiom subroutine on an element.',
@@ -520,8 +522,8 @@ MODULE = Module(
         Verb('revise', revise, 'Bind a frozen call and its recorded progress to the operative successor revision.',
              nouns=(Noun('run', 'The active workflow run.'), Noun('change', 'Stable specification change id.'),
                     ADDRESS, Noun('name', 'The changed subroutine name.'),
-                    Noun('revision', 'The committed operative logic revision.'),
-                    Noun('layer', 'The stored logic layer.', required=False))),
+                    Noun('revision', 'The committed operative prompt revision.'),
+                    Noun('layer', 'The stored prompt layer.', required=False))),
         Verb('export', export, 'Export a workflow from its stored layer as a portable document, printed or written to '
                                'a file.',
              nouns=(ADDRESS, LAYER, Noun('file', 'The destination <workflow name>.metaform file.', required=False))),
@@ -550,9 +552,9 @@ MODULE = Module(
         Verb('fail', fail, "Fail a run: deliver an error to its caller, for the caller's authored Retry or Catch.",
              nouns=(Noun('name', 'The authored error name.'), TOKEN,
                     Noun('message', 'The error detail.', required=False)), listed=run_open),
-        Verb('pause', pause, 'Pause a run on the person when something its logic does not decide stops it, '
+        Verb('pause', pause, 'Pause a run on the person when something its prompt does not decide stops it, '
                              'saying what you found.',
-             nouns=(TOKEN, Noun('found', 'What stopped the run that neither its ticket nor its logic decides, in plain '
+             nouns=(TOKEN, Noun('found', 'What stopped the run that neither its ticket nor its prompt decides, in plain '
                                          'words: what you found and what you need from the person. A choice you can '
                                          'undo is yours to make and record; it is not a pause.',
                                 many=True, schema=TEXT)), listed=run_open),

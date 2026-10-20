@@ -2,7 +2,7 @@
 name: workflow-builder
 description: "prepare one request as a workflow and rules at its nodes"
 metadata:
-  ing.metaform.address: "logic.skill.workflow-builder"
+  ing.metaform.address: "prompt.skill.workflow-builder"
   ing.metaform.discover: "true"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

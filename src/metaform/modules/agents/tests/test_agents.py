@@ -46,38 +46,38 @@ def test_roles_lists_the_code_s_six_roles_each_with_the_prompts_it_is_sent(run, 
     found = read(run, 'roles', folder=project_folder)
     assert [one['role'] for one in found['roles']] == list(settings.AGENT_ROLES)
     worker = next(one for one in found['roles'] if one['role'] == 'worker')
-    assert worker['prompts'][:2] == ['dispatch:work', 'dispatch:work_record'] and worker['broken'] == []
+    assert worker['prompts'][:2] == ['prompt.dispatch:work', 'prompt.dispatch:work_record'] and worker['broken'] == []
     assert worker['held_back'] is False and worker['running'] == 0
     system = next(one for one in found['roles'] if one['role'] == 'system')
-    assert system['prompts'][0] == 'dispatch:system' and system['held_back'] is False
+    assert system['prompts'][0] == 'prompt.dispatch:system' and system['held_back'] is False
 
 
 def test_role_shows_each_prompt_with_its_text_and_the_version_the_store_sends(run, project_folder):
     from metaform import prompt_files
-    before = prompt_of(read(run, 'role', 'name=worker', folder=project_folder), 'dispatch:work')
+    before = prompt_of(read(run, 'role', 'name=worker', folder=project_folder), 'prompt.dispatch:work')
     assert before['resolves'] is True and before['revision'] is None and '<work_id />' in before['text']
     prompt_files.served(DISPATCH, 'work', work_id='T1', record='')
     found = read(run, 'role', 'name=worker', folder=project_folder)
-    work = prompt_of(found, 'dispatch:work')
+    work = prompt_of(found, 'prompt.dispatch:work')
     assert (work['revision'], work['origin']) == (1, 'shipped') and 'note' not in work
     assert found['held_back'] is False and found['asks_person'] is False and found['running'] == []
-    assert [one['name'] for one in found['prompts']][-3:] == ['dispatch:communication', 'dispatch:timer',
-                                                          'dispatch:workflow_answered']
+    assert [one['name'] for one in found['prompts']][-3:] == ['prompt.dispatch:communication', 'prompt.dispatch:timer',
+                                                          'prompt.dispatch:workflow_answered']
 
 
 def test_a_renamed_prompt_element_makes_show_report_the_broken_name(project_folder, renamed):
     from metaform.module import context
     found = agents().role(context('agents', project_folder, project='proj', nouns={'name': 'worker'}))
-    work = prompt_of(found, 'dispatch:work')
+    work = prompt_of(found, 'prompt.dispatch:work')
     assert work['resolves'] is False and work['problem'] == 'dispatch ships no prompt work.'
-    assert found['broken'] == ['dispatch:work'] and 'dispatch:work' in found['notice']
-    assert prompt_of(found, 'dispatch:work_record')['resolves'] is True  # the others still read
+    assert found['broken'] == ['prompt.dispatch:work'] and 'prompt.dispatch:work' in found['notice']
+    assert prompt_of(found, 'prompt.dispatch:work_record')['resolves'] is True  # the others still read
 
 
 def test_an_override_is_sent_in_place_of_the_shipped_text_and_drop_goes_back(run, project_folder):
     from metaform import prompt_files
     shipped = prompt_files.served(DISPATCH, 'work', work_id='T1', record='')
-    saved = read(run, 'override', 'name=dispatch:work', 'text=Work <work_id/> now.<record/>', '--confirm',
+    saved = read(run, 'override', 'name=prompt.dispatch:work', 'text=Work <work_id/> now.<record/>', '--confirm',
                  folder=project_folder)
     assert (saved['revision'], saved['origin']) == (2, 'edited')
     sent = prompt_files.collect()
@@ -85,9 +85,9 @@ def test_an_override_is_sent_in_place_of_the_shipped_text_and_drop_goes_back(run
         assert prompt_files.served(DISPATCH, 'work', work_id='T1', record='') == 'Work T1 now.'
     finally:
         prompt_files.release(sent)
-    assert [(one.name, one.number, one.origin) for one in sent] == [('dispatch:work', 2, 'edited')]
-    assert prompt_of(read(run, 'role', 'name=worker', folder=project_folder), 'dispatch:work')['origin'] == 'edited'
-    dropped = read(run, 'drop', 'name=dispatch:work', '--confirm', folder=project_folder)
+    assert [(one.name, one.number, one.origin) for one in sent] == [('prompt.dispatch:work', 2, 'edited')]
+    assert prompt_of(read(run, 'role', 'name=worker', folder=project_folder), 'prompt.dispatch:work')['origin'] == 'edited'
+    dropped = read(run, 'drop', 'name=prompt.dispatch:work', '--confirm', folder=project_folder)
     assert (dropped['revision'], dropped['origin'], dropped['dropped']) == (3, 'shipped', 2)
     assert prompt_files.served(DISPATCH, 'work', work_id='T1', record='') == shipped
 
@@ -95,14 +95,14 @@ def test_an_override_is_sent_in_place_of_the_shipped_text_and_drop_goes_back(run
 def test_override_takes_plain_text_and_refuses_an_agent_held_back(run, project_folder):
     """UX review round 2, prompt-authoring F3: the person writes the prompt as the agent reads it; a < or an & is the
     character itself, and a word written like a fill place that is none is sent as written, and said so."""
-    saved = run('agents', 'override', 'name=dispatch:work', 'text=Work <work_id> now & then.', '--confirm',
+    saved = run('agents', 'override', 'name=prompt.dispatch:work', 'text=Work <work_id> now & then.', '--confirm',
                 cwd=project_folder)
     assert '<work_id> is sent as written' in saved.stdout and 'leaves out the fill place(s) <work_id/>' in saved.stdout
     from metaform import prompt_files
     assert prompt_files.served(DISPATCH, 'work', work_id='T1', record='') == 'Work <work_id> now & then.'
-    unnamed = run('agents', 'override', 'name=dispatch:nothing', 'text=x', '--confirm', cwd=project_folder,
+    unnamed = run('agents', 'override', 'name=prompt.dispatch:nothing', 'text=x', '--confirm', cwd=project_folder,
                   ok=False)
-    assert 'No role is sent a prompt dispatch:nothing' in unnamed.stderr
+    assert 'No role is sent a prompt prompt.dispatch:nothing' in unnamed.stderr
 
 
 def test_an_edit_says_what_it_left_out(run, project_folder):
@@ -112,13 +112,13 @@ def test_an_edit_says_what_it_left_out(run, project_folder):
 
     def origin():
         try:
-            return prompts.prompt_version('dispatch:work').origin
+            return prompts.prompt_version('prompt.dispatch:work').origin
         except StoreError:  # never stored: only the shipped text was ever sent
             return 'shipped'
     assert origin() == 'shipped'
-    saved = run('agents', 'override', 'name=dispatch:work', 'text=Work <work_id/> now.', '--confirm',
+    saved = run('agents', 'override', 'name=prompt.dispatch:work', 'text=Work <work_id/> now.', '--confirm',
                 cwd=project_folder)
-    assert 'Notice: dispatch:work: The edit leaves out the fill place(s) <record/>' in saved.stdout, saved.stdout
+    assert 'Notice: prompt.dispatch:work: The edit leaves out the fill place(s) <record/>' in saved.stdout, saved.stdout
     assert origin() == 'edited'
     mine = run('prompt', 'save', 'prepared-review', 'My own prompt.', cwd=project_folder,
                env={'METAFORM_ROLE': 'worker'})  # a prompt an agent made for itself is its own to save
@@ -126,7 +126,7 @@ def test_an_edit_says_what_it_left_out(run, project_folder):
 
 
 def test_drop_refuses_a_prompt_with_no_edit(run, project_folder):
-    refused = run('agents', 'drop', 'name=dispatch:work', '--confirm', cwd=project_folder, ok=False)
+    refused = run('agents', 'drop', 'name=prompt.dispatch:work', '--confirm', cwd=project_folder, ok=False)
     assert refused.returncode != 0 and 'has no edit' in refused.stderr
 
 
@@ -134,17 +134,17 @@ def test_a_shipped_change_behind_an_override_is_shown_on_the_role(project_folder
     from metaform import prompt_files
     from metaform.data import prompts
     from metaform.module import context
-    prompts.shipped('dispatch:system', 'xml', str(prompt_files.shipped('dispatch', 'system')))
-    prompts.save_prompt('dispatch:system', 'The person\'s edit. <project/><mascot/>')
+    prompts.shipped('prompt.dispatch:system', 'xml', str(prompt_files.shipped('dispatch', 'system')))
+    prompts.save_prompt('prompt.dispatch:system', 'The person\'s edit. <project/><mascot/>')
     path = renamed / 'resources' / 'prompts.xml'
     written = path.read_text(encoding='utf-8')
     path.write_text(written.replace('<system>', '<system>Newly shipped. ', 1), encoding='utf-8')
     prompt_files.served(renamed, 'system', project='proj', mascot='')  # the module sends it, and the store notes it
     system = prompt_of(agents().role(context('agents', project_folder, project='proj', nouns={'name': 'system'})),
-                       'dispatch:system')
+                       'prompt.dispatch:system')
     assert system['origin'] == 'edited' and system['text'].startswith("The person's edit.")
     assert system['behind']['shipped'].startswith('Newly shipped.') and system['behind']['seen']
-    assert 'metaform agents drop name=dispatch:system' in system['note']
+    assert 'metaform agents drop name=prompt.dispatch:system' in system['note']
 
 
 def test_sent_reads_the_role_and_the_versions_each_turn_of_a_session_carried(run, project_folder):
@@ -154,17 +154,17 @@ def test_sent_reads_the_role_and_the_versions_each_turn_of_a_session_carried(run
     home.ensure_base('proj')
     turn = {'project': 'proj', 'work_id': 'w1', 'session_id': 's1', 'runner': 'r1', 'role': 'worker',
             'agent': 'claude', 'at': '2026-10-15T18:00:00Z',
-            'prompts': [{'name': 'dispatch:work', 'number': 1, 'origin': 'shipped', 'version_id': 'v1'},
-                        {'name': 'dispatch:work_record', 'number': 1, 'origin': 'shipped', 'version_id': 'v2'}]}
+            'prompts': [{'name': 'prompt.dispatch:work', 'number': 1, 'origin': 'shipped', 'version_id': 'v1'},
+                        {'name': 'prompt.dispatch:work_record', 'number': 1, 'origin': 'shipped', 'version_id': 'v2'}]}
     later = {**turn, 'at': '2026-10-15T18:05:00Z',
-             'prompts': [{'name': 'dispatch:work', 'number': 2, 'origin': 'edited', 'version_id': 'v3'}]}
+             'prompts': [{'name': 'prompt.dispatch:work', 'number': 2, 'origin': 'edited', 'version_id': 'v3'}]}
     told = context('dispatch', project_folder, project='proj')
     told.publish('prompt.sent', turn)
     told.publish('prompt.sent', later)
     found = read(run, 'sent', 'session=s1', folder=project_folder)
     assert (found['role'], found['agent'], found['work_id']) == ('worker', 'claude', 'w1')
-    assert found['prompts'] == [{'name': 'dispatch:work', 'versions': [1, 2]},
-                                {'name': 'dispatch:work_record', 'versions': [1]}]
+    assert found['prompts'] == [{'name': 'prompt.dispatch:work', 'versions': [1, 2]},
+                                {'name': 'prompt.dispatch:work_record', 'versions': [1]}]
     assert [one['at'] for one in found['turns']] == ['2026-10-15T18:00:00Z', '2026-10-15T18:05:00Z']
     assert read(run, 'sent', 'session=r1', folder=project_folder)['session_id'] == 's1'
     assert [layer.module for layer in Store('proj').layers(limit=0).results if layer.name == 'agents'] == ['agents']
@@ -173,9 +173,9 @@ def test_sent_reads_the_role_and_the_versions_each_turn_of_a_session_carried(run
 
 
 def test_the_canonical_intake_is_shown_as_shipped_and_never_overridden(run, project_folder):
-    intake = prompt_of(read(run, 'role', 'name=intake', folder=project_folder), 'intake:intake.axiom')
+    intake = prompt_of(read(run, 'role', 'name=intake', folder=project_folder), 'prompt.intake:intake.axiom')
     assert intake['resolves'] is True and intake['fixed'] is True and intake['revision'] is None
-    refused = run('agents', 'override', 'name=intake:intake.axiom', 'text=x', '--confirm', cwd=project_folder,
+    refused = run('agents', 'override', 'name=prompt.intake:intake.axiom', 'text=x', '--confirm', cwd=project_folder,
                   ok=False)
     assert refused.returncode != 0 and 'never kept in the prompt store or edited' in refused.stderr
 
@@ -183,16 +183,16 @@ def test_the_canonical_intake_is_shown_as_shipped_and_never_overridden(run, proj
 def test_an_override_says_truly_when_each_role_takes_it(run, project_folder):
     """UX review round 2, prompt-authoring F4: the system agent takes an edit of its prompt from its next turn, a
     conversation running now included; a prompt sent only as a conversation begins reaches the next conversation."""
-    system = read(run, 'override', 'name=dispatch:system', 'text=Plain orchestrator. <mascot/>', '--confirm',
+    system = read(run, 'override', 'name=prompt.dispatch:system', 'text=Plain orchestrator. <mascot/>', '--confirm',
                   folder=project_folder)
     assert system['sent'] == ('to the system role from its next turn; '
                               'the authored triage role from its next turn')
-    talk = read(run, 'override', 'name=dispatch:talk', 'text=Talk about <about/>. <read/> <eyes/>', '--confirm',
+    talk = read(run, 'override', 'name=prompt.dispatch:talk', 'text=Talk about <about/>. <read/> <eyes/>', '--confirm',
                 folder=project_folder)
     assert talk['sent'] == 'to the talk role from its next new conversation'
     role = read(run, 'role', 'name=system', folder=project_folder)
-    assert prompt_of(role, 'dispatch:system')['text'] == 'Plain orchestrator. <mascot />'  # as written, to edit
-    assert prompt_of(role, 'dispatch:system_changed')['resolves'] is True
+    assert prompt_of(role, 'prompt.dispatch:system')['text'] == 'Plain orchestrator. <mascot />'  # as written, to edit
+    assert prompt_of(role, 'prompt.dispatch:system_changed')['resolves'] is True
 
 
 def test_a_prompt_written_wrong_in_its_file_is_named_on_its_role_and_still_sent(project_folder, renamed):
@@ -205,7 +205,7 @@ def test_a_prompt_written_wrong_in_its_file_is_named_on_its_role_and_still_sent(
     path.write_text(path.read_text(encoding='utf-8').replace('<system>', '<system>Write <address> here. ', 1),
                     encoding='utf-8')
     system = prompt_of(agents().role(context('agents', project_folder, project='proj', nouns={'name': 'system'})),
-                       'dispatch:system')
+                       'prompt.dispatch:system')
     assert system['file_problem'].startswith(f'{path}: line ')
     assert 'in <system>: <address> starts a tag that is never closed' in system['file_problem']
     assert prompt_files.served(renamed, 'system', project='proj', mascot='') == before

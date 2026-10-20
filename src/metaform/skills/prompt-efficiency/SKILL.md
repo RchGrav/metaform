@@ -2,7 +2,7 @@
 name: prompt-efficiency
 description: "lint and tighten one prompt or script. Reports; rewrites only if asked."
 metadata:
-  ing.metaform.address: "logic.skill.prompt-efficiency"
+  ing.metaform.address: "prompt.skill.prompt-efficiency"
   ing.metaform.discover: "true"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

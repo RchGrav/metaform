@@ -1690,7 +1690,7 @@ def workflow_skill(ctx: Context, name: str, given: str) -> str:
     found = next((module for module in surface(ctx.folder) if module.id == 'workflow'), None)
     if found is None:
         from metaform import skills
-        return skills.served(f'logic.skill.{name}', given)
+        return skills.served(f'prompt.skill.{name}', given)
     verb = next(verb for verb in found.verbs if verb.name == 'serve')
     return str(verb.run(context('workflow', ctx.folder, project=ctx.project, nouns={'name': name, 'input': given})))
 

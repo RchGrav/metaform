@@ -1,8 +1,8 @@
 ---
 name: import-workflow
-description: "turn an existing prompt, SOP, checklist or agent playbook into workflow logic: delexicalize it, cut it into subroutines one per step, keep every word."
+description: "turn an existing prompt, SOP, checklist or agent playbook into workflow prompt: delexicalize it, cut it into subroutines one per step, keep every word."
 metadata:
-  ing.metaform.address: "logic.skill.import-workflow"
+  ing.metaform.address: "prompt.skill.import-workflow"
   ing.metaform.discover: "true"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

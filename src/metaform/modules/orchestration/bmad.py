@@ -133,10 +133,10 @@ def discover(ctx: Context) -> dict[str, Any]:
 def _definition(ctx: Context, record: dict[str, Any]) -> AgentRoleDefinition:
     project = _hash(f'{ctx.project}:{ctx.folder.resolve()}')[:16]
     source_id = _hash(record['source'])[:12]
-    reference = f'orchestration:bmad_{project}_{record["name"]}_{source_id}'
+    reference = f'prompt.orchestration:bmad_{project}_{record["name"]}_{source_id}'
     provenance = '\n'.join(f'{key}: {record[key]}' for key in (
         'source', 'source_directory', 'project_root', 'installed_version', 'source_fingerprint'))
-    prompts.shipped('orchestration:bmad_bridge', 'text', BRIDGE)
+    prompts.shipped('prompt.orchestration:bmad_bridge', 'text', BRIDGE)
     selected = prompts.shipped(reference, 'text', provenance + '\n\n' + record['text'])
     record.update(prompt=reference, selected_version_id=selected.version_id,
                   actual_version_id=selected.version_id, selected_origin=selected.origin,
@@ -144,7 +144,7 @@ def _definition(ctx: Context, record: dict[str, Any]) -> AgentRoleDefinition:
                   call={'verb': 'orchestration call', 'role': record['name'],
                         'task': 'The requested contribution, including its installed menu selection.'})
     return AgentRoleDefinition(record['name'], str(record['purpose']),
-                               ('orchestration:common', 'orchestration:bmad_bridge', reference))
+                               ('prompt.orchestration:common', 'prompt.orchestration:bmad_bridge', reference))
 
 
 def definitions(ctx: Context) -> tuple[AgentRoleDefinition, ...]:

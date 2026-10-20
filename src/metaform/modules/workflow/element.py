@@ -1,4 +1,4 @@
-"""The read-only, address-based element values available to Axiom logic, MAP-057."""
+"""The read-only, address-based element values available to Axiom prompt, MAP-057."""
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -88,7 +88,7 @@ class Value:
 
 
 class ElementValue(Value):
-    """The element carrying the current logic, or passed explicitly to another subroutine."""
+    """The element carrying the current prompt, or passed explicitly to another subroutine."""
     __slots__ = ()
 
 

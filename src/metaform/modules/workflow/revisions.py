@@ -21,7 +21,7 @@ def revise(ctx: Context) -> dict[str, Any]:
 
     Active children now return to the successor and the original caller waits for
     that successor. Completed progress, local variables and genuine user pauses
-    are carried unchanged; only the named frozen logic receives its new content.
+    are carried unchanged; only the named frozen prompt receives its new content.
     """
     from .catalog import at_revision
     store = ctx.require_store()
@@ -38,7 +38,7 @@ def revise(ctx: Context) -> dict[str, Any]:
         if existing:
             return {'run': existing['successor_run'], 'previous_run': run_id, 'change_id': change_id,
                     'revision': existing['revision']}
-        logic = at_revision(owned, address, name, str(ctx.nouns['revision']), ctx.nouns.get('layer'))
+        prompt = at_revision(owned, address, name, str(ctx.nouns['revision']), ctx.nouns.get('layer'))
         previous = tx.get('runs', {'run_id': run_id})
         seen: set[str] = set()
         while previous is not None and previous['state'] == 'cancelled' and previous.get('result'):
@@ -63,9 +63,9 @@ def revise(ctx: Context) -> dict[str, Any]:
         changed = False
         for frame in frames:
             frozen = frame['call']
-            if frozen['address'] == address and frozen['logic']['logic_id'] == logic.logic_id:
-                changed = changed or frozen['logic']['content'] != logic.content
-                frozen['logic'] = logic.to_dict()
+            if frozen['address'] == address and frozen['prompt']['prompt_id'] == prompt.prompt_id:
+                changed = changed or frozen['prompt']['content'] != prompt.content
+                frozen['prompt'] = prompt.to_dict()
                 matched = True
         if not matched:
             raise Stop(f'Run {run_id} is not executing {address}.{name}.', f'metaform workflow resume run={run_id}')

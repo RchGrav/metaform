@@ -481,6 +481,6 @@ MODULE = Module(
     work_read=work_read,
     provides=(Provides('agent.roles', (
         AgentRoleDefinition('hello.greeter', 'Welcome an assigned visitor and return the greeting.',
-                            ('hello:role_greeter',)),
+                            ('prompt.hello:role_greeter',)),
     )),),
 )

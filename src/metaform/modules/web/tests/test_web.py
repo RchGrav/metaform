@@ -5319,7 +5319,7 @@ def test_the_task_editor_has_a_chart_of_its_own_to_browse_and_is_sized_or_made_f
 VALIDATE = ('Orient yourself only enough to validate the coherence of this element, approve addition or if element '
             'needs additional coherence submit questions w/ recommendations.')
 
-WORKFLOW_ADDRESS = 'workflow.quality.code'
+WORKFLOW_ADDRESS = 'prompt.workflow.quality.code'
 WORKFLOW_SCRIPT = '''@STATE_INIT:
  {target} := PARAM
 @CONSTRAINT:
@@ -5347,7 +5347,7 @@ def test_a_stored_workflow_runs_from_the_task_editor_through_acp(run, web, mappe
     run('enable', 'workflow')
     run('enable', 'dispatch')
     run('workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality', cwd=mapped)
-    run('workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
+    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
     run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
     log = tmp_path / 'fake.jsonl'
     run('web', '--json', env={'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'workflow'})
@@ -5388,7 +5388,7 @@ def test_a_workflow_ticket_keeps_its_call_when_queued_or_acp_cannot_start(run, w
     run('enable', 'workflow')
     run('enable', 'dispatch')
     run('workflow', 'submit', ADDRESS, 'procedures', cwd=mapped)
-    run('workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
+    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
     run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
     run('set', '--dispatch-codex', f'"{sys.executable}" "{FAKE_AGENT}"', cwd=mapped)  # found when the page reads the agents
     started(run)
@@ -5426,14 +5426,14 @@ def test_workflow_picker_follows_the_enabled_module_and_launches_no_nonce_on_a_r
 
     run('enable', 'workflow')
     run('workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality', cwd=mapped)
-    run('workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
+    run('workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT, cwd=mapped)
     started(run)
     status, listed = api(web, '/api/workflows?project=proj')
     assert status == 200 and listed == {'enabled': True, 'workflows': []}
     run('set', '--layers', ','.join([*TOGGLED, 'procedures']), cwd=mapped)
     status, listed = api(web, '/api/workflows?project=proj')
     assert status == 200 and listed['enabled'] is True
-    assert any(item['address'] == ADDRESS and item['logic'] == ['review'] for item in listed['workflows'])
+    assert any(item['address'] == ADDRESS and item['prompt'] == ['review'] for item in listed['workflows'])
     with Store('proj', module='workflow').tables(write=False) as tx:  # a read of the picker starts no workflow run
         assert list(tx.rows('runs', limit=0).results) == []
     run('disable', 'workflow')

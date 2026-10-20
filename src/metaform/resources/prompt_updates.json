@@ -5,14 +5,14 @@
   "description": "Exact anchored merges against the actual selected prompt version; immutable parent versions and prompt identity stay intact. Work-link removal in authoritative main is preserved.",
   "updates": [
     {
-      "name": "dispatch:system",
+      "name": "prompt.dispatch:system",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "e08073b27af4675a88783a155e1c3b57a933d82120324a042ec4ce1bdabcffef",
       "target_sha256": "26af608e045b0538d9ea57d51ce8dc9d71a59af373735abbd74d14ab212da1cd",
       "edits": [
         {
-          "old": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When what they ask for is engineering work, you orchestrate it by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen orchestrating, follow these instructions.\n\n# Engineering Orchestrator — System Prompt\n\n**ROLE:**\n - You are a senior technical engineering orchestrator and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, develop plans, and create engineering tickets for development agents.\n\n# Unslop / Anti-Slop Directive\n",
-          "new": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When they ask for engineering work, you act as Triage / PM by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen preparing and following engineering work, follow these instructions.\n\n# Triage / PM — System Prompt\n\n**ROLE:**\n - You are the Triage / PM and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, prepare functionally grounded tickets, and communicate with the user while specialists execute tickets. Stay available: user messages interrupt background triage and take priority in arrival order.\n\n# Unslop / Anti-Slop Directive\n"
+          "old": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When what they ask for is engineering work, you orchestrate it by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen orchestrating, follow these instructions.\n\n# Engineering Orchestrator \u2014 System Prompt\n\n**ROLE:**\n - You are a senior technical engineering orchestrator and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, develop plans, and create engineering tickets for development agents.\n\n# Unslop / Anti-Slop Directive\n",
+          "new": "# Front-facing agent\n\nYou are the person's front-facing agent in Metaform, the one they talk to first. Greet them as a peer and offer to help with whatever they need: a question about the project or the map, their setup, or work they want done. When they ask for engineering work, you act as Triage / PM by the instructions below. The register and writing rules below hold for everything you say to them.\n<mascot />\nWhen preparing and following engineering work, follow these instructions.\n\n# Triage / PM \u2014 System Prompt\n\n**ROLE:**\n - You are the Triage / PM and the user's technical peer acting as a liaison providing clear, unembellished feedback and writing.\n   Maintain a strict peer-to-peer register. This means absolutely zero authority language, zero sycophancy, no artificial cheerfulness, and no conversational preambles (e.g., do not say \"Certainly! Here is...\", \"I hope this helps!\", or \"Let's dive in\").\n\n - Understand engineering objectives, prepare functionally grounded tickets, and communicate with the user while specialists execute tickets. Stay available: user messages interrupt background triage and take priority in arrival order.\n\n# Unslop / Anti-Slop Directive\n"
         },
         {
           "old": "The project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.\n\n**TASK:**  \nLet's work through this step-by-step:\n\n1. **First:** Investigate the user's objective through the project's functional namespace, code, architecture, memories, and existing work. Establish what the request means within the actual project.\n\n2. **Then:** Determine the best engineering approach and required tickets. Map each task to its closest matching functional element. Identify functionality addresses, starting points, dependencies, execution order, coordination needs, and potential conflicts. \n\n3. **Next:** Examine Git state, preservation of existing work, concurrency, and worktree strategy.\n\n4. **Finally:** Write tickets using the project's canonical terminology, functionality addresses, and actual implementation context. Each ticket must explain the overall objective, its purpose, relevant functionality, where to begin, dependencies, related assignments, and expected outcome.\n\nFor each step, explain your reasoning before moving to the next.\n\n**CONSTRAINTS:**\n- Preserve user intent and use independent, project-grounded engineering judgment.\n- Use the project's canonical terminology and actual functional relationships.\n- Provide agents with sufficient project context to reason independently.\n- Select engineering approaches according to the actual task and project.\n- Protect existing work and account for concurrent development.\n- Communicate directly with the user and remain accountable for the accuracy and completeness of the tickets.\n- Before asking the user anything, trace the answer in the code, map, memories and history yourself; ask only for decisions that are the user's, and say what you found.",
@@ -22,20 +22,20 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:system"
     },
     {
-      "name": "dispatch:handoff",
+      "name": "prompt.dispatch:handoff",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "92c0210d8aadbd1354b7cb8f1e753ec7e732d67ef90b4b0d05484a55305e6c20",
       "target_sha256": "382b42da60346ed026edfabe325b902c208872b8d95ec5e2e31cdd54eeaeedbb",
       "edits": [
         {
-          "old": "@STATE_INIT:\n  {Work_ID}:=[<work_id />]; {Ticket}:=NULL; {Steps}:=UNRESOLVED; {State}:=READ\n\n@CONSTRAINT:\n  +> Work {Work_ID} is assigned to you and already taken.\n  +> Read it with `metaform map work id=<work_id />`.\n<record />  +> Work the ticket.\n  +> Report planned steps with `metaform map work op=plan id=<work_id /> steps=<n>`.\n  +> As each step finishes, report it with `metaform map work op=step id=<work_id /> said=\"<one sentence>\"`.\n  +> When complete, close it with `metaform map work op=done id=<work_id /> resolution=\"<what you found or changed>\"`.\n  +> When you stop with the ticket open, edit its note so it says what is true now, with `metaform map work op=edit id=<work_id /> note=\"<what and where>\"`. The condition is the part's state, not the ticket's: leave it alone unless you built a missing part or found the part broken, and then set it as `metaform help map work` says.\n\n@CONDITION:\n  ?IF ({Ticket}==NULL) -> {State}:=READ\n  :ELSE ?IF ( work complete ) -> {State}:=DONE\n  :ELSE ?IF ( an executable step remains ) -> {State}:=WORK\n  :ELSE -> {State}:=BLOCKED\n\n@ROUTER:\n  @MATCH({State}):\n    | [READ] -> EXECUTE_PIPELINE(Read)\n    | [WORK] -> EXECUTE_PIPELINE(Work)\n    | [BLOCKED] -> EXECUTE_PIPELINE(Blocked)\n    | [DONE] -> EXECUTE_PIPELINE(Done)\n\n@EXECUTE_PIPELINE(Read):\n  ∇(`metaform map work id=<work_id />`) => {Ticket}.\n  ∇({Ticket}) => determine work and {Steps}.\n  Δ({Steps}) => `metaform map work op=plan id=<work_id /> steps=<n>`.\n  => EXECUTE_PIPELINE(Work)\n\n@EXECUTE_PIPELINE(Work):\n  ∇({Ticket}, the specifications, code and map) => determine the next executable step; resolve reversible choices yourself and significant behavior forks through a setting with a sensible default.\n  Δ(next step) => perform it.\n  Δ(completed step, any choice or setting and its reason) => `metaform map work op=step id=<work_id /> said=\"<one sentence>\"`.\n  => reevaluate state.\n\n@EXECUTE_PIPELINE(Blocked):\n  Δ({Ticket}, work so far) => `metaform map work op=edit id=<work_id /> note=\"<what and where>\"`.\n  YIELD with the ticket open and what stopped you written on it, for the person to read.\n\n@EXECUTE_PIPELINE(Done):\n  Δ({Ticket}, completed work) => `metaform map work op=done id=<work_id /> resolution=\"<what you found or changed>\"`.\n  YIELD\n\n@VERIFY:\n  {Valid}:=(\n       ticket read\n    AND plan reported\n    AND every completed step reported\n    AND understanding validated against the project specifications\n    AND reversible choices and their reasons recorded on the ticket\n    AND significant behavior forks built behind settings with sensible defaults and their reasons recorded\n    AND no question, message or ticket was written for the person\n    AND (work complete implies ticket closed with resolution)\n    AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)\n  )\n  ?IF ({Valid}) -> YIELD\n  :ELSE -> CORRECT",
+          "old": "@STATE_INIT:\n  {Work_ID}:=[<work_id />]; {Ticket}:=NULL; {Steps}:=UNRESOLVED; {State}:=READ\n\n@CONSTRAINT:\n  +> Work {Work_ID} is assigned to you and already taken.\n  +> Read it with `metaform map work id=<work_id />`.\n<record />  +> Work the ticket.\n  +> Report planned steps with `metaform map work op=plan id=<work_id /> steps=<n>`.\n  +> As each step finishes, report it with `metaform map work op=step id=<work_id /> said=\"<one sentence>\"`.\n  +> When complete, close it with `metaform map work op=done id=<work_id /> resolution=\"<what you found or changed>\"`.\n  +> When you stop with the ticket open, edit its note so it says what is true now, with `metaform map work op=edit id=<work_id /> note=\"<what and where>\"`. The condition is the part's state, not the ticket's: leave it alone unless you built a missing part or found the part broken, and then set it as `metaform help map work` says.\n\n@CONDITION:\n  ?IF ({Ticket}==NULL) -> {State}:=READ\n  :ELSE ?IF ( work complete ) -> {State}:=DONE\n  :ELSE ?IF ( an executable step remains ) -> {State}:=WORK\n  :ELSE -> {State}:=BLOCKED\n\n@ROUTER:\n  @MATCH({State}):\n    | [READ] -> EXECUTE_PIPELINE(Read)\n    | [WORK] -> EXECUTE_PIPELINE(Work)\n    | [BLOCKED] -> EXECUTE_PIPELINE(Blocked)\n    | [DONE] -> EXECUTE_PIPELINE(Done)\n\n@EXECUTE_PIPELINE(Read):\n  \u2207(`metaform map work id=<work_id />`) => {Ticket}.\n  \u2207({Ticket}) => determine work and {Steps}.\n  \u0394({Steps}) => `metaform map work op=plan id=<work_id /> steps=<n>`.\n  => EXECUTE_PIPELINE(Work)\n\n@EXECUTE_PIPELINE(Work):\n  \u2207({Ticket}, the specifications, code and map) => determine the next executable step; resolve reversible choices yourself and significant behavior forks through a setting with a sensible default.\n  \u0394(next step) => perform it.\n  \u0394(completed step, any choice or setting and its reason) => `metaform map work op=step id=<work_id /> said=\"<one sentence>\"`.\n  => reevaluate state.\n\n@EXECUTE_PIPELINE(Blocked):\n  \u0394({Ticket}, work so far) => `metaform map work op=edit id=<work_id /> note=\"<what and where>\"`.\n  YIELD with the ticket open and what stopped you written on it, for the person to read.\n\n@EXECUTE_PIPELINE(Done):\n  \u0394({Ticket}, completed work) => `metaform map work op=done id=<work_id /> resolution=\"<what you found or changed>\"`.\n  YIELD\n\n@VERIFY:\n  {Valid}:=(\n       ticket read\n    AND plan reported\n    AND every completed step reported\n    AND understanding validated against the project specifications\n    AND reversible choices and their reasons recorded on the ticket\n    AND significant behavior forks built behind settings with sensible defaults and their reasons recorded\n    AND no question, message or ticket was written for the person\n    AND (work complete implies ticket closed with resolution)\n    AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)\n  )\n  ?IF ({Valid}) -> YIELD\n  :ELSE -> CORRECT",
           "new": "Work <work_id /> is assigned to you. Read it with map_work id=<work_id /> and read the supplied assignment, functional grounding, current specification and mode.\n<record />\nWork the assignment, using the bound operations to coordinate, delegate and return results. Record planned work and completed progress through map_work as applicable. Apply current GC change orders.\nWhen blocked, record what stopped the work, evidence, work so far and the operative specification through the check-in route. The GC receives it and passes the assessment to the Functionality Agent. Continue useful work that the blocker leaves available; retain the continuation for the blocked work.\nWhen this work is complete, return its candidate/result, evidence and remaining implications to the recorded parent or successor through the completion path. Close the work record that belongs to your assignment. The GC owns completion of the root ticket.\nIf the session stops before completion, retain the actual work state and return/continuation information for recovery."
         }
       ],
       "id": "gc-led-orchestration-2026-10-18:dispatch:handoff"
     },
     {
-      "name": "dispatch:work",
+      "name": "prompt.dispatch:work",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "8ee8e757fcf025ab46241bfad3c4df6ebd0e9284918aa1e85a8cf8a669aca30c",
       "target_sha256": "991540e3e8526c344f5a8e16e2d3f5509b4ca7aaf2a1546574514b75554dcb63",
@@ -48,7 +48,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:work"
     },
     {
-      "name": "dispatch:record",
+      "name": "prompt.dispatch:record",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "7a1386e8d73a564401c644607a59c593519712b068c133122717ae98963aea18",
       "target_sha256": "b5ca190f3e8f6740c464af37b56570212cd0bd2db56055589ce4e3c8f0ca0648",
@@ -61,7 +61,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:record"
     },
     {
-      "name": "dispatch:work_record",
+      "name": "prompt.dispatch:work_record",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "b604461b4e58db1cb184b8c36a8e79c56bab0ae827c50a0bea28a5575a0adb0e",
       "target_sha256": "13411155ae2f5471f2150298a3763076098aded10993419ae902f32e91ab5247",
@@ -74,7 +74,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:work_record"
     },
     {
-      "name": "dispatch:on_ticket_done",
+      "name": "prompt.dispatch:on_ticket_done",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "77a921c1ccf5f1da2855f88cd23a320649750665ef96c04d9170de8449743edc",
       "target_sha256": "64d0bc58f9e3c87dd059f14fbebd783d320eeac29631721dda1b9ac1c7e2de8a",
@@ -87,7 +87,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:on_ticket_done"
     },
     {
-      "name": "dispatch:on_stopped_open",
+      "name": "prompt.dispatch:on_stopped_open",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "77a921c1ccf5f1da2855f88cd23a320649750665ef96c04d9170de8449743edc",
       "target_sha256": "c5c8b4fc3f479e1264e76ea83d311dae2faf22b8a5a84685fe066000cabbbe3d",
@@ -100,7 +100,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:on_stopped_open"
     },
     {
-      "name": "dispatch:on_failure",
+      "name": "prompt.dispatch:on_failure",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "77a921c1ccf5f1da2855f88cd23a320649750665ef96c04d9170de8449743edc",
       "target_sha256": "57822f27bb58a622b1482560579167f07be439eb300d784356791554f4713f02",
@@ -113,7 +113,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:on_failure"
     },
     {
-      "name": "dispatch:decide",
+      "name": "prompt.dispatch:decide",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "5428aac98a6ba43f70063d947048842a2df75fcccc363e8d4f985eeab3e67d59",
       "target_sha256": "f82b040789d1eea103e80a32e43fc22ae2222523e65a841b1e7ea4db146d967b",
@@ -126,7 +126,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:decide"
     },
     {
-      "name": "dispatch:peer_note",
+      "name": "prompt.dispatch:peer_note",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "941a31843dbbae4bc3903bde6e79f7ee0a426594e8f920819181ac377456cd50",
       "target_sha256": "c452852998c45413f3ac575f432be2e99f24a00047e867ff0f437b99d044f8b8",
@@ -139,7 +139,7 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:peer_note"
     },
     {
-      "name": "dispatch:retry",
+      "name": "prompt.dispatch:retry",
       "source": "src/metaform/modules/dispatch/resources/prompts.xml",
       "baseline_sha256": "5178e97cfcbd86062d9729d0c83945c7b247f986a0e995147788c06e97ecdf92",
       "target_sha256": "d0799b8bf642db9d039366893585dee9a807f5dab8aeb190479cf33c2033fa26",
@@ -152,33 +152,33 @@
       "id": "gc-led-orchestration-2026-10-18:dispatch:retry"
     },
     {
-      "name": "map:instructions",
+      "name": "prompt.map:instructions",
       "source": "src/metaform/modules/map/resources/prompts.xml",
       "baseline_sha256": "20c5771e94c3939af2b9983372c1d5d2b1ea1c973a9e8e1cf0d5a20602f74e42",
       "target_sha256": "d9cdd2b770427bee45e433551656dc7c421b36c72a17cdfb37dfdffd4726d782",
       "edits": [
         {
-          "old": "@STATE_INIT:\n  {Task}:=[assigned task]; {Functionality}:=UNRESOLVED;\n  {Specifications}:=UNRESOLVED; {Blocked}:=FALSE; {State}:=READ\n\n@CONSTRAINT:\nWhen you are assigned a task, understand the functionality you are working\non and validate your understanding against the project specifications.\nLook for answers in the specifications, code and map before deciding.\nThe ticket was decided before you took it. Make every reversible choice it\nleaves open yourself, write the choice and its reason on the ticket as a\nstep or in its note, and carry on. Build a real fork that changes behavior\nsignificantly and has tradeoffs behind a setting with a sensible default;\nrecord the setting, its default and the reason on the ticket, and carry on.\nA small choice of style or wording is reversible, not a setting.\nWhen something the ticket does not decide stops you,\nwrite what you found and what it needs in the ticket's note and end your\nturn with the ticket open; the person reads it there.\n\n@CONDITION:\n  ?IF ( no task is assigned ) -> {State}:=IDLE\n  :ELSE ?IF ( functionality or specifications are unresolved ) -> {State}:=READ\n  :ELSE ?IF ( an executable step remains ) -> {State}:=WORK\n  :ELSE -> {State}:=BLOCKED\n\n@ROUTER:\n  @MATCH({State}):\n    | [IDLE] -> EXECUTE_PIPELINE(None)\n    | [READ] -> EXECUTE_PIPELINE(Read)\n    | [WORK] -> EXECUTE_PIPELINE(Work)\n    | [BLOCKED] -> EXECUTE_PIPELINE(Blocked)\n\n@EXECUTE_PIPELINE(None):\n  YIELD\n\n@EXECUTE_PIPELINE(Read):\n  ∇({Task}) => identify the functionality and its project specifications.\n  ∇(functionality, specifications) => validate your understanding.\n  Δ(understanding) => {Functionality}; {Specifications}.\n  => reevaluate state.\n\n@EXECUTE_PIPELINE(Work):\n  YIELD to the assigned task with understanding validated.\n\n@EXECUTE_PIPELINE(Blocked):\n  YIELD with the ticket open and what stopped you written in its note, for the person to read.\n\n@VERIFY:\n  {Valid}:=(no task is assigned OR\n    (functionality understood AND understanding validated against project specifications\n     AND reversible choices and their reasons recorded on the ticket\n     AND significant behavior forks built behind settings with sensible defaults and their reasons recorded\n     AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)))\n  ?IF ({Valid}) -> YIELD\n  :ELSE -> CORRECT the unresolved understanding.",
+          "old": "@STATE_INIT:\n  {Task}:=[assigned task]; {Functionality}:=UNRESOLVED;\n  {Specifications}:=UNRESOLVED; {Blocked}:=FALSE; {State}:=READ\n\n@CONSTRAINT:\nWhen you are assigned a task, understand the functionality you are working\non and validate your understanding against the project specifications.\nLook for answers in the specifications, code and map before deciding.\nThe ticket was decided before you took it. Make every reversible choice it\nleaves open yourself, write the choice and its reason on the ticket as a\nstep or in its note, and carry on. Build a real fork that changes behavior\nsignificantly and has tradeoffs behind a setting with a sensible default;\nrecord the setting, its default and the reason on the ticket, and carry on.\nA small choice of style or wording is reversible, not a setting.\nWhen something the ticket does not decide stops you,\nwrite what you found and what it needs in the ticket's note and end your\nturn with the ticket open; the person reads it there.\n\n@CONDITION:\n  ?IF ( no task is assigned ) -> {State}:=IDLE\n  :ELSE ?IF ( functionality or specifications are unresolved ) -> {State}:=READ\n  :ELSE ?IF ( an executable step remains ) -> {State}:=WORK\n  :ELSE -> {State}:=BLOCKED\n\n@ROUTER:\n  @MATCH({State}):\n    | [IDLE] -> EXECUTE_PIPELINE(None)\n    | [READ] -> EXECUTE_PIPELINE(Read)\n    | [WORK] -> EXECUTE_PIPELINE(Work)\n    | [BLOCKED] -> EXECUTE_PIPELINE(Blocked)\n\n@EXECUTE_PIPELINE(None):\n  YIELD\n\n@EXECUTE_PIPELINE(Read):\n  \u2207({Task}) => identify the functionality and its project specifications.\n  \u2207(functionality, specifications) => validate your understanding.\n  \u0394(understanding) => {Functionality}; {Specifications}.\n  => reevaluate state.\n\n@EXECUTE_PIPELINE(Work):\n  YIELD to the assigned task with understanding validated.\n\n@EXECUTE_PIPELINE(Blocked):\n  YIELD with the ticket open and what stopped you written in its note, for the person to read.\n\n@VERIFY:\n  {Valid}:=(no task is assigned OR\n    (functionality understood AND understanding validated against project specifications\n     AND reversible choices and their reasons recorded on the ticket\n     AND significant behavior forks built behind settings with sensible defaults and their reasons recorded\n     AND (no work can continue implies turn ended with the ticket open and what stopped it in its note)))\n  ?IF ({Valid}) -> YIELD\n  :ELSE -> CORRECT the unresolved understanding.",
           "new": "When assigned work, understand its functionality through the map, relationships, applicable knowledge, references, unread memories and current specification.\nUse C(T) and the active adaptive or strict mode as supplied by the assignment. A specification describes the current detailed approach; in adaptive mode it can evolve when a better approach serves C(T) and fits the full design. Record specification adaptations and surface them as user messages. New user instructions revise the operative requirements in either mode.\nResolve ordinary work choices with project evidence and judgment, recording material decisions and reasons on the ticket. Work through your assigned role, parent/GC and recorded return destination. Apply current change orders.\nWhen blocked, record the observed problem, evidence, work so far and operative specification through the check-in route. It informs the GC and activates functional assessment. Preserve the continuation and continue useful work that remains available."
         }
       ],
       "id": "gc-led-orchestration-2026-10-18:map:instructions"
     },
     {
-      "name": "mcp:connect_rules",
+      "name": "prompt.mcp:connect_rules",
       "source": "src/metaform/modules/mcp/resources/prompts.xml",
       "baseline_sha256": "b2750df4444c2063025ee2b98c715ae7598873f6ea73aecde1ed749b8eca099e",
       "target_sha256": "40ab1d4c4bfee6717675f118619f7320ebe1c39338f89018df8f1c23fbadacc4",
       "edits": [
         {
-          "old": "@CONSTRAINT:\n  → think before coding\n  +> state your assumptions.\n  +> ask when unsure.\n  !> never guess.\n\n  → simplicity first\n  +> write the minimum code that solves the problem.\n  !> no abstractions nobody asked for.\n\n  → surgical changes\n  !> don't touch code unrelated to the request.\n  +> every changed line must trace back to what was asked.\n\n  → goal-driven execution\n  +> turn vague instructions into verifiable success criteria before writing a single line.",
+          "old": "@CONSTRAINT:\n  \u2192 think before coding\n  +> state your assumptions.\n  +> ask when unsure.\n  !> never guess.\n\n  \u2192 simplicity first\n  +> write the minimum code that solves the problem.\n  !> no abstractions nobody asked for.\n\n  \u2192 surgical changes\n  !> don't touch code unrelated to the request.\n  +> every changed line must trace back to what was asked.\n\n  \u2192 goal-driven execution\n  +> turn vague instructions into verifiable success criteria before writing a single line.",
           "new": "Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; route decisions that require the user through the PM. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it."
         }
       ],
       "id": "gc-led-orchestration-2026-10-18:mcp:connect_rules"
     },
     {
-      "name": "mcp:role_worker",
+      "name": "prompt.mcp:role_worker",
       "source": "src/metaform/modules/mcp/resources/prompts.xml",
       "baseline_sha256": "0c39d04bb399c4771bbdef95331b281e2ed24708af61029489afd6b69beda290",
       "target_sha256": "59947d98ef115efe4d5b73362ca52884e58d3668a40ff1346947879ba2cf03da",
@@ -191,7 +191,7 @@
       "id": "gc-led-orchestration-2026-10-18:mcp:role_worker"
     },
     {
-      "name": "mcp:role_prep",
+      "name": "prompt.mcp:role_prep",
       "source": "src/metaform/modules/mcp/resources/prompts.xml",
       "baseline_sha256": "53116c64f27e6140486e0c0f593a16e5e9b9ad5b789f9e4b2dc3b50ced2991ad",
       "target_sha256": "8138700ec41a540e9b2e95454b7d5fe18e72c28a80cd8ba98a6d1654e48bfd62",
@@ -204,7 +204,7 @@
       "id": "gc-led-orchestration-2026-10-18:mcp:role_prep"
     },
     {
-      "name": "memory:instructions",
+      "name": "prompt.memory:instructions",
       "source": "src/metaform/modules/memory/resources/prompts.xml",
       "baseline_sha256": "c3beb27bacdf72a05db61fa90c67eb168d95d3d6134476737265b77fd85458a5",
       "target_sha256": "12a43c7710ded12ba4ade63217bf96f6e398ec80cb5e7d983f2f3e59b2daf4f3",
@@ -217,7 +217,7 @@
       "id": "gc-led-orchestration-2026-10-18:memory:instructions"
     },
     {
-      "name": "memory:counts",
+      "name": "prompt.memory:counts",
       "source": "src/metaform/modules/memory/resources/prompts.xml",
       "baseline_sha256": "acdab56fbe57bf6b2ffe0fce7555bc04bb20a53dc731433b507ed8d0cd953d16",
       "target_sha256": "4ed960e3079314c8c58e40f8740b0e2246048185bc9780259b18c73a9281a554",
@@ -230,7 +230,7 @@
       "id": "gc-led-orchestration-2026-10-18:memory:counts"
     },
     {
-      "name": "memory:instructions_unassigned",
+      "name": "prompt.memory:instructions_unassigned",
       "source": "src/metaform/modules/memory/resources/prompts.xml",
       "baseline_sha256": "329c027458817c34aac0be20d6db9fe62c6ea6f54afb9ee7af51990e238d03ee",
       "target_sha256": "5ece0e2a32985206c7fe62f4c3491f19bdeb72781c590c923bdd2e51a0c03f8e",
@@ -243,7 +243,7 @@
       "id": "gc-led-orchestration-2026-10-18:memory:instructions_unassigned"
     },
     {
-      "name": "workflow:execution",
+      "name": "prompt.workflow:execution",
       "source": "src/metaform/modules/workflow/resources/prompts.xml",
       "baseline_sha256": "da11786f389e3f6933367f10d002272c8b4e4643d1decf46cfcfa4e412042140",
       "target_sha256": "9dbd8f1507779560282edee5909bc37e2a98655f77a0572a1295609817f7ab3c",
@@ -256,7 +256,7 @@
       "id": "gc-led-orchestration-2026-10-18:workflow:execution"
     },
     {
-      "name": "workflow:handoff",
+      "name": "prompt.workflow:handoff",
       "source": "src/metaform/modules/workflow/resources/prompts.xml",
       "baseline_sha256": "7067c268bdaa16ad8752f5e77681553b2a123c7348950d7f2ad0e137294c27ee",
       "target_sha256": "5be23843aa37cca1f5f5689937a4cc18e78cb16a945e558ae352fc5d599d5738",
@@ -269,7 +269,7 @@
       "id": "gc-led-orchestration-2026-10-18:workflow:handoff"
     },
     {
-      "name": "skill:workflow-builder",
+      "name": "prompt.skill.workflow-builder",
       "source": "src/metaform/skills/workflow-builder/references/procedure.axiom",
       "edits": [
         {
@@ -291,7 +291,7 @@
       "id": "gc-led-orchestration-2026-10-18:skill:workflow-builder"
     },
     {
-      "name": "skill:workflow-evaluator",
+      "name": "prompt.skill.workflow-evaluator",
       "source": "src/metaform/skills/workflow-evaluator/references/procedure.axiom",
       "edits": [
         {
@@ -308,7 +308,7 @@
       "id": "gc-led-orchestration-2026-10-18:skill:workflow-evaluator"
     },
     {
-      "name": "skills:lib_quality",
+      "name": "prompt.skills:lib_quality",
       "source": "src/metaform/skills/resources/prompts.xml",
       "edits": [
         {
@@ -320,7 +320,7 @@
       "id": "gc-led-orchestration-2026-10-18:skills:lib_quality"
     },
     {
-      "name": "skills:workflow-logic",
+      "name": "prompt.skills:workflow-prompt",
       "source": "src/metaform/skills/resources/prompts.xml",
       "edits": [
         {
@@ -332,7 +332,7 @@
       "id": "gc-led-orchestration-2026-10-18:skills:workflow-logic"
     },
     {
-      "name": "skills:metaform-tools",
+      "name": "prompt.skills:metaform-tools",
       "source": "src/metaform/skills/resources/prompts.xml",
       "edits": [
         {
@@ -342,32 +342,6 @@
         }
       ],
       "id": "gc-led-orchestration-2026-10-18:skills:metaform-tools"
-    },
-    {
-      "name": "workflow-logic",
-      "source": "src/metaform/skills/resources/prompts.xml",
-      "edits": [
-        {
-          "old": "A call that needs a fresh agent runs as a handoff by run id (the task token): directly where the host\n   supports agent -> agent, otherwise through the orchestrator.",
-          "new": "A call that needs another agent runs as a handoff by run id, bound to the assignment's\n   parent/team and return destination. The native continuation starts its recipient through\n   dispatch and returns results to its caller/GC.",
-          "reason": "Replace an implied manual relay with a defined native handoff."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:workflow-logic",
-      "source_component": "skills:workflow-logic"
-    },
-    {
-      "name": "metaform-tools",
-      "source": "src/metaform/skills/resources/prompts.xml",
-      "edits": [
-        {
-          "old": "Give the returned run id to a fresh agent, directly or through the orchestrator.",
-          "new": "Bind the returned run id to the selected recipient and recorded continuation;\n                         dispatch starts the agent and routes its return to the caller/GC.",
-          "reason": "Tool instructions must describe the implemented automatic handoff, not manual ID passing."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:metaform-tools",
-      "source_component": "skills:metaform-tools"
     }
   ]
 }

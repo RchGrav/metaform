@@ -29,29 +29,29 @@ settings.number('orchestration_reviews', 0, min=0, max=10,
                 help='Bound independent reviews of one delivery. Findings reopen that ticket; zero disables automatic reviews.')
 
 ROLE_DUTIES = (
-    ('triage', 'Prepare functional tickets and communicate with the user.', 'dispatch:system'),
-    ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'orchestration:gc'),
+    ('triage', 'Prepare functional tickets and communicate with the user.', 'prompt.dispatch:system'),
+    ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'prompt.orchestration:gc'),
     ('functionality', 'Independently assess functional quality and reconcile specifications with C(T).',
-     'orchestration:functionality'),
+     'prompt.orchestration:functionality'),
     ('investigator', 'Establish behavior, causes, dependencies and implementation entry points.',
-     'orchestration:investigator'),
-    ('requirements', 'Express requested outcomes and consequential requirements precisely.', 'orchestration:requirements'),
-    ('planner', 'Develop an executable approach for the current assignment.', 'orchestration:planner'),
-    ('implementer', 'Produce the assigned change and establish its effect.', 'orchestration:implementer'),
-    ('verifier', 'Assess whether observed behavior establishes the requested outcome.', 'orchestration:verifier'),
-    ('reviewer', 'Examine requested behavior and implementation quality as separate judgments.', 'orchestration:reviewer'),
-    ('integrator', 'Combine assigned candidates and establish their resulting behavior.', 'orchestration:integrator'),
-    ('architect', 'Design an assigned part and its interfaces within the existing system.', 'orchestration:architect'),
-    ('designer', 'Design clear user journeys, states and recovery behavior.', 'orchestration:designer'),
-    ('researcher', 'Establish attributed findings for an assigned question.', 'orchestration:researcher'),
-    ('synthesizer', 'Reconcile findings into a faithful combined result.', 'orchestration:synthesizer'),
-    ('dogfood', 'Expose user-experience failures by using the actual product.', 'orchestration:dogfood'),
-    ('release', 'Prepare the assigned release candidate and materials.', 'orchestration:release'),
-    ('facilitator', 'Create or reuse specialist expertise and continue the original ticket.', 'orchestration:role_creator'),
+     'prompt.orchestration:investigator'),
+    ('requirements', 'Express requested outcomes and consequential requirements precisely.', 'prompt.orchestration:requirements'),
+    ('planner', 'Develop an executable approach for the current assignment.', 'prompt.orchestration:planner'),
+    ('implementer', 'Produce the assigned change and establish its effect.', 'prompt.orchestration:implementer'),
+    ('verifier', 'Assess whether observed behavior establishes the requested outcome.', 'prompt.orchestration:verifier'),
+    ('reviewer', 'Examine requested behavior and implementation quality as separate judgments.', 'prompt.orchestration:reviewer'),
+    ('integrator', 'Combine assigned candidates and establish their resulting behavior.', 'prompt.orchestration:integrator'),
+    ('architect', 'Design an assigned part and its interfaces within the existing system.', 'prompt.orchestration:architect'),
+    ('designer', 'Design clear user journeys, states and recovery behavior.', 'prompt.orchestration:designer'),
+    ('researcher', 'Establish attributed findings for an assigned question.', 'prompt.orchestration:researcher'),
+    ('synthesizer', 'Reconcile findings into a faithful combined result.', 'prompt.orchestration:synthesizer'),
+    ('dogfood', 'Expose user-experience failures by using the actual product.', 'prompt.orchestration:dogfood'),
+    ('release', 'Prepare the assigned release candidate and materials.', 'prompt.orchestration:release'),
+    ('facilitator', 'Create or reuse specialist expertise and continue the original ticket.', 'prompt.orchestration:role_creator'),
     # Retained for already recorded assignments; new commissions use facilitator.
-    ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'orchestration:role_creator'),
+    ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'prompt.orchestration:role_creator'),
 )
-ROLES = tuple(AgentRoleDefinition(name, purpose, ('orchestration:common', prompt), specialist=False)
+ROLES = tuple(AgentRoleDefinition(name, purpose, ('prompt.orchestration:common', prompt), specialist=False)
               for name, purpose, prompt in ROLE_DUTIES)
 
 OBJECT = {'type': 'object', 'additionalProperties': True}

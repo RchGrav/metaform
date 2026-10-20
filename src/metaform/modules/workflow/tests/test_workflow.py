@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.req('BASE-051'), pytest.mark.req('MCP-030'), pytest.ma
 def enabled_workflow(run):
     run('enable', 'workflow')
 
-ADDRESS = 'workflow.quality.code'
+ADDRESS = 'prompt.workflow.quality.code'
 SCRIPT = '''@STATE_INIT:
  {target} := PARAM
 @CONSTRAINT:
@@ -39,24 +39,24 @@ def read(run, folder, *words):
 def test_cli_stored_call_fresh_handoff_frozen_text_and_return(run, store, project_folder):
     small_map(store)
     read(run, project_folder, 'workflow', 'submit', ADDRESS, 'procedures', 'name=Code quality')
-    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'improve', SCRIPT)
-    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT)
+    read(run, project_folder, 'workflow', 'add_prompt', ADDRESS, 'procedures', 'improve', SCRIPT)
+    read(run, project_folder, 'workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT)
     started = read(run, project_folder, 'workflow', 'run',
-                   '({ok}, {address}) := workflow.quality.code.improve(target=code.timer.kitchen)')
+                   '({ok}, {address}) := prompt.workflow.quality.code.improve(target=code.timer.kitchen)')
     word = started['run']
     assert started['arguments']['target']['address'] == 'code.timer.kitchen'
     handed = read(run, project_folder, 'workflow', 'handoff',
-                  '({ok}, {address}) := workflow.quality.code.review(target={target})', f'run={word}')
+                  '({ok}, {address}) := prompt.workflow.quality.code.review(target={target})', f'run={word}')
     child = handed['run']
     assert f'metaform workflow resume run={child} --project proj' in handed['handoff']
-    read(run, project_folder, 'workflow', 'add_logic', ADDRESS, 'procedures', 'review', SCRIPT + '# revised\n')
+    read(run, project_folder, 'workflow', 'add_prompt', ADDRESS, 'procedures', 'review', SCRIPT + '# revised\n')
     elsewhere = project_folder.parent / 'fresh-agent'  # a fresh agent's own folder reaches the run by project
     redeemed = read(run, elsewhere, 'workflow', 'resume', f'run={child}', '--project', 'proj')
-    assert redeemed['logic']['content'] == SCRIPT
+    assert redeemed['prompt']['content'] == SCRIPT
     assert 'frames' not in redeemed and 'parent' not in redeemed
     returned = read(run, project_folder, 'workflow', 'complete', 'RETURN (TRUE, {target}.address)', f'run={child}')
     assert returned['resume'] == word
-    assert 'variables' not in returned and 'logic' not in returned
+    assert 'variables' not in returned and 'prompt' not in returned
     assert read(run, project_folder, 'workflow', 'resume', f'run={word}')['variables']['address'] == \
         'code.timer.kitchen'
     root = read(run, project_folder, 'workflow', 'complete', 'RETURN ({ok}, {address})', f'run={word}')
@@ -69,14 +69,14 @@ def test_cli_stored_call_fresh_handoff_frozen_text_and_return(run, store, projec
 def test_mcp_run_id_resumes_and_returns_the_same_call(store, project_folder):
     small_map(store)
     catalog.submit_workflow(store, ADDRESS, 'procedures')
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
     def invoke(name, args):
         import asyncio
         failed, blocks = asyncio.run(run_tool(project_folder, f'workflow_{name}', args))
         assert not failed, blocks
         return json.loads(blocks[-1])
 
-    started = invoke('run', {'call': '( {ok}, {address} ) := workflow.quality.code.review(target=this)',
+    started = invoke('run', {'call': '( {ok}, {address} ) := prompt.workflow.quality.code.review(target=this)',
                             'element': 'code.timer.kitchen'})
     redeemed = invoke('resume', {'run': started['run']})
     assert redeemed['arguments']['target']['address'] == 'code.timer.kitchen'
@@ -86,10 +86,10 @@ def test_mcp_run_id_resumes_and_returns_the_same_call(store, project_folder):
 
 def test_shared_sections_are_shipped_to_the_prompt_store(run, project_folder):
     run('workflow', 'lib', 'lib_axiom', cwd=project_folder)
-    language = run('prompt', 'axiom-language', '1', cwd=project_folder).stdout
+    language = run('prompt', 'prompt.skills:axiom-language', '1', cwd=project_folder).stdout
     assert 'The agent reading an Axiom script is its interpreter. There is no other runtime.' in language
-    tools = run('prompt', 'metaform-tools', '1', cwd=project_folder).stdout
-    assert 'metaform workflow add_logic' in tools and '<<TO FILL: record one logic' not in tools
+    tools = run('prompt', 'prompt.skills:metaform-tools', '1', cwd=project_folder).stdout
+    assert 'metaform workflow add_prompt' in tools and '<<TO FILL: record one prompt' not in tools
 
 
 @pytest.mark.req('LAYER-017')
@@ -149,7 +149,7 @@ def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, pro
 def test_cli_portable_file_runs_on_another_project(run, store, project_folder, tmp_path):
     small_map(store)
     catalog.submit_workflow(store, ADDRESS, 'procedures')
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
     path = tmp_path / 'code quality.metaform'
     read(run, project_folder, 'workflow', 'export', ADDRESS, 'procedures', f'file={path}')
     other_folder = tmp_path / 'other'
@@ -159,8 +159,8 @@ def test_cli_portable_file_runs_on_another_project(run, store, project_folder, t
     small_map(other)
     read(run, other_folder, 'workflow', 'import', str(path))
     started = read(run, other_folder, 'workflow', 'run',
-                   'workflow.quality.code.review(target=this)', 'element=code.timer.kitchen')
-    assert started['logic']['content'] == SCRIPT
+                   'prompt.workflow.quality.code.review(target=this)', 'element=code.timer.kitchen')
+    assert started['prompt']['content'] == SCRIPT
     assert started['context']['project'] == 'other'
 
 
@@ -170,27 +170,27 @@ def test_selected_knowledge_reaches_arguments_and_still_obeys_masks(run, store, 
     catalog.ensure_layer(store, 'standards')
     store.add_item('standards', Node('element', 'code.timer.kitchen'), 'Keep time precisely.')
     catalog.submit_workflow(store, ADDRESS, 'procedures', layers=('standards',))
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
-    arguments = ('workflow', 'run', 'workflow.quality.code.review(target=this)',
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    arguments = ('workflow', 'run', 'prompt.workflow.quality.code.review(target=this)',
                  'element=code.timer.kitchen', '--layers', f'{layer.name},procedures')
     visible = read(run, project_folder, *arguments)
     assert visible['arguments']['target']['items']['standards'][0]['value'] == 'Keep time precisely.'
     store.mask('code.timer', 'standards')
     masked = read(run, project_folder, *arguments)
     assert 'standards' not in masked['arguments']['target']['items']
-    store.mask('workflow', 'procedures')
+    store.mask('prompt.workflow', 'procedures')
     failed = run(*arguments, cwd=project_folder, ok=False)
     assert failed.returncode != 0 and 'KeyError' in failed.stderr
 
 
 def test_existing_prompt_versions_are_kept_and_libs_name_the_shipped_section_version(run, home, project_folder):
     from metaform.data import prompts
-    old = prompts.add_prompt('metaform-tools', 'text', 'old tool instructions', origin='shipped')
+    old = prompts.add_prompt('prompt.skills:metaform-tools', 'text', 'old tool instructions', origin='shipped')
     served = run('workflow', 'lib', 'lib_metaform', cwd=project_folder).stdout
-    latest = prompts.prompt_version('metaform-tools')
-    assert latest.number == 2 and 'metaform workflow add_logic' in latest.text
+    latest = prompts.prompt_version('prompt.skills:metaform-tools')
+    assert latest.number == 2 and 'metaform workflow add_prompt' in latest.text
     assert 'metaform-tools · version 2' in served and latest.text in served
-    assert prompts.prompt_version('metaform-tools', 1).text == old.text
+    assert prompts.prompt_version('prompt.skills:metaform-tools', 1).text == old.text
 
 
 def test_run_calls_remain_bound_when_active_metaform_changes(store, project_folder):
@@ -199,22 +199,22 @@ def test_run_calls_remain_bound_when_active_metaform_changes(store, project_fold
     from metaform.modules.workflow.executor import view
     small_map(store)
     catalog.submit_workflow(store, ADDRESS, 'procedures')
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'improve', SCRIPT)
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'improve', SCRIPT)
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
     initial = run(Context('workflow', project_folder, store=store, nouns={
-        'call': 'workflow.quality.code.improve(target=this)', 'element': 'code.timer.kitchen'}))
+        'call': 'prompt.workflow.quality.code.improve(target=this)', 'element': 'code.timer.kitchen'}))
     old_metaform = initial['context']['metaform']
     store.add_base('other')
     bound = Store('proj', module='workflow', base=old_metaform)
     catalog.ensure_layer(bound, 'standards')
     catalog.submit_workflow(bound, ADDRESS, 'procedures', layers=('standards',))
     context = Context('workflow', project_folder, nouns={
-        'run': initial['run'], 'call': '{ok} := workflow.quality.code.review(target={target})'})
+        'run': initial['run'], 'call': '{ok} := prompt.workflow.quality.code.review(target={target})'})
     # Selecting accompanying knowledge must retain the original metaform.
     context.store = Store('proj', module='workflow')
     child = call(context)
     assert child['context']['metaform'] == old_metaform
-    assert child['logic']['content'] == SCRIPT
+    assert child['prompt']['content'] == SCRIPT
     context.nouns = {'run': initial['run'], 'return': 'RETURN TRUE'}
     complete(context)
     assert view(Store('proj', module='workflow'), initial['run'])['context']['metaform'] == old_metaform
@@ -227,7 +227,7 @@ def test_workflow_ships_and_runs_in_direct_wheel_without_other_feature_modules(r
     import zipfile
     from pathlib import Path
     catalog.submit_workflow(Store('proj'), ADDRESS, 'procedures')
-    catalog.submit_logic(Store('proj'), ADDRESS, 'procedures', 'review', SCRIPT)
+    catalog.submit_prompt(Store('proj'), ADDRESS, 'procedures', 'review', SCRIPT)
     for module in ('map', 'mcp', 'memory', 'intake', 'web'):
         run('disable', module)
     built = run('build').stdout
@@ -241,7 +241,7 @@ def test_workflow_ships_and_runs_in_direct_wheel_without_other_feature_modules(r
     assert result.returncode == 0, result.stderr
     assert 'name=write_workflow' in result.stdout
     started = subprocess.run([sys.executable, '-I', str(wheel), 'workflow', 'run',
-                              'workflow.quality.code.review(target=this)', f'element={ADDRESS}', '--json'],
+                              'prompt.workflow.quality.code.review(target=this)', f'element={ADDRESS}', '--json'],
                              cwd=project_folder, env={**os.environ, 'METAFORM_HOME': str(home)},
                              capture_output=True, text=True, check=False)
     assert started.returncode == 0, started.stderr
@@ -253,7 +253,7 @@ def test_a_call_or_export_that_does_not_bind_is_the_callers_error_with_its_next_
     import asyncio
     small_map(store)
     catalog.submit_workflow(store, ADDRESS, 'procedures')
-    catalog.submit_logic(store, ADDRESS, 'procedures', 'review', SCRIPT)
+    catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
     for arguments in (('workflow', 'run', f'{ADDRESS}.review()'), ('workflow', 'run', f'{ADDRESS}.absent(target=1)'),
                       ('workflow', 'export', ADDRESS, 'nolayer')):
         failed = run(*arguments, cwd=project_folder, ok=False)

@@ -15,7 +15,7 @@ The Unreleased module contract after 0.3.0.
 
 `SUPPORTED_OS` is Linux, macOS and Windows; `DEPENDENCIES` is empty;
 `SHIPS_DISABLED` is true; enable it with `metaform enable workflow`.
-`MODULE` declares the CLI/MCP verbs, the logic-version
+`MODULE` declares the CLI/MCP verbs, the prompt-version
 and run tables and the node-read contribution.
 
 ## Common base used
@@ -70,7 +70,7 @@ metaform workflow assign workflow_evaluator input="<result, criteria, nodes and 
 
 Give each returned run id to the agent holding that role. The builder also has
 the MCP prompt `/metaform:workflow_builder`. The internal evaluator is loaded
-explicitly with `metaform_skills op=load name=logic.skill.workflow-evaluator`.
+explicitly with `metaform_skills op=load name=prompt.skill.workflow-evaluator`.
 All incoming work, including small fixes, goes through the builder under
 D117; a small fix may use a single pass so it receives its rules with little
 preparation overhead. Automatic routing is not implemented, and its mechanism
@@ -130,20 +130,20 @@ The tools section supplies the implemented commands. Writing and importing
 submit the same stored shape:
 
 ```sh
-metaform workflow submit workflow.quality.code procedures name="Code quality"
-metaform workflow add_logic workflow.quality.code procedures review "<Axiom content>"
+metaform workflow submit prompt.workflow.quality.code procedures name="Code quality"
+metaform workflow add_prompt prompt.workflow.quality.code procedures review "<Axiom content>"
 metaform workflow list
 ```
 
 `provenance=` accepts the producing prompt, model and role. A workflow may
 share its knowledge layer with other knowledge. `selected=` lists knowledge
 layers that accompany a workflow's calls. Existing layer lifecycle, selection,
-masking and hiding apply. The `add_logic` command also attaches a named subroutine
+masking and hiding apply. The `add_prompt` command also attaches a named subroutine
 to any project element, including one a join holds. Its `this` is
 that element. Its instructions are stored without content validation.
 
-The four-field logic record has `type`, a system-assigned stable `logic_id`,
-`name` and `content`. Submitting another version of the same named logic in
+The four-field prompt record has `type`, a system-assigned stable `prompt_id`,
+`name` and `content`. Submitting another version of the same named prompt in
 the same layer retains its identity and keeps every earlier content version.
 `history <address> <name> <layer>` reads those versions. Calls use address and
 name; they never handle the storage id.
@@ -151,9 +151,9 @@ name; they never handle the storage id.
 Start a call, passing an element by address or using the entry's `this`:
 
 ```sh
-metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=code.engine.game)'
-metaform workflow run '({ok}, {issues}) := workflow.quality.code.review(target=this)' element=code.engine.game
-metaform workflow run '{verdict} := logic.skill.workflow-evaluator(Result="<result>", Criteria="<criteria>")'
+metaform workflow run '({ok}, {issues}) := prompt.workflow.quality.code.review(target=code.engine.game)'
+metaform workflow run '({ok}, {issues}) := prompt.workflow.quality.code.review(target=this)' element=code.engine.game
+metaform workflow run '{verdict} := prompt.skill.workflow-evaluator(Result="<result>", Criteria="<criteria>")'
 ```
 
 Skill calls use their unversioned Address directly, including kebab names, and
@@ -171,8 +171,8 @@ private caller stack.
 While interpreting a call:
 
 ```sh
-metaform workflow call '{fixed} := workflow.quality.code.fix(target={target})' run=<run id>
-metaform workflow handoff '({ok}, {issues}) := workflow.quality.code.review(target={target})' run=<run id>
+metaform workflow call '{fixed} := prompt.workflow.quality.code.fix(target={target})' run=<run id>
+metaform workflow handoff '({ok}, {issues}) := prompt.workflow.quality.code.review(target={target})' run=<run id>
 metaform workflow complete 'RETURN ({ok}, {issues})' run=<run id> variables='{"ok":true,"issues":[]}'
 metaform workflow fail SourceUnreadable run=<run id> message="src/game.py"
 ```
@@ -186,11 +186,11 @@ the caller interprets its authored Retry or Catch. At the top of the calls,
 results or errors return to the orchestrator. Returns become prompt values,
 without implicit writes to the functional map or knowledge layers.
 
-A run that something neither its ticket nor its logic decides stops pauses on
+A run that something neither its ticket nor its prompt decides stops pauses on
 the person, and a run that is no longer wanted is cancelled:
 
 ```sh
-metaform workflow pause run=<run id> The target code.timer.kitchen is gone from the map and the logic names no other.
+metaform workflow pause run=<run id> The target code.timer.kitchen is gone from the map and the prompt names no other.
 metaform workflow answer run=<run id> Use code.timer.oven; the kitchen timer was merged into it.
 metaform workflow cancel run=<run id> reason="superseded by ticket 80cafcd9"
 metaform workflow runs state=input_required
@@ -198,7 +198,7 @@ metaform workflow runs state=input_required
 
 Agents do not ask, MAP-050 as amended 2026-10-08: a choice an agent can undo
 is its own to make and record, and is never a pause. `pause` is how an agent
-stops a run on something its ticket and its logic leave to the person. An
+stops a run on something its ticket and its prompt leave to the person. An
 agent working a ticket has the line added to the ticket's note first, where
 the person reads it; if that cannot be written the run is not paused, and the
 agent is told to write the note itself. The run is then `input_required`, with
@@ -223,6 +223,8 @@ cancels no run: a running one it fails, and one waiting or paused it leaves to
 the person, with what stopped it in its ticket's note. `runs` lists the open
 runs, oldest first, or those in one state, the newest first for an ended
 state, 20 at a time with the command for the next page in `more`.
+`ticket=<work id>` filters in storage and remains in each next-page command.
+Dispatch uses this filter when checking for answers to its own paused runs.
 
 ### Run states
 
@@ -265,11 +267,11 @@ agent's work, as the authored Axiom language defines.
 Export a carried workflow from its stored layer and import it elsewhere:
 
 ```sh
-metaform workflow export workflow.quality.code procedures file="Code quality.metaform"
+metaform workflow export prompt.workflow.quality.code procedures file="Code quality.metaform"
 metaform workflow import "Code quality.metaform" layer=procedures
 ```
 
-The file contains the workflow element, selected layer names, exact logic,
+The file contains the workflow element, selected layer names, exact prompts,
 saved versions and producing provenance. It contains no source project
 ownership. The destination assigns its native identities. Export with no
 `file` returns the same portable document. It carries selected layer names;
@@ -328,9 +330,9 @@ its standard worker-thread path. Parallel work is handed to independent agents.
 ## Layers
 
 The caller chooses ordinary knowledge layers. Newly created layers are mutable,
-hideable and ready; existing layers retain their lifecycle. Logic is attached
+hideable and ready; existing layers retain their lifecycle. Prompts attach
 as native layer items with four-field callable records. The module's
-`logic_versions` table lives beside the metaform, keyed by `(logic_id, number)`,
+`prompt_versions` table lives beside the metaform, keyed by `(prompt_id, number)`,
 and holds name and exact content. Native item deletion removes its history.
 
 Version 2 adds `runs`, at project level so a clear of the metaforms or a change
@@ -353,6 +355,14 @@ as ended and refuses it. Version 1 is the last committed; versions 2 and 3
 were only in the working tree from 2026-10-11, and their steps are kept so a
 database opened from it still upgrades.
 
+Version 7 renames saved records to `prompt_versions` and call transport to
+`prompt`/`prompt_id`. It preserves IDs, saved text, revision numbers and earlier
+operations. `compatible_from` becomes 7 because earlier workflow code cannot
+read the renamed table. Workflow reads prepare each base once, append the
+terminology corrections, and record completion in that transaction. Conflicting
+addresses stop migration without overwriting either record. Portable format 2
+uses the new names; importing format 1 converts its envelope while keeping text.
+
 ## Lifecycle and cleanup
 
 No start/stop hooks or spawned tasks. Storage survives unload. Each completed
@@ -360,7 +370,7 @@ call closes its run, which keeps its row and result.
 
 ## Modules relied on
 
-Logic reads use the public DAO. Element values include the memory module's
+Prompt reads use the public DAO. Element values include the memory module's
 existing public node projection, as the MAP-057 binding already provides.
 The chassis and MCP module expose the declared verbs.
 

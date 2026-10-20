@@ -17,9 +17,9 @@ from metaform.data import Record
 
 
 @dataclass(frozen=True)
-class Logic(Record):
+class Prompt(Record):
     type: str
-    logic_id: str
+    prompt_id: str
     name: str
     content: str
 
@@ -27,14 +27,14 @@ class Logic(Record):
 @dataclass(frozen=True)
 class Call(Record):
     address: str
-    logic: Logic
+    prompt: Prompt
     arguments: dict[str, Any]
     this: Any
     targets: tuple[str, ...]
     unpack: bool
 
 
-Lookup = Callable[[str, str], tuple[Logic, Any]]
+Lookup = Callable[[str, str], tuple[Prompt, Any]]
 PARAM = re.compile(r'^\s*\{(\w+)\}\s*:=\s*PARAM(?:\s*=\s*(.*))?$')
 
 
@@ -173,7 +173,7 @@ def _call_expression(text: str) -> tuple[tuple[str, ...], bool, ast.Call]:
             break
     # Skill folder names are kebab-case. Normalize only the callable at the start,
     # leaving quoted data and argument expressions intact.
-    expression = re.sub(r'^(\s*logic\.skill\.)([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s*\()',
+    expression = re.sub(r'^(\s*prompt\.skill\.)([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s*\()',
                         lambda match: match[1] + match[2].replace('-', '_'), expression)
     node = _expression(expression)
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
@@ -201,10 +201,10 @@ def prepare(text: str, variables: Mapping[str, Any], this: Any, lookup: Lookup,
         if key in arguments:
             raise TypeError(f'Duplicate keyword argument: {key}')
         arguments[key] = _value(keyword.value, variables, this, resolve)
-    logic, owner = lookup(address, name)
-    if logic.type == 'skill':
+    prompt, owner = lookup(address, name)
+    if prompt.type == 'skill':
         address = owner.address
-    return Call(address, logic, parameters(logic.content, arguments, owner), owner, targets, unpack)
+    return Call(address, prompt, parameters(prompt.content, arguments, owner), owner, targets, unpack)
 
 
 def returned(text: str, variables: Mapping[str, Any], this: Any) -> Any:

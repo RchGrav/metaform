@@ -181,7 +181,7 @@ def _guard(spec: dict[str, Any], before: str, after: str, removing: list[str], s
 
 def _write(ctx: Context, spec: dict[str, Any], content: str, change_id: str) -> str:
     if spec['kind'] == 'workflow':
-        verb(ctx, 'workflow', 'add_logic', address=spec['address'], layer=spec['layer'], name=spec['name'],
+        verb(ctx, 'workflow', 'add_prompt', address=spec['address'], layer=spec['layer'], name=spec['name'],
              content=content, provenance={'orchestration_change': change_id})
         return read(ctx, spec)[1]
     if spec['kind'] == 'ticket':  # the earlier task is kept as the change record's before_content

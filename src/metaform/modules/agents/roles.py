@@ -123,14 +123,14 @@ class RoleService:
         problems: list[str] = []
         for reference in definition.prompts:
             fills = dict(bindings or {})
-            component_owner = reference.partition(':')[0]
+            component_owner = prompt_files.split_address(reference)[0]
             for renderer_owner, renderer in renderers:
                 if renderer_owner == component_owner:
                     supplied = renderer(context(renderer_owner, ctx.folder, project=ctx.project), reference, fills)
                     if supplied is not None:
                         fills.update(cast(dict[str, str], supplied))
             try:
-                if generated_row and reference.startswith('agents:generated_') and \
+                if generated_row and reference.startswith('prompt.agents:generated_') and \
                         'duty' in generated_row['source']:
                     one = prompt_files.component(reference, generated_row['source']['duty'])
                     one.update(actual_version_id=generated_row['version_id'],
@@ -157,9 +157,9 @@ class RoleService:
         if conflicts:
             raise Stop(f'Role {name} is already provided by {", ".join(conflicts)}.', 'inspect that role')
         # Source identity survives project reuse while generated prompt names never overwrite a shipped component.
-        prompt_name = f'agents:generated_{ctx.require_store().project_id}_{name}'
+        prompt_name = f'prompt.agents:generated_{ctx.require_store().project_id}_{name}'
         version, _ = prompt_files.save_edit(prompt_name, duty, format='text')
-        references = ['orchestration:common', prompt_name]
+        references = ['prompt.orchestration:common', prompt_name]
         row = {'name': name, 'purpose': purpose, 'prompts': references, 'source': {**(source or {}), 'duty': duty},
                'version_id': version.version_id, 'at': home.now()}
         with ctx.require_store().tables() as tx:

@@ -12,7 +12,7 @@ Status of each item: **done** (committed on `main`), **decided** (agreed, not bu
 - The sentinel, a workflow skill sent whole over ACP; Raise an issue on a node's menu and panel. VIEW-045.
 - Upstream and downstream as toggles beside the layers. VIEW-046.
 - Exclude replaced by `.metaform/ignore.txt`. BASE-058.
-- The `logic` root, with workflows under `logic.workflow`. MAP-055, BASE-051, LAYER-028.
+- The `prompt` root, with workflows under `prompt.workflow`. MAP-055, BASE-051, LAYER-028.
 - The digital typology intake in Axiom is the served intake, with the core-node schema; Axiom scripts use `.axiom`. BASE-039, MCP-031.
 - BASE-059, skills are universal, recorded.
 - `main` consolidated; `chassis` retired.
@@ -38,7 +38,7 @@ One full intake of this project with `intake.axiom`, into a new base, compared w
 
 - The core node is an element of the map with a name and no namespace address, holding the AUEs, collections and CQUs (schema `metaform.axiom`). The store identifies an element by its address today, MAP-015, so it needs an element that has a name and no address; the intake tools need a way to record it, since `intake element` requires an address. The page draws it at the center instead of starting from one DE, and the reads that look for the map's entry return what it holds.
 - `collection` joins the roots: MAP-014 and `roots.json`. A project can hold several CQU roots, one per collection.
-- The stored `namespace-rules` section gets a new version naming `logic` and `collection`.
+- The stored `namespace-rules` section gets a new version naming `prompt` and `collection`.
 
 Open: the collection element's role, AUE or a grouping element with no AUE role.
 
@@ -70,9 +70,9 @@ Broken stops flashing red; a finding flashes in the critic's color.
 
 Open: whether an intake's broken mark flashes like a critic's finding; whether flawed and enhancement light the map or show on the board only.
 
-## Lane 3: logic and skills
+## Lane 3: prompt and skills
 
-### 3.1 Move to the logic root (decided)
+### 3.1 Move to the prompt root (decided)
 
 The workflow module reads `logic.workflow.` where it reads `workflow.`; LAYER-028's reserved layer name becomes `logic`; any element at the old root in a base moves by a correction.
 
@@ -80,7 +80,7 @@ The workflow module reads `logic.workflow.` where it reads `workflow.`; LAYER-02
 
 - The eight skills leave `prompts.xml` for `skills/<name>/` folders: `SKILL.md` with frontmatter and the `ing.metaform.` keys, the procedure in `references/<name>.axiom`, kebab-case names.
 - Mark each discoverable or internal. The sentinel and the evaluator are internal.
-- A `skills` tool on the MCP server: list, load and read by name or by `logic.skill.<name>`, libs loaded fresh.
+- A `skills` tool on the MCP server: list, load and read by name or by `prompt.skill.<name>`, libs loaded fresh.
 - The deploy script copies discoverable skills with their libs into harnesses that inject discovery, and records it; the server injects the index at connect for any other harness, with a setting to force it.
 - Dispatch loads the sentinel through the `skills` tool by address.
 - The `talk` and `system` prompts in dispatch become skills the same way.

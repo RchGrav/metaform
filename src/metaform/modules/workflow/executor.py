@@ -1,6 +1,6 @@
 """Persisted call transport for the agent that interprets Axiom.
 
-Frames carry authored logic unchanged. The agent interprets Choice, Map,
+Frames carry authored prompts unchanged. The agent interprets Choice, Map,
 Retry and Catch; this module transports their calls and results. Each run's
 state is kept in its run record, `runs`, reached by its run id.
 """
@@ -13,7 +13,7 @@ from metaform.data import Store
 from metaform.module import Stop
 
 from . import runs
-from .binding import Call, Logic, Lookup, prepare, receive, returned
+from .binding import Call, Lookup, Prompt, prepare, receive, returned
 from .element import ElementValue, Value
 
 
@@ -43,13 +43,13 @@ def unpack(value: Any) -> Any:
 
 
 def _call(data: dict[str, Any]) -> Call:
-    logic = data['logic']
-    return Call(data['address'], Logic(**logic), unpack(data['arguments']), unpack(data['this']),
+    prompt = data['prompt']
+    return Call(data['address'], Prompt(**prompt), unpack(data['arguments']), unpack(data['this']),
                 tuple(data['targets']), data['unpack'])
 
 
 def _frame(call: Call, context: dict[str, Any] | None = None) -> dict[str, Any]:
-    return {'call': {'address': call.address, 'logic': call.logic.to_dict(),
+    return {'call': {'address': call.address, 'prompt': call.prompt.to_dict(),
                      'arguments': pack(call.arguments), 'this': pack(call.this),
                      'targets': list(call.targets), 'unpack': call.unpack},
             'variables': pack(call.arguments), 'context': context}
@@ -90,7 +90,7 @@ def view(store: Store, word: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         'run': word, 'state': found.state, **({'message': found.message} if found.message else {}),
         'context': frame.get('context') or state['context'], 'address': call.address,
-        'logic': {'type': call.logic.type, 'name': call.logic.name, 'content': call.logic.content},
+        'prompt': {'type': call.prompt.type, 'name': call.prompt.name, 'content': call.prompt.content},
         'arguments': call.arguments, 'this': call.this, 'variables': unpack(frame['variables'])}
     if 'returned' in frame:
         result['returned'] = unpack(frame['returned'])

@@ -60,7 +60,7 @@
   [STEP 3]: Load workflow skill write_workflow and follow its complete procedure with
             {Request} as Goal and {Target_Layer} as Target_Layer. Pass the node rules and
             their layer as authoring context. Have workers read those rules where they work.
-            Store the workflow and its subroutines using submit and add_logic.
+            Store the workflow and its subroutines using submit and add_prompt.
             Record the workflow address, entry call and selected layers as {Workflow}.
   [STEP 4]: Write each change loop's proof into its acceptance: the relevant test command
             when one exists, otherwise a fresh review. For a review required by D118 or

@@ -49,7 +49,7 @@
   +> Dialect first: AXIOM_2 -> L1-L10; AXIOM_V1 -> L3 and L9 are N/A; PROSE -> CLI-036, LAYER-021, host honesty,
      and once, [INFERRED]: would it be stronger as Axiom.
   +> Redundancy is counted: duplicate constraints, duplicate states, conditions no router consumes, pipelines
-     no router reaches, empty modules, examples longer than the logic, text that restates a lib.
+     no router reaches, empty modules, examples longer than the prompt, text that restates a lib.
 @BUDGET: max_recurse=3
 
 @CONDITION (INPUT):

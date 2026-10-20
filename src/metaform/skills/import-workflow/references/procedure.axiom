@@ -1,5 +1,5 @@
 #! AXIOM/2.0 name=import_workflow strict=2
-# skill: import_workflow · turn an existing prompt, SOP, checklist or agent playbook into workflow logic:
+# skill: import_workflow · turn an existing prompt, SOP, checklist or agent playbook into workflow prompt:
 #        delexicalize it, cut it into subroutines one per step, keep every word.
 # requires: lib_axiom (grammar), lib_metaform (the map, tools), lib_workflow (the rules, delexicalization)
 #           Load each once; skip any whose marker is already in your context.
@@ -50,10 +50,10 @@
 #     "1. Read {Element_A}'s {Element_B} and list every place it allocates during a frame.
 #      2. For each allocation, move it to {Element_C}'s frame arena. Re-run {Element_D} after each move.
 #      3. Have a fresh reviewer confirm {Element_B} allocates nothing during a frame."
-#   Workflow element, by what the workflow is, not by the project:  workflow.allocation.frame -> "frame allocation workflow"
+#   Workflow element, by what the workflow is, not by the project:  prompt.workflow.allocation.frame -> "frame allocation workflow"
 
 # --- 2. A step becomes a subroutine: words verbatim, placeholders as PARAMs, the unstated as PARAMs --
-<example_subroutine>   # logic requirement "list_allocations" on workflow.allocation.frame; the entry (step 1)
+<example_subroutine>   # prompt requirement "list_allocations" on prompt.workflow.allocation.frame; the entry (step 1)
 @STATE_INIT:
   {Element_A}  := PARAM
   {Element_B}  := PARAM
@@ -74,7 +74,7 @@
 
 @EXECUTE_PIPELINE (List_Allocations):
   [STEP 1]: Read {Element_A}'s {Element_B} and list every place it allocates during a frame. Δ => {allocations}.
-  [STEP 2]: APPLY NEXT: workflow.allocation.frame.move_allocations( allocations={allocations}, Element_C={Element_C}, Element_D={Element_D} )
+  [STEP 2]: APPLY NEXT: prompt.workflow.allocation.frame.move_allocations( allocations={allocations}, Element_C={Element_C}, Element_D={Element_D} )
 
 @VERIFY:
   [V1] Is the instruction in STEP 1 the text's words, unchanged?   NO -> RECURSE List_Allocations.
@@ -137,8 +137,8 @@
   [STEP 3]: Write. FOR each step: ITERATION, ACCEPTANCE, FAILURE, NEXT, HANDOFF. Δ => its v1 Axiom: six modules,
             PARAMs, the verbatim instruction, acceptance, control flow, Raises, RETURN or the next call (example 2).
             Δ => {Subroutines}; {Entry_Subroutine} := the first step; {Handoffs}.
-  [STEP 4]: Submit. SUBMIT the workflow element into {Target_Layer} with {Layers}; SUBMIT each LOGIC; EXPORT
-            `<workflow name>.metaform` (metaform-tools: submit workflow, submit logic, export workflow).
+  [STEP 4]: Submit. SUBMIT the workflow element into {Target_Layer} with {Layers}; SUBMIT each PROMPT; EXPORT
+            `<workflow name>.metaform` (metaform-tools: submit workflow, submit prompt, export workflow).
             A step that needs a command metaform-tools does not list: {Stopped_At}, and go on.
   [STEP 5]: YIELD:
             PLACEHOLDERS (delexicalized by hand; script not built, BASE-051): one line per letter
@@ -152,12 +152,12 @@
 
 @VERIFY:
   [V1]  Every step's text in its subroutine exactly as delexicalized?                         NO  -> RECURSE(max=3) Main.
-  [V2]  One logic requirement per step?                                                     NO  -> RECURSE(max=3) Main.
+  [V2]  One prompt requirement per step?                                                     NO  -> RECURSE(max=3) Main.
   [V3]  Each subroutine complete, six modules, v1?                                            NO  -> RECURSE(max=3) Main.
   [V4]  Every call names a subroutine that exists at its address?                            NO  -> RECURSE(max=3) Main.
   [V5]  Every placeholder a step uses declared as a PARAM of its subroutine?                  NO  -> RECURSE(max=3) Main.
   [V6]  Any step, condition, loop, route or error the text does not state, beyond PARAMs for
-        the unstated and the rules of workflow-logic?                                         YES -> RECURSE(max=3) Main.
+        the unstated and the rules of workflow-prompt?                                         YES -> RECURSE(max=3) Main.
   [V7]  Every handed-off subroutine complete, states what it accepts and returns, ends in RETURN? NO -> RECURSE(max=3) Main.
   [V8]  Entry subroutine named?                                                              NO  -> RECURSE(max=3) Main.
   [V9]  Any project name or address left anywhere in the output?                             YES -> RECURSE(max=3) Main.

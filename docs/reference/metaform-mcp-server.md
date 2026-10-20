@@ -334,7 +334,7 @@ Write, import and run reusable Axiom subroutines.
 
 | Tool | What it does | Effect |
 |---|---|---|
-| `workflow_add_logic` | Record a named Axiom subroutine on a workflow element or any other project element. | write |
+| `workflow_add_prompt` | Record a named Axiom subroutine on a workflow element or any other project element. | write |
 | `workflow_assign` | Hand a workflow skill to a fresh agent: it gets a run id and reads its assignment with resume. | write |
 | `workflow_call` | Call an Axiom subroutine on the same agent, keeping the caller's scope. | write |
 | `workflow_cancel` | Cancel a run and every run below it; its caller receives the error cancelled. | write |
@@ -349,7 +349,7 @@ Write, import and run reusable Axiom subroutines.
 | `workflow_libs` | List the Axiom libs, each with its first line, its marker. | read |
 | `workflow_list` | List the visible workflow elements and the names of their Axiom subroutines. | read |
 | `workflow_parallel` | Run independent subroutine calls as branches; the run resumes when every branch returns. | write |
-| `workflow_pause` | Pause a run on the person when something its logic does not decide stops it, saying what you found. | write |
+| `workflow_pause` | Pause a run on the person when something its prompt does not decide stops it, saying what you found. | write |
 | `workflow_preprocess` | Prepare a lexicalized prompt by placing the knowledge visible at its addresses before its address footer. | read |
 | `workflow_resume` | Read a workflow run by its id: its current subroutine and values, or its assignment. | write |
 | `workflow_run` | Start a workflow run: an entry call to an Axiom subroutine, whose run id the interpreter follows. | write |
@@ -383,7 +383,7 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 | `metaform_skills` | List discoverable skills, load a skill by name or Address with current prompt-store libraries, or read one of its files. Internal skills remain explicitly loadable. `all=true` lists them for administrative inspection. Always available. | read |
 
 `metaform_skills` takes `op=list|load|read`, `name` for load and read, and
-`path` for read. The skill Address is `logic.skill.<kebab-name>` with its
+`path` for read. The skill Address is `prompt.skill.<kebab-name>` with its
 version in frontmatter metadata. At connect, `skill_index=auto` adds a compact
 index unless a current completed native deployment is recorded for the actual
 client. `on` forces this index and `off` omits it. Internal skills appear in no

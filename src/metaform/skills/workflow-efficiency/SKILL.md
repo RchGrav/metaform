@@ -2,7 +2,7 @@
 name: workflow-efficiency
 description: "where a workflow spends inference it need not. Reports; changes nothing."
 metadata:
-  ing.metaform.address: "logic.skill.workflow-efficiency"
+  ing.metaform.address: "prompt.skill.workflow-efficiency"
   ing.metaform.discover: "true"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

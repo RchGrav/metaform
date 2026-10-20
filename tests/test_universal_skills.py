@@ -5,7 +5,7 @@ import re
 import pytest
 import yaml
 
-from metaform import skills
+from metaform import prompt_files, skills
 from metaform.data import prompts
 from metaform.errors import Stop
 
@@ -25,7 +25,7 @@ def test_skill_folders_declare_identity_and_separate_discovery_from_access():
         assert frontmatter['metadata']['ing.metaform.discover'] == str(one.discover).lower()
         assert one.folder.name == one.name
         assert re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', one.name)
-        assert one.address == f'logic.skill.{one.name}'
+        assert one.address == f'prompt.skill.{one.name}'
         loaded = skills.load(one.address)
         assert loaded == skills.load(one.name)
         assert loaded['procedure'].startswith('#! AXIOM/2.0')
@@ -34,19 +34,19 @@ def test_skill_folders_declare_identity_and_separate_discovery_from_access():
         assert loaded['version'] and loaded['tier']
     assert {one['name'] for one in skills.listing(discoverable=True)} == {
         one.name for one in listed if one.discover}
-    assert skills.load('workflow_evaluator')['address'] == 'logic.skill.workflow-evaluator'
+    assert skills.load('workflow_evaluator')['address'] == 'prompt.skill.workflow-evaluator'
 
 
 def test_load_and_deployment_use_current_prompt_store_libraries():
     first = skills.load('sentinel')
-    held = prompts.prompt_version('metaform-tools')
+    held = prompts.prompt_version('prompt.skills:metaform-tools')
     changed = held.text + '\nA current library edit.'
-    prompts.add_prompt_version('metaform-tools', changed, held.number)
-    assert changed in skills.load('logic.skill.sentinel')['libs']['lib_metaform']
+    prompts.add_prompt_version('prompt.skills:metaform-tools', changed, held.number)
+    assert prompt_files.rendered(changed) in skills.load('prompt.skill.sentinel')['libs']['lib_metaform']
     assert first['procedure'] == skills.load('sentinel')['procedure']
     one = next(one for one in skills.catalog() if one.name == 'write-workflow')
     deployed = skills.deployment_files(one)
-    assert changed.encode() in deployed['references/lib_metaform.md']
+    assert prompt_files.rendered(changed).encode() in deployed['references/lib_metaform.md']
     assert deployed['references/procedure.axiom'].decode().strip() == skills.load(one.name)['procedure']
 
 
@@ -61,18 +61,18 @@ def test_read_returns_authored_frontmatter_and_procedure():
     assert 'ing.metaform.discover:' in skills.read('sentinel', 'SKILL.md')
     assert skills.read('sentinel', 'references/procedure.axiom').strip() == skills.load('sentinel')['procedure']
     with pytest.raises(Stop):
-        skills.load('logic.skill.sentinel.v2')
+        skills.load('prompt.skill.sentinel.v2')
 
 
 def test_axiom_calls_skill_addresses_with_kebab_names_and_keeps_arguments(run, project_folder):
     run('enable', 'workflow')
     result = run('workflow', 'run',
-                 '{verdict} := logic.skill.workflow-evaluator(Result="logic.skill.write-workflow()", Criteria="works")',
+                 '{verdict} := prompt.skill.workflow-evaluator(Result="prompt.skill.write-workflow()", Criteria="works")',
                  '--json', cwd=project_folder)
     called = json.loads(result.stdout)
-    assert called['address'] == 'logic.skill.workflow-evaluator'
-    assert called['arguments']['Result'] == 'logic.skill.write-workflow()'
-    assert called['logic']['content'] == skills.load(called['address'])['procedure']
+    assert called['address'] == 'prompt.skill.workflow-evaluator'
+    assert called['arguments']['Result'] == 'prompt.skill.write-workflow()'
+    assert called['prompt']['content'] == skills.load(called['address'])['procedure']
     assert set(called['libs']) == {'lib_axiom', 'lib_metaform', 'lib_workflow'}
     assert called['this']['address'] == called['address']
     completed = run('workflow', 'complete', 'RETURN TRUE', f'run={called["run"]}', '--json', cwd=project_folder)

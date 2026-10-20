@@ -2,7 +2,7 @@
 name: workflow-evaluator
 description: "judge a supplied result against the work's acceptance"
 metadata:
-  ing.metaform.address: "logic.skill.workflow-evaluator"
+  ing.metaform.address: "prompt.skill.workflow-evaluator"
   ing.metaform.discover: "false"
   ing.metaform.version: "1.0.0"
   ing.metaform.tier: "1"

@@ -19,7 +19,7 @@ from .errors import Stop
 
 PACKAGE = resources.files('metaform') / 'skills'
 PREFIX = 'ing.metaform.'
-SECTIONS = ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-logic', 'metaform-tools',
+SECTIONS = ('axiom-language', 'metaform-system', 'namespace-rules', 'workflow-prompt', 'metaform-tools',
             'delexicalization-rules')
 LIBS = ('lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality')
 
@@ -77,15 +77,13 @@ def procedure(name: str) -> str:
 def selected_procedure(name: str) -> str:
     """The selected procedure for a read or deployment; resolving an artifact is not an agent delivery receipt."""
     one = get(name)
-    return str(prompt_files.resolve_text(f'skill:{one.name}', procedure(one.name))['text'])
+    return str(prompt_files.resolve_text(prompt_files.address('skill', one.name), procedure(one.name))['text'])
 
 
 def seed() -> None:
     for section in SECTIONS:
-        prompts.shipped(section, 'text', prompt_files.required(PACKAGE, section))
-        # These established, unprefixed store identities are the versions libraries actually read. A source
-        # update therefore merges here as well as at skills:<section>, retaining each selection and its history.
-        prompt_files.merge_selected_updates(section)
+        name = prompt_files.address('skills', section)
+        prompt_files.resolve(name)
 
 
 def library(name: str) -> str:
@@ -94,12 +92,12 @@ def library(name: str) -> str:
     seed()
     fills: dict[str, str] = {}
     for section in SECTIONS:
-        version = prompts.prompt_version(section)
-        fills[section] = version.text
+        version = prompts.prompt_version(prompt_files.address('skills', section))
+        fills[section] = prompt_files.rendered(version.text) if version.format == 'xml' else version.text
         fills[f'{section}-version'] = str(version.number)
     text = prompt_files.required(PACKAGE, name, **fills)
     edited = [section for section in SECTIONS if fills[section] in text
-              and fills[section] != prompt_files.required(PACKAGE, section)]
+              and fills[section] != prompt_files.rendered(prompt_files.shipped('skills', section) or '')]
     return text + (f'\n\nServed from an edit in the prompt store in place of the shipped text: {", ".join(edited)}.'
                    if edited else '')
 
@@ -141,7 +139,8 @@ def served(name: str, given: str | None = None) -> str:
     """A skill whole, for an agent already connected: its current libs, the procedure and the input bound as data,
     with no run record. Workflow serve gives it, and dispatch sends it as the sentinel's first turn without workflow."""
     one = get(name)
-    skill = prompt_files.served_text(f'skill:{one.name}', procedure(one.name))  # the store's version, STORE-044
+    # Serve the store's selected version, STORE-044.
+    skill = prompt_files.served_text(prompt_files.address('skill', one.name), procedure(one.name))
     return prompt_files.served(PACKAGE, 'served', libs='\n\n'.join(libraries(one).values()),
                                skill=skill, input=bound(given) if given else '')
 

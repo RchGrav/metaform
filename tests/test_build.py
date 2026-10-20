@@ -141,7 +141,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from metaform import install, skills
-assert skills.load('logic.skill.write-workflow')['libs']
+assert skills.load('prompt.skill.write-workflow')['libs']
 root = Path.home() / '.cursor' / 'skills'
 tool = install.Tool('cursor', 'Cursor', lambda: True, 'test', lambda: None, lambda: root)
 install.tools = lambda: {'cursor': tool}

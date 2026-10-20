@@ -2,44 +2,44 @@
 # skill: workflow_efficiency · where a workflow spends inference it need not. Reports; changes nothing.
 # requires: lib_axiom (grammar), lib_metaform (this, the join shape), lib_workflow (loop/handoff rules), lib_quality (amortization, rules listed not carried)
 #           Load each once; skip any whose marker is already in your context.
-# "efficient" is defined only by: BASE-051 amortization (lib_quality), workflow-logic loops/handoffs (lib_workflow),
+# "efficient" is defined only by: BASE-051 amortization (lib_quality), workflow-prompt loops/handoffs (lib_workflow),
 # LAYER-021 rules listed not carried (lib_quality), Map=MaxConcurrency 1 / Parallel=independent (lib_axiom).
 
 # ============================================================================================
 # EXAMPLES · findings in the shape this skill yields. Sandbox [skill example].
 # ============================================================================================
-#   F1 [HIGH] workflow-logic, "Every loop has MaxAttempts. A loop that uses them up without acceptance stops
-#      and RETURNs a failure value"  at workflow.quality.code.improve STEP 1
+#   F1 [HIGH] workflow-prompt, "Every loop has MaxAttempts. A loop that uses them up without acceptance stops
+#      and RETURNs a failure value"  at prompt.workflow.quality.code.improve STEP 1
 #      evidence: "Loop STEP 2 to STEP 4 UNTIL acceptance"  (no MaxAttempts, no failure RETURN)
 #      effect: a run that never reaches acceptance never ends; the orchestrator sees nothing.
 #      suggestion: MaxAttempts: {max_attempts}; STEP 5: RETURN ( FALSE, {issues} ).
-#   F2 [MEDIUM] workflow-logic, "A call that needs a fresh agent runs as a handoff"; BASE-050 (a handoff is a
-#      fresh agent with no context)  at workflow.quality.code.improve STEP 4
-#      evidence: "{fixed} := workflow.quality.code.fix(...)  # handoff to a fresh agent"
+#   F2 [MEDIUM] workflow-prompt, "A call that needs a fresh agent runs as a handoff"; BASE-050 (a handoff is a
+#      fresh agent with no context)  at prompt.workflow.quality.code.improve STEP 4
+#      evidence: "{fixed} := prompt.workflow.quality.code.fix(...)  # handoff to a fresh agent"
 #      effect: every fix pays a fresh agent that re-reads the target; fix needs no independence from improve.
 #      suggestion: run fix in the same agent; keep review as the handoff (it is the one that needs fresh eyes).
-#   F3 [MEDIUM] lib_axiom control flow, "Parallel: Run independent work at once"  at workflow.research.topic.survey STEP 2
+#   F3 [MEDIUM] lib_axiom control flow, "Parallel: Run independent work at once"  at prompt.workflow.research.topic.survey STEP 2
 #      evidence: "Map {questions}, MaxConcurrency: 1 ... each question"  (the questions share nothing)
 #      effect: n sequential agent runs where one Parallel would finish when the slowest returns.
 #      suggestion: Parallel, one branch per question; merge on the RETURNs.
 #   F4 [MEDIUM] LAYER-021, "What an agent is handed with a task lists the rules rather than carrying their full
-#      text"  at workflow.quality.code.review @CONSTRAINT
+#      text"  at prompt.workflow.quality.code.review @CONSTRAINT
 #      evidence: 40 lines of the coding standard pasted into the subroutine
 #      effect: every handoff carries 40 lines the fresh agent could read once as a lib.
 #      suggestion: name the standard; pass it as {standard} PARAM; the agent reads it by reference.
 #   F5 [HIGH] metaform-system (lib_metaform), "A join's fields: purpose, ef, ifd, elements"; "Refs are not in
-#      the metaform"  at element logic on code.engine.game STEP 1
+#      the metaform"  at element prompts on code.engine.game STEP 1
 #      evidence: "focus=this.require[...].non_goal"
 #      effect: the field no longer exists; the read raises at run time.
 #      suggestion: pass the purpose, this.require[...].purpose, or drop the argument.
 #   F6 [LOW] workflow-authoring ~> "If an existing workflow subroutine already does a step, call it"
-#      at workflow.allocation.frame.review_result
-#      evidence: a second review subroutine with the same PARAMs and acceptance as workflow.quality.code.review
+#      at prompt.workflow.allocation.frame.review_result
+#      evidence: a second review subroutine with the same PARAMs and acceptance as prompt.workflow.quality.code.review
 #      effect: two copies to maintain; a change to one drifts from the other.
-#      suggestion: call workflow.quality.code.review( target=..., standard=... ) instead.
+#      suggestion: call prompt.workflow.quality.code.review( target=..., standard=... ) instead.
 
 @STATE_INIT:
-  {Workflow} := <<DATA: [address, the subroutines' Axiom, element logic if any]>>
+  {Workflow} := <<DATA: [address, the subroutines' Axiom, element prompts if any]>>
   {Baseline} := <<DATA: [a second workflow to compare, or NULL]>>
   {Route}    := UNSET
   {Graph}    := {}      # subroutines, entry, calls (same agent | handoff), loops (MaxAttempts, failure RETURN), Retry/Catch, PARAMs, this reads, layers brought
@@ -74,7 +74,7 @@
   [STEP 1]: scan( Workflow={Workflow}, Task=workflow_efficiency ); load only its load-now list.
   [STEP 2]: ∇({Workflow}) => {Graph}. Δ => {Metrics}: subroutines, calls, handoffs, loops without MaxAttempts,
             loops without failure RETURN, errors raised/caught/uncaught, params without default, duplicated step
-            logic, layers brought vs read, rule text pasted, stale fields read, Map over independent work,
+            prompt, layers brought vs read, rule text pasted, stale fields read, Map over independent work,
             Parallel over dependent work.
   [STEP 3]: ∇({Metrics}, the libs) => {Findings}, HIGH first, each with rule, evidence, effect, suggestion.
   [STEP 4]: ?IF ( {Baseline} is not NULL ) -> repeat 2-3 on it; Δ => {Compare} :ELSE -> {Compare} := NULL.

@@ -56,7 +56,7 @@ async function taskWorkflows() {
   }
 }
 /* Each entry of a stored workflow, offered as a call to start it with. */
-const workflowCalls = workflow => workflow.logic.map(name =>
+const workflowCalls = workflow => workflow.prompt.map(name =>
   h('option', {value: `${workflow.address}.${name}`}, `${workflow.name || workflow.address} · ${name}`));
 function chooseWorkflow() {
   const chosen = $('#task .workflow').value;

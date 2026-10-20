@@ -38,7 +38,7 @@
     | [*]     -> EXECUTE_PIPELINE( Scan )
 
 @EXECUTE_PIPELINE (Fetch):
-  [STEP 1]: {Workflow} := `metaform map where {Workflow}`; if it holds no logic -> HALT "paste the subroutines; list workflows is `metaform workflow list`".
+  [STEP 1]: {Workflow} := `metaform map where {Workflow}`; if it holds no prompt -> HALT "paste the subroutines; list workflows is `metaform workflow list`".
   [STEP 2]: EXECUTE_PIPELINE( Scan ).
 
 @EXECUTE_PIPELINE (Scan):

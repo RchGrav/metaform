@@ -25,7 +25,7 @@ def deployment(home, tmp_path, monkeypatch):
     tool = install.Tool('cursor', 'Cursor', lambda: True, 'test', lambda: user / '.cursor/mcp.json',
                         lambda: user / '.cursor/skills', merge=True)
     monkeypatch.setattr(install, 'tools', lambda: {'cursor': tool})
-    catalog = [SimpleNamespace(name=name, address=f'logic.skill.{name}', discover=discover, version='1',
+    catalog = [SimpleNamespace(name=name, address=f'prompt.skill.{name}', discover=discover, version='1',
                                requires=('axiom',), tier='workflow', folder=tmp_path / name)
                for name, discover in [('write-workflow', True), ('import-workflow', True),
                                       ('sentinel', False), ('workflow-evaluator', False)]]
