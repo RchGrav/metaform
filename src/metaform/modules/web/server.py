@@ -2890,7 +2890,13 @@ class Handler(BaseHTTPRequestHandler):
         or with its error and next step. It runs as the command line, so dispatch enabled after this server started
         is found, and the person's environment reaches the agent unchanged, BASE-052. A message's text comes after
         `--`, so no text a person writes is read as a switch. `module_id` runs another module's verb the same way."""
-        self.send(*cli_result(given, module_id, verb, nouns, text))
+        if module_id == 'dispatch' and verb in IN_PROCESS:
+            try:
+                self.send(200, in_process_result(given, verb, nouns, text))
+            except (Stop, StoreError) as error:
+                self.refuse(error, 400)
+        else:
+            self.send(*cli_result(given, module_id, verb, nouns, text))
         deaths = getattr(self.gui, 'deaths', None)
         if module_id == 'dispatch' and deaths is not None:  # a runner it started is watched at once
             deaths.arm()
@@ -3574,6 +3580,47 @@ def cli_result(given: dict[str, Any], module_id: str, verb: str, nouns: list[str
             return 200, {'said': done.stdout.strip()}
         return 200, cast(dict[str, Any], found) if isinstance(found, dict) else {'result': found}
     return 400, refusal(done)
+
+
+# The dispatch verbs run in this server rather than as a command-line process: a process costs seconds of startup, and
+# from the page a cancel took 6 s a step (the person, 2026-10-20). A verb that starts an agent keeps the command line, so
+# the person's environment reaches the agent unchanged, BASE-052; stop, message and the rest keep it for now, since the
+# command line's caller is not read as the person and their in-process answers differ (a stop with nothing running
+# cancels the ticket's assignments in process, and is refused with the start to make from the command line).
+IN_PROCESS = frozenset({'cancel'})
+
+
+def in_process_result(given: dict[str, Any], verb: str, nouns: list[str], text: str | None = None) -> dict[str, Any]:
+    """`cli_result` for a dispatch verb in IN_PROCESS, run in this process, `module_verb`: the command-line words, each
+    positional one a required noun in order, each `name=value` its noun, and the text after `--` the noun that takes
+    many words, give the arguments; the result is the JSON the command line prints. Stop and StoreError are the
+    caller's to answer, as `refuse` does."""
+    project = home.project(str(given.get('project', '')))
+    if project is None:
+        raise StoreError(f'No project {given.get("project", "")} is registered.', 'metaform list projects')
+    chassis.refresh_modules()
+    module = next((one for one in chassis.surface(Path(project.path)) if one.id == 'dispatch'), None)
+    declared = next((one for one in module.verbs if one.name == verb), None) if module is not None else None
+    if declared is None:
+        raise Stop(f'dispatch {verb} is not on this project\'s surface.', 'metaform enable dispatch')
+    named = {noun.name: noun for noun in declared.nouns}
+    arguments: dict[str, Any] = {}
+    positional: list[str] = []
+    for word in nouns:
+        key, equals, value = word.partition('=')
+        if equals and key in named:
+            arguments[key] = (value.lower() in ('true', '1', 'yes')) if named[key].kind == 'bool' else value
+        else:
+            positional.append(word)
+    required = [noun.name for noun in declared.nouns if noun.required and not noun.many]
+    arguments.update(dict(zip(required, positional)))
+    if text is not None:
+        many = next((noun.name for noun in declared.nouns if noun.many), None)
+        if many is not None:
+            arguments[many] = text
+    found = module_verb(given, 'dispatch', verb, arguments, chosen=True)
+    result: Any = json.loads(chassis.result_json(found))
+    return cast(dict[str, Any], result) if isinstance(result, dict) else {'result': result}
 
 
 def run_dispatch(project_id: str, verb: str, nouns: list[str], base: str | None = None) -> tuple[bool, dict[str, Any]]:
