@@ -5,6 +5,7 @@ import '/page/app/figures/attention.js';  // the part before runs first, so the 
 import * as THREE from 'three';
 import {eyeOf} from '/page/agents3d.js';
 import {$, css, reduced} from '/page/app/core/dom.js';
+import {pageVitals} from '/page/app/core/vitals.js';
 import {S} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
 import {ROAM, ballOf, isSystemTalk, conversing, sizeOf} from '/page/app/figures/agents.js';
@@ -273,7 +274,7 @@ export function viewing() {
     board: !$('#board').hidden, chat: !$('#helpdesk').hidden, panes: WS.on ? WS.layout() : null, in_view_3d: inView,
     view_3d: view3d(), pointer: pointerNow(), mascot_eyes: EYE.view && !EYE.agent, following: FOLLOW.work,
     agent_eyes: EYE.agent, sharing: sharing() ? shareSaid() : null, mascot_motion: mascotMotion(),
-    clicked: clickedSaid()};
+    clicked: clickedSaid(), vitals: pageVitals()};
 }
 /* The last thing the person clicked, which their system agent reads to know what "this" is: its kind, what names it,
  * the state it showed and the record behind that, and when. One object, written in place on every click. A listener
