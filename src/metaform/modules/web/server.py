@@ -221,7 +221,8 @@ GATE_HEADER, CLASSES_HEADER, ACCOUNT_HEADER = 'X-Metaform-Gate', 'X-Metaform-Cla
 # workspace.run. A write not listed is admin, so a new one is refused to members until it is classed here.
 WRITE_ROUTES = frozenset({
     '/api/apply-layers', '/api/answer', '/api/reopen', '/api/read', '/api/task', '/api/state', '/api/element',
-    '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/eligible', '/api/memory', '/api/ignore',
+    '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/remove-ticket', '/api/eligible', '/api/memory',
+    '/api/ignore',
     '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak',
     '/api/voice/note', '/api/page-faults'})
 DISPATCH_ROUTES = frozenset({
@@ -1421,7 +1422,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/element': self.add_part, '/api/restore': self.restore, '/api/add-project': self.add_project, '/api/report': self.problem_report,
                   '/api/page-faults': self.page_faults, SHOWN: self.shown,
                   '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
-                  '/api/ticket': self.set_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
+                  '/api/ticket': self.set_ticket, '/api/remove-ticket': self.remove_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk, '/api/raise': self.raise_issue,
                   '/api/activate-base': self.activate_base,
@@ -1804,6 +1805,27 @@ class Handler(BaseHTTPRequestHandler):
                 # then starts the agent the ticket now prefers. Nothing here waits for it, QUAL-015.
                 self.dispatch_call(given, 'stop', [work_id])
         self.send(200, {'results': [edited]})
+
+    def remove_ticket(self, given: dict[str, Any]) -> None:
+        """Delete a ticket for good, `map work op=remove`, the person's own act (2026-10-20: a ticket could be cancelled
+        into the Archive but never deleted). An agent working it is stopped first, as one is when the ticket's agent
+        changes, so nothing goes on with a ticket that is gone."""
+        work_id = given.get('work_id')
+        if not isinstance(work_id, str) or not work_id:
+            return self.send(400, {'error': 'A ticket is deleted by its work id.'})
+        try:
+            found: Any = plain(module_verb(given, 'dispatch', 'sessions', {'id': work_id, 'thread': False}, chosen=True))
+            rows = cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []) \
+                if isinstance(found, dict) else []
+            if any(row.get('state') == 'running' for row in rows):
+                module_verb(given, 'dispatch', 'stop', {'id': work_id}, chosen=True)
+        except (Stop, StoreError):
+            pass  # dispatch not on the surface, or nothing running on it: the ticket is removed as it stands
+        try:
+            removed = plain(module_verb(given, 'map', 'work', {'op': 'remove', 'id': work_id}, chosen=True))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, {'results': [removed]})
 
     def dispatch_call(self, given: dict[str, Any], verb: str, nouns: list[str]) -> tuple[bool, dict[str, Any]]:
         """One dispatch verb run as the command line runs it, for a write that goes on after it."""

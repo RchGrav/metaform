@@ -559,6 +559,21 @@ export async function cancelTicket(ticket, button = null) {
   } else if (button) button.disabled = false;
   return Boolean(done);
 }
+/* Delete a ticket for good, the person's own act (2026-10-20): the server stops an agent working it, then removes the
+ * ticket with its steps, links and settings; every page drops its card on the change. Nothing restores it. */
+export async function removeTicket(ticket, button = null) {
+  const sure = await confirmAct({title: 'Delete this ticket?', verb: 'Delete ticket', cancel: 'Keep it',
+    text: [ticket.taken && !ticket.done ? 'The agent working it is stopped first.' : 'Its steps, links and settings go with it.'],
+    lost: ['The ticket is gone for good: not in the Archive, and nothing restores it.']});
+  if (!sure) return false;
+  if (button) button.disabled = true;
+  const done = await wrote('/api/remove-ticket', {work_id: ticket.id});
+  if (done) {
+    toast('Ticket deleted.');
+    if (!$('#board').hidden) await renderBoard();
+  } else if (button) button.disabled = false;
+  return Boolean(done);
+}
 export function chatActivity(session) {
   if (!session) return {label: 'Connecting', busy: false, interruptible: false};
   if (session.state !== 'running') return {label: 'Ended', busy: false, interruptible: false};

@@ -574,6 +574,20 @@ def test_finishing_a_ticket_says_when_its_work_is_not_on_the_map_with_the_refine
     assert j(run, 'work', 'op=done', f'id={there}', 'resolution=louder', cwd=mapped)['notices'] == []
 
 
+@pytest.mark.req('MAP-046')
+def test_a_ticket_removed_is_gone_with_its_steps_and_settings(run, mapped):
+    """The person deletes a ticket for good, 2026-10-20: op=remove takes its row, its steps and what the map keeps on
+    it; the list no longer holds it and a read of it is refused."""
+    gone = j(run, 'work', 'op=add', 'node=element:code.alarm.audible', 'task=Delete me.', 'agent=codex', cwd=mapped)['id']
+    j(run, 'work', 'op=plan', f'id={gone}', 'steps=2', cwd=mapped)
+    j(run, 'work', 'op=step', f'id={gone}', 'said=One done.', cwd=mapped)
+    removed = j(run, 'work', 'op=remove', f'id={gone}', cwd=mapped)
+    assert removed['removed'] == gone and removed['address'] == 'code.alarm.audible'
+    assert gone not in [one['id'] for one in j(run, 'work', cwd=mapped)['results']]
+    refused = run('map', 'work', f'id={gone}', cwd=mapped, ok=False)
+    assert refused.returncode != 0 and 'No work record' in refused.stderr
+
+
 @pytest.mark.req('LAYER-025')
 def test_knowledge_creates_no_correction_layer_and_offers_no_correct_or_peel(run, mapped):
     refused = run('map', 'knowledge', 'op=create', 'layer=fix-a', 'kind=correction', 'variable=Fixes.',

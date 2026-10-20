@@ -1230,6 +1230,7 @@ WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'open', 'limit', 'after',
                        'hold', 'board'}),
     'read': frozenset({'id'}),
+    'remove': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
                       'links', 'agent', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents', 'board'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
@@ -1258,7 +1259,7 @@ AGENT_TYPES = TICKET_AGENTS
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
 WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'glyphs': (), 'read': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
                                           'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
-                                          'move': ('id', 'column'), 'distribute': ('agents',)}
+                                          'move': ('id', 'column'), 'distribute': ('agents',), 'remove': ('id',)}
 
 
 def _work_node(value: Any) -> Node:
@@ -1387,7 +1388,7 @@ def work(ctx: Context) -> Any:
     if op == 'add':
         _may_write_ticket(ctx)
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
-        raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute or done; '
+        raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute, done or remove; '
                    'with id= and '
                    'no op, the one ticket is read.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
@@ -1467,6 +1468,10 @@ def work(ctx: Context) -> Any:
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
     work_id = _work_id(store, str(nouns['id']))
     word = _orchestrating(ctx, store, op, work_id, nouns)
+    if op == 'remove':  # the person deletes a ticket for good, 2026-10-20; an agent on it is stopped by the caller
+        with store.atomic():
+            removed = store.remove_work(work_id)
+        return _with_notices(removed, notices)
     if op == 'read':
         return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
@@ -2061,9 +2066,10 @@ WORK_NOUNS = (
                 'steps you plan, first, and again when the plan changes; step, which says you finished one, with what '
                 'you did and any choice you made and why; move, which puts it in a column of the board; distribute, '
                 'which gives the open tickets the glyphs of N agents; glyphs, which reads the available agent glyph '
-                'names; or done, which closes it with its resolution and why once the work is complete.',
+                'names; done, which closes it with its resolution and why once the work is complete; or remove, which '
+                'deletes it for good with its steps, links and settings.',
           schema={'type': 'string', 'enum': ['list', 'add', 'edit', 'take', 'plan', 'step', 'move', 'distribute',
-                                             'glyphs', 'done']}),
+                                             'glyphs', 'done', 'remove']}),
     _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
     _noun('said', 'step: what you did in the step you finished, in a sentence, with any choice you made and its why.'),
     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
@@ -2312,8 +2318,8 @@ MODULE = Module(
                      'or the start of one. Only what the layers in view show is found.',
              examples=(('metaform map find cents', 'Where the map holds anything about cents.'),),
              effect='read', reads_layers=True),
-        Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take '
-                           'and finish them. To work a ticket handed to you: read it with id=; op=plan with the steps '
+        Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take, '
+                           'finish and remove them. To work a ticket handed to you: read it with id=; op=plan with the steps '
                            'you plan; op=step as each finishes, saying what you did and any choice you made with its '
                            'why; op=done with a resolution and a why when it is complete; when you stop with it open, '
                            'op=edit its note to say what is true now and where. A ticket never changes the map, and it '

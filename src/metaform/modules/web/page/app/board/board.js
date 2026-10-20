@@ -7,7 +7,7 @@ import {S, read} from '/page/app/core/reads.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
-import {ticketStatus, statusChip, cancelTicket, rememberStop} from '/page/app/dock/threads.js';
+import {ticketStatus, statusChip, cancelTicket, removeTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
 import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago}
   from '/page/app/board/refs.js';
@@ -226,6 +226,7 @@ function cardProgress(ticket) {
 function cardActs(ticket, place, total, move) {
   const start = event => { event.stopPropagation(); startWindow(`Start an agent · ${ticketPart(ticket)}`, [ticket]); };
   const cancel = async event => { event.stopPropagation(); await cancelTicket(ticket, event.currentTarget); };
+  const remove = async event => { event.stopPropagation(); await removeTicket(ticket, event.currentTarget); };
   return h('div', {class: 'acts'},
     waiting(ticket) ? h('button', {class: 'btn sm primary start', type: 'button',
       title: 'Start an agent on this ticket', onclick: start}, 'Start agent') : null,
@@ -233,6 +234,8 @@ function cardActs(ticket, place, total, move) {
     h('button', {class: 'btn sm quiet', type: 'button'}, 'Inspect'),
     ticket.done ? null : h('button', {class: 'btn sm quiet cancel', type: 'button',
       title: 'Cancel this ticket: its agent stops and the ticket is closed as cancelled', onclick: cancel}, 'Cancel'),
+    h('button', {class: 'btn sm quiet remove', type: 'button',
+      title: 'Delete this ticket for good, with its steps, links and settings', onclick: remove}, 'Delete'),
     B.boards.length ? boardSelect(ticket) : null,
     h('span', {class: 'grow'}),
     h('div', {class: 'priority', role: 'group', 'aria-label': 'Card order'},
@@ -452,6 +455,9 @@ function archiveRow(ticket) {
     h('span', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
     h('span', {class: 'address'}, ticket.address || ''),
     h('small', {class: 'when'}, `Done ${String(ticket.done).replace('T', ' ')}`),
+    h('button', {class: 'btn sm quiet remove', type: 'button', title: 'Delete this ticket for good',
+      onclick: async event => { event.stopPropagation(); const row = event.currentTarget.closest('.row');
+        if (await removeTicket(ticket, event.currentTarget)) row?.remove(); }}, 'Delete'),
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null);
 }
 $('#board .archive-toggle').onclick = async () => {

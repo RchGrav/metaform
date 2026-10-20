@@ -584,6 +584,27 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
+def remove_work(tx: Tx, work_id: str) -> dict[str, Any]:
+    """Delete a ticket for good: its row, its steps, links, plans and reports, and what the map module keeps on it, its
+    glyph, settings, eligible agents, order, question links and number. Its node stays, and a question it carried stays
+    as the node's. Said on `map.changed` as a change to the ticket, so every page drops its card. The person's own act,
+    2026-10-20: a ticket could be cancelled, which kept it in the Archive, but never deleted."""
+    row = _work_row(tx, work_id)
+    record = work_record(tx, row, ())
+    _ticket_changed(tx, work_id)
+    for table in ("work_steps", "work_links", "plans", "reports"):
+        if any(column[1] == "work_id" for column in tx.execute(f"PRAGMA table_info({table})").fetchall()):
+            tx.execute(f"DELETE FROM {table} WHERE work_id=?", (work_id,))
+    tables = tx.tables()
+    for table in ("glyphs", "ticket_settings", "eligible", "after"):
+        tables.delete(table, {"work_id": work_id})
+    for linked in [one for one in tables.rows("question_work", limit=0).results if one["work_id"] == work_id]:
+        tables.delete("question_work", {"message_id": linked["message_id"]})
+    tables.delete("numbered", {"kind": "work", "item_id": work_id})
+    tx.execute("DELETE FROM work WHERE work_id=?", (work_id,))
+    return {"removed": work_id, "address": record.address, "task": record.task}
+
+
 def _epic_of(tx: Tx, work_id: str) -> str | None:
     """The epic a ticket belongs to, the `epic` its settings name, or None."""
     row = tx.tables().get("ticket_settings", {"work_id": work_id})
@@ -1563,6 +1584,7 @@ DATA = Data(
                 plan_work,
                 step_work,
                 finish_work,
+                remove_work,
                 prove_work,
                 answer,
                 approve,
