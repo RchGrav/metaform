@@ -14,8 +14,10 @@ merge is ever offered; the active dev branch is the branch checked out in the pr
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -24,6 +26,7 @@ from typing import Any
 from metaform.data import Node, Store, WorkRecord
 
 READY, REVIEW, MERGED, FAILED = 'ready', 'review', 'merged', 'failed'
+PUSH_PENDING = 'push pending'
 MERGING = 'merging'  # journaled: a merge under way, or left part way by one that died, `merge_due`
 FOLDER = '.worktrees'  # inside the project folder, so an agent there reaches the project; kept out of git status
 TRAILER = 'Metaform-Ticket'  # the git trailer every commit made for a ticket carries, P009
@@ -35,6 +38,210 @@ QUEUE_LIMIT = 600.0  # seconds a lock left by a merge that died is honoured befo
 def git(folder: str | Path, *words: str, limit: float = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(['git', *words], cwd=folder, capture_output=True, text=True, encoding='utf-8',
                           timeout=limit, check=False, stdin=subprocess.DEVNULL)
+
+
+def capture_state(folder: str | Path) -> dict[str, str]:
+    """Dirty paths at session start. Their content belongs to an earlier writer."""
+    found = git(folder, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames')
+    if found.returncode:
+        return {'': 'not a git checkout'}
+    return {entry[3:]: hashlib.sha256(entry.encode('utf-8')).hexdigest()
+            for entry in found.stdout.split('\0') if entry}
+
+
+def file_fingerprint(folder: str | Path, name: str) -> str:
+    """Content and mode prove that a successful edit has not since changed."""
+    path = Path(folder) / name
+    try:
+        mode = path.lstat().st_mode
+        content = os.readlink(path).encode('utf-8') if path.is_symlink() else path.read_bytes()
+    except FileNotFoundError:
+        return 'deleted'
+    return hashlib.sha256(str(mode).encode('ascii') + b'\0' + content).hexdigest()
+
+
+def ticket_title(store: Store, record: WorkRecord) -> str:
+    address = record.address or record.receiver_address or record.provider_address or 'work'
+    numbered = store.numbers_of('work', [record.id]).get(record.id)
+    handle = numbered[0] if numbered else f'{address}#{record.id[:8]}'
+    title = numbered[1] if numbered and numbered[1] else record.task or record.note or record.condition or 'Work'
+    return f'{handle} {title}'.splitlines()[0]
+
+
+def _deliverable(path: str) -> bool:
+    """Exclude runtime output, temporary files and diagnostic captures from ticket commits."""
+    parts = Path(path).parts
+    return bool(parts) and not any(part in ('.git', '.worktrees', '__pycache__', '.pytest_cache',
+                                            'node_modules', '.venv', 'tmp', 'temp', 'diagnostics')
+                                   for part in parts) and not path.endswith(('.log', '.tmp', '.pyc', '.bak', '~'))
+
+
+def push_ticket(folder: str | Path) -> dict[str, Any]:
+    try:
+        return _push_ticket(folder)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {'pushed': False, 'conflict': False, 'why': f'Git push failed: {exc}'}
+
+
+def _push_ticket(folder: str | Path) -> dict[str, Any]:
+    """Push configured upstream. A rejected push fetches and merges, never rewrites history."""
+    result: dict[str, Any] = {'pushed': False, 'conflict': False, 'why': ''}
+    upstream = git(folder, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}')
+    if upstream.returncode:
+        return result
+    branch = dev_branch(folder)
+    if branch is None:
+        return result
+    remote = git(folder, 'config', '--get', f'branch.{branch}.remote').stdout.strip()
+    destination = git(folder, 'config', '--get', f'branch.{branch}.merge').stdout.strip()
+    if not remote or not destination:
+        return result
+    pushed = git(folder, 'push', remote, f'HEAD:{destination}')
+    if pushed.returncode == 0:
+        result['pushed'] = True
+        return result
+    fetched = git(folder, 'fetch', remote)
+    if fetched.returncode:
+        result['why'] = (fetched.stdout + fetched.stderr).strip()[-400:]
+        return result
+    merged = git(folder, '-c', 'merge.autostash=false', 'merge', '--no-edit', '@{upstream}')
+    if merged.returncode:
+        result['conflict'] = _conflicting(folder, merged.stdout + merged.stderr)
+        result['why'] = (merged.stdout + merged.stderr).strip()[-400:]
+        if result['conflict']:
+            git(folder, 'merge', '--abort')
+        return result
+    pushed = git(folder, 'push', remote, f'HEAD:{destination}')
+    result['pushed'] = pushed.returncode == 0
+    result['why'] = '' if result['pushed'] else (pushed.stdout + pushed.stderr).strip()[-400:]
+    return result
+
+
+def _reconcile_index(folder: Path, commit: str, files: dict[str, str]) -> str:
+    """Refresh only ticket entries still at their pre-commit version, preserving later peer staging."""
+    changed = git(folder, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', '-z', commit)
+    if changed.returncode:
+        return changed.stderr.strip()[-400:]
+    owned: set[str] = set()
+    for name in files:
+        candidate = Path(name)
+        try:
+            relative = (candidate if candidate.is_absolute() else folder / candidate).relative_to(folder).as_posix()
+        except ValueError:
+            continue
+        if '..' not in Path(relative).parts:
+            owned.add(relative)
+    refresh: list[str] = []
+    for name in changed.stdout.split('\0'):
+        if name not in owned:
+            continue
+        unchanged = git(folder, 'diff', '--cached', '--quiet', f'{commit}^', '--', name)
+        if unchanged.returncode == 0:
+            refresh.append(name)
+        elif unchanged.returncode != 1:
+            return unchanged.stderr.strip()[-400:]
+    if not refresh:
+        return ''
+    reset = git(folder, 'reset', '-q', 'HEAD', '--', *refresh)
+    return '' if reset.returncode == 0 else (reset.stdout + reset.stderr).strip()[-400:]
+
+
+def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[str, str],
+                    baseline: dict[str, str] | None) -> dict[str, Any]:
+    """Commit only owned paths through a private index, preserving other staged and unstaged work.
+
+    Ownership must be supplied by the runner. Dirty startup paths cannot be attributed safely,
+    even if the session subsequently edits them. Missing startup evidence blocks shared commits.
+    """
+    result: dict[str, Any] = {'committed': None, 'pushed': False, 'conflict': False, 'why': ''}
+    folder = Path(folder).resolve()
+    trailer = f'{TRAILER}: {work_id}'
+    previous = git(folder, 'log', '--format=%H', '--fixed-strings', '--grep', trailer)
+    for commit in previous.stdout.splitlines():
+        if trailer in git(folder, 'log', '-1', '--format=%B', commit).stdout.splitlines():
+            result['committed'] = commit
+            with Queued(folder) as held:
+                if not held:
+                    result['why'] = 'Another git operation is under way.'
+                    return result
+                result['why'] = _reconcile_index(folder, commit, files)
+                if not result['why']:
+                    result.update(push_ticket(folder))
+            return result
+    if not files or baseline is not None and '' in baseline:
+        return result
+    if baseline is None:
+        result['why'] = 'Missing startup git state. Ticket files cannot be attributed safely.'
+        return result
+    paths: list[str] = []
+    expected: dict[str, str] = {}
+    dirty = capture_state(folder)
+    for name, fingerprint in files.items():
+        candidate = Path(name)
+        if not candidate.is_absolute():
+            candidate = folder / candidate
+        try:
+            relative = candidate.relative_to(folder).as_posix()
+        except ValueError:
+            continue
+        if '..' in Path(relative).parts or not _deliverable(relative) or relative not in dirty:
+            continue
+        if file_fingerprint(folder, relative) != fingerprint:
+            result['why'] = f'File changed after the session edit: {relative}'
+            return result
+        if relative in baseline:
+            result['why'] = f'Pre-existing changes prevent safe attribution: {relative}'
+            return result
+        if relative not in paths:
+            paths.append(relative)
+            expected[relative] = fingerprint
+    if not paths:
+        return result
+    with Queued(folder) as held:
+        if not held:
+            result['why'] = 'Another git operation is under way.'
+            return result
+        handle, index = tempfile.mkstemp(prefix='metaform-ticket-index-')
+        os.close(handle)
+        env = {**os.environ, 'GIT_INDEX_FILE': index}
+        try:
+            def staged(*words: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(['git', *words], cwd=folder, capture_output=True, text=True,
+                                      encoding='utf-8', timeout=120, check=False,
+                                      stdin=subprocess.DEVNULL, env=env)
+            head = git(folder, 'rev-parse', 'HEAD').stdout.strip()
+            for words in [('read-tree', head), ('add', '-A', '--', *paths),
+                          ('diff', '--cached', '--check')]:
+                done = staged(*words)
+                if done.returncode:
+                    result['why'] = (done.stdout + done.stderr).strip()[-400:]
+                    return result
+            for name, fingerprint in expected.items():
+                if file_fingerprint(folder, name) != fingerprint:
+                    result['why'] = f'File changed while preparing ticket commit: {name}'
+                    return result
+            tree = staged('write-tree')
+            if tree.returncode:
+                result['why'] = tree.stderr.strip()[-400:]
+                return result
+            made = git(folder, 'commit-tree', tree.stdout.strip(), '-p', head, '-m', title,
+                       '-m', f'{TRAILER}: {work_id}')
+            if made.returncode:
+                result['why'] = made.stderr.strip()[-400:]
+                return result
+            committed = made.stdout.strip()
+            advanced = git(folder, 'update-ref', 'HEAD', committed, head)
+            if advanced.returncode:
+                result['why'] = 'Branch changed while preparing ticket commit.'
+                return result
+            result['committed'] = committed
+            result['why'] = _reconcile_index(folder, committed, expected)
+            if result['why']:
+                return result
+            result.update(push_ticket(folder))
+            return result
+        finally:
+            Path(index).unlink(missing_ok=True)
 
 
 def branch_of(work_id: str) -> str:
@@ -223,7 +430,9 @@ def due(store: Store) -> list[dict[str, Any]]:
     past, so the next check finishes it."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        rows = [dict(row) for state in (READY, MERGING) for row in tx.rows('merges', {'state': state}, limit=0).results]
+        rows = [dict(row) for state in (READY, MERGING, MERGED)
+                for row in tx.rows('merges', {'state': state}, limit=0).results
+                if state != MERGED or row['reason'] == PUSH_PENDING]
     return sorted(rows, key=lambda row: row['deadline'])
 
 
@@ -360,6 +569,8 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
+    if row is not None and row['state'] == MERGED:
+        return _delivered(ctx, store, own, Path(store.project().path), work_id)
     if row is None or row['state'] not in (READY, MERGING):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(row)
@@ -411,7 +622,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             record = store.ticket(work_id).work
             git(here, 'reset', '--soft', dev)
             squashed = git(here, 'commit', '-q', '-m',
-                           f'{record.condition or "work"}: {(record.task or record.note or work_id)[:60]}',
+                           ticket_title(store, record),
                            '-m', f'Work {work_id}: {record.resolution or ""}', '-m', f'{TRAILER}: {work_id}')
             done = git(project, 'merge', '--ff-only', temp) if squashed.returncode == 0 else squashed
             if done.returncode == 0:
@@ -431,8 +642,25 @@ def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev
     _dropped(project, work_id)
     removed(project, folder, branch)
     with own.tables() as tx:
-        tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': ''})
-    return {'work_id': work_id, 'merged': True, 'why': ''}
+        tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': PUSH_PENDING})
+    return _delivered(ctx, store, own, project, work_id)
+
+
+def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) -> dict[str, Any]:
+    """A committed merge's pending push survives crashes. Explicit retries never repeat its squash."""
+    pushed = push_ticket(project)
+    if pushed['why']:
+        from .orchestration import TRANSPORT
+        try:
+            record = store.ticket(work_id).work
+            TRANSPORT.notify_user(ctx, {'text': f'{ticket_title(store, record)}: {pushed["why"]}',
+                                        'work_id': work_id, 'kind': 'ticket-commit', 'state': 'blocked'},
+                                  f'ticket-commit:{work_id}')
+        except Exception as exc:  # noqa: BLE001  notification failure cannot undo a completed merge
+            print(f'Ticket push notification failed: {exc}', file=sys.stderr)
+    with own.tables() as tx:
+        tx.update('merges', {'work_id': work_id}, {'reason': pushed['why']})
+    return {'work_id': work_id, 'merged': True, **pushed}
 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:

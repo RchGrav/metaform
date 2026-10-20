@@ -380,8 +380,8 @@ settings.number('dispatch_rework_limit', 3, min=0, person_only=True, label='Rewo
                         'resumes remain available; dispatch.rework-limit announces the pause.')
 settings.boolean('dispatch_worktrees', False, person_only=True,
                  help='Each ticket\'s agent works in a git worktree of its own, and done '
-                 'work waits for review, then merges into the active dev branch, VIEW-044. Off until the dev branch '
-                 'holds the work in progress, since a worktree starts from the last commit.')
+                 'work waits for review, then merges into the active dev branch, VIEW-044. Finished tickets commit '
+                 'their own files and push the branch upstream with either choice.')
 settings.number('dispatch_abandoned_branch_days', 30, min=1, person_only=True, label='Abandoned branches kept',
                 help='Days the branch of a ticket closed without merging is kept, its work committed, before it is '
                      'removed.',

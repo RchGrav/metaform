@@ -778,6 +778,18 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 
 ### VIEW-044 A worktree that passes its tests and merges cleanly waits fifteen minutes for review, then merges itself, unless the person steps in
 
+- Amendment, 2026-10-20, code.dispatcher.agent#7e, confirmed: Ticket completion commits the ticket's own deliverable
+  files by default, with no setting. The commit subject contains its Address, number and title, with the existing
+  `Metaform-Ticket` trailer. Completion includes proof landing. Shared-checkout commits preserve peer staging and
+  unrelated edits. Startup dirty paths, overlapping writers and changed write fingerprints block uncertain
+  attribution. Explicit functional links identify deliverables. Temporary and diagnostic output is excluded.
+  Worktree landing retains the existing review flow and squash commit, then pushes. Both paths push the current
+  branch to its upstream when configured. A rejected push fetches and merges without rewriting history or
+  automatically stashing peer work. Conflicts are aborted and reported once to the system agent's inbox.
+  Why: Each finished ticket must remain independently reviewable on the remote without claiming another agent's
+  changes. Acceptance: Local bare-remote tests prove ticket-only commits beside staged and unstaged peer edits,
+  rejected-push merges, conflict notification, write attribution and repeated completion recovery.
+
 - Requirement: When an agent's worktree passes its tests and the merge check finds it can merge, the web page shows a Review notice for it. If fifteen minutes pass with no manual review, and the tests still pass and it still merges, the worktree is merged into the active dev branch automatically and logged as a newly committed feature that needs testing before the next release. If the person clicks Review, the countdown is cancelled for good and the work is the person's from then on. A window then offers an agent's help to prepare the code so it does not conflict with the ongoing work. Yes opens a chat with an agent that prepares the code for review, and No does not restart the countdown. The chat window has the form of a customer service window in the lower right corner and shows that the agent is coming while it starts.
 - What this means:
   - The text the page shows is given, and is used as written:

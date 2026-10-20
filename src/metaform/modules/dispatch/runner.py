@@ -164,7 +164,7 @@ from . import (
     work_over,
     workflow_skill,
 )
-from .merge import checkpoint
+from .merge import capture_state, checkpoint, complete_ticket, file_fingerprint, ticket_title
 from .signals import THREAD_TABLES, add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
@@ -1249,7 +1249,7 @@ class Session:
                                     'spent': None, 'auth': None, 'auth_methods': [],
                                     # the files it read and wrote through the runner, P019, the latest first, and an
                                     # intake agent's first call and record, M04
-                                    'files': [], 'intake': None,
+                                    'files': [], 'intake': None, 'ticket_git': None,
                                     # how the person chose this session's permission requests are answered, one of
                                     # dispatch_prompts' choices over the launch's and the project's, `answering`
                                     'prompts': None,
@@ -1712,6 +1712,12 @@ class Session:
                     self.flowed(ident, detail['nodes'], str(known.get('kind') or 'other'))
                     await self.note(f'detail:{ident}', 'tool_detail', json.dumps(detail, ensure_ascii=False))
                     await self.touch(detail['nodes'], str(known.get('kind') or 'other'))
+                    if known.get('status') == 'completed' and not known.get('commit_recorded'):
+                        paths = [str(one['path']) for one in detail['diffs']]
+                        if known.get('kind') in ('edit', 'delete', 'move'):
+                            paths += [str(one['path']) for one in detail['locations']]
+                        await self.changed_files(paths)
+                        known['commit_recorded'] = True
                 line = call_line({**known, 'title': title})
                 if self.intake is not None and (fresh or known.get('status') in ('completed', 'failed')):
                     await self.intake_call(line, known.get('status') == 'completed', ident)
@@ -2475,6 +2481,8 @@ class Session:
         except OSError as error:
             raise acp.RequestError.internal_error({'path': path, 'reason': str(error)}) from None
         await self.filed(found, 'edit')
+        async with self.lock:
+            await self.changed_files([str(found)])
         return WriteTextFileResponse()
 
     async def create_terminal(self, session_id: str, command: str, args: list[str] | None = None,
@@ -3625,6 +3633,11 @@ class Session:
         if self.resume:  # the thread goes on where it ended: its lines keep their names and their order
             await asyncio.to_thread(self.continue_thread)
             await asyncio.to_thread(self.covers_kept)  # and the work the person's word started goes on
+        if self.role == 'worker' and not self.prep and self.folder == self.root and self.acp['ticket_git'] is None:
+            self.acp['ticket_git'] = {'started': time.time_ns(),
+                                      'peers': await asyncio.to_thread(self.commit_peers),
+                                      'baseline': await asyncio.to_thread(capture_state, self.folder),
+                                      'files': {}, 'written_at': {}, 'result': None}
         # The server the agent is asked to start is the one AI tools are registered with, chosen at the project's root
         # and not in a worktree, run by this interpreter; none is asked for when no module provides one, MCP-010.
         server = await asyncio.to_thread(mcp_server, Path(self.root))
@@ -4077,6 +4090,7 @@ class Session:
         if isinstance(before, dict):
             held = cast(dict[str, Any], before)
             self.acp['touched'] = list(held.get('touched') or [])
+            self.acp['ticket_git'] = held.get('ticket_git')
             if held.get('prompts') in PROMPTS:  # the person's choice for this session holds when it goes on
                 self.acp['prompts'] = held['prompts']
             if isinstance(held.get('opening'), dict):  # the system prompt the conversation holds, `reopened`
@@ -4682,6 +4696,83 @@ class Session:
         if not self.turns and not self.ending:  # a message that came meanwhile has started the next turn
             await self.end('its brief is done' if state == 'done' else f'its brief stopped: {reason}')
 
+    async def changed_files(self, paths: list[str]) -> None:
+        """Keep every successful write for completion, separately from the bounded activity display."""
+        held = self.acp['ticket_git']
+        if held is None:
+            return
+        for path in paths:
+            named = relative(path, [self.folder, self.root])
+            if named:
+                held['files'][named] = await asyncio.to_thread(file_fingerprint, self.folder, named)
+                held.setdefault('written_at', {})[named] = time.time_ns()
+        if paths:
+            await self.save_state()
+
+    def commit_peers(self) -> list[str]:
+        with self.store.tables(write=False) as tx:
+            return [str(row['session_id']) for row in tx.rows('agent_sessions', limit=0).results
+                    if row['state'] == 'running' and row['session_id'] != self.session_id]
+
+    def commit_overlaps(self, files: set[str]) -> set[str]:
+        """Refuse writes from overlapping sessions, including peers that have already ended."""
+        from .peering import touched
+        overlaps: set[str] = set()
+        if not files:
+            return overlaps
+        with self.store.tables(write=False) as tx:
+            for row in tx.rows('agent_sessions', limit=0).results:
+                if row['session_id'] == self.session_id:
+                    continue
+                state = tx.get('session_lines', {'session_id': row['session_id'], 'name': 'state'})
+                if state is None:
+                    continue
+                held = json.loads(str(state['text']))
+                if held.get('cwd') != self.folder:
+                    continue
+                own: dict[str, Any] = self.acp['ticket_git'] or {}
+                started = int(own.get('started', 0))
+                evidence: dict[str, Any] = held.get('ticket_git') or {}
+                overlaps.update(path for path in evidence.get('files', {})
+                                if path in files and evidence.get('written_at', {}).get(path, 0) >= started)
+                if 'written_at' not in evidence and (row['state'] == 'running'
+                        or row['session_id'] in own.get('peers', []) or int(row['seq']) * 1_000_000 >= started):
+                    overlaps.update(str(one['path']) for one in touched(tx, str(row['session_id']))
+                                    if one.get('action') in ('edit', 'delete', 'move') and str(one['path']) in files)
+        return overlaps
+
+    async def commit_done(self) -> None:
+        """Commit attributable linked files once, before completion releases the shared checkout."""
+        held = self.acp['ticket_git']
+        if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
+                or (held['result'] is not None and not held['result']['why']):
+            return
+        index = await self.places()
+        files = {path: fingerprint for path, fingerprint in held['files'].items()
+                 if placed(index, path)[1]}
+        title = await asyncio.to_thread(ticket_title, self.store,
+                                       await asyncio.to_thread(ticket, self.store, self.work_id))
+        overlaps = await asyncio.to_thread(self.commit_overlaps, set(files))
+        try:
+            result = ({'committed': None, 'pushed': False, 'conflict': False,
+                       'why': 'Other sessions changed the same files: ' + ', '.join(sorted(overlaps))}
+                      if overlaps else await asyncio.to_thread(complete_ticket, self.folder, self.work_id, title,
+                                                              files, held['baseline']))
+        except (OSError, subprocess.SubprocessError) as error:
+            result = {'committed': None, 'pushed': False, 'conflict': False, 'why': str(error)}
+        held['result'] = result
+        async with self.lock:
+            await self.note('ticket-commit', 'commit', json.dumps(result, ensure_ascii=False))
+            await self.save_state()
+        if result['why']:
+            from .orchestration import TRANSPORT
+            try:
+                await asyncio.to_thread(TRANSPORT.notify_user, self.ctx,
+                                        {'text': f'{title}: {result["why"]}', 'work_id': self.work_id,
+                                         'kind': 'ticket-commit', 'state': 'blocked'}, f'ticket-commit:{self.work_id}')
+            except Exception as error:  # noqa: BLE001  reporting must not hold the finished session open
+                sys.stderr.write(f'Could not report ticket commit {self.work_id}: {error}\n')
+
     async def ticket_done(self) -> None:
         """A worker's ticket is done: once per session, the agent first gets one more turn to record what it learned
         at the ticket's node when `dispatch_record_on_finish` asks for it, and the session ends when that turn ends;
@@ -4691,6 +4782,7 @@ class Session:
             return
         self.finishing = True
         try:
+            await self.commit_done()
             if self.role == 'worker':  # while Full Auto is on, the system agent checks the fault lights it may clear
                 from .board import finished
                 try:
@@ -5151,6 +5243,15 @@ class Session:
             if self.conn is not None:
                 with contextlib.suppress(Exception):
                     await self.conn.close()
+            # An adapter can exit after closing its ticket but before returning its final prompt response.
+            held_git = self.acp['ticket_git']
+            if self.role == 'worker' and held_git is not None and held_git['result'] is None:
+                try:
+                    record = await asyncio.to_thread(ticket, self.store, self.work_id)
+                    if await asyncio.to_thread(work_over, self.store, record):
+                        await self.commit_done()
+                except Exception as error:  # noqa: BLE001  git failure cannot prevent releasing process ownership
+                    sys.stderr.write(f'Could not finish ticket commit {self.work_id}: {error}\n')
             try:
                 async with self.lock:
                     await self.flush()

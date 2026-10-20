@@ -242,6 +242,22 @@ With Autostart agents checked, `autostart` is also a supervisor, P012: a worker'
 
 The steps on the ticket stay the agent's own, MAP-053. The session id is also on the work record, in `taken_by`, as `<agent> <session id>`, because a work record has no `extra`.
 
+## Ticket commits
+
+Completed tickets commit their own linked deliverables, then push the current branch to its configured upstream.
+This behavior has no setting. Completion includes proof work whose fix has landed. Commit subjects contain the
+ticket Address, number and title, followed by the existing `Metaform-Ticket` trailer. Worktree review still owns
+landing consent. Its existing squash becomes the ticket commit and is pushed after landing.
+
+Shared-checkout commits use a private Git index. The runner retains startup dirty paths and every successful file
+write separately from its bounded activity display. Earlier changes, overlapping writers and files changed after
+the recorded write prevent attribution and are reported instead of committed. Only explicitly linked files qualify;
+temporary output and diagnostic files stay out. Peer staging and unrelated uncommitted edits remain intact.
+
+Rejected pushes fetch and merge upstream without rewriting history or automatically stashing peer edits. Git
+conflicts are aborted and reported once to the system agent's inbox. Commit and push results remain in the
+session thread. Repeated completion recovers the ticket commit rather than making another one.
+
 ## Lifecycle and cleanup
 
 No `start` or `stop` hook. A runner owns one agent process group, one loopback listening socket and its tasks. The session ends when a prompt turn ends with the ticket done, when `stop` is run, when the agent's process ends, or on Ctrl+C in a foreground `run`. Ending ends the agent's process group and marks the session record ended.
