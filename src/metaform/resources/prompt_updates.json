@@ -165,19 +165,6 @@
       "id": "gc-led-orchestration-2026-10-18:map:instructions"
     },
     {
-      "name": "mcp:connect_directive",
-      "source": "src/metaform/modules/mcp/resources/prompts.xml",
-      "baseline_sha256": "ca084f6eb227af0f440c98e798c03b59e2e65c0f9833ae0ee26a2df36c0a647d",
-      "target_sha256": "ed98c4568ca395445258a53b2fa942c785cd2aaf9a6419c8359149fb55410b00",
-      "edits": [
-        {
-          "old": "Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your role is for.",
-          "new": "Read the applicable instruction resources linked below whose contents are due in this context. They supply shared project terms, your responsibilities and memory instructions. Components already delivered unchanged in this context are omitted by the delivery service."
-        }
-      ],
-      "id": "gc-led-orchestration-2026-10-18:mcp:connect_directive"
-    },
-    {
       "name": "mcp:connect_rules",
       "source": "src/metaform/modules/mcp/resources/prompts.xml",
       "baseline_sha256": "b2750df4444c2063025ee2b98c715ae7598873f6ea73aecde1ed749b8eca099e",
