@@ -224,22 +224,14 @@ function same(one, two, length) {
   return true;
 }
 
-/* ---------- the labels, drawn in one draw for each page of an atlas, VIEW-038 and VIEW-010 ---------- */
-/* Each label keeps its own sign, `tags` in labels.js, which the page places, turns, sizes, fades and reads as before,
- * and its own canvas, painted only when what it shows changes; only its drawing moves here. Its canvas is copied into
- * a slot of an atlas page when it is painted, each page sent to the graphics card once in a frame where any of its
- * labels changed (a label sent alone waited on the graphics card for each one, seconds for a map's worth), and every
- * label of a page is one instance of one plane, its place, turn and size its sign's, its part of the page and its
- * opacity its own: one draw call a page in
- * place of one a label (874 at 1,000 elements, critic F1, 2026-10-17). The signs themselves stay out of the drawing,
- * on HIDDEN_LAYER, so three.js neither draws nor sorts them. A slot freed by a label painted at another size, or
- * dropped, is taken again by the next that fits; a page with no room left gets another page beside it. Instances are
- * written farthest first, as three.js sorted the signs, so a nearer name is drawn over a farther one. */
+/* ---------- labels batched by consecutive texture banks in depth order, VIEW-038 and VIEW-010 ---------- */
+/* Labels keep their signs, canvases and atlas slots. One shared geometry writes four world-space vertices per
+ * label in farthest-first order. Consecutive labels sharing a texture bank form one draw group. Bank transitions split
+ * groups so interleaved pages preserve global transparent order, including partial opacity and alpha edges.
+ * Geometry and group storage grow while labels are painted, never during atlasDraw. */
 const PAGE = 2048, GUTTER = 2, ROW_STEP = 8;
 export const HIDDEN_LAYER = 31;
-export const ATLAS = {pages: [], scene: null};
-const LABEL_VERTEX = ['#include <uv_vertex>', '#include <uv_vertex>\nvMapUv = labelUv.xy + vMapUv * labelUv.zw;\n'
-  + 'vLabelOpacity = labelOpacity;'];
+export const ATLAS = {pages: [], scene: null, mesh: null, room: 0, n: 0, used: 0, groups: [], bankSize: 1};
 function atlasPage(index) {
   // a page is a canvas the labels are copied into, sent to the graphics card whole the first time, then each label
   // repainted on it sent alone into its slot, `atlasPaint`
@@ -249,34 +241,60 @@ function atlasPage(index) {
     magFilter: THREE.LinearFilter, generateMipmaps: false});
   const material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide, depthTest: true,
     depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false});  // faded by its own depth
+  const bank = index - index % ATLAS.bankSize;
   material.onBeforeCompile = shader => {
-    shader.vertexShader = 'attribute vec4 labelUv;\nattribute float labelOpacity;\nvarying float vLabelOpacity;\n'
-      + shader.vertexShader.replace(...LABEL_VERTEX);
-    shader.fragmentShader = 'varying float vLabelOpacity;\n' + shader.fragmentShader
-      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.a *= vLabelOpacity;');
+    const count = Math.min(ATLAS.bankSize, ATLAS.pages.length - bank);
+    let samplers = '', sample = 'vec4 sampledDiffuseColor;\n';
+    for (let i = 0; i < count; i++) {
+      const name = i ? 'labelMap' + i : 'map';
+      if (i) {
+        samplers += 'uniform sampler2D ' + name + ';\n';
+        shader.uniforms[name] = {value: ATLAS.pages[bank + i].texture};
+      }
+      sample += (i ? 'else ' : '') + (i < count - 1 ? 'if (vLabelPage < ' + (i + 0.5) + ') ' : '')
+        + 'sampledDiffuseColor = texture2D(' + name + ', vMapUv);\n';
+    }
+    shader.vertexShader = 'attribute float labelOpacity;\nattribute float labelPage;\n'
+      + 'varying float vLabelOpacity;\nvarying float vLabelPage;\n' + shader.vertexShader
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvLabelOpacity = labelOpacity;\nvLabelPage = labelPage;');
+    shader.fragmentShader = samplers + 'varying float vLabelOpacity;\nvarying float vLabelPage;\n'
+      + shader.fragmentShader.replace('#include <map_fragment>',
+        sample + 'diffuseColor *= sampledDiffuseColor;\ndiffuseColor.a *= vLabelOpacity;');
   };
-  material.customProgramCacheKey = () => 'label-atlas';
-  const page = {index, texture, pen: canvas.getContext('2d'), mesh: null, room: 0, dirty: false, spent: 0, rows: [],
-    top: 0, n: 0};
-  page.mesh = pageMesh(new THREE.PlaneGeometry(1, 1), material, 256, null);
-  page.room = 256;
-  ATLAS.scene.add(page.mesh);
+  material.customProgramCacheKey = () => 'label-atlas-' + Math.min(ATLAS.bankSize, ATLAS.pages.length - bank);
+  if (index !== bank) ATLAS.pages[bank].material.needsUpdate = true;
+  const page = {index, texture, material, pen: canvas.getContext('2d'), dirty: false, spent: 0, rows: [], top: 0};
+  if (ATLAS.mesh) ATLAS.mesh.material.push(material);
   return page;
 }
-/* A page's instances, room for `room` labels, with what `old` held copied in. */
-function pageMesh(geometry, material, room, old) {
-  const mesh = new THREE.InstancedMesh(geometry, material, room);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  for (const [name, size] of [['labelUv', 4], ['labelOpacity', 1]]) {
-    const attribute = new THREE.InstancedBufferAttribute(new Float32Array(room * size), size)
-      .setUsage(THREE.DynamicDrawUsage);
-    if (old) attribute.array.set(old.geometry.attributes[name].array);
-    geometry.setAttribute(name, attribute);
+/* Reserve all vertex and group storage on the painting path. No per-frame geometry or group allocation. */
+function atlasReserve(count) {
+  if (count <= ATLAS.room) return;
+  const room = Math.max(256, ATLAS.room * 2), geometry = new THREE.BufferGeometry();
+  for (const [name, size] of [['position', 3], ['uv', 2], ['labelOpacity', 1], ['labelPage', 1]]) {
+    geometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(room * 4 * size), size)
+      .setUsage(THREE.DynamicDrawUsage));
   }
-  if (old) mesh.instanceMatrix.array.set(old.instanceMatrix.array);
-  Object.assign(mesh, {frustumCulled: false, count: old ? old.count : 0, renderOrder: 10});
-  mesh.raycast = () => {};  // a label is never picked in place of the node
-  return mesh;
+  const indices = new Uint32Array(room * 6);
+  for (let i = 0; i < room; i++) {
+    const v = i * 4, at = i * 6;
+    indices[at] = v; indices[at + 1] = v + 2; indices[at + 2] = v + 1;
+    indices[at + 3] = v + 2; indices[at + 4] = v + 3; indices[at + 5] = v + 1;
+    if (i >= ATLAS.room) ATLAS.groups.push({start: 0, count: 0, materialIndex: -1});
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.groups = ATLAS.groups;
+  if (ATLAS.mesh) {
+    ATLAS.mesh.geometry.dispose();
+    ATLAS.mesh.geometry = geometry;
+  } else {
+    const mesh = new THREE.Mesh(geometry, ATLAS.pages.map(page => page.material));
+    Object.assign(mesh, {frustumCulled: false, renderOrder: 10});
+    mesh.raycast = () => {};  // labels never replace nodes in picking
+    ATLAS.mesh = mesh;
+    ATLAS.scene.add(mesh);
+  }
+  ATLAS.room = room;
 }
 /* A slot w by h on some page, in rows of a height rounded up to ROW_STEP, each row's freed runs taken first. */
 function slotFor(w, h) {
@@ -349,15 +367,20 @@ function sendSlot(page, slot, canvas, w, h) {
 /* A label's canvas, just painted, copied into its slot: a new slot when it no longer fits, or fits loosely. */
 export function atlasPaint(tag) {
   if (!G) return;
-  if (ATLAS.scene !== G.scene()) Object.assign(ATLAS, {pages: [], scene: G.scene()});
+  if (ATLAS.scene !== G.scene()) Object.assign(ATLAS, {pages: [], scene: G.scene(), mesh: null, room: 0, n: 0, used: 0, groups: [],
+    bankSize: Math.max(1, G.renderer().capabilities.maxTextures)});
   const canvas = tag.texture.image, w = canvas.width, h = canvas.height;
   if (!w || !h) return;
   let slot = tag.slot;
   if (!slot || slot.page !== ATLAS.pages[slot.page.index] || slot.wide < w + GUTTER || slot.tall < h + GUTTER
     || slot.wide > 2 * (w + GUTTER)) {
     if (slot && slot.page === ATLAS.pages[slot.page.index]) freeSlot(slot);
+    if (!slot || slot.page !== ATLAS.pages[slot.page.index]) {
+      ATLAS.n++;
+      atlasReserve(ATLAS.n);
+    }
     slot = tag.slot = slotFor(w, h);
-    if (!slot) return;
+    if (!slot) { ATLAS.n--; return; }
   }
   const page = slot.page;
   page.pen.clearRect(slot.x, slot.y, slot.wide, slot.tall);
@@ -376,37 +399,56 @@ export function atlasPaint(tag) {
   tag.uvw = (w - 1) / PAGE; tag.uvh = (h - 1) / PAGE;
 }
 export function atlasDrop(tag) {
-  if (tag.slot && tag.slot.page === ATLAS.pages[tag.slot.page.index]) freeSlot(tag.slot);
+  if (tag.slot && tag.slot.page === ATLAS.pages[tag.slot.page.index]) { freeSlot(tag.slot); ATLAS.n--; }
   tag.slot = null;
 }
-/* The labels drawn this frame, each sign's place, turn and size, part of its page and opacity, written into its page's
- * instances farthest first; what is sent to the graphics card is sent only when it changed. `order` holds the labels
- * nearest first, as labels.js layers them, `count` of them; `on`, whether names are shown at all. */
+/* `order` holds nearest-first signs. Groups retain the reverse traversal across page boundaries. */
 const LABEL_MATRIX = new THREE.Matrix4();
-const UV4 = new Float32Array(4), ONE = new Float32Array(1);
+const LABEL_POSITIONS = new Float32Array(12), LABEL_UVS = new Float32Array(8);
+const LABEL_ALPHA = new Float32Array(4), LABEL_PAGE = new Float32Array(4);
 export function atlasDraw(order, count, on) {
-  const pages = ATLAS.pages;
+  const pages = ATLAS.pages, mesh = ATLAS.mesh;
   for (let p = 0; p < pages.length; p++) {
     const page = pages[p];
-    page.n = 0;
-    page.mesh.visible = on;
     if (page.dirty) { page.texture.needsUpdate = true; page.dirty = false; }
     page.spent = 0;
   }
+  if (!mesh) return;
+  mesh.visible = on;
+  const geometry = mesh.geometry, attributes = geometry.attributes, groups = geometry.groups;
+  let n = 0, used = 0, last = -1, group = null;
   for (let i = count - 1; i >= 0; i--) {
     const tag = order[i], sprite = tag.sprite, slot = tag.slot;
     if (!slot || !sprite.visible || tag.hidden || slot.page !== pages[slot.page.index]) continue;
-    const page = slot.page;
-    if (page.n === page.room) growPage(page);
-    const n = page.n++, mesh = page.mesh, attributes = mesh.geometry.attributes;
+    const page = slot.page.index - slot.page.index % ATLAS.bankSize;
+    if (page !== last) {
+      group = ATLAS.groups[used];
+      group.start = n * 6; group.count = 0; group.materialIndex = page;
+      used++;
+      last = page;
+    }
+    group.count += 6;
     LABEL_MATRIX.compose(sprite.position, sprite.quaternion, sprite.scale);
-    writeIf(mesh.instanceMatrix, LABEL_MATRIX.elements, n * 16, 16);
-    UV4[0] = tag.uv0; UV4[1] = tag.uv1; UV4[2] = tag.uvw; UV4[3] = tag.uvh;
-    writeIf(attributes.labelUv, UV4, n * 4, 4);
-    ONE[0] = sprite.material.opacity;
-    writeIf(attributes.labelOpacity, ONE, n, 1);
+    const m = LABEL_MATRIX.elements;
+    for (let v = 0; v < 4; v++) {
+      const x = v % 2 ? 0.5 : -0.5, y = v < 2 ? 0.5 : -0.5;
+      LABEL_POSITIONS[v * 3] = m[0] * x + m[4] * y + m[12];
+      LABEL_POSITIONS[v * 3 + 1] = m[1] * x + m[5] * y + m[13];
+      LABEL_POSITIONS[v * 3 + 2] = m[2] * x + m[6] * y + m[14];
+      LABEL_UVS[v * 2] = tag.uv0 + (v % 2 ? tag.uvw : 0);
+      LABEL_UVS[v * 2 + 1] = tag.uv1 + (v < 2 ? tag.uvh : 0);
+      LABEL_ALPHA[v] = sprite.material.opacity;
+      LABEL_PAGE[v] = slot.page.index % ATLAS.bankSize;
+    }
+    writeIf(attributes.position, LABEL_POSITIONS, n * 12, 12);
+    writeIf(attributes.uv, LABEL_UVS, n * 8, 8);
+    writeIf(attributes.labelOpacity, LABEL_ALPHA, n * 4, 4);
+    writeIf(attributes.labelPage, LABEL_PAGE, n * 4, 4);
+    n++;
   }
-  for (let p = 0; p < pages.length; p++) if (pages[p].mesh.count !== pages[p].n) pages[p].mesh.count = pages[p].n;
+  for (let i = used; i < ATLAS.used; i++) { groups[i].count = 0; groups[i].materialIndex = -1; }
+  ATLAS.used = used;
+  geometry.setDrawRange(0, n * 6);
 }
 function writeIf(attribute, values, at, size) {
   const array = attribute.array;
@@ -415,13 +457,4 @@ function writeIf(attribute, values, at, size) {
   if (same) return;
   for (let k = 0; k < size; k++) array[at + k] = values[k];
   attribute.needsUpdate = true;
-}
-function growPage(page) {
-  const old = page.mesh, room = page.room * 2;
-  const mesh = pageMesh(old.geometry, old.material, room, old);
-  ATLAS.scene.remove(old);
-  old.dispose();
-  ATLAS.scene.add(mesh);
-  page.mesh = mesh;
-  page.room = room;
 }
