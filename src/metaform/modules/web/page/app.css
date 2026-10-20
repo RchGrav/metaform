@@ -598,11 +598,21 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 /* The floating window messages and a node's work history are read in, VIEW-030 and VIEW-036. */
 #float{width:420px;max-height:75vh}
 #ticketDetail{max-height:85vh;width:min(900px,calc(100vw - 24px))}
+#ticketDetail .titlebar .ref{margin-left:var(--s2);font:var(--t-xs) var(--mono)}
 #ticketDetail .body{overflow:auto;gap:var(--s3)}
+#ticketDetail .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s2)}
+#ticketDetail .head .address{color:var(--muted);font:var(--t-xs) var(--mono)}
+#ticketDetail .head .expertise{font:var(--t-sm) var(--sans)}
 #ticketDetail form{display:grid;gap:var(--s3)}
 #ticketDetail label{display:grid;gap:var(--s1)}
+#ticketDetail .row{display:flex;align-items:end;gap:var(--s3)}
+#ticketDetail .row label.kind{min-width:160px}
+#ticketDetail .row [role=status]{color:var(--muted);font:var(--t-sm) var(--sans)}
 #ticketDetail textarea,#ticketDetail input{width:100%;box-sizing:border-box}
-#ticketDetail .ticket-graph{overflow:auto}
+#ticketDetail textarea{resize:vertical;line-height:1.45}
+#ticketDetail details.pane{border-top:1px solid var(--line);padding-top:var(--s2)}
+#ticketDetail details.pane summary{cursor:pointer;font-weight:600;padding:var(--s1) 0}
+#ticketDetail .ticket-graph{overflow:auto;min-height:260px;max-height:55vh;margin-top:var(--s2)}
 #float > .body{gap:var(--s3)}
 #float .body .when{font:var(--t-xs) var(--mono);color:var(--muted)}
 .map2d .node.work-question,.map2d .cluster.work-question,.map2d path.work-question{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}
