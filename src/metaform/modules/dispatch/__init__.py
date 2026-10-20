@@ -733,9 +733,9 @@ def system_agent_choices(ctx: Any = None) -> list[str]:
 # for them too, which is not what they meant. With Jev on, Jev chooses the agent, model and thinking level of an
 # ordinary ticket; these settings choose for the purposes Jev is not asked about, and stand when Jev is off or unsure.
 settings.choice('dispatch_system_agent', system_agent_choices, 'claude', person_only=True,
-                help='The agent that is your system agent, the one you talk to in the chat, that triages for you and '
-                     'that records an intake: Claude unless you choose another installed here, or default to follow '
-                     'the default agent.',
+                help='The agent that is your system agent, the one you talk to in the chat and that triages for you: '
+                     'Claude unless you choose another installed here, or default to follow the default agent. The '
+                     'intake agent is chosen on the intake bar, else the default agent.',
                 details='Kept apart from the default agent, so changing which agent works tickets never changes who '
                         'triages for you. The chat picker on the page chooses the agent of one conversation; this one '
                         'starts when none is chosen, and when Stay connected brings your system agent back.',
@@ -6400,8 +6400,7 @@ def intake(ctx: Context) -> dict[str, Any]:
     server, recording the map as it reasons it, so an open page follows it. It takes no ticket and counts against the
     agent slots as a summoned agent does, staying to talk until the person stops it. One intake runs at a time."""
     store = ctx.require_store()
-    # the intake is the system role's duty, so it runs on the system agent's own setting, never the workers' default
-    agent = agent_named(str(ctx.nouns.get('agent') or system_agent(ctx)))
+    agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent')))  # the intake picker's, else the default
     runnable(ctx, agent)
     if not any(module.id == 'intake' for module in surface(ctx.folder)):
         raise Stop('The intake module is not active; it serves the intake the agent follows.', 'metaform enable intake')
