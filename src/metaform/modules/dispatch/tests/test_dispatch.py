@@ -1715,20 +1715,23 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
 
 
 @pytest.mark.req('VIEW-042')
-@pytest.mark.parametrize(('address', 'receiver', 'default'), [('code.interface.graphical', None, 'claude'),
-                                                               ('code.dispatcher.agent', None, 'claude'),
-                                                               (None, 'code.interface.graphical', 'gemini')])
-def test_a_ticket_with_no_agent_of_its_own_starts_with_the_default_agent_whatever_its_area(address, receiver, default):
-    """UX review round 1, 2026-10-17 (web-gui-controls F6): autostart chose Claude for front-end words in a ticket's
-    address and Codex for the rest, while the person's Default agent said Claude Code. A ticket the card gives an agent
-    keeps it."""
+@pytest.mark.parametrize(('address', 'receiver', 'paths', 'expected'), [
+    ('code.interface.graphical.board', None, [], 'claude'),
+    ('code.assistant.navigation', None, [], 'claude'),
+    ('code.dispatcher.agent', None, [], 'codex'),
+    (None, 'code.interface.graphical', [], 'claude'),
+    ('code.unknown', None, ['src/metaform/modules/web/page/app.js'], 'claude'),
+    (None, None, [], 'gemini'),
+])
+def test_ticket_agent_follows_area_unless_explicit(address, receiver, paths, expected):
     from metaform.data import WorkRecord
     from metaform.modules.dispatch import preferred
     record = WorkRecord(id='w', node_kind='element' if address else 'join', node_id='n', address=address,
                         receiver_address=receiver, provider_address=None, condition='', note=None, task='Fix it.',
                         held=False, reviewed=False, created='2026-10-14T00:00:00Z', done=None, resolution=None)
-    assert preferred(record, None, default) == default
-    assert preferred(record, {'agent': 'codex'}, default) == 'codex'
+    assert preferred(record, {'paths': paths}, 'gemini') == expected
+    assert preferred(record, {'agent': 'codex', 'paths': paths}, 'gemini') == 'codex'
+    assert preferred(record, {'agent': 'claude', 'paths': paths}, 'gemini') == 'claude'
 
 
 @pytest.mark.req('MAP-046')
@@ -3572,13 +3575,13 @@ def test_cancel_and_tune_are_the_persons_and_tune_takes_only_what_the_agent_offe
         with pytest.raises(Stop, match='the person'):
             verb(context('dispatch', dispatch.folder, project='proj', nouns=nouns, surface='mcp'))
     assert not dispatch.ticket().done
-    with Store('proj', module='dispatch').tables() as tx:  # claude: preferred() resolves the ticket to dispatch_agent since 7876f16b
+    with Store('proj', module='dispatch').tables() as tx:  # both agents publish their model choices
         for seq, (agent, name) in enumerate((('claude', 'Claude Code'), ('codex', 'Codex')), 1):
             tx.insert('catalog', {'agent': agent, 'version': '9', 'name': name, 'seen': '2026-10-12T00:00:00Z',
                                   'seq': seq, 'settings': [{'id': 'model', 'category': 'model', 'type': 'select',
                                                             'options': [{'value': 'small'}, {'value': 'large'}]}]})
     refused = run('dispatch', 'tune', dispatch.id, 'model=bogus', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and 'Claude Code offers model small, large' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and 'Codex offers model small, large' in refused.stdout + refused.stderr
     run('dispatch', 'tune', dispatch.id, 'model=large', cwd=dispatch.folder)
     shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
     assert shown['dispatch']['options'] == {'model': 'large'}

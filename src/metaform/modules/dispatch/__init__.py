@@ -321,13 +321,11 @@ def start_environment(agent: str) -> dict[str, str]:
     return agent_registry.environment(agent, version) if version else {}
 
 
-# Claude Code is the default, and the default is the agent every start that names none uses, autostart's and a merge
-# preparation's among them: UX review round 1, 2026-10-17 (web-gui-controls F6), found autostart starting Codex by the
-# ticket's area while the person's Default agent said Claude Code.
+# Conversations and tickets with unknown areas use this default. Ticket areas select their specialist.
 settings.choice('dispatch_agent', agent_choices, 'claude', person_only=True,
-                help='The default agent: the one started when none is chosen, for a ticket autostart starts, a chat, '
+                help='The default agent: the one started when none is chosen, for a ticket with unknown area, a chat, '
                      'an issue or an intake.',
-                details='A ticket whose card names an agent starts with that one; every other start uses this. The '
+                details='A ticket uses its chosen agent, else Claude for frontend work or Codex for other known areas. The '
                         'person sets it here or from the page.',
                 label='Default agent', category='agents', heading='Starting work', essential=10)
 # Whether each agent working a ticket is told to take out the code its change makes obsolete: on by default, so a
@@ -1527,8 +1525,9 @@ def require_eligible(ctx: Context, record: WorkRecord, agent: str) -> None:
 
 
 def agent_for(ctx: Context, record: WorkRecord | None, agent: str | None = None) -> str:
-    """Use the configured agent when eligible, otherwise the first agent listed, MAP-058; with no ticket, any is."""
-    chosen = agent or str(ctx.setting('dispatch_agent'))
+    """Use the explicit agent or ticket preference when eligible, otherwise the first listed, MAP-058."""
+    chosen = agent or (preferred(record, ticket_settings(ctx).get(record.id), str(ctx.setting('dispatch_agent')),
+                                 store=ctx.store) if record is not None else str(ctx.setting('dispatch_agent')))
     agents = eligible_of(ctx, record) if record is not None else []
     return agent_named(chosen if not agents or chosen in agents else agents[0])
 
@@ -2289,13 +2288,25 @@ def jev_choices(ctx: Context, store: Store, eligible: set[str] | None = None) ->
             for work_id, decision in got.decisions.items() if decision.sure}
 
 
-def preferred(record: WorkRecord, kept: dict[str, Any] | None, default: str) -> str:
-    """The agent a ticket starts with: the one the person chose on its card, else the person's Default agent,
-    `dispatch_agent`. UX review round 1, 2026-10-17 (web-gui-controls F6): it was Claude for front-end words in the
-    ticket's address and Codex for the rest, a default no control showed, so autostart started Codex while the
-    Default agent said Claude Code."""
+FRONTEND = frozenset({'gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend', 'graphical', 'interface',
+                      'graphic', 'display', 'render', 'css', 'figures', 'figure', 'chat', 'dock', 'map2d', 'map3d'})
+
+
+def preferred(record: WorkRecord, kept: dict[str, Any] | None, default: str, *,
+              store: Store | None = None) -> str:
+    """Ticket choice wins, then its functional area, then the default when its area is unknown."""
     agent = (kept or {}).get('agent')
-    return str(agent) if agent in agent_choices() else default
+    if agent in agent_choices():
+        return str(agent)
+    address = record.address or record.receiver_address or ''
+    paths = (kept or {}).get('paths') or ()
+    if store is not None:
+        paths = [ref.value for ref in store.refs(Node.of(record.node_kind, record.node_id)) if ref.key == 'path']
+    if (FRONTEND.intersection(address.split('.'))
+            or address == 'code.assistant.navigation' or address.startswith('code.assistant.navigation.')
+            or any(str(path).replace('\\', '/').startswith('src/metaform/modules/web/page/') for path in paths)):
+        return 'claude'
+    return 'codex' if address or paths else default
 
 
 def summoned(row: dict[str, Any]) -> bool:
@@ -2505,7 +2516,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
             if not isinstance(raw, list) or any(not isinstance(agent, str) for agent in cast(list[Any], raw)):
                 continue  # unreadable eligibility is refused, as by the individual start check
             agents = cast(list[str], raw)
-            chosen = preferred(record, kept.get(record.id), default)  # the ticket's own choice, else the default
+            chosen = preferred(record, kept.get(record.id), default, store=store)  # the ticket's own choice, else its area
             picked = picks.get(record.id, {}).get('agent')  # else Jev's, when it is sure and the agent eligible
             if picked and not kept.get(record.id, {}).get('agent') and (not agents or picked in agents):
                 chosen = picked
@@ -3212,7 +3223,7 @@ def prep(ctx: Context) -> dict[str, Any]:
     record = ticket(store, work_id)
     kept = work_reads(ctx.folder, record, project=ctx.project).get('map')  # a done ticket's own, as it shows it
     agent = preferred(record, cast(dict[str, Any], kept) if isinstance(kept, dict) else None,
-                      str(ctx.setting('dispatch_agent')))
+                      str(ctx.setting('dispatch_agent')), store=store)
     if found_command(ctx, agent) is None:
         raise Stop(f'The start command of {agent} is not found on this system.', f'metaform set --dispatch-{agent} "<command>"')
     started = start_runner(ctx, store, work_id, agent, ['prep=true'], 'prep')  # a summoned agent, through the gate
@@ -6621,7 +6632,7 @@ def tune(ctx: Context) -> dict[str, Any]:
         raise Stop('Give model=, effort= or both; none clears one.', 'metaform dispatch options')
     live = running(store, record.id)
     agent = str(live['agent']) if live is not None else agent_for(  # the agent autostart would start on it
-        ctx, record, preferred(record, ticket_settings(ctx).get(record.id), str(ctx.setting('dispatch_agent'))))
+        ctx, record, preferred(record, ticket_settings(ctx).get(record.id), str(ctx.setting('dispatch_agent')), store=store))
     notices: list[dict[str, str]] = []  # a write that does not fit is kept, with its notice, BASE-044
     for field, value in given.items():
         said = str(value).strip()

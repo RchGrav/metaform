@@ -3377,6 +3377,14 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                     item=reference(row['address'], row['number']), title=row['title'])
     except (Stop, StoreError):
         return page
+    paths: dict[tuple[str, str], list[str]] = {}
+    for ref in store.refs():
+        if ref.key == 'path' and ref.value.replace('\\', '/').startswith('src/metaform/modules/web/page/'):
+            paths.setdefault((ref.node.kind, ref.node.id), []).append(ref.value)
+    for record in page.results:
+        own_paths = paths.get((record.node_kind, record.node_id))
+        if own_paths:
+            held.setdefault(record.id, {})['paths'] = own_paths
     if not held:
         return page
     shown: list[dict[str, Any]] = []

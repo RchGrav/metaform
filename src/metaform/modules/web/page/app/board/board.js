@@ -17,10 +17,18 @@ import {giveWork} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
-/* The agent a ticket starts with when its card names none: the person's Default agent, as dispatch starts it, read
- * with the agents; the person can choose another on the card at any time. UX review round 1, 2026-10-17: it was
- * Claude for front-end words in the address and Codex for the rest, a default no control showed. */
-export const defaultAgent = () => HARNESS.default || 'claude';
+/* Show the agent dispatch will start before the ticket runs: its saved choice, then its area, then the
+ * person's default only when the area is unknown. Helpers retain their explicitly assigned agents. */
+const FRONTEND = new Set(['gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend', 'graphical',
+  'interface', 'graphic', 'display', 'render', 'css', 'figures', 'figure', 'chat', 'dock', 'map2d', 'map3d']);
+export const defaultAgent = (address, paths = []) => {
+  if (paths.some(path => typeof path === 'string' && path.replaceAll('\\', '/').startsWith('src/metaform/modules/web/page/')))
+    return 'claude';
+  if (!address) return HARNESS.default || 'claude';
+  const parts = address.split('.');
+  return parts.some(part => FRONTEND.has(part)) || address === 'code.assistant.navigation'
+    || address.startsWith('code.assistant.navigation.') ? 'claude' : 'codex';
+};
 export const eligibleAgents = ticket => Array.isArray(ticket?.map?.eligible) ? ticket.map.eligible : [];
 export const allowsAgent = (ticket, agent) => !eligibleAgents(ticket).length || eligibleAgents(ticket).includes(agent);
 export function eligibilityPicker(agents, save) {
@@ -57,7 +65,7 @@ function ticketControls(ticket) {
     try { if (await wrote('/api/ticket', {work_id: ticket.id, ...fields})) await renderBoard(); }
     finally { control.disabled = false; }
   };
-  const chosen = kept.agent || defaultAgent();
+  const chosen = kept.agent || defaultAgent(ticket.address || ticket.receiver_address, kept.paths || []);
   const saveEligible = async agents => {
     if (!await wrote('/api/eligible', {work_id: ticket.id, agents})) return false;
     await renderBoard();
