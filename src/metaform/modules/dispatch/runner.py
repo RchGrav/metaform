@@ -283,12 +283,13 @@ def inbox_phrase(held: dict[str, Any], note_id: str) -> str:
     2026-10-20)."""
     text = ' '.join(str(held.get('text') or '').split())
     summary = ' '.join(str(held.get('summary') or '').split())
+    reply = f' (reply with dispatch_note reply={note_id})' if held.get('ask') else ''  # a question waits on an answer
     if not summary and len(text) <= PHRASE:
-        return text
+        return f'{text}{reply}'
     phrase = summary or f'{text[:PHRASE].rsplit(" ", 1)[0]}…'
     sender = cast(dict[str, Any], held.get('from') or {})
     who = str(sender.get('item') or sender.get('work_id') or sender.get('agent') or 'a peer')
-    return f'{who}: {phrase} (the whole: dispatch_notes note={note_id})'
+    return f'{who}: {phrase} (the whole: dispatch_notes note={note_id}){reply}'
 
 
 def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
