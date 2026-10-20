@@ -11521,7 +11521,7 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     page.click(f'{row("debug")} button.reset')
     page.wait_for_selector(f'{row("debug")} .state.off')
     assert settings.value('debug', mapped) is False
-    to('agent_options')                                                 # an agent's options, under its own heading
+    to('agents')                                                        # an agent's options, under its own heading
     page.wait_for_selector('#settings .setgroup[data-group="Claude Code"] .setrow[data-key="dispatch_claude_mode"]')
     page.select_option(f'{row("dispatch_claude_mode")} select', 'acceptEdits')
     page.wait_for_selector(f'{row("dispatch_claude_mode")} .state.ok')

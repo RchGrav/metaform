@@ -328,6 +328,7 @@ settings.choice('dispatch_agent', agent_choices, 'claude', person_only=True,
                 details='A ticket uses its chosen agent, else Claude for frontend work or Codex for other known areas. The '
                         'person sets it here or from the page.',
                 label='Default agent', category='agents', heading='Starting work', essential=10)
+
 # Whether each agent working a ticket is told to take out the code its change makes obsolete: on by default, so a
 # design that changes leaves no dead code beside the new (the person's decision, 2026-10-18).
 settings.boolean('dispatch_remove_superseded', True, label='Agents remove superseded code', category='agents',
@@ -485,9 +486,22 @@ settings.number('dispatch_intake_first_record', 180, min=0, person_only=True, la
 # What each agent does well, one setting for each agent dispatch starts, dispatch_<agent>_strengths, so setting one
 # never wipes another's, settings cleanup 2026-10-15 (it was the one list dispatch_agent_strengths, P199's rule). A
 # registry agent the person pins later has its own once the process starts again.
-STRENGTHS = {'claude': 'front-end, GUI and page work, and long reasoning over prose',
-             'codex': 'back-end, system and data work, and exact code changes',
-             'gemini': 'large reads across many files'}
+# What each agent does well, its models and its thinking levels, as the default of dispatch_<agent>_strengths: Jev reads
+# it when it chooses the agent, model and thinking level for a ticket. From the research the person delivered on
+# 2026-10-20, kept whole in docs/reference/choosing-agents-models-effort.md.
+STRENGTHS = {
+    'claude': 'Front-end, GUI and page work; document-heavy and long-context work, nuanced writing, and complex '
+              'multi-file repository coding, done carefully and structured. Models: Opus for the hardest knowledge work '
+              'and coding; Fable for demanding agentic, multi-step work; Sonnet or Haiku for everyday speed at lower '
+              'cost. Thinking level: low for quick syntax fixes, boilerplate and direct lookups; medium for everyday tasks '
+              'and familiar refactoring; high or max for multi-file design, hard debugging and long-horizon planning.',
+    'codex': 'Back-end, system and data work, exact code changes, rapid prototyping, and broad flexible workflows. '
+             'Models: GPT-6 Astra or GPT-5.2 Thinking for the most demanding multi-step reasoning, architecture and hard '
+             'coding; GPT-6.1 Sol as the balanced daily driver; GPT-6 Luna for high-volume, cost-sensitive automated '
+             'tasks; lighter variants for quick turns. Thinking level: low for pattern matching, formatting and minor '
+             'adjustments; medium for everyday bugs, clear features and routine refactors; high or max for deep '
+             'algorithmic complexity, multi-file codebases and hard-to-reproduce bugs.',
+    'gemini': 'large reads across many files'}
 
 
 def strengths_key(agent: str) -> str:
@@ -705,7 +719,48 @@ for _agent, (_name, _command) in AGENTS.items():
                                 'prime=true, which starts it, reads its options and closes it without a prompt. Applied '
                                 'to every session it starts, new, loaded or resumed. A ticket\'s own model and effort, '
                                 'set with dispatch tune, go over these.',
-                        category='agent_options')
+                        category='agents')  # under Agents: a thinking level found nowhere else made no sense (2026-10-20)
+
+
+def system_agent_choices(ctx: Any = None) -> list[str]:
+    """An agent for one purpose: default, the default agent, or any agent dispatch starts."""
+    return [AGENT_DEFAULT, *agent_choices(ctx)]
+
+
+# An agent per purpose, the person's decision of 2026-10-20: setting the default agent for tickets changed who triaged
+# for them too, which is not what they meant. With Jev on, Jev chooses the agent, model and thinking level of an
+# ordinary ticket; these settings choose for the purposes Jev is not asked about, and stand when Jev is off or unsure.
+settings.choice('dispatch_system_agent', system_agent_choices, AGENT_DEFAULT, person_only=True,
+                help='The agent that is your system agent, the one you talk to in the chat and that triages for you: '
+                     'one installed here, or default to use the default agent.',
+                details='Kept apart from the default agent, so changing which agent works tickets never changes who '
+                        'triages for you. The chat picker on the page chooses the agent of one conversation; this one '
+                        'starts when none is chosen, and when Stay connected brings your system agent back.',
+                label='System agent', category='agents', heading='Starting work', essential=11)
+# The system healing itself: a ticket of kind or condition broken, filed by autoticket from a fault the system saw or
+# marked by the person. Its agent thinks at the highest level its AI tool offers, under the person's own choice for the
+# ticket or the agent, and no other ticket starts while one is being healed; healing tickets start first. A fault
+# healed at a low thinking level, with other agents starting around it, made the system worse (2026-10-20).
+HEALING_EFFORT = 'xhigh'
+settings.choice('dispatch_healing_agent', system_agent_choices, AGENT_DEFAULT, person_only=True,
+                help='The agent that heals a fault the system found in itself, a ticket of kind broken: one installed '
+                     'here, or default to use the ticket\'s own agent, else the default agent.',
+                details='A healing ticket starts before any other and alone: no other ticket starts while it is being '
+                        'worked. The agent set on the ticket itself still wins.',
+                label='Healing agent', category='agents', heading='Starting work', essential=12)
+settings.text('dispatch_healing_effort', HEALING_EFFORT, person_only=True,
+              help='The thinking level asked of the agent healing a fault of the system\'s own, as that agent names its '
+                   'levels; empty leaves the agent\'s own default.',
+              details='Applied under the thinking level set on the ticket itself and the agent\'s own effort setting, so '
+                      'your choices for either still win. A level the agent does not offer is said once in its thread '
+                      'and left.',
+              label='Healing thinking level', category='agents', heading='Starting work', essential=13)
+
+
+def system_agent(ctx: Context) -> str:
+    """The agent the person's system agent runs on: dispatch_system_agent, else the default agent."""
+    chosen = str(ctx.setting('dispatch_system_agent') or AGENT_DEFAULT)
+    return chosen if chosen != AGENT_DEFAULT else str(ctx.setting('dispatch_agent'))
 
 
 def migrate_agent_options(ctx: Context | None = None) -> list[str]:
@@ -2364,11 +2419,6 @@ def autostart(ctx: Context) -> dict[str, Any]:
 MARKERS = {'trouble': 'This part is marked trouble: it does not do its job. Fix it as the note says.',
            'broken': 'This part is marked broken: it does not do its job. Fix it as the note says.',
            'missing': 'This part is marked missing: it should exist and does not. Build it as the note says.'}
-# The system healing itself: a ticket of kind or condition broken, filed by autoticket from a fault the system saw or
-# marked by the person. Its agent thinks at the highest level its AI tool offers, under the person's own choice for the
-# ticket or the agent, and no other ticket starts while one is being healed; healing tickets start first. A fault
-# healed at a low thought level, with other agents starting around it, made the system worse (2026-10-20).
-HEALING_EFFORT = 'xhigh'
 
 
 def healing(record: WorkRecord) -> bool:
@@ -2531,8 +2581,12 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
                 continue  # unreadable eligibility is refused, as by the individual start check
             agents = cast(list[str], raw)
             chosen = preferred(record, kept.get(record.id), default, store=store)  # the ticket's own choice, else its area
+            healer = str(ctx.setting('dispatch_healing_agent') or AGENT_DEFAULT) if healing(record) else AGENT_DEFAULT
+            if healer != AGENT_DEFAULT and not kept.get(record.id, {}).get('agent'):
+                chosen = healer  # the agent chosen for healing, over the area's and Jev's; the ticket's own still wins
             picked = picks.get(record.id, {}).get('agent')  # else Jev's, when it is sure and the agent eligible
-            if picked and not kept.get(record.id, {}).get('agent') and (not agents or picked in agents):
+            if picked and healer == AGENT_DEFAULT and not kept.get(record.id, {}).get('agent') \
+                    and (not agents or picked in agents):
                 chosen = picked
             try:
                 agent = agent_named(chosen if not agents or chosen in agents else agents[0])
@@ -2574,8 +2628,9 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         try:
             given = {key: value for key, value in picks.get(record.id, {}).items()
                      if key != 'agent' and picks[record.id].get('agent') == agent}
-            if healing(record) and not ticket_options(store, record.id).get('thought_level'):
-                given['thought_level'] = HEALING_EFFORT  # over Jev's pick; the person's own choices still win
+            level = str(ctx.setting('dispatch_healing_effort') or '').strip() if healing(record) else ''
+            if level and not ticket_options(store, record.id).get('thought_level'):
+                given['thought_level'] = level  # over Jev's pick; the person's own choices still win
             started.append(run_reserved(context('dispatch', ctx.folder, project=ctx.project,
                                          nouns={'id': record.id, 'agent': agent,
                                                 **({'chosen': json.dumps(given)} if given else {})}), reservation,
@@ -2875,7 +2930,7 @@ def stay_connected(ctx: Context, store: Store, asked: int | None = None) -> dict
             tx.delete('session_attempts', {'work_id': held})
             tx.insert('session_attempts', {'work_id': held, 'session_id': session_id, 'retries': 0,
                                            'next_at': now + wait, 'how': how or None, 'seq': time.time_ns()})
-        agent = str(ctx.setting('dispatch_agent'))
+        agent = system_agent(ctx)
         try:
             agent = agent_named(agent)
             again = resumed_conversation(ctx, store, held, agent, 'system', asked=asked) \
@@ -3330,7 +3385,7 @@ def system(ctx: Context) -> dict[str, Any]:
         live, pid = holds
         if silent(live, pid) and not fresh:
             return held_session(live, pid)
-    agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent'))) if live is None or fresh else ''
+    agent = agent_named(str(ctx.nouns.get('agent') or system_agent(ctx))) if live is None or fresh else ''
     if live is not None and fresh:
         if found_command(ctx, agent) is None:  # checked before the running one ends, so a refused start leaves it
             raise Stop(f'The start command of {agent} is not found on this system.',

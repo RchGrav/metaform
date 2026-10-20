@@ -2690,6 +2690,31 @@ def test_an_agents_options_are_kept_offered_as_settings_and_applied_with_the_tic
     dispatch.stop()
 
 
+def test_the_thought_level_chosen_for_a_start_reaches_the_agents_session(dispatch, run):
+    """The thought level the agent starter chooses for a start, HEALING_EFFORT for a healing ticket, travels as the
+    start's chosen noun and is set on the session with session/set_config_option, under the person's own choices."""
+    dispatch.start('hold', 'chosen={"thought_level": "high"}', **rich(dispatch))
+    eventually(lambda: dispatch.logged('grandchild'))
+    sent = [(one['params']['configId'], one['params']['value']) for one in dispatch.received('session/set_config_option')]
+    assert sent == [('reasoning', 'high')], sent
+    dispatch.stop()
+
+
+def test_the_system_agent_runs_on_its_own_agent_setting_not_the_workers_default(dispatch, run, monkeypatch):
+    """2026-10-20: setting the default agent to Codex for tickets turned the person's system agent into Codex too.
+    The system agent has an agent of its own, dispatch_system_agent; default follows the default agent."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    started = []
+    monkeypatch.setattr(module, 'converse', lambda ctx, store, held, agent, words, **kw: started.append(agent)
+                        or {'work_id': held, 'agent': agent, 'state': 'starting'})
+    run('set', '--dispatch-agent', 'codex', cwd=dispatch.folder)
+    module.system(context('dispatch', dispatch.folder, project='proj'))
+    run('set', '--dispatch-system-agent', 'claude', cwd=dispatch.folder)
+    module.system(context('dispatch', dispatch.folder, project='proj'))
+    assert started == ['codex', 'claude'], started
+
+
 @pytest.mark.req('BASE-052')
 def test_priming_reads_an_agents_options_without_a_prompt(dispatch, run):
     primed = json.loads(run('dispatch', 'options', 'agent=claude', 'prime=true', '--json', cwd=dispatch.folder,
@@ -5206,9 +5231,10 @@ def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(di
     run('set', '--dispatch-autostart', '--dispatch-agents', '4', cwd=dispatch.folder)
     launched = []
     monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: launched.append(
-        (ctx.nouns['id'], ctx.nouns.get('chosen'))) or {'work_id': ctx.nouns['id']})
+        (ctx.nouns['id'], ctx.nouns['agent'], ctx.nouns.get('chosen'))) or {'work_id': ctx.nouns['id']})
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert launched == [(broken, json.dumps({'thought_level': module.HEALING_EFFORT}))], launched
+    # the agent is the ticket's own, else its area's, as for any ticket; only the thinking level is the healer's
+    assert [(one[0], one[2]) for one in launched] == [(broken, json.dumps({'thought_level': module.HEALING_EFFORT}))], launched
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert launched[1:] == [], 'nothing else starts while the system heals itself'
     handed = module.handoff_text(context('dispatch', dispatch.folder, project='proj'), broken)
@@ -5218,6 +5244,12 @@ def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(di
     dispatch.store.finish_work(broken, 'Healed.')
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert [one[0] for one in launched[1:]] == [dispatch.id], launched
+    # the person's choice per purpose, when Jev is off or unsure: the healing agent and its thinking level
+    run('set', '--dispatch-healing-agent', 'codex', '--dispatch-healing-effort', 'high', cwd=dispatch.folder)
+    again = dispatch.store.add_work(dispatch.node, 'broken', kind='broken', note='It sounds twice.').id
+    dispatch.store.finish_work(dispatch.id, 'Done.')
+    module.autostart(context('dispatch', dispatch.folder, project='proj'))
+    assert launched[2:] == [(again, 'codex', json.dumps({'thought_level': 'high'}))], launched[2:]
 
 
 @pytest.mark.req('MAP-058')

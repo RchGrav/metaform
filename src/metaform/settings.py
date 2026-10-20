@@ -29,10 +29,10 @@ KINDS = ('str', 'int', 'bool', 'list', 'select')
 # `settings_category`, and the chassis's own take advanced.
 CATEGORIES: tuple[tuple[str, str, str], ...] = (
     ('general', 'General', 'The project these settings are kept for, and where they apply.'),
-    ('agents', 'Agents', 'Which agent works, when agents start, how many at once, and what they may do unasked.'),
+    ('agents', 'Agents', ("Which agent works, when agents start, how many at once, what they may do unasked, and each "
+                          "agent's own mode, model and thinking level.")),
     ('automation', 'Full Auto', 'Project automation policy, worker capacity, recovery and repair gates.'),
     ('budgets', 'Budgets', 'How many tokens and how much money agents may spend, and what happens at the limit.'),
-    ('agent_options', 'Agent options', "Each agent's own mode, model and effort, used when it starts."),
     ('map', 'Map and display', 'What the map shows and how the page draws it.'),
     ('voice', 'Voice and speech', 'Talking to Metaform, and the voice its agent answers with.'),
     ('phone', 'Phone', 'Talk with your system agent by phone, and be called or texted when something needs you.'),
