@@ -63,6 +63,7 @@ Refine existing relevant knowledge as your work establishes better understanding
 Use canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.
 Associate memories with the functional entry points where they are relevant, following the receiving-element and join semantics. Memory entities and relations represent the knowledge; the map supplies its index locations. An entity's name need not be a map address.
 During discovery, link meaningful implementation entry points as functional references. Keep execution progress and return details in work records; preserve maintained project knowledge in memory.
+A memory is durable knowledge of the functionality: what holds across sessions, a decision and its reason, a cause found, a constraint learned. What is going on at the moment, progress, status, who is doing what, is never a memory; it belongs in the ticket. Agents keep memory current, nobody else does: remove a memory that only records a moment when you find one, and refine or delete any memory that no longer holds unless the person has locked it.
 </instructions>
 <!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {element} ..."
      bullet when the agent has no assigned element: one connected over MCP outside dispatch, the system agent, or a
