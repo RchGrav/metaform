@@ -2028,7 +2028,9 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     assert work_id.startswith('intake-') and started['intake'] and started['conversation']
     [prompt] = eventually(lambda: dispatch.received('session/prompt'))
     [block] = prompt['params']['prompt']
-    assert block['type'] == 'text' and block['text'].strip() == served.strip(), 'the intake as served, nothing added'
+    text = block['text'].strip()  # the startup checkpoint every agent opens with, then the intake as served, whole
+    assert block['type'] == 'text' and text.endswith(served.strip()), 'the intake as served, nothing added after it'
+    assert text.startswith('Retain this context key'), text[:120]
     from metaform.data import Store
     with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
         kept = tx.get('raised', {'work_id': work_id})
