@@ -1,6 +1,12 @@
 # Changes
 
-## 2026-10-20
+## 2026-10-20 — Automatic specialist fallback
+
+- Missing JEV keys, unavailable credits/providers and uncertain decisions directly commission the Facilitator instead of leaving a triage notice.
+- The event-driven starter recovers existing triage entries in bounded passes without repeating unchanged cached selection calls. Existing ownership, user stops and Backlog holds are preserved.
+- Ticket inspection names the Facilitator while selection is pending; prompts no longer require the user-facing agent to relay fallback tickets.
+
+## 2026-10-20 — Launches the person asked for
 
 - A claim the person makes, or their system agent makes on their word, marks its delivery `persons_start` (assignments table version 5), and every launch in it, the GC, a commissioned Facilitator and the continuation after publication, is no automatic start: Full Auto off no longer holds it, while a halt still refuses it as it does every start. Found when the system agent's claim commissioned a Role Creator that never launched.
 

@@ -64,30 +64,29 @@ def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(cas
 
 
 @pytest.mark.parametrize('balance', ['unknown', 'exhausted'])
-def test_credit_unavailable_preserves_ticket_for_triage_without_generic_worker(case, monkeypatch, balance):
+def test_credit_unavailable_commissions_facilitator_without_paid_selection(case, monkeypatch, balance):
     ctx, store, work = case
     expert(ctx)
     monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='openrouter')))
     monkeypatch.setattr(jev, 'openrouter_credits', lambda: {'status': balance})
     monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('No paid selection without credit'))
     found = SERVICE.route(ctx, work.id)
-    assert found['state'] == 'triage' and found['role'] is None
-    assert not store.ticket(work.id).work.taken
-    with pytest.raises(Stop, match='specialist'):
-        SERVICE.ensure(ctx, work.id)
-    assert SERVICE.assignment(ctx, work_id=work.id) is None
+    assert found['state'] == 'creating' and found['role'] is None
+    assert store.ticket(work.id).work.taken
+    owner = SERVICE.ensure(ctx, work.id)
+    assert owner['state'] == 'waiting' and owner['owner_session_id'] is None
+    with pytest.raises(Stop, match='waiting for its specialist'):
+        SERVICE.ensure(ctx, work.id, session_id='premature-worker')
 
 
 def test_filed_event_only_queues_and_no_specialist_requests_reusable_role(case, monkeypatch):
     ctx, store, work = case
     monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('Filing cannot call models'))
     work_changed({'project': 'proj', 'tables': ['work'], 'kinds': ['filed'], 'work_ids': [work.id]}, ctx)
-    assert SERVICE.route_pending(ctx)[0]['state'] == 'triage'
     assert not store.ticket(work.id).work.taken
-    ctx.nouns.update(work=work.id, role='alarm_engineering', purpose='Reliable countdown alarms.')
-    assigned = SERVICE.claim(ctx)
-    assert assigned['role_request']['state'] == 'commissioned'
-    assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
+    assert SERVICE.assignment(ctx, work_id=work.id) is None
+    assert SERVICE.route_pending(ctx)[0]['state'] == 'creating'
+    assert SERVICE.assignment(ctx, work_id=work.id)['state'] == 'waiting'
 
 
 def test_local_graph_lists_real_requirements_and_dependents(case):
@@ -158,7 +157,8 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
     assert SERVICE.route(ctx, work.id)['state'] == 'creating'
     owner = SERVICE.assignment(ctx, work_id=work.id)
     assert owner['state'] == 'waiting' and owner['owner_session_id'] is None
-    assert SERVICE.routing_status(ctx, work.id) == {'state': 'creating', 'role': None}
+    assert SERVICE.routing_status(ctx, work.id) == {
+        'state': 'creating', 'role': None, 'reason': 'Facilitator is selecting expertise.'}
     assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating'
     with own(ctx).tables(write=False) as tx:
         request, = tx.rows('role_requests', limit=0).results
@@ -195,35 +195,99 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
 
 
 @pytest.mark.parametrize('existing', [True, False])
-def test_no_jev_key_ticket_writer_assigns_expertise_or_hands_to_facilitator(case, monkeypatch, existing):
+def test_no_jev_key_preserves_writer_assignment_or_automatically_hands_to_facilitator(case, monkeypatch, existing):
     from metaform import home
+    from metaform.modules.orchestration.state import own
     ctx, _, work = case
     if existing:
         expert(ctx)
+        ctx.nouns.update(work=work.id, role='alarm_engineering')
+        assigned = SERVICE.claim(ctx)
     home.save(str(ctx.folder), 'chassis', 'jev', ['true'])
     monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
     monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
     monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('Missing key must not call JEV'))
-    assert SERVICE.route(ctx, work.id)['state'] == 'triage'
-    ctx.nouns.update(work=work.id, **({'role': 'alarm_engineering'} if existing else {'create': True}))
-    assigned = SERVICE.claim(ctx)
+    routed = SERVICE.route(ctx, work.id)
     if existing:
-        assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
-        assert assigned['state'] == 'queued'
+        assert routed['role'] == 'metaform://role/alarm_engineering'
+        assert SERVICE.assignment(ctx, work_id=work.id) == assigned
+        with own(ctx).tables(write=False) as tx:
+            assert not tx.rows('role_requests', limit=0).results
     else:
+        assert routed['state'] == 'creating'
+        assigned = SERVICE.assignment(ctx, work_id=work.id)
         assert assigned['state'] == 'waiting'
-        creator = SERVICE.assignment(ctx, assignment_id=assigned['role_request']['creator_assignment_id'])
+        assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating'
+        with own(ctx).tables(write=False) as tx:
+            request, = tx.rows('role_requests', limit=0).results
+        creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
         assert creator['authored_role_uri'] == 'metaform://role/facilitator'
-        assert SERVICE.claim(ctx)['role_request']['request_id'] == assigned['role_request']['request_id']
 
 
-def test_uncertain_none_goes_to_ticket_writer_without_commissioning(case, monkeypatch):
+@pytest.mark.parametrize('decision', [None, SimpleNamespace(sure=False, answer='none')])
+def test_failed_or_uncertain_selection_automatically_commissions_facilitator(case, monkeypatch, decision):
     ctx, _, work = case
     expert(ctx)
     monkeypatch.setattr(jev, 'config', lambda *a: SimpleNamespace(endpoint=SimpleNamespace(name='typesafe')))
-    monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: SimpleNamespace(sure=False, answer='none'))
-    assert SERVICE.route(ctx, work.id)['state'] == 'triage'
-    assert SERVICE.assignment(ctx, work_id=work.id) is None
+    monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: decision)
+    assert SERVICE.route(ctx, work.id)['state'] == 'creating'
+    assert SERVICE.assignment(ctx, work_id=work.id)['state'] == 'waiting'
+
+
+def test_persisted_triage_is_drained_once_without_repeating_cached_selection(case, monkeypatch):
+    from metaform import home
+    from metaform.modules.orchestration.state import fingerprint, own
+    ctx, store, first = case
+    expert(ctx)
+    second = store.add_work(Node('element', 'code.alarm.audible'), None, task='Test audible notifications.')
+    for work in (first, second):
+        graph = functional_context(store, work)
+        numbered = store.numbers_of('work', [work.id]).get(work.id)
+        previous_input = {'title': numbered[1] if numbered else None, 'task': work.task, 'note': work.note,
+                          'function': {key: value for key, value in graph.items() if key != 'markdown'}}
+        with own(ctx).tables() as tx:
+            tx.insert('routing', {'work_id': work.id, 'state': 'triage', 'updated': home.now(),
+                'fingerprint': fingerprint(json.dumps([previous_input, ROLES.specialists(ctx)], sort_keys=True)),
+                'reason': 'JEV is unavailable; triage must select expertise.'})
+    monkeypatch.setattr(jev, 'config', lambda *a: pytest.fail('Recover the cached decision without another lookup'))
+    assert SERVICE.routing_waiting(ctx)
+    assert len(SERVICE.route_pending(ctx)) == 1
+    assert SERVICE.routing_waiting(ctx)
+    assert len(SERVICE.route_pending(ctx)) == 1
+    assert not SERVICE.routing_waiting(ctx)
+    assert SERVICE.route_pending(ctx) == []
+    for work in (first, second):
+        assert SERVICE.route(ctx, work.id, refresh=True)['state'] == 'creating'
+        assert SERVICE.assignment(ctx, work_id=work.id)['state'] == 'waiting'
+    with own(ctx).tables(write=False) as tx:
+        requests = tx.rows('role_requests', limit=0).results
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize('owner', ['specialist', 'framework', 'stopped', 'legacy'])
+def test_stale_triage_never_replaces_existing_ownership(case, monkeypatch, owner):
+    from metaform import home
+    from metaform.modules.orchestration.state import own
+    ctx, store, work = case
+    if owner == 'legacy':
+        store.take_work(work.id, by='existing-agent')
+        assigned = None
+    else:
+        expert(ctx)
+        ctx.nouns.update(work=work.id, role='gc' if owner == 'framework' else 'alarm_engineering')
+        assigned = SERVICE.claim(ctx)
+        if owner == 'stopped':
+            SERVICE.stopped(ctx, work_id=work.id, by='user')
+            assigned = SERVICE.assignment(ctx, work_id=work.id)
+    with own(ctx).tables() as tx:
+        tx.insert('routing', {'work_id': work.id, 'state': 'triage', 'updated': home.now(),
+                             'reason': 'JEV is unavailable; triage must select expertise.'})
+    monkeypatch.setattr(jev, 'config', lambda *a: pytest.fail('An owned ticket must not be reclassified'))
+    SERVICE.route_pending(ctx)
+    assert SERVICE.assignment(ctx, work_id=work.id) == assigned
+    assert not SERVICE.routing_waiting(ctx)
+    with own(ctx).tables(write=False) as tx:
+        assert not tx.rows('role_requests', limit=0).results
 
 
 def test_empty_inventory_commissions_without_paying_for_an_empty_choice(case, monkeypatch):
@@ -254,43 +318,15 @@ def test_facilitators_choose_names_independently_and_reuse_already_published_exp
     assert ROLES.resolve(ctx, registered['name'])['version_id'] == registered['version_id']
 
 
-def test_fallback_wakes_orchestrator_once_with_a_short_reference(case, run, dispatch_runners):
-    import sys
-
-    ctx, _, work = case
-    run('enable', 'dispatch')
-    run('set', '--dispatch-autostart', cwd=ctx.folder)
-    from metaform.modules.dispatch import signals
-    from metaform.modules.dispatch.orchestration import Transport
-    starts = []
-
-    # Signal publication can reload enabled module packages. Observe the real callback across
-    # that reload instead of patching a function on the now-discarded module instance.
-    def trace(frame, event, arg):
-        if event == 'call' and frame.f_code.co_name == 'stay_connected' and \
-                frame.f_globals.get('__name__') == 'metaform.modules.dispatch':
-            starts.append(True)
-    previous = sys.getprofile()
-    sys.setprofile(trace)
-    try:
-        Transport().needs_specialist(ctx, work.id)
-        Transport().needs_specialist(ctx, work.id)
-    finally:
-        sys.setprofile(previous)
-    assert len(starts) == 1
-    needs = [row for row in signals.rows(ctx.require_store()) if row.get('signal') == 'board-needs']
-    assert len(needs) == 1
-    assert work.task not in json.dumps(needs)
-
-
-def test_facilitator_reuses_without_editing_and_respects_backlog_placement(case):
+def test_automatic_facilitator_reuses_without_editing_and_respects_backlog_placement(case, monkeypatch):
     from metaform.modules.orchestration import publish_role
     from metaform.modules.orchestration.state import own
     ctx, store, work = case
-    ctx.nouns.update(work=work.id, create=True)
-    assigned = SERVICE.claim(ctx)
-    request = assigned['role_request']
     registered = expert(ctx)
+    monkeypatch.setattr(jev, 'config', lambda *a: None)
+    assigned = SERVICE.ensure(ctx, work.id)
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
     SERVICE.bind(ctx, request['creator_assignment_id'], 'facilitator')
     writer = context('orchestration', ctx.folder, project='proj', session='facilitator', nouns={
         'request': request['request_id'], 'role': registered['uri'], 'duty': 'Do not overwrite existing expertise.',
@@ -326,9 +362,13 @@ def test_specialist_registry_resource_has_names_and_urls_without_role_bodies(cas
     assert newer['uri'] in restored
 
 
-def test_automatic_creation_waits_for_a_held_ticket_to_be_released(case, monkeypatch):
+@pytest.mark.parametrize('previous_state', ['pending', 'triage'])
+def test_automatic_creation_waits_for_a_held_ticket_to_be_released(case, monkeypatch, previous_state):
+    from metaform.modules.orchestration.state import own
     ctx, store, work = case
     routing.queue(ctx, [work.id])
+    with own(ctx).tables() as tx:
+        tx.update('routing', {'work_id': work.id}, {'state': previous_state})
     store.move_work(work.id, 'backlog', kept=True)
     with monkeypatch.context() as waiting:
         waiting.setattr(jev, 'config', lambda *a: pytest.fail('A held ticket must not spend on routing'))

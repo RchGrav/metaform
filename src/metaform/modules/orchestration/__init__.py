@@ -173,7 +173,7 @@ MODULE = Module(
     verbs=(
         Verb('functionality', functionality, 'Read a ticket’s local requirements and dependents as a named graph and Markdown.',
              effect='read', nouns=(Noun('work', 'Ticket id.'),)),
-        Verb('route', route, 'Select expertise, commission missing expertise, or ask the orchestrator to decide.',
+        Verb('route', route, 'Select specialist expertise or automatically commission the Facilitator.',
              nouns=(Noun('work', 'Ticket id.'),
                     Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
         Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',

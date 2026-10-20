@@ -78,11 +78,6 @@ def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any]
 class Transport:
     """The orchestration module uses this provider instead of importing dispatch internals."""
 
-    def needs_specialist(self, ctx: Context, work_id: str) -> None:
-        from .board import raised
-        raised(ctx, f'specialist:{work_id}', f'Ticket {work_id}: select or create specialist expertise.',
-               work_id=work_id)
-
     def guard_claim(self, ctx: Context, work_id: str) -> None:
         from . import person_asks, starts_held
         caution = starts_held(replace(ctx, nouns={'id': work_id}))

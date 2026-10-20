@@ -13,8 +13,9 @@ from metaform.modules.orchestration.state import SERVICE
 pytestmark = pytest.mark.kind('simulation')
 
 
-@pytest.mark.parametrize("named", [True, False])
-def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, home, project_folder, tmp_path, monkeypatch, named):
+@pytest.mark.parametrize('selection', ['named', 'unnamed', 'automatic'])
+def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(
+        run, home, project_folder, tmp_path, monkeypatch, selection):
     live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     fake = Path(__file__).with_name('fake_swarm_agent.py')
     for agent in ('claude', 'codex', 'gemini'):
@@ -24,8 +25,17 @@ def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(run, hom
     for name, value in live.env('ask', FAKE_SWARM_SCENARIO='direct', FAKE_SWARM_STATE=str(tmp_path / 'state')).items():
         if name.startswith('FAKE_'):
             monkeypatch.setenv(name, value)
-    ctx = context('orchestration', project_folder, project='proj', nouns={'work': live.id, **({'role': 'route_specialist'} if named else {'create': True})})
-    assigned = SERVICE.claim(ctx)
+    ctx = context('orchestration', project_folder, project='proj', nouns={
+        'work': live.id, **({'role': 'route_specialist'} if selection == 'named' else {'create': True})})
+    if selection == 'automatic':
+        monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+        monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+        ctx.nouns = {}
+        SERVICE.queue_routing(ctx, [live.id])
+        assert SERVICE.route_pending(ctx)[0]['state'] == 'creating'
+        assigned = SERVICE.assignment(ctx, work_id=live.id)
+    else:
+        assigned = SERVICE.claim(ctx)
     try:
         SERVICE.drain(ctx)
         def finished():
