@@ -16,7 +16,6 @@ import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
 import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
 import {narrowPage, resetDock} from '/page/app/dock/place.js';
 import {wrote} from '/page/app/board/history.js';
-import {isIntake} from '/page/app/session/tools.js';
 import {showGallery, takeContext, withContext, contextBack} from '/page/app/session/apps.js';
 import {messageRow} from '/page/app/session/text.js';
 import {notificationState} from '/page/app/session/orchestration.js';
@@ -43,11 +42,10 @@ function ensureAgent() {
   if (!DOCK.target) { callSystem(); return; }
   if (DOCK.live) return;
   const chat = DOCK.chat;
-  if (!chat || isIntake(chat.target)) {
-    startFailed('This conversation has ended; an intake is not taken up again from here.');
-    return;
-  }
+  if (!chat) { startFailed('This conversation cannot be found.'); return; }
   if (chat.source === 'system' || chat.target === DOCK.mine && chat.source !== 'conversation') { callSystem(); return; }
+  // any past context can be spoken to, an ended intake's included: its session is resumed in place, so the person can
+  // ask it what happened rather than investigate (the person's rule, 2026-10-20)
   talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);
 }
 export function queuedRows() {

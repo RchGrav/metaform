@@ -3438,6 +3438,30 @@ def disconnect(ctx: Context, store: Store, row: dict[str, Any]) -> bool:
     return True
 
 
+def resumed_session(ctx: Context, store: Store, row: dict[str, Any], about: str, *,
+                    asked: int | None = None) -> dict[str, Any] | None:
+    """The very session the person named, ended, resumed in place with its own agent as a conversation, so they can
+    ask it what happened: the person speaks to any past context, an intake's included, since without it understanding
+    a problem takes deep investigation (the person's rule, 2026-10-20). None when its agent can neither load nor resume
+    it, its folder is gone, or another home started it; a new conversation about the thread starts then."""
+    kept = session_state(store, str(row['session_id'])) or {}
+    caps = cast(dict[str, Any], kept.get('capabilities') or {})
+    cwd = kept.get('cwd')
+    if not (caps.get('resume') or caps.get('load')) or not isinstance(cwd, str) or not os.path.isdir(cwd) \
+            or (foreign(row) and row.get('origin')):
+        return None
+    agent = str(row['agent'])
+    runnable(ctx, agent)
+    session_id, work_id = str(row['session_id']), str(row['work_id'])
+    extra = [f'resume={session_id}', 'system=true', f'talk={about}']
+    started = resume_spawn(store, work_id, agent, extra, 'resume', ctx=ctx, asked=asked, auto=False,
+                           subject=subject_of(extra[1:]))
+    if started.get('state') == 'running' and silent(row, started.get('pid')):
+        return held_session(row, int(started['pid']))
+    return {'state': 'starting', 'work_id': work_id, 'agent': agent, 'session_id': session_id, **started,
+            'conversation': True}
+
+
 def resumed_conversation(ctx: Context, store: Store, work_id: str, agent: str, about: str, *,
                          person: bool = False, asked: int | None = None) -> dict[str, Any] | None:
     """The person's last conversation about this with this agent, resumed in place so the agent keeps its memory of it;
@@ -4649,6 +4673,10 @@ def talk(ctx: Context) -> dict[str, Any]:
                     and f'talk={about}' in command_line(row['pid'])), None)
     if talking is not None:  # the chat about this is already open: it is reused
         return {key: talking[key] for key in ('work_id', 'agent', 'session_id', 'state')}
+    if kind == 'session':  # the very context the person named, ended: resumed in place, so they can ask it
+        named = next(row for row in everyone if row['work_id'] == work_id and row['session_id'] == ref.partition(':')[2])
+        if named['state'] != 'running' and (again := resumed_session(ctx, store, named, about)) is not None:
+            return again
     # the slots are counted by the gate alone, under its lock, which names the limit that binds (spawn-gate F4); one
     # starting about this already is reused there too
     # a thread whose ticket went with a cleared map is talked about all the same, on no ticket
