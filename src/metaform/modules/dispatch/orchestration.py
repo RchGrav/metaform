@@ -103,6 +103,13 @@ class Transport:
         auto = not held.get('persons_start')
         if held.get('stop'):
             return {'state': 'stopped'}
+        # A delivery whose specialist role is still being made waits for its publication, which owns the start: a
+        # runner started here only read that state and ended at once, SUSPENDED, and the launch left pending started
+        # another on every pass of the agent starter (783 runner starts on one ticket, 2026-10-20).
+        owner = service(ctx)
+        status = owner.routing_status(ctx, work) if owner is not None else None
+        if status and status.get('state') == 'creating':
+            return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}
         created = held.get('continuation', {}).get('created')
         if isinstance(created, str):
             asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)

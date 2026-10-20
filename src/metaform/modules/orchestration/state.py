@@ -571,9 +571,11 @@ class Orchestration:
             state = str(delivery.get('state', 'queued'))
             accepted = state in ('running', 'delivered', 'suspended', 'stopped', 'returned', 'completed') or bool(
                 delivery.get('accepted'))
+            next_state = 'delivered' if accepted else 'failed' if state == 'failed' else 'pending'
+            if next_state == 'pending' and held['state'] == 'pending' and held.get('delivery') == dict(delivery):
+                return held  # still waiting as it was: no write, so no change for every process of the home to hear
             made = tx.update('transitions', {'transition_id': transition_id}, {
-                'state': 'delivered' if accepted else 'failed' if state == 'failed' else 'pending',
-                'delivery': dict(delivery), 'updated': now()})
+                'state': next_state, 'delivery': dict(delivery), 'updated': now()})
             assignment = row_for(tx, assignment_id=held['assignment_id'])
             if assignment:
                 touch(tx, assignment, 'delivery')
