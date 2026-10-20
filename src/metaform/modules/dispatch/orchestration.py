@@ -103,6 +103,9 @@ class Transport:
         )
         store = ctx.require_store()
         work = str(held['work_id'])
+        # a delivery the person started, or their system agent on their word, is no automatic start: Full Auto off
+        # does not hold its launches; a halt still refuses them as it does every start
+        auto = not held.get('persons_start')
         if held.get('stop'):
             return {'state': 'stopped'}
         created = held.get('continuation', {}).get('created')
@@ -142,7 +145,7 @@ class Transport:
                         try:
                             made = resume_spawn(store, work, agent,
                                                 [*words, f'resume={row["session_id"]}', 'retry=true'],
-                                                'orchestration', ctx=launch_ctx, asked=asked, auto=True)
+                                                'orchestration', ctx=launch_ctx, asked=asked, auto=auto)
                         except (Stop, OSError):
                             if took:
                                 given_back_reservation(store, work, by)
@@ -150,7 +153,7 @@ class Transport:
                         return {'state': 'queued', 'reservation': transition_id, **made}
             # Unknown context retention creates a new registered context with the retained work and current brief.
             # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
-            admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=True)
+            admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=auto)
             reservation = f'dispatch starting {transition_id}'
             with store.atomic():
                 record = ticket(store, work)
@@ -163,7 +166,7 @@ class Transport:
             keep_launch(store, work, {'prompts': None, 'mode': None})
             try:
                 made = start_runner(launch_ctx, store, work, agent, [*words, f'reservation={reservation}'],
-                                    'orchestration', reservation=reservation, asked=asked, auto=True)
+                                    'orchestration', reservation=reservation, asked=asked, auto=auto)
             except (Stop, OSError):
                 # Capacity can change between the optimistic check and the locked gate. Ownership survives it.
                 with store.atomic():

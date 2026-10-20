@@ -388,6 +388,26 @@ def test_a_review_finding_resumes_the_worker_with_its_reopened_ticket_its_own(di
     assert orchestration.Transport().launch(ctx, held, 'transition')['state'] == 'completed'
 
 
+@pytest.mark.kind('fixture')
+def test_a_delivery_the_person_started_launches_with_full_auto_off(dispatch, monkeypatch):
+    """2026-10-20: the system agent claimed a ticket on the person's word, and the Role Creator it commissioned never
+    launched: every orchestration launch was automatic, so Full Auto off refused it."""
+    import metaform.modules.dispatch as package
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    asked = []
+    monkeypatch.setattr(package, 'launches', list)
+    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: None)
+    monkeypatch.setattr(package, 'admit', lambda *args, auto, **_: asked.append(auto))
+    monkeypatch.setattr(package, 'start_runner', lambda *args, **_: {'pid': 1})
+    for persons in (True, False):
+        dispatch.store.move_work(dispatch.id, 'todo', kept=True)
+        orchestration.Transport().launch(ctx, {'work_id': dispatch.id, 'assignment_id': 'a',
+                                               'persons_start': persons}, 'transition')
+    assert asked == [False, True], 'only a delivery nobody asked for waits on Full Auto'
+
+
 @pytest.mark.skipif(not os.environ.get('METAFORM_IDLE_EVIDENCE'), reason='Explicit 60-second CPU evidence run.')
 @pytest.mark.kind('simulation')
 def test_idle_cpu_evidence(run, home, project_folder, tmp_path):

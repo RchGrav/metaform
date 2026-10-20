@@ -26,6 +26,7 @@ from metaform.module import (
     context,
     held_role,
     on_persons_word,
+    persons_word,
     persons_word_acted,
     provided,
     surface,
@@ -117,9 +118,9 @@ def own(ctx: Context) -> Store:
 
 
 # Version 2 adds an assignment's `role_snapshot` and `attempt`; version 3 its `findings_filed`, the tickets its
-# assessment's findings landed on. Each column may be empty or has a default, so version 1's code still reads and
-# writes the tables, STORE-029.
-TABLES = Tables(version=4, compatible_from=1, tables=(
+# assessment's findings landed on; version 5 its `persons_start`, a delivery the person started. Each column may be
+# empty or has a default, so version 1's code still reads and writes the tables, STORE-029.
+TABLES = Tables(version=5, compatible_from=1, tables=(
     routing.TABLE,
     Table('assignments', key=('assignment_id',), columns=(
         Column('assignment_id', required=True), Column('work_id', required=True),
@@ -133,8 +134,8 @@ TABLES = Tables(version=4, compatible_from=1, tables=(
         Column('specification', 'json'), Column('mode', required=True), Column('state', required=True),
         Column('return_to', 'json'), Column('pending_direction', 'json'), Column('result', 'json'),
         Column('evidence', 'json'), Column('last_check_in', 'json'), Column('stop', 'json'), Column('stop_history', 'json'),
-        Column('findings_filed', 'json'), Column('created', required=True),
-        Column('updated', required=True)), indexes=(
+        Column('findings_filed', 'json'), Column('persons_start', 'bool', default=False),
+        Column('created', required=True), Column('updated', required=True)), indexes=(
             Index(('work_id',), unique=True), Index(('owner_session_id',)), Index(('team_id',)),
             Index(('parent_assignment_id',)), Index(('reviewed_assignment_id',)), Index(('state',)))),
     Table('sessions', key=('session_id',), columns=(
@@ -318,7 +319,9 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
                    parent: Mapping[str, Any] | None = None, review: Mapping[str, Any] | None = None,
                    task: str, result: str, locations: Sequence[Mapping[str, Any]],
                    mode: str = 'adaptive', specification: Any = None, candidate: Any = None,
-                   session: str | None = None, return_to: Any = None) -> dict[str, Any]:
+                   session: str | None = None, return_to: Any = None, persons: bool = False) -> dict[str, Any]:
+    """`persons`: the person started this delivery, themselves or through their system agent on their word, so its
+    launches, and those of every assignment under it, are no automatic starts: Full Auto off does not hold them."""
     ident = ident or uuid.uuid4().hex
     root = work.id if parent is None else parent['root_work_id']
     team = ident if parent is None else parent['team_id']
@@ -335,6 +338,7 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
         'state': 'running' if session else 'queued', 'return_to': return_to,
         'pending_direction': list((parent or review or {}).get('pending_direction') or []),
         'result': None, 'evidence': [], 'last_check_in': None, 'stop': None, 'stop_history': [],
+        'persons_start': persons or bool((parent or review or {}).get('persons_start')),
         'created': now(), 'updated': now()})
     touch(tx, made, 'assignment')
     if session:
@@ -687,6 +691,9 @@ class Orchestration:
             guard = getattr(transport, 'guard_claim', None)
             if guard is not None:
                 guard(ctx, work_id)
+        # the person's own claim, or their system agent's on their word, launches at once whatever Full Auto says
+        persons = ctx.consented or (ctx.surface != 'mcp' and agent_caller() is None) or persons_word(
+            ctx.folder, f'Starting an agent on ticket {work_id}', ctx.project, [work_id]) is not None
         with store.atomic(), store.tables() as tx:
             prior = row_for(tx, work_id=work_id)
             if prior:
@@ -709,7 +716,7 @@ class Orchestration:
                 task=record.task or '', result=str(ctx.nouns.get('result') or record.task or ''),
                 locations=places, mode=mode, specification=ctx.nouns.get('specification'),
                 candidate=ctx.nouns.get('candidate'), session=session,
-                return_to={'session_id': ctx.nouns.get('pm_session'), 'kind': 'pm'})
+                return_to={'session_id': ctx.nouns.get('pm_session'), 'kind': 'pm'}, persons=bool(persons))
             if not resolution.get('missing'):
                 assignment = update(tx, assignment, role_snapshot=resolution)
                 if not session:

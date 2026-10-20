@@ -186,7 +186,7 @@ settings.number('board_done_days', 1, min=0, max=3650,
                 label='Done tickets stay on the board for', heading='Board')
 # The board's archive cutoff: every ticket done before this time is in the Archive, whatever board_done_days says.
 # The board's Archive done tickets sets it to now; resetting it brings back the done tickets board_done_days shows.
-settings.text('board_line', '', person_only=True,
+settings.text('board_line', '',
               help="The board's archive cutoff: tickets done before this time are in its Archive.",
               details='Set to now by Archive done tickets on the board; empty, board_done_days alone decides. Nothing is '
                       'deleted either way.',

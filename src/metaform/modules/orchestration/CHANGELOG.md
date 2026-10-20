@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-10-20
+
+- A claim the person makes, or their system agent makes on their word, marks its delivery `persons_start` (assignments table version 5), and every launch in it, the GC, a commissioned Facilitator and the continuation after publication, is no automatic start: Full Auto off no longer holds it, while a halt still refuses it as it does every start. Found when the system agent's claim commissioned a Role Creator that never launched.
+
 ## 2026-10-19 — Facilitator handoff
 
 - Confident JEV no-match directly commissions the Facilitator; missing-key and uncertain fallback asks the ticket writer to assign existing expertise or hand off with `claim create=true`.
