@@ -3841,8 +3841,10 @@ class Session:
         """Put one note or project update in the person's system agent's inbox, never into its conversation: the next
         turn carries the one inbox line naming all that waits. Only an entry that needs the person, `inbox_wakes`,
         starts that turn itself, an empty one the line alone fills, and while one waits no second is queued; a new
-        conversation not yet given its opening turn needs none, since that turn carries the line."""
-        if any(one[0] == note_id for one in self.inbox):
+        conversation not yet given its opening turn needs none, since that turn carries the line. A routine entry (a
+        ticket complete, a board item, a peer note, a commit) is never named: it stays in its thread for dispatch notes,
+        and only what needs the person or the system agent reaches its conversation (2026-10-20: routine lines flooded it)."""
+        if not wakes or any(one[0] == note_id for one in self.inbox):
             return
         self.inbox.append((note_id, sender, said, update))
         if wakes and '' not in self.pending and (self.resume or self.spoken or self.turns):
