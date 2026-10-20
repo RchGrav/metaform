@@ -17,7 +17,6 @@ The ACP SDK is imported only by `runner`, so only the runner process loads it.
 from __future__ import annotations
 
 import asyncio
-import calendar
 import contextlib
 import contextvars
 import ctypes
@@ -5978,38 +5977,30 @@ ENDED_ASSIGNMENT = ('assignment_id', 'authored_role_uri', 'team_id', 'gc_assignm
 ENDED_STATES: dict[tuple[str, str], tuple[tuple[Any, ...], dict[str, Any] | None]] = {}
 
 
-RECENT_SESSIONS = 48 * 3600  # seconds: an ended session begun longer ago is read from its ticket's history alone
+LISTED_MOST = 40  # the newest sessions the agents key lists beyond the running and each open ticket's latest
 ENDED_WORDS = 300  # characters of how and why an ended session ended that the agents key carries
 
 
-def agents_key_view(found: list[dict[str, Any]],
-                    raised: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """What the agents key lists: every running session, each ticket's latest session, and those begun in the last
-    RECENT_SESSIONS, an ended one's words of how and why cut to ENDED_WORDS; and the active signals of a running
-    session or of the last day. The page's Agents menu, its figures and its cards show no more. Every session since the
-    project began, 1,119 with each one's state, made this read 2.3 MB on every event the page heard, and the menu
-    1,119 rows redrawn against 642 signals each (the person's stalls of seconds a click, 2026-10-20)."""
-    now = time.time()
-
-    def when(value: Any) -> float:
-        if isinstance(value, (int, float)):
-            return float(value)
-        try:
-            return calendar.timegm(time.strptime(str(value or ''), '%Y-%m-%dT%H:%M:%SZ'))
-        except ValueError:
-            return 0.0
-
+def agents_key_view(found: list[dict[str, Any]], raised: list[dict[str, Any]],
+                    open_ids: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """What the agents key lists: every running session, each open ticket's latest session, and the newest
+    LISTED_MOST, an ended one's words of how and why cut to ENDED_WORDS; and the active signals of a listed session
+    or of an open ticket. The page's Agents menu, its figures and its cards show no more. Every session since the
+    project began, 1,097 with each one's state, made this read 2.1 MB on every event the page heard, and the menu
+    1,097 rows redrawn against 524 signals each (the person's stalls of seconds a click, 2026-10-20). Every session
+    stays readable by its id, at its node."""
     def cut(value: Any) -> Any:
         return value[:ENDED_WORDS] + '…' if isinstance(value, str) and len(value) > ENDED_WORDS else value
-    latest = {str(row['work_id']): str(row['session_id']) for row in found}  # rows come oldest first
+    latest = {str(row['work_id']): str(row['session_id']) for row in found if str(row['work_id']) in open_ids}
+    listed = set(latest.values()) | {str(row['session_id']) for row in found[-LISTED_MOST:]}  # rows come oldest first
     kept: list[dict[str, Any]] = []
     for row in found:
         live = row.get('state') == 'running'
-        if live or latest.get(str(row['work_id'])) == str(row['session_id']) \
-                or now - when(row.get('started')) <= RECENT_SESSIONS:
+        if live or str(row['session_id']) in listed:
             kept.append(row if live else {**row, 'how': cut(row.get('how')), 'reason': cut(row.get('reason'))})
-    running = {str(row['session_id']) for row in kept if row.get('state') == 'running'}
-    signals = [one for one in raised if str(one.get('session_id') or '') in running or now - when(one.get('at')) <= 86400]
+    shown = {str(row['session_id']) for row in kept}
+    signals = [one for one in raised
+               if str(one.get('session_id') or '') in shown or str(one.get('work_id') or '') in open_ids]
     return kept, signals
 
 
@@ -6098,7 +6089,8 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
             raised = signal_rows(tx, work_id)
     except StoreError:
         raised = read_signal_rows(store, work_id)  # as before: a store that cannot be read says so here
-    found = verified(store, stored)
+    open_work: list[WorkRecord] = list(store.work(open=True, limit=0).results) if agents_key else []
+    found = verified(store, stored, open_work if agents_key else None)
     if ctx.nouns.get('thread') is False:  # the subagents only of sessions whose runner holds them
         live = {session['session_id'] for session in found if session.get('state') == 'running'}
         lines = [line for line in lines if line['kind'] != 'subagent' or line['session_id'] in live]
@@ -6114,7 +6106,7 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
             mark = marks.get(session_id)
             if mark is not None and session_id not in kept and session_id not in running:
                 ENDED_STATES[(store.project_id, session_id)] = (mark, states.get(session_id))
-        found, raised = agents_key_view(found, raised)  # after every ended state is cached: listed or not
+        found, raised = agents_key_view(found, raised, {record.id for record in open_work})  # every ended state cached
         copies = {key: dict(state) for key, state in kept.items() if state is not None}  # callers may change them
         states = {key: copies[key] if key in copies else states[key]
                   for key in (str(session['session_id']) for session in found) if key in copies or key in states}
