@@ -1,8 +1,58 @@
 {
  "agents": {
-  "version": 2,
+  "version": 3,
   "compatible_from": 1,
   "tables": {
+   "context_checks": {
+    "place": "project",
+    "key": [
+     "session_id"
+    ],
+    "columns": {
+     "checkpoint": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "confirmed": [
+      "bool",
+      "INTEGER",
+      true,
+      null
+     ],
+     "epoch": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "marker": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "pending": [
+      "bool",
+      "INTEGER",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "contexts": {
     "place": "project",
     "key": [
@@ -148,6 +198,46 @@
     "on_conflict": [],
     "generated": []
    },
+   "delivered_text": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "epoch",
+     "fingerprint"
+    ],
+    "columns": {
+     "at": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "epoch": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "fingerprint": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "receipts": {
     "place": "project",
     "key": [
@@ -227,6 +317,32 @@
        ],
        [
         "epoch",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "epoch",
+        0,
+        "BINARY"
+       ],
+       [
+        "fingerprint",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
         0,
         "BINARY"
        ]
@@ -2472,7 +2588,7 @@
   }
  },
  "map": {
-  "version": 18,
+  "version": 22,
   "compatible_from": 9,
   "tables": {
    "after": {
@@ -2495,6 +2611,55 @@
      ]
     },
     "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
+   "boards": {
+    "place": "metaform",
+    "key": [
+     "name"
+    ],
+    "columns": {
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "line": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "created",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
     "checks": [],
     "foreign_keys": [],
     "collations": {},
@@ -3151,6 +3316,36 @@
       false,
       null
      ],
+     "agents": [
+      "int",
+      "INTEGER",
+      false,
+      null
+     ],
+     "board": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "decision": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "effort": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "epic": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
      "hold": [
       "int",
       "INTEGER",
@@ -3158,6 +3353,12 @@
       "0"
      ],
      "landed": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "model": [
       "text",
       "TEXT",
       false,
@@ -3176,7 +3377,24 @@
       null
      ]
     },
-    "indexes": [],
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "board",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
     "checks": [],
     "foreign_keys": [],
     "collations": {},
@@ -4876,7 +5094,7 @@
  },
  "node": null,
  "orchestration": {
-  "version": 3,
+  "version": 5,
   "compatible_from": 1,
   "tables": {
    "assignments": {
@@ -4974,6 +5192,12 @@
       "TEXT",
       false,
       null
+     ],
+     "persons_start": [
+      "bool",
+      "INTEGER",
+      false,
+      "0"
      ],
      "requested_result": [
       "text",
@@ -5487,6 +5711,73 @@
     "on_conflict": [],
     "generated": []
    },
+   "routing": {
+    "place": "metaform",
+    "key": [
+     "work_id"
+    ],
+    "columns": {
+     "fingerprint": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "reason": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "role": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ],
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "sessions": {
     "place": "metaform",
     "key": [
@@ -5870,8 +6161,8 @@
   }
  },
  "roundtables": {
-  "version": 1,
-  "compatible_from": 1,
+  "version": 2,
+  "compatible_from": 2,
   "tables": {
    "events": {
     "place": "project",
@@ -5933,7 +6224,7 @@
      "address": [
       "text",
       "TEXT",
-      true,
+      false,
       null
      ],
      "answer": [
@@ -6003,24 +6294,6 @@
       null
      ],
      "reason": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "report": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "report_error": [
-      "text",
-      "TEXT",
-      false,
-      null
-     ],
-     "reporter": [
       "text",
       "TEXT",
       false,
