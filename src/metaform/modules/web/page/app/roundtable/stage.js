@@ -10,7 +10,9 @@
  * its turn in a word bubble whose tail points at it; a turn Jev vetoes fades from its bubble; the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
- * are the question, the chair's controls and the whole transcript. Leaving puts the map back as it was; the table runs
+ * are the question, the table's state and the whole transcript. The person only watches: the seats talk among
+ * themselves and nothing on the stage asks for the person's input once the question is asked. Leaving puts the map
+ * back as it was; the table runs
  * on, and the stage shows it again when the person comes back to it. With reduced motion the figures stand still and
  * nothing moves into place: everything is shown, only the movements are skipped.
  *
@@ -79,21 +81,10 @@ UI.seats = h('div', {class: 'rt-seats'});
 UI.band = h('div', {class: 'rt-band'}, UI.canvas, UI.seats);
 UI.topic = h('b', {class: 'rt-question'});
 UI.state = h('span', {class: 'rt-state', role: 'status'});
-UI.comment = h('input', {type: 'text', class: 'rt-say', placeholder: 'Say something to the table as its chair',
-  'aria-label': 'Your comment to the table', onkeydown: event => { if (event.key === 'Enter') chair('comment'); }});
-const act = (name, words, title) => h('button', {class: `btn sm rt-${name}`, type: 'button', title,
-  onclick: () => chair(name)}, words);
-UI.acts = {comment: act('comment', 'Comment', 'Say it to the table at its next gap between turns'),
-  hold: act('hold', 'Hold', 'Hold the table after the turn in flight'),
-  continue: act('continue', 'Continue', 'Run the held table again'),
-  advance: act('advance', 'Advance', "End the discussion for the ideas, the rankings and the host's summary"),
-  end: act('end', 'End', 'End the table; your system agent writes its report')};
 UI.leave = h('button', {class: 'btn sm quiet rt-leave', type: 'button', onclick: () => leaveStage(),
   title: 'Back to the map; the table runs on (Escape)'}, 'Leave');
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-UI.foot = h('div', {class: 'rt-foot'},
-  h('div', {class: 'rt-head'}, UI.topic, UI.state),
-  h('div', {class: 'rt-chair'}, UI.comment, ...Object.values(UI.acts), UI.leave), UI.transcript);
+UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.leave), UI.transcript);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -173,7 +164,6 @@ function resetTable() {
   UI.answer.textContent = '';
   UI.ideasBox.hidden = UI.rankingsBox.hidden = UI.answerBox.hidden = true;
   UI.topic.textContent = ''; UI.state.textContent = '';
-  chairFor('');
 }
 /* The seats' characters given back, so the agents at work may take them again. */
 function unseat() {
@@ -428,35 +418,12 @@ function stateIs(state, reason) {
     refused: 'Refused'}[TABLE.state] || TABLE.state;
   UI.state.textContent = reason && TABLE.state !== 'running' ? `${words}: ${reason}` : words;
   UI.root.dataset.state = TABLE.state;
-  chairFor(TABLE.state);
-}
-/* The chair's controls the table's state allows: a running table can be held, advanced or ended, a held one run again
- * or ended, and an ended one nothing; Leave always. */
-function chairFor(state) {
-  const running = state === 'running', held = state === 'held';
-  UI.acts.comment.disabled = UI.comment.disabled = !(running || held);
-  UI.acts.hold.disabled = !running;
-  UI.acts.continue.disabled = !held;
-  UI.acts.advance.disabled = !running;
-  UI.acts.end.disabled = !(running || held);
 }
 /* One line of the transcript, whole, the newest kept in view unless the person has scrolled up to read. */
 function said(kind, who, text, after = '') {
   const box = UI.transcript, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
   box.append(h('li', {class: kind}, h('b', {}, who), ' ', text, after ? h('span', {class: 'rt-why'}, after) : null));
   if (bottom) box.scrollTop = box.scrollHeight;
-}
-async function chair(name) {
-  if (!TABLE.id) return;
-  const text = UI.comment.value.trim();
-  if (name === 'comment' && !text) { UI.comment.focus(); return; }
-  UI.acts[name].disabled = true;
-  const answer = await wrote('/api/roundtable-chair', {table: TABLE.id, act: name,
-    ...(name === 'comment' ? {text} : {})});
-  if (answer && name === 'comment') { UI.comment.value = ''; said('rt-chair', 'You', text); }
-  if (answer?.state) stateIs(answer.state, answer.reason);
-  else chairFor(TABLE.state);
-  nextUp();
 }
 
 /* ---------- the figures ---------- */

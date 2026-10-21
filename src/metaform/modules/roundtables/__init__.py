@@ -48,22 +48,19 @@ from metaform.module import Context, Module, Noun, Stop, Verb, context, node_ite
 from . import engine, follow
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
-DEPENDENCIES = ()
-SHIPS_DISABLED = False  # a person can open a table in any project once the engine is installed
+# The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
+DEPENDENCIES = ('mcp>=2.2,<3', 'agent-client-protocol>=0.12.1,<0.13', 'a2a-sdk[http-server]>=1.2.2,<2', 'httpx>=0.28,<1',
+                'uvicorn>=0.31')
+SHIPS_DISABLED = False  # a person can open a table in any project: the engine ships inside this module
 
 PACKAGE = resources.files(__name__)
 OPEN_LIMIT = engine.CALL_LIMIT + 30  # seconds `open` waits for its follower's first line: a deadline on one request
 CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner')
 
-settings.text('roundtables_engine', 'roundtable', scope='global', person_only=True, label='Roundtable engine',
-              category='integrations', heading='Roundtables',
-              help='The command that runs the Roundtable 2 engine, such as <its folder>/.venv/bin/roundtable.',
-              details='Metaform runs it as `<command> serve` to open and chair a table and `<command> web` to follow '
-                      'one. OPENROUTER_API_KEY must be set where Metaform runs: Jev judges every turn through '
-                      'OpenRouter.')
 settings.number('roundtables_spend', 2, min=0, max=100, person_only=True, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
-                help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.')
+                help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.',
+                details='OPENROUTER_API_KEY must be set where Metaform runs: Jev judges every turn through OpenRouter.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -235,7 +232,6 @@ def open_table(ctx: Context) -> dict[str, Any]:
         raise Stop('A table sends your question, and the part\'s context when it is about a part, to OpenRouter, where '
                    'Jev judges every turn, and only you allow project text to leave this machine.',
                    'metaform set --jev')
-    engine.command(ctx.folder)
     address, topic = str(ctx.nouns.get('address') or '').strip(), str(ctx.nouns['topic']).strip()
     if not topic:
         raise Stop('A table opens on a question.', 'metaform roundtables open')

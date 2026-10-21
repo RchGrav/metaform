@@ -1,12 +1,13 @@
 """The Roundtable 2 engine as the bridge reaches it: its MCP server over stdio for opening and chairing a table, and its
 web page's server-sent events for following one.
 
-The engine is the person's own program, `roundtable` (https://github.com/RchGrav/roundtable), named by the
-`roundtables_engine` setting. Each call to it starts `roundtable serve` over stdio, calls one tool and ends; a table's
-runner is detached by the engine, so a table outlives the call that opened it. The chair token `open` returns is kept
+The engine is the Roundtable 2 engine (https://github.com/RchGrav/roundtable), shipped inside this module as the
+package `roundtable` and run as `python -m` of it with Metaform's own interpreter, so it is there on every install and
+nothing is looked up on PATH. Each call to it starts its `serve` over stdio, calls one tool and ends; a table's runner
+is detached by the engine, so a table outlives the call that opened it. The chair token `open` returns is kept
 with the table in the project, and every chair tool is passed it.
 
-A follower reads the table live from a web page server of its own, `roundtable web` on a free loopback port with a
+A follower reads the table live from a web page server of its own, the engine's `web` on a free loopback port with a
 token only it holds. The page's `events` stream says when anything of the table moves; the follower then reads only
 what moved. The engine's page server looks at its own store for those events about once a second: that is the engine's
 own loop, in its own process, and nothing in Metaform waits on a clock for a change.
@@ -22,11 +23,10 @@ import contextlib
 import json
 import os
 import secrets
-import shlex
-import shutil
 import signal
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -37,6 +37,7 @@ import httpx
 from metaform import home, settings
 from metaform.module import Stop
 
+ENGINE = 'metaform.modules.roundtables.roundtable'  # the shipped engine's package, by the name every process imports
 AGENTS = ('claude', 'codex', 'antigravity')  # Metaform's own agents, seated through the engine's ACP client
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_AUTHORED_ROLE',
             'METAFORM_LEASE')
@@ -51,15 +52,9 @@ def folder_log() -> Path:
     return found
 
 
-def command(folder: Path) -> list[str]:
-    """The engine's command, as the person set it; refused when it is not found, with how to set it."""
-    given = str(settings.value('roundtables_engine', folder) or '').strip()
-    parts = shlex.split(given) if given else []
-    if not parts or shutil.which(parts[0]) is None:
-        raise Stop(f'The Roundtable 2 engine is not found: roundtables_engine is {given or "empty"}. Install it '
-                   '(uv tool install <path to roundtable>) or name its command.',
-                   'metaform set --roundtables-engine=<path to roundtable>/.venv/bin/roundtable')
-    return parts
+def command() -> list[str]:
+    """The shipped engine's command: this interpreter running its package."""
+    return [sys.executable, '-m', ENGINE]
 
 
 def environment(folder: Path) -> dict[str, str]:
@@ -88,7 +83,7 @@ def call(where: Path, tool: str, /, **arguments: Any) -> dict[str, Any]:
 async def _call(folder: Path, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    parts = command(folder)
+    parts = command()
     params = StdioServerParameters(command=parts[0], args=[*parts[1:], 'serve'], env=environment(folder), cwd=folder)
     descriptor = os.open(folder_log() / 'engine.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as errlog:
@@ -123,7 +118,7 @@ class Page:
         self.token = secrets.token_urlsafe(24)
         self.port = _free_port()
         self.base = f'http://127.0.0.1:{self.port}/{self.token}/api'
-        parts = command(folder)
+        parts = command()
         descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(descriptor, 'ab') as written:
             self.process = subprocess.Popen([*parts, 'web', '--port', str(self.port)], cwd=folder,

@@ -1,16 +1,15 @@
 """roundtables: a table opened at an Address through the Roundtable 2 engine, followed live and chaired from Metaform,
 ticket code.gateway.messaging#3.
 
-The engine is the person's own checkout (ROUNDTABLE_ENGINE_HOME, ~/roundtable by default), run with its own fakes as
-its offline proof runs it (scripts/offline_table.py): its stub OpenRouter and Jev on the loopback, from
-scripts/check.py, and its fake ACP agent, dev/fake_agent.py, as Claude Code. Nothing is paid for and nothing leaves the
-machine. Without the checkout the tests are skipped.
+The engine is the one shipped inside the module, run as a fresh install runs it, with no engine on PATH, and with
+its own fakes as its offline proof runs it: its stub OpenRouter and Jev on the loopback (fakes.py) and its fake ACP
+agent (fake_agent.py) as Claude Code. Nothing is paid for and nothing leaves the machine.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -24,11 +23,11 @@ from metaform import events
 from metaform.data import Store
 from metaform.module import Context
 from metaform.modules.roundtables import engine, follow
+from metaform.modules.roundtables.tests import fakes
 
 pytestmark = pytest.mark.kind('simulation')
 
-ENGINE = Path(os.environ.get('ROUNDTABLE_ENGINE_HOME', str(Path.home() / 'roundtable')))
-COMMAND = ENGINE / '.venv' / 'bin' / 'roundtable'
+FAKE_AGENT = Path(__file__).with_name('fake_agent.py')
 ADDRESS = 'code.gateway.messaging'
 PURPOSE = 'Accept external agent work as project-addressed tickets.'
 MEMORY = 'Peers are named by the person'
@@ -37,24 +36,11 @@ REPORT_MARK = 'The roundtable has ended'
 STAGE_MARKS = ('# Topic synthesis', '# Rank collected ideas', '# Explain your top three', '# Explain your bottom three',
                '# Host summary', REPORT_MARK, 'could not be read as every idea')  # the offline proof's
 
-needs_engine = pytest.mark.skipif(not COMMAND.is_file(), reason=f'the Roundtable 2 engine is not at {ENGINE}')
-
-
-def checks() -> Any:
-    """The engine's own stub of OpenRouter and Jev, scripts/check.py."""
-    spec = importlib.util.spec_from_file_location('roundtable_check', ENGINE / 'scripts' / 'check.py')
-    assert spec is not None and spec.loader is not None
-    found = importlib.util.module_from_spec(spec)
-    sys.modules['roundtable_check'] = found
-    spec.loader.exec_module(found)
-    return found
-
-
 def stubbed(*, pace: float = 0.0) -> Any:
     """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and a Jev
     that finds the topic covered with nothing added each round, so the topic goes to synthesis on its sufficiency.
     `pace` slows every seat's turn so the chair acts while the table runs."""
-    base = checks().Stub
+    base = fakes.Stub
 
     class Offline(base):  # type: ignore[misc, valid-type]
         def chat(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -98,11 +84,10 @@ def table(run, tmp_path, monkeypatch):
         f'node=element:{ADDRESS}', cwd=folder)
     run('enable', 'dispatch', cwd=folder)
     run('set', '--jev', cwd=folder)
-    run('set', f'--roundtables-engine={COMMAND}', cwd=folder)
     engine_home = tmp_path / 'engine'
     log = tmp_path / 'fake-acp.log'
     for key, value in {'ROUNDTABLE_HOME': str(engine_home), 'OPENROUTER_API_KEY': 'stub-key',
-                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {ENGINE / "dev" / "fake_agent.py"}',
+                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {FAKE_AGENT}',
                        'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
                        'ROUNDTABLE_REPORT_MODEL': 'stub/reporter', 'FAKE_ACP_LOG': str(log)}.items():
         monkeypatch.setenv(key, value)
@@ -110,7 +95,7 @@ def table(run, tmp_path, monkeypatch):
 
 
 def serve(monkeypatch, stub: Any) -> Any:
-    held = checks().serve_stub(stub)
+    held = fakes.serve_stub(stub)
     monkeypatch.setenv('ROUNDTABLE_OPENROUTER_URL', f'http://127.0.0.1:{held.server_address[1]}/api')
     return held
 
@@ -204,7 +189,30 @@ def test_a_seats_short_name_means_the_newest_release_of_its_family_as_the_table_
     assert 'nearest is astra, now gpt-6-astra' in refused.stdout + refused.stderr
 
 
-@needs_engine
+@pytest.mark.timeout(LIMIT + 60)
+def test_a_fresh_install_with_no_engine_on_path_runs_a_table_whose_seats_speak_in_turn(run, home, table, monkeypatch):
+    """The engine ships inside the module: with no `roundtable` anywhere on PATH, a table on the question alone opens,
+    its fixture seats speak in their speaking order, and it runs to its answer."""
+    folder, _ = table
+    monkeypatch.setenv('PATH', os.pathsep.join((str(Path(sys.executable).parent), '/usr/bin', '/bin')))
+    assert shutil.which('roundtable') is None, 'no engine on PATH'
+    held = serve(monkeypatch, stubbed())
+    heard = Heard()
+    try:
+        answer = json.loads(run('roundtables', 'open', 'How should a table be heard?', 'host=stub/host', 'rounds=2',
+                                'seats=' + json.dumps(['stub/vega', 'claude/haiku', 'stub/orion']), '--json',
+                                cwd=folder).stdout)
+        assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
+    finally:
+        heard.close()
+        held.shutdown()
+    status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+    assert status['seated'] == ['Vega', 'Haiku', 'Orion'], status
+    spoke = [one['payload']['seat'] for one in heard.events if one['kind'] in ('turn', 'veto')]
+    assert spoke[:3] == status['seated'], spoke
+    assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer'], status
+
+
 @pytest.mark.timeout(LIMIT + 60)
 def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_heard_as_it_runs_to_its_answer(
         run, home, table, monkeypatch):
@@ -294,13 +302,17 @@ def test_a_table_ended_with_no_report_records_its_outcome_citing_its_export_and_
     assert any('No current element' in one['message'] for one in adopted.get('notices', [])), adopted
 
 
-def openings(run, folder: Path, tmp_path: Path) -> dict[str, str]:
-    """Each table's opening as `open` kept it, by its question, the engine a stand-in that fails at once, so the
-    table is refused after its opening is written and no seat starts."""
-    failing = tmp_path / 'no-engine'
-    failing.write_text('#!/bin/sh\nexit 1\n')
-    failing.chmod(0o755)
-    run('set', f'--roundtables-engine={failing}', cwd=folder)
+def broken(monkeypatch, tmp_path: Path) -> None:
+    """The shipped engine made to fail at once: its home is a file, so it cannot open its store."""
+    held = tmp_path / 'engine-home-is-a-file'
+    held.write_text('')
+    monkeypatch.setenv('ROUNDTABLE_HOME', str(held))
+
+
+def openings(run, folder: Path, tmp_path: Path, monkeypatch) -> dict[str, str]:
+    """Each table's opening as `open` kept it, by its question, the engine failing at once, so the table is refused
+    after its opening is written and no seat starts."""
+    broken(monkeypatch, tmp_path)
     run('roundtables', 'open', 'What could a peer directory be?', 'seats=["stub/vega"]', cwd=folder, ok=False)
     run('roundtables', 'open', 'Who reaches whom?', f'address={ADDRESS}', 'seats=["stub/vega"]', cwd=folder, ok=False)
     with Store('proj', module='roundtables').tables(write=False) as tx:
@@ -309,9 +321,9 @@ def openings(run, folder: Path, tmp_path: Path) -> dict[str, str]:
 
 
 def test_a_table_with_no_address_opens_on_the_question_alone_and_one_with_an_address_on_the_part(
-        run, table, tmp_path):
+        run, table, tmp_path, monkeypatch):
     folder, _ = table
-    found = openings(run, folder, tmp_path)
+    found = openings(run, folder, tmp_path, monkeypatch)
     alone = found['What could a peer directory be?']
     assert 'What could a peer directory be?' in alone, alone
     assert ADDRESS not in alone and PURPOSE not in alone and MEMORY not in alone, alone
@@ -360,7 +372,6 @@ def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ide
     assert Store('proj').element('code.peers.directory') is None, 'a ticket never changes the map'
 
 
-@needs_engine
 @pytest.mark.timeout(LIMIT + 60)
 def test_hold_and_end_work_from_metaform_and_the_record_is_saved_and_handed_to_the_system_agent(run, home, table,
                                                                                                  monkeypatch):
@@ -390,7 +401,6 @@ def test_hold_and_end_work_from_metaform_and_the_record_is_saved_and_handed_to_t
     assert gone(lambda: seat_entries(home))
 
 
-@needs_engine
 def test_a_table_with_more_seats_than_free_agent_slots_is_refused_before_any_seat_starts(run, home, table):
     folder, log = table
     run('set', '--dispatch-agents=1', cwd=folder)
@@ -424,7 +434,6 @@ def page_servers() -> list[int]:
     return found
 
 
-@needs_engine
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc for the page servers left')
 @pytest.mark.timeout(2 * LIMIT + 60)
 def test_a_stopped_follower_ends_its_table_before_its_slots_go_back(run, home, table, monkeypatch):
@@ -466,14 +475,10 @@ def test_a_stopped_follower_ends_its_table_before_its_slots_go_back(run, home, t
         held.shutdown()
 
 
-@needs_engine
-def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slot(run, home, table, tmp_path):
+def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slot(run, home, table, tmp_path,
+                                                                                    monkeypatch):
     folder, _ = table
-    failing = tmp_path / 'failing-roundtable'
-    failing.write_text('#!/bin/sh\nif [ "$1" = serve ]; then echo "the engine broke" >&2; exit 1; fi\n'
-                       f'exec {COMMAND} "$@"\n')
-    failing.chmod(0o755)
-    run('set', f'--roundtables-engine={failing}', cwd=folder)
+    broken(monkeypatch, tmp_path)
     began = time.monotonic()
     refused = run('roundtables', 'open', 'Does it open?', f'address={ADDRESS}', 'seats=' + json.dumps(['stub/vega']),
                   cwd=folder, ok=False)

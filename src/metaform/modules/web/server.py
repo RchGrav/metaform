@@ -232,7 +232,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
-    '/api/roundtable-open', '/api/roundtable-chair'})
+    '/api/roundtable-open'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -274,7 +274,6 @@ def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) ->
     return 'read' if verb.effect == 'read' else 'write'
 
 
-ROUNDTABLE_CHAIR = ('comment', 'hold', 'continue', 'advance', 'end')  # the stage's chair controls, roundtables' verbs
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
 GONE: dict[str, Any] = {'topic': 'gone'}  # put on a page's stream by its socket closing, `events`
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
@@ -1460,7 +1459,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
-                  '/api/roundtable-open': self.roundtable_open, '/api/roundtable-chair': self.roundtable_chair,
+                  '/api/roundtable-open': self.roundtable_open,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -2611,24 +2610,6 @@ class Handler(BaseHTTPRequestHandler):
                                                             else {}), **({'seats': seats} if seats else {})}
         try:
             found = module_verb(given, 'roundtables', 'open', nouns)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            return self.refuse(error, 400)
-        self.send(200, plain(found))
-
-    def roundtable_chair(self, given: dict[str, Any]) -> None:
-        """One of the chair's controls on the stage's table: comment, hold, continue, advance or end."""
-        table, act, text = given.get('table'), given.get('act'), given.get('text')
-        if not isinstance(table, str) or not table:
-            return self.send(400, {'error': 'The chair acts on a table, by its id.'})
-        if act not in ROUNDTABLE_CHAIR:
-            return self.send(400, {'error': f'The chair can {", ".join(ROUNDTABLE_CHAIR)}.'})
-        if act == 'comment' and (not isinstance(text, str) or not text.strip()):
-            return self.send(400, {'error': 'A comment says something.'})
-        nouns = {'table': table, **({'text': cast(str, text).strip()} if act == 'comment' else {})}
-        try:
-            found = module_verb(given, 'roundtables', str(act), nouns)
         except StoreError as error:
             return self.refuse(error, 404)
         except Stop as error:
