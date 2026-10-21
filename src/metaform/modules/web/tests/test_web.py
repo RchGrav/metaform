@@ -1996,9 +1996,10 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
         page.wait_for_function(made, timeout=10000)
         for node in checked:
             seen = page.evaluate(f'window.metaform.look("{node}")')
-            # drei's glass, it lets light through, parts its colors, bends it and draws its far wall
+            # drei's glass, it lets light through, parts its colors at the edge and draws its far wall; it is clear,
+            # so nothing bends what is read through it (2026-10-21)
             assert seen['material'] == 'MeshTransmissionMaterial' and seen['transmission'] > 0, (theme, node, seen)
-            assert seen['chromatic'] > 0 and seen['distortion'] > 0 and seen['backside'] is True, (theme, node, seen)
+            assert seen['chromatic'] > 0 and seen['distortion'] == 0 and seen['backside'] is True, (theme, node, seen)
     # one shape for every node of a size, however many nodes there are
     sizes = page.evaluate('new Set(window.metaform.graph().nodes.filter(node => node.t === "el")'
                           '.map(node => window.metaform.look(node.id).shape)).size')

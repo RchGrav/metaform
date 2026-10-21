@@ -7,6 +7,7 @@ import * as THREE from 'three';
 // the page's import map names as the same file, so both share one three.js.
 import {MeshTransmissionMaterial} from '/vendor/drei-vanilla/MeshTransmissionMaterial.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
 import {css} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {layerColor} from '/page/app/header/layers.js';
@@ -91,21 +92,32 @@ export const dimmed = node => S.selected && node.t === 'el' && node.id !== S.sel
  * it, and as the light it gives off. */
 export function colored(material, color) {
   material.color.set(color);
-  if (material.isMeshPhysicalMaterial) { material.attenuationColor.set(color); material.emissive.set(color); }
+  if (material.isMeshPhysicalMaterial) {
+    // the face of the glass is pale, FACE of the way to white, and the colour is laid in by absorption through its
+    // thickness, deeper where the glass is thicker, as drei's example colours its cube; the light it gives off is its own
+    material.color.lerp(WHITE, FACE);
+    material.attenuationColor.set(color); material.emissive.set(color);
+  }
 }
+const WHITE = new THREE.Color(1, 1, 1);
+const FACE = 0.6;
 /* Glass, VIEW-025: in every theme an element is made of a material that obeys reality. Light passes through it and
- * is tinted by it, so the theme's background shows through the node. It gives off a little of its own color, since
- * clear glass on a dark background with nothing to reflect shows as black. It is drei's transmission material: the
- * light behind it is read `samples` times, each color at its own index of refraction, which parts the colors at the
- * edges, `chromaticAberration`; the surface bends it by a noise, `distortion` at `distortionScale`, drifting at
- * `temporalDistortion`; the reads spread along the ray blur it, `anisotropicBlur`. What is behind the glass is drawn
- * by `addBehind`, as drei's own component draws it, with the far wall of every node in it: a node shows its own far
- * wall and the glass behind it, the backside. The drei values are a start and are not settled: with the frosting and
- * the absorption above, what is behind a node is blurred and tinted almost to its own color, so they hardly show. One
- * shape serves every node of a size. */
-export const GLASS = {transmission: 0.7, thickness: 9, roughness: 0.3, ior: 1.35, attenuationDistance: 7,
-  clearcoat: 0.6, clearcoatRoughness: 0.25, emissiveIntensity: 0.45, metalness: 0,
-  chromaticAberration: 0.06, distortion: 0.25, distortionScale: 0.35, temporalDistortion: 0.1, anisotropicBlur: 0.1,
+ * is tinted by it, so the theme's background shows through the node, and it reflects the hall of `environment3d`. It
+ * is drei's transmission material: the light behind it is read `samples` times, each color at its own index of
+ * refraction, which parts the colors at the edges, `chromaticAberration`; the surface bends it by a noise,
+ * `distortion` at `distortionScale`, drifting at `temporalDistortion`; the reads spread along the ray blur it,
+ * `anisotropicBlur`. What is behind the glass is drawn by `addBehind`, as drei's own component draws it, with the far
+ * wall of every node in it: a node shows its own far wall and the glass behind it, the backside. The values follow
+ * drei's own example of the material, the gelatinous cube (2026-10-21): the light let through whole, the surface
+ * polished under a clearcoat, the glass about as thick as the node is wide, `thickness` and `attenuationDistance`
+ * being shares of the node's radius, and its colour laid in by absorption over a pale face, `colored`; a little
+ * light of its own stays, for a node on a dark ground and for the bloom to raise when it is lit, `shine`. The glass
+ * is clear: nothing frosts, spreads or bends what is behind it, so a name behind a node is read through it, refracted
+ * as a lens refracts, and only the colours part a little at the edge; the person asked for clear glass whose edges
+ * are what shows (2026-10-21). One shape serves every node of a size. */
+export const GLASS = {transmission: 1, thickness: 1, roughness: 0, ior: 1.5, attenuationDistance: 5,
+  clearcoat: 1, clearcoatRoughness: 0, emissiveIntensity: 0.3, metalness: 0, envMapIntensity: 1,
+  chromaticAberration: 0.02, distortion: 0, distortionScale: 0.3, temporalDistortion: 0, anisotropicBlur: 0,
   samples: 6};
 export const DRIFT = {value: 0};  // the one clock the distortion of every node drifts by; still with reduced motion
 export const shapes = new Map();
@@ -175,9 +187,9 @@ export function bead(node) {
     temporalDistortion, anisotropicBlur, samples, ...physical} = GLASS;
   // drei's amount of light let through is `_transmission`; three.js's own `transmission` stays 0, since the page
   // draws what is behind the glass itself.
-  const made = side => Object.assign(new MeshTransmissionMaterial({samples, _transmission: transmission, thickness,
-    roughness, attenuationDistance, chromaticAberration, distortion, distortionScale, temporalDistortion,
-    anisotropicBlur}), physical, {side});
+  const made = side => Object.assign(new MeshTransmissionMaterial({samples, _transmission: transmission,
+    thickness: thickness * radius, roughness, attenuationDistance: attenuationDistance * radius, chromaticAberration,
+    distortion, distortionScale, temporalDistortion, anisotropicBlur}), physical, {side});
   // The near wall reads the picture with every far wall in it. The far wall is a material of its own, since three.js
   // keeps a material's program when only its side changes; it shares every setting of the near wall but the picture
   // it reads, which is the scene with no glass in it.
@@ -189,6 +201,9 @@ export function bead(node) {
   material.uniforms.time = DRIFT;
   material.uniforms.buffer.value = BEHIND.main?.texture ?? null;
   back.uniforms = {...material.uniforms, buffer: {value: BEHIND.back?.texture ?? null}};
+  // The colour is laid in once, by the near wall: the far wall lets what is behind through as it is, else the two
+  // walls tinted it twice and a pale glass came out deep (2026-10-21).
+  back.uniforms.attenuationDistance = {value: Infinity};
   material.userData.back = back;
   back.userData.front = material;
   material.userData.own = true;
@@ -198,13 +213,13 @@ export function bead(node) {
 /* What is behind the glass, drawn as drei's component draws it, once for every node, VIEW-025: the scene with the
  * glass hidden, into `back`; then with the far wall of every node, which reads `back`, into `main`; and the near walls
  * read `main` in the frame itself. Both are drawn at `scale` of the view's size, drei's `resolution` and
- * `backsideResolution`. It runs before the frame in the graph's own render chain. The two pictures are drawn again
+ * `backsideResolution`, the whole of it since 2026-10-21, as drei's example draws them. It runs before the frame in the graph's own render chain. The two pictures are drawn again
  * only on a frame where something of the map seen through the glass changed, `behindChanged`: drawn every frame they
  * took two of the frame's three drawings of the whole scene. What moves over the map without end is left out of
  * them, so it never makes them be drawn again: the flow's dots, light added over the map, and what walks or floats
  * about it, the agents' figures, the mascot, their speech bubbles and a wave's dots. Seen through a node's frosted
  * and tinted glass these hardly showed; a figure behind a node is now hidden by it. `drawn` counts the pictures. */
-export const BEHIND = {back: null, main: null, scale: 0.5, kept: null, stale: true, drawn: 0};
+export const BEHIND = {back: null, main: null, scale: 1, kept: null, stale: true, drawn: 0};
 export function addBehind() {
   const composer = G.postProcessingComposer();
   if (!composer?.insertPass) return;
@@ -234,7 +249,7 @@ function drawBehind(renderer) {
   // outward, so the far wall's light goes away from the eye, and the node is as bright as its near wall makes it.
   for (const object of glass) {
     const near = object.material, far = near.userData.back;
-    far.color.copy(near.color);
+    far.color.copy(WHITE);  // the colour is the near wall's alone, `bead`
     Object.assign(far, {emissiveIntensity: 0, opacity: near.opacity, transparent: near.transparent});
     Object.assign(object, {material: far, visible: true});
   }
@@ -243,6 +258,23 @@ function drawBehind(renderer) {
   for (const object of glass) object.material = object.material.userData.front;
   for (const object of moving) object.visible = true;
   renderer.setRenderTarget(was);
+}
+/* The hall the glass reflects, VIEW-025, as drei's example lights its cube: a high-dynamic-range picture of whole
+ * surroundings, Poly Haven's Dancing Hall (CC0, vendor/environment), made into the scene's environment through
+ * three.js's PMREM, so every physical material in the scene, the glass first, takes its reflections and its light from
+ * it: the bright windows and lamps of the hall are what a node's highlights and rim are. It is never shown itself: each
+ * theme keeps its own ground, VIEW-023. Loaded once; until it arrives the glass is lit by the graph's two lights
+ * alone, and the pictures behind the glass are drawn again when it does. */
+export function environment3d() {
+  const renderer = G.renderer(), scene = G.scene();
+  new RGBELoader().load('/vendor/environment/dancing_hall_1k.hdr', picture => {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromEquirectangular(picture).texture;
+    picture.dispose();
+    pmrem.dispose();
+    BEHIND.stale = true;
+    wake3d();
+  }, undefined, error => console.warn('The hall the glass reflects did not load.', error));
 }
 /* A part of the map, seen through the glass: the graph's nodes and links, the labels, the page's batches of fibers
  * and nodes, and the lights. */

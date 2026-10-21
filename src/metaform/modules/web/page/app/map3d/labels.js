@@ -573,8 +573,9 @@ const PARSED = new Map();
 function holds(material, color) {
   let want = PARSED.get(color);
   if (!want) PARSED.set(color, want = new THREE.Color(color));
-  return material.color.equals(want) && (!material.isMeshPhysicalMaterial
-    || (material.attenuationColor.equals(want) && material.emissive.equals(want)));
+  // the glass's face is pale, `colored`: its colour is read from its absorption and its light
+  return material.isMeshPhysicalMaterial ? material.attenuationColor.equals(want) && material.emissive.equals(want)
+    : material.color.equals(want);
 }
 /* Each node picked by its whole sphere, its record's condition painted on it, and whether any node signals. */
 function paintSignals(data) {

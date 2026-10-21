@@ -12,7 +12,7 @@ import {S, read} from '/page/app/core/reads.js';
 import {selectedNode} from '/page/app/graph/data.js';
 import {MASCOT, HANDDRAG} from '/page/app/figures/mascot.js';
 import {FIGURE_PICK, figureAt, openFigure} from '/page/app/figures/ask.js';
-import {shownNode, colorOf, dim, dimmed, VIEW_SETTINGS, addBehind} from '/page/app/map3d/light.js';
+import {shownNode, colorOf, dim, dimmed, VIEW_SETTINGS, addBehind, environment3d} from '/page/app/map3d/light.js';
 import {addBloom} from '/page/app/map3d/bloom.js';
 import {nodeObject, linkColor} from '/page/app/map3d/ghosts.js';
 import {linkAt3d, nodeAt3d, clickedAt3d, pick3d, hovered, TIP, hover3d} from '/page/app/map3d/pick3d.js';
@@ -366,6 +366,7 @@ function create3D() {
   G.scene().onBeforeRender = solid;
   freeDefaults();
   addBehind();
+  environment3d();
   addBloom();
   ULTRA.setting(document.documentElement.dataset.theme === 'space' ? 'ultra' : 'clean');  // the theme decides the look
   ULTRA.attach(G, {wake: wake3d, reduced, css, selected: selectedNode, hovered: () => hovered?.id ?? null,  // ULTRA
