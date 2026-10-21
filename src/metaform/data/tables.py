@@ -1599,7 +1599,7 @@ def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]
         try:
             module = entry['module']
             if not isinstance(module, str) or not isinstance(entry['table'], Mapping):
-                raise ValueError('each entry names its module and table declaration')
+                raise TypeError('each entry names its module and table declaration')
             table = Table.from_dict(cast(Mapping[str, Any], entry['table']))
             held = current.get((module, table.name))
             if held is None or physical(module, held) != physical(module, table) or held.key != table.key:
@@ -1617,11 +1617,11 @@ def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]
                 raise ValueError(f'{module}.{table.name} has no work_id column')
             rows = entry['rows']
             if not isinstance(rows, list):
-                raise ValueError('rows must be a list')
+                raise TypeError('rows must be a list')
             kept: list[Mapping[str, Any]] = []
             for row in cast(list[Any], rows):
                 if not isinstance(row, Mapping):
-                    raise ValueError(f'{module}.{table.name} requires one raw scalar value for every column')
+                    raise TypeError(f'{module}.{table.name} requires one raw scalar value for every column')
                 raw = cast(Mapping[str, Any], row)
                 if set(raw) != names or not all(_scalar(value) for value in raw.values()):
                     raise ValueError(f'{module}.{table.name} requires one raw scalar value for every column')
