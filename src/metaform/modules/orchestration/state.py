@@ -424,6 +424,11 @@ class Orchestration:
 
     def prepare_runtime(self, ctx: Context, assignment: Mapping[str, Any], *, restart: bool = False) -> bool:
         """Commission existing fallback work before launching an unconfigured specialist."""
+        store = own(ctx)
+        with store.tables(write=False) as tx:
+            assignment = row_for(tx, assignment_id=assignment['assignment_id']) or assignment
+        if assignment.get('stop') or store.ticket(str(assignment['work_id'])).work.done:
+            return False
         if assignment['authored_role_uri'] in FACILITATORS:
             return True
         with own(ctx).tables(write=False) as tx:
@@ -1210,8 +1215,26 @@ class Orchestration:
         update(tx, owner, state='queued')
         transition(tx, owner, 'launch', {'resume': True, 'return_transition': key}, key)
 
+    @staticmethod
+    def blocked_assessment_allowed(tx: TableTx, store: Store, gc: Mapping[str, Any],
+                                   source: Mapping[str, Any]) -> bool:
+        if gc.get('stop') or gc['state'] in ENDED or store.ticket(str(gc['work_id'])).work.done:
+            return False
+        # Helpers return their blocker to their caller. Assessments already inspect this delivery, including
+        # specialists and role commissions they call; their blockers must not start another review of it.
+        seen: set[str] = set()
+        current: Mapping[str, Any] | None = source
+        while current is not None:
+            ident = str(current['assignment_id'])
+            if ident in seen or current.get('stop') or current.get('reviewed_assignment_id') or \
+                    current['authored_role_uri'] in FACILITATORS:
+                return False
+            seen.add(ident)
+            current = row_for(tx, assignment_id=current.get('parent_assignment_id'))
+        return not store.ticket(str(source['work_id'])).work.done
+
     def assessment(self, ctx: Context, gc: Mapping[str, Any], report: Mapping[str, Any],
-                   key: str) -> dict[str, Any]:
+                   key: str, *, blocked_by: str | None = None) -> dict[str, Any]:
         resolved_role(ctx, 'functionality')
         store = own(ctx)
         ident = identity(gc['assignment_id'], 'assessment', key)
@@ -1220,6 +1243,11 @@ class Orchestration:
             if existing:
                 return existing
             current_gc = row_for(tx, assignment_id=gc['assignment_id']) or gc
+            record = store.ticket(str(current_gc['work_id'])).work
+            source = row_for(tx, assignment_id=blocked_by) if blocked_by else None
+            if record.outcome == 'cancelled' or (blocked_by and (source is None or not
+                    self.blocked_assessment_allowed(tx, store, current_gc, source))):
+                return {'state': 'completed', 'queued': False, 'reason': 'Assessment no longer applies.'}
             if current_gc.get('stop'):
                 raise Stop('The delivery ticket was stopped before its assessment.', HELP)
             node, places = location(store, None, gc)
@@ -1258,16 +1286,19 @@ class Orchestration:
             held = update(tx, assignment, state=state, evidence=ctx.nouns.get('evidence') or assignment['evidence'],
                           candidate=ctx.nouns.get('candidate') or assignment['candidate'], last_check_in=report)
             gc = row_for(tx, assignment_id=assignment.get('gc_assignment_id'))
+            assess_blocker = state == 'blocked' and gc is not None and \
+                self.blocked_assessment_allowed(tx, store, gc, held)
             if state in ('waiting', 'blocked'):
                 transition(tx, held, 'suspend', {'reason': report['summary'] or state}, key)
             if gc and gc['assignment_id'] != held['assignment_id']:
                 transition(tx, gc, 'send', {'kind': state, 'body': str(report['summary'] or state),
                     'report': report, 'sender_assignment_id': held['assignment_id'],
                     'sender_session_id': held['owner_session_id']}, key)
-            if state == 'blocked' and gc:
-                transition(tx, gc, 'assessment', {'report': report, 'key': key}, key)
-        if state == 'blocked' and gc:
-            assessment = self.assessment(ctx, gc, report, key)
+            if assess_blocker and gc:
+                transition(tx, gc, 'assessment', {'report': report, 'key': key,
+                           'blocked_by': held['assignment_id']}, key)
+        if assess_blocker and gc:
+            assessment = self.assessment(ctx, gc, report, key, blocked_by=held['assignment_id'])
             return {'assignment': held, 'assessment': assessment}
         return held
 
@@ -1493,9 +1524,10 @@ class Orchestration:
                     from .specifications import finish_publication
                     delivered = finish_publication(ctx, self, str(payload['change_id']))
                 elif kind == 'assessment':
-                    assessment = self.assessment(ctx, assignment, payload['report'], str(payload['key']))
-                    delivered = {'state': 'completed', 'assessment_id': assessment['assignment_id']}
-                    for addition in self.pending(ctx, [assessment['work_id']]):
+                    assessment = self.assessment(ctx, assignment, payload['report'], str(payload['key']),
+                                                 blocked_by=payload.get('blocked_by'))
+                    delivered = {'state': 'completed', 'assessment_id': assessment.get('assignment_id')}
+                    for addition in self.pending(ctx, [assessment['work_id']]) if assessment.get('assignment_id') else ():
                         if addition['transition_id'] not in seen:
                             events.append(addition)
                             seen.add(addition['transition_id'])

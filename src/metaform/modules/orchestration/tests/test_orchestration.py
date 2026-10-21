@@ -516,6 +516,80 @@ def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(pr
     assert actual.launches[0][0]['last_check_in']['work_so_far'] == 'Candidate working tree and trace retained.'
 
 
+@pytest.mark.parametrize('outcome', ['cancelled', 'completed'])
+def test_blocked_commission_under_closed_gc_creates_no_assessment(project, outcome):
+    store, _ = project
+    gc = root(project)
+    request = SERVICE.delegate(ctx(project, 'gc-one', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+    SERVICE.bind(ctx(project), request['creator_assignment_id'], 'creator')
+    store.finish_work(gc['work_id'], 'Closed by the person.', outcome=outcome)
+    before = {one.id for one in store.work(limit=0).results}
+
+    SERVICE.check_in(ctx(project, 'creator', state='blocked', summary='Publication held.', key='held'))
+    transport_events = SERVICE.pending(ctx(project))
+
+    assert {one.id for one in store.work(limit=0).results} == before
+    assert not any(one['kind'] == 'assessment' for one in transport_events)
+
+
+@pytest.mark.parametrize('source', ['commission', 'assessment', 'assessment_specialist', 'assessment_commission'])
+def test_blocked_helper_chain_never_reassesses_live_gc(project, source):
+    store, _ = project
+    gc = root(project)
+    if source == 'commission':
+        request = SERVICE.delegate(ctx(project, 'gc-one', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+        blocked = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
+    else:
+        blocked = assess(ctx(project, 'gc-one', summary='Inspect countdown.', key='first-review'))
+        SERVICE.bind(ctx(project), blocked['assignment_id'], 'reviewer')
+        if source == 'assessment_specialist':
+            blocked = SERVICE.delegate(ctx(project, 'reviewer', role='verifier', task='Inspect alarm.'))
+        elif source == 'assessment_commission':
+            request = SERVICE.delegate(ctx(project, 'reviewer', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+            blocked = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
+    SERVICE.bind(ctx(project), blocked['assignment_id'], 'blocked-helper')
+    before = {one.id for one in store.work(limit=0).results}
+
+    SERVICE.check_in(ctx(project, 'blocked-helper', state='blocked', summary='Cannot continue.', key='held'))
+
+    assert {one.id for one in store.work(limit=0).results} == before
+    assert not any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
+    assert not store.ticket(gc['work_id']).work.done
+
+
+@pytest.mark.parametrize('outcome', ['cancelled', 'completed'])
+def test_closed_ticket_never_requests_runtime_commission(project, monkeypatch, outcome):
+    store, _ = project
+    gc = root(project)
+    store.finish_work(gc['work_id'], 'Closed by the person.', outcome=outcome)
+
+    def unexpected_runtime(*args, **kwargs):
+        pytest.fail('Closed work reached runtime selection.')
+
+    monkeypatch.setattr(SERVICE, 'runtime', unexpected_runtime)
+    before = {one.id for one in store.work(limit=0).results}
+    assert not SERVICE.prepare_runtime(ctx(project), gc)
+    assert {one.id for one in store.work(limit=0).results} == before
+
+
+def test_pending_blocked_assessment_skips_gc_closed_before_recovery(project, monkeypatch):
+    store, _ = project
+    gc = root(project)
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
+    SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
+    with monkeypatch.context() as patch:
+        patch.setattr(SERVICE, 'assessment', lambda *args, **kwargs: None)
+        SERVICE.check_in(ctx(project, 'worker', state='blocked', summary='View selection resets.', key='block'))
+    store.finish_work(gc['work_id'], 'Cancelled by the person.', outcome='cancelled')
+    before = {one.id for one in store.work(limit=0).results}
+    transport(monkeypatch, project)
+
+    SERVICE.drain(ctx(project))
+
+    assert {one.id for one in store.work(limit=0).results} == before
+    assert not any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
+
+
 def test_workflow_revision_preserves_frozen_history_variables_and_return_route(project, run):
     from metaform.module import context as workflow_context
     from metaform.modules.workflow import catalog, executor, runs
