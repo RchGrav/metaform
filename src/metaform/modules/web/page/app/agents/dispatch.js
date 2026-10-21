@@ -26,7 +26,8 @@ import {conditionLabel, partAt, taskWords} from '/page/app/board/refs.js';
 import {eligibleAgents, allowsAgent, drawBoard, renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {named} from '/page/app/task/task.js';
-import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab, optionWords}
+  from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
@@ -70,6 +71,22 @@ export const waiting = ticket => !ticket.done && !ticket.taken && (ticket.task |
   && !D.sessions.some(one => one.state === 'running'
     && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
 export const ticketOf = workId => (S.tickets || []).find(ticket => ticket.id === workId);
+/* An agent's own name, an adjective and a noun dispatch chose for its ticket as its session started, `name` on the
+ * session's state: what the person calls it, and how they call its context back, `dispatch resume <name>`. None for a
+ * session that ran before agents had names. */
+export const nameOf = session => (session && D.states?.[session.session_id]?.name) || null;
+/* An agent as the dock, the agents key and the session lists say it: its name first, then its ticket's number; its
+ * kind where it has no name, and the part it works on where its work is no ticket. */
+export function agentLabel(session, workId = session?.work_id) {
+  const name = nameOf(session) || agentName(session?.agent), item = ticketOf(workId)?.map?.item;
+  return item ? `${name} · ${item}` : `${name} on ${workPart(workId)}`;
+}
+/* The model and the thinking level a session runs, from its settings as the dock's line shows them. */
+export function runsOn(state) {
+  const settings = state?.settings || [];
+  return ['model', 'thought_level'].map(category => settings.find(one => one.category === category))
+    .filter(Boolean).map(optionWords).filter(Boolean);
+}
 export function ticketPart(ticket) {
   const element = ticket?.address ? partAt(ticket.address) : null;
   return element ? named(element) : ticket ? calledOf(ticketNode(ticket)) : 'its ticket';
@@ -346,7 +363,7 @@ export async function renderAgents(only = null) {
   const working = D.sessions.filter(one => one.activity === 'working');
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
-    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentName(one.agent),
+    text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentLabel(one),
       onOtherBase(one), assignmentSummary(D.states?.[one.session_id])].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
@@ -440,7 +457,7 @@ export function onOtherBase(one) {
   return 'another base';
 }
 function agentRow(one) {
-  const name = agentName(one.agent), elsewhere = onOtherBase(one);
+  const name = nameOf(one) || agentName(one.agent), elsewhere = onOtherBase(one);
   const responsibility = assignmentSummary(D.states?.[one.session_id]);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
@@ -449,7 +466,7 @@ function agentRow(one) {
       title: 'Checked: the part of the map this work is using shows in white. Unchecked: it is hidden.'}),
     h('button', {class: 'agent working', 'data-id': one.work_id, 'data-session': one.session_id,
       title: `${name} on work ${one.work_id}: working`, onclick: () => agentAt(one.work_id, one.session_id)},
-    h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, name),
+    h('img', {src: glyphOf(one.work_id), alt: glyphFor(one.work_id)}), h('b', {}, agentLabel(one)),
     h('small', {}, [responsibility, `on ${workPart(one.work_id)} · working${elsewhere ? ` · on ${elsewhere}` : ''}`]
       .filter(Boolean).join(' · '))),
     chatButton({id: one.work_id}, `${name} on ${workPart(one.work_id)}`));
@@ -490,6 +507,6 @@ export function agentAt(workId, sessionId = null) {
   // a thread already open keeps its name and where it comes from: the person's chat about a node and the system agent
   // hang on the same held ticket, and the thread read tells them apart
   const open = session && DOCK.chats.find(one => one.session === session.session_id);
-  openHelpdesk(workId, open?.label || `${agentName(session?.agent)} on ${workPart(workId)}`,
+  openHelpdesk(workId, open?.label || agentLabel(session, workId),
     'It answers when its current step ends.', session?.session_id || null, null, {focus: true});
 }

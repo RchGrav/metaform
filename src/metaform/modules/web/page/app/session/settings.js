@@ -7,7 +7,7 @@ import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker, optionWords} from '/page/app/agents/pickers.js';
 import {countOf, skipsPrompts} from '/page/app/session/tools.js';
 import {posted} from '/page/app/intake/intake.js';
 
@@ -22,12 +22,6 @@ export function sessionPop() {
   $('#helpdesk').append(SESSIONPOP.el);
   overlay(SESSIONPOP.el, {kind: 'popover'});
   return SESSIONPOP.el;
-}
-function optionWords(setting) {
-  if (setting.type === 'boolean') return setting.current ? setting.name : null;
-  const chosen = (setting.options || setting.choices || [])
-    .find(option => option.value === (setting.current ?? setting.chosen));
-  return chosen?.name || null;
 }
 /* The agent is the line's first word and the popover's first field. Before Call it is the one choice of the agent a
  * call starts, the summon choice every start shares, with its default star; choosing another shows that agent's own

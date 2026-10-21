@@ -53,6 +53,14 @@ export function forgetHarnesses() {
 }
 const harness = agent => HARNESS.agents.find(one => one.agent === agent) || null;
 export const agentName = agent => harness(agent)?.label || agent || 'An agent';
+/* One of a session's settings as its chosen option is named, the word the dock's line shows for it: a switch that is
+ * on by its own name, a select by its option's. */
+export function optionWords(setting) {
+  if (setting.type === 'boolean') return setting.current ? setting.name : null;
+  const chosen = (setting.options || setting.choices || [])
+    .find(option => option.value === (setting.current ?? setting.chosen));
+  return chosen?.name || null;
+}
 /* The agent a start uses when the person has chosen none: the one offered when this machine runs it, else the
  * default, else the first it runs. An agent the person chose stays chosen, found or not, so nothing they did not
  * choose is started in its place. */

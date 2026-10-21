@@ -3,7 +3,7 @@ import '/page/app/map2d/camera.js';  // the part before runs first, so the parts
 import {$, SVG, h} from '/page/app/core/dom.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
 import {REACH, reachOf} from '/page/app/map3d/pick3d.js';
-import {readout, readoutOf, edgeWords, figureWords} from '/page/app/map3d/readout.js';
+import {readout, readoutOf, edgeWords, figureWords, agentTip, moveTip} from '/page/app/map3d/readout.js';
 import {flowModeNow} from '/page/app/flow/flow.js';
 import {MODE} from '/page/app/camera/flight.js';
 import {M} from '/page/app/map2d/build.js';
@@ -156,7 +156,9 @@ function hoverOver(event) {
     const found = [...ROAM2D.figures.values()].find(one => one.g === figure);
     HOVER2D.on = found ? `figure:${found.id}` : null;
     if (found) readout('2d', figureWords(found.id));
+    agentTip(found?.id || null, event.clientX, event.clientY);  // named beside the pointer, with what it runs
   } else if (node?.dataset.key) {
+    agentTip(null);
     HOVER2D.on = node.dataset.key;
     readout('2d', readoutOf(node.dataset.key, '2d'));
   }
@@ -164,12 +166,14 @@ function hoverOver(event) {
 function hoverOut(event) {
   const from = event.target.closest?.('g.agent2d, g.node');
   if (!from || from.contains(event.relatedTarget)) return;
+  if (from.matches('g.agent2d')) agentTip(null);
   HOVER2D.on = EDGE_PICK.node2d;  // a node still within reach keeps the readout, `nodeAt2d`
   readout('2d', EDGE_PICK.node2d ? readoutOf(EDGE_PICK.node2d, '2d')
     : EDGE_PICK.edge2d ? edgeWords(EDGE_PICK.edge2d.join) : null);
 }
 $('#viewport').addEventListener('pointerover', hoverOver);
 $('#viewport').addEventListener('pointerout', hoverOut);
+$('#viewport').addEventListener('pointermove', event => moveTip(event.clientX, event.clientY), {passive: true});
 /* All shows the whole map and leaves the selection as it is, its node and its joins still marked, so the whole map is
  * seen with what the selected node is joined to; letting go of the selection clears the marks, `deselect`. */
 export function unmark2D() {

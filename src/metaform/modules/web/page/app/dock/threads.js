@@ -17,7 +17,7 @@ import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {narrowPage} from '/page/app/dock/place.js';
-import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt} from '/page/app/agents/dispatch.js';
+import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
@@ -211,7 +211,8 @@ function runningRow(session) {
   const chat = DOCK.chats.find(one => one.session === session.session_id), work = session.work_id;
   return listRow(`s:${session.session_id}`, {on: Boolean(DOCK.chat) && DOCK.chat === chat,
     source: chat?.source || sourceOf(work), glyph: ticketOf(work) && !isIntake(work) ? glyphOf(work) : null,
-    name: [agentName(session.agent), assignmentSummary(D.states?.[session.session_id])].filter(Boolean).join(' · '),
+    name: [nameOf(session) || agentName(session.agent), assignmentSummary(D.states?.[session.session_id])]
+      .filter(Boolean).join(' · '),
     status: listState(session), ...taskOf(work, session), session: session.session_id,
     open: () => {  // the thread open at the click, which a row kept since it was drawn may not know of
       const open = DOCK.chats.find(one => one.session === session.session_id);
@@ -278,8 +279,8 @@ export function drawAgentSessions() {
     if (held) held.push(one); else signalsOf.set(one.session_id, [one]);
   }
   const row = forget => session => ({key: session.session_id,
-    text: JSON.stringify([session.state, session.how, agentName(session.agent), glyphOf(session.work_id), sessionTask(session),
-      assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
+    text: JSON.stringify([session.state, session.how, agentLabel(session), glyphOf(session.work_id),
+      sessionTask(session), assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
       signalsOf.get(session.session_id) || null]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
@@ -288,14 +289,15 @@ export function drawAgentSessions() {
 const MENU_MOST = 40;
 function sessionRow(session, forget = false) {
   const state = D.states?.[session.session_id], notification = notificationState(state);
-  const stopped = stoppedByPerson(session), name = agentName(session.agent), task = sessionTask(session);
+  const stopped = stoppedByPerson(session), name = nameOf(session) || agentName(session.agent);
+  const label = agentLabel(session), task = sessionTask(session);
   const ended = session.state !== 'running', word = endWord(session);
   const signals = (D.signals || []).filter(one => one.session_id === session.session_id
     && one.reason === session.how && one.at).sort((a, b) => a.at.localeCompare(b.at));
   const at = signals.at(-1)?.at || stopTimes()[session.session_id] || null;
   const open = () => {
     $('#agentbox').hidden = true;
-    openHelpdesk(session.work_id, `${name} on ${task}`, '', session.session_id,
+    openHelpdesk(session.work_id, label, '', session.session_id,
       notification ? 'notification' : isSystemSession(session, D.states) ? 'system' : isIntake(session.work_id)
         ? 'intake' : null, {focus: true});
   };
@@ -316,7 +318,7 @@ function sessionRow(session, forget = false) {
   const how = session.how ? `It ended: ${session.how}.` : 'Its session ended.';
   return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
     h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
-    h('div', {class: 'details'}, h('b', {}, name), h('span', {class: 'task'}, task),
+    h('div', {class: 'details'}, h('b', {}, label), h('span', {class: 'task'}, task),
       assignmentSummary(state) ? h('span', {class: 'meta responsibility'}, assignmentSummary(state)) : null,
       notification ? h('span', {class: 'meta'}, 'Project messages') : !ended ? h('span', {class: 'meta'}, 'Running')
         : at ? h('time', {datetime: at, title: `${how} ${new Date(at).toLocaleString()}`}, `${word} ${clockOf(at, true)}`)
@@ -393,7 +395,7 @@ async function stopThread(event) {
     const found = await read('dispatch-sessions', {id: work, thread: 'false'});
     const session = (found.sessions || []).find(one => one.session_id === sessionId);
     if (session?.state !== 'running') return;
-    const ticket = ticketOf(work), name = agentName(session.agent);
+    const ticket = ticketOf(work), name = found.states?.[sessionId]?.name || agentName(session.agent);
     const task = sessionTask(session, found.states?.[sessionId]);
     if ((chatActivity(session).busy || ticket && !ticket.done) && !await confirmAct({
       title: `Stop ${name}?`, text: `It is working on ${task}. You can resume it later with its memory.`,

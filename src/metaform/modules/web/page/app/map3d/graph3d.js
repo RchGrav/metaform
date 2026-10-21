@@ -16,7 +16,7 @@ import {shownNode, colorOf, dim, dimmed, VIEW_SETTINGS, addBehind, environment3d
 import {addBloom} from '/page/app/map3d/bloom.js';
 import {nodeObject, linkColor} from '/page/app/map3d/ghosts.js';
 import {linkAt3d, nodeAt3d, clickedAt3d, pick3d, hovered, TIP, hover3d} from '/page/app/map3d/pick3d.js';
-import {readout, rehover3d, figureWords} from '/page/app/map3d/readout.js';
+import {readout, rehover3d, figureWords, agentTip} from '/page/app/map3d/readout.js';
 import {prepare3d} from '/page/app/map3d/labels.js';
 import {fibers3d} from '/page/app/map3d/fibers3d.js';
 import {nodes3d} from '/page/app/map3d/nodes3d.js';
@@ -477,17 +477,20 @@ function listen3d(stage) {
   for (const type of ['pointerenter', 'pointermove']) {
     stage.addEventListener(type, () => { TIP.out = false; wake3d(); }, {passive: true});
   }
-  stage.addEventListener('pointerleave', () => { TIP.out = true; hover3d(null); pick3d(null); });
+  stage.addEventListener('pointerleave', () => { TIP.out = true; hover3d(null); pick3d(null); agentTip(null); });
   stage.addEventListener('pointermove', pointAt3d, {passive: true});
   // a click on an agent's figure, not a drag of the camera, opens its thread
   stage.addEventListener('pointerdown', event => { FIGURE_PICK.down = [event.clientX, event.clientY]; }, true);
   stage.addEventListener('click', clickFigure);
   // A press anywhere else, or a key, ends the tooltip: a menu or a window may now cover the node it named.
-  document.addEventListener('pointerdown', event => { if (!stage.contains(event.target)) hover3d(null); }, true);
-  document.addEventListener('keydown', () => hover3d(null), true);
+  document.addEventListener('pointerdown', event => {
+    if (!stage.contains(event.target)) { hover3d(null); agentTip(null); }
+  }, true);
+  document.addEventListener('keydown', () => { hover3d(null); agentTip(null); }, true);
 }
 /* The edge a click would take, marked once a frame as the pointer moves; a node under the pointer takes the click. */
 function pointAt3d(event) {
+  if (event.buttons) agentTip(null);  // a drag takes the camera, not the figure
   if (EDGE_PICK.frame3d || event.buttons) return;
   const {clientX: x, clientY: y} = event;
   EDGE_PICK.frame3d = requestAnimationFrame(() => {
@@ -501,6 +504,7 @@ function pointAt3d(event) {
     const work = !hovered && !link ? figureAt(x, y) : null;
     if (work) readout('3d', figureWords(work));
     else if (!hovered && !link) readout('3d', null);
+    agentTip(work, x, y);  // and named beside the pointer, with the model and thinking level it runs
   });
 }
 function clickFigure(event) {

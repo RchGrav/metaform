@@ -12,7 +12,7 @@ import {M} from '/page/app/map2d/build.js';
 import {labelOf} from '/page/app/map2d/inside.js';
 import {memoryThing} from '/page/app/memory/graph.js';
 import {sessionStatus, statusChip} from '/page/app/dock/threads.js';
-import {D} from '/page/app/agents/dispatch.js';
+import {D, nameOf, runsOn} from '/page/app/agents/dispatch.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {workPart} from '/page/app/session/tools.js';
@@ -175,6 +175,37 @@ export function figureWords(workId) {
   const session = D.sessions.filter(one => one.work_id === workId).at(-1);
   return {top: [h('b', {}, agentName(session?.agent))], card: {title: agentName(session?.agent), kind: 'agent',
     text: `On ${workPart(workId)}`, status: sessionStatus(session)}};
+}
+/* ---------- the agent under the pointer, named at the pointer ----------
+ * Over an agent's figure, on either map, a small label beside the pointer names it: its name, then the model and the
+ * thinking level its session runs, as the dock shows them, `runsOn`. It is one element, made the first time; its words
+ * are set only when the figure under the pointer changes, and a move of the pointer only moves it, so a hover
+ * allocates nothing as the pointer goes. It goes when the pointer leaves the figure; nothing marks the figure. */
+export const AGENTTIP = {el: null, work: null};
+function agentWords(workId) {
+  const child = ROAM.figures.get(workId)?.child;
+  if (child) return child.name || 'Subagent';
+  const sessions = D.sessions.filter(one => one.work_id === workId);
+  const session = sessions.filter(one => one.state === 'running').at(-1) || sessions.at(-1);
+  return [nameOf(session) || agentName(session?.agent), ...runsOn(D.states?.[session?.session_id])].join(' · ');
+}
+export function agentTip(workId, x = 0, y = 0) {
+  if (!workId) {
+    if (AGENTTIP.work) { AGENTTIP.work = null; AGENTTIP.el.hidden = true; }
+    return;
+  }
+  const tip = AGENTTIP.el || (AGENTTIP.el = document.body.appendChild(h('div', {id: 'agenttip', class: 'agenttip',
+    role: 'tooltip', hidden: true})));
+  if (workId !== AGENTTIP.work) {
+    AGENTTIP.work = workId;
+    tip.textContent = agentWords(workId);
+    tip.hidden = false;
+  }
+  tip.style.translate = `${x}px ${y}px`;
+}
+/* The pointer moved on a map: the label goes with it while it names an agent. */
+export function moveTip(x, y) {
+  if (AGENTTIP.work) AGENTTIP.el.style.translate = `${x}px ${y}px`;
 }
 /* The detail card at the lower left of the map's window, in the legend's corner, the legend easing out while it shows:
  * the name as its title, a quiet line of its kind and role, the address in mono, its purpose or EF in a line or two,

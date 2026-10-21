@@ -2179,6 +2179,12 @@ html.frame .viewslot #viewbar{position:static}
 .small .readout .said{-webkit-line-clamp:1;line-clamp:1;display:block;white-space:nowrap;text-overflow:ellipsis}
 #tip3d.readout{left:0!important;top:0!important;transform:none!important}
 @media (prefers-reduced-motion: reduce){.readout,.readout.on{transition:none;translate:none}}
+/* The agent under the pointer, named beside the pointer on either map: its name, model and thinking level, `agentTip`.
+ * Placed by `translate` at the pointer, just below and right of it, so the pointer never covers it. */
+.agenttip{position:fixed;left:0;top:0;z-index:40;pointer-events:none;margin:16px 0 0 12px;padding:3px 8px;
+  font:500 var(--t-sm) var(--sans);white-space:nowrap;color:var(--text);
+  background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);border-radius:6px}
+.agenttip[hidden]{display:none}
 #stage.pickable canvas,#viewport.pickable,#viewport.picking{cursor:pointer}
 /* the 2D map's own grab gives way to the finger wherever a click would take a node or an edge, `nodeAt2d`/`edgeAt2d` */
 #viewport.picking .map2d svg,#viewport.picking svg,#viewport.picking svg *{cursor:pointer}

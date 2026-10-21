@@ -1652,6 +1652,67 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     assert set(ended.get(session, {})) <= set(ENDED_STATE), 'an ended session keeps only what names it'
 
 
+def name_of(run, dispatch, work_id):
+    """The name the running session of the work was given, None until its runner has named it."""
+    got = read(run, dispatch, work_id)
+    live = [one['session_id'] for one in got['sessions'] if one['state'] == 'running']
+    return got['states'].get(live[-1], {}).get('name') if live else None
+
+
+@pytest.mark.req('VIEW-039')
+def test_each_session_is_named_from_the_lists_for_its_ticket_and_never_by_a_name_a_running_session_holds(
+        dispatch, run, dispatch_runners):
+    """A session is named an adjective and a noun of dispatch's lists, the pair that best matches its ticket's words;
+    a second session whose ticket ranks the same pair first, while the first runs, takes its next pair. Each agent is
+    told its own name once, at the head of its first turn."""
+    from metaform.data import Node
+    from metaform.modules.dispatch.names import pairs, ranked, words
+    task = 'Make the cosmic argon panel: cosmic argon, cosmic argon.'
+    works = [dispatch.store.add_work(Node('element', at), 'unbuilt', task=task).id for at in (NODE, LINKED)]
+    names = []
+    for work in works:
+        started = json.loads(run('dispatch', 'start', work, 'claude', '--json', cwd=dispatch.folder,
+                                 env=dispatch.env('hold')).stdout)
+        dispatch_runners.append((started, dispatch.folder, dispatch.log))
+        names.append(eventually(lambda work=work: name_of(run, dispatch, work)))
+    assert names[0] == 'cosmic-argon', 'the pair the ticket says three times'
+    assert names[1] == next(one for one in pairs(*ranked(None, '', task, works[1])) if one != names[0])
+    adjective, noun = names[1].split('-')
+    assert adjective in words('adjectives') and noun in words('nouns')
+    def first_turns():  # each session's first turn, its blocks' text together
+        got = [' '.join(block.get('text', '') for block in prompt['params']['prompt'])
+               for prompt in dispatch.received('session/prompt')]
+        return got if len(got) >= len(names) else None
+    prompts = eventually(first_turns)
+    for name in names:
+        assert sum(text.count(f'Your name is {name};') for text in prompts) == 1, 'told once, in its first turn'
+
+
+@pytest.mark.req('VIEW-039')
+def test_talk_resume_and_sessions_take_a_name_for_the_latest_session_of_that_name(dispatch, run):
+    """A person who names an agent reaches its latest session: talk to it, resume it, read its thread, as they would
+    by its session id; an older session of the same name is passed over, and a name no session has is refused."""
+    from metaform.data import Store
+    dispatch.start('hold')
+    name = eventually(lambda: name_of(run, dispatch, dispatch.id))
+    session = dispatch.session().extra['session_id']
+    with Store('proj', module='dispatch').tables() as tx:  # an older session called the same, ended long ago
+        tx.insert('agent_sessions', {'session_id': 'older', 'work_id': dispatch.id, 'agent': 'claude',
+                                     'state': 'ended', 'started': '2026-10-01T00:00:00Z', 'seq': 1})
+        tx.insert('session_lines', {'session_id': 'older', 'name': 'state', 'work_id': dispatch.id, 'kind': 'state',
+                                    'text': json.dumps({'name': name}), 'seq': 1})
+    talked = json.loads(run('dispatch', 'talk', f'session={name}', '--json', cwd=dispatch.folder).stdout)
+    assert (talked['session_id'], talked['state']) == (session, 'running'), 'the agent at work, talked to directly'
+    resumed = json.loads(run('dispatch', 'resume', name, '--json', cwd=dispatch.folder).stdout)
+    assert (resumed['session_id'], resumed['state']) == (session, 'running')
+    listed = json.loads(run('dispatch', 'sessions', f'id={name}', '--json', cwd=dispatch.folder).stdout)
+    assert [one['session_id'] for one in listed['sessions']] == [session] and list(listed['states']) == [session]
+    other = next(one for one in ('cosmic-argon', 'astral-argon') if one != name)
+    refused = run('dispatch', 'talk', f'session={other}', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0 and f'No agent session is called {other}.' in refused.stdout + refused.stderr
+    dispatch.stop()
+
+
 @pytest.mark.req('VIEW-039')
 @pytest.mark.req('STORE-005')
 def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended(dispatch, run, monkeypatch):
