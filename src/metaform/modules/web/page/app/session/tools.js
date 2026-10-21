@@ -76,7 +76,7 @@ function unifiedDiff(patch) {
   return h('div', {class: 'udiff'}, rows);
 }
 /* The parts of the map a file belongs to, each a chip that selects the part and flies both views to it. */
-function nodeChips(nodes = []) {
+export function nodeChips(nodes = []) {
   return (nodes || []).map(nodeChip);
 }
 function nodeChip(node) {
@@ -90,11 +90,16 @@ function nodeChip(node) {
 }
 const delta = (added, removed) => h('span', {class: 'delta'}, h('b', {class: 'add'}, `+${added}`),
   h('b', {class: 'del'}, `−${removed}`));
-function fileDetail(diff) {
+/* One file's edit: a tool call's, or a commit's in the board's Archive, which can also say a file deleted, renamed or
+ * binary. */
+export function fileDetail(diff) {
   return h('div', {class: 'file'},
     h('div', {class: 'filehead'}, h('i', {class: 'i i-file', 'aria-hidden': 'true'}),
       h('span', {class: 'path', title: diff.path}, diff.path),
       diff.created ? h('span', {class: 'badge ok'}, 'New file') : null,
+      diff.deleted ? h('span', {class: 'badge'}, 'Deleted') : null,
+      diff.was ? h('span', {class: 'badge', title: diff.was}, `Renamed from ${diff.was}`) : null,
+      diff.binary ? h('span', {class: 'badge'}, 'Binary') : null,
       delta(diff.added ?? 0, diff.removed ?? 0)),
     (diff.nodes || []).length ? h('div', {class: 'chips'}, nodeChips(diff.nodes)) : null,
     unifiedDiff(diff.patch),

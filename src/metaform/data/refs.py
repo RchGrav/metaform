@@ -16,10 +16,12 @@ ref there, with a name of its own. Linked again where it is, nothing changes but
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .. import home
 from ..errors import StoreError
@@ -31,10 +33,15 @@ from .records import Node, Notice, Outcome, Ref, SourceRef
 from .selection import LayerRow
 from .session import Tx
 
+if TYPE_CHECKING:
+    from .store import Store
+
 SOURCES = 'sources'  # the layer every ref is a record of, MAP-021
 PRIMARY = 'path'  # the key that starts a ref when a list of pairs is split: the pairs after it are its details
 NAME = re.compile(r'^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$')  # a ref_id: Address segments, either case
 LINE_MARK = re.compile(r':\d+(-\d+)?(,\d+(-\d+)?)*$')  # file.py:12 names file.py
+PLACE_MARK = re.compile(r'(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$')  # a line or a range after a path: file.py:12, #L3-L9
+FOLDED = os.name == 'nt' or sys.platform == 'darwin'  # their file systems compare names without case, as a rule
 UNSAFE = re.compile(r'[^A-Za-z0-9_]+')
 # The fields every node is read by on `this`, never ref names, CTX-087; whether `this`'s other names are reserved too
 # is open question 19 of CTX. The `this` reader imports this list when refs read flat on it, CTX-085.
@@ -139,6 +146,63 @@ def current(tx: Tx, node: Node | None = None) -> tuple[SourceRef, ...]:
             continue
         made.append(record(tx, ident, newest))
     return tuple(made)
+
+
+# Placing a file on the map ------------------------------------------------------------------------------------
+# One way for every surface, MAP-021: an agent's tool call in its thread and a commit in the board's Archive name the
+# same parts of the map for the same file.
+
+def relative(path: str, roots: Sequence[str]) -> str | None:
+    """A path an agent named, as the project names it: relative to the first of the roots it is inside, with forward
+    slashes; None for a path inside none of them. ACP paths are absolute; a relative one is taken as given."""
+    if not os.path.isabs(path):
+        given = path.replace('\\', '/')
+        while given.startswith('./'):
+            given = given[2:]
+        return given.rstrip('/') or None
+    for root in roots:
+        try:
+            found = os.path.relpath(path, root)
+        except ValueError:  # Windows: another drive
+            continue
+        if found == os.curdir or found == os.pardir or found.startswith(os.pardir + os.sep):
+            continue
+        return found.replace(os.sep, '/')
+    return None
+
+
+def folded(path: str) -> str:
+    return path.casefold() if FOLDED else path
+
+
+def sources_index(store: Store, root: str) -> dict[str, list[dict[str, str]]]:
+    """Each path the sources layer's refs name, as the project names it, with the part of the map its ref is linked at:
+    an element, or a join under its receiver's address, code.graph.knowledge#c. A ref's line mark is left off, so
+    file.py:12 is file.py. With no sources layer the map places no file."""
+    index: dict[str, list[dict[str, str]]] = {}
+    for ref in store.refs():
+        if ref.address is None:
+            continue  # linked at a part no longer on the map
+        path = relative(PLACE_MARK.sub('', ref.value.strip()), [root])
+        if path:
+            place = {'kind': ref.node.kind, 'id': ref.node.id, 'address': ref.address}
+            held = index.setdefault(folded(path), [])
+            if place not in held:
+                held.append(place)
+    return index
+
+
+def placed(index: dict[str, list[dict[str, str]]], path: str | None) -> tuple[list[dict[str, str]], bool]:
+    """The parts of the map a file belongs to: those whose refs name it, or else those whose refs name the nearest
+    folder holding it; and whether the match was exact, the file itself named, rather than that folder fallback."""
+    if not path or not index:
+        return [], False
+    parts = folded(path).split('/')
+    for end in range(len(parts), 0, -1):
+        found = index.get('/'.join(parts[:end]))
+        if found:
+            return found, end == len(parts)
+    return [], False
 
 
 def read(tx: Tx, given: str) -> SourceRef | None:

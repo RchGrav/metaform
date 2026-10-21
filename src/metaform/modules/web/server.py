@@ -1076,6 +1076,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.write(url.path)
         if url.path == '/api/events':
             return self.events(query.get('project', [''])[-1])
+        if url.path in ('/api/commits', '/api/commit'):  # the board's Archive: the project folder's git history
+            from . import commits
+            return commits.answer(self, url.path, {key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/server':
             return self.send(200, {'pid': os.getpid(), 'home': str(home.home())})
         if url.path == '/api/demo':  # the demo's card, in the home `metaform demo` runs, CLI-042
@@ -1178,12 +1181,9 @@ class Handler(BaseHTTPRequestHandler):
         board = given.get('board') if name == 'work' else None
         cutoff = ''
         try:
-            if board is not None:  # the board reads what it shows, or its archive a page at a time, never every ticket
+            if board is not None:  # the board reads what it shows, never every ticket
                 cutoff = board_cutoff(given)
-                if board == 'archive':
-                    arguments.update(open='false', done_before=cutoff)
-                else:
-                    arguments.update(done_since=cutoff)
+                arguments.update(done_since=cutoff)
             store = opened(given)
             found = query_read(store, name, arguments)
         except (Stop, StoreError) as error:
@@ -3443,7 +3443,8 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
 
 def board_cutoff(given: dict[str, str], *, boards: list[dict[str, Any]] | None = None) -> str:
     """The time the board's done tickets start at: board_done_days ago, or the board's archive cutoff when that is
-    later. A ticket done before it is in the board's Archive; times compare as text, as `home.now` writes them."""
+    later. A ticket done before it leaves the board, its commit read in the Archive; times compare as text, as
+    `home.now` writes them."""
     project = home.project(given.get('project', ''))
     if project is None:
         raise Stop(f'No project {given.get("project", "")} is registered.', 'metaform list projects')

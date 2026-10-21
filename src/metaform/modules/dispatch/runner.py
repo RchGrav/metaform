@@ -81,6 +81,7 @@ from acp.schema import (
 
 from metaform import home, prompt_files
 from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
+from metaform.data.refs import placed, relative, sources_index
 from metaform.module import (
     COMPACTED_KEY,
     WITHHELD,
@@ -208,8 +209,6 @@ TOUCHED_KEPT = 40  # the parts of the map a session's state lists as touched, th
 # left blank after a resume; each is named in `before_resume` while it still holds what was known before the resume.
 CARRIED = ('plan', 'usage', 'tokens', 'spent', 'auth', 'title', 'updated_at', 'commands')
 SETTING_LIMIT = 10.0  # the one wait for the agent to take a setting; inside the caller's REPLY_LIMIT
-LINE_MARK = re.compile(r'(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$')  # a line or a range after a path: file.py:12, #L3-L9
-FOLDED = os.name == 'nt' or sys.platform == 'darwin'  # their file systems compare names without case, as a rule
 # This runner, one `dispatch run`: the tickets it works in turn spend against one run budget, and a retry the supervisor
 # starts is given the run of the session it resumes as its `run` noun, so retries never reset it, M01.
 RUN = secrets.token_hex(8)
@@ -373,59 +372,6 @@ def role(nouns: dict[str, Any], work_id: str) -> str:
     if nouns.get('system'):
         return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'
     return 'prep' if nouns.get('prep') else 'worker'
-
-
-def relative(path: str, roots: Sequence[str]) -> str | None:
-    """A path an agent named, as the project names it: relative to the first of the roots it is inside, with forward
-    slashes; None for a path inside none of them. ACP paths are absolute; a relative one is taken as given."""
-    if not os.path.isabs(path):
-        given = path.replace('\\', '/')
-        while given.startswith('./'):
-            given = given[2:]
-        return given.rstrip('/') or None
-    for root in roots:
-        try:
-            found = os.path.relpath(path, root)
-        except ValueError:  # Windows: another drive
-            continue
-        if found == os.curdir or found == os.pardir or found.startswith(os.pardir + os.sep):
-            continue
-        return found.replace(os.sep, '/')
-    return None
-
-
-def folded(path: str) -> str:
-    return path.casefold() if FOLDED else path
-
-
-def sources_index(store: Store, root: str) -> dict[str, list[dict[str, str]]]:
-    """Each path the sources layer's refs name, as the project names it, with the part of the map its ref is linked at:
-    an element, or a join under its receiver's address, code.graph.knowledge#c. A ref's line mark is left off, so
-    file.py:12 is file.py. With no sources layer the map places no file."""
-    index: dict[str, list[dict[str, str]]] = {}
-    for ref in store.refs():
-        if ref.address is None:
-            continue  # linked at a part no longer on the map
-        path = relative(LINE_MARK.sub('', ref.value.strip()), [root])
-        if path:
-            place = {'kind': ref.node.kind, 'id': ref.node.id, 'address': ref.address}
-            held = index.setdefault(folded(path), [])
-            if place not in held:
-                held.append(place)
-    return index
-
-
-def placed(index: dict[str, list[dict[str, str]]], path: str | None) -> tuple[list[dict[str, str]], bool]:
-    """The parts of the map a file belongs to: those whose refs name it, or else those whose refs name the nearest
-    folder holding it; and whether the match was exact, the file itself named, rather than that folder fallback."""
-    if not path or not index:
-        return [], False
-    parts = folded(path).split('/')
-    for end in range(len(parts), 0, -1):
-        found = index.get('/'.join(parts[:end]))
-        if found:
-            return found, end == len(parts)
-    return [], False
 
 
 def unified(path: str, old: str | None, new: str) -> dict[str, Any]:

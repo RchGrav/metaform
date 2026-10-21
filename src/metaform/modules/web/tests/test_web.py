@@ -6211,20 +6211,56 @@ def test_the_board_reads_only_open_and_recent_done_tickets_and_archives_the_rest
     page.wait_for_function('count => document.querySelectorAll("#board .card").length === count', arg=len(shown))
     drawn = time.monotonic() - began
     assert drawn < 1.0, f'the board took {drawn:.2f} s to draw'
-    page.click('#board .archive-toggle')
-    page.wait_for_function('() => document.querySelectorAll("#board .archive .row").length === 50')
-    assert page.is_hidden('#board .columns') and page.is_visible('#board .archive .more')
-    page.click('#board .archive .more')
-    page.wait_for_function('() => document.querySelectorAll("#board .archive .row").length === 100')
-    listed = page.eval_on_selector_all('#board .archive .row', 'rows => rows.map(row => row.dataset.id)')
-    assert listed == old[:100]
-    assert len(Store('proj').work(open=False, limit=0).results) == 405  # archived, never deleted
-    page.click('#board .archive-toggle')
-    page.click('#board .line-in-sand')  # everything done up to now goes to the Archive in one step
+    assert len(Store('proj').work(open=False, limit=0).results) == 405  # off the board, never deleted
+    page.click('#board .line-in-sand')  # everything done up to now leaves the board in one step
     page.wait_for_function('count => document.querySelectorAll("#board .card").length === count',
                            arg=len(store.work(open=True, limit=0).results))
     assert len(Store('proj').work(open=False, limit=0).results) == 405
     assert problems == []
+
+
+@pytest.mark.req('VIEW-037')
+def test_the_archive_route_pages_the_folders_git_log_and_filters_by_trailer(run, web, mapped):
+    """The board's Archive reads the project folder's commits newest first, a page at a time, from the tip its first
+    page was read at, so a commit made while the person pages shifts nothing; a ticket's commit carries its trailers, a
+    hand commit none and is marked so; board and node are checked on the trailers exactly, never on words in prose."""
+    def git(*words):
+        subprocess.run(['git', '-c', 'user.name=Tester', '-c', 'user.email=tester@example.com', *words], cwd=mapped,
+                       check=True, capture_output=True)
+
+    def commit(subject, **trailers):
+        block = '\n'.join(f'Metaform-{key.title()}: {value}' for key, value in trailers.items())
+        git('commit', '-q', '--allow-empty', '-m', subject, *(['-m', block] if block else []))
+    git('init', '-q')
+    commit('hand 0')
+    for number in range(5):
+        commit(f'ticket {number}', ticket=f'{number:032x}', number=f'code.timer.kitchen#{number}',
+               node='code.timer.kitchen' if number % 2 else 'code.alarm.audible', board='spring' if number < 3 else '',
+               agent='claude')
+    git('commit', '-q', '--allow-empty', '-m', 'hand 1',
+        '-m', 'It says Metaform-Board: spring and Metaform-Node: code.timer.kitchen in prose.')
+    started(run)
+    subjects = lambda found: [one['subject'] for one in found['commits']]
+    status, first = api(web, '/api/commits?project=proj&limit=3')
+    assert status == 200, first
+    assert subjects(first) == ['hand 1', 'ticket 4', 'ticket 3']
+    assert first['commits'][0]['hand'] and first['commits'][0]['number'] is None
+    assert first['commits'][1] | {'sha': '', 'when': ''} == {
+        'sha': '', 'when': '', 'author': 'Tester', 'subject': 'ticket 4', 'ticket': f'{4:032x}',
+        'number': 'code.timer.kitchen#4', 'node': 'code.alarm.audible', 'board': '', 'agent': 'claude', 'hand': False}
+    commit('made while paging')
+    _, second = api(web, f'/api/commits?project=proj&limit=3&after={first["next"]}')
+    assert subjects(second) == ['ticket 2', 'ticket 1', 'ticket 0']
+    _, last = api(web, f'/api/commits?project=proj&limit=3&after={second["next"]}')
+    assert subjects(last) == ['hand 0'] and last['next'] is None
+    assert subjects(api(web, '/api/commits?project=proj&board=spring')[1]) == ['ticket 2', 'ticket 1', 'ticket 0']
+    assert subjects(api(web, '/api/commits?project=proj&board=')[1]) == ['ticket 4', 'ticket 3']  # the first board
+    assert subjects(api(web, '/api/commits?project=proj&node=code.timer')[1]) == ['ticket 3', 'ticket 1']
+    _, paged = api(web, '/api/commits?project=proj&board=spring&limit=2')
+    assert subjects(paged) == ['ticket 2', 'ticket 1']
+    assert subjects(api(web, f'/api/commits?project=proj&board=spring&limit=2&after={paged["next"]}')[1]) == [
+        'ticket 0']
+    assert subjects(api(web, '/api/commits?project=proj&words=IN+PROSE')[1]) == ['hand 1']
 
 
 @pytest.mark.req('VIEW-037')

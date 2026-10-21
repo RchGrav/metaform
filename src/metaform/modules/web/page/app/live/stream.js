@@ -17,7 +17,7 @@ import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
-  agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead, bulkBoardChange} from '/page/app/live/ops.js';
+  agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead, bulkBoardChange, commitsConcerned} from '/page/app/live/ops.js';
 import {listBases, loadGraph, loadProject, fillProjects, goToProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 import {tableChange} from '/page/app/roundtable/stage.js';
@@ -279,6 +279,8 @@ export async function changed(event) {
   const bulkBoard = bulkBoardChange(event.payload);
   if (!bulkBoard && Array.isArray(named) && named.includes('map.boards'))
     document.dispatchEvent(new CustomEvent('metaform:boards'));
+  // a commit made in the project's folder: the board's Archive reads its newest commits if it is open
+  if (commitsConcerned(event.payload)) document.dispatchEvent(new CustomEvent('metaform:commits'));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
   if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
     document.dispatchEvent(new CustomEvent('metaform:settings', {detail: named}));  // the tables it names

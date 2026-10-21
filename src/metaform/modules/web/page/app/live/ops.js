@@ -440,6 +440,10 @@ export function mergesConcerned(payload) {
   if (kinds !== null && holdsAny(kinds, MERGE_KINDS) || named !== null && holdsAny(named, MERGES)) return true;
   return kinds === null && named === null;
 }
+/* Whether a change says a commit was made in the project's folder, from its kinds alone: `commit` for a ticket's
+ * commit, `merge` for a ticket's work merged into the dev branch. The board's Archive reads its first page again. */
+const COMMIT_KINDS = ['commit', 'merge'];
+export const commitsConcerned = payload => Array.isArray(payload.kinds) && holdsAny(payload.kinds, COMMIT_KINDS);
 export async function agentsChanged(whole = false, sessions = true, works = null) {
   if (whole) AGENTS.whole = true;
   if (sessions) {  // the tickets the changes named, gathered over the batch; one that names none reads every one

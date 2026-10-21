@@ -821,10 +821,19 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .columns[hidden],#board .archive[hidden]{display:none}
 /* the board's Archive: the tickets done before its cutoff, a page at a time */
 #board .archive{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3) var(--s4) var(--s4);overflow:auto}
-#board .archive .since{font:var(--t-sm) var(--sans);color:var(--muted)}
-#board .archive .row{display:grid;grid-template-columns:max-content 1fr max-content max-content;gap:var(--s3);align-items:baseline;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);background:color-mix(in srgb,var(--panel-2) 70%,transparent);cursor:pointer;font:var(--t-sm) var(--sans)}
-#board .archive .row .address,#board .archive .row .when{font:var(--t-xs) var(--mono);color:var(--muted)}
-#board .archive .row .resolution{grid-column:1/-1;color:var(--muted)}
+#board .archive .filters{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;font:var(--t-sm) var(--sans);color:var(--muted)}
+#board .archive .filters .words{flex:1;min-width:12em}
+#board .archive .row{display:grid;grid-template-columns:max-content 1fr max-content max-content max-content;gap:var(--s3);align-items:baseline;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);background:color-mix(in srgb,var(--panel-2) 70%,transparent);cursor:pointer;font:var(--t-sm) var(--sans)}
+#board .archive .row .item,#board .archive .row .agent,#board .archive .row .when{font:var(--t-xs) var(--mono);color:var(--muted)}
+#board .archive .row .by-hand{font-style:italic}
+#board .archive .row .node{font:var(--t-xs) var(--sans)}
+#board .archive .row .commit{grid-column:1/-1;cursor:auto;display:flex;flex-direction:column;gap:var(--s2);padding-top:var(--s2);border-top:1px solid var(--line)}
+#board .archive .row .commit[hidden]{display:none}
+#board .archive .commit .meta{display:flex;flex-wrap:wrap;gap:var(--s3);font:var(--t-xs) var(--mono);color:var(--muted)}
+#board .archive .commit .message{margin:0;white-space:pre-wrap;font:var(--t-sm) var(--mono)}
+#board .archive .commit .chips{display:flex;flex-wrap:wrap;gap:var(--s1);align-items:center}
+#board .archive .commit .files{display:flex;flex-direction:column;gap:var(--s3)}
+#board .archive .commit .file{display:grid;gap:6px;min-width:0}
 #board .archive .more{align-self:start}
 #board .column{display:flex;flex-direction:column;min-height:0;background:color-mix(in srgb,var(--panel-2) 70%,transparent);border:1px solid var(--line);border-radius:var(--r-lg)}
 #board .column .head{display:flex;justify-content:space-between;align-items:center;padding:var(--s3) var(--s3) var(--s2);font:600 var(--t-sm) var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}

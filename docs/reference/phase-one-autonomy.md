@@ -24,7 +24,7 @@ Faults carry actionable repair and verification instructions. Repeated occurrenc
 
 The web supervisor owns a log watcher per registered project, independent of open pages. Register real application logs with `metaform autoticket add log=/actual/path/application.log`. Intake prompts request these registrations or an explicit statement that no runtime logs exist. Native file watches, offsets, rotation handling and leases remain the capture mechanism. Watcher failures surface as faults and receive bounded retry backoff; disabled watchers release their leases.
 
-The board reads open work and a bounded recent Done window. Older completed work remains in Archive. Full Auto's recovery pass reconciles verifiably dead runners before admitting more work. Recorded user stops and held work remain respected.
+The board reads open work and a bounded recent Done window. Older completed work leaves the board; the board's Archive reads past work from the project folder's git commits, a page at a time. Full Auto's recovery pass reconciles verifiably dead runners before admitting more work. Recorded user stops and held work remain respected.
 
 ## Projects and conversations
 

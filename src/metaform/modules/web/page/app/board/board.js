@@ -9,11 +9,11 @@ import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
 import {ticketStatus, statusChip, cancelTicket, removeTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
-import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago}
+import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago, dated}
   from '/page/app/board/refs.js';
-import {COLUMN_NAMES, columnOf, history, ageOf, wrote, takenWords} from '/page/app/board/history.js';
+import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
-import {giveWork} from '/page/app/task/task.js';
+import {giveWork, named} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
@@ -566,48 +566,131 @@ export async function renderBoard() {
   B.cutoff = found.cutoff || '';
   B.tickets = boardTickets(found.results || []);
   drawBoard();
-  if (!$('#board .archive').hidden) await renderArchive();
 }
-/* The Archive: the tickets done before the board's cutoff, each still a record at its part of the map, read from the
- * server a page at a time in the order they were written, More reading the next; a row opens its part's history. */
-const ARCHIVE_PAGE = 50;
+/* The Archive: the project folder's git history, VIEW-037, since a done ticket becomes its commit and is shed after.
+ * One row per commit, newest first, read from the server a page at a time, More reading the next: its number
+ * (<address>#<n>), its subject, its node, which opens it on the map, its agent and when. A commit made by hand carries no
+ * trailer and is listed too, marked so, so the history is whole. Filtered by board, node and its leaves, days, and words
+ * in the message. A row opened shows the commit's message, the map parts its files belong to, and each file's diff as
+ * an agent's tool call shows it. A commit Metaform makes reaches an open Archive on the live stream, `metaform:commits`:
+ * its first page is read again and the commits new since are put on top. */
+const ARCHIVE = {busy: false, again: false};
+const archiveBox = () => $('#board .archive');
+function archiveFilters() {
+  const box = archiveBox(), value = name => box.querySelector(name).value.trim();
+  const board = box.querySelector('.by-board').value;
+  return {...(board === '*' ? {} : {board}), ...(value('.by-node') ? {node: value('.by-node')} : {}),
+    ...(value('.since') ? {since: value('.since')} : {}), ...(value('.until') ? {until: value('.until')} : {}),
+    ...(value('.words') ? {words: value('.words')} : {})};
+}
+/* The board filter's choices: every board, the first, and each named board, the one chosen kept. */
+function archiveBoards() {
+  const pick = archiveBox().querySelector('.by-board'), chosen = pick.value || '*';
+  fill(pick, [h('option', {value: '*'}, 'Every board'), h('option', {value: ''}, 'First board'),
+    ...B.boards.map(one => h('option', {value: one.name}, one.name))]);
+  pick.value = [...pick.options].some(option => option.value === chosen) ? chosen : '*';
+}
 async function renderArchive(after = null) {
-  const list = $('#board .archive .rows'), more = $('#board .archive .more');
-  const project = S.project, metaform = S.base;
+  const list = archiveBox().querySelector('.rows'), more = archiveBox().querySelector('.more');
+  const project = S.project;
   let found;
-  try { found = await read('work', {limit: ARCHIVE_PAGE, board: 'archive', on: B.board, ...(after ? {after} : {})}); }
-  catch (error) { toast(error.message); return; }
-  if (S.project !== project || S.base !== metaform) return;
-  const rows = (found.results || []).filter(ticket => ticket.is_work).map(archiveRow);
+  try { found = await read('commits', {...archiveFilters(), ...(after ? {after} : {})}); }
+  catch (error) { toast(error.message); fill(list, [h('p', {class: 'empty'}, error.message)]); more.hidden = true; return; }
+  if (S.project !== project) return;
+  const rows = (found.commits || []).map(commitRow);
   if (after) list.append(...rows); else fill(list, rows);
-  if (!list.children.length) fill(list, [h('p', {class: 'empty'}, 'Nothing is archived yet.')]);
+  if (!list.children.length) fill(list, [h('p', {class: 'empty'}, 'No commits match.')]);
   more.hidden = !found.next;
   more.dataset.after = found.next || '';
-  $('#board .archive .since').textContent = found.cutoff ? `Done before ${found.cutoff.replace('T', ' ')}` : '';
 }
-function archiveRow(ticket) {
+/* A commit made while the Archive is open: its first page read again, and the commits not listed yet put on top, in
+ * order, so the rows the person paged to and opened stay. A burst of commits reads once more, never once each. */
+async function archiveHeard() {
+  if (ARCHIVE.busy) { ARCHIVE.again = true; return; }
+  ARCHIVE.busy = true;
+  try {
+    do {
+      ARCHIVE.again = false;
+      const project = S.project, list = archiveBox().querySelector('.rows');
+      const found = await read('commits', archiveFilters()).catch(() => null);
+      if (!found || S.project !== project || archiveBox().hidden) return;
+      const listed = new Set([...list.querySelectorAll('.row')].map(row => row.dataset.sha));
+      const fresh = (found.commits || []).filter(one => !listed.has(one.sha));
+      if (!fresh.length) continue;
+      if (!listed.size) { await renderArchive(); continue; }
+      list.prepend(...fresh.map(commitRow));
+    } while (ARCHIVE.again);
+  } finally { ARCHIVE.busy = false; }
+}
+document.addEventListener('metaform:commits', () => {
+  if (!$('#board').hidden && !archiveBox().hidden) archiveHeard();
+});
+/* A node named by a commit, by its name on the map shown; a press opens it there. One not on this map is its address. */
+function commitNode(address) {
+  if (!address) return h('span', {class: 'node none'});
+  const element = partAt(address);
+  return h('button', {class: 'node', type: 'button', disabled: !element,
+    title: element ? `Open ${address} on the map` : `${address}: not on the map shown`,
+    onclick: event => { event.stopPropagation(); select(element.id, true); }}, element ? named(element) : address);
+}
+function commitRow(one) {
+  // reading and selecting in an opened commit never closes its row
+  const detail = h('div', {class: 'commit', hidden: true, onclick: event => event.stopPropagation()});
   const open = () => {
-    const element = partAt(ticket.address);
-    if (element) { select(element.id, true); history(element.id); }
+    detail.hidden = !detail.hidden;
+    row.classList.toggle('open', !detail.hidden);
+    if (!detail.hidden && !detail.childElementCount) commitDetail(one.sha, detail);
   };
-  return h('div', {class: 'row', 'data-id': ticket.id, onclick: open},
-    h('span', {class: 'item'}, ticket.map?.item || ticket.map?.title || ticket.id.slice(0, 8)),
-    h('span', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
-    h('span', {class: 'address'}, ticket.address || ''),
-    h('small', {class: 'when'}, `Done ${String(ticket.done).replace('T', ' ')}`),
-    h('button', {class: 'btn sm quiet remove', type: 'button', title: 'Delete this ticket for good',
-      onclick: async event => { event.stopPropagation(); const row = event.currentTarget.closest('.row');
-        if (await removeTicket(ticket, event.currentTarget)) row?.remove(); }}, 'Delete'),
-    ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null);
+  const row = h('div', {class: one.hand ? 'row hand' : 'row', 'data-sha': one.sha, onclick: open},
+    one.number ? h('span', {class: 'item'}, one.number)
+      : one.hand ? h('span', {class: 'item by-hand', title: 'Made by hand: it carries no ticket trailer'}, 'by hand')
+        : h('span', {class: 'item', title: `Ticket ${one.ticket}`}, `ticket ${one.ticket.slice(0, 8)}`),
+    h('span', {class: 'text'}, one.subject),
+    commitNode(one.node),
+    h('small', {class: 'agent'}, one.agent || one.author || ''),
+    h('small', {class: 'when', title: dated(one.when)}, ago(one.when)),
+    detail);
+  return row;
+}
+/* One commit opened: its message whole, the parts of the map its files belong to, and each file's diff as an agent's
+ * tool call shows it, read once. A long commit draws its first files' diffs and offers the rest, each drawn when asked
+ * for, so the page never stalls on a commit of thousands of lines. */
+const OPENED_DIFF = 200_000;  // characters of diff drawn at once when a commit opens
+async function commitDetail(sha, box) {
+  const project = S.project;
+  fill(box, [h('p', {class: 'hint'}, 'Reading the commit…')]);
+  let found;
+  try { found = await read('commit', {sha}); }
+  catch (error) { fill(box, [h('p', {class: 'empty'}, error.message)]); return; }
+  if (S.project !== project) return;
+  const {fileDetail, nodeChips} = await import('/page/app/session/tools.js');
+  let drawn = 0;
+  const file = diff => {
+    const now = drawn < OPENED_DIFF;
+    drawn += (diff.patch || '').length;
+    if (now || !diff.patch) return fileDetail(diff);
+    const held = fileDetail({...diff, patch: ''});
+    held.append(h('button', {class: 'btn sm quiet', type: 'button',
+      onclick: () => held.replaceWith(fileDetail(diff))}, 'Show the diff'));
+    return held;
+  };
+  fill(box, [h('div', {class: 'meta'}, h('code', {class: 'sha'}, found.sha), h('span', {}, found.author),
+    h('span', {}, dated(found.when))),
+  h('pre', {class: 'message'}, ...linked(found.message)),
+  found.nodes?.length ? h('div', {class: 'chips'}, h('small', {}, 'Map parts'), nodeChips(found.nodes)) : null,
+  h('div', {class: 'files'}, (found.files || []).map(file))]);
 }
 $('#board .archive-toggle').onclick = async () => {
-  const box = $('#board .archive'), showing = box.hidden;
+  const box = archiveBox(), showing = box.hidden;
   box.hidden = !showing;
   $('#board .columns').hidden = showing;
   $('#board .archive-toggle').setAttribute('aria-pressed', String(showing));
-  if (showing) await renderArchive();
+  if (showing) { archiveBoards(); await renderArchive(); }
 };
 $('#board .archive .more').onclick = event => renderArchive(event.currentTarget.dataset.after || null);
+for (const control of ['.by-board', '.by-node', '.since', '.until', '.words']) {
+  $(`#board .archive ${control}`).addEventListener('change', () => renderArchive());
+}
 /* Archive done tickets: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
  * line that was before back. */
 $('#board .line-in-sand').onclick = async () => {
