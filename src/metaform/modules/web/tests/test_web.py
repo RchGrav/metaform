@@ -1180,12 +1180,16 @@ def test_the_panel_shows_everything_about_the_selected_element_with_its_layers(r
     page, problems, _ = opened(browser, web)
     kitchen = store.element('code.timer.kitchen').id
     page.evaluate(f'window.metaform.select("{kitchen}")')
-    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("written in C")')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("written in C")')
+    # the joins and the knowledge fold closed under a line with their count; opened, they show every record
+    assert page.evaluate('[...document.querySelectorAll("#p-object details.fold")].every(fold => !fold.open)')
+    page.evaluate('document.querySelectorAll("#p-object details").forEach(fold => { fold.open = true; })')
     panel = page.inner_text('#p-object')
     for shown in ('kitchen timer', 'code.timer.kitchen', 'DE', 'intake-1',
                   'provider · audible alarm', 'receiver · cook', 'receiver · display',
-                  'MEMORY', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
+                  'MEMORIES', 'drifts under load', 'Nothing recovers a hung loop. · A', 'written in C', 'notes'):
         assert shown in panel, shown
+    assert panel.index('MEMORIES') < panel.index('OPEN WORK') < panel.index('JOINS') < panel.index('KNOWLEDGE')
     assert problems == []
 
 
@@ -1230,8 +1234,10 @@ def test_a_node_with_open_unbuilt_work_is_a_ghost_a_broken_one_flashes_red_until
     page.evaluate(f'window.metaform.select("{ids["code.timer.kitchen"]}")')
     page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("hold the tick to one second")')
     panel = page.inner_text('#p-object')
-    for shown in ('WORK', 'broken', 'drifts', 'hold the tick to one second', 'open'):
+    # one line per ticket, its condition, kind, number and title; the note is read by opening it
+    for shown in ('OPEN WORK', 'broken', 'code.timer.kitchen#', 'hold the tick to one second'):
         assert shown in panel, shown
+    assert 'drifts' not in panel
     # Its task done, pushed to the page, the alarm turns solid without a reload.
     run('map', 'work', 'op=done', f'id={missing.id}', 'resolution=driver written', 'why=the test closes it', cwd=mapped)
     # solid glass, as every built element, once its ghost has come up to it
@@ -1242,8 +1248,8 @@ def test_a_node_with_open_unbuilt_work_is_a_ghost_a_broken_one_flashes_red_until
     solid = look('code.alarm.audible')
     assert (solid['work'], solid['classes'], solid['opacity2d']) == ([], [], 1)
     page.evaluate(f'window.metaform.select("{ids["code.alarm.audible"]}")')
-    page.wait_for_function('() => document.querySelector("#p-object").innerText.includes("driver written")')
-    assert 'done' in page.inner_text('#p-object')
+    page.wait_for_function('() => document.querySelector("#p-object").textContent.includes("Past work · 1")')
+    assert 'build the piezo driver' not in page.inner_text('#p-object')  # done work stays folded until opened
     assert problems == []
 
 
@@ -6097,7 +6103,7 @@ def test_the_board_holds_the_tickets_in_four_columns_and_a_card_dragged_moves_it
     assert worked.locator('.age').inner_text() == 'now'
     # a card is drawn again only when what it shows changed: a move rebuilds the moved card, not the others
     page.evaluate('document.querySelectorAll("#board .card").forEach(card => { card.kept = true; })')
-    start = page.locator(f'#board .card[data-id="{todo.id}"] .text').bounding_box()
+    start = page.locator(f'#board .card[data-id="{todo.id}"] .lead').bounding_box()
     end = page.locator('#board .column[data-column="doing"] .cards').bounding_box()
     page.mouse.move(start['x'] + 10, start['y'] + start['height'] / 2)
     page.mouse.down()

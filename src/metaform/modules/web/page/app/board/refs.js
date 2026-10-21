@@ -38,6 +38,19 @@ export function conditionLabel(ticket, extra = '') {
     : `A plain task at ${ticketPart(ticket)}. The part's stage shows on its node.`;
   return h('span', {class: `kind kind-${kind || 'none'}${extra}`, title}, words);
 }
+/* A ticket by its number, `<address>#<n>` as the map gives it, and its one-line title, so a glance says what it is: the
+ * title it was given, else the first line of its task or note, as the store titles it, cut at TITLE characters as the
+ * brief cuts it (TITLE in modules/map/around.py). Its body is read by opening it. */
+const TITLE = 80;
+const firstLine = text => String(text || '').split('\n').map(line => line.trim()).find(Boolean) || '';
+export function ticketTitle(ticket) {
+  const title = String(ticket.map?.title || firstLine(ticket.task) || firstLine(ticket.note)).split(/\s+/)
+    .filter(Boolean).join(' ');
+  return title.length <= TITLE ? title : `${title.slice(0, TITLE - 1).trimEnd()}…`;
+}
+export const ticketHead = ticket => h('span', {class: 'ticket-head'},
+  h('span', {class: 'ticket-number'}, ticket.map?.item || ticket.id.slice(0, 8)), ' ',
+  h('span', {class: 'ticket-title'}, ticketTitle(ticket)));
 export function dated(text) {
   const date = new Date(text || '');
   return isNaN(date) ? '' : date.toLocaleString();

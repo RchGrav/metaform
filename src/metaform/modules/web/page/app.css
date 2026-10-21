@@ -715,6 +715,10 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 .map2d .crumbs b{color:var(--text);font-weight:500}
 .map2d .cluster.layergroup rect{stroke:var(--c,var(--node-line))!important}
 .map2d .node.in-center rect{stroke:var(--signal)!important;stroke-width:1.6px!important}
+/* The memory chosen, in a memory network or inside a node, is white with the signal's line, as in 3D: the memory
+ * layer's colour is every memory's, so only white tells the one the panel shows; its name is dark to read on it. */
+.map2d .node.sel:is(.in-entity,.in-memory) :is(rect,polygon,path.label-container,.label-container > path,.label-container > g > path){fill:#ffffff!important;stroke:var(--signal)!important;stroke-width:2px!important}
+.map2d .node.sel:is(.in-entity,.in-memory) :is(text,.nodeLabel){fill:#000000!important;color:#000000!important}
 .map2d .node.in-stub rect{stroke-dasharray:4 3!important}
 .map2d .node.in-item .nodeLabel,.map2d .node.in-item text,.map2d .node.in-more text,.map2d .node.in-more .nodeLabel{font:500 11px var(--sans)!important}
 .map2d .node.in-more rect{stroke-dasharray:2 3!important}
@@ -855,8 +859,9 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card .kind{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 #board .card .by{color:var(--text)}
 #board .card .age{margin-left:auto;font:var(--t-xs) var(--mono)}
-#board .card .text{margin:var(--s2) 0;font:var(--t-md)/1.45 var(--sans);color:var(--text);display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
-#board .card .inline{color:var(--signal)}
+/* The card's first line: its number and one-line title, found at a glance; the task is read on Inspect. */
+#board .card .lead{margin-bottom:var(--s2);font:600 var(--t-md)/1.4 var(--sans);color:var(--text);overflow-wrap:anywhere}
+#board .card .ticket-number{font:500 var(--t-sm) var(--mono);color:var(--c)}
 #board .card .nodes{display:flex;flex-wrap:wrap;gap:var(--s1)}
 #board .card .node{height:22px;font:var(--t-xs) var(--sans);border-radius:var(--r-sm);padding:0 var(--s2);border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);cursor:pointer}
 #board .card .node:hover{border-color:var(--signal);color:var(--signal)}
@@ -1059,6 +1064,18 @@ span.ref-link{color:var(--signal);text-decoration:underline dotted;cursor:pointe
 #work .issue textarea{width:100%}
 #work .issue .send{justify-self:start}
 #work .item.work{display:grid;gap:var(--s1)}
+/* One line per ticket, its condition, kind, number and title; a click opens the whole ticket. */
+#work .item.work.line{display:flex;align-items:center;gap:var(--s2);width:100%;min-height:var(--ctl-sm);padding:0 var(--s2);border:0;border-left:2px solid var(--line-2);border-radius:0;background:none;font:var(--t-md)/1.4 var(--sans);color:var(--text);text-align:left;white-space:nowrap;cursor:pointer}
+#work .item.work.line:hover,#work .item.work.line:focus-visible{background:var(--panel-2)}
+#work .item.work.line .ticket-head{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#work .item.work.line .ticket-number{font:var(--t-sm) var(--mono);color:var(--muted)}
+#work .item.work.line .age{font:var(--t-xs) var(--mono);color:var(--muted)}
+/* The Object tab's memories and knowledge, and its folds: past work, joins and knowledge, each closed under one line
+ * with its count. */
+#memories,#items{display:grid;gap:var(--s2)}
+#p-object details.fold > summary{cursor:pointer;padding:var(--s1) 0;font:600 var(--t-xs)/1.3 var(--sans);color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+#p-object details.fold > summary:hover{color:var(--text)}
+#p-object details.fold[open]{display:grid;gap:var(--s2)}
 #work .item.work p{margin:0}
 
 /* ---------- the search of the map, and the keyboard shortcuts ---------- */

@@ -65,6 +65,7 @@ function selectNow(id, fly, keepTrail, stepping, again) {
   setReach(id);
   if (!known) {
     S.neighbors = new Set();
+    if (G) G.nodeColor(G.nodeColor());  // a memory hung on the map is drawn white once chosen, `colorOf`
     focus2D(id, frame);
     if (!again) showTab('object');
     renderThing(thing);

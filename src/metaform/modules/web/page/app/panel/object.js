@@ -12,8 +12,8 @@ import {DOCK, STANDBY} from '/page/app/dock/embody.js';
 import {openHelpdesk} from '/page/app/dock/threads.js';
 import {chatButton, nodeTalk} from '/page/app/dock/send.js';
 import {calledOf} from '/page/app/board/messages.js';
-import {CONDITION_WORDS, KIND_WORDS, linked} from '/page/app/board/refs.js';
-import {wrote} from '/page/app/board/history.js';
+import {CONDITION_WORDS, KIND_WORDS, ticketHead} from '/page/app/board/refs.js';
+import {wrote, ageOf} from '/page/app/board/history.js';
 import {noteBy} from '/page/app/task/notes.js';
 import {showTab} from '/page/app/panel/prompts.js';
 import {summonAgent, summonPicker} from '/page/app/agents/pickers.js';
@@ -31,12 +31,20 @@ export async function renderWork(target, key, also = null) {
   const held = records.find(record => !record.done && record.condition);
   const state = stateSelect(held ? held.condition : '', () => renderWork(target, key, also), target, key);
   const issue = issueForm(key);
+  const tickets = records.filter(record => record.is_work), open = tickets.filter(record => !record.done);
+  const past = tickets.filter(record => record.done).sort((one, two) => String(two.done).localeCompare(one.done));
   // One row for the part: its state, Raise an issue, one Chat for the node and, for an element, its Roundtable; then
-  // one row for each ticket on it.
-  fill(box, h('div', {class: 'workhead'}, h('div', {class: 'eyebrow'}, 'Work'), state, raiseButton(issue),
+  // one line for each open ticket on it, and the done ones folded, newest first.
+  fill(box, h('div', {class: 'workhead'}, h('div', {class: 'eyebrow'}, 'Open work'), state, raiseButton(issue),
     chatButton(nodeTalk(key), calledOf(key) || 'this node'), S.elements.has(key) ? roundtableButton() : null), issue,
-    records.map(workRow));
+    open.length ? open.map(workRow) : h('p', {class: 'empty'}, 'No open work here.'),
+    folded('Past work', past.length, past.length ? past.map(workRow) : h('p', {class: 'empty'}, 'No past work here.')));
 }
+/* A part of the tab folded closed under one line with its count; a person opens it when they want it. */
+function folded(title, count, ...body) {
+  return h('details', {class: 'fold'}, h('summary', {}, counted(title, count)), ...body);
+}
+const counted = (title, count) => (count === null ? title : `${title} · ${count}`);
 // a part with no state is built, the normal state, which marks nothing: built and none are one choice, MAP-046
 const STATES = [['unbuilt', 'unbuilt'], ['under-construction', 'under construction'], ['built', 'built'],
   ['broken', 'broken']];
@@ -102,14 +110,17 @@ function toggleIssue(issue, raise) {
   }
 }
 const pill = text => h('span', {class: 'pill'}, text);
-/* One ticket on the part: its state, kind and whether it is done, held or reviewed; its note, task and resolution. */
-const workRow = record => h('div', {class: 'item work'},
-  h('div', {class: 'pills'}, record.condition ? workPill(record.condition) : null,
-    pill(KIND_WORDS[record.kind] || record.kind || 'task'), pill(record.done ? 'done' : 'open'),
-    record.held ? pill('held') : null, record.reviewed ? pill('reviewed') : null),
-  record.note ? h('p', {}, ...linked(record.note)) : null,
-  record.task ? h('p', {class: 'fn'}, ...linked(record.task)) : null,
-  record.done ? h('p', {class: 'obs'}, 'Resolved: ', ...linked(record.resolution)) : null);
+/* One ticket on the part on one line, so a glance says what it is: its condition, its kind, its number and its
+ * title, and once done, how long since. A click opens the whole ticket, as the board's Inspect does; its body is never
+ * here. */
+const workRow = record => h('button', {class: 'item work line', type: 'button', title: 'Open this ticket',
+  onclick: () => openTicket(record.id)},
+record.condition ? workPill(record.condition) : null, pill(KIND_WORDS[record.kind] || record.kind || 'task'),
+ticketHead(record), record.done ? ageOf(record) : null);
+function openTicket(id) {
+  const project = S.project, base = S.base || '';
+  import('/page/app/board/detail.js').then(({ticketDetail}) => ticketDetail(id, project, base));
+}
 export function layerPill(name) {
   return h('span', {class: 'pill layer', style: {'--c': `var(${colorVar(name)})`}}, name);
 }
@@ -186,13 +197,18 @@ export async function renderObject(id) {
       title: 'The brief an agent working here is handed, and the memories, messages and work numbered here',
       onclick: () => { showTab('brief'); $('#t-brief').focus(); }},
     'What an agent reads here', h('i', {class: 'i i-chev', 'aria-hidden': 'true'})),
+    // A person's context is far smaller than an agent's: first the memories, what a person opens a node for, then its
+    // open work; its past work, joins and knowledge fold, since the brief tab numbers the history and the map shows the
+    // joins and the layers.
+    h('div', {id: 'memories'}, h('div', {class: 'eyebrow'}, 'Memories')),
     h('div', {id: 'work'}),
-    h('div', {id: 'items'}),
-    h('div', {class: 'eyebrow'}, 'Joins held by this element'),
-    held.length ? held.map(join => joinCard(join, 'provider'))
-      : h('p', {class: 'empty'}, 'This element receives nothing here.'),
-    serves.length ? h('div', {class: 'eyebrow'}, 'Serves') : null,
-    serves.map(join => joinCard(join, 'receiver')));
+    folded('Joins', held.length + serves.length,
+      h('div', {class: 'eyebrow'}, 'Joins held by this element'),
+      held.length ? held.map(join => joinCard(join, 'provider'))
+        : h('p', {class: 'empty'}, 'This element receives nothing here.'),
+      serves.length ? h('div', {class: 'eyebrow'}, 'Serves') : null,
+      serves.map(join => joinCard(join, 'receiver'))),
+    folded('Knowledge', null, h('div', {id: 'items'})));
   renderWork(`element:${id}`, id);
   try {
     // While the page follows an intake being recorded, the element is shown as the building layer records it; that
@@ -200,9 +216,9 @@ export async function renderObject(id) {
     // made.
     const node = following() ? {layers: []} : await read('node', {target: `element:${id}`, ...viewLayers()});
     if (S.selected !== id) return;
-    const box = $('#items');
-    for (const group of node.layers || []) layerItems(box, group);
-    memoryItems(box, node.memory || {});
+    const kept = $('#memories'), box = $('#items');
+    for (const group of node.layers || []) layerItems(group.kind === 'memory' ? kept : box, group);
+    memoryItems(kept, node.memory || {});
     const context = await read('context', {address: element.address, limit: 0, ...viewLayers()});
     if (S.selected !== id) return;
     const kinds = [['Properties that apply here', context.applying],
@@ -223,15 +239,21 @@ export async function renderObject(id) {
   } catch (error) {  // nothing in the layers turned on, such as an intake still being built, is not an error
     if (error.status !== 404) toast(error.message);
   }
+  if (S.selected !== id) return;
+  const kept = $('#memories'), box = $('#items');
+  if (kept && kept.children.length === 1) kept.append(h('p', {class: 'empty'}, 'No memories are kept here.'));
+  // the knowledge counted once read: each item, property and join it holds
+  if (box) box.closest('details').querySelector('summary').textContent =
+    counted('Knowledge', box.querySelectorAll('.item, .join').length);
 }
-/* A layer's items at the element, under the layer's name. */
+/* A layer's items at the element, under the layer's name; a memory layer's under the Memories heading alone. */
 function layerItems(box, group) {
   const items = group.items || [];
   if (!items.length) return;
-  box.append(h('div', {class: 'eyebrow'}, group.kind === 'memory' ? 'Memory' : group.layer),
-    ...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''),
-      style: {'--c': `var(${colorVar(group.layer)})`}},
-    itemView(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
+  if (group.kind !== 'memory') box.append(h('div', {class: 'eyebrow'}, group.layer));
+  box.append(...items.map(item => h('div', {class: 'item' + (item.orphaned ? ' orphaned' : ''),
+    style: {'--c': `var(${colorVar(group.layer)})`}},
+  itemView(item.value), item.state ? ` · ${item.state}` : '', refsOf(item.refs))));
 }
 /* What the memory module adds to the node's read, as `map node` gives it, BASE-035: its one note, and while memory
  * shows here, the memories kept at it and those on the joins it receives and provides, LAYER-013 and VIEW-034. */
@@ -246,7 +268,7 @@ function memoryItems(box, memory) {
       h('p', {class: 'itemtext'}, memory.note.text), h('small', {}, noteBy(memory.note))));
   }
   if ((memory.entities || []).length) {
-    box.append(h('div', {class: 'eyebrow'}, 'Memory'), ...memory.entities.map(remembered),
+    box.append(...memory.entities.map(remembered),
       ...(memory.relations || []).map(relation =>
         h('p', {class: 'meta'}, `${relation.from} ${relation.relationType} ${relation.to}`)));
   }

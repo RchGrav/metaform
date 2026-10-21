@@ -14,6 +14,7 @@ import {layerColor} from '/page/app/header/layers.js';
 import {ticketNode} from '/page/app/figures/agents.js';
 import {G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
 import {M} from '/page/app/map2d/build.js';
+import {memoryLayer} from '/page/app/memory/graph.js';
 import {D, ticketOf} from '/page/app/agents/dispatch.js';
 
 /* A part's light, VIEW-035 and MAP-046: broken flashes red. Flashing lets the node's own
@@ -69,12 +70,15 @@ function partsInUse() {
 export const shownNode = node => INUSE.parts.get(typeof node === 'object' ? node.id : node) !== false;
 export const lightOf = node => LIGHTS.find(([condition]) => has(node, condition));
 export const has = (node, condition) => (node.work || []).includes(condition);
+const CHOSEN_MEMORY = '#ffffff';  // the memory chosen, in both views
 export function colorOf(node) {
   if (INUSE.parts.get(node.id) === true) return css('--in-use');  // the part an agent's work is using, VIEW-045
   if (node.t === 'el') {
     return node.role === 'CQU' ? css('--signal') : node.role === 'DE' ? css('--de') : layerColor(node.layer);
   }
   if (node.t === 'purpose') return css('--text');
+  // the memory the panel shows is white: the memory layer's own colour is every memory's, so it would not stand out
+  if (node.id === S.selected && node.t === 'item' && node.layer === memoryLayer()) return CHOSEN_MEMORY;
   return layerColor(node.layer);
 }
 /* The color an object has apart from any condition. */

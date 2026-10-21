@@ -176,7 +176,7 @@ def test_board_card_opens_editable_ticket_and_draws_local_graph(run, web, mapped
         page.wait_for_function('() => window.metaform && document.querySelectorAll("#map2d svg g.node").length > 0')
         page.evaluate("async () => { document.querySelector('#board').hidden = false; "
                       "const b = await import('/page/app/board/board.js'); await b.renderBoard(); }")
-        page.locator(f'.card[data-id="{work.id}"] .text').click()
+        page.locator(f'.card[data-id="{work.id}"] .lead').click()
         page.locator('#ticketDetail input[name=title]').fill('Edited in the inspector')
         page.locator('#ticketDetail textarea[name=task]').fill('Repair the countdown boundary.')
         page.evaluate("async () => { (await import('/page/app/core/reads.js')).S.project = 'another-project'; }")

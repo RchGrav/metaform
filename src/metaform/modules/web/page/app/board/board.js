@@ -9,7 +9,7 @@ import {plural} from '/page/app/memory/manage.js';
 import {select} from '/page/app/selection/select.js';
 import {ticketStatus, statusChip, cancelTicket, removeTicket, rememberStop} from '/page/app/dock/threads.js';
 import {chatButton} from '/page/app/dock/send.js';
-import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago, dated}
+import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago, dated, ticketHead}
   from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
@@ -195,8 +195,9 @@ function card(ticket, place, total, find) {
   };
   const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.kind || 'none',
     onclick: open},
+    // its number and one-line title first, so a ticket is found by either at a glance; the body shows on Inspect
+    h('div', {class: 'lead'}, ticketHead(ticket)),
     cardTop(ticket),
-    h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),
     h('div', {class: 'nodes'}, nodeChip(assignedOf(ticket), 'assigned', find),
       ...(ticket.links || []).map(link => nodeChip(link, 'ref', find))),
     cardProgress(ticket),
