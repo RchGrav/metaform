@@ -653,9 +653,8 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     """Mark a work record done, keeping its resolution beside it, the why of that resolution with its number, MCP-037,
     and how it ended, `outcome`: a terminal state of the one status vocabulary, completed unless the person cancelled
     it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
-    resolution and outcome. Fault tickets require delivery evidence, `prove_work`: pending delivery keeps the
-    resolution and leaves the ticket open. A delivered fix closes immediately. `proven` remains accepted for callers
-    using the former proof API and never bypasses delivery. Cancelled or failed work ends without delivery."""
+    resolution and outcome. Resolved work closes directly. Delivery receipts, commits, publication and activation
+    never gate closure. `proven` remains accepted for callers using the former proof API."""
     ended = status.known(outcome, "map work op=done id=<id>")
     if ended not in status.TERMINAL:
         raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
@@ -807,37 +806,8 @@ def prove_work(tx: Tx, work_id: str) -> WorkRecord:
     return work_record(tx, _work_row(tx, work_id))
 
 
-def _proof(tx: Tx, work_id: str) -> Any:
-    """The settings row of a ticket requiring fault delivery evidence, or None for any other."""
-    row = tx.tables().get("ticket_settings", {"work_id": work_id})
-    return row if row is not None and row["proof"] else None
 
 
-def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice], *,
-            missing: tuple[str, ...]) -> WorkRecord:
-    """Keep the result pending a verified feature commit. Say exactly what prevents closure."""
-    work_id = str(row["work_id"])
-    _ticket_changed(tx, work_id)
-    done = int(row["steps_done"] or 0) + 1
-    planned = None if row["steps"] is None else max(int(row["steps"]), done)
-    tx.execute(
-        "UPDATE work SET resolution=?, steps=?, steps_done=?, taken=COALESCE(taken, ?), "
-        "taken_by=COALESCE(taken_by, 'delivery') WHERE work_id=?",
-        (resolution, planned, done, now(), work_id),
-    )
-    tx.execute(
-        "INSERT INTO work_steps(row, work_id, number, said, at) VALUES (?, ?, ?, ?, ?)",
-        (_next_work_row(tx, "work_steps"), work_id, done,
-         "Delivery pending: " + " ".join(missing), now()),
-    )
-    tables = tx.tables()
-    settings = tables.get("ticket_settings", {"work_id": work_id})
-    landed = str(settings["landed"]) if settings is not None and settings["landed"] else \
-        datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
-    if tables.update("ticket_settings", {"work_id": work_id}, {"landed": landed}) is None:
-        tables.insert("ticket_settings", {"work_id": work_id, "landed": landed})
-    notices.append(Notice("delivery", "Ticket stays open. Missing: " + " ".join(missing)))
-    return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
 def _past_work(tx: Tx, target: Node) -> tuple[PastWork, ...]:

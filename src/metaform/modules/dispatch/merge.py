@@ -462,11 +462,11 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         settings = tx.get('ticket_settings', {'work_id': record.id})
     landed = str(settings['landed'] or '') if settings else ''
     fresh = previous is not None and (not landed or float(previous['ready']) >= datetime.fromisoformat(landed).timestamp())
-    if fresh and previous is not None and previous['state'] == COMMITTED and previous['evidence'] \
+    if fresh and previous is not None and previous['state'] in (COMMITTED, MERGED) and previous['evidence'] \
             and not previous['reason'] and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
             and not git(folder, 'status', '--porcelain').stdout.strip():
         store.complete_delivery(record.id)
-        return dict(previous)
+        return _full_auto_merge(ctx, store, record.id, dict(previous))
     checked = verification(ctx, folder, record)
     if not checked['passed']:
         return _saved(store, record, folder, branch, git(folder, 'rev-parse', 'HEAD').stdout.strip(), checked)
@@ -479,7 +479,17 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         commit_fault(store, record, 'Git could not commit the completed worktree ticket.')
         return None
     since = snapshot_of(project, branch) or ''
-    return _saved(store, record, folder, branch, committed, checked, since)
+    return _full_auto_merge(ctx, store, record.id, _saved(store, record, folder, branch, committed, checked, since))
+
+
+def _full_auto_merge(ctx: Any, store: Store, work_id: str, saved: dict[str, Any]) -> dict[str, Any]:
+    """Full Auto integrates saved work locally. Publication remains an explicit request."""
+    if saved['state'] == COMMITTED and ctx.setting('dispatch_autostart'):
+        merge_due(ctx, store, work_id, publish=False)
+        with Store(store.project_id, module='dispatch').tables(write=False) as tx:
+            current = tx.get('merges', {'work_id': work_id})
+        return dict(current) if current is not None else saved
+    return saved
 
 
 def in_force(store: Store, work_id: str) -> bool:
@@ -647,7 +657,7 @@ def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict
     return {'work_id': work_id, 'merged': False, 'why': why}
 
 
-def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
+def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) -> dict[str, Any]:
     """Merge only ticket changes into one new commit. Never replay or rewrite ticket history."""
     from . import work_over
     own = Store(store.project_id, module='dispatch')
@@ -660,7 +670,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
         if committed:
             return deliver_shared(ctx, store, work_id)
     if found is not None and found['state'] == MERGED:
-        return _delivered(ctx, store, own, Path(store.project().path), work_id)
+        return _delivered(ctx, store, own, Path(store.project().path), work_id, publish=publish)
     if found is None or found['state'] not in (COMMITTED, READY, MERGING, FAILED):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(found)
@@ -681,11 +691,11 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             made = git(project, 'rev-parse', '--verify', '--quiet', temp).stdout.strip()
             ours = bool(made) and f'{TRAILER}: {work_id}' in git(project, 'log', '-1', '--format=%B', made).stdout
             if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
-                return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+                return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
             if ours and git(project, 'rev-parse', f'{made}^').stdout.strip() == before:
                 passed, why = advance(project, made, before)
                 if passed:
-                    return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+                    return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
                 return _blocked(ctx, store, own, work_id, why)
             _dropped(project, work_id)
         record = store.ticket(work_id).work
@@ -720,13 +730,13 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             else:
                 passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before)
         if passed:
-            return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+            return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
         _dropped(project, work_id)
         return _blocked(ctx, store, own, work_id, why)
 
 
 def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev: str, folder: str,
-            branch: str) -> dict[str, Any]:
+            branch: str, *, publish: bool = False) -> dict[str, Any]:
     """Journal the landed commit, retaining the ticket branch and all its worktree files."""
     _dropped(project, work_id)
     record = store.ticket(work_id).work
@@ -735,12 +745,15 @@ def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev
            snapshot_of(project, branch) or '')
     # Keep ticket branches and worktrees. Another session may still own uncommitted files there.
     with own.tables() as tx:
-        tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': PUSH_PENDING})
-    return _delivered(ctx, store, own, project, work_id)
+        tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': PUSH_PENDING if publish else ''})
+    return _delivered(ctx, store, own, project, work_id, publish=publish)
 
 
-def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) -> dict[str, Any]:
+def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str, *,
+               publish: bool = False) -> dict[str, Any]:
     """A committed merge's pending push survives crashes. Explicit retries never repeat its squash."""
+    if not publish:
+        return {'work_id': work_id, 'merged': True, 'pushed': False, 'conflict': False, 'why': ''}
     pushed = push_ticket(project)
     activation: dict[str, Any] = {}
     why = pushed['why'] or ('' if pushed['pushed'] else 'push pending: configure the branch upstream')

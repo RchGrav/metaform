@@ -252,10 +252,14 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 
 ## Ticket commits
 
-Completed tickets save a feature commit of their own linked deliverables after relevant verification passes.
-The ticket or assignment retains ticket identity, branch, commit ID, affected artifacts and verification evidence.
-Completion requires no merge into main, remote push or activation. Ordinary completion never pushes.
-Failed verification leaves the ticket unresolved. Commit subjects use the ticket
+A resolved ticket closes directly through done or a move to Done. Agents verify the actual fix and record
+its resolution and checks. Commit, merge, push, activation, review and delivery receipts never gate closure.
+Saving the ticket's feature commit is a separate delivery step. With Full Auto (`dispatch_autostart`) on,
+dispatch integrates that feature locally automatically without pushing. With Full Auto off, it retains the
+feature commit. Delivery failures are reported separately and never keep a resolved error open.
+The ticket or assignment retains ticket identity, artifacts, verification and available branch and commit IDs.
+Projects without Git record the checked result without inventing commits or missing-commit faults.
+Actual recurrence or supported review findings may reopen faults. Commit subjects use the ticket
 title. Commit bodies retain the resolution, its why and a canonical `Ticket state` JSON snapshot of map-owned ticket
 rows and citation metadata. The archive compares that snapshot with current state before deleting a ticket, so a
 same-second completion with unchanged resolution cannot discard newer notes or progress. Five trailers retain
@@ -263,21 +267,20 @@ ticket identity: `Metaform-Ticket`
 (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address), `Metaform-Board` (board name, empty for
 the first board), and `Metaform-Agent` (agent id and name). Empty completions make empty commits with the same
 message. `Metaform-Target` preserves the attachment as `element:<address>` or `join:<id>` so archive counts keep
-join work separate from its receiver element. Configured checks run before saving the feature commit; an unset
-test command does not strand work. Ticket branches and dirty worktrees stay intact. Repeated completion
-recovers its journal without another feature commit. Verified resolution closes a fault ticket and clears its
-light through the existing completion events.
+join work separate from its receiver element. Configured checks contribute verification evidence.
+Ticket branches and dirty worktrees stay intact. Repeated delivery recovers its journal without another feature
+commit. Direct closure clears a resolved fault ticket's light through the existing completion events.
 
-Explicit publishing and legacy manual reviews remain available when requested. Merge, push and runtime
-activation belong to that separate request and do not gate ordinary ticket completion.
+Ordinary completion and Full Auto integration never push. Explicit publishing and manual reviews remain
+available when requested. Runtime activation remains separate from ticket closure.
 
 New ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked
 files stay in the shared checkout. The recorded starting commit still excludes dirty startup snapshots from
 merges of older ticket branches.
 
 Cancelled and failed tickets make no completion commit. Uncommitted worktree edits stay until the existing
-abandoned-branch retention expires. A missing completion commit files one broken ticket at `code.dispatcher.agent`,
-named by the completed ticket's number, on its board. Its broken condition lights the board node.
+abandoned-branch retention expires. A failed feature commit is reported as separate delivery trouble
+at `code.dispatcher.agent`; the resolved source ticket remains closed.
 
 Shared-checkout commits use a private Git index. The runner retains startup dirty paths and every successful file
 write separately from its bounded activity display. Earlier changes, overlapping writers and files changed after
@@ -350,5 +353,3 @@ reuses the supervisor's earliest `retry_due` timer. Named ticket events update o
 cancellation, completion and removal cancel their deadlines. Pending reminders share one Board inbox batch.
 Triage reads recorded reasons, releases valid work when its reason no longer applies, and cancels only work
 established as invalid or superseded with evidence. Explicit person stops retain their launch authority.
-
-Projects without Git complete after verification. Their completion record explicitly states that no repository exists and contains no invented commit ID. A Git project cannot use this path to bypass its feature commit requirement.

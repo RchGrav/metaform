@@ -1377,7 +1377,6 @@ class Session:
         self.terminal_count = 0
         self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
         self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
-        self.delivery_asked = False  # missing delivery steps are sent once, without a repeated completion turn
         self.interrupted = False  # the last turn ended by the person's interrupt, so no recording turn follows it
         # An intake agent's first Metaform call and first record, M04: when its first turn began, the seconds each
         # took, and whether it was steered; and its clock, which steers it once when no call has come in time.
@@ -4979,20 +4978,14 @@ class Session:
         try:
             await self.commit_done()
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
-            if self.role == 'worker' and self.folder != self.root and not record.done:
+            if self.role == 'worker' and self.folder != self.root:
                 from .merge import finished as deliver_worktree
                 await self.write(deliver_worktree, self.ctx, self.store, record, Path(self.folder))
                 record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if not record.done:
-                if not self.delivery_asked and not self.turns:
-                    self.delivery_asked = True
-                    with self.store.tables(write=False) as tables:
-                        delivery = tables.get('merges', {'work_id': self.work_id})
-                    missing = 'Save the ticket feature commit and record passing verification.'
-                    if delivery:
-                        missing = str(delivery['reason'] or missing)
-                    self.turn(prompt('delivery_pending', missing=missing))
-                return
+                record = await self.write(self.store.complete_delivery, self.work_id)
+                if not record.done:
+                    return
             if self.role == 'worker':  # while Full Auto is on, the system agent checks the fault lights it may clear
                 from .board import finished
                 try:

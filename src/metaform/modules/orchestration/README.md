@@ -72,11 +72,13 @@ Unrelated table changes do no orchestration reads. A work-table event with absen
 ticket concerns reads only indexed active assignments, covering a command that
 aggregated another module's unannotated write. No polling scheduler is added.
 
-Ticket completion requires the requested result, relevant verification and a saved feature commit.
-The ticket or assignment retains ticket identity, branch, commit ID, affected artifacts and verification evidence.
-Completion requires no merge into main, remote push or activation. Ordinary completion never pushes.
-Publishing remains available when explicitly requested. Failed verification leaves the ticket unresolved.
-Verified resolution closes a fault ticket and clears its light through the existing completion events.
+Agents verify the actual fix and record its resolution and checks. A resolved ticket closes directly through
+done or a move to Done. No commit, merge, push, activation, review or receipt is a prerequisite.
+Feature commits remain a separate delivery step. With Full Auto (`dispatch_autostart`) on, integrate locally
+automatically without pushing; otherwise retain the feature commit. Report delivery failures separately without
+keeping resolved errors open. Records retain ticket identity, artifacts, verification and available branch and
+commit IDs. Non-Git projects retain checked results without invented commits. Actual recurrence or supported
+review findings may reopen faults. Closure clears the resolved fault's light through existing completion events.
 
 ## Functional adaptation
 

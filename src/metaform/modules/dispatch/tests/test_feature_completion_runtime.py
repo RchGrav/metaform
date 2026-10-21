@@ -1,4 +1,4 @@
-"""Full Auto closes verified feature work and releases dependent tickets on fresh boards."""
+"""Full Auto closes resolved work, integrates Git features locally, and releases dependencies."""
 import json
 import sys
 
@@ -15,20 +15,22 @@ from metaform.modules.web.server import Server, projects_started
 pytestmark = [pytest.mark.req('BASE-052'), pytest.mark.req('VIEW-042'), pytest.mark.kind('simulation')]
 
 
-@pytest.mark.parametrize('board', ['repair-queue', 'verification-lab'])
+@pytest.mark.parametrize(('board', 'development_branch', 'condition'), [
+    ('repair-queue', 'main', 'broken'), ('verification-lab', 'trunk', 'trouble'),
+])
 @pytest.mark.parametrize('repository_present', [True, False], ids=['git', 'non-git'])
 def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
-        dispatch, run, monkeypatch, board, repository_present):
+        dispatch, run, monkeypatch, board, development_branch, condition, repository_present):
     original = None
     if repository_present:
         initialize(dispatch.folder)
-        assert git(dispatch.folder, 'branch', '-m', 'main').returncode == 0
+        assert git(dispatch.folder, 'branch', '-m', development_branch).returncode == 0
         original = git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
         assert not git(dispatch.folder, 'remote').stdout.strip()
     run('map', 'boards', 'op=add', f'name={board}', cwd=dispatch.folder)
     run('set', '--board', board, cwd=dispatch.folder)
     first = dispatch.id
-    dispatch.store.edit_work(first, {'condition': 'broken', 'kind': 'broken'})
+    dispatch.store.edit_work(first, {'condition': condition, 'kind': 'broken'})
     second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Verify dependent feature').id
     for work_id in (first, second):
         run('map', 'work', 'op=edit', f'id={work_id}', f'board={board}', cwd=dispatch.folder)
@@ -61,7 +63,8 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
             assert {row['work_id'] for row in sessions} == {first, second}
             assert gone([row['pid'] for row in sessions], limit=20)
             for work_id, receipt in zip((first, second), receipts, strict=True):
-                assert receipt['work_id'] == work_id and receipt['state'] == 'committed'
+                assert receipt['work_id'] == work_id
+                assert receipt['state'] == ('merged' if repository_present else 'committed')
                 assert receipt['evidence']['verification']['passed'] is True
                 assert receipt['evidence']['verification']['command'] == check
                 assert receipt['evidence']['repository'] is repository_present
@@ -79,8 +82,11 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
             assert one.done <= two.taken, 'the dependent worker started before fault closure'
             assert not dispatch.store.where('code.engine').work
             if repository_present:
-                assert git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip() == original
-                assert not git(dispatch.folder, 'ls-tree', 'HEAD', '--', 'feature.txt').stdout
+                assert git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip() != original
+                assert git(dispatch.folder, 'show', 'HEAD:feature.txt').stdout == 'changed by the fake agent\n'
+                for receipt in receipts:
+                    assert git(dispatch.folder, 'diff', '--quiet', receipt['head'], 'HEAD',
+                               '--', 'feature.txt').returncode == 0
             else:
                 assert not (dispatch.folder / '.git').exists()
                 assert (dispatch.folder / 'feature.txt').read_text() == 'changed by the fake agent\n'
