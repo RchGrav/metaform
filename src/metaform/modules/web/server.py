@@ -3528,6 +3528,14 @@ def spec_record(folder: Path, code: str, specs: list[tuple[Path, list[str]]]) ->
     return None
 
 
+REFERENCE_WORDS = 300  # characters of a referenced ticket's or message's text a lookup carries
+
+
+def short(value: Any) -> Any:
+    """A text cut to REFERENCE_WORDS for a lookup's answer; anything else as it is."""
+    return value[:REFERENCE_WORDS] + '…' if isinstance(value, str) and len(value) > REFERENCE_WORDS else value
+
+
 def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None]:
     """What each reference stands for in a project, or None, in one pass: the specifications are read once for every
     code, and the tickets and the messages once for every id. A page draws hundreds of references at once, and one
@@ -3549,9 +3557,12 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
             tickets = [record for record in work if record.id.startswith(ref)]
             if len(tickets) == 1:
                 record = tickets[0]
-                found[ref] = {'kind': 'ticket', 'id': record.id, 'title': record.task or record.note or record.id,
-                              'task': record.task, 'note': record.note, 'condition': record.condition,
-                              'column': record.column, 'done': record.done, 'resolution': record.resolution,
+                # the popover shows a reference's first words; the ticket opens whole from it (178 KB a batch of
+                # whole records, 2026-10-20)
+                found[ref] = {'kind': 'ticket', 'id': record.id,
+                              'title': short(record.task or record.note or record.id),
+                              'task': short(record.task), 'note': short(record.note), 'condition': record.condition,
+                              'column': record.column, 'done': record.done, 'resolution': short(record.resolution),
                               'address': record.address}
                 continue
             if said is None:
@@ -3560,8 +3571,8 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
             messages = [message for message in said if message.id.startswith(ref)]
             message = messages[0] if len(messages) == 1 else None
             found[ref] = None if message is None else {
-                'kind': 'message', 'id': message.id, 'type': message.kind, 'title': message.text or '',
-                'text': message.text, 'choices': list(message.suggestions), 'answer': message.answer,
+                'kind': 'message', 'id': message.id, 'type': message.kind, 'title': short(message.text or ''),
+                'text': short(message.text), 'choices': list(message.suggestions), 'answer': short(message.answer),
                 'closed': message.closed, 'address': message.address}
     for ref in refs:
         if ref not in found:
