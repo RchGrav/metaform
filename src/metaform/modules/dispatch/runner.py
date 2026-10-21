@@ -1347,6 +1347,7 @@ class Session:
         # with no note of its own); and the project updates the turn in flight carries, marked carried as it goes
         self.inbox: list[tuple[str, str, str, bool]] = []
         self.digest_count = 0  # routine entries since the last status line, counted and never named, `digest_note`
+        self.digest_kinds: dict[str, int] = {}  # the same entries by kind, for the status line's counts
         self.digest_handle: asyncio.TimerHandle | None = None  # the one deadline for the next status line
         self.digest_line = ''  # the status line the next turn carries, `digest_due`
         self.inflight_updates: list[str] = []
@@ -3859,7 +3860,7 @@ class Session:
         ticket complete, a board item, a peer note, a commit) is never named: it stays in its thread for dispatch notes,
         and only what needs the person or the system agent reaches its conversation (2026-10-20: routine lines flooded it)."""
         if not wakes:
-            self.digest_note()  # counted toward the one status line, never named
+            self.digest_note(said.rpartition(' — ')[2] if ' — ' in said else said.rpartition(' ')[2])  # counted, never named
             return
         if any(one[0] == note_id for one in self.inbox):
             return
@@ -3867,13 +3868,14 @@ class Session:
         if '' not in self.pending and (self.resume or self.spoken or self.turns):
             self.turn('')
 
-    def digest_note(self) -> None:
+    def digest_note(self, kind: str = 'change') -> None:
         """A routine entry, a ticket complete, progress or a board item finished, never enters the inbox and starts no
         turn of its own: it counts toward one status line. The person's system agent is woken for it at most every
         TRIAGE_DIGEST seconds, and only when status changed since its last line: the first change after that line sets
         the one deadline, never a clock. The line carries the count and tells the agent to check; no ticket is given,
         since every token of its context counts (the person's rule, 2026-10-20)."""
         self.digest_count += 1
+        self.digest_kinds[kind] = self.digest_kinds.get(kind, 0) + 1
         if self.digest_handle is None and not self.ending:
             self.digest_handle = asyncio.get_running_loop().call_later(TRIAGE_DIGEST, self.digest_due)
 
@@ -3882,9 +3884,11 @@ class Session:
         none waits; nothing when no status changed meanwhile."""
         self.digest_handle = None
         count, self.digest_count = self.digest_count, 0
+        kinds, self.digest_kinds = self.digest_kinds, {}
         if not count or self.ending:
             return
-        self.digest_line = prompt('inbox_digest', count=str(count))
+        self.digest_line = prompt('inbox_digest', count=str(count), kinds=', '.join(
+            f'{number} {kind}' for kind, number in sorted(kinds.items(), key=lambda one: -one[1])))
         if '' not in self.pending and (self.resume or self.spoken or self.turns):
             self.turn('')
 

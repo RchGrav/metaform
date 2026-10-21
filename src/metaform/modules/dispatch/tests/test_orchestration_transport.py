@@ -326,7 +326,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     system.digest_handle.cancel()
     system.digest_due()
     [digest] = sent(monkeypatch, system)
-    assert digest == module.prompt('inbox_digest', count='23') and 'Evidence' not in digest and len(digest) < 300, digest
+    assert digest == module.prompt('inbox_digest', count='23', kinds='10 complete, 10 progress, 3 board finished') and 'Evidence' not in digest and len(digest) < 300, digest
     assert system.digest_count == 0 and system.digest_handle is None
 
     monkeypatch.setattr(peering, 'caller', lambda store: (None, peering.sessions(store, dispatch.id)[0]))
