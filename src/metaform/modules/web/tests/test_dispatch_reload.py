@@ -1,4 +1,7 @@
 """Unrelated module changes preserve dispatch requests already using their declarations."""
+import http.client
+import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -57,7 +60,8 @@ def test_agent_choices_survive_unrelated_module_refresh(project_folder, monkeypa
     assert refreshed
 
 
-def test_merges_keeps_its_package_through_unrelated_refresh(store, project_folder, monkeypatch):
+@pytest.mark.parametrize('surface', ['module', 'http'])
+def test_merges_keeps_its_package_through_unrelated_refresh(store, project_folder, monkeypatch, surface):
     monkeypatch.chdir(project_folder)
     registry.set_module_state('dispatch', True)
     chassis.surface(project_folder)
@@ -73,5 +77,23 @@ def test_merges_keeps_its_package_through_unrelated_refresh(store, project_folde
         return call(function, *args)
 
     monkeypatch.setattr(chassis, 'call', refreshing_call)
-    assert server.module_verb({'project': 'proj'}, 'dispatch', 'merges', {}) == {'merges': []}
+    if surface == 'module':
+        assert server.module_verb({'project': 'proj'}, 'dispatch', 'merges', {}) == {'merges': []}
+    else:
+        served = server.Server('127.0.0.1', 0, 'nonce')
+        worker = threading.Thread(target=served.serve_forever, daemon=True)
+        worker.start()
+        connection = http.client.HTTPConnection('127.0.0.1', served.port, timeout=10)
+        try:
+            connection.request('GET', '/api/merges?project=proj')
+            response = connection.getresponse()
+            body = json.loads(response.read())
+            assert response.status == 200, body
+            assert body == {'merges': []}
+        finally:
+            connection.close()
+            served.shutdown()
+            worker.join(5)
+            served.server_close()
+            served.vouch.close()
     assert refreshed
