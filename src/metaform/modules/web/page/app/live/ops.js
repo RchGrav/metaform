@@ -427,7 +427,7 @@ export function holdsAny(kinds, wanted) {
 /* Whether a change concerns the agents' sessions, from its kinds when it names them; one that does not, as a runner
  * older than map.changed's kinds says, may concern anything. */
 export const sessionsConcerned = payload => !Array.isArray(payload.kinds) || holdsAny(payload.kinds, SESSION_KINDS);
-/* Whether a change may have put a merge up for review or taken one down, as the server's merge_change decides it: it
+/* Whether a change may have put an explicit merge up for review or taken one down: it
  * names the merges table, its kinds name a merge, or it says neither its kinds nor its tables. A runner's session,
  * permission, spending and progress writes say they are not about merges. */
 const MERGE_KINDS = ['merge'], MERGES = ['dispatch.merges'];

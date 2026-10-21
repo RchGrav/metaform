@@ -220,12 +220,11 @@ export async function renderMerges() {
   if (!S.project || FRAMED) return;
   try { MERGE.rows = (await read('merges')).merges || []; } catch { MERGE.rows = []; }
   noticeAttention();  // a merge waiting for review: the mascot tells the person, `ATTN`
-  const at = seconds => new Date(seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   fill($('#reviewNotice'), MERGE.rows.map(row => {
     const ticket = (B.tickets || []).find(one => one.id === row.work_id);
     const what = ticket ? (ticket.task || ticket.note || '').slice(0, 80) : row.branch;
     return h('div', {class: 'notice'}, h('b', {}, 'Review.'),
-      h('span', {}, ` ${what} · merges by itself at ${at(row.deadline)}`),
+      h('span', {}, ` ${what} · merge on request`),
       h('button', {class: 'btn sm primary', type: 'button', onclick: event => takeReview(row.work_id, event.target)},
         'Review'));
   }));

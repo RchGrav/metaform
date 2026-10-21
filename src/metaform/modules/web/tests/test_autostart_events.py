@@ -11,6 +11,44 @@ from metaform.modules.web import server as module
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
 
 
+@pytest.mark.req('VIEW-044')
+@pytest.mark.parametrize('state', ['ready', 'merging'])
+def test_legacy_merge_receipts_never_publish_during_ordinary_reconciliation(state, monkeypatch):
+    with module.Server('127.0.0.1', 0, 'test') as server:
+        monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+        monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+        monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
+        monkeypatch.setattr(module.events, 'announce', lambda *args: [])
+        monkeypatch.setattr(server, 'watch_backgrounds', lambda *args: None)
+        monkeypatch.setattr(server, 'watch_runners', lambda *args: None)
+        monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: {})
+        reads, publications = [], []
+
+        def waiting(given):
+            reads.append(given)
+            return {'merges': [{'work_id': 'legacy', 'state': state, 'deadline': 0}]}
+
+        monkeypatch.setattr(module, 'merges_waiting', waiting)
+        monkeypatch.setattr(module, 'run_dispatch',
+                            lambda *args: publications.append(args) or (True, {'merged': True}))
+        monkeypatch.setattr(module.threading, 'Timer',
+                            lambda delay, callback, args: SimpleNamespace(start=lambda: callback(*args)))
+        server.changed({'project': 'proj', 'tables': 'dispatch', 'kinds': ['merge'], 'work_ids': ['legacy']})
+        server.schedule_dispatch('proj')  # opening the project also reconciles its queue
+        assert publications == [], 'ordinary reconciliation published a legacy candidate'
+        assert reads == [], 'ordinary reconciliation read the explicit publication queue'
+
+
+@pytest.mark.req('VIEW-044')
+def test_explicit_merge_remains_available_through_dispatch_call(monkeypatch):
+    publications = []
+    monkeypatch.setattr(module, 'run_dispatch',
+                        lambda *args: publications.append(args) or (True, {'merged': True}))
+    assert module.Handler.dispatch_call(SimpleNamespace(), {'project': 'proj'}, 'merge', ['legacy']) == (
+        True, {'merged': True})
+    assert publications == [('proj', 'merge', ['legacy'], None)]
+
+
 @pytest.mark.parametrize(('payload', 'starts'), [
     ({'tables': ['work']}, True),
     ({'tables': ['messages', 'map.question_work']}, True),
@@ -48,7 +86,7 @@ def test_change_triggers_only_relevant_dispatch_checks(payload, starts, monkeypa
     scheduled = []
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(project_id=project))
     monkeypatch.setattr(server, 'schedule_dispatch',
-                        lambda project, starts=True, merges=True: scheduled.append(project) if starts else None)
+                        lambda project: scheduled.append(project))
     event = {'project': 'proj', 'base_id': 'main', **payload}
     assert server.changed(event) == 1
     assert scheduled == (['proj'] if starts else [])
@@ -90,11 +128,11 @@ def test_a_burst_of_note_edits_runs_no_agent_starter_pass_and_one_ticket_change_
     page = queue.SimpleQueue()
     server.listeners, server.listening = {page}, threading.Lock()
     server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
-    server.dispatch_pending, server.merges_pending = set(), set()
+    server.dispatch_pending = set()
+    server.retry_timers = {}
     monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
     monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
     monkeypatch.setattr(module.events, 'announce', lambda *args: [])
-    monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
     passes = []
     monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: passes.append(args) or {})
     arms = []  # the watch on runners' deaths lists the leases only for a change that can have started one, round 2
@@ -115,14 +153,13 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     server = object.__new__(module.Server)
     server.dispatch_lock = threading.Lock()
     server.dispatch_pending = set()
-    server.merges_pending = set()
+    server.retry_timers = {}
     server.dispatch_busy = False
     server.dispatch_errors = {}
     threads = []
     monkeypatch.setattr(module.threading, 'Thread', lambda **kwargs: SimpleNamespace(start=lambda: threads.append(kwargs)))
     monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
-    monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
     monkeypatch.setattr(module.events, 'announce', lambda *args: [])
     calls = []
 
@@ -141,43 +178,17 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     assert not server.dispatch_busy and not server.dispatch_pending
 
 
-@pytest.mark.req('VIEW-044')
-@pytest.mark.parametrize(('payload', 'starts', 'merges'), [
-    ({'tables': 'dispatch', 'dispatch_tables': ['dispatch.lines'], 'kinds': ['line']}, False, False),
-    ({'tables': 'dispatch', 'kinds': ['line'], 'session_ids': ['s']}, False, False),
-    ({'tables': 'dispatch', 'kinds': ['merge'], 'work_ids': ['w']}, False, True),
-    ({'tables': 'dispatch', 'dispatch_tables': ['dispatch.merges']}, False, True),
-    ({'tables': 'dispatch'}, True, True),
-    ({'tables': ['work'], 'kinds': ['ticket']}, True, False),
-])
-def test_a_change_runs_the_agent_starter_and_the_merges_read_only_when_it_can_need_them(payload, starts, merges,
-                                                                                         monkeypatch):
-    server = object.__new__(module.Server)
-    server.listeners, server.listening = set(), threading.Lock()
-    server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
-    server.dispatch_pending, server.merges_pending = set(), set()
-    monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
-    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
-    monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
-    monkeypatch.setattr(module.events, 'announce', lambda *args: [])
-    ran = []
-    monkeypatch.setattr(server, 'schedule_merges', lambda project: ran.append('merges'))
-    monkeypatch.setattr(module, 'module_verb', lambda *args, **kwargs: ran.append('autostart') or {})
-    server.changed({'project': 'proj', 'base_id': 'main', **payload})
-    assert ran == ['merges'] * merges + ['autostart'] * starts
-
-
 @pytest.mark.req('VIEW-042')
 def test_the_agent_starters_own_writes_reach_the_pages_and_start_no_second_pass(monkeypatch):
     server = object.__new__(module.Server)
     page = queue.SimpleQueue()
     server.listeners, server.listening = {page}, threading.Lock()
     server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
-    server.dispatch_pending, server.merges_pending = set(), set()
+    server.dispatch_pending = set()
+    server.retry_timers = {}
     monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
     monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))
-    monkeypatch.setattr(server, 'schedule_merges', lambda project: None)
     taken = {'project': 'proj', 'base_id': 'main', 'tables': ['work'], 'work_ids': ['w'], 'kinds': ['ticket']}
     monkeypatch.setattr(module.events, 'announce', lambda *args: [taken])  # the starter took a ticket
     passes = []
@@ -199,7 +210,7 @@ def test_cli_setting_changes_reach_the_server_without_an_open_page(run, home, tm
     server.listening = threading.Lock()
     scheduled = queue.Queue()
     monkeypatch.setattr(server, 'schedule_dispatch',
-                        lambda project, starts=True, merges=True: scheduled.put(project) if starts else None)
+                        lambda project: scheduled.put(project))
     with module.events.listen('web', server.changed):
         run('set', '--dispatch-autostart', cwd=folder)
         assert scheduled.get(timeout=5) == 'proj'
@@ -212,7 +223,7 @@ def test_new_worker_starts_rotate_projects_and_capacity_release_wakes_waiters(mo
     server.dispatch_lock, server.listening = threading.Lock(), threading.Lock()
     server.listeners = set()
     server.dispatch_pending = {('a', None), ('b', None)}
-    server.capacity_waiters, server.merges_pending = set(), set()
+    server.capacity_waiters = set()
     server.dispatch_busy, server.dispatch_errors, server.dispatch_last = True, {}, ''
     monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
     monkeypatch.setattr(module.home, 'project', lambda project: SimpleNamespace(path='/tmp', project_id=project))

@@ -113,8 +113,10 @@ def test_session_verification_reuses_the_unfiltered_open_work_snapshot(dispatch,
 @pytest.mark.req('BASE-052')
 def test_autostart_without_page_starts_the_next_ticket_when_a_runner_finishes(dispatch, run):  # noqa: F811
     """No page is open: the runner whose ticket is done starts the waiting ticket itself, D-11."""
+    from metaform.modules.dispatch.tests.test_completion_commit import initialize
     from metaform.modules.dispatch.tests.test_dispatch import LIMIT, eventually, gone
 
+    initialize(dispatch.folder)
     run('set', '--dispatch-autostart', '--dispatch-agents=1', cwd=dispatch.folder)
     second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Second ticket').id
     dispatch.start('done')

@@ -4901,7 +4901,7 @@ class Session:
         """Commit attributable linked files once, before completion releases the shared checkout."""
         held = self.acp['ticket_git']
         if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
-                or (held['result'] is not None and held['result']['committed'] and held['result'].get('pushed')
+                or (held['result'] is not None and held['result']['committed']
                     and not held['result']['why']):
             return
         record = await asyncio.to_thread(ticket, self.store, self.work_id)
@@ -4927,10 +4927,11 @@ class Session:
         except (OSError, subprocess.SubprocessError) as error:
             result = {'committed': None, 'pushed': False, 'conflict': False, 'why': str(error)}
         held['result'] = result
-        if result['committed'] and result.get('pushed'):
-            delivery = await asyncio.to_thread(deliver_shared, self.ctx, self.store, self.work_id)
-            if delivery.get('why'):
-                result['why'] = str(delivery['why'])
+        if result['committed'] and not result['why']:
+            delivery = await asyncio.to_thread(deliver_shared, self.ctx, self.store, self.work_id,
+                                              str(result['committed']))
+            if delivery.get('reason') or delivery.get('why'):
+                result['why'] = str(delivery.get('reason') or delivery.get('why'))
         if result == previous_result:
             return
         if not result['committed']:
@@ -4976,10 +4977,9 @@ class Session:
                     self.delivery_asked = True
                     with self.store.tables(write=False) as tables:
                         delivery = tables.get('merges', {'work_id': self.work_id})
-                    missing = 'Merge ticket commits into main, push and activate changed code.'
+                    missing = 'Save the ticket feature commit and record passing verification.'
                     if delivery:
-                        missing = str(delivery['reason'] or ('Fault proof must clear the fault light.'
-                                      if delivery['state'] == 'merged' else missing))
+                        missing = str(delivery['reason'] or missing)
                     self.turn(prompt('delivery_pending', missing=missing))
                 return
             if self.role == 'worker':  # while Full Auto is on, the system agent checks the fault lights it may clear

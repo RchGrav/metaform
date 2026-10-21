@@ -161,7 +161,6 @@ STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'ques
 UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
                       'dispatch.claims',
                       'dispatch.claim_work', 'dispatch.raised'})
-MERGES = 'dispatch.merges'
 
 
 def named_tables(payload: dict[str, Any]) -> list[str] | None:
@@ -180,15 +179,6 @@ def given_kinds(payload: dict[str, Any]) -> list[str] | None:
     if not isinstance(kinds, list) or any(not isinstance(one, str) for one in cast(list[Any], kinds)):
         return None
     return cast(list[str], kinds)
-
-
-def merge_change(payload: dict[str, Any]) -> bool:
-    """Whether a change may have put a merge up for review, VIEW-044: it names the merges table, or its `kinds` name a
-    merge, or it says neither what it concerns nor which tables it wrote."""
-    tables, kinds = named_tables(payload), given_kinds(payload)
-    if tables is not None and MERGES in tables or kinds is not None and 'merge' in kinds:
-        return True
-    return tables is None and kinds is None
 
 
 def runner_change(payload: dict[str, Any]) -> bool:
@@ -413,7 +403,6 @@ class Server(ThreadingHTTPServer):
         self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
         self.capacity_waiters: set[tuple[str, str | None]] = set()
         self.dispatch_last = ''
-        self.merges_pending: set[str] = set()  # each project whose merges' timers are set again
         self.dispatch_busy = False
         self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
         self.said: dict[str, None] = {}  # the refusals and faults already logged, oldest first, `first_time`
@@ -426,7 +415,6 @@ class Server(ThreadingHTTPServer):
         self.supervisor = os.environ.pop(SUPERVISOR, '') or None
         self.restarted = restart_said(os.environ.pop(RESTARTED, ''))
         self.told: int | None = None  # the pipe to the watchdog, kept past the ready line, `ready`
-        self.merge_timers: dict[tuple[str, str], threading.Timer] = {}  # VIEW-044: one per merge waiting for review
         self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
         # The watch on every runner of the home, dispatch's `dispatch.deaths`: a runner's death, however it comes, is a
         # change announced at once, never one a page finds on its next read (UX review round 2, intake-single-flight F1)
@@ -559,7 +547,7 @@ class Server(ThreadingHTTPServer):
     def changed(self, payload: dict[str, Any], own: bool = False) -> int:
         """Push one `map.changed` to every open page, VIEW-018 and BASE-053; a change to a project no longer registered,
         such as the removal of one, is not pushed, since a page has nothing of it to read. `own`, the agent starter's
-        and the merges' own writes, schedules no dispatch check: a process never reacts to its own writes."""
+        own writes, schedules no dispatch check: a process never reacts to its own writes."""
         if home.project(str(payload.get('project', ''))) is None:
             self.watch_backgrounds(str(payload.get('project', '')), refresh=True)
             return 0
@@ -572,12 +560,11 @@ class Server(ThreadingHTTPServer):
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
         if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
             self.watch_backgrounds(str(payload['project']), refresh=True)
-        starts, merges = (False, False) if own else (dispatch_change(payload), merge_change(payload))
-        if starts or merges:
+        if not own and dispatch_change(payload):
             if runner_change(payload) and getattr(self, 'capacity_waiters', None):
                 with self.dispatch_lock:
                     self.dispatch_pending.update(getattr(self, 'capacity_waiters', ()))
-            self.schedule_dispatch(str(payload['project']), starts=starts, merges=merges)
+            self.schedule_dispatch(str(payload['project']))
         return self.push({'topic': 'map.changed', 'payload': payload})
 
     def pages_changed(self, project_id: str) -> None:
@@ -668,43 +655,15 @@ class Server(ThreadingHTTPServer):
         with self.listening:
             return set(self.watching.values())
 
-    def schedule_dispatch(self, project: str, base: str | None = None, *, starts: bool = True,
-                          merges: bool = True) -> None:
+    def schedule_dispatch(self, project: str, base: str | None = None) -> None:
         """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches; on the active
-        base, or on `base`, a base the page shows that is not the active one: the agent starter when the change can
-        start work, and the merges' timers when it can put a merge up for review."""
+        base, or on `base`, a base the page shows that is not the active one."""
         with self.dispatch_lock:
-            if starts:
-                self.dispatch_pending.add((project, base))
-            if merges:
-                self.merges_pending.add(project)
+            self.dispatch_pending.add((project, base))
             if self.dispatch_busy:
                 return
             self.dispatch_busy = True
         threading.Thread(target=self.dispatch_waiting, daemon=True).start()
-
-    def schedule_merges(self, project: str) -> None:
-        """Set one timer for each merge waiting for review, at its deadline, VIEW-044; nothing polls, QUAL-015. Read in
-        this process, `merges_waiting`: a subprocess here ran on every merge-related change."""
-        with chassis.request_scope(fresh=True):
-            data = merges_waiting({'project': project})
-        for row in cast(list[dict[str, Any]], data.get('merges') or []):
-            key = (project, str(row['work_id']))
-            if key in self.merge_timers:
-                continue
-            timer = threading.Timer(max(0.0, float(row['deadline']) - time.time()), self.merge_due, key)
-            timer.daemon = True
-            self.merge_timers[key] = timer
-            timer.start()
-
-    def merge_due(self, project: str, work_id: str) -> None:
-        """A merge's review time is up with no review: dispatch checks it again and merges it, VIEW-044."""
-        self.merge_timers.pop((project, work_id), None)
-        run_dispatch(project, 'merge', [work_id])
-        found = home.project(project)
-        if found is not None:
-            for payload in events.announce(Path(found.path), 'web'):
-                self.changed(dict(payload), own=True)
 
     def schedule_retry(self, project: str, due: Any) -> None:
         """The supervisor's next retry, P012, when one waits: one timer per project, at the earliest time due, runs the
@@ -722,20 +681,13 @@ class Server(ThreadingHTTPServer):
                 return
             if held is not None:
                 held[1].cancel()
-            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,),
-                                    {'merges': False})
+            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,))
             timer.daemon = True
             self.retry_timers[project] = (float(due), timer)
             timer.start()
 
-    def cancel_merge(self, project: str, work_id: str) -> None:
-        timer = self.merge_timers.pop((project, work_id), None)
-        if timer is not None:
-            timer.cancel()
-
     def dispatch_waiting(self) -> None:
-        """Check changed projects in one worker, each for what its changes can need, the agent starter or the merges'
-        timers; new changes are coalesced while a batch starts."""
+        """Start eligible work for changed projects in one worker; coalesce changes while a batch starts."""
         while True:
             with self.dispatch_lock:
                 if self.dispatch_pending:
@@ -745,18 +697,10 @@ class Server(ThreadingHTTPServer):
                     last = getattr(self, 'dispatch_last', '')
                     project_id, base = next((one for one in ordered if one[0] > last), ordered[0])
                     self.dispatch_pending.discard((project_id, base))
-                    self.dispatch_last, starts = project_id, True
-                elif self.merges_pending:
-                    project_id, base, starts = next(iter(self.merges_pending)), None, False
+                    self.dispatch_last = project_id
                 else:
                     self.dispatch_busy = False
                     return
-                merges = project_id in self.merges_pending
-                self.merges_pending.discard(project_id)
-            if merges:
-                self.schedule_merges(project_id)
-            if not starts:
-                continue
             with chassis.request_scope(fresh=True):
                 chassis.refresh_modules()
                 project = home.project(project_id)
@@ -1922,12 +1866,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, plain(made))
 
     def review_merge(self, given: dict[str, Any]) -> None:
-        """The person clicked Review: the merge is theirs and its countdown is cancelled for good, VIEW-044."""
+        """The person clicked Review: retain their ownership of the explicit merge, VIEW-044."""
         work_id, project = given.get('work_id'), str(given.get('project', ''))
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'Review names the ticket whose merge waits.'})
         ok, data = run_dispatch(project, 'review', [work_id], chosen_base(given))
-        self.gui.cancel_merge(project, work_id)
         if not ok:
             return self.send(400, {'error': f'No merge of work {work_id} is waiting for review.'})
         self.send(200, data)
@@ -4052,10 +3995,8 @@ def module_verb(given: dict[str, Any], module_id: str, name: str, arguments: dic
 
 
 def merges_waiting(given: dict[str, Any]) -> dict[str, Any]:
-    """The merges waiting for review, as `metaform dispatch merges` reads them, in this process. The page's Review
-    notice and the server's own merge timers ask on every merge-related change, and a subprocess for each, `run_dispatch`,
-    cost a Python start, 0.6 s of a core, for an answer that is usually empty (2026-10-20). Dispatch off the project's
-    surface, or a store that cannot be read, means no merge waits."""
+    """Read explicit merges for the page's Review notice through `metaform dispatch merges`, in this process.
+    Dispatch off the project's surface, or a store that cannot be read, means no merge waits."""
     try:
         found = module_verb(given, 'dispatch', 'merges', {}, chosen=bool(chosen_base(given)))
     except (Stop, StoreError):

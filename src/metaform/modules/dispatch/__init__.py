@@ -165,7 +165,7 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
 # nothing raised on an agent is lost when the map shown changes (UX review round 2, 2026-10-17, combined F4). The
 # signals `lines` still holds, written by runners on older code, are carried into it by carry_conversations(); only a
 # table is added, so version 5's code still reads and writes the tables.
-TABLES = Tables(version=22, compatible_from=5, tables=(  # additive activation and persisted hold-review deadlines
+TABLES = Tables(version=23, compatible_from=5, tables=(  # additive feature-commit verification evidence
     # The conversations with agents, the project's whatever its maps: each session and the lines of its thread.
     Table('agent_sessions', place='project', key=('session_id',), columns=SESSION,
           indexes=(Index(('work_id', 'seq')), Index(('seq',)), Index(('state', 'ended', 'seq')))),
@@ -186,7 +186,8 @@ TABLES = Tables(version=22, compatible_from=5, tables=(  # additive activation a
     Table('merges', place='project', key=('work_id',),
           columns=(Column('work_id', required=True), Column('branch', required=True), Column('worktree', required=True),
                    Column('state', required=True), Column('reason'), Column('ready', 'real', required=True),
-                   Column('deadline', 'real', required=True), Column('seq', 'int', required=True), Column('head')),
+                   Column('deadline', 'real', required=True), Column('seq', 'int', required=True), Column('head'),
+                   Column('evidence', 'json')),
           indexes=(Index(('state',)),)),
     Table('activations', place='project', key=('work_id',),
           columns=(Column('work_id', required=True), Column('value', 'json', required=True))),
@@ -390,12 +391,10 @@ settings.number('dispatch_rework_limit', 3, min=0, person_only=True, label='Rewo
                 details='Counts worker runners that send a prompt and end with the ticket open. Person stops and idle '
                         'resumes do not count. A completed step or ticket clears the streak. Explicit starts and '
                         'resumes remain available; dispatch.rework-limit announces the pause.')
-# On by default since 2026-10-20, the person's decision: agents work in worktrees, each feature is its own commit, never
-# combined with another, and every feature is committed and its worktree cleaned up.
+# Each ticket saves its own feature commit. Candidate cleanup remains separate from completion.
 settings.boolean('dispatch_worktrees', True, person_only=True,
-                 help='Each ticket\'s agent works in a git worktree of its own, and done '
-                 'work waits for review, then merges into the active dev branch, VIEW-044. Finished tickets commit '
-                 'their own files and push the branch upstream with either choice.')
+                 help='Each ticket\'s agent works in its own git worktree. Completion saves a verified feature '
+                 'commit with either choice. Merging and publishing require an explicit request.')
 settings.number('dispatch_abandoned_branch_days', 30, min=1, person_only=True, label='Abandoned branches kept',
                 help='Days the branch of a ticket closed without merging is kept, its work committed, before it is '
                      'removed.',
@@ -404,10 +403,8 @@ settings.number('dispatch_abandoned_branch_days', 30, min=1, person_only=True, l
                         'this old, and git\'s record of worktrees already gone is pruned. A branch whose merge waits '
                         'is never removed.')
 settings.text('dispatch_test_command', '', person_only=True,
-              help='The project\'s test command, run in a worktree before its merge is '
-              'offered and again before it merges; with none, no merge is offered.')
-settings.number('dispatch_review_minutes', 15, min=1, person_only=True,
-                help='How long done work waits for a person\'s review before it merges by itself.')
+              help='The project\'s test command, run before saving a worktree feature commit and during explicit '
+              'integration. Without a command, completion retains the worker\'s verification report.')
 # How long one wait blocks paces only the agent that calls it, so it is given on that call and never stored: settings
 # cleanup 2026-10-15, which found it a switch of wait alone and made it per_call rather than fixed, so a caller keeps
 # its choice of a shorter wait.
@@ -1650,11 +1647,14 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     signals = rows(ctx.store, record.id)
     chosen = ticket_options(ctx.store, record.id)  # the ticket's own model and effort, P015, shown where it is read
     chosen = {**chosen, **launch_options(ctx.store, record.id)}  # and its latest launch's permissions
-    if not found and not signals and not chosen:
+    with Store(ctx.store.project_id, module='dispatch').tables(write=False) as tx:
+        completion = tx.get('merges', {'work_id': record.id})
+    if not found and not signals and not chosen and completion is None:
         return None
     return {'sessions': [{**{key: value for key, value in session.items() if key not in PRIVATE},
                           **session_work_status(session, signals)} for session in found],
             'signals': signals, **({'options': chosen} if chosen else {}),
+            **({'completion': dict(completion)} if completion is not None else {}),
             **ticket_work_status(record, found, signals)}
 
 
@@ -2542,7 +2542,7 @@ def fix_in_force(store: Store, work_id: str) -> bool:
 def work_over(store: Store, record: WorkRecord) -> bool:
     """Whether repair work is submitted: done, or pending delivery with a recorded result.
 
-    Dispatch can merge a submitted result while the ticket remains open for delivery.
+    Dispatch can save a verified feature commit while the ticket remains open for delivery.
     """
     if record.done:
         return True
@@ -3360,7 +3360,7 @@ def merges(ctx: Context) -> dict[str, Any]:
 
 
 def review(ctx: Context) -> dict[str, Any]:
-    """The person takes a waiting merge over: its countdown is cancelled for good, VIEW-044."""
+    """Retain the person's ownership of a candidate's explicit review, VIEW-044."""
     from .merge import review as taking
     if not taking(ctx.require_store(), str(ctx.nouns['id'])):
         raise Stop(f'No merge of work {ctx.nouns["id"]} is waiting for review.', 'metaform dispatch merges')
@@ -3368,7 +3368,7 @@ def review(ctx: Context) -> dict[str, Any]:
 
 
 def merge(ctx: Context) -> dict[str, Any]:
-    """Merge a waiting worktree whose review time is up, after both checks pass again, VIEW-044."""
+    """Explicitly integrate and publish the candidate after its checks pass, VIEW-044."""
     from .merge import merge_due
     return merge_due(ctx, ctx.require_store(), str(ctx.nouns['id']))
 
@@ -3780,7 +3780,8 @@ def claim_rows(store: Store) -> list[dict[str, Any]]:
         claims = [dict(row) for row in tx.rows('claims', by=('seq',), limit=0).results]
         members = [dict(row) for row in tx.rows('claim_work', limit=0).results]
     with own.tables(write=False) as tx:  # merges are in the project's store, a transaction of their own, STORE-006
-        waiting = {row['work_id'] for row in tx.rows('merges', limit=0).results if row['state'] != 'merged'}
+        waiting = {row['work_id'] for row in tx.rows('merges', limit=0).results
+                   if row['state'] not in ('committed', 'merged')}
     for claim in claims:
         claim['nodes'] = json.loads(claim['nodes'])
         claim['work'] = [row['work_id'] for row in members if row['claim_id'] == claim['claim_id']]
@@ -7373,10 +7374,10 @@ MODULE = Module(
                              'to the queue. Dead sessions are recorded as ended; live agents are left alone.',
              examples=(('metaform dispatch reset', 'Release every ticket a dead agent still holds.'),)),
         Verb('merges', merges, "List the agents' merges waiting for the person's review, the soonest first.",
-             switches=('dispatch_worktrees', 'dispatch_test_command', 'dispatch_review_minutes'), effect='read'),
-        Verb('review', review, "Hold a waiting merge for the person's review, cancelling its automatic merge for good.",
+             switches=('dispatch_worktrees', 'dispatch_test_command'), effect='read'),
+        Verb('review', review, "Hold a waiting candidate for the person's explicit review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), listed=merge_waits),
-        Verb('merge', merge, 'Merge a waiting worktree whose review time is up, after its checks pass again.',
+        Verb('merge', merge, 'Explicitly integrate and publish a ticket candidate after its checks pass.',
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), surfaces=('cli',)),
         Verb('system', system, "Start the person's system agent, who talks with them about anything in the project, or "
                                'reuse the running one.',

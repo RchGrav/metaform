@@ -1,4 +1,4 @@
-"""Ticket completion lands and pushes one commit while preserving agent branches and shared edits.
+"""Ticket completion saves verified commits. Explicit publication preserves shared edits.
 
 Legacy review rows remain under manual control. Real local git repositories, no model.
 """
@@ -66,19 +66,34 @@ def waiting_merge(dispatch, repo):
     return row
 
 
-def test_a_done_ticket_automatically_lands_one_commit_and_pushes_without_successor(dispatch, repo, run):
+def test_a_done_ticket_saves_one_verified_commit_without_publishing_or_successor(dispatch, repo, run):
+    head = git(repo, 'rev-parse', 'HEAD')
     [delivered] = worked(dispatch, repo)
-    assert delivered['state'] == 'merged' and not delivered['reason'], delivered
+    assert delivered['state'] == 'committed' and not delivered['reason'], delivered
     assert delivered['branch'].startswith('metaform/')
     assert (repo / delivered['worktree']).is_dir()
-    assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'ticket feature\n'
+    tree = repo / delivered['worktree']
+    assert (tree / 'feature.txt').read_text(encoding='utf-8') == 'ticket feature\n'
+    assert not (repo / 'feature.txt').exists()
     assert git(repo, 'branch', '--show-current') == 'dev'
-    assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
-    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD')
-    assert git(repo, 'log', '--format=%B').count(f'Metaform-Ticket: {dispatch.id}') == 1
+    assert git(repo, 'rev-parse', 'HEAD') == git(repo, 'rev-parse', 'origin/dev') == head
+    assert git(tree, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(tree, 'log', '--format=%B').count(f'Metaform-Ticket: {dispatch.id}') == 1
+    assert delivered['head'] == git(tree, 'rev-parse', 'HEAD')
+    assert delivered['evidence']['verification']['passed'] is True
+    assert delivered['evidence']['artifacts'] == ['feature.txt']
     assert dispatch.ticket().done
     assert not dispatch.store.work(open=True, limit=0).results, 'delivery creates no successor ticket'
     assert json.loads(run('dispatch', 'merges', '--json', cwd=repo).stdout)['merges'] == []
+
+
+def test_saved_feature_branch_survives_automatic_abandoned_cleanup(dispatch, repo):
+    from metaform.modules.dispatch.merge import abandoned
+
+    [saved] = worked(dispatch, repo)
+    assert abandoned(dispatch.store, repo, 0) == []
+    assert git(repo, 'rev-parse', saved['branch']) == saved['head']
+    assert (repo / saved['worktree']).is_dir()
 
 
 def _killed_at(monkeypatch, step):
@@ -140,9 +155,8 @@ def test_autostart_has_no_successor_to_start_after_ticket_delivery(dispatch, rep
     from metaform.module import context
     from metaform.modules import dispatch as module
     from metaform.modules.dispatch import recovery
-    merge = importlib.import_module('metaform.modules.dispatch.merge')
     worked(dispatch, repo)
-    assert merge.merge_due(context('dispatch', repo, project='proj'), dispatch.store, dispatch.id)['merged']
+    assert dispatch.ticket().done
     run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=repo)
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
     monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: dict(ctx.nouns))
@@ -158,12 +172,15 @@ def test_review_takes_the_merge_over_for_good(dispatch, repo, run):
     assert again.returncode != 0, 'the countdown never restarts'
 
 
-def test_with_no_test_command_ticket_still_lands_and_pushes(dispatch, repo, run):
+def test_with_no_test_command_ticket_still_saves_without_publishing(dispatch, repo, run):
+    head = git(repo, 'rev-parse', 'HEAD')
     run('set', '--dispatch-test-command=', cwd=repo)
     [delivered] = worked(dispatch, repo)
-    assert delivered['state'] == 'merged' and not delivered['reason'], delivered
-    assert (repo / 'feature.txt').read_text() == 'ticket feature\n'
-    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD')
+    assert delivered['state'] == 'committed' and not delivered['reason'], delivered
+    assert delivered['evidence']['verification']['passed'] is True
+    assert delivered['evidence']['verification']['command'] == ''
+    assert (repo / delivered['worktree'] / 'feature.txt').read_text() == 'ticket feature\n'
+    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD') == head
 
 
 def test_work_that_clashes_preserves_branches_and_sends_one_inbox_line(dispatch, repo, run, monkeypatch):
@@ -229,9 +246,9 @@ def test_a_worktree_excludes_shared_uncommitted_work_and_merges_only_ticket_chan
     assert (tree / 'README.md').read_text(encoding='utf-8') == 'base\n'
     assert (tree / 'removed.txt').read_text(encoding='utf-8') == 'tracked peer file\n'
     assert not (tree / 'draft.txt').exists()
-    assert waiting['state'] == 'merged' and not waiting['reason'], waiting
-    assert git(repo, 'rev-parse', 'HEAD') != head
-    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD')
+    assert waiting['state'] == 'committed' and not waiting['reason'], waiting
+    assert git(repo, 'rev-parse', 'HEAD') == head
+    assert not (repo / 'feature.txt').exists()
     assert [git(repo, *args) for args in [('diff',), ('diff', '--cached'), ('status', '--porcelain')]] == before
     assert git(repo, 'rev-parse', f"refs/metaform/snapshot/{waiting['branch']}") == head
     assert 'Snapshot of uncommitted work' not in git(tree, 'log', '--format=%s', f'{head}..HEAD')
@@ -240,6 +257,7 @@ def test_a_worktree_excludes_shared_uncommitted_work_and_merges_only_ticket_chan
     (tree / 'later-draft.txt').write_text('another agent owns this draft\n')
     merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
     assert merged['merged'] and merged['pushed'], merged
+    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD') != head
     assert git(repo, 'log', '-1', '--format=%B').count('Metaform-Ticket') == 1
     assert git(repo, 'show', '--stat', '--format=', 'HEAD').split('|')[0].strip() == 'feature.txt', \
         'the merged commit holds the agent\'s work alone'
@@ -262,7 +280,7 @@ def test_legacy_dirty_snapshot_is_excluded_when_its_ticket_branch_merges(dispatc
     (folder / 'feature.txt').write_text('ticket change\n', encoding='utf-8')
     record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver only ticket changes.')
     ctx = context('dispatch', repo, project='proj')
-    assert merge.finished(ctx, dispatch.store, record, folder)['state'] == 'merged'
+    assert merge.finished(ctx, dispatch.store, record, folder)['state'] == 'committed'
     assert merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
     assert (repo / 'README.md').read_text(encoding='utf-8') == 'base\n'
     assert not (repo / 'draft.txt').exists()
@@ -392,18 +410,21 @@ def test_uncompleted_shared_ticket_makes_no_commit(dispatch, repo, outcome):
     assert made.acp['ticket_git']['result'] is None
 
 
-def test_empty_worktree_completion_lands_as_empty_ticket_commit(dispatch, repo):
+def test_empty_worktree_completion_saves_empty_ticket_commit_without_publishing(dispatch, repo):
     from metaform.module import context
-    from metaform.modules.dispatch.merge import finished, merge_due, worktree_for
+    from metaform.modules.dispatch.merge import finished, worktree_for
 
+    head = git(repo, 'rev-parse', 'HEAD')
     folder = worktree_for(repo, dispatch.id)
     record = dispatch.store.finish_work(dispatch.id, 'No changes required.', 'Existing behavior suffices.')
     ctx = context('dispatch', repo, project='proj')
-    assert finished(ctx, dispatch.store, record, folder)['state'] == 'merged'
-    assert merge_due(ctx, dispatch.store, dispatch.id)['merged']
-    assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
-    assert git(repo, 'rev-parse', 'HEAD^{tree}') == git(repo, 'rev-parse', 'HEAD^^{tree}')
-    message = git(repo, 'log', '-1', '--format=%B')
+    result = finished(ctx, dispatch.store, record, folder)
+    assert result['state'] == 'committed'
+    assert result['evidence']['artifacts'] == []
+    assert git(repo, 'rev-parse', 'HEAD') == head
+    assert git(folder, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(folder, 'rev-parse', 'HEAD^{tree}') == git(repo, 'rev-parse', f'{head}^{{tree}}')
+    message = git(folder, 'log', '-1', '--format=%B')
     assert 'No changes required.\n\nWhy: Existing behavior suffices.' in message
     assert message.count('Metaform-') == 6
 
@@ -453,26 +474,32 @@ def test_proof_landing_commit_retains_resolution_reason(dispatch, repo):
     assert 'Fix landed.\n\nWhy: Keep the required behavior.' in git(repo, 'log', '-1', '--format=%B')
 
 
-def test_worktree_completion_retry_includes_later_edits_before_landing(dispatch, repo, run):
+def test_worktree_completion_retry_includes_later_edits_before_saving(dispatch, repo, run, monkeypatch):
     from metaform.module import context
     from metaform.modules.dispatch.merge import finished, worktree_for
 
     folder = worktree_for(repo, dispatch.id)
+    run('set', '--dispatch-test-command=false', cwd=repo)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    shared_head = git(repo, 'rev-parse', 'HEAD')
     record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver accepted behavior.')
     ctx = context('dispatch', repo, project='proj')
-    run('set', '--dispatch-test-command=false', cwd=repo)
     assert finished(ctx, dispatch.store, record, folder)['state'] == 'failed'
+    assert dispatch.store.complete_delivery(dispatch.id).done is None
     head = git(folder, 'rev-parse', 'HEAD')
     assert finished(ctx, dispatch.store, record, folder)['state'] == 'failed'
     assert git(folder, 'rev-parse', 'HEAD') == head
     (folder / 'README.md').write_text('later edit\n')
+    monkeypatch.delenv('METAFORM_ROLE')
     run('set', '--dispatch-test-command=true', cwd=repo)
-    assert finished(ctx, dispatch.store, record, folder)['state'] == 'merged'
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    assert finished(ctx, dispatch.store, record, folder)['state'] == 'committed'
+    assert dispatch.store.complete_delivery(dispatch.id).done
     assert git(folder, 'show', 'HEAD:README.md') == 'later edit'
     assert git(folder, 'status', '--porcelain') == ''
-    assert (repo / 'README.md').read_text() == 'later edit\n'
-    assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
-    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD')
+    assert (repo / 'README.md').read_text() == 'base\n'
+    assert git(folder, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD') == shared_head
 
 
 @pytest.mark.parametrize('during_checks', [False, True])

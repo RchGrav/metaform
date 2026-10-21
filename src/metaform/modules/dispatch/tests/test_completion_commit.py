@@ -28,6 +28,65 @@ def initialize(folder):
     assert git(folder, 'commit', '-qm', 'base').returncode == 0
 
 
+def test_shared_verification_cannot_certify_dirty_content_as_saved_commit(dispatch, run, monkeypatch):
+    from metaform.modules.dispatch.merge import complete_ticket, deliver_shared, file_fingerprint, ticket_message
+
+    initialize(dispatch.folder)
+    run('set', '--dispatch-test-command=grep -q fixed owned.py', cwd=dispatch.folder)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    record = dispatch.store.finish_work(dispatch.id, 'Fix verified.')
+    (dispatch.folder / 'owned.py').write_text('broken\n')
+    saved = complete_ticket(dispatch.folder, dispatch.id, ticket_message(dispatch.store, record),
+                            {'owned.py': file_fingerprint(dispatch.folder, 'owned.py')}, {})
+    (dispatch.folder / 'owned.py').write_text('fixed\n')
+    result = deliver_shared(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id,
+                            saved['committed'])
+    assert result['state'] == 'failed'
+    assert result['evidence']['verification']['passed'] is False
+    assert not dispatch.ticket().done
+    assert git(dispatch.folder, 'show', 'HEAD:owned.py').stdout == 'broken\n'
+    assert (dispatch.folder / 'owned.py').read_text() == 'fixed\n'
+
+
+def test_failed_shared_check_retry_saves_and_verifies_current_fix(dispatch, run, monkeypatch):
+    initialize(dispatch.folder)
+    run('set', '--dispatch-test-command=grep -q fixed owned.py', cwd=dispatch.folder)
+    made = session_for(dispatch)
+    made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
+    made.sources = {'owned.py': [{'kind': 'element', 'id': 'owned', 'address': 'code.owned'}]}
+
+    async def note(*args):
+        pass
+
+    monkeypatch.setattr(made, 'note', note)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+
+    async def scenario():
+        await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'broken\n')
+        dispatch.store.finish_work(dispatch.id, 'Fix verified.')
+        await made.commit_done()
+        assert made.acp['ticket_git']['result']['why']
+        assert not dispatch.ticket().done
+        old = made.acp['ticket_git']['result']['committed']
+        await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'fixed\n')
+        await made.commit_done()
+        assert not made.acp['ticket_git']['result']['why']
+        assert made.acp['ticket_git']['result']['committed'] != old
+
+    asyncio.run(scenario())
+    assert dispatch.ticket().done
+    assert git(dispatch.folder, 'show', 'HEAD:owned.py').stdout == 'fixed\n'
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        receipt = tx.get('merges', {'work_id': dispatch.id})
+    assert receipt['head'] == git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
+    assert receipt['evidence']['verification']['passed'] is True
+    monkeypatch.delenv('METAFORM_ROLE')
+    retained = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert retained['dispatch']['completion']['head'] == receipt['head']
+    assert retained['dispatch']['completion']['branch'] == 'dev'
+    assert retained['dispatch']['completion']['evidence']['artifacts'] == ['owned.py']
+
+
 def test_completion_commits_linked_writes_once_and_preserves_peer_edits(dispatch, monkeypatch):
     initialize(dispatch.folder)
     (dispatch.folder / 'peer.py').write_text('peer edit\n')

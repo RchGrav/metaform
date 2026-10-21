@@ -780,77 +780,31 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - Deploy pending the owner's go-ahead.
 - Withdrawn, 2026-10-08: consensus mode and Help me answer are removed. The voting code, the voter and helper prompts, the `vote`, `recommend`, `advice` and `results` verbs, their five tables and the page's Votes panel and Help me answer control are gone, and the dispatch module's tables are at version 5 without them. Why: consensus was built to answer a flood of questions the person could not, and it answered the agents' own homework for them, 35 notices of it open on 2026-10-08. With agents no longer asking, MAP-050, there is nothing to vote on. The record stays as history.
 
-### VIEW-044 A worktree that passes its tests and merges cleanly waits fifteen minutes for review, then merges itself, unless the person steps in
+### VIEW-044 Verified ticket work remains saved until publishing is explicitly requested
 
-- Amendment, 2026-10-21, confirmed: An agent's completed ticket automatically lands its own committed delta
-  into main as one feature commit and pushes it. Existing projects without main retain their development branch.
-  Legacy startup snapshots never enter that delta. Configured checks must pass. An unset test command does not
-  strand completed work. Shared staged and unstaged files remain intact. Overlaps and merge conflicts stop delivery
-  and send one inbox line naming the ticket and files. Ticket branches remain unchanged. Explicit legacy manual
-  reviews remain under human control. Delivery records recover crashes without replaying feature commits.
-  Changed running web code restarts through `metaform web restart`; its page survives the restart. MCP servers and
-  runners load changes at their next session and remaining old process identities are reported. Code keeps a worker's
-  ticket open until merge, push and runtime activation are recorded. Faults additionally require independent proof:
-  a recurrence-free window or a named regression test on running code. Closing a ticket never substitutes for proof.
-  The proof clock starts only after the relevant source runs the fix and fails closed when readiness is unknown.
-  Why: completed branch work and processes holding old code left the same faults recurring after purported fixes.
-  Acceptance: bare-remote fixtures prove automatic push, one feature commit, snapshot exclusion and preservation of
-  peer staging. Runtime checks prove restart readiness. Completion and proof regressions keep undelivered or old-code
-  fixes open and prevent premature fault proof.
-
-- Amendment, 2026-10-20, code.dispatcher.agent#7e, confirmed: Ticket completion commits the ticket's own deliverable
-  files by default, with no setting. Completion includes proof landing. Shared-checkout commits preserve peer staging and
-  unrelated edits. Startup dirty paths, overlapping writers and changed write fingerprints block uncertain
-  attribution. Explicit functional links identify deliverables. Temporary and diagnostic output is excluded.
-  Worktree landing retains the existing review flow and squash commit, then pushes. Both paths push the current
-  branch to its upstream when configured. A rejected push fetches and merges without rewriting history or
-  automatically stashing peer work. Conflicts are aborted and reported once to the system agent's inbox.
-  Why: Each finished ticket must remain independently reviewable on the remote without claiming another agent's
-  changes. Acceptance: Local bare-remote tests prove ticket-only commits beside staged and unstaged peer edits,
-  rejected-push merges, conflict notification, write attribution and repeated completion recovery.
-
-- Amendment, 2026-10-21, code.dispatcher.agent#e3, confirmed: Every completed ticket creates a commit, including an
-  empty completion. Its subject is the stored ticket title. Its body retains the resolution and its why. Its five
-  trailers are `Metaform-Ticket` (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address),
-  `Metaform-Board` (board name, empty for the first board), and `Metaform-Agent` (agent id and name). Shared-tree
-  commits include only files attributable to the session's successful tool calls, through the existing private
-  index. Cancelled and failed tickets create no completion commit. Uncommitted cancelled or failed worktrees remain
-  until abandoned-branch retention expires. A completed ticket without its commit files one broken ticket at
-  `code.dispatcher.agent`, named by the completed ticket's number, on its board. Its broken condition lights the
-  board node. Why: The commit preserves the ticket's lasting record in searchable Git history. Acceptance: Existing
-  dispatch merge tests prove full messages, ownership isolation, empty commits, terminal outcomes and missing-commit
-  faults. Worktree review and landing consent remain required.
-
-- Requirement: When an agent's worktree passes its tests and the merge check finds it can merge, the web page shows a Review notice for it. If fifteen minutes pass with no manual review, and the tests still pass and it still merges, the worktree is merged into the active dev branch automatically and logged as a newly committed feature that needs testing before the next release. If the person clicks Review, the countdown is cancelled for good and the work is the person's from then on. A window then offers an agent's help to prepare the code so it does not conflict with the ongoing work. Yes opens a chat with an agent that prepares the code for review, and No does not restart the countdown. The chat window has the form of a customer service window in the lower right corner and shows that the agent is coming while it starts.
+- Requirement: Relevant verification and a saved feature commit satisfy ticket completion without a merge into main, remote push or runtime activation; publishing occurs only when explicitly requested.
 - What this means:
-  - The text the page shows is given, and is used as written:
-    - The notice: `Review.`
-    - The question in the window: `Would you like agent assistance with prepping code so it doesn't conflict with the ongoing work?`, with Yes and No.
-    - The chat window while the agent starts: `Waiting for the next available agent.`
-  - The countdown starts when both conditions first hold. Before the merge, both are checked again. If either fails, nothing is merged, and the worktree waits for its next passing run.
-  - Clicking Review cancels the countdown for that worktree for good. Both answers in the window end it, and nothing restarts it. Merging is then the person's to do or to decline.
-  - The chat window looks like the lower-right chat panel people know from support sites. It opens at once, shows the waiting line until the agent's session starts, and then is the agent's chat, VIEW-039.
-  - A merge made by the countdown is logged as committed and needing testing before the release, so nothing merged without a person's review reaches a release untested.
-  - Fifteen minutes is a quantity, so it is a setting with fifteen minutes as its default, as VIEW-042 holds for every such number.
-  - Ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked files stay in the shared checkout. New ticket history contains no startup snapshot commit. The recorded starting commit remains the merge base, including dirty snapshots recorded for older branches, so only ticket changes land. This replaces dirty startup snapshots after unrelated shared changes blocked ticket reviews, 2026-10-21. Collecting a worktree as a variant, PROJ-017, already exists, and the two are to be kept consistent.
-  - Interpretations made when recording, not the owner's decisions:
-    - The merge check is git finding no conflicts when merging the worktree's branch into the active dev branch. The repository has no Sourcery integration. If the Sourcery review tool was meant, that is a later integration.
-    - The tests passing means the project's test command passes in the worktree. Where the project's test command is declared is not settled. Recommended: a project setting.
-    - The active dev branch is the branch checked out in the project's folder.
-    - The release log is a ticket or a knowledge item marked committed, needs testing before release.
-- Why: Finished work that passes its tests and merges cleanly should not wait on a person who is busy elsewhere. Every hour it waits, the dev branch moves on and the merge gets harder. A person who steps in has chosen to own the decision, so the system stops acting on its own and never takes the merge back from them, whichever answer they give. A feature merged without a review is flagged so that it is tested before release: the countdown trades review for speed, and the flag makes sure testing catches what review did not. The offer of an agent's help addresses the most common reason a reviewed merge stalls, conflicts with work that landed meanwhile. The chat window uses a pattern people already know, so it needs no explanation, and the waiting line says that something is happening during the seconds an agent takes to start.
-- How it shows: An agent finishes in its worktree. The tests pass and the branch merges cleanly, so `Review.` appears on the page. Nobody clicks it. Fifteen minutes later the tests still pass and the branch still merges, so it is merged into the dev branch, and a ticket marked committed, needs testing before release appears. On another worktree the person clicks `Review.`, and the countdown is gone. The window asks the question, the person picks Yes, and a chat panel opens in the lower right corner saying `Waiting for the next available agent.` until the agent answers.
-- Build: Not built. A worktree per agent in dispatch comes first, BASE-052. The countdown is held in code that hears test results and branch changes as events, BASE-053, with one bounded wait for the deadline, not a poll, QUAL-015. The merge and the release log go through the map's work records, MAP-046. The notice, the window and the chat panel are in the web page, with the agent's session through dispatch, VIEW-039.
-- Acceptance: Recommended:
-  - With a fake worktree whose test command passes and whose branch merges cleanly, the notice shows.
-  - With the countdown set short, the branch is merged and a ticket marked committed, needs testing before release is written.
-  - A test made to fail, or a conflict made, before the deadline stops the merge.
-  - Clicking Review cancels the countdown, and neither Yes nor No restarts it.
-  - Yes opens the lower-right chat with the waiting line until the fake agent's session starts.
-  - Nothing polls.
+  - Ordinary ticket completion never merges or pushes automatically. Opening the page, receiving a map change or recovering a legacy `ready` or `merging` receipt cannot publish work.
+  - The ticket or assignment retains ticket identity, branch, commit ID, affected artifacts and verification evidence. Failed verification leaves work unresolved. Verified fault resolution clears its light through existing completion events.
+  - Every completed ticket creates a commit, including an empty completion. Its subject is the stored ticket title. Its body retains the resolution, its why and the canonical `Ticket state` snapshot. Trailers retain `Metaform-Ticket`, `Metaform-Number`, `Metaform-Node`, `Metaform-Board`, `Metaform-Agent` and `Metaform-Target`.
+  - Shared-checkout commits include only explicitly linked deliverables attributable to the session's successful writes, through a private Git index. Startup dirty paths, overlapping writers and changed write fingerprints block uncertain attribution. Peer staging, unrelated edits and temporary or diagnostic output remain outside the commit.
+  - Ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked files stay in the shared checkout. Legacy startup snapshots remain excluded from any later explicit merge.
+  - Existing candidates, branches and uncommitted work remain intact. Repeated completion recovers the saved feature commit rather than creating another. Cancelled and failed tickets create no completion commit. Their uncommitted work remains subject to existing abandoned-branch retention.
+  - A completed ticket without its feature commit files one broken ticket at `code.dispatcher.agent`, named by the completed ticket's number, on its board.
+  - Explicit merge, review and preparation remain available. The page's Review notice and preparation chat support an existing manual review. No countdown starts or resumes a merge. Merge and push conflicts stop the explicit publishing request without rewriting ticket history or stashing peer changes.
+  - Review text remains: `Review.` The assistance question remains: `Would you like agent assistance with prepping code so it doesn't conflict with the ongoing work?` The waiting text remains: `Waiting for the next available agent.`
+- Why: Saving verified work establishes the ticket's result while keeping remote publication and running-process changes separate. A legacy receipt or an unattended page must not publish work merely because time passes. Existing manual review remains usable for independently requested publishing.
+- How it shows: A worker verifies its change and saves its feature commit. The ticket closes without a remote. Its commit and verification remain readable. The page receives legacy merge records without starting merge timers or publishing them. A separately requested merge still uses the existing explicit operation.
+- Build: Dispatch saves the feature commit and durable completion evidence through existing work records and completion events, BASE-052. The web server schedules eligible worker starts and existing failure retries, without merge timers, merge-pending bookkeeping or a review-delay setting. Explicit merge, review and preparation retain their existing command paths and page support. An explicit merge preserves the ticket branch, creates its integration commit in a separate temporary branch/worktree and recovers its journal without duplicate feature commits.
+- Acceptance:
+  - A verified saved feature commit completes a ticket without a configured remote, merged-main receipt, push receipt or activation record. Ordinary completion executes no push.
+  - Ticket identity, branch, commit ID, artifacts and verification survive closure and restart. Failed verification leaves work unresolved. Verified fault resolution clears its light.
+  - Existing dispatch tests prove ticket-only commits beside peer staging, complete messages and trailers, empty commits, terminal outcomes, missing-commit faults and repeated-completion recovery.
+  - Legacy `ready` and `merging` receipts trigger no automatic merge or push during page opening or map-change reconciliation. Ordinary reconciliation reads no publication queue.
+  - A burst of unrelated events triggers no agent-starter reads. Relevant changes still coalesce and release queue capacity through existing events.
+  - Explicit dispatch merge, review and preparation remain callable. Existing merge tests protect snapshot exclusion, conflict handling and interrupted explicit integration.
 - Relates to: BASE-052, BASE-053, MAP-046, PROJ-017, QUAL-015, VIEW-039, VIEW-042.
-- Status: proposed 2026-10-05 by the workflow agent from the session of 2026-10-04 and 2026-10-05; not yet confirmed. The page's three lines of text are given as written. The interpretations listed above are the recorder's, not the owner's decisions. Open: where the project's test command is declared; the release log's form, ticket or knowledge item. Depends on agents working in their own worktrees.
-- Amendment, 2026-10-17, UX review round 1, fix group held-sweeps-merge (runaway-and-load F5, interrupt-failure-recovery F7): the release log a merge without review writes records completed delivery, and a merge of a release log's own ticket writes none; before, it was an open ticket autostart started, whose agent could merge and write the next. A merge no longer moves the agent's branch: it is made on a branch and worktree of its own (`metaform-merging/<id>`, `.worktrees/merging-<id>`) and the dev branch is fast-forwarded to its squashed commit. Its row reads `merging` from before its first git step to its last, and the next check, under the merge lock, finishes a merge whose commit the dev branch already holds or makes it again from the agent's branch, with one release log. Only a real conflict is said with `conflict:`; other git failures with `git:`. The merge lock names its process and is taken over at once when that process is gone. Acceptance: `dispatch/tests/test_merge.py`.
+- Status: Confirmed 2026-10-21, code.scheduler.task#55. Replaces automatic landing, push, activation closure gates and the automatic review countdown. Preserves ticket commit records and separately requested publishing.
 
 ## Open questions
 

@@ -252,8 +252,10 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 
 ## Ticket commits
 
-Completed tickets commit their own linked deliverables, then push the current branch to its configured upstream.
-This behavior has no setting. Completion includes fault work whose result awaits delivery. Commit subjects use the ticket
+Completed tickets save a feature commit of their own linked deliverables after relevant verification passes.
+The ticket or assignment retains ticket identity, branch, commit ID, affected artifacts and verification evidence.
+Completion requires no merge into main, remote push or activation. Ordinary completion never pushes.
+Failed verification leaves the ticket unresolved. Commit subjects use the ticket
 title. Commit bodies retain the resolution, its why and a canonical `Ticket state` JSON snapshot of map-owned ticket
 rows and citation metadata. The archive compares that snapshot with current state before deleting a ticket, so a
 same-second completion with unchanged resolution cannot discard newer notes or progress. Five trailers retain
@@ -261,16 +263,13 @@ ticket identity: `Metaform-Ticket`
 (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address), `Metaform-Board` (board name, empty for
 the first board), and `Metaform-Agent` (agent id and name). Empty completions make empty commits with the same
 message. `Metaform-Target` preserves the attachment as `element:<address>` or `join:<id>` so archive counts keep
-join work separate from its receiver element. Completed worktrees automatically merge only their own delta into
-one feature commit on main, then push. Existing projects without main retain their development branch. Explicit
-legacy manual reviews remain under human control. Configured checks run before landing; an unset test command
-does not strand work. Overlapping edits stop delivery and name conflicting files in the system inbox. Ticket
-branches and dirty worktrees stay intact. Repeated delivery recovers its journal without another feature commit.
+join work separate from its receiver element. Configured checks run before saving the feature commit; an unset
+test command does not strand work. Ticket branches and dirty worktrees stay intact. Repeated completion
+recovers its journal without another feature commit. Verified resolution closes a fault ticket and clears its
+light through the existing completion events.
 
-After push, changed web code restarts through `metaform web restart`. MCP servers and runners take new code at
-their next session; activation records name old process identities. Worker completion stays open until delivery
-is recorded. Faults additionally require independent proof after their source runs current code. The proof clock
-never starts while a required restart or old source process remains pending.
+Explicit publishing and legacy manual reviews remain available when requested. Merge, push and runtime
+activation belong to that separate request and do not gate ordinary ticket completion.
 
 New ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked
 files stay in the shared checkout. The recorded starting commit still excludes dirty startup snapshots from
@@ -285,9 +284,9 @@ write separately from its bounded activity display. Earlier changes, overlapping
 the recorded write prevent attribution and are reported instead of committed. Only explicitly linked files qualify;
 temporary output and diagnostic files stay out. Peer staging and unrelated uncommitted edits remain intact.
 
-Rejected pushes fetch and merge upstream without rewriting history or automatically stashing peer edits. Git
-conflicts are aborted and reported once to the system agent's inbox. Commit and push results remain in the
-session thread. Repeated completion recovers the ticket commit rather than making another one.
+Explicit publishing handles rejected pushes without rewriting history or automatically stashing peer edits.
+Git conflicts are aborted and reported once to the system agent's inbox. Commit and explicit publishing results
+remain in the session thread. Repeated completion recovers the ticket commit rather than making another one.
 
 ## Lifecycle and cleanup
 

@@ -72,6 +72,12 @@ Unrelated table changes do no orchestration reads. A work-table event with absen
 ticket concerns reads only indexed active assignments, covering a command that
 aggregated another module's unannotated write. No polling scheduler is added.
 
+Ticket completion requires the requested result, relevant verification and a saved feature commit.
+The ticket or assignment retains ticket identity, branch, commit ID, affected artifacts and verification evidence.
+Completion requires no merge into main, remote push or activation. Ordinary completion never pushes.
+Publishing remains available when explicitly requested. Failed verification leaves the ticket unresolved.
+Verified resolution closes a fault ticket and clears its light through the existing completion events.
+
 ## Functional adaptation
 
 C(T) preserves the functional core. In adaptive mode, a better approach that

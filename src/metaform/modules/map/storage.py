@@ -701,7 +701,7 @@ def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
 
 
 def _delivery_state(tx: Tx, work_id: str) -> tuple[tuple[str, ...], bool]:
-    """Read durable delivery evidence only. Git, pushes and process restarts run outside map transactions."""
+    """Read saved commit and verification evidence without running Git inside map transactions."""
     if page_vouched():
         return (), False  # an explicit human board action can close stale or superseded work
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
@@ -714,15 +714,18 @@ def _delivery_state(tx: Tx, work_id: str) -> tuple[tuple[str, ...], bool]:
                     "agent_sessions", {"work_id": work_id}, limit=0).results)
     except StoreError:
         receipt = None
+    needed = "Save this ticket's own verified feature commit with its completion evidence."
     if receipt is None:
-        return (("Merge this ticket's own commits into main, push, activate changed code, then clear its fault light.",)
-                if required else ()), required
-    if receipt["state"] != "merged":
-        return (str(receipt["reason"] or "Merge this ticket's own commits into main and push."),), True
+        return ((needed,) if required else ()), required
+    evidence = receipt["evidence"]
+    verification = cast(dict[str, Any], evidence).get("verification") if isinstance(evidence, dict) else None
+    if receipt["state"] not in ("committed", "merged") or not receipt["head"] \
+            or not isinstance(verification, dict) or cast(dict[str, Any], verification).get("passed") is not True:
+        return (str(receipt["reason"] or needed),), True
     staged = datetime.fromisoformat(str(settings["landed"])) \
         if settings is not None and settings["landed"] else None
     if staged is None or float(receipt["ready"]) < staged.timestamp():
-        return ("Deliver this ticket's current commits. The previous delivery receipt is older than this result.",), True
+        return ("Verify this ticket's current saved commit. The previous completion record is older than this result.",), True
     return ((str(receipt["reason"]),) if receipt["reason"] else ()), True
 
 
@@ -854,7 +857,7 @@ def _proof(tx: Tx, work_id: str) -> Any:
 
 def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice], *,
             missing: tuple[str, ...]) -> WorkRecord:
-    """Keep the result pending delivery so dispatch can merge it. Say exactly what prevents closure."""
+    """Keep the result pending a verified feature commit. Say exactly what prevents closure."""
     work_id = str(row["work_id"])
     _ticket_changed(tx, work_id)
     done = int(row["steps_done"] or 0) + 1

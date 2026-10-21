@@ -1,4 +1,4 @@
-"""Ticket completion lands one feature commit without shared edits or startup snapshots."""
+"""Ticket completion saves verified feature commits without publishing shared branches."""
 import importlib
 import subprocess
 import time
@@ -19,8 +19,26 @@ def git(folder, *args):
     return subprocess.run(['git', *args], cwd=folder, check=True, text=True, capture_output=True).stdout.strip()
 
 
-def test_done_lands_and_pushes_one_ticket_commit_beside_peer_staging(dispatch, repo, tmp_path):
+@pytest.mark.parametrize('remote_configured', [False, True])
+@pytest.mark.parametrize('development_branch', ['dev', 'main'])
+def test_done_saves_one_ticket_commit_without_publishing_beside_peer_staging(dispatch, repo, remote_configured,
+                                                                         development_branch, monkeypatch):
+    if development_branch == 'main':
+        git(repo, 'branch', '-m', 'main')
+        git(repo, 'push', '-qu', 'origin', 'main')
     remote = Path(git(repo, 'remote', 'get-url', 'origin'))
+    before = git(repo, 'rev-parse', 'HEAD')
+    remote_before = git(remote, 'rev-parse', development_branch)
+    if not remote_configured:
+        git(repo, 'remote', 'remove', 'origin')
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    from metaform.modules.dispatch import activation
+
+    def publish_forbidden(*args, **kwargs):
+        pytest.fail('Ticket completion must save without publishing or activation.')
+
+    monkeypatch.setattr(merge, 'push_ticket', publish_forbidden)
+    monkeypatch.setattr(activation, 'delivered', publish_forbidden)
     tree = merge.worktree_for(repo, dispatch.id)
     assert tree is not None
     (tree / 'feature.txt').write_text('ticket feature\n')
@@ -33,18 +51,26 @@ def test_done_lands_and_pushes_one_ticket_commit_beside_peer_staging(dispatch, r
     dispatch.store.finish_work(dispatch.id, 'Feature verified')
     result = merge.finished(context('dispatch', repo, project='proj'), dispatch.store,
                             dispatch.store.ticket(dispatch.id).work, tree)
-    assert result['state'] == merge.MERGED and not result['reason'], result
-    assert git(remote, 'rev-parse', 'dev') == git(repo, 'rev-parse', 'HEAD')
-    assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
-    assert git(repo, 'show', '--format=', '--name-only', 'HEAD') == 'feature.txt'
+    assert result['state'] == 'committed' and not result['reason'], result
+    assert result['head'] == git(tree, 'rev-parse', 'HEAD')
+    assert result['evidence']['verification']['passed'] is True
+    assert result['evidence']['verification']['command'] == 'true'
+    assert result['evidence']['artifacts'] == ['feature.txt']
+    assert dispatch.store.complete_delivery(dispatch.id).done
+    assert git(remote, 'rev-parse', development_branch) == remote_before
+    assert git(repo, 'rev-parse', 'HEAD') == before
+    assert git(repo, 'rev-list', '--count', 'HEAD') == '1'
+    assert git(tree, 'diff', '--name-only', before, 'HEAD') == 'feature.txt'
     assert git(repo, 'show', ':README.md') == 'staged peer'
     assert (repo / 'README.md').read_text() == 'unstaged peer\n'
-    assert (repo / 'feature.txt').read_text() == 'ticket feature\n'
+    assert not (repo / 'feature.txt').exists()
     assert git(tree, 'merge-base', '--is-ancestor', tip, 'HEAD') == ''
-    delivered = git(repo, 'rev-parse', 'HEAD')
+    delivered = git(tree, 'rev-parse', 'HEAD')
     merge.finished(context('dispatch', repo, project='proj'), dispatch.store,
                    dispatch.store.ticket(dispatch.id).work, tree)
-    assert git(repo, 'rev-parse', 'HEAD') == delivered, 'Repeated completion creates no second feature commit'
+    assert git(tree, 'rev-parse', 'HEAD') == delivered, 'Repeated completion creates no second feature commit'
+    assert git(repo, 'rev-parse', 'HEAD') == before
+    assert not dispatch.store.work(open=True, limit=0).results
 
 
 def test_recovery_excludes_snapshot_and_never_commits_later_worktree_edits(dispatch, repo, tmp_path):

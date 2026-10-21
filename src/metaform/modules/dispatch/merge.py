@@ -1,4 +1,4 @@
-"""Land completed tickets as individual commits, push them, then activate their code.
+"""Save verified ticket commits. Publish only through an explicit merge request.
 
 Only the delta from the recorded ticket start is merged. Legacy startup snapshots and
 shared uncommitted files never enter the feature commit. Merge journals recover interrupted
@@ -19,6 +19,7 @@ from typing import Any
 from metaform.data import Node, Store, WorkRecord
 
 READY, REVIEW, MERGED, FAILED = 'ready', 'review', 'merged', 'failed'
+COMMITTED = 'committed'
 PUSH_PENDING = 'push pending'
 MERGING = 'merging'  # journaled: a merge under way, or left part way by one that died, `merge_due`
 FOLDER = '.worktrees'  # inside the project folder, so an agent there reaches the project; kept out of git status
@@ -197,15 +198,15 @@ def complete_ticket(folder: str | Path, work_id: str, message: str, files: dict[
     trailer = f'{TRAILER}: {work_id}'
     previous = git(folder, 'log', '--format=%H', '--fixed-strings', '--grep', trailer)
     for commit in previous.stdout.splitlines():
-        if git(folder, 'log', '-1', '--format=%B', commit).stdout.strip() == message.strip():
+        if git(folder, 'log', '-1', '--format=%B', commit).stdout.strip() == message.strip() \
+                and (not files or ((baseline is None or git(folder, 'diff', '--quiet', commit, '--', *files).returncode == 0)
+                     and not git(folder, 'ls-files', '--others', '--exclude-standard', '-z', '--', *files).stdout)):
             result['committed'] = commit
             with Queued(folder) as held:
                 if not held:
                     result['why'] = 'Another git operation is under way.'
                     return result
                 result['why'] = _reconcile_index(folder, commit, files)
-                if not result['why']:
-                    result.update(push_ticket(folder))
             return result
     if baseline is not None and '' in baseline:
         result['why'] = 'The project folder is not a git checkout.'
@@ -275,7 +276,6 @@ def complete_ticket(folder: str | Path, work_id: str, message: str, files: dict[
             result['why'] = _reconcile_index(folder, committed, expected)
             if result['why']:
                 return result
-            result.update(push_ticket(folder))
             return result
         finally:
             Path(index).unlink(missing_ok=True)
@@ -396,17 +396,62 @@ def tests_pass(folder: str | Path, command: str) -> tuple[bool, str]:
     return done.returncode == 0, (done.stdout + done.stderr).strip()[-400:]
 
 
+def verification(ctx: Any, folder: Path, record: WorkRecord) -> dict[str, Any]:
+    """Keep the configured check, or the worker's submitted verification report, with its candidate."""
+    command = str(ctx.setting('dispatch_test_command') or '').strip()
+    passed, output = tests_pass(folder, command) if command else (bool(record.resolution), '')
+    return {'passed': passed, 'command': command, 'output': output,
+            'source': 'command' if command else 'worker', 'report': record.resolution or ''}
+
+
+def verify_commit(ctx: Any, folder: Path, record: WorkRecord, commit: str) -> dict[str, Any]:
+    """Run configured checks on the saved tree, excluding mutable checkout and peer changes."""
+    if not str(ctx.setting('dispatch_test_command') or '').strip():
+        return verification(ctx, folder, record)
+    with tempfile.TemporaryDirectory(prefix='metaform-verify-') as temporary:
+        candidate = Path(temporary) / 'candidate'
+        added = git(folder, 'worktree', 'add', '--detach', str(candidate), commit)
+        if added.returncode:
+            return {'passed': False, 'command': str(ctx.setting('dispatch_test_command')),
+                    'output': added.stderr.strip(), 'source': 'command', 'report': record.resolution or ''}
+        try:
+            return verification(ctx, candidate, record)
+        finally:
+            git(folder, 'worktree', 'remove', '--force', str(candidate))
+
+
+def _saved(store: Store, record: WorkRecord, folder: Path, branch: str, commit: str,
+           checked: dict[str, Any], since: str = '') -> dict[str, Any]:
+    """Journal the candidate before closure so restart and repeated delivery retain its evidence."""
+    own = Store(store.project_id, module='dispatch')
+    changed = git(folder, 'diff', '--name-only', '-z', since, commit) if since else git(
+        folder, 'diff-tree', '--no-commit-id', '--name-only', '--root', '-r', '-z', commit)
+    reason = '' if checked['passed'] else str(checked['output'] or 'Ticket verification failed.')
+    row = {'work_id': record.id, 'branch': branch, 'worktree': str(folder),
+           'state': COMMITTED if checked['passed'] else FAILED, 'reason': reason, 'head': commit,
+           'evidence': {'verification': checked,
+                        'artifacts': [path for path in changed.stdout.split('\0') if path]},
+           'ready': time.time(), 'deadline': time.time(), 'seq': time.time_ns()}
+    with own.tables() as tx:
+        if tx.update('merges', {'work_id': record.id}, row) is None:
+            tx.insert('merges', row)
+        tx.concern(work_id=record.id, kind='ticket')
+    if checked['passed']:
+        store.complete_delivery(record.id)
+    return row
+
+
 def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[str, Any] | None:
-    """Commit the completed ticket's worktree, then land, push and activate its final delta.
-    Repeated completion preserves its feature commit. Cancelled and failed work stays uncommitted.
-    """
+    """Verify and save a ticket feature commit without merging, pushing or removing its candidate."""
+    from . import work_over
     project = Path(store.project().path)
-    if not (Path(folder) / '.git').is_file() or Path(folder).resolve() == project.resolve():
-        return None  # not a worktree: the shared checkout is neither committed nor removed, as checkpoint
-    branch = branch_of(record.id)
-    if (record.outcome or 'completed') != 'completed':
-        if not git(folder, 'status', '--porcelain').stdout.strip():
-            removed(project, folder)
+    folder = Path(folder)
+    if not (folder / '.git').is_file() or folder.resolve() == project.resolve():
+        return None
+    if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
+        return None
+    branch = dev_branch(folder)
+    if branch is None:
         return None
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
@@ -415,12 +460,14 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         settings = tx.get('ticket_settings', {'work_id': record.id})
     landed = str(settings['landed'] or '') if settings else ''
     fresh = previous is not None and (not landed or float(previous['ready']) >= datetime.fromisoformat(landed).timestamp())
-    if fresh and previous is not None and previous['state'] == MERGED and dict(previous).get('head') \
-            and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
+    if fresh and previous is not None and previous['state'] == COMMITTED and previous['evidence'] \
+            and not previous['reason'] and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
             and not git(folder, 'status', '--porcelain').stdout.strip():
-        # Delivery retries can notify the runner repeatedly. Its already delivered
-        # feature remains one commit until that agent changes its branch again.
+        store.complete_delivery(record.id)
         return dict(previous)
+    checked = verification(ctx, folder, record)
+    if not checked['passed']:
+        return _saved(store, record, folder, branch, git(folder, 'rev-parse', 'HEAD').stdout.strip(), checked)
     try:
         committed = checkpoint(folder, record.id, ticket_message(store, record), completed=True)
     except (OSError, subprocess.SubprocessError) as error:
@@ -429,22 +476,8 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     if committed is None:
         commit_fault(store, record, 'Git could not commit the completed worktree ticket.')
         return None
-    dev = dev_branch(project)
-    since = snapshot_of(project, branch) or dev
-    if dev is None or git(project, 'rev-list', '--count', f'{since}..{branch}').stdout.strip() in ('', '0'):
-        return None
-    row = {'work_id': record.id, 'branch': branch, 'worktree': str(folder),
-           'state': READY, 'reason': '',
-           'head': committed,
-           'ready': time.time(), 'deadline': time.time(),
-           'seq': time.time_ns()}
-    with own.tables() as tx:
-        if tx.update('merges', {'work_id': record.id}, row) is None:
-            tx.insert('merges', row)
-    merge_due(ctx, store, record.id)
-    with own.tables(write=False) as tx:
-        delivered = tx.get('merges', {'work_id': record.id})
-    return dict(delivered) if delivered is not None else row
+    since = snapshot_of(project, branch) or ''
+    return _saved(store, record, folder, branch, committed, checked, since)
 
 
 def in_force(store: Store, work_id: str) -> bool:
@@ -465,14 +498,13 @@ def due(store: Store) -> list[dict[str, Any]]:
     past, so the next check finishes it."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        rows = [dict(row) for state in (READY, MERGING, MERGED)
-                for row in tx.rows('merges', {'state': state}, limit=0).results
-                if state != MERGED or row['reason'] == PUSH_PENDING]
+        rows = [dict(row) for state in (READY, MERGING)
+                for row in tx.rows('merges', {'state': state}, limit=0).results]
     return sorted(rows, key=lambda row: row['deadline'])
 
 
 def review(store: Store, work_id: str) -> bool:
-    """The person takes the merge over: the countdown is cancelled for good."""
+    """The person takes an existing pending integration under explicit review."""
     own = Store(store.project_id, module='dispatch')
     with own.tables() as tx:
         row = tx.get('merges', {'work_id': work_id})
@@ -624,7 +656,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             return deliver_shared(ctx, store, work_id)
     if found is not None and found['state'] == MERGED:
         return _delivered(ctx, store, own, Path(store.project().path), work_id)
-    if found is None or found['state'] not in (READY, MERGING, FAILED):
+    if found is None or found['state'] not in (COMMITTED, READY, MERGING, FAILED):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(found)
     project = Path(store.project().path)
@@ -692,6 +724,10 @@ def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev
             branch: str) -> dict[str, Any]:
     """Journal the landed commit, retaining the ticket branch and all its worktree files."""
     _dropped(project, work_id)
+    record = store.ticket(work_id).work
+    candidate = git(project, 'rev-parse', branch).stdout.strip()
+    _saved(store, record, Path(folder), branch, candidate, verify_commit(ctx, project, record, candidate),
+           snapshot_of(project, branch) or '')
     # Keep ticket branches and worktrees. Another session may still own uncommitted files there.
     with own.tables() as tx:
         tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': PUSH_PENDING})
@@ -720,22 +756,19 @@ def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) 
     with own.tables() as tx:
         tx.update('merges', {'work_id': work_id}, {'reason': why})
         tx.concern(work_id=work_id, kind='ticket')
-    if not why:
-        store.complete_delivery(work_id)
     return {'work_id': work_id, 'merged': True, **pushed, 'why': why, **activation}
 
 
-def deliver_shared(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
-    """Give an attributable shared-checkout commit the same durable delivery gate."""
+def deliver_shared(ctx: Any, store: Store, work_id: str, commit: str = '') -> dict[str, Any]:
+    """Record a shared-checkout feature commit and verification without publishing it."""
     project = Path(store.project().path)
-    dev = dev_branch(project) or ''
-    own = Store(store.project_id, module='dispatch')
-    with own.tables() as tx:
-        row = {'work_id': work_id, 'branch': dev, 'worktree': str(project), 'state': MERGED,
-               'reason': PUSH_PENDING, 'ready': time.time(), 'deadline': time.time(), 'seq': time.time_ns()}
-        if tx.update('merges', {'work_id': work_id}, row) is None:
-            tx.insert('merges', row)
-    return _delivered(ctx, store, own, project, work_id)
+    record = store.ticket(work_id).work
+    commit = commit or git(project, 'log', '-1', '--format=%H', '--fixed-strings', '--grep',
+                           f'{TRAILER}: {work_id}').stdout.strip()
+    if not commit or f'{TRAILER}: {work_id}' not in git(project, 'log', '-1', '--format=%B', commit).stdout:
+        return {'work_id': work_id, 'why': "Save this ticket's feature commit before completion."}
+    return _saved(store, record, project, dev_branch(project) or '', commit,
+                  verify_commit(ctx, project, record, commit))
 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
@@ -748,7 +781,8 @@ def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
     listed = git(project, 'for-each-ref', '--format=%(refname:short) %(committerdate:unix)', 'refs/heads/metaform/')
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results if row['state'] in (READY, REVIEW, MERGING)}
+        waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results
+                   if row['state'] in (COMMITTED, READY, REVIEW, MERGING)}
     closed = {branch_of(record.id): record for record in store.work(open=False, limit=0).results}
     gone: list[str] = []
     for line in listed.stdout.splitlines():

@@ -71,6 +71,17 @@ def test_later_peer_edit_blocks_commit(repo):
     assert 'changed after' in result['why']
 
 
+def test_retry_saves_new_owned_artifact_with_unchanged_completion_message(repo):
+    baseline = merge.capture_state(repo)
+    (repo / 'own.txt').write_text('ticket\n')
+    first = finish(repo, baseline, 'own.txt')
+    (repo / 'new_test.py').write_text('assert True\n')
+    second = finish(repo, baseline, 'own.txt', 'new_test.py')
+    assert second['committed'] != first['committed']
+    assert not second['why']
+    assert git(repo, 'show', 'HEAD:new_test.py') == 'assert True'
+
+
 def upstream(repo, tmp_path):
     remote = tmp_path / 'remote.git'
     git(tmp_path, 'init', '--bare', '-q', str(remote))
@@ -83,6 +94,18 @@ def upstream(repo, tmp_path):
     return remote, peer
 
 
+def test_ordinary_completion_never_pushes_configured_upstream(repo, tmp_path, monkeypatch):
+    remote, _ = upstream(repo, tmp_path)
+    before = git(remote, 'rev-parse', 'dev')
+    baseline = merge.capture_state(repo)
+    (repo / 'own.txt').write_text('ticket\n')
+    monkeypatch.setattr(merge, 'push_ticket', lambda *_: pytest.fail('Ordinary completion must not push.'))
+    result = finish(repo, baseline, 'own.txt')
+    assert result['committed'] and not result['why'], result
+    assert not result['pushed']
+    assert git(remote, 'rev-parse', 'dev') == before
+
+
 def test_rejected_push_merges_upstream_without_rewriting(repo, tmp_path):
     remote, peer = upstream(repo, tmp_path)
     baseline = merge.capture_state(repo)
@@ -92,6 +115,7 @@ def test_rejected_push_merges_upstream_without_rewriting(repo, tmp_path):
     git(peer, 'push', '-q')
     (repo / 'own.txt').write_text('ticket\n')
     result = finish(repo, baseline, 'own.txt')
+    result.update(merge.push_ticket(repo))  # publishing is explicitly requested
     assert result['pushed'], result
     git(repo, 'merge-base', '--is-ancestor', peer_commit, 'HEAD')
     git(repo, 'merge-base', '--is-ancestor', result['committed'], 'HEAD')
@@ -106,6 +130,7 @@ def test_upstream_conflict_reports_once_without_losing_ticket(repo, tmp_path):
     git(peer, 'push', '-q')
     (repo / 'own.txt').write_text('ticket\n')
     result = finish(repo, baseline, 'own.txt')
+    result.update(merge.push_ticket(repo))  # publishing is explicitly requested
     assert result['committed'] and result['conflict'] and not result['pushed'], result
     assert (repo / 'own.txt').read_text() == 'ticket\n'
     assert merge.capture_state(repo) == {}
@@ -125,6 +150,7 @@ def test_rejected_push_merges_beside_unrelated_peer_edits(repo, tmp_path):
     git(peer, 'push', '-q')
     (repo / 'own.txt').write_text('ticket\n')
     result = finish(repo, baseline, 'own.txt')
+    result.update(merge.push_ticket(repo))  # publishing is explicitly requested
     assert result['pushed'], result
     assert (repo / 'local.txt').read_text() == 'uncommitted peer work\n'
     assert git(repo, 'show', 'HEAD:local.txt') == 'base'
@@ -146,10 +172,11 @@ def test_retry_recovers_committed_ticket_then_pushes_when_remote_returns(repo, t
     remote.rename(unavailable)
     message = 'Feature title\n\nMetaform-Ticket: recover-id'
     first = merge.complete_ticket(repo, 'recover-id', message, files, baseline)
-    assert first['committed'] and not first['pushed'] and first['why'], first
+    assert first['committed'] and not first['pushed'] and not first['why'], first
     unavailable.rename(remote)
     second = merge.complete_ticket(repo, 'recover-id', message, files, None)
-    assert second['committed'] == first['committed'] and second['pushed'], second
+    assert second['committed'] == first['committed'] and not second['pushed'], second
+    assert merge.push_ticket(repo)['pushed']
     assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
     assert git(remote, 'rev-parse', 'dev') == first['committed']
 
@@ -171,7 +198,7 @@ def test_worktree_push_journal_recovers_crash_and_allows_explicit_retry(dispatch
         tx.insert('merges', {'work_id': dispatch.id, 'branch': 'already-removed', 'worktree': 'already-removed',
                             'state': merge.MERGED, 'reason': merge.PUSH_PENDING, 'ready': time.time(),
                             'deadline': time.time(), 'seq': time.time_ns()})
-    assert [row['work_id'] for row in merge.due(dispatch.store)] == [dispatch.id]
+    assert merge.due(dispatch.store) == [], 'Publishing retries require an explicit request.'
     unavailable = tmp_path / 'unavailable.git'
     remote.rename(unavailable)
     ctx = context('dispatch', folder, project='proj')
@@ -224,6 +251,7 @@ def test_rejected_push_never_merges_peer_staging_into_history(repo, tmp_path):
     git(peer, 'push', '-q')
     (repo / 'own.txt').write_text('ticket\n')
     result = finish(repo, baseline, 'own.txt')
+    result.update(merge.push_ticket(repo))  # publishing is explicitly requested
     assert result['committed'], result
     assert git(repo, 'show', 'HEAD:peer.txt') == 'base'
     assert git(repo, 'show', ':peer.txt') == 'private peer stage'

@@ -79,12 +79,12 @@ Work <work_id/> is assigned to you. Read it with map_work id=<work_id/> and read
 <record/>
 Work the assignment, using the bound operations to coordinate, delegate and return results. Record planned work and completed progress through map_work as applicable. Apply current GC change orders.
 When blocked, record what stopped the work, evidence, work so far and the operative specification through the check-in route. The GC receives it and passes the assessment to the Functionality Agent. Continue useful work that the blocker leaves available; retain the continuation for the blocked work.
-Own delivery until this ticket's commits are merged into main and pushed, changed running code is restarted or old processes are named. Successful delivery closes the fault ticket and clears its light immediately. An op=done before delivery stages the result and leaves the ticket open. Follow the returned missing steps. Return the delivered result and evidence through the recorded completion path. The GC owns completion of the root ticket.
+Own delivery until the requested result passes relevant verification and its feature commit is saved. Retain the ticket identity, branch, commit ID, affected artifacts and verification evidence in the ticket or assignment. Completion requires no merge into main, remote push or activation. Ordinary completion never pushes. Perform publishing only when explicitly requested. Verified resolution closes a fault ticket and clears its light. Failed verification leaves the ticket unresolved. Follow returned missing steps. Return the result and evidence through the recorded completion path. The GC owns completion of the root ticket.
 If the session stops before completion, retain the actual work state and return/continuation information for recovery.
 </handoff>
 
-<!-- A staged worker retains ownership until its missing delivery steps are complete. -->
-<delivery_pending>Your ticket stays open. Missing: <missing/> Keep working on delivery. Record blockers through the assignment route. Once delivery succeeds, close the ticket immediately. Send completion only after the ticket closes.</delivery_pending>
+<!-- A worker retains ownership until the requested result is verified and its feature commit is saved. -->
+<delivery_pending>Your ticket stays open. Missing: <missing/> Finish the requested result, verification and saved feature commit. Record blockers through the assignment route. Completion requires no merge, push or activation. Ordinary completion never pushes. Close the ticket when these requirements pass. Send completion only after the ticket closes.</delivery_pending>
 
 <!-- One more message to a worker after it closes its ticket, asking it to record what happened in the work at <node/>
      as memory and what is true of the project as knowledge. A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing what is learned.
