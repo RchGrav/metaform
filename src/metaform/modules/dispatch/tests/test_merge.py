@@ -1,4 +1,4 @@
-"""Ticket completion saves verified commits. Explicit publication preserves shared edits.
+"""Ticket completion saves feature commits. Explicit publication preserves shared edits.
 
 Legacy review rows remain under manual control. Real local git repositories, no model.
 """
@@ -94,6 +94,47 @@ def test_saved_feature_branch_survives_automatic_abandoned_cleanup(dispatch, rep
     assert abandoned(dispatch.store, repo, 0) == []
     assert git(repo, 'rev-parse', saved['branch']) == saved['head']
     assert (repo / saved['worktree']).is_dir()
+
+
+@pytest.mark.parametrize('full_auto', [False, True])
+def test_full_auto_controls_local_integration_without_publication(dispatch, repo, run, monkeypatch, full_auto):
+    from metaform.modules.dispatch import activation
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    run('set', '--dispatch-autostart' if full_auto else '--no-dispatch-autostart', cwd=repo)
+    before = git(repo, 'rev-parse', 'HEAD')
+
+    def publish_forbidden(*args, **kwargs):
+        pytest.fail('Local ticket completion must not publish or activate.')
+
+    monkeypatch.setattr(merge, 'push_ticket', publish_forbidden)
+    monkeypatch.setattr(activation, 'delivered', publish_forbidden)
+    [saved] = worked(dispatch, repo)
+    assert saved['state'] == ('merged' if full_auto else 'committed')
+    assert dispatch.ticket().done
+    assert git(repo, 'rev-parse', 'origin/dev') == before
+    assert (git(repo, 'rev-parse', 'HEAD') != before) is full_auto
+    assert (repo / 'feature.txt').exists() is full_auto
+    assert git(repo, 'show', f"{merge.branch_of(dispatch.id)}:feature.txt") == 'ticket feature'
+    assert not dispatch.store.work(open=True, limit=0).results
+
+
+def test_explicit_merge_integrates_locally_without_pushing_by_default(dispatch, repo, run, monkeypatch):
+    from metaform.modules.dispatch import activation
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    [saved] = worked(dispatch, repo)
+    before = git(repo, 'rev-parse', 'HEAD')
+
+    def publish_forbidden(*args, **kwargs):
+        pytest.fail('An explicit local merge must not publish or activate.')
+
+    monkeypatch.setattr(merge, 'push_ticket', publish_forbidden)
+    monkeypatch.setattr(activation, 'delivered', publish_forbidden)
+    result = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
+    assert result['merged'] and not result['pushed'] and not result['why'], result
+    assert git(repo, 'rev-parse', 'HEAD') != before
+    assert git(repo, 'rev-parse', 'origin/dev') == before
+    assert (repo / 'feature.txt').read_text() == 'ticket feature\n'
+    assert git(repo, 'rev-parse', saved['branch']) == saved['head']
 
 
 def _killed_at(monkeypatch, step):
@@ -469,36 +510,48 @@ def test_proof_landing_commit_retains_resolution_reason(dispatch, repo):
     made.acp['ticket_git'] = {'baseline': {}, 'files': {}, 'result': None}
     dispatch.store.prove_work(dispatch.id)
     record = dispatch.store.finish_work(dispatch.id, 'Fix landed.', 'Keep the required behavior.')
-    assert record.done is None
+    assert record.done
     asyncio.run(made.commit_done())
     assert 'Fix landed.\n\nWhy: Keep the required behavior.' in git(repo, 'log', '-1', '--format=%B')
 
 
-def test_worktree_completion_retry_includes_later_edits_before_saving(dispatch, repo, run, monkeypatch):
+def test_failed_checks_save_completed_work_and_retry_saves_later_edits_once(dispatch, repo, run, monkeypatch):
     from metaform.module import context
     from metaform.modules.dispatch.merge import finished, worktree_for
 
     folder = worktree_for(repo, dispatch.id)
+    (folder / 'feature.txt').write_text('ticket feature\n')
     run('set', '--dispatch-test-command=false', cwd=repo)
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     shared_head = git(repo, 'rev-parse', 'HEAD')
     record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver accepted behavior.')
+    assert record.done
     ctx = context('dispatch', repo, project='proj')
-    assert finished(ctx, dispatch.store, record, folder)['state'] == 'failed'
-    assert dispatch.store.complete_delivery(dispatch.id).done is None
+    failed = finished(ctx, dispatch.store, record, folder)
+    assert failed['state'] == 'failed' and failed['reason']
+    assert failed['evidence']['verification']['passed'] is False
+    assert failed['evidence']['artifacts'] == ['feature.txt']
+    assert git(folder, 'show', 'HEAD:feature.txt') == 'ticket feature'
+    assert git(folder, 'rev-list', '--count', 'HEAD') == '2'
+    assert dispatch.store.complete_delivery(dispatch.id).done
     head = git(folder, 'rev-parse', 'HEAD')
+    assert failed['head'] == head
     assert finished(ctx, dispatch.store, record, folder)['state'] == 'failed'
     assert git(folder, 'rev-parse', 'HEAD') == head
     (folder / 'README.md').write_text('later edit\n')
     monkeypatch.delenv('METAFORM_ROLE')
     run('set', '--dispatch-test-command=true', cwd=repo)
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
-    assert finished(ctx, dispatch.store, record, folder)['state'] == 'committed'
+    saved = finished(ctx, dispatch.store, record, folder)
+    assert saved['state'] == 'committed'
+    assert saved['evidence']['verification']['passed'] is True
     assert dispatch.store.complete_delivery(dispatch.id).done
     assert git(folder, 'show', 'HEAD:README.md') == 'later edit'
     assert git(folder, 'status', '--porcelain') == ''
     assert (repo / 'README.md').read_text() == 'base\n'
-    assert git(folder, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(folder, 'rev-list', '--count', 'HEAD') == '3'
+    assert finished(ctx, dispatch.store, record, folder)['head'] == saved['head']
+    assert git(folder, 'rev-list', '--count', 'HEAD') == '3'
     assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD') == shared_head
 
 

@@ -1,4 +1,4 @@
-"""Save verified ticket commits. Publish only through an explicit merge request.
+"""Save ticket commits. Full Auto integrates locally. Publication requires an explicit request.
 
 Only the delta from the recorded ticket start is merged. Legacy startup snapshots and
 shared uncommitted files never enter the feature commit. Merge journals recover interrupted
@@ -422,7 +422,7 @@ def verify_commit(ctx: Any, folder: Path, record: WorkRecord, commit: str) -> di
 
 def _saved(store: Store, record: WorkRecord, folder: Path, branch: str, commit: str | None,
            checked: dict[str, Any], since: str = '', *, repository_present: bool = True) -> dict[str, Any]:
-    """Journal the candidate before closure so restart and repeated delivery retain its evidence."""
+    """Retain delivery evidence separately from ticket closure."""
     own = Store(store.project_id, module='dispatch')
     artifacts: list[str] = []
     if commit:
@@ -444,7 +444,7 @@ def _saved(store: Store, record: WorkRecord, folder: Path, branch: str, commit: 
 
 
 def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[str, Any] | None:
-    """Verify and save a ticket feature commit without merging, pushing or removing its candidate."""
+    """Save a feature commit, recording checks and integrating locally under Full Auto."""
     from . import work_over
     project = Path(store.project().path)
     folder = Path(folder)
@@ -468,8 +468,6 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         store.complete_delivery(record.id)
         return _full_auto_merge(ctx, store, record.id, dict(previous))
     checked = verification(ctx, folder, record)
-    if not checked['passed']:
-        return _saved(store, record, folder, branch, git(folder, 'rev-parse', 'HEAD').stdout.strip(), checked)
     try:
         committed = checkpoint(folder, record.id, ticket_message(store, record), completed=True)
     except (OSError, subprocess.SubprocessError) as error:
@@ -485,6 +483,10 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
 def _full_auto_merge(ctx: Any, store: Store, work_id: str, saved: dict[str, Any]) -> dict[str, Any]:
     """Full Auto integrates saved work locally. Publication remains an explicit request."""
     if saved['state'] == COMMITTED and ctx.setting('dispatch_autostart'):
+        if Path(saved['worktree']).resolve() == Path(store.project().path).resolve():
+            with Store(store.project_id, module='dispatch').tables() as tx:
+                tx.update('merges', {'work_id': work_id}, {'state': MERGED})
+            return {**saved, 'state': MERGED}
         merge_due(ctx, store, work_id, publish=False)
         with Store(store.project_id, module='dispatch').tables(write=False) as tx:
             current = tx.get('merges', {'work_id': work_id})
@@ -782,8 +784,8 @@ def deliver_shared(ctx: Any, store: Store, work_id: str, commit: str = '') -> di
                            f'{TRAILER}: {work_id}').stdout.strip()
     if not commit or f'{TRAILER}: {work_id}' not in git(project, 'log', '-1', '--format=%B', commit).stdout:
         return {'work_id': work_id, 'why': "Save this ticket's feature commit before completion."}
-    return _saved(store, record, project, dev_branch(project) or '', commit,
-                  verify_commit(ctx, project, record, commit))
+    return _full_auto_merge(ctx, store, work_id, _saved(store, record, project, dev_branch(project) or '', commit,
+                                                      verify_commit(ctx, project, record, commit)))
 
 
 def deliver_nonrepository(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:

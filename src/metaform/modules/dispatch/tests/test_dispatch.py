@@ -1300,18 +1300,15 @@ def test_the_persons_stop_turns_autostart_off_and_reset_leaves_the_ticket_they_s
     assert dispatch.ticket().taken_by == 'claude fake-session-1', 'it waits for the person'
 
 
-def test_reset_leaves_a_ticket_with_delivery_pending(dispatch, run):
-    """Reset preserves submitted repairs until their delivery completes."""
-    from metaform.data import Store
+def test_reset_keeps_resolved_ticket_closed_without_delivery_receipts(dispatch, run):
+    """Administrative reset cannot reopen a resolved fault for missing delivery receipts."""
     dispatch.store.prove_work(dispatch.id)
     dispatch.store.finish_work(dispatch.id, 'Fixed the notes.', 'Tested.')
     reset = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
     assert dispatch.id not in reset['released'] and dispatch.id not in reset['kept_for_you']
-    assert reset['pending_delivery'] == [dispatch.id]
+    assert dispatch.id not in reset.get('pending_delivery', [])
     record = dispatch.ticket()
-    assert not record.done and record.taken_by == 'delivery' and record.resolution == 'Fixed the notes.'
-    with Store('proj', module='map').tables(write=False) as tx:
-        assert tx.get('ticket_settings', {'work_id': dispatch.id})['landed']
+    assert record.done and record.resolution == 'Fixed the notes.'
 
 
 @pytest.mark.req('BASE-052')

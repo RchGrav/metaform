@@ -109,6 +109,44 @@ def test_legacy_staged_result_closes_without_delivery_proof(dispatch, monkeypatc
     assert closed.done and closed.resolution == 'Legacy resolved result.'
 
 
+def test_reset_closes_dead_legacy_result_and_preserves_unfinished_stop_semantics(dispatch, run):
+    resolved = dispatch.id
+    unfinished = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Unfinished work').id
+    stopped = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Work the person stopped').id
+    for work_id, session in ((resolved, 'resolved-session'), (unfinished, 'unfinished-session'),
+                             (stopped, 'stopped-session')):
+        dispatch.store.take_work(work_id, by=f'claude {session}')
+    with dispatch.store._write() as tx:
+        tx.execute('UPDATE work SET resolution=? WHERE work_id=?', ('Legacy fix resolved.', resolved))
+    with Store('proj', module='map').tables() as tables:
+        values = {'landed': '2026-10-20T00:00:00Z', 'proof': 1}
+        if tables.update('ticket_settings', {'work_id': resolved}, values) is None:
+            tables.insert('ticket_settings', {'work_id': resolved, **values})
+    with Store('proj', module='dispatch').tables() as tables:
+        for seq, (work_id, session) in enumerate(((resolved, 'resolved-session'),
+                                                (unfinished, 'unfinished-session'), (stopped, 'stopped-session'))):
+            tables.insert('agent_sessions', {'session_id': session, 'work_id': work_id, 'agent': 'claude',
+                                             'state': 'ended' if work_id == stopped else 'running',
+                                             'how': 'stopped by the person' if work_id == stopped else None,
+                                             'pid': 2 ** 22 + 7, 'port': 9, 'token': 'fixture',
+                                             'started': '2026-10-20T00:00:00Z', 'seq': seq})
+    receipt(dispatch, state='failed', passed=False, reason='Old delivery failed.')
+    assert dispatch.store.ticket(resolved).work.done is None
+
+    result = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
+
+    closed = dispatch.store.ticket(resolved).work
+    assert closed.done and closed.resolution == 'Legacy fix resolved.'
+    assert set(result['sessions_ended']) == {resolved, unfinished}
+    assert result['released'] == [unfinished]
+    assert result['kept_for_you'] == [stopped]
+    assert 'pending_delivery' not in result
+    remaining = dispatch.store.ticket(unfinished).work
+    assert remaining.done is None and remaining.taken is None
+    paused = dispatch.store.ticket(stopped).work
+    assert paused.done is None and paused.taken_by == 'claude stopped-session'
+
+
 def test_delivery_failure_does_not_keep_resolved_worker_session_open(dispatch, monkeypatch):
     from metaform.modules.dispatch import board
 

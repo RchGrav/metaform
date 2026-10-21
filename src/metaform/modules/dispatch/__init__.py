@@ -393,8 +393,8 @@ settings.number('dispatch_rework_limit', 3, min=0, person_only=True, label='Rewo
                         'resumes remain available; dispatch.rework-limit announces the pause.')
 # Each ticket saves its own feature commit. Candidate cleanup remains separate from completion.
 settings.boolean('dispatch_worktrees', True, person_only=True,
-                 help='Each ticket\'s agent works in its own git worktree. Completion saves a verified feature '
-                 'commit with either choice. Merging and publishing require an explicit request.')
+                 help='Each ticket\'s agent works in its own git worktree. Save feature commits with either choice. '
+                 'Full Auto integrates locally. Publishing requires an explicit request.')
 settings.number('dispatch_abandoned_branch_days', 30, min=1, person_only=True, label='Abandoned branches kept',
                 help='Days the branch of a ticket closed without merging is kept, its work committed, before it is '
                      'removed.',
@@ -3269,7 +3269,7 @@ def reset(ctx: Context) -> dict[str, Any]:
     every ticket taken with no live agent behind it goes back to the queue. Live agents and their tickets are left
     alone, and so is a ticket whose agent the person stopped, or the supervisor handed to them, which waits for them
     as before, `kept_for_you`; a ticket whose leftover processes cannot be verified ended stays taken, `deferred`; a
-    ticket with a submitted result awaits delivery and remains assigned, `pending_delivery`.
+    ticket with a submitted result closes independently of delivery.
     Nothing is deleted. UX review round 1, 2026-10-17: reset released the tickets the person had stopped, which
     autostart then started again (web-gui-controls F7), and left a dead runner's agent's children running while a new
     agent took its ticket (interrupt-failure-recovery F3, dispatch-concurrency F6)."""
@@ -3329,13 +3329,12 @@ def reset(ctx: Context) -> dict[str, Any]:
     every = sessions(store, verify=False)
     launching = {entry.get('work_id') for entry in launches() if entry.get('project') == store.project_id}
     kept: list[str] = []
-    pending_delivery: list[str] = []  # submitted results still awaiting delivery
     for at, name in pinned_bases(store, every):
         opened = at.work(open=True, limit=0).results
         yours = left_waiting(at, opened, every)
         for record in opened:
             if record.taken and record.id not in alive and work_over(at, record):
-                pending_delivery.append(record.id)
+                at.complete_delivery(record.id)
             elif record.taken and record.id not in alive and record.id not in yours and record.id not in unswept \
                     and record.id not in launching:
                 at.move_work(record.id, 'backlog' if record.held else 'todo', kept=True)
@@ -3349,7 +3348,7 @@ def reset(ctx: Context) -> dict[str, Any]:
             if name is not None:
                 elsewhere[record.id] = name
     return {'released': released, 'sessions_ended': ended, 'still_working': sorted(alive),
-            'kept_for_you': sorted(kept), 'deferred': deferred, **({'pending_delivery': sorted(pending_delivery)} if pending_delivery else {}),
+            'kept_for_you': sorted(kept), 'deferred': deferred,
             **({'on_bases': elsewhere} if elsewhere else {})}
 
 

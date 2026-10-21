@@ -206,7 +206,7 @@ def matched(terms: tuple[int, ...], known: list[tuple[int, tuple[int, ...]]], th
 
 def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '') -> None:
     """Reopen a completed canonical issue once: the fix that did not hold and the new evidence go into its note, it
-    stays of kind broken with its fault light, condition broken, on again, and it requires delivery evidence again."""
+    stays of kind broken with its fault light, condition broken, on again, ready for a verified repair."""
     with store.atomic():
         current = store.ticket(work_id).work
         if current.done and current.outcome != 'cancelled':

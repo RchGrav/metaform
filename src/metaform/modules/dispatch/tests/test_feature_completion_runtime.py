@@ -67,6 +67,7 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
             for work_id, receipt in zip((first, second), receipts, strict=True):
                 assert receipt['work_id'] == work_id
                 assert receipt['state'] == ('merged' if repository_present else 'committed')
+                assert not receipt['reason']
                 assert receipt['evidence']['verification']['passed'] is True
                 assert receipt['evidence']['verification']['command'] == check
                 assert receipt['evidence']['repository'] is repository_present
