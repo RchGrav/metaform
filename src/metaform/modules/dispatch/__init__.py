@@ -90,6 +90,7 @@ from metaform.module import (
 
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
 from .board import changed as board_changed
+from .board import fault_filed
 from .board import waiting as board_waiting
 from .hold_review import HOLD_REVIEW_TABLES
 from .hold_review import changed as hold_review_changed
@@ -1329,9 +1330,11 @@ def found_command(ctx: Context, agent: str) -> str | None:
 
 
 def runnable(ctx: Context, agent: str) -> None:
-    """Refuse an agent whose start command is not found, before anything is written."""
+    """Report an unavailable adapter before its launch is attempted."""
     if found_command(ctx, agent) is None:
-        raise Stop(f'The start command of {agent} is not found on this system.',
+        reason = f'The start command of {agent} is not found on this system.'
+        startup_fault(ctx, str(ctx.nouns.get('id') or ''), agent, reason)
+        raise Stop(reason,
                    f'metaform set --dispatch-{agent} "<command>"' if agent in AGENTS else
                    f'metaform dispatch registry add={agent}')
 
@@ -4181,7 +4184,9 @@ def start_runner(ctx: Context | None, store: Store, work_id: str, agent: str, wo
             except OSError:
                 end_group(process.pid)  # a runner the ledger cannot hold is no slot anyone can count
                 raise
-    except (Stop, OSError):
+    except (Stop, OSError) as error:
+        if isinstance(error, OSError):
+            startup_fault(ctx, work_id, agent, str(error))
         if reservation is not None:
             given_back_reservation(store, work_id, reservation)
         raise
@@ -4523,19 +4528,34 @@ def failing_agent(ctx: Context, project_id: str, agent: str) -> dict[str, Any] |
 FAILED_TICKETS = 2  # the different tickets an agent fails to start on, for the same reason, before it is failing
 
 
+def startup_fault(ctx: Context, work_id: str, agent: str, reason: str) -> None:
+    """Startup failures before Session.run still need the canonical repair path; reporting cannot hold cleanup."""
+    line = (reason.strip().splitlines() or ['it failed with no reason given'])[0][:500]
+    try:
+        ctx.publish('fault.raised', {'source': 'start', 'message': f'{agent} did not start: {line}',
+                                    'detail': reason, 'file': 'src/metaform/modules/dispatch/runner.py',
+                                    'work_id': work_id,
+                                    'reproduce': f'metaform dispatch start {work_id} {agent}'})
+    except Exception as error:  # noqa: BLE001  startup cleanup must continue even when capture is unavailable
+        sys.stderr.write(f'Could not publish startup fault for {work_id}: {error}\n')
+
+
 def start_failed(ctx: Context, store: Store, work_id: str, agent: str, reason: str, *,
-                 reservation: str | None = None) -> dict[str, Any]:
+                 reservation: str | None = None, report: bool = True) -> dict[str, Any]:
     """A start that failed, before or after its agent made a session, without its session recorded: counted on its
     ticket when it was reserved for this start, so the agent starter waits RETRY_SECONDS doubled for each failure
     before it tries again and, past dispatch_retries, hands it to the person; its reservation is given back after
     the count is written, so the pass the give-back wakes sees it; and counted on its agent, which, failing for the
     same reason on FAILED_TICKETS different tickets, nothing starts by itself again until its start command changes
     or the person starts one. Each failure raises not-smooth on its ticket with the reason; a hand-over raises
-    handed-over, an agent found failing raises setup-not-working for the person's system agent and the page."""
-    from .signals import SETUP_NOT_WORKING, publish
+    handed-over. Startup repair notification belongs to the canonical fault group, not a second setup alert."""
+    from .signals import publish
     said = (reason.strip().splitlines() or ['it failed with no reason given'])[0][:300]
     limit, now = int(ctx.setting('dispatch_retries')), time.time()
     result: dict[str, Any] = {'work_id': work_id, 'agent': agent, 'reason': said}
+    if report:
+        # Session.run publishes its own full traceback. Failures before that boundary still need a repair ticket.
+        startup_fault(ctx, work_id, agent, reason)
     counts = reservation is not None and not ticketless(work_id) and not intake_id(work_id)
     if counts:
         try:
@@ -4556,7 +4576,6 @@ def start_failed(ctx: Context, store: Store, work_id: str, agent: str, reason: s
         same = kept.get('command') == command and kept.get('reason') == said
         tickets = sorted({*(cast(list[str], kept.get('tickets') or []) if same else []), work_id})
         failing = len(tickets) >= FAILED_TICKETS
-        newly = failing and not (same and kept.get('failing'))
         _write_json(path, {'agent': agent, 'command': command, 'reason': said, 'tickets': tickets,
                            'failing': failing, 'at': now})
     retries, handed = 0, False
@@ -4587,12 +4606,6 @@ def start_failed(ctx: Context, store: Store, work_id: str, agent: str, reason: s
             publish(ctx, 'handed-over', work_id=work_id, key=f'start:{retries}',
                     reason=f'{agent_label(agent)} did not start on it {retries} times: {said}. It waits for you.',
                     next=f'metaform dispatch start {work_id} {agent}')
-        if newly:
-            key = f'dispatch:{agent}'
-            publish(ctx, SETUP_NOT_WORKING, session_id='producer:dispatch', key=key, signal_key=key,
-                    feature=f'{agent_label(agent)} as an agent', set_up=f'dispatch_{agent}: {command}',
-                    look='metaform dispatch signals; the runner logs under run/dispatch/logs in the Metaform home',
-                    report={'reason': said, 'tickets': tickets})
     result['failing'] = failing
     return result
 
@@ -7815,7 +7828,8 @@ MODULE = Module(
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed),
                    Subscription('map.changed', orchestration_changed), Subscription('map.changed', board_changed),
-                   Subscription('map.changed', hold_review_changed), Subscription('map.changed', plan_changed)),
+                   Subscription('map.changed', hold_review_changed), Subscription('map.changed', plan_changed),
+                   Subscription('fault.filed', fault_filed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the

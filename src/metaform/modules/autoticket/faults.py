@@ -41,9 +41,9 @@ from .watch import active_work, first_line, now_text, place, secret_values, simi
 HERE = resources.files(__package__ or 'metaform.modules.autoticket')
 TOPIC = 'fault.raised'
 SOURCES = {'web': 'the web server', 'page': 'the web page', 'mcp': 'an MCP tool call', 'run': 'an agent run',
-           'feedback': 'a feedback report', 'log': 'a watched log'}
+           'start': 'an agent start', 'feedback': 'a feedback report', 'log': 'a watched log'}
 TITLES = {'web': 'Web server fault', 'page': 'Page error', 'mcp': 'MCP tool failure', 'run': 'Agent run failure',
-          'feedback': 'Feedback', 'log': 'Log error'}
+          'start': 'Agent start failure', 'feedback': 'Feedback', 'log': 'Log error'}
 FILING = 'filing '  # a group's work_id while one process files it: `filing <time>`
 FILING_STALE = 60.0  # seconds after which a filing never finished, its process gone, is taken up again
 # the words of a message whose fix may delete or remove data, so the ticket waits for the person
@@ -204,7 +204,7 @@ def matched(terms: tuple[int, ...], known: list[tuple[int, tuple[int, ...]]], th
     return grouping.first_match(terms[1:], same, threshold)
 
 
-def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '') -> None:
+def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '') -> bool:
     """Reopen a completed canonical issue once: the fix that did not hold and the new evidence go into its note, it
     stays of kind broken with its fault light, condition broken, on again, ready for a verified repair."""
     with store.atomic():
@@ -217,19 +217,22 @@ def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '')
                                       'condition': 'broken'})
             store.prove_work(work_id)
             store.move_work(work_id, 'todo', kept=True)
+            return True
+    return False
 
 
-def not_held(store: Store, work_id: str, landed: str, last_seen: str, evidence: str = '') -> None:
+def not_held(store: Store, work_id: str, landed: str, last_seen: str, evidence: str = '') -> bool:
     """A recurrence while a ticket's repair awaits delivery: the fix did not hold, so the ticket goes back to To do, its
     landing and resolution cleared, with that fix and the new evidence in its note, to be repaired again."""
     with store.atomic():
         current = store.ticket(work_id).work
-        if current.done:
-            return
+        if current.done or proof.landed_of(store, work_id) != landed:
+            return False
         history = (f'The fix that landed at {landed} did not hold: {(current.resolution or "not recorded").rstrip(".")}. Fault '
                    f'recurred at {last_seen}{f": {evidence}" if evidence else ""}; repair and verify it again.')
         store.edit_work(work_id, {'note': f'{current.note or ""}\n\n{history}'.strip()})
         store.move_work(work_id, 'todo', kept=True)
+        return True
 
 
 def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int, str],
@@ -250,6 +253,7 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
     records = {record.id: record for record in store.work(ids=sorted(named), limit=0).results} if named else {}
     notes: dict[str, list[dict[str, Any]]] = {}
     early: dict[str, list[tuple[int, str]]] = {}  # by ticket: the groups seen before its fix was in force, and why
+    reopened: list[tuple[dict[str, Any], str]] = []
     for group_id, row in rows.items():
         record = records.get(str(row['work_id']))
         agent = by_agent.get(group_id)
@@ -261,19 +265,24 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
             notes.setdefault(record.id, []).append(row)
         elif record is not None and not record.done:
             if landed is not None:
-                events.announced(ctx.folder, ctx.surface, not_held, store, record.id, landed, str(row['last_seen']),
-                                 (latest or {}).get(group_id, ''))
+                changed = events.announced(ctx.folder, ctx.surface, not_held, store, record.id, landed,
+                                           str(row['last_seen']), (latest or {}).get(group_id, ''))[0]
                 records[record.id] = store.ticket(record.id).work
+                if changed:
+                    reopened.append((row, f'{landed}:{row["count"]}'))
             notes.setdefault(record.id, []).append(row)
         elif agent in agents and (on := records.get(agent)) is not None and not on.done:
             row['work_id'] = agent
             notes.setdefault(agent, []).append(row)
+            reopened.append((row, 'new'))
         elif record is not None:
             # A recurrence belongs to the same issue. Explicit cancellation is retained; it is not a crash.
             if record.outcome != 'cancelled' and settings.value('autoticket_reopen', ctx.folder):
-                events.announced(ctx.folder, ctx.surface, reopen_fault, store, record.id, str(row['last_seen']),
-                                 (latest or {}).get(group_id, ''))
+                changed = events.announced(ctx.folder, ctx.surface, reopen_fault, store, record.id,
+                                           str(row['last_seen']), (latest or {}).get(group_id, ''))[0]
                 records[record.id] = store.ticket(record.id).work
+                if changed:
+                    reopened.append((row, f'{record.done}:{row["count"]}'))
             notes.setdefault(record.id, []).append(row)
     with store.tables() as tx:
         for work_id, told in notes.items():
@@ -283,7 +292,15 @@ def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int,
         note = early_noted(noted(records[work_id].note or '', told), early.get(work_id, []))
         if note != (records[work_id].note or ''):
             events.announced(ctx.folder, ctx.surface, store.edit_work, work_id, {'note': note})
+    for row, occurrence in reopened:
+        notify_filed(ctx, row, str(row['work_id']), occurrence)
     return file_waiting(ctx, store)
+
+
+def notify_filed(ctx: Context, row: dict[str, Any], work_id: str, occurrence: str) -> None:
+    """Announce a new repair or recurrence once, after its canonical ticket is committed."""
+    ctx.publish('fault.filed', {'source': str(row['source']), 'group_id': int(row['group_id']),
+                               'work_id': work_id, 'occurrence': occurrence})
 
 
 def line(row: dict[str, Any]) -> str:
@@ -337,7 +354,13 @@ def file_waiting(ctx: Context, store: Store) -> int:
     open_now = sum(not record.held and record.id not in kept for record in records)
     waiting = sorted((row for row in rows if row['address'] and waits(row, at)), key=lambda row: int(row['group_id']))
     filed = 0
-    for row in waiting[:max(0, most - open_now)]:
+    room = max(0, most - open_now)
+    for row in waiting:
+        # A startup repair cannot wait for workers that the same fault prevents from starting.
+        if row['source'] != 'start':
+            if not room:
+                continue
+            room -= 1
         group_id = int(row['group_id'])
         with store.tables() as tx:
             now = tx.get('groups', {'group_id': group_id})
@@ -352,6 +375,7 @@ def file_waiting(ctx: Context, store: Store) -> int:
             raise
         with store.tables() as tx:
             tx.update('groups', {'group_id': group_id}, {'work_id': record.id})
+        notify_filed(ctx, row, record.id, 'new')
         filed += 1
     return filed
 

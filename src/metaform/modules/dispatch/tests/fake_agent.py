@@ -490,6 +490,10 @@ def main():
             STEERED.set()
             send({'jsonrpc': '2.0', 'id': ident, 'result': {'outcome': outcome}})
         elif method == 'session/new':
+            if os.environ.get('FAKE_ACP_START_FAIL') == '1':
+                send({'jsonrpc': '2.0', 'id': ident, 'error': {
+                    'code': -32603, 'message': 'fixture startup failure'}})
+                continue
             with WRITING, open(LOG, encoding='utf-8') as handle:
                 count = sum(json.loads(line).get('message', {}).get('method') == 'session/new' for line in handle)
             SESSION = f'fake-session-{count}'

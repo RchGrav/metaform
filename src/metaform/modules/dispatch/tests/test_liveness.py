@@ -1119,8 +1119,8 @@ def test_a_start_that_keeps_failing_waits_out_its_backoff_then_waits_for_the_per
     other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Write more notes.').id
     attempt(other)
     assert module.failing_agent(ctx, 'proj', 'claude') is not None
-    assert any(one['signal'] == 'setup-not-working' and one['signal_key'] == 'dispatch:claude'
-               and 'SQLite objects' in one['report']['reason'] for one in rows(dispatch.store)), 'the person is told'
+    assert not any(one['signal'] == 'setup-not-working' and one.get('signal_key') == 'dispatch:claude'
+                   for one in rows(dispatch.store)), 'canonical startup faults own the repair notification'
     with pytest.raises(module.Refused, match='did not start on 2 tickets in a row'):
         module.admit(ctx, dispatch.store, other, 'worker', agent='claude', auto=True)
     module.admit(ctx, dispatch.store, other, 'worker', agent='claude')  # the person's own start is their retry

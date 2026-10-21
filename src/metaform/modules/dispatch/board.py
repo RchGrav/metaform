@@ -21,18 +21,20 @@ from .signals import record as keep
 BOARD = 'board-needs'
 
 
-def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: str = '', start: bool = True) -> bool:
+def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: str = '', start: bool = True,
+           urgent: bool = False) -> bool:
     """Keep one thing the board needs, `said` in a line, once for its `key`, while Full Auto is on, and tell the
     system agent; with `start`, a system agent is started for it when none runs. Whether it was raised now."""
-    if not ctx.setting('dispatch_autostart'):
+    automatic = ctx.setting('dispatch_autostart')
+    if not automatic and not urgent:
         return False
     store = ctx.require_store()
     value = keep(store, BOARD, work_id=work_id, session_id=session_id, key=key, once=True, signal_key=key,
-                   said=said)
+                   said=said, urgent=urgent)
     if value is None:
         return False
     announce(ctx, value)
-    if start:
+    if start and automatic:
         from . import stay_connected
         try:
             stay_connected(ctx, store)
@@ -40,6 +42,25 @@ def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: 
             import sys
             sys.stderr.write(f'Could not start the system agent for the board: {error}\n')
     return True
+
+
+def fault_filed(payload: dict[str, Any], ctx: Context) -> None:
+    """A canonical startup repair needs the existing system session, even with automatic workers off.
+
+    Other filed faults enter the routine inbox. Group and recurrence identify one notification across processes.
+    """
+    if not payload.get('work_id') or 'group_id' not in payload:
+        return
+    work = str(payload['work_id'])
+    store = ctx.require_store()
+    numbered = store.numbers_of('work', [work]).get(work)
+    ref = numbered[0] if numbered else work
+    urgent = payload.get('source') == 'start'
+    kind = 'start-fault' if urgent else 'fault'
+    from . import prompt
+    said = prompt('startup_fault', item=ref) if urgent else f'{ref}: fault filed'
+    raised(ctx, f'{kind}:{payload["group_id"]}:{payload["occurrence"]}', said,
+           work_id=work, urgent=urgent, start=urgent)
 
 
 def waiting(store: Store) -> bool:

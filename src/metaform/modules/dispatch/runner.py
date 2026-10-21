@@ -156,6 +156,7 @@ from . import (
     start_failed,
     startable,
     started_well,
+    startup_fault,
     stop_end,
     system_sessions,
     ticket,
@@ -285,6 +286,10 @@ def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
     """A note to the person's system agent as its inbox keeps it: the sender's ticket and what the note is, never its
     words, and whether it needs the person."""
     from .orchestration import inbox_status, inbox_wakes
+    if held.get('kind') == 'board' and str(held.get('board') or '').startswith('start-fault:'):
+        sender = cast(dict[str, Any], held.get('from') or {})
+        if sender.get('agent') == 'metaform':
+            return str(held['text']), True
     update, state, ask = str(held.get('update') or ''), str(held.get('state') or ''), bool(held.get('ask'))
     return inbox_status(held), inbox_wakes(update, state, ask)
 
@@ -765,8 +770,13 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     # Every runner stays on the metaform its ticket or conversation began in, whichever is made active later, and so
     # do its agent and that agent's MCP server, which inherit the variable: the one its starter named, else the one
     # active now, BASE-052. A conversation on no map has none to stay on, and follows the first one made.
-    bound = await asyncio.to_thread(store.bound_base) or await asyncio.to_thread(store.active_base)
-    if bound is not None:  # named by its starter, else the one active now: pinned, so a switch made later never moves it
+    try:
+        bound = await asyncio.to_thread(store.bound_base) or await asyncio.to_thread(store.active_base)
+    except StoreError as error:
+        await asyncio.to_thread(startup_fault, ctx, str(ctx.nouns['id']), str(ctx.nouns.get('agent') or ''),
+                                f'{type(error).__name__}: {error}')
+        raise
+    if bound is not None:
         os.environ[BASE_VARIABLE] = bound.id
         store = Store(store.project_id, toggled=store.toggled, base=bound.id, module=store.module,
                       write_layer=store.write_layer)
@@ -790,6 +800,9 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     summoning = any(ctx.nouns.get(word) for word in ('system', 'prep', 'question'))
     try:
         await asyncio.to_thread(admit_self, ctx, store, work_id, 'summoned' if summoning else 'worker')
+    except StoreError as error:
+        await asyncio.to_thread(startup_fault, ctx, str(work_id), str(agent), f'{type(error).__name__}: {error}')
+        raise
     except Stop:  # its reservation goes back where it waited, as the gate's own refusal says
         await asyncio.to_thread(given_back, store, work_id, ctx.nouns.get('reservation'))
         raise
@@ -3548,7 +3561,7 @@ class Session:
                 try:
                     await asyncio.to_thread(start_failed, self.ctx, self.store, self.work_id, self.agent,
                                             f'{error}' + (f'; its last stderr: {last}' if last else ''),
-                                            reservation=str(reservation) if reservation else None)
+                                            reservation=str(reservation) if reservation else None, report=False)
                 except Exception as count_error:  # noqa: BLE001  the stale sweep is still the backstop
                     sys.stderr.write(f'Could not count the failed start: {count_error}\n')
         finally:
@@ -3579,7 +3592,9 @@ class Session:
         if self.probe or self.login_needed or not self.how.startswith(FAULTED):
             return
         tail = '\n'.join(self.stderr_tail)
-        payload = {'source': 'run', 'message': f'The {self.agent} run ended: {self.how.split(chr(10))[0]}'[:500],
+        payload = {'source': 'run' if self.spoken else 'start',
+                   'message': f'The {self.agent} run ended: {self.how.split(chr(10))[0]}'[:500],
+                   'file': 'src/metaform/modules/dispatch/runner.py',
                    'detail': '\n'.join(part for part in (f'Ticket {self.work_id}: {self.how}', self.failed_trace,
                                                          f'Its last stderr:\n{tail}' if tail else '') if part),
                    'reproduce': f'metaform dispatch start {self.work_id} {self.agent}', 'work_id': self.work_id,

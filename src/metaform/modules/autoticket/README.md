@@ -119,3 +119,5 @@ metaform map work kind=broken          # the tickets it filed
 
 
 The web supervisor owns a watcher for every registered project, even with no browser page open. `autoticket_watch`, `autoticket_file` and `autoticket_reopen` are independent Full Auto policy controls. Register actual logs with `metaform autoticket add log=<path>`; the watcher never invents paths. Local file rotation and recorded offsets survive reconnects through the existing watch leases. Watcher failures publish an actionable fault and retry with bounded backoff. Error text mentioning removal or deletion does not create an approval gate.
+
+Agent startup failures use source `start`. Filing or reopening their canonical ticket publishes `fault.filed` with `source`, `group_id`, `work_id` and `occurrence`. Ordinary repeats emit no filing notification. Dispatch consumes these events through its existing signal inbox. Startup repairs bypass the ordinary open-ticket limit so unavailable workers cannot prevent recovery. Capture and reopening switches still apply. No table migration is required.

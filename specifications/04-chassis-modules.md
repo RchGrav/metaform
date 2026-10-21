@@ -1140,3 +1140,15 @@ High / Max / Pro
 - Acceptance: Verify direct results and saved links, one Planner assignment under replay and concurrent admission, compact non-waking system references, explicit proposal review, stale-revision rejection, person-controlled decisions, no execution tickets before approval, unchanged agent caller behavior, isolated-worktree publication and preservation of version 2 records. Use the existing roundtable, dispatch transport and web tests.
 - Relates to: BASE-030, BASE-052, BASE-066.
 - Status: Confirmed by the operative ticket direction on 2026-10-21, code.system.management.knowledge#92. Actual execution remains a separate work request.
+
+
+### BASE-068 Startup faults wake the existing system session for repair
+
+- Requirement: A fault preventing agent startup wakes the existing system session once per canonical fault group and repair recurrence.
+- What this means: Role resolution failures, runner startup failures, adapter launch failures and store upgrade refusals enter the startup fault path. The notification names the repair ticket and tells the system agent to fix it in its existing session. Ordinary filed faults enter its routine inbox without an immediate wake.
+- Why: Delegating startup repair cannot restore service while agents cannot start. Repeated faults must retain one repair identity without flooding the system conversation.
+- How it shows: A failed fixture adapter start produces one urgent line. Ten repeats produce no further wake. A proven repair followed by recurrence reopens the same ticket and wakes again.
+- Build: Reuse fault grouping, canonical ticket reopening, fault filing events, board signals and the existing system inbox. Startup repairs bypass the ordinary filing limit. Existing system sessions receive startup repair notifications with Full Auto on or off. Automatic system starts preserve Full Auto, user stops and halt admission. The system prompt directs repair in place, focused checks, an own-file commit, the authorized push and confirmation of a successful start. Helper capacity counts live runners and releases ended helpers.
+- Acceptance: Fixture-adapter checks cover startup wake, ten-repeat coalescing, ordinary inbox-only faults, recurrence wake and both Full Auto states. Existing helper-capacity checks cover failed-start cleanup and ended-helper release.
+- Relates to: BASE-010, BASE-052, BASE-053, BASE-054.
+- Status: Confirmed by the startup self-repair assignment, 2026-10-20.
