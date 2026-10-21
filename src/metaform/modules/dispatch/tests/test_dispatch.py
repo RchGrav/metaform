@@ -3649,29 +3649,6 @@ def test_the_old_agent_options_move_once_into_each_options_own_setting(dispatch)
 
 
 @pytest.mark.req('BASE-052')
-def test_the_old_strengths_list_moves_once_into_each_agents_own_setting(dispatch, run):
-    """Settings cleanup 2026-10-15: each entry of a stored dispatch_agent_strengths list becomes that agent's
-    dispatch_<agent>_strengths at the same scope, words with commas whole; an agent the list left out keeps its own
-    default rather than being wiped; an entry for no agent is dropped and said; it runs once per home. Setting one
-    agent's strengths after leaves the others."""
-    from metaform import home, settings
-    from metaform.modules import dispatch as module
-    scope = home.path_key(dispatch.folder)
-    home.save(scope, 'dispatch', 'dispatch_agent_strengths', ['codex=exact code, and data', 'nobody=x'])
-    with home.chassis(write=True) as db:  # the test home's own start carried nothing and marked it; undo the mark
-        db.execute("DELETE FROM meta WHERE key='carried:dispatch-agent-strengths'")
-    settings._carried.clear()
-    said = module.carry_strengths()
-    assert settings.value('dispatch_codex_strengths', dispatch.folder) == 'exact code, and data'
-    assert settings.value('dispatch_claude_strengths', dispatch.folder) == module.STRENGTHS['claude'], 'left as it was'
-    assert home.stored(scope, 'dispatch', 'dispatch_agent_strengths') is None
-    assert any('nobody=x' in line and 'dropped' in line for line in said)
-    assert module.carry_strengths() == [], 'once per home'
-    run('set', '--dispatch-gemini-strengths', 'big reads, and logs', cwd=dispatch.folder)
-    assert settings.value('dispatch_codex_strengths', dispatch.folder) == 'exact code, and data'
-
-
-@pytest.mark.req('BASE-052')
 def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_run(dispatch, monkeypatch):
     """P012 and M01: a session whose agent needs a login is handed to the person with no retry, since only they can
     log it in; a retry goes on spending against the run of the session it resumes."""
@@ -5191,41 +5168,237 @@ def test_a_workflow_answer_reaches_the_worker_that_paused_the_run(dispatch, run)
     dispatch.stop()
 
 
-# ------------------------------------------------------------------ Jev's hooks in dispatch, H23
+# Assignment runtime choices are saved before dispatch starts.
 
-def decided(answer, sure=True):
-    from metaform.jev import Decision
-    return Decision('pick_one', 'title', 'why', 'question', (), answer, 0.9, sure, 'reason', 'jev', 0.0, False)
+def runtime_offers(dispatch, agent, *, models=('balanced', 'heavy'), efforts=('medium', 'high')):
+    from metaform.modules import dispatch as module
+    with module.own_store(dispatch.store).tables() as tx:
+        tx.insert('catalog', {'agent': agent, 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
+                              'seq': time.time_ns(), 'settings': [
+            {'id': 'model', 'category': 'model', 'type': 'select',
+             'options': [{'value': value, 'name': value.title(), 'description': f'{value} model'} for value in models]},
+            {'id': 'reasoning', 'category': 'thought_level', 'type': 'select',
+             'options': [{'value': value} for value in efforts]}]})
 
 
-@pytest.mark.req('MAP-058')
-@pytest.mark.req('VIEW-042')
-def test_autostart_takes_jevs_sure_agent_and_options_only_where_the_person_chose_none(dispatch, run, monkeypatch):
-    """With Jev on, autostart starts a ticket the person gave no agent with the agent Jev is sure of, and passes its
-    model and effort on, under the person's own; a ticket whose eligible agents leave Jev's out, or with Jev unsure,
-    starts as before."""
-    from metaform import jev
-    from metaform.jev import Assignments
+def test_runtime_catalog_uses_installed_eligible_adapters_and_model_descriptions(dispatch, run):
+    from metaform.module import context
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    runtime_offers(dispatch, 'codex')
+    runtime_offers(dispatch, 'claude')
+    runtime_offers(dispatch, 'gemini')
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'eligible=["codex","claude"]', cwd=dispatch.folder)
+    run('set', '--dispatch-claude', 'missing-adapter-for-runtime-test', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    catalog = TRANSPORT.runtime_catalog(ctx, dispatch.id)
+    assert catalog == {'codex': {'models': {'balanced': 'Balanced: balanced model', 'heavy': 'Heavy: heavy model'},
+                                 'efforts': ['medium', 'high']}}
+
+
+def test_ticket_runtime_edits_replace_legacy_tune_values_and_keep_launch_permissions(dispatch, run):
+    from metaform.data import Store
     from metaform.module import context
     from metaform.modules import dispatch as module
-    picked, unsure = glyphed(dispatch, run, ('Picked by Jev', None, False), ('Jev unsure', None, False))
-    eligible(dispatch, run, dispatch.id, 'codex')  # Jev's pick is not eligible here, so the eligible agent starts
-    run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
-    asked = []
-    monkeypatch.setattr(jev, 'config', lambda folder, decision=None: object())
-    monkeypatch.setattr(jev, 'choose_agents', lambda folder, tickets, agents, options, **kw: asked.append(
-        (sorted(tickets), sorted(agents))) or Assignments({
-            dispatch.id: decided({'agent': 'gemini', 'model': None, 'thought_level': None}),
-            picked: decided({'agent': 'gemini', 'model': 'large', 'thought_level': 'high'}),
-            unsure: decided({'agent': 'gemini', 'model': None, 'thought_level': None}, sure=False)}))
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    runtime_offers(dispatch, 'codex')
+    with Store('proj', module='map').tables() as tx:
+        tx.insert('ticket_settings', {'work_id': dispatch.id, 'agent': 'codex'})
+    with module.own_store(dispatch.store).tables() as tx:
+        tx.insert('ticket_options', {'work_id': dispatch.id, 'model': 'heavy', 'effort': 'high',
+                                     'prompts': 'ask_all', 'mode': 'plan', 'seq': 1})
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    saved = TRANSPORT.keep_runtime(ctx, dispatch.id, {
+        'agent': 'codex', 'model': 'balanced', 'effort': 'medium', 'decider': 'jev', 'confidence': 0.95,
+        'task_type': 'coding', 'reason': 'Backend task.'})
+    assert (saved['model'], saved['effort'], saved['decision']['decider']) == ('heavy', 'high', 'person')
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'model=balanced', cwd=dispatch.folder)
+    assert module.ticket_options(dispatch.store, dispatch.id) == {'model': 'balanced', 'thought_level': 'high'}
+    row = module.ticket_row(dispatch.store, dispatch.id)
+    assert row['model'] is None and row['effort'] is None
+    assert (row['prompts'], row['mode']) == ('ask_all', 'plan')
+    run('dispatch', 'tune', dispatch.id, 'effort=medium', cwd=dispatch.folder)
+    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)
+    assert (shown['map']['model'], shown['map']['effort']) == ('balanced', 'medium')
+    assert shown['map']['decision']['decider'] == 'person'
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'model=none', cwd=dispatch.folder)
+    assert module.ticket_options(dispatch.store, dispatch.id) == {'thought_level': 'medium'}
+
+
+def test_runtime_agent_change_clears_incompatible_options_and_rejects_unoffered_values(dispatch, run):
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    runtime_offers(dispatch, 'codex')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    TRANSPORT.keep_runtime(ctx, dispatch.id, {
+        'agent': 'codex', 'model': 'balanced', 'effort': 'medium', 'decider': 'jev', 'confidence': 0.95,
+        'task_type': 'coding', 'reason': 'Backend task.'})
+    with pytest.raises(Stop, match='offered model and effort'):
+        TRANSPORT.keep_runtime(ctx, dispatch.store.add_work(dispatch.node, None, task='Another task').id, {
+            'agent': 'codex', 'model': 'invented', 'effort': 'medium', 'decider': 'jev', 'confidence': 0.95})
+    assert module.wanted_options(ctx, dispatch.store, 'claude', dispatch.id) == {}, 'adapter options stay with its agent'
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=claude', cwd=dispatch.folder)
+    changed = TRANSPORT.runtime_settings(ctx, dispatch.id)
+    assert changed['agent'] == 'claude' and changed['model'] is None and changed['effort'] is None
+    assert changed['decision']['decider'] == 'person'
+
+
+def test_refined_tasks_can_replace_automatic_runtime_but_keep_person_choices(dispatch, run):
+    from metaform.module import context
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    runtime_offers(dispatch, 'codex')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    choice = {'agent': 'codex', 'model': 'balanced', 'effort': 'medium', 'decider': 'jev', 'confidence': 0.95,
+              'task_type': 'coding', 'reason': 'Backend task.', 'task_fingerprint': 'before'}
+    TRANSPORT.keep_runtime(ctx, dispatch.id, choice)
+    refined = TRANSPORT.keep_runtime(ctx, dispatch.id, {**choice, 'model': 'heavy', 'effort': 'high',
+                                                       'task_fingerprint': 'after'})
+    assert refined['model'] == 'heavy' and refined['decision']['task_fingerprint'] == 'after'
+    run('dispatch', 'tune', dispatch.id, 'effort=medium', cwd=dispatch.folder)
+    chosen = TRANSPORT.keep_runtime(ctx, dispatch.id, {**choice, 'task_fingerprint': 'again'})
+    assert (chosen['model'], chosen['effort'], chosen['decision']['decider']) == ('balanced', 'medium', 'jev')
+    assert chosen['decision']['overrides'] == {'effort': 'medium'}
+
+
+def test_partial_manual_effort_stays_fixed_after_inference_and_task_refinement(dispatch, run):
+    from metaform.module import context
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    runtime_offers(dispatch, 'codex')
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    run('dispatch', 'tune', dispatch.id, 'effort=high', cwd=dispatch.folder)
+    choice = {'agent': 'codex', 'model': 'balanced', 'effort': 'medium', 'decider': 'jev', 'confidence': 0.95,
+              'task_type': 'coding', 'reason': 'Backend task.', 'task_fingerprint': 'before'}
+    initial = TRANSPORT.keep_runtime(ctx, dispatch.id, choice)
+    assert initial['effort'] == 'high' and initial['decision']['overrides'] == {'effort': 'high'}
+    refined = TRANSPORT.keep_runtime(ctx, dispatch.id, {**choice, 'model': 'heavy', 'task_fingerprint': 'after'})
+    assert (refined['model'], refined['effort']) == ('heavy', 'high')
+    assert refined['decision']['overrides'] == {'effort': 'high'}
+
+
+def test_direct_start_and_reserved_start_wait_before_opening_an_unconfigured_adapter(dispatch, monkeypatch):
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'codex'})
+    held = {'work_id': dispatch.id, 'authored_role_uri': 'metaform://role/backend_engineer'}
+    owner = SimpleNamespace(route=lambda *_args: {'role': held['authored_role_uri']},
+                            assignment=lambda *_args, **_kwargs: held, prepare_runtime=lambda *_args: False,
+                            ensure=lambda *_args, **_kwargs: held, reopen=lambda *_args, **_kwargs: held)
+    monkeypatch.setattr(orchestration, 'service', lambda _ctx: owner)
+    monkeypatch.setattr(module, 'start_runner', lambda *_args, **_kwargs: pytest.fail('unconfigured adapter started'))
+    assert module.start(ctx)['state'] == 'queued'
+    assert module.runtime_settings(ctx, dispatch.id)['decision']['overrides'] == {'agent': 'codex'}
+    assert not dispatch.ticket().taken
+    reservation = 'dispatch starting runtime-test'
+    dispatch.store.take_work(dispatch.id, by=reservation)
+    assert module.run_reserved(ctx, reservation)['state'] == 'queued'
+    assert not dispatch.ticket().taken
+
+
+@pytest.mark.parametrize('persons', (False, True))
+def test_runner_waits_for_runtime_even_for_person_started_work(dispatch, monkeypatch, persons):
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules.dispatch import orchestration, runner
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'persons': persons})
+    held = {'work_id': dispatch.id, 'authored_role_uri': 'metaform://role/backend_engineer'}
+    owner = SimpleNamespace(prepare_runtime=lambda *_args: False)
+    monkeypatch.setattr(orchestration, 'assignment', lambda *_args: held)
+    monkeypatch.setattr(orchestration, 'service', lambda _ctx: owner)
+    session = runner.Session(ctx, ctx.require_store(), dispatch.ticket(), 'claude', ['unused'])
+
+    async def must_not_open(*_args):
+        pytest.fail('unconfigured adapter started')
+
+    monkeypatch.setattr(session, 'open_agent', must_not_open)
+    asyncio.run(session.begin())
+    assert session.ended.is_set() and session.how == orchestration.SUSPENDED
+
+
+@pytest.mark.req('BASE-052')
+def test_autostart_uses_saved_runtime_without_asking_jev(dispatch, run, monkeypatch):
+    from metaform import jev
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with module.own_store(dispatch.store).tables() as tx:
+        tx.insert('catalog', {'agent': 'codex', 'version': '9', 'name': 'Codex', 'seen': '2026-10-21T00:00:00Z',
+                              'seq': 1, 'settings': [
+            {'id': 'model', 'category': 'model', 'type': 'select',
+             'options': [{'value': 'balanced', 'name': 'Balanced', 'description': 'Standard coding'}]},
+            {'id': 'reasoning', 'category': 'thought_level', 'type': 'select',
+             'options': [{'value': 'medium'}]}]})
+    saved = TRANSPORT.keep_runtime(ctx, dispatch.id, {
+        'agent': 'codex', 'model': 'balanced', 'effort': 'medium', 'decider': 'jev',
+        'confidence': 0.95, 'task_type': 'coding', 'reason': 'Precise backend change.'})
+    assert saved['decision']['decider'] == 'jev'
+    monkeypatch.setattr(jev, 'choose_agents', lambda *_args, **_kw: pytest.fail('dispatch must not repick runtime'))
+    run('set', '--dispatch-autostart', '--dispatch-agent', 'claude', cwd=dispatch.folder)
     launched = []
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: launched.append(
-        (ctx.nouns['id'], ctx.nouns['agent'], ctx.nouns.get('chosen'))) or {'work_id': ctx.nouns['id']})
-    module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert asked == [(sorted([dispatch.id, picked, unsure]), ['claude', 'codex', 'gemini'])]
-    assert launched == [(dispatch.id, 'codex', None),
-                        (picked, 'gemini', json.dumps({'model': 'large', 'thought_level': 'high'})),
-                        (unsure, 'codex', None)]
+    monkeypatch.setattr(module, 'run_reserved', lambda launch_ctx, reservation, *_, **__: launched.append(
+        (launch_ctx.nouns['agent'], module.wanted_options(launch_ctx, dispatch.store,
+                                                       launch_ctx.nouns['agent'], dispatch.id))) or {})
+    module.autostart(ctx)
+    assert launched == [('codex', {'model': 'balanced', 'thought_level': 'medium'})]
+
+
+def test_personal_start_releases_only_requested_backlog_ticket_before_routing(dispatch, monkeypatch):
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    dispatch.store.move_work(dispatch.id, 'backlog', kept=True)
+    other = dispatch.store.add_work(dispatch.node, None, task='Keep this later work held.', held=True)
+    routed = []
+
+    def route(ctx, work_id):
+        routed.append((work_id, dispatch.store.ticket(work_id).work.held))
+        return {'state': 'creating', 'role': None}
+
+    owner = SimpleNamespace(route=route, assignment=lambda *args, **kwargs: None)
+    monkeypatch.setattr(orchestration, 'service', lambda _ctx: owner)
+    monkeypatch.setattr(module, 'start_runner', lambda *args, **kwargs: pytest.fail('Unassigned worker started'))
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    assert module.start(ctx)['state'] == 'needs_specialist'
+    assert routed == [(dispatch.id, False)]
+    assert dispatch.store.ticket(other.id).work.held
+
+
+def test_resume_keeps_original_adapter_after_ticket_agent_change(dispatch, monkeypatch):
+    from types import SimpleNamespace
+
+    from metaform.module import Stop, context
+    from metaform.modules.dispatch import orchestration, runner
+
+    held = {'assignment_id': 'old-assignment', 'authored_role_uri': 'metaform://role/backend_engineer'}
+    owner = SimpleNamespace(assignment=lambda *args, **kwargs: held,
+                            prepare_runtime=lambda *args, **kwargs: True,
+                            routing_status=lambda *args, **kwargs: {'state': 'running'})
+    monkeypatch.setattr(orchestration, 'service', lambda _ctx: owner)
+    monkeypatch.setattr(runner, 'mcp_server', lambda *args: None)
+    from metaform.modules import dispatch as module
+    monkeypatch.setattr(module, 'runtime_settings', lambda *args: {'agent': 'codex'})
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    session = runner.Session(ctx, module.own_store(dispatch.store), dispatch.ticket(), 'claude', ['old-adapter'],
+                             resume='claude-session')
+    monkeypatch.setattr(session, 'continue_thread', lambda: None)
+    monkeypatch.setattr(session, 'covers_kept', lambda: None)
+    opened = []
+
+    async def capture(identity):
+        opened.append((session.agent, session.resume, session.command))
+        raise Stop('Adapter ownership observed.', 'test')
+
+    monkeypatch.setattr(session, 'open_agent', capture)
+    with pytest.raises(Stop, match='Adapter ownership observed'):
+        asyncio.run(session.begin())
+    assert opened == [('claude', 'claude-session', ['old-adapter'])]
 
 
 def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(dispatch, run, monkeypatch):
@@ -5258,24 +5431,6 @@ def test_a_healing_ticket_starts_first_and_alone_at_the_highest_thought_level(di
     dispatch.store.finish_work(dispatch.id, 'Done.')
     module.autostart(context('dispatch', dispatch.folder, project='proj'))
     assert launched[2:] == [(again, 'codex', json.dumps({'thought_level': 'high'}))], launched[2:]
-
-
-@pytest.mark.req('MAP-058')
-def test_autostart_starts_as_before_when_jev_is_off_or_fails(dispatch, run, monkeypatch):
-    from metaform import jev
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    run('set', '--dispatch-autostart', '--dispatch-agent', 'codex', cwd=dispatch.folder)
-    monkeypatch.setattr(jev, 'config', lambda folder, decision=None: object())
-
-    def failing(*args, **kw):
-        raise OSError('unreachable')
-    monkeypatch.setattr(jev, 'choose_agents', failing)
-    launched = []
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: launched.append(
-        (ctx.nouns['id'], ctx.nouns['agent'])) or {'work_id': ctx.nouns['id']})
-    module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert launched == [(dispatch.id, 'codex')]
 
 
 @pytest.mark.req('STORE-029')

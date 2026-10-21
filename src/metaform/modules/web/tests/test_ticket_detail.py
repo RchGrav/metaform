@@ -20,6 +20,8 @@ pytestmark = pytest.mark.kind('simulation')
 def web(threaded, monkeypatch):
     # Model an authenticated person's browser; caller-authentication behavior has its own integration tests.
     monkeypatch.setattr('metaform.module.page_caller', lambda *args: None)
+    # Ticket reads and edits need no background runner. Keep dispatch workers inside their own test homes.
+    monkeypatch.setattr('metaform.modules.web.server.Server.schedule_dispatch', lambda *args, **kwargs: None)
     return threaded
 
 
@@ -31,6 +33,39 @@ def ticket():
 def post(port, **fields):
     return api(port, '/api/ticket', method='POST', body=json.dumps({'project': 'proj', **fields}),
                headers={'Origin': f'http://127.0.0.1:{port}', 'Content-Type': 'application/json'})
+
+
+def runtime_catalog():
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('catalog', {'agent': 'codex', 'version': '1', 'name': 'Codex', 'seen': '2026-10-21T00:00:00Z',
+                              'seq': 1, 'settings': [
+                                  {'id': 'model', 'category': 'model', 'type': 'select', 'current': 'gpt-6',
+                                   'options': [{'value': 'gpt-6', 'name': 'GPT 6'}, {'value': 'small', 'name': 'Small'}]},
+                                  {'id': 'effort', 'category': 'thought_level', 'type': 'select', 'current': 'high',
+                                   'options': [{'value': 'medium', 'name': 'Medium'}, {'value': 'high', 'name': 'High'}]},
+                              ]})
+
+
+def test_card_runtime_choices_save_on_ticket_without_changing_project_defaults(run, web, mapped):
+    from metaform import settings
+
+    run('enable', 'dispatch')
+    runtime_catalog()
+    work = ticket()
+    before = settings.value('dispatch_codex_effort', mapped)
+    status, saved = post(web, work_id=work.id, agent='codex', model='gpt-6', effort='medium')
+    assert status == 200, saved
+    _, detail = api(web, f'/api/work?project=proj&ids={work.id}')
+    saved_map = detail['results'][0]['map']
+    assert saved_map['model'] == 'gpt-6'
+    assert saved_map['effort'] == 'medium'
+    assert saved_map['decision']['decider'] == 'person'
+    assert settings.value('dispatch_codex_effort', mapped) == before
+    assert post(web, work_id=work.id, model='unknown-model')[0] == 400
+    assert post(web, work_id=work.id, effort='none')[0] == 200
+    _, cleared = api(web, f'/api/work?project=proj&ids={work.id}')
+    assert cleared['results'][0]['map'].get('effort') is None
+    assert cleared['results'][0]['map']['model'] == 'gpt-6'
 
 
 def test_ticket_opens_with_named_graph_edits_and_refuses_stale_save(run, web, mapped):
@@ -83,6 +118,45 @@ def test_ticket_memory_is_local_atomic_observations_and_relations(web, mapped):
     with pytest.raises(Stop, match='more than one fact'):
         module_verb({'project': 'proj'}, 'memory', 'add_observations', {
             'observations': [{'entityName': 'countdown', 'contents': ['One fact. Another fact.']}]})
+
+
+@pytest.mark.browser
+def test_card_edits_runtime_choice_before_start_and_refreshes_summary(run, web, mapped, browser):
+    run('enable', 'dispatch')
+    runtime_catalog()
+    work = ticket()
+    assert post(web, work_id=work.id, agent='codex', model='gpt-6', effort='medium')[0] == 200
+    page = browser.new_page(viewport={'width': 1280, 'height': 800})
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    try:
+        page.goto(f'http://127.0.0.1:{web}/#p=proj')
+        page.wait_for_function('() => window.metaform?.loaded()')
+        page.evaluate("async () => { document.querySelector('#board').hidden = false; "
+                      "await (await import('/page/app/board/board.js')).renderBoard(); }")
+        card = page.locator(f'.card[data-id="{work.id}"]')
+        assert card.locator('.runtime-choice').inner_text() == 'codex gpt-6 medium'
+        card.locator('.ticket-settings > summary').click()
+        card.locator('.runtime-settings select.effort:not([disabled])').wait_for()
+        with page.expect_response(lambda response: '/api/ticket' in response.url
+                                  and response.request.method == 'POST') as changed:
+            card.locator('select.effort').select_option('high')
+        assert changed.value.status == 200, changed.value.text()
+        page.wait_for_function("id => document.querySelector(`.card[data-id=\"${id}\"] .runtime-choice`)"
+                               "?.textContent === 'codex gpt-6 high'", arg=work.id)
+        assert 'Chosen by person' in card.locator('.runtime-choice').get_attribute('title')
+        assert card.locator('.ticket-settings').get_attribute('open') is not None
+        assert not Store('proj').ticket(work.id).work.taken
+        card.locator('.acts .start').click()
+        page.wait_for_function("() => document.querySelector('#dispatch .agentpicker .lbl')?.textContent === 'Codex'")
+        page.route('**/api/dispatch-start', lambda route: route.fulfill(json={'state': 'starting'}))
+        with page.expect_request(lambda request: '/api/dispatch-start' in request.url
+                                 and request.method == 'POST') as launched:
+            page.locator(f'#dispatch .ticket[data-id="{work.id}"] .start').click()
+        assert launched.value.post_data_json['agent'] == 'codex'
+        assert not errors, errors
+    finally:
+        page.close()
 
 
 @pytest.mark.browser

@@ -11581,14 +11581,6 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     assert settings.value('dispatch_claude_mode', mapped) == 'acceptEdits'
     assert settings.state('dispatch_claude_model', mapped) == 'default', 'one option set leaves the others'
     assert 'Accept edits' in page.inner_text(f'{row("dispatch_claude_mode")} .hint')
-    to('advanced')
-    unfold('Dispatch')
-    strengths = f'{row("dispatch_gemini_strengths")} input'  # one agent's strengths, kept with its commas
-    page.fill(strengths, page.input_value(strengths).replace('large reads', 'big reads, and long logs'))
-    page.keyboard.press('Tab')
-    page.wait_for_selector(f'{row("dispatch_gemini_strengths")} .state.ok')
-    assert settings.value('dispatch_gemini_strengths', mapped) == 'big reads, and long logs across many files'
-    assert settings.state('dispatch_claude_strengths', mapped) == 'default', "one agent's strengths leave the others"
     assert [one for one in problems if 'status of 400' not in one] == [] and remote == []  # the refusal's own 400
 
 

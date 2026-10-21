@@ -1509,8 +1509,9 @@ TABLES = Tables(
     # it at once, `epic` and `agents` in ticket_settings (code.dispatcher.agent#7a, 2026-10-19), columns version 9
     # never names; 20: the named board a ticket is on, `board` in ticket_settings, and the project's named boards with
     # each its own archive cutoff, `boards` (the person's need, 2026-10-20), a column and a table version 9 never names;
-    # 21: their indexes, by board and by created
-    version=21,
+    # 21: their indexes, by board and by created; 22: nullable assignment model, effort and decision provenance,
+    # which older versions never name
+    version=22,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1525,9 +1526,10 @@ TABLES = Tables(
         # epic it belongs to, `epic`, which closes once every child naming it is done and whose worktree its children
         # share; and how many agents work on it at once, `agents`, one when none is set
         # and the named board the ticket is on, `board`, none for the project's first board (2026-10-20)
+        # and assignment runtime, `model`, `effort`, `decision`, which the person can change before the start
         columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
                  Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int'),
-                 Column('board')),
+                 Column('board'), Column('model'), Column('effort'), Column('decision', 'json')),
         indexes=(Index(('board',)),),
     ), Table(
         # the project's named boards besides its first: each with its own archive cutoff, `line`, the time before

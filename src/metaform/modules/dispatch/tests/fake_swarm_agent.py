@@ -24,7 +24,7 @@ LOG = Path(os.environ['FAKE_ACP_LOG'])
 STATE = Path(os.environ['FAKE_SWARM_STATE'])
 STATE.mkdir(parents=True, exist_ok=True)
 SCENARIO = os.environ.get('FAKE_SWARM_SCENARIO', 'nested')
-WORK = os.environ['METAFORM_WORK']
+WORK = os.environ.get('METAFORM_WORK', 'catalog-prime')
 ROLE = os.environ.get('METAFORM_AUTHORED_ROLE', '').removeprefix('metaform://role/')
 SESSION = ''
 MCP_SERVER = None
@@ -36,6 +36,21 @@ CANDIDATE = {'revision': 'fake-swarm-candidate-1', 'path': 'candidate.txt'}
 SPECIALIST_RESULT = 'SPECIALIST_RESULT: the route preserves its functional result after resumption.'
 OPERATIVE = 'Preserve the functional return; restore retained work before continuing.\n'
 CORRECTION = 'CORRECTIVE_RESULT: restored retained work before continuing.\n'
+MODEL = ['swarm-light']
+EFFORT = ['low']
+
+
+def config_options():
+    return [{'id': 'model', 'name': 'Model', 'type': 'select', 'category': 'model', 'currentValue': MODEL[0],
+             'options': [
+                 {'value': 'swarm-light', 'name': 'Fixture light',
+                  'description': 'Lightweight model for lookups and precise implementation.'},
+                 {'value': 'swarm-deep', 'name': 'Fixture deep',
+                  'description': 'Highest capability model for planning and complex analysis.'}]},
+            {'id': 'reasoning', 'name': 'Effort', 'type': 'select', 'category': 'thought_level',
+             'currentValue': EFFORT[0],
+             'options': [{'value': value, 'name': value.title()}
+                         for value in ('off', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')]}]
 
 
 def log(**entry):
@@ -252,7 +267,37 @@ def specialist():
 def creator(assignment):
     assert 'metaform://specialists' in DUTY and '<metaprompt name="role_creation">' in DUTY
     assert 'orchestration_publish_role' in DUTY and '<system_prompt>' in DUTY
-    request = json.loads(assignment['task'])['request']
+    brief = json.loads(assignment['task'])['request']
+    request = next(one for one in cli('orchestration', 'role_requests')
+                   if one['request_id'] == brief['request_id'])
+    caller = next(one for one in cli('orchestration', 'team')['members']
+                  if one['assignment_id'] == request['caller_assignment_id'])
+    selected = cli('orchestration', 'runtime', work=caller['work_id'])
+    if selected['state'] == 'needs_choice':
+        # These fixture actors have fixed responsibilities. This is their deterministic
+        # full-model reply, not a production classifier or a default for unknown work.
+        task_type, agent, effort = {
+            'gc': ('planning', 'claude', 'ultra'),
+            'implementer': ('coding', 'codex', 'medium'),
+            'investigator': ('lookup', 'codex', 'low'),
+            'route_specialist': ('lookup', 'codex', 'low'),
+            'functionality': ('analysis', 'claude', 'high'),
+            'bmad.bmm.dev': ('lookup', 'codex', 'low'),
+        }[caller['authored_role_uri'].removeprefix('metaform://role/')]
+        catalog = selected['catalog'][agent]
+        assert effort in catalog['efforts']
+        model = next(value for value, description in catalog['models'].items()
+                     if ('Highest capability' in description) == (task_type in ('planning', 'analysis')))
+        selected = cli('orchestration', 'runtime', work=caller['work_id'], choice={
+            'agent': agent, 'model': model, 'effort': effort, 'task_type': task_type, 'confidence': 1.0,
+            'reason': 'The deterministic fixture actor chooses its declared scenario responsibility.'})
+        assert selected['state'] == 'selected'
+    log(runtime_choice={'target': caller['work_id'], 'selected': selected})
+    if brief['runtime_only']:
+        progress(stage=99)
+        cli('orchestration', 'publish_role', request=request['request_id'], role=request['role'],
+            match_reason='Runtime selection preserves the assigned scenario responsibility.')
+        return
     duty = ('You are the Route Specialist. Independently establish route behavior for your immediate caller. '
             'Preserve its functional result across suspension and return candidate-specific evidence. '
             'Your delivery GC retains swarm ownership. Use the public module action bindings you receive.')
@@ -508,9 +553,14 @@ def turn(ident, text):
             log(pm_observation=text, capacity=capacity, all_agent_discovery=cli('dispatch', 'peers'))
             return
         assignment = cli('orchestration', 'inspect')
-        log(assignment_context=assignment, capacity=capacity)
+        log(assignment_context=assignment, capacity=capacity, runtime_config={'model': MODEL[0], 'effort': EFFORT[0]})
         held = progress()
-        if SCENARIO == 'bmad':
+        if ROLE in ('facilitator', 'role_creator'):
+            if held['stage'] == 99:
+                log(maintenance_turn=True)
+            else:
+                creator(assignment)
+        elif SCENARIO == 'bmad':
             installed_bmad(assignment, held['stage'], text)
         elif SCENARIO == 'compaction' and ROLE == 'gc':
             compacted_gc(held['stage'], text, assignment)
@@ -529,8 +579,6 @@ def turn(ident, text):
             worker(held['stage'])
         elif ROLE in ('investigator', 'route_specialist'):
             specialist()
-        elif ROLE in ('facilitator', 'role_creator'):
-            creator(assignment)
         elif ROLE == 'functionality':
             assessment(assignment)
         else:
@@ -562,13 +610,20 @@ for raw in sys.stdin.buffer:
     elif method == 'session/new':
         MCP_SERVER = next((one for one in message['params'].get('mcpServers', []) if one['name'] == 'metaform'), None)
         SESSION = 'swarm-' + uuid.uuid4().hex[:16]
-        log(session_created=SESSION)
-        send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION}})
+        log(**{'session_created' if ROLE else 'catalog_primed': SESSION})
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'sessionId': SESSION, 'configOptions': config_options()}})
     elif method == 'session/load':
         MCP_SERVER = next((one for one in message['params'].get('mcpServers', []) if one['name'] == 'metaform'), None)
         SESSION = message['params']['sessionId']
         log(session_loaded=SESSION)
-        send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': config_options()}})
+    elif method == 'session/set_config_option':
+        params = message['params']
+        option = next(one for one in config_options() if one['id'] == params['configId'])
+        assert params['value'] in {one['value'] for one in option['options']}
+        (MODEL if params['configId'] == 'model' else EFFORT)[0] = params['value']
+        log(config_applied={'id': params['configId'], 'value': params['value']})
+        send({'jsonrpc': '2.0', 'id': ident, 'result': {'configOptions': config_options()}})
     elif method == 'session/prompt':
         CANCELLED.clear()
         text = '\n'.join(block.get('text', '') for block in message['params']['prompt'])

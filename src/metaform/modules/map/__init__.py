@@ -1259,10 +1259,10 @@ WORK_READS: dict[str, frozenset[str]] = {
     'read': frozenset({'id'}),
     'remove': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents', 'board'}),
+                      'links', 'agent', 'model', 'effort', 'hold', 'eligible', 'after_work', 'title', 'epic', 'agents', 'board'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
                        'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title',
-                       'epic', 'agents', 'board'}),
+                       'epic', 'agents', 'board', 'model', 'effort'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by'}),
@@ -1489,7 +1489,7 @@ def work(ctx: Context) -> Any:
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
                                    **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title'))
             # a ticket filed with no board lands on the active board, 2026-10-21; board='' names the first on purpose
-            _keep(store, added.id, nouns if 'board' in nouns else {**nouns, 'board': ctx.setting('board')}, notices)
+            _keep(store, added.id, nouns if 'board' in nouns else {**nouns, 'board': ctx.setting('board')}, notices, ctx)
         return _on_word(ctx, _added_on_word(ctx, store, added.id, nouns.get('after_work')),
                         _written(ctx, store, added, 'add', notices))
     if op == 'distribute':
@@ -1530,7 +1530,7 @@ def work(ctx: Context) -> Any:
             edited = store.edit_work(work_id, changes)
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
-            _keep(store, work_id, nouns, notices)
+            _keep(store, work_id, nouns, notices, ctx)
         return _on_word(ctx, word, _written(ctx, store, edited, 'edit', notices))
     # A resolution records a decision, so it carries a short why, kept with the ticket's number, MCP-037.
     titled(ctx, 'The resolution', None, nouns.get('why'), why_needed=True, title_needed=False,
@@ -1592,13 +1592,14 @@ def _glyphs(store: Store, work_ids: list[str]) -> dict[str, str]:
 
 
 def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
-    """Each ticket's preferred agent, hold and eligibility, read in one transaction; a ticket with no
+    """Each ticket's runtime choice, decision, hold and eligibility, read in one transaction; a ticket with no
     settings is left out."""
     with store.tables(write=False) as tx:
         found = {work_id: tx.get('ticket_settings', {'work_id': work_id}) for work_id in work_ids}
         eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
         after = {work_id: tx.get('after', {'work_id': work_id}) for work_id in work_ids}
     kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold']),
+                      **{field: row[field] for field in ('model', 'effort', 'decision') if row.get(field) is not None},
                       **({'proof': True, 'landed': row['landed']} if row['proof'] else {}),
                       **({'epic': row['epic']} if row['epic'] else {}),
                       **({'board': row['board']} if row.get('board') else {}),
@@ -1889,9 +1890,24 @@ def boards(ctx: Context) -> dict[str, Any]:
     return {'board': name, 'state': 'removed'}
 
 
-def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice]) -> None:
+def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice],
+          ctx: Context | None = None) -> None:
     """Write a ticket's settings, when given, in the map module's own tables, STORE-045."""
     changes: dict[str, Any] = {}
+    runtime_fields = ('agent', 'model', 'effort')
+    if ctx is not None and any(field in nouns for field in runtime_fields):
+        runtime = provided(ctx.folder, 'orchestration.transport')
+        transport = runtime[0][1] if runtime else None
+        if transport is not None and hasattr(transport, 'edit_runtime'):
+            # Model and effort retain dispatch tune's person-only authority and advertised-value checks.
+            edited = cast(dict[str, Any], transport.edit_runtime(ctx, work_id, nouns))
+            notices.extend(Notice(str(one['where']), str(one['message']))
+                           for one in cast(list[dict[str, str]], edited.get('notices') or []))
+        elif any(field in nouns for field in ('model', 'effort')):
+            raise Stop('Dispatch must be enabled to set model or effort.', 'metaform enable dispatch')
+        else:
+            changes['decision'] = {'decider': 'person', 'confidence': 1.0, 'task_type': None,
+                                   'reason': 'Agent selected on the ticket.'}
     if 'agent' in nouns:
         agent = nouns['agent'] or None
         if agent is not None and agent not in TICKET_AGENTS:
@@ -1939,6 +1955,39 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
                 kept = sorted({str(one) for one in cast(list[str], waits)} - {work_id})
                 if tx.update('after', {'work_id': work_id}, {'works': kept}) is None:
                     tx.insert('after', {'work_id': work_id, 'works': kept})
+
+
+class TicketRuntime:
+    """Public access to the ticket's runtime, beside its agent and glyph."""
+
+    @staticmethod
+    def store(ctx: Context) -> Store:
+        store = ctx.require_store()
+        if store.module == 'map':
+            return store
+        bound = store.bound_base()
+        return Store(store.project_id, base=bound.id if bound else None, module='map')
+
+    def read(self, ctx: Context, work_id: str) -> dict[str, Any]:
+        store = self.store(ctx)
+        with store.tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': work_id})
+            eligible = tx.get('eligible', {'work_id': work_id})
+        return {**({field: row.get(field) for field in ('agent', 'model', 'effort', 'decision')} if row else {}),
+                **({'eligible': eligible['agents']} if eligible else {})}
+
+    def save(self, ctx: Context, work_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        store = self.store(ctx)
+        changes = {field: values[field] for field in ('agent', 'model', 'effort', 'decision') if field in values}
+        if changes:
+            with store.tables() as tx:
+                tx.concern(work_id=work_id, kind='ticket')
+                if tx.update('ticket_settings', {'work_id': work_id}, changes) is None:
+                    tx.insert('ticket_settings', {'work_id': work_id, **changes})
+        return self.read(ctx, work_id)
+
+
+TICKET_RUNTIME = TicketRuntime()
 
 
 def _epic(store: Store, work_id: str, given: Any) -> str | None:
@@ -2142,6 +2191,10 @@ WORK_NOUNS = (
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
     _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
                    'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
+    _noun('model', 'add and edit: the model this ticket uses, from dispatch options; none clears it. '
+                   'The person can change it before the start.'),
+    _noun('effort', 'add and edit: the thinking level this ticket uses, from dispatch options; none clears it. '
+                    'The person can change it before the start.'),
     _noun('hold', 'add and edit: true holds the ticket, hidden from agents and automatic starts until '
                   'the person lets it go; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
@@ -2210,7 +2263,7 @@ MODULE = Module(
     item_read=map_item_read,
     items_at=map_items_at,
     item_kinds=('work', 'question', 'message', 'term'),
-    provides=(Provides('base.holds', base_holds),),
+    provides=(Provides('base.holds', base_holds), Provides('ticket.runtime', TICKET_RUNTIME)),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with its receiver and '

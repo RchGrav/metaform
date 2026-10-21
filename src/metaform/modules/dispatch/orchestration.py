@@ -78,6 +78,52 @@ def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any]
 class Transport:
     """The orchestration module uses this provider instead of importing dispatch internals."""
 
+    def runtime_catalog(self, ctx: Context, work_id: str) -> dict[str, Any]:
+        """Installed, eligible adapters and their advertised model descriptions and thinking levels.
+
+        Reading a catalog starts no process and sends no prompt. Missing options remain empty so the assignment
+        owner can request an options-only prime before choosing.
+        """
+        from . import agent_choices, catalog_rows, found_command, option_key
+        eligible = cast(list[str], self.runtime_settings(ctx, work_id).get('eligible') or [])
+        rows = catalog_rows(ctx.require_store())
+        result: dict[str, Any] = {}
+        for agent in agent_choices():
+            if eligible and agent not in eligible or found_command(ctx, agent) is None:
+                continue
+            models: dict[str, str] = {}
+            efforts: list[str] = []
+            for option in cast(list[dict[str, Any]], (rows.get(agent) or {}).get('settings') or []):
+                key = option_key(option)
+                for choice in cast(list[dict[str, Any]], option.get('options') or []):
+                    value = choice.get('value')
+                    if not isinstance(value, str) or not value.strip():
+                        continue
+                    if key == 'model':
+                        models[value] = ': '.join(str(part) for part in
+                                                 (choice.get('name'), choice.get('description')) if part) or value
+                    elif key == 'thought_level':
+                        efforts.append(value)
+            result[agent] = {'models': models, 'efforts': efforts}
+        return result
+
+    def runtime_settings(self, ctx: Context, work_id: str) -> dict[str, Any]:
+        """The saved ticket choice, carrying pre-existing manual tune values until it is saved in the map."""
+        from . import runtime_settings
+        return runtime_settings(ctx, work_id)
+
+    def keep_runtime(self, ctx: Context, work_id: str, choice: dict[str, Any]) -> dict[str, Any]:
+        """Keep an assignment's validated choice while preserving the person's existing ticket overrides."""
+        from . import keep_runtime
+        catalog = self.runtime_catalog(ctx, work_id)
+        with ctx.require_store().atomic():
+            return keep_runtime(ctx, work_id, choice, catalog)
+
+    def edit_runtime(self, ctx: Context, work_id: str, given: dict[str, Any]) -> dict[str, Any]:
+        """Card edits share dispatch tune's validation and authority."""
+        from . import edit_runtime
+        return edit_runtime(ctx, work_id, given)
+
     def guard_claim(self, ctx: Context, work_id: str) -> None:
         from . import person_asks, starts_held
         caution = starts_held(replace(ctx, nouns={'id': work_id}))
@@ -110,6 +156,8 @@ class Transport:
         status = owner.routing_status(ctx, work) if owner is not None else None
         if status and status.get('state') == 'creating':
             return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}
+        if owner is not None and hasattr(owner, 'prepare_runtime') and not owner.prepare_runtime(ctx, held):
+            return {'state': 'queued', 'problem': 'The Facilitator is choosing the ticket runtime.'}
         # A launch counts the runners it started in its delivery, `attempts`. Past dispatch_retries starts with no
         # session made, the delivery is handed to the person with a signal and started no more: the system stops its
         # own loop and says why, rather than start a runner on every pass (2026-10-20).
@@ -138,7 +186,10 @@ class Transport:
                     return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner')}
                 return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid'],
                         'attempts': attempts}
-            agent = agent_named(str((row or {}).get('agent') or ctx.setting('dispatch_agent')))
+            runtime = self.runtime_settings(ctx, work)
+            agent = agent_named(str(runtime.get('agent') or (row or {}).get('agent') or ctx.setting('dispatch_agent')))
+            if row is not None and row.get('agent') != agent:
+                row = None  # a changed ticket agent starts its own adapter instead of resuming another agent's session
             launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
             words = [f'assignment={held["assignment_id"]}']
             if row is not None:
@@ -416,7 +467,8 @@ def broadcast(ctx: Context, text: str, team: str | None = None) -> dict[str, Any
     ident = hashlib.sha256(f'{gc["assignment_id"]}:{time.time_ns()}'.encode()).hexdigest()[:16]
     recipients: list[dict[str, Any]] = []
     for member in owner.members(ctx, gc['team_id']):
-        if member['assignment_id'] == gc['assignment_id'] or member.get('stop'):
+        if (member['assignment_id'] == gc['assignment_id'] or member.get('stop')
+                or member['state'] in ('returned', 'delivered', 'failed', 'stopped', 'transferred')):
             continue
         event = owner.queue_message(ctx, member['assignment_id'],
             {'id': ident, 'kind': 'gc_broadcast', 'from': sender, 'text': text, 'team_id': gc['team_id']},
@@ -466,4 +518,3 @@ def snapshots(sent: list[prompt_files.Sent]) -> list[dict[str, Any]]:
              'selected_version_id': one.selected_version_id, 'rendered_fingerprint': one.rendered_fingerprint,
              'number': one.number, 'origin': one.origin, 'bindings': one.bindings, 'problems': list(one.problems)}
             for one in sent]
-

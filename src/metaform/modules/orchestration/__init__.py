@@ -155,6 +155,10 @@ def credits(ctx: Context) -> Any:
     return result
 
 
+def select_runtime(ctx: Context) -> Any:
+    return SERVICE.runtime(ctx, str(ctx.nouns['work']), ctx.nouns.get('choice'))
+
+
 def functionality(ctx: Context) -> Any:
     store = ctx.require_store()
     return functional_context(store, store.ticket(str(ctx.nouns['work'])).work)
@@ -185,6 +189,10 @@ MODULE = Module(
                     Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
         Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',
              effect='read', nouns=(Noun('refresh', 'Fetch the current account balance.', 'bool', required=False),)),
+        Verb('runtime', select_runtime, 'Choose ticket runtime through Jev or record its Facilitator fallback.',
+             nouns=(Noun('work', 'Ticket id.'),
+                    Noun('choice', 'Facilitator choice: agent, model, effort, task_type, confidence and reason.',
+                         'json', required=False, schema=OBJECT))),
         Verb('claim', claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
              nouns=(Noun('work', 'Existing root work id.'),
                     Noun('role', 'Reusable specialist name or URI; omitted uses the selected specialist. Missing roles are created.', required=False),

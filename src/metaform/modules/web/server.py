@@ -1761,8 +1761,8 @@ class Handler(BaseHTTPRequestHandler):
             self.refuse(error, 404)
 
     def set_ticket(self, given: dict[str, Any]) -> None:
-        """Change a ticket's preferred agent, the person's hold or its glyph, at any time. When the agent changes while
-        another agent works the ticket, that agent is stopped and the chosen one started on it."""
+        """Change a ticket's agent, model, thinking level, hold, glyph or board. When the agent changes while another
+        agent works the ticket, that agent is stopped and the chosen one started on it."""
         work_id = given.get('work_id')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A ticket change names the ticket.'})
@@ -1790,9 +1790,9 @@ class Handler(BaseHTTPRequestHandler):
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
-        changes = {key: given[key] for key in ('agent', 'hold', 'glyph', 'board') if key in given}
+        changes = {key: given[key] for key in ('agent', 'model', 'effort', 'hold', 'glyph', 'board') if key in given}
         if not changes:
-            return self.send(400, {'error': 'A ticket change gives an agent, a hold, a glyph or a board.'})
+            return self.send(400, {'error': 'A ticket change gives an agent, model, thinking level, hold, glyph or board.'})
         try:
             edited = plain(module_verb(given, 'map', 'work', {'op': 'edit', 'id': work_id, **changes}, chosen=True))
         except (Stop, StoreError) as error:
@@ -3461,7 +3461,7 @@ def brief_work(found: Any) -> Any:
 
 
 def with_glyphs(given: dict[str, str], found: Any) -> Any:
-    """A work read's records, each with what the map module keeps on it under `map`, its glyph, its preferred agent,
+    """A work read's records, each with what the map module keeps on it under `map`, its glyph, runtime choice,
     eligible agents, the tickets it waits on and whether the person holds it, as `map work` shows it, VIEW-040, VIEW-042,
     MAP-058 and BASE-035. Its tables, STORE-045,
     are read once each: running `map work` over every ticket again only to add these cost more than the work read
@@ -3490,7 +3490,8 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                 str(row['work_id']): {'glyph': row['glyph']} for row in rows('glyphs', 'work_id', {})}
             for row in rows('ticket_settings', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
-                                                                board=row.get('board') or '')
+                    board=row.get('board') or '',
+                    **{field: row[field] for field in ('model', 'effort', 'decision') if row.get(field) is not None})
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
             # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every

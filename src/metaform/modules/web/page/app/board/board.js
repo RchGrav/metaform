@@ -58,11 +58,15 @@ export function eligibilityPicker(agents, save) {
   return box;
 }
 const FIVE_AGENTS = ['jelly', 'gearling', 'kite', 'moth', 'drone'];  // five agents at work at most
-function ticketControls(ticket) {
+function ticketControls(ticket, settings = null) {
   const kept = ticket.map || {};
   const change = async (fields, control) => {
     control.disabled = true;
-    try { if (await wrote('/api/ticket', {work_id: ticket.id, ...fields})) await renderBoard(); }
+    try {
+      const saved = await wrote('/api/ticket', {work_id: ticket.id, ...fields});
+      if (saved) await renderBoard();
+      return Boolean(saved);
+    }
     finally { control.disabled = false; }
   };
   const chosen = kept.agent || defaultAgent(ticket.address || ticket.receiver_address, kept.paths || []);
@@ -74,6 +78,7 @@ function ticketControls(ticket) {
   const box = h('div', {class: 'ticket-controls', onclick: event => event.stopPropagation()},
     h('label', {title: 'The agent this ticket prefers; change it any time, even while one works on it'}, 'Agent ',
       agentSelect(chosen, agent => change({agent}, box.querySelector('select.agent')))),
+    runtimeControls(ticket, chosen, change, settings),
     eligibilityPicker(eligibleAgents(ticket), saveEligible),
     glyphPick(kept, change),
     // only while an agent runs on it: an ended agent's ticket offers Back to To do on its card (UX recheck 2026-10-17)
@@ -81,6 +86,56 @@ function ticketControls(ticket) {
       ? recallButton(ticket) : null,
     ticket.done ? null : holdButton(kept, change));
   return box;
+}
+/* Runtime choices belong to this ticket. Read the agent's offered values only when its settings are opened. */
+function runtimeControls(ticket, agent, change, settings) {
+  const kept = ticket.map || {}, project = S.project, base = S.base;
+  const fields = ['model', 'effort'];
+  const picks = fields.map(key => h('select', {class: key, 'aria-label': key === 'model' ? 'Model' : 'Thinking level',
+    disabled: true, onchange: async event => {
+      const pick = event.currentTarget;
+      if (!await change({[key]: pick.value || 'none'}, pick)) pick.value = kept[key] || '';
+    }}, h('option', {value: kept[key] || ''}, kept[key] || 'Project setting')));
+  const hint = h('small', {class: 'runtime-hint'}, 'Open settings to load model and thinking choices.');
+  const box = h('div', {class: 'runtime-settings'},
+    fields.map((key, index) => h('label', {}, key === 'model' ? 'Model ' : 'Thinking ', picks[index])), hint);
+  let reading = null;
+  const load = async () => {
+    try {
+      const found = (await read('dispatch-options', {agent})).agents?.find(one => one.agent === agent);
+      if (S.project !== project || S.base !== base) return;
+      fields.forEach((key, index) => {
+        const option = found?.settings?.find(one => key === 'effort'
+          ? ['effort', 'thought_level'].includes(one.key) || one.category === 'thought_level'
+          : one.key === 'model' || one.category === 'model');
+        const choices = option?.choices || [], current = option?.chosen ?? option?.current;
+        const name = choices.find(one => one.value === current)?.name || current;
+        const chosen = kept[key] || '';
+        fill(picks[index], h('option', {value: '', selected: !chosen},
+          name ? `Project setting: ${name}` : 'Project setting'),
+        chosen && !choices.some(one => one.value === chosen)
+          ? h('option', {value: chosen, selected: true}, chosen) : null,
+        choices.map(one => h('option', {value: one.value, title: one.description || '',
+          selected: one.value === chosen}, one.name || one.value)));
+        picks[index].disabled = !choices.length;
+      });
+      hint.textContent = found?.next ? 'Choices appear after this agent has run here.'
+        : 'Changes apply to this ticket’s next start.';
+    } catch (error) { hint.textContent = error.message; reading = null; }
+  };
+  settings?.addEventListener('toggle', () => {
+    if (settings.open && !reading) reading = load();
+  });
+  return box;
+}
+/* Three compact words expose the saved launch choice. Decision provenance stays available on hover. */
+function runtimeSummary(ticket) {
+  const kept = ticket.map || {}, decision = kept.decision;
+  const agent = kept.agent || defaultAgent(ticket.address || ticket.receiver_address, kept.paths || []);
+  const confidence = Number.isFinite(decision?.confidence) ? ` (${Math.round(decision.confidence * 100)}%)` : '';
+  const title = decision ? `Chosen by ${decision.decider}${confidence}. ${decision.reason || ''}`.trim()
+    : 'Agent, model and thinking level. Default follows the project setting.';
+  return h('span', {class: 'runtime-choice', title}, `${agent} ${kept.model || 'default'} ${kept.effort || 'default'}`);
 }
 /* Which agent works this ticket, by its glyph: the tickets with one glyph are one agent's, done one at a time. */
 function glyphPick(kept, change) {
@@ -124,6 +179,9 @@ function holdButton(kept, change) {
 const assignedOf = ticket => ({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
   ends: [ticket.receiver_address, ticket.provider_address]});
 function card(ticket, place, total, find) {
+  const settings = h('details', {class: 'ticket-settings', onclick: event => event.stopPropagation()},
+    h('summary', {}, ticket.map?.hold ? 'Held · agent settings' : 'Agent settings'));
+  settings.append(ticketControls(ticket, settings));
   // the place counted when it is clicked, not when it was made: a card a move elsewhere left as it was is not made again
   const move = async (to, by = 0) => {
     const column = columnOf(ticket);
@@ -145,8 +203,7 @@ function card(ticket, place, total, find) {
     cardEnded(ticket),
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
     cardActs(ticket, place, total, move),
-    h('details', {class: 'ticket-settings', onclick: event => event.stopPropagation()},
-      h('summary', {}, ticket.map?.hold ? 'Held · agent and glyph' : 'Agent, glyph and hold'), ticketControls(ticket)));
+    settings);
   if (ticket.map?.hold) box.classList.add('on-hold');
   box.addEventListener('dragstart', event => {
     event.dataTransfer.setData('text/plain', ticket.id);
@@ -162,7 +219,7 @@ function cardTop(ticket) {
   const glyph = ownGlyph(ticket) || ROAM.figures.get(ticket.id)?.glyph;
   return h('div', {class: 'top'}, glyph ? h('img', {class: 'glyph', src: `/page/agent-glyphs/${glyph}.svg`, alt: glyph,
     title: `Agent ${glyph}: the tickets with this glyph are one agent's, done one at a time`}) : null,
-  conditionLabel(ticket),
+  runtimeSummary(ticket), conditionLabel(ticket),
   ticket.done && ticket.outcome && ticket.outcome !== 'completed' ? h('span', {class: `outcome ${ticket.outcome}`,
     title: `Closed ${ticket.outcome}, not completed`}, ticket.outcome === 'cancelled' ? 'Cancelled' : ticket.outcome)
     : null,

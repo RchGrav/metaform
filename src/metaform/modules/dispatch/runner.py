@@ -3656,6 +3656,22 @@ class Session:
         native = owner is not None
         if owner is not None and self.role == 'worker' and self.assignment is None:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id)
+        if owner is not None and self.role == 'worker' and self.assignment is not None:
+            if not await asyncio.to_thread(owner.prepare_runtime, self.ctx, self.assignment):
+                from .orchestration import SUSPENDED
+                self.how = SUSPENDED
+                self.ended.set()
+                return
+            from . import runtime_settings
+            runtime = await asyncio.to_thread(runtime_settings, self.ctx, self.work_id)
+            selected_agent = runtime.get('agent')
+            if selected_agent and selected_agent != self.agent and not self.resume:
+                # A resumed ACP session belongs to its original adapter. Ticket agent edits apply to new sessions.
+                self.agent = agent_named(str(selected_agent))
+                self.command = argv(start_command(self.ctx, self.agent))
+                self.name = agent_label(self.agent)
+                self.acp['agent'] = self.agent
+                self.ctx.nouns['agent'] = self.agent
         if owner is not None and self.role == 'worker' and self.assignment is not None \
                 and not self.ctx.nouns.get('persons'):  # the person's own start runs now, specialist or not
             status = await asyncio.to_thread(owner.routing_status, self.ctx, self.work_id)

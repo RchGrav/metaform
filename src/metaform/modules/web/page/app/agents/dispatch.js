@@ -97,12 +97,16 @@ export async function startAgent(workId, agent, own = {}) {
   toast(`${agentName(agent)} is starting on the ticket. It shows under Agent deployed while it is working.`);
   return true;
 }
-/* The window an agent is started from: the tickets, and the agent chosen once for the window, in the picker every
- * start shares, VIEW-039. */
+const startAgentFor = (ticket, agent) => START.agentChanged ? agent : ticket.map?.agent || agent;
+/* Each ticket keeps its assigned agent until the person changes this window's picker, VIEW-039. A card's own start
+ * opens on that assignment rather than a previous window's choice. */
 export function startWindow(title, tickets, all = false) {
   if (D.starting) return;
   $('#dispatch .title').textContent = title;
-  const pick = PICKERS.start ||= agentPicker({label: 'Agent', kept: true, onchange: () => START.draw?.()});
+  const pick = PICKERS.start ||= agentPicker({label: 'Agent', kept: true,
+    onchange: () => { START.agentChanged = true; START.draw?.(); }});
+  START.agentChanged = false;
+  if (!all && tickets.length === 1 && tickets[0].map?.agent) pick.set(tickets[0].map.agent);
   if (!$('#dispatch .pickhost').firstChild) $('#dispatch .pickhost').append(pick);
   const startAll = $('#dispatch .start-all');
   let shown = tickets;  // the tickets the window offers now, for the agent chosen
@@ -115,7 +119,7 @@ export function startWindow(title, tickets, all = false) {
   const draw = () => {
     const agent = pick.value();
     shown = all ? startable(tickets, agent) : tickets;
-    const said = startAllLabel(shown.filter(ticket => allowsAgent(ticket, agent)).length);
+    const said = startAllLabel(shown.filter(ticket => allowsAgent(ticket, startAgentFor(ticket, agent))).length);
     startAll.textContent = counted ? said.label : 'Start all';
     $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
     startAll.disabled = !shown.length || !agent || !counted || !said.count;
@@ -123,7 +127,8 @@ export function startWindow(title, tickets, all = false) {
     // starts, never the person's start (code.dispatcher.agent#79); UX review round 1 (web-gui-controls F10)
     const full = counted && HARNESS.slots ? HARNESS.slots.machine_free <= 0 : false;
     fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
-      conditionLabel(ticket), startButton(ticket, agent, pick, full),
+      conditionLabel(ticket), h('span', {class: 'agent'}, agentName(startAgentFor(ticket, agent))),
+      startButton(ticket, startAgentFor(ticket, agent), pick, full),
       h('div', {class: 'task'}, ...taskWords(ticket.task || ticket.note || '')))));
     drawPermissions(agent);
   };
@@ -180,14 +185,15 @@ async function drawPermissions(agent) {
   };
   sayRisk();
 }
-/* The permissions chosen for this launch, only those changed from the project's. */
-const launchOwn = () => Object.fromEntries(Object.entries(START.own || {}).filter(([, value]) => value));
+/* The permissions chosen for this launch. A mode belongs only to the agent whose options supplied it. */
+const launchOwn = agent => Object.fromEntries(Object.entries(START.own || {}).filter(([key, value]) => value
+  && (key !== 'mode' || START.permissionsFor === `${S.project}:${agent}`)));
 /* Start all offers the tickets the agent chosen may take, one for each glyph, since a glyph's tickets are one
  * agent's, done one at a time. */
 function startable(candidates, agent) {
   const glyphs = new Set();
   return candidates.filter(ticket => {
-    if (!allowsAgent(ticket, agent)) return false;
+    if (!allowsAgent(ticket, startAgentFor(ticket, agent))) return false;
     const glyph = ownGlyph(ticket);
     if (glyph && glyphs.has(glyph)) return false;
     if (glyph) glyphs.add(glyph);
@@ -212,7 +218,7 @@ export function startAllLabel(offered) {
     + `slots free${machine}.${free ? '' : own} `
     + `${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
 }
-/* Start all: the agent chosen started on each ticket offered that is not started yet, one after another, up to the
+/* Start all: each ticket's assigned agent, or the person's override, starts one after another, up to the
  * agent slots free now, as its label says before the click; the rest wait in To do, and autostart starts them as
  * slots free. Stop starting ends the run between two starts. A start that fails can be retried on its own ticket. */
 async function startAllTickets(tickets, pick, startAll) {
@@ -240,7 +246,8 @@ async function startAllTickets(tickets, pick, startAll) {
     const button = buttons[tickets.indexOf(ticket)];
     if (START.cancel) { left++; button.disabled = false; continue; }
     try {
-      if (await startAgent(ticket.id, agent, {...launchOwn(), batch: START.batch})) {
+      const chosen = startAgentFor(ticket, agent);
+      if (await startAgent(ticket.id, chosen, {...launchOwn(chosen), batch: START.batch})) {
         started++; button.textContent = 'Starting';
       }
       else { failed++; button.disabled = false; button.textContent = 'Retry'; }
@@ -255,7 +262,7 @@ async function startAllTickets(tickets, pick, startAll) {
   startAll.textContent = label;
   startAll.disabled = !buttons.some(button => !button.disabled);
   if (!failed && !left) $('#dispatch').hidden = true;
-  toast(`${started} ${agentName(agent)} agent${started === 1 ? '' : 's'} starting.`
+  toast(`${started} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (failed ? ` ${failed} could not start; retry their tickets.` : '')
     + (waiting ? ` ${waiting} wait in To do for a free Full Auto slot, or start each on its own; ` + (AUTO.value
@@ -263,13 +270,13 @@ async function startAllTickets(tickets, pick, startAll) {
       : 'they wait until you start them or check Full Auto.') : ''));
   await renderBoard();
 }
-/* One ticket's Start, for the agent chosen above, unless the ticket's eligible agents leave it out. */
+/* One ticket's Start uses its assignment or the person's current override, within its eligible agents. */
 function startButton(ticket, agent, pick, full = false) {
   const start = async event => {
-    const chosen = pick.value();
+    const chosen = startAgentFor(ticket, pick.value());
     event.target.disabled = true;
     try {
-      if (await startAgent(ticket.id, chosen, launchOwn())) { $('#dispatch').hidden = true; await renderBoard(); }
+      if (await startAgent(ticket.id, chosen, launchOwn(chosen))) { $('#dispatch').hidden = true; await renderBoard(); }
       else event.target.disabled = false;
     } catch (error) { toast(error.message); event.target.disabled = false; }
   };
@@ -278,10 +285,11 @@ function startButton(ticket, agent, pick, full = false) {
     title: !allowsAgent(ticket, agent) ? `Eligible agents: ${eligibleAgents(ticket).map(agentName).join(', ')}`
       : full ? 'This machine runs the most agents dispatch_machine_agents allows; it can start once one finishes or is '
         + 'stopped'
-      : 'Start the agent chosen above on this ticket', onclick: start}, 'Start');
+      : `Start ${agentName(agent)} on this ticket`, onclick: start}, 'Start');
 }
 // the start window's tickets, drawn again for the agent chosen, and the permissions chosen for its launches
-const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false, batch: null};
+const START = {draw: null, own: {prompts: '', mode: ''}, permissionsFor: null, cancel: false, batch: null,
+  agentChanged: false};
 /* Stop all ends a Start all run between two starts, as its own Stop starting does; true when one was running. UX
  * review round 2 (ux-verify-combined F1): Stop all left the run going, and three agents started after it. */
 export function cancelStarting() {

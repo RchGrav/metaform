@@ -23,8 +23,11 @@ SPECIALIST_RESULT = 'SPECIALIST_RESULT: the route preserves its functional resul
 @pytest.fixture
 def swarm(run, home, project_folder, tmp_path, request):
     made = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
+    made.swarm_state = tmp_path / 'swarm-progress'
     for agent in ('claude', 'codex', 'gemini'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
+        run('dispatch', 'options', f'agent={agent}', 'prime=true', '--json', cwd=project_folder,
+            env=made.env('ask', FAKE_SWARM_STATE=str(made.swarm_state)))
     run('set', '--dispatch-agents', '1', '--dispatch-machine-agents', '1', cwd=project_folder)
     # one independent assessment of each delivery, which these scenarios wait for: the project default is none
     # since the owner's restoration (orchestration_reviews 0), so the fixture asks for it (2026-10-20)
@@ -32,6 +35,11 @@ def swarm(run, home, project_folder, tmp_path, request):
     # The fixture adapter completes the explicit result/check-in work itself. An optional after-finish note turn
     # is a separate dispatch contract and would not add evidence to this delivery scenario.
     run('set', '--dispatch-record-on-finish', 'off', '--dispatch-autostart', cwd=project_folder)
+    # This legacy GC is deliberately preassigned by the person. Every new child
+    # chooses its runtime through its commissioned Facilitator instead.
+    run('set', '--dispatch-agent', 'claude', cwd=project_folder)
+    run('map', 'work', 'op=edit', f'id={made.id}', 'agent=claude', 'model=swarm-deep', 'effort=ultra',
+        cwd=project_folder)
     from metaform.module import context
     from metaform.modules.orchestration.state import SERVICE
     legacy_ctx = context('orchestration', project_folder, project='proj')
@@ -45,7 +53,6 @@ def swarm(run, home, project_folder, tmp_path, request):
         {'name': 'route-grounding', 'entityType': 'functional constraint',
          'observations': ['The caller retains ownership of its requested result.'],
          'why': 'Ground the delivery and nested calls.'}]), f'node=element:{NODE}', cwd=project_folder)
-    made.swarm_state = tmp_path / 'swarm-progress'
     (project_folder / 'OPERATIVE.md').write_text('Use the original restoration sequence.\n')
     made.event_log = tmp_path / 'map-events.jsonl'
 
@@ -68,6 +75,34 @@ def records(module, table):
         return [dict(one) for one in tx.rows(table, limit=0).results]
 
 
+def delivery_assignments(assignments):
+    return [one for one in assignments if one['authored_role_uri'] not in
+            ('metaform://role/facilitator', 'metaform://role/role_creator')]
+
+
+def creation_requests():
+    return [one for one in records('orchestration', 'role_requests')
+            if not one['context'].get('context', {}).get('runtime_only')]
+
+
+def runtime_evidence(assignments, logged):
+    choices = {one['work_id']: one for one in records('map', 'ticket_settings')}
+    sessions = {one['session_id']: one for one in records('dispatch', 'agent_sessions')}
+    for assignment in delivery_assignments(assignments):
+        chosen = choices[assignment['work_id']]
+        turns = [one for one in logged if one['work'] == assignment['work_id'] and 'runtime_config' in one]
+        assert turns, 'The selected runtime reaches a real ACP recipient.'
+        assert all(one['runtime_config'] == {key: chosen[key] for key in ('model', 'effort')} for one in turns)
+        assert all(sessions[one['session']]['agent'] == chosen['agent'] for one in turns)
+        if assignment['authored_role_uri'] == 'metaform://role/implementer':
+            assert chosen['agent'] == 'codex' and chosen['effort'] == 'medium'
+        if assignment['parent_assignment_id'] or assignment['reviewed_assignment_id']:
+            assert chosen['decision']['decider'] == 'facilitator' and chosen['decision']['confidence'] == 1.0
+    assert any(one.get('config_applied') == {'id': 'model', 'value': 'swarm-deep'} for one in logged)
+    assert any(one.get('config_applied') == {'id': 'reasoning', 'value': 'medium'} for one in logged)
+    assert [one for one in logged if 'runtime_choice' in one], 'New assignments exercise full-model fallback.'
+
+
 def write_evidence(swarm, folder, test):
     # Keep the final runtime records beside the exact ACP recipient and cross-process event logs. A caller can
     # retain all evidence with pytest --basetemp; these summaries never substitute for the recipient assertions.
@@ -78,6 +113,7 @@ def write_evidence(swarm, folder, test):
         'transitions': records('orchestration', 'transitions'),
         'role_requests': records('orchestration', 'role_requests'),
         'changes': records('orchestration', 'changes'),
+        'ticket_settings': records('map', 'ticket_settings'),
         'generated_role_history': records('agents', 'definition_history'),
         'context_epochs': records('agents', 'contexts'),
         'context_receipts': [{key: value for key, value in one.items() if key != 'component'}
@@ -216,12 +252,16 @@ def delivery_evidence(swarm, scenario):
     assert len(worker_calls) == 1 and worker_calls[0]['role'] == 'implementer'
     assert worker_calls[0]['mcp_tool']['runner_identity'] == worker_calls[0]['runner_identity']
     assert worker_calls[0]['mcp_tool']['is_error'] is False
+    runtime_evidence(assignments, logged)
     return assignments, logged
 
 
 def test_capacity_one_gc_worker_specialist_return_and_independent_fqc(swarm):
     assignments, logged = delivery_evidence(swarm, 'nested')
-    assert len(assignments) == 4
+    assert len(delivery_assignments(assignments)) == 4
+    runtime_requests = records('orchestration', 'role_requests')
+    assert len(runtime_requests) == 3 and all(
+        one['state'] == 'published' and one['context']['context']['runtime_only'] for one in runtime_requests)
     # the swarm's four sessions; the person's system agent, woken for its digest, and a Facilitator making a
     # specialist may run beside them (2026-10-20)
     created = [one for one in logged if 'session_created' in one]
@@ -229,16 +269,17 @@ def test_capacity_one_gc_worker_specialist_return_and_independent_fqc(swarm):
     assert len([one for one in created if one['role'] not in ('triage', 'facilitator', 'role_creator')]) == 4
     assert len([one for one in logged if 'session_loaded' in one and one['role'] in ('gc', 'implementer')]) == 2
     transitions = records('orchestration', 'transitions')
-    assert len([one for one in transitions if one['kind'] == 'suspend' and one['state'] == 'delivered']) == 2
+    assert len([one for one in transitions if one['kind'] == 'suspend' and one['state'] == 'delivered'
+                and one['payload'].get('child_assignment_id')]) == 2
     pm_evidence(swarm, 'nested', ['GC_VALIDATED', 'FQC_ACCEPTED'])
 
 
 def test_worker_missing_role_returns_through_gc_creator_published_duty_and_registered_reuse(swarm):
     assignments, logged = delivery_evidence(swarm, 'generated')
-    requests = records('orchestration', 'role_requests')
+    requests = creation_requests()
     assert len(requests) == 1 and requests[0]['state'] == 'published'
     requested = requests[0]
-    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/facilitator')
+    creator = next(one for one in assignments if one['assignment_id'] == requested['creator_assignment_id'])
     worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
     specialists = [one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist']
     assert requested['caller_assignment_id'] == worker['assignment_id']
@@ -265,10 +306,11 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     swarm.start(FAKE_SWARM_SCENARIO='gc-generated', FAKE_SWARM_STATE=str(swarm.swarm_state))
     assignments = completed(swarm)
     root = next(one for one in assignments if one['work_id'] == swarm.id)
-    creator = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/facilitator')
+    request = creation_requests()[0]
+    creator = next(one for one in assignments if one['assignment_id'] == request['creator_assignment_id'])
     specialist = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist')
     critic = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/functionality')
-    assert len(assignments) == 4 and root['state'] == 'delivered' and swarm.ticket().done
+    assert len(delivery_assignments(assignments)) == 3 and root['state'] == 'delivered' and swarm.ticket().done
     assert creator['parent_assignment_id'] == specialist['parent_assignment_id'] == root['assignment_id']
     assert creator['team_id'] == specialist['team_id'] == root['team_id']
     assert specialist['return_to']['assignment_id'] == root['assignment_id']
@@ -298,7 +340,6 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
     assert capacities and all(one['limit'] == one['machine_limit'] == 1 and one['used'] == one['machine_used'] <= 1
                               for one in capacities)
-    request = records('orchestration', 'role_requests')[0]
     assert request['state'] == 'published' and request['creator_assignment_id'] == creator['assignment_id']
     assert request['child_assignment_id'] == specialist['assignment_id']
     definition = next(one for one in records('agents', 'definitions') if one['name'] == 'route_specialist')
@@ -340,8 +381,10 @@ def test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_g
     receipts = [one for one in records('agents', 'receipts') if one['name'] == role['prompt']]
     assert receipts and receipts[0]['actual_version_id'] == role['actual_version_id']
     assert source in receipts[0]['component']['text']
-    capacities = [one['capacity'] for one in swarm.entries() if 'capacity' in one]
-    assert len(assignments) == 3 and all(one['used'] == one['machine_used'] == 1 for one in capacities)
+    capacities = [one['capacity'] for one in swarm.entries()
+                  if 'capacity' in one and one['role'] not in ('facilitator', 'role_creator', 'triage')]
+    assert len(delivery_assignments(assignments)) == 3 and all(one['used'] == one['machine_used'] == 1
+                                                            for one in capacities)
 
 
 def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_read(swarm):
@@ -371,8 +414,9 @@ def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_rea
     assert not any(common in text for text in contexts)
     duties = [one['role_resource'] for one in swarm.entries() if one['role'] == 'gc' and 'role_resource' in one]
     assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in duties) == 2
-    assert len(assignments) == 2 and swarm.ticket().done
-    capacities = [one['capacity'] for one in swarm.entries() if 'capacity' in one]
+    assert len(delivery_assignments(assignments)) == 2 and swarm.ticket().done
+    capacities = [one['capacity'] for one in swarm.entries()
+                  if 'capacity' in one and one['role'] not in ('facilitator', 'role_creator', 'triage')]
     assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
 
 
@@ -384,10 +428,13 @@ def test_user_stops_a_suspended_gc_and_its_live_child_without_restarting_pending
     assert gc['state'] in ('suspended', 'waiting')
     assert next(one for one in before if one['work_id'] == worker['work'])['state'] == 'running'
     swarm.run('dispatch', 'stop', swarm.id, cwd=swarm.folder)
-    wait_for(swarm, lambda: not any(one['state'] == 'running' for one in records('dispatch', 'agent_sessions')))
+    owned_work = {one['work_id'] for one in before}
+    wait_for(swarm, lambda: not any(one['state'] == 'running' and one['work_id'] in owned_work
+                                  for one in records('dispatch', 'agent_sessions')))
     after = records('orchestration', 'assignments')
-    assert len(after) == 2 and {one['state'] for one in after} == {'stopped'}
-    assert all(one['stop']['by'] == 'user' for one in after)
+    actors = delivery_assignments(after)
+    assert len(actors) == 2 and {one['state'] for one in actors} == {'stopped'}
+    assert all(one['stop']['by'] == 'user' for one in actors)
     assert 'RETAINED_WORKER_DRAFT' in str(next(one for one in after if one['work_id'] == worker['work'])['last_check_in'])
     assert not any(one['state'] == 'pending' for one in records('orchestration', 'transitions'))
     assert not swarm.ticket().done
@@ -433,7 +480,8 @@ def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommenda
         wait_for(swarm, lambda: any('recommendation' in one['recipient_context'] for one in swarm.entries()
                                     if one.get('role') == 'gc' and 'recipient_context' in one))
         assert not any('correction_delivered' in one for one in logged)
-    capacities = [one['capacity'] for one in logged if 'capacity' in one]
+    capacities = [one['capacity'] for one in logged
+                  if 'capacity' in one and one['role'] not in ('facilitator', 'role_creator', 'triage')]
     assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
     pm_evidence(swarm, mode, ['GC_VALIDATED', 'FQC_FINDING', change['reason'], 'C(T)'])
 
@@ -447,7 +495,8 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     (swarm.swarm_state / 'peer-note').touch()
     wait_for(swarm, lambda: any('peer_note_sent' in one for one in swarm.entries()))
     early = swarm.entries()
-    assert not any(one.get('message', {}).get('method') in ('session/cancel', '_session/steering') for one in early)
+    assert not any(one.get('message', {}).get('method') in ('session/cancel', '_session/steering')
+                   for one in early if one['role'] != 'facilitator')
     peer_sent = next(one for one in early if 'peer_note_sent' in one)
     assert peer_sent['peer_interrupt_refused']['code'] != 0
     assert peer_sent['worker_broadcast_refused']['code'] != 0
@@ -459,24 +508,27 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     assert broadcast['team_id'] == next(one['team_id'] for one in records('orchestration', 'assignments')
                                         if one['work_id'] == swarm.id)
     discovery = {one['role']: one['all_agent_discovery']['peers'] for one in swarm.entries()
-                 if 'all_agent_discovery' in one}
+                 if 'all_agent_discovery' in one and one['role'] in ('gc', 'implementer', 'investigator')}
     assert set(discovery) == {'gc', 'implementer', 'investigator'}
     for peers in discovery.values():
-        assert {one['authored_role_uri'] for one in peers} == {
+        # Missing-Jev runtime commissions may connect the person's PM as well.
+        team_peers = [one for one in peers if one['work_id'] != 'conversation-system']
+        assert {one['authored_role_uri'] for one in team_peers} == {
             'metaform://role/gc', 'metaform://role/implementer', 'metaform://role/investigator'}
-        assert {one['session_id'] for one in peers} == {
-            one['owner_session_id'] for one in records('orchestration', 'assignments')}
+        assert {one['session_id'] for one in team_peers} == {
+            one['owner_session_id'] for one in delivery_assignments(records('orchestration', 'assignments'))}
     (swarm.swarm_state / 'specialist-release').touch()
     wait_for(swarm, lambda: any('specialist_reply' in one for one in swarm.entries()))
     (swarm.swarm_state / 'worker-release').touch()
     wait_for(swarm, lambda: any('PEER_REPLY:' in one.get('worker_peer_turn', '') for one in swarm.entries()))
     before_interrupt = swarm.entries()
     assert not any(one.get('message', {}).get('method') in ('session/cancel', '_session/steering')
-                   for one in before_interrupt)
+                   for one in before_interrupt if one['role'] != 'facilitator')
     (swarm.swarm_state / 'interrupt').touch()
     wait_for(swarm, lambda: any('interrupted_recipient' in one for one in swarm.entries()))
     seen = swarm.entries()
-    cancelled = [one for one in seen if one.get('message', {}).get('method') == 'session/cancel']
+    cancelled = [one for one in seen if one.get('message', {}).get('method') == 'session/cancel'
+                 and one['role'] != 'facilitator']
     assert cancelled and {one['role'] for one in cancelled} == {'investigator'}
     assert not any(one.get('message', {}).get('method') == '_session/steering' for one in seen)
     received = next(one['interrupted_recipient'] for one in seen if 'interrupted_recipient' in one)
@@ -522,3 +574,4 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
         assert 'RETAINED_SPECIALIST_STATE' in json.dumps(restored['interrupted_recipient']['assignment'])
         assert any(one.get('session_loaded') == session and one['pid'] != adapter for one in swarm.entries())
         assert following()['pending_direction'] == held['pending_direction']
+    runtime_evidence(records('orchestration', 'assignments'), swarm.entries())

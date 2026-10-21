@@ -14,9 +14,10 @@ import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from importlib import resources
 from typing import Any, cast
 
-from metaform import home
+from metaform import home, prompt_files
 from metaform.data import Column, Index, Node, Store, Table, Tables, TableTx, WorkRecord
 from metaform.module import (
     Context,
@@ -372,6 +373,95 @@ def current_mode(tx: TableTx, assignment: Mapping[str, Any]) -> str:
 class Orchestration:
     """Public provider used by dispatch, MCP context delivery and module UI reads."""
 
+    def runtime(self, ctx: Context, work_id: str,
+                fallback: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Choose once at assignment. Missing Jev decisions belong to the Facilitator's full model."""
+        from .runtime import choose
+        transports = [one for _, one in provided(ctx.folder, 'orchestration.transport')
+                      if hasattr(one, 'runtime_catalog')]
+        if not transports:
+            return {'state': 'unmanaged'}
+        transport = transports[0]
+        record = own(ctx).ticket(work_id).work
+        kept = transport.runtime_settings(ctx, work_id)
+        decision = cast(dict[str, Any], kept.get('decision') or {})
+        overrides = cast(dict[str, Any], decision.get('overrides') or {})
+        if not overrides and decision.get('decider') == 'person':
+            overrides = {key: kept[key] for key in ('agent', 'model', 'effort') if kept.get(key)}
+        if not decision and kept.get('agent'):
+            overrides = {'agent': kept['agent']}
+        current = fingerprint(record.task or '')
+        if fallback is not None:
+            caller = requested(ctx, ctx.nouns.get('assignment'))
+            with own(ctx).tables(write=False) as tx:
+                commissions = tx.rows('role_requests', {
+                    'creator_assignment_id': caller['assignment_id'], 'state': 'commissioned'}, limit=0).results
+                allowed = any((row_for(tx, assignment_id=one['caller_assignment_id']) or {}).get('work_id') == work_id
+                              for one in commissions)
+            if caller['authored_role_uri'] not in FACILITATORS or not allowed:
+                raise Stop('Only the commissioned Facilitator records a full-model runtime choice.', HELP)
+        recorded_task = decision.get('task_fingerprint')
+        if all(kept.get(key) for key in ('agent', 'model', 'effort')) and (
+                recorded_task == current or (recorded_task is None and not decision.get('task_type'))):
+            return {'state': 'selected', 'choice': kept}
+        catalog = transport.runtime_catalog(ctx, work_id)
+        # Explicit person choices restrict inference. Automatic choices can change after a Planner refines the task.
+        chosen = choose(ctx, record, catalog, fallback=fallback, overrides=overrides)
+        if chosen is None:
+            return {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog}
+        chosen['task_fingerprint'] = current
+        saved = transport.keep_runtime(ctx, work_id, chosen)
+        return {'state': 'selected', 'choice': saved}
+
+    def prepare_runtime(self, ctx: Context, assignment: Mapping[str, Any], *, restart: bool = False) -> bool:
+        """Commission existing fallback work before launching an unconfigured specialist."""
+        if assignment['authored_role_uri'] in FACILITATORS:
+            return True
+        with own(ctx).tables(write=False) as tx:
+            pending = tx.rows('role_requests', {'caller_assignment_id': assignment['assignment_id']}, limit=0).results
+            pending = [one for one in pending
+                       if one['state'] == 'commissioned' and role_options(one).get('assign_in_place')]
+            creators = [row_for(tx, assignment_id=one['creator_assignment_id']) for one in pending]
+        if pending:
+            if restart and not assignment.get('stop') and all(
+                    one is None or one.get('stop') or one['state'] in ENDED for one in creators):
+                # An explicit root restart authorizes replacement work. Old stopped descendants remain stopped.
+                with own(ctx).atomic(), own(ctx).tables() as tx:
+                    for request in pending:
+                        tx.update('role_requests', {'request_id': request['request_id']}, {'state': 'superseded'})
+                    request = pending[0]
+                    self.request_role(replace(ctx, nouns={
+                        'task': request['task'], 'key': 'restart:' + request['request_id'],
+                        'context': role_options(request)}), assignment, request['role'])
+            return False  # Its existing Facilitator owns both expertise and runtime before publication.
+        work_id = str(assignment['work_id'])
+        selected = self.runtime(ctx, work_id)
+        if selected['state'] == 'unmanaged':
+            return True
+        if selected['state'] != 'selected':
+            request_ctx = replace(ctx, nouns={
+                'task': assignment['task'], 'key': 'runtime:' + fingerprint(str(assignment['task'])),
+                'context': {'assign_in_place': True, 'runtime_only': True}})
+            self.request_role(request_ctx, assignment,
+                              str(assignment['authored_role_uri']).removeprefix('metaform://role/'))
+            return False
+        choice = selected['choice']
+        decision = choice.get('decision') or choice
+        if decision.get('task_type') != 'needs_plan' or assignment['authored_role_uri'] == 'metaform://role/planner':
+            return True
+        # A planning contribution refines the original ticket. It never completes an implementation ticket.
+        task = prompt_files.served(resources.files('metaform.modules.orchestration'), 'runtime_plan',
+                                   work=work_id)
+        inherited = ({**{key: choice.get(key) for key in ('agent', 'model', 'effort')},
+                      **decision, 'task_type': 'planning'}
+                     if decision.get('decider') in ('jev', 'facilitator') and not decision.get('overrides') else None)
+        self._delegate(replace(ctx, nouns={
+            'assignment': assignment['assignment_id'], 'role': 'planner', 'task': task,
+            'result': 'Refine the implementation ticket with concrete behavior and acceptance evidence.',
+            'key': 'runtime-plan:' + fingerprint(str(assignment['task'])), 'wait': True,
+            '_runtime_choice': inherited}), assignment, waiting=True, internal=True)
+        return False
+
     def route(self, ctx: Context, work_id: str, *, refresh: bool = False) -> dict[str, Any]:
         return routing.route(ctx, work_id, refresh=refresh)
 
@@ -421,6 +511,8 @@ class Orchestration:
             for request in tx.rows('role_requests', {'caller_assignment_id': caller['assignment_id']}, limit=0).results:
                 if request['state'] != 'commissioned' or not role_options(request).get('assign_in_place'):
                     continue
+                if role_options(request).get('runtime_only'):
+                    continue  # Choosing expertise cannot replace the missing full-model runtime decision.
                 creator_id = request.get('creator_assignment_id')
                 creator = row_for(tx, assignment_id=str(creator_id)) if creator_id else None
                 if creator is not None and creator['state'] == 'running':
@@ -456,8 +548,13 @@ class Orchestration:
             assignment = row_for(tx, work_id=work_id)
             if assignment:
                 requests = tx.rows('role_requests', {'caller_assignment_id': assignment['assignment_id']}, limit=0).results
-                if any(one['state'] == 'commissioned' and role_options(one).get('assign_in_place') for one in requests):
-                    return {'state': 'creating', 'role': None, 'reason': 'Facilitator is selecting expertise.'}
+                waiting = [one for one in requests
+                           if one['state'] == 'commissioned' and role_options(one).get('assign_in_place')]
+                if waiting:
+                    reason = ('Facilitator is choosing agent, model and thinking level.'
+                              if all(role_options(one).get('runtime_only') for one in waiting)
+                              else 'Facilitator is selecting expertise.')
+                    return {'state': 'creating', 'role': None, 'reason': reason}
                 return {'state': assignment['state'], 'role': assignment['authored_role_uri']}
             row = tx.get('routing', {'work_id': work_id})
             return {key: row.get(key) for key in ('state', 'role', 'reason')} if row else None
@@ -592,12 +689,23 @@ class Orchestration:
                 _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
                 assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
                     task=record.task or '', result=record.task or '', locations=places,
-                    mode=str(ctx.setting('orchestration_mode')), return_to={'kind': 'pm'})
+                    mode=str(ctx.setting('orchestration_mode')), return_to={'kind': 'pm'}, persons=persons)
                 if queue:
                     transition(tx, assignment, 'launch', {}, 'initial')
+            if persons and not assignment.get('stop'):
+                descendants = [assignment]
+                for current in descendants:
+                    if current.get('stop'):
+                        continue
+                    updated = update(tx, current, persons_start=True)
+                    if current['assignment_id'] == assignment['assignment_id']:
+                        assignment = updated
+                    descendants.extend(tx.rows('assignments', {
+                        'parent_assignment_id': current['assignment_id']}, limit=0).results)
         if session_id:
             return self.bind(ctx, assignment['assignment_id'], session_id, runner, persons=persons)
-        return assignment
+        self.prepare_runtime(ctx, assignment, restart=persons)
+        return self.assignment(ctx, assignment_id=assignment['assignment_id']) or assignment
 
     def context(self, ctx: Context, work_id: str | None = None,
                 session_id: str | None = None) -> dict[str, Any] | None:
@@ -799,10 +907,15 @@ class Orchestration:
                                                  'context': {'assign_in_place': True, 'choose_name': create}})
                 request = self.request_role(request_ctx, assignment, '' if create else role)
                 return {**(self.assignment(ctx, work_id=work_id) or assignment), 'role_request': request}
-        return assignment
+        self.prepare_runtime(ctx, assignment)
+        return self.assignment(ctx, assignment_id=assignment['assignment_id']) or assignment
 
     def delegate(self, ctx: Context, *, waiting: bool = False, handoff: bool = False) -> dict[str, Any]:
         parent = requested(ctx, ctx.nouns.get('assignment'))
+        return self._delegate(ctx, parent, waiting=waiting, handoff=handoff)
+
+    def _delegate(self, ctx: Context, parent: Mapping[str, Any], *, waiting: bool = False,
+                  handoff: bool = False, internal: bool = False) -> dict[str, Any]:
         name = str(ctx.nouns['role']).removeprefix('metaform://role/')
         if name == 'functionality':
             raise Stop('The FQC assesses independently of a GC swarm and returns findings to the responsible GC.',
@@ -810,7 +923,7 @@ class Orchestration:
         if name in ('facilitator', 'role_creator'):
             raise Stop('The Facilitator needs the delivery GC\'s recorded specialist-role commission.',
                        'metaform orchestration commission <request>')
-        blocked = held_role(ctx)
+        blocked = None if internal else held_role(ctx)
         if blocked:
             raise Stop(f'The configured roles_without_authority excludes {blocked} from creating work.',
                        'metaform config --show')
@@ -854,7 +967,14 @@ class Orchestration:
                 transition(tx, current, 'suspend', {'reason': 'Waiting for delegated result.',
                                                    'child_assignment_id': ident}, ident)
             transition(tx, child, 'launch', {'parent_assignment_id': current['assignment_id']}, 'initial')
-        return child
+        supplied_runtime = ctx.nouns.get('_runtime_choice')
+        if supplied_runtime:
+            for _, transport in provided(ctx.folder, 'orchestration.transport'):
+                if hasattr(transport, 'keep_runtime'):
+                    transport.keep_runtime(ctx, child['work_id'], {
+                        **supplied_runtime, 'task_fingerprint': fingerprint(child['task'])})
+        self.prepare_runtime(ctx, child)
+        return self.assignment(ctx, assignment_id=child['assignment_id']) or child
 
     def request_role(self, ctx: Context, parent: Mapping[str, Any], name: str,
                      handoff: bool = False) -> dict[str, Any]:
@@ -896,8 +1016,12 @@ class Orchestration:
             transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
             # Concurrent tickets needing the same specialty share one authoring helper. Each
             # request retains its own caller, task and continuation; publication releases all.
-            shared = tx.rows('role_requests', {'role': name, 'state': 'commissioned'}, limit=0).results if name else ()
+            runtime_only = cast(dict[str, Any], ctx.nouns.get('context') or {}).get('runtime_only')
+            shared = tx.rows('role_requests', {'role': name, 'state': 'commissioned'}, limit=0).results \
+                if name and not runtime_only else ()
             for pending in shared:
+                if role_options(pending).get('runtime_only'):
+                    continue
                 creator = row_for(tx, assignment_id=pending['creator_assignment_id'])
                 if creator and creator['state'] not in ENDED and not creator.get('stop'):
                     tx.update('role_requests', {'request_id': request_id}, {
@@ -915,12 +1039,17 @@ class Orchestration:
         # that listed the commission, while the ticket is one read away.
         work_id = str(owner['work_id'])
         numbered = store.numbers_of('work', [work_id]).get(work_id)
-        task = json.dumps({'request': {'request_id': request['request_id'], 'role': request['role'] or None},
+        task = json.dumps({'request': {'request_id': request['request_id'], 'role': request['role'] or None,
+                                      'runtime_only': bool(role_options(request).get('runtime_only'))},
                            'ticket': numbered[0] if numbered else work_id}, ensure_ascii=False)
         node, places = location(store, None, owner)
-        work = store.add_work(node, None, task=task, title=f'Create specialist role {request["role"] or "for this ticket"}')
+        runtime_only = bool(role_options(request).get('runtime_only'))
+        work = store.add_work(node, None, task=task,
+                              title='Choose ticket runtime' if runtime_only
+                              else f'Create specialist role {request["role"] or "for this ticket"}')
         creator = new_assignment(tx, work, 'facilitator', parent=owner, task=task,
-            result='Publish reusable expertise and return its registered name and URL.', locations=places,
+            result=('Choose ticket runtime and continue its assigned expertise.' if runtime_only
+                    else 'Publish reusable expertise and return its registered name and URL.'), locations=places,
             mode=current_mode(tx, owner), specification=owner['specification'],
             return_to={'assignment_id': owner['assignment_id'], 'role_request_id': request['request_id']})
         tx.update('role_requests', {'request_id': request['request_id']},
@@ -965,6 +1094,9 @@ class Orchestration:
         role = str(ctx.nouns.get('role') or request['role']).removeprefix('metaform://role/')
         if not role:
             raise Stop('Name the reusable expertise being published.', 'metaform orchestration publish_role role=<name>')
+        runtime_only = bool(role_options(request).get('runtime_only'))
+        if runtime_only and role != request['role']:
+            raise Stop('Runtime selection preserves assigned expertise.', HELP)
         lock = home.home() / 'run' / 'role-publication' / f'{fingerprint(f"{ctx.project}:{role}")}.lock'
         home.mkdir_private(lock.parent)
         with home.file_lock(lock):
@@ -974,7 +1106,7 @@ class Orchestration:
                 published = request['source']  # Retried delivery cannot revise an already published duty.
                 receipt = cast(dict[str, Any], request['context'].get('publication') or {})
             elif not registered.get('missing'):
-                if registered.get('problems') or not registered.get('specialist'):
+                if registered.get('problems') or (not registered.get('specialist') and not runtime_only):
                     raise Stop('Select registered specialist expertise, not a system responsibility.',
                                'metaform agents specialists')
                 published = registered  # Another creator may have published it while this one worked.
@@ -987,6 +1119,17 @@ class Orchestration:
                 published = service(ctx, 'agent.role').publish(ctx, role, purpose, duty, source=source)
                 receipt = {'source': 'created', 'match_reason': str(ctx.nouns.get('match_reason') or '')}
         published_assignments: list[dict[str, Any]] = []
+        # Resolve every shared in-place ticket independently before publication can queue any worker.
+        with store.tables(write=False) as tx:
+            pending = tx.rows('role_requests', {'creator_assignment_id': creator['assignment_id']}, limit=0).results
+            targets = [row_for(tx, assignment_id=one['caller_assignment_id']) for one in pending
+                       if not one.get('child_assignment_id') and role_options(one).get('assign_in_place')]
+        for target in targets:
+            if target and not target.get('stop'):
+                selected = self.runtime(ctx, str(target['work_id']))
+                if selected['state'] == 'needs_choice':
+                    raise Stop(f'Choose runtime for ticket {target["work_id"]} before publishing.',
+                               f'metaform orchestration runtime work={target["work_id"]}')
         with store.atomic(), store.tables() as tx:
             waiting = tx.rows('role_requests', {'creator_assignment_id': creator['assignment_id']}, limit=0).results
             for request in waiting:
@@ -1029,6 +1172,9 @@ class Orchestration:
                     if column != 'backlog':
                         transition(tx, child, 'launch', {'role_request_id': request['request_id']}, 'initial')
                 published_assignments.append(child)
+        for assigned in published_assignments:
+            if not assigned.get('stop'):
+                self.prepare_runtime(ctx, assigned)
         reference = {key: published.get(key) for key in ('name', 'uri', 'version_id')}
         self.returned(ctx, creator['work_id'], {'published_role': reference, 'request_id': request_id},
                       evidence=[reference], key=identity(request_id, 'published'))

@@ -1082,3 +1082,42 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Relates to: BASE-010, BASE-039, BASE-052, BASE-063, BASE-064.
 - Status: Confirmed automatic extension and existing-intake entry point, 2026-10-13. Implementation and validation are tracked with the refactor module.
 - Amendment, 2026-10-14, ticket 59573056, a fix from round 6 of the blind check, recorded to match the code: a verification pass (`intake start` with no name on a finished map) finishes no layer and activates no base. Its finish still publishes `intake.finished` when the pass added `code.*` elements to the map, with the active base, the map's layer and the ids of those elements under `elements`, so the extension runs for the base as it does after a first intake. A pass that adds no code element publishes nothing. Before this fix no verification pass published, and the functions of code elements it added were never placed.
+
+### BASE-066 Assign each ticket an agent, model and thinking level
+
+- Requirement: Assignment chooses and records each ticket's agent, model and thinking level before dispatch starts its worker.
+- What this means: Jev chooses from the ticket's title, kind, functional node and task whenever enabled, credited and responsive. If Jev is off, out of credits, uncertain or unavailable, the Facilitator's own full model makes the decision. Tickets never wait for Jev recovery. The ticket records the decider, confidence, task classification and reason. The card shows agent, model and thinking level together. The person can change them before starting.
+- Why: Planning mistakes affect dependent work. Precise implementation needs less reasoning than open design. Saving each choice makes spending visible and prevents project defaults from silently assigning every ticket the same runtime.
+- Build:
+  - Keep model, effort and decision metadata in map `ticket_settings`, beside agent. Preserve explicit person overrides, including existing manual ticket tuning. Do not change project settings.
+  - Use only installed, eligible agents and their advertised dispatch options. Rank model capability from model descriptions. Catalog order and static model identifiers do not establish capability. Prime missing adapter catalogs through existing dispatch options without a model prompt.
+  - Specifications, plans, goals, ticket decomposition and ticket ordering use the highest-capability model offered for the selected agent. Precise implementation uses Codex at Medium or higher. Front-end polish uses Claude at Medium or higher. Vague coding returns to Planner before implementation. Research and information collection helpers use Low. Coding never uses Low. Map guide names onto actual offered levels.
+  - Reuse existing bounded Jev requests and credit observations. Failed choices immediately take the existing Facilitator continuation. Record a full-model fallback as Facilitator, never as Jev or a deterministic guess.
+  - Apply selected model and effort with existing session configuration, after project defaults. Reuse existing ticket events, capacity, session ownership and stop controls. Remove assignment's replaced autostart runtime inference.
+- Acceptance: Extend existing orchestration tests. Front-end polish receives Claude. Precise backend implementation receives Codex at Medium or higher. Planning receives the highest-capability advertised model. No coding choice uses Low. Exhausted Jev credit invokes Facilitator choice without waiting for credit recovery. Person edits survive startup and retries. Card controls expose saved choice and provenance. No new test files.
+- Thinking-level guide, supplied for this requirement:
+
+Match AI agent thinking levels to task complexity: use Off for basic data routing, Low for quick debugging, Medium for standard coding and writing, and High/Max for complex multi-step planning, architecture design, and novel problem-solving. [1] (https://fast.io/resources/openclaw-thinking-mode-guide/), [2] (https://zylos.ai/research/2026-04-13-adaptive-reasoning-depth-ai-agent-systems/)
+
+Off (Disabled)
+• Best for: Status checks, raw data movement, and simple text formatting.
+• Why: Delivers immediate responses without internal delay or wasted token costs. [1]
+
+Minimal / Light
+• Best for: Message routing, template filling, and quick binary choices.
+• Why: Runs basic sanity checks without tracing complex logic chains. [1]
+
+Low
+• Best for: Documentation lookups, straightforward debugging, and prompt-based answers.
+• Why: Traces basic logical steps while keeping latency low. [1]
+
+Medium (Default)
+• Best for: Standard software coding, technical Q&A, and analytical writing.
+• Why: Handles multi-step logic and evaluates alternative approaches for everyday work. [1]
+
+High / Max / Pro
+• Best for: System architecture, ambiguous code refactoring, and deep research.
+• Why: Maximize analytical depth and self-correction on difficult, high-stakes tasks, as outlined in the OpenClaw Thinking Mode Guide. [1] (https://www.reddit.com/r/ClaudeAI/comments/1uoyq1x/when_to_use_each_model_and_when_to_change_the/), [2] (https://zylos.ai/research/2026-04-13-adaptive-reasoning-depth-ai-agent-systems/), [3] (https://etc.cuit.columbia.edu/news/when-use-ai-thinking-models), [4] (https://www.youtube.com/shorts/Fb0Lk-T7bag)
+
+- Relates to: BASE-052, BASE-054, VIEW-037.
+- Status: Confirmed behavior, 2026-10-21, code.dispatcher.agent#df. Uses existing runtime catalogs and Facilitator continuations.

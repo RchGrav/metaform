@@ -485,40 +485,6 @@ settings.number('dispatch_intake_first_record', 180, min=0, person_only=True, la
                 details='The clock starts with its first turn. Until its first record the session reads as waiting '
                         'for first record, on the page and in dispatch sessions, and how long the first call and the '
                         'first record took is kept in its state. The steer is the intake_first_record prompt.')
-# What each agent does well, one setting for each agent dispatch starts, dispatch_<agent>_strengths, so setting one
-# never wipes another's, settings cleanup 2026-10-15 (it was the one list dispatch_agent_strengths, P199's rule). A
-# registry agent the person pins later has its own once the process starts again.
-# What each agent does well, its models and its thinking levels, as the default of dispatch_<agent>_strengths: Jev reads
-# it when it chooses the agent, model and thinking level for a ticket. From the research the person delivered on
-# 2026-10-20, kept whole in docs/reference/choosing-agents-models-effort.md.
-STRENGTHS = {
-    'claude': 'Front-end, GUI and page work; document-heavy and long-context work, nuanced writing, and complex '
-              'multi-file repository coding, done carefully and structured. Models: Opus for the hardest knowledge work '
-              'and coding; Fable for demanding agentic, multi-step work; Sonnet or Haiku for everyday speed at lower '
-              'cost. Thinking level: low for quick syntax fixes, boilerplate and direct lookups; medium for everyday tasks '
-              'and familiar refactoring; high or max for multi-file design, hard debugging and long-horizon planning.',
-    'codex': 'Back-end, system and data work, exact code changes, rapid prototyping, and broad flexible workflows. '
-             'Models: GPT-6 Astra or GPT-5.2 Thinking for the most demanding multi-step reasoning, architecture and hard '
-             'coding; GPT-6.1 Sol as the balanced daily driver; GPT-6 Luna for high-volume, cost-sensitive automated '
-             'tasks; lighter variants for quick turns. Thinking level: low for pattern matching, formatting and minor '
-             'adjustments; medium for everyday bugs, clear features and routine refactors; high or max for deep '
-             'algorithmic complexity, multi-file codebases and hard-to-reproduce bugs.',
-    'gemini': 'large reads across many files'}
-
-
-def strengths_key(agent: str) -> str:
-    return f'dispatch_{agent}_strengths'
-
-
-for _agent in agent_choices():
-    settings.text(strengths_key(_agent), STRENGTHS.get(_agent, ''), person_only=True,
-                  label=f'What {AGENTS[_agent][0] if _agent in AGENTS else _agent} does well',
-                  help=f'What {_agent} does well, in a few words; Jev reads it to choose the agent for a ticket when '
-                       'jev is on and its choose_agent decision is chosen.',
-                  details='Only autostart asks Jev, and only for a ticket you gave no agent: your choice on the ticket, '
-                          'then its eligible agents, always win, and the model and effort you set for the ticket or the '
-                          'agent win over Jev\'s. With Jev off, unsure or unreachable, the ticket\'s area picks the agent '
-                          'as before. Empty, Jev is told only the agent\'s name.')
 def _withheld_choices(ctx: Context) -> list[str]:
     """What an intake's server can leave out: each module, its reading tools, and each of its tools by name."""
     from metaform.module import installed
@@ -730,8 +696,8 @@ def system_agent_choices(ctx: Any = None) -> list[str]:
 
 
 # An agent per purpose, the person's decision of 2026-10-20: setting the default agent for tickets changed who triaged
-# for them too, which is not what they meant. With Jev on, Jev chooses the agent, model and thinking level of an
-# ordinary ticket; these settings choose for the purposes Jev is not asked about, and stand when Jev is off or unsure.
+# for them too, which is not what they meant. Assignment orchestration chooses ordinary tickets' runtimes;
+# these settings choose the agents for conversations and system work.
 settings.choice('dispatch_system_agent', system_agent_choices, 'claude', person_only=True,
                 help='The agent that is your system agent, the one you talk to in the chat and that triages for you: '
                      'Claude unless you choose another installed here, or default to follow the default agent. The '
@@ -817,41 +783,9 @@ def migrate_agent_options(ctx: Context | None = None) -> list[str]:
 
 
 
-def carry_strengths(ctx: Context | None = None) -> list[str]:
-    """Once per home, as dispatch starts: each entry of a stored dispatch_agent_strengths list, `<agent>=<words>`,
-    becomes that agent's dispatch_<agent>_strengths at the same scope, and the list is removed, settings cleanup
-    2026-10-15. Only what an entry named moves: an agent the list left out now keeps its own default rather than
-    being wiped, which was the defect the split fixes. An entry for no agent dispatch starts is dropped and said."""
-    del ctx
-    return settings.carry_once('dispatch-agent-strengths', _carry_strengths)
-
-
-def _carry_strengths() -> list[str]:
-    said: list[str] = []
-    held: dict[str, list[str]] = {}
-    for scope in dict.fromkeys(['global', *(home.path_key(record.path) for record in home.projects())]):
-        with home.settings_db(scope) as db:
-            rows = db.execute("SELECT scope, value FROM settings WHERE owner='dispatch' AND "
-                              "key='dispatch_agent_strengths' ORDER BY scope, position").fetchall()
-        for found_scope, raw in rows:
-            held.setdefault(str(found_scope), []).append(str(json.loads(raw)))
-    for scope, entries in held.items():
-        for entry in entries:
-            agent, _, words = (part.strip() for part in entry.partition('='))
-            key = strengths_key(agent)
-            if key not in settings.SCHEMA or not words:
-                said.append(f'{scope}: {entry} has no setting to hold it and was dropped.')
-            elif words != STRENGTHS.get(agent):
-                home.save(scope, 'dispatch', key, [words])
-                said.append(f'{scope}: {key} = {words}')
-        home.clear(scope, 'dispatch', 'dispatch_agent_strengths')
-        home.set_glue(scope, 'dispatch', 'dispatch_agent_strengths', False)
-    return said
-
-
 def started(ctx: Context | None = None) -> list[str]:
-    """Dispatch's start: the one-time carries of settings that changed shape."""
-    return [*migrate_agent_options(ctx), *carry_strengths(ctx)]
+    """Dispatch's one-time carry of agent settings that changed shape."""
+    return migrate_agent_options(ctx)
 
 # How an agent's interactive prompts are answered, as the administrator sets it, read at each request so a change
 # reaches agents already running: approve-all answers each with its allow option; approve-reads answers a read or a
@@ -1523,7 +1457,7 @@ def ticket_work_status(record: WorkRecord, found: Sequence[dict[str, Any]],
 
 def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     """What dispatch keeps on a work record: the sessions of agents dispatched on it, oldest first, without what only
-    this module uses to reach them, its signals, and its own model and effort set with dispatch tune, by ACP
+    this module uses to reach them, its signals, and its assignment or manually selected model and effort, by ACP
     category, shown under `dispatch` in `map work id=<id>`, BASE-035; nothing on a ticket dispatch holds nothing of."""
     if ctx.store is None:
         return None
@@ -1831,9 +1765,126 @@ def ticket_row(store: Store, work_id: str) -> dict[str, Any] | None:
 def ticket_options(store: Store, work_id: str) -> dict[str, str]:
     """A ticket's own model and effort, by the ACP category each sets: `model` and `thought_level`."""
     row = ticket_row(store, work_id)
-    if row is None:
-        return {}
-    return {key: str(row[field]) for key, field in (('model', 'model'), ('thought_level', 'effort')) if row[field]}
+    try:
+        bound = store.bound_base()
+        with Store(store.project_id, base=bound.id if bound else None, module='map').tables(write=False) as tx:
+            runtime = tx.get('ticket_settings', {'work_id': work_id})
+    except StoreError:
+        runtime = None
+    # A map decision makes its nullable fields authoritative, including a person's explicit clearing of a value.
+    # Older manual tunes remain readable until their next edit or assignment carries them into the map.
+    chosen = runtime if runtime is not None and runtime.get('decision') else {
+        **(dict(row) if row is not None else {}),
+        **({field: runtime[field] for field in ('model', 'effort') if runtime.get(field)} if runtime else {})}
+    return {key: str(chosen[field]) for key, field in (('model', 'model'), ('thought_level', 'effort'))
+            if chosen.get(field)}
+
+
+def runtime_provider(ctx: Context) -> Any:
+    found = provided(ctx.folder, 'ticket.runtime')
+    return found[0][1] if found else None
+
+
+def runtime_settings(ctx: Context, work_id: str) -> dict[str, Any]:
+    """Saved assignment runtime plus manual choices made before the map owned model and effort."""
+    owner = runtime_provider(ctx)
+    kept: dict[str, Any] = owner.read(ctx, work_id) if owner is not None else {}
+    if not kept.get('decision'):
+        row = ticket_row(ctx.require_store(), work_id) or {}
+        kept = {**kept, **{field: kept.get(field) or row.get(field) for field in ('model', 'effort')}}
+        overrides = {field: kept[field] for field in ('agent', 'model', 'effort') if kept.get(field)}
+        if overrides:
+            kept['decision'] = {'decider': 'person', 'confidence': 1.0, 'task_type': None,
+                                'reason': 'Runtime fields selected on the ticket.', 'overrides': overrides}
+    decision = cast(dict[str, Any], kept.get('decision') or {})
+    if decision.get('decider') == 'person' and 'overrides' not in decision:
+        kept['decision'] = {**decision, 'overrides': {
+            field: kept[field] for field in ('agent', 'model', 'effort') if kept.get(field)}}
+    return kept
+
+
+def keep_runtime(ctx: Context, work_id: str, choice: dict[str, Any], catalog: dict[str, Any]) -> dict[str, Any]:
+    """Persist a validated assignment choice without replacing existing ticket choices or project defaults."""
+    owner = runtime_provider(ctx)
+    if owner is None:
+        raise Stop('The map must be enabled to save a ticket runtime.', 'metaform enable map')
+    held = runtime_settings(ctx, work_id)
+    previous = cast(dict[str, Any], held.get('decision') or {})
+    overrides = cast(dict[str, Any], previous.get('overrides') or {})
+    refined = bool(choice.get('task_fingerprint')
+                   and choice.get('task_fingerprint') != previous.get('task_fingerprint'))
+    preserve = not refined and all(held.get(field) for field in ('agent', 'model', 'effort')) and bool(previous)
+    values = {field: held[field] if preserve else overrides.get(field) or choice.get(field)
+              for field in ('agent', 'model', 'effort')}
+    agent = str(values.get('agent') or '')
+    offered = catalog.get(agent)
+    if offered is None or values['model'] not in offered['models'] or values['effort'] not in offered['efforts']:
+        raise Stop('The ticket runtime must use installed, eligible agents and their offered model and effort.',
+                   f'metaform dispatch options agent={agent or "codex"}')
+    if preserve:
+        values['decision'] = held['decision']
+    elif all(overrides.get(field) for field in ('agent', 'model', 'effort')):
+        values['decision'] = {**previous, 'task_type': choice.get('task_type'),
+                              'task_fingerprint': choice.get('task_fingerprint')}
+    else:
+        confidence = choice.get('confidence')
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not 0 <= confidence <= 1:
+            raise Stop('Runtime confidence must be between 0 and 1.', 'metaform orchestration route')
+        if choice.get('decider') not in ('jev', 'facilitator'):
+            raise Stop('Runtime decider must be jev or facilitator.', 'metaform orchestration route')
+        values['decision'] = {field: choice.get(field) for field in
+                              ('decider', 'confidence', 'task_type', 'reason', 'task_fingerprint')}
+        values['decision']['overrides'] = overrides
+    return owner.save(ctx, work_id, values)
+
+
+def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: str | None = None) -> dict[str, Any]:
+    """The person's card or tune edit, validated against the same catalog and recorded with personal provenance."""
+    fields = ('agent', 'model', 'effort')
+    if any(field in given for field in ('model', 'effort')):
+        persons_own(ctx, 'A ticket\'s model and effort')
+    store = ctx.require_store()
+    record = ticket(store, work_id)
+    owner = runtime_provider(ctx)
+    if owner is None:
+        raise Stop('The map must be enabled to save a ticket runtime.', 'metaform enable map')
+    kept = runtime_settings(ctx, work_id)
+    previous = cast(dict[str, Any], kept.get('decision') or {})
+    overrides = cast(dict[str, Any], previous.get('overrides') or {})
+    values = {field: kept.get(field) for field in fields}
+    values.update({field: None if str(given[field] or '').strip() in ('', 'none') else str(given[field]).strip()
+                   for field in fields if field in given})
+    agent = agent or str(values.get('agent') or agent_for(ctx, record))
+    if 'agent' in given and values.get('agent') != kept.get('agent'):
+        for field in ('model', 'effort'):
+            if field not in given:
+                offered = offered_values(store, agent, 'model' if field == 'model' else 'thought_level')
+                if offered is None or values[field] not in offered:
+                    values[field] = None
+                    overrides = {key: value for key, value in overrides.items() if key != field}
+    notices: list[dict[str, str]] = []
+    for field in ('model', 'effort'):
+        if field not in given or values[field] is None:
+            continue
+        offered = offered_values(store, agent, 'model' if field == 'model' else 'thought_level')
+        if offered is None:
+            notices.append({'where': field, 'message': f'{agent} has not run here; {field} is kept unchecked.'})
+        elif values[field] not in offered:
+            raise Stop(f'{agent_label(agent)} offers {field} {", ".join(offered) or "none"}, not {values[field]}.',
+                       f'metaform dispatch options agent={agent}')
+    overrides = {**overrides, **{field: values[field] for field in fields if field in given}}
+    overrides = {field: value for field, value in overrides.items() if value is not None}
+    values['decision'] = {'decider': 'person', 'confidence': 1.0, 'task_type': previous.get('task_type'),
+                          'task_fingerprint': previous.get('task_fingerprint'),
+                          'reason': 'Runtime changed on the ticket.', 'overrides': overrides}
+    result = owner.save(ctx, work_id, values)
+    # Retire the former model/effort source on an edit. Launch permissions retain their original row and authority.
+    held = ticket_row(store, work_id)
+    if held is not None and (held.get('model') or held.get('effort')):
+        with own_store(store).tables() as tx:
+            tx.concern(work_id=work_id, kind='ticket')
+            tx.update('ticket_options', {'work_id': work_id}, {'model': None, 'effort': None, 'seq': time.time_ns()})
+    return {**result, **({'notices': notices} if notices else {})}
 
 
 def launch_options(store: Store, work_id: str) -> dict[str, str]:
@@ -1883,7 +1934,12 @@ def keep_launch(store: Store, work_id: str, given: dict[str, str | None]) -> Non
 
 def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) -> dict[str, str]:
     """The settings a session of the agent is given: its dispatch_<agent>_<option> settings, then its ticket's own."""
-    return {**chosen_options(ctx, agent), **(ticket_options(store, work_id) if work_id and not intake_id(work_id) else {})}
+    chosen: dict[str, str] = {}
+    if work_id and not intake_id(work_id):
+        runtime = runtime_settings(ctx, work_id)
+        if not runtime.get('agent') or runtime['agent'] == agent:
+            chosen = ticket_options(store, work_id)
+    return {**chosen_options(ctx, agent), **chosen}
 
 
 def today() -> str:
@@ -2199,19 +2255,20 @@ def budget_refusal(found: dict[str, Any]) -> Stop:
 
 
 def ticket_settings(ctx: Context) -> dict[str, dict[str, Any]]:
-    """What the map module keeps on each open ticket, read once: its glyph, its preferred agent and whether the person
-    holds it, held tickets included."""
+    """What the map keeps on each ticket: its glyph, runtime choice, decision, eligibility, order and holds."""
     if not any(module.id == 'map' for module in surface(ctx.folder)):
         return {}
     store = ctx.require_store()
-    own = Store(store.project_id, module='map')
+    bound = store.bound_base()
+    own = Store(store.project_id, base=bound.id if bound else None, module='map')
     with own.tables(write=False) as tx:
         kept: dict[str, dict[str, Any]] = {
             str(row['work_id']): {'glyph': row['glyph']} for row in tx.rows('glyphs', limit=0).results}
         for row in tx.rows('ticket_settings', limit=0).results:
             kept.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
                                                             epic=row['epic'], agents=row['agents'],
-                                                            board=row.get('board') or '')
+                                                            board=row.get('board') or '', model=row.get('model'),
+                                                            effort=row.get('effort'), decision=row.get('decision'))
         for row in tx.rows('eligible', limit=0).results:
             kept.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
         for row in tx.rows('after', limit=0).results:
@@ -2316,60 +2373,6 @@ def waits(record: WorkRecord, kept: dict[str, Any] | None, opened: Iterable[str]
     on a ticket still open. UX review round 1 (orchestrator F5): `held` held nothing, and autostart started held
     Backlog tickets after To do."""
     return bool(record.held) or bool(waiting_on(kept, opened))
-
-
-def jev_choices(ctx: Context, store: Store, eligible: set[str] | None = None) -> dict[str, dict[str, str]]:
-    """Jev's choice for each waiting ticket the person gave no agent, H23: its agent, and that agent's model and
-    thinking level where Jev is sure of them, among the agents installed here, each described by
-    its dispatch_<agent>_strengths, and the options each offered at its last session. Asked for at most dispatch_agents
-    tickets, the next in board order, within one bounded wait. Empty with Jev off, unsure, unreachable or failing:
-    autostart then chooses as it always has."""
-    from metaform import jev
-    if eligible is not None and not eligible:
-        return {}
-    try:
-        if jev.config(ctx.folder, 'choose_agent') is None:
-            return {}
-        # Jev via OpenRouter is asked only while the account has credit: observed here, cached for a minute across
-        # processes, and read again at the request itself; with none observed, autostart chooses as it always has
-        if str(ctx.setting('jev_endpoint')) == 'openrouter' and jev.openrouter_credits().get('status') == 'exhausted':
-            return {}
-        kept = ticket_settings(ctx)
-        opened = store.work(open=True, limit=0).results
-        open_ids = {record.id for record in opened}
-        waiting = sorted((record for record in opened
-                          if not record.taken and (record.task or '').strip() and not kept.get(record.id, {}).get('hold')
-                          and (eligible is None or record.id in eligible)
-                          and not waits(record, kept.get(record.id), open_ids)
-                          and not kept.get(record.id, {}).get('agent')),
-                         key=lambda record: (record.held, record.position is None, record.position or 0))
-        waiting = waiting[:int(ctx.setting('dispatch_agents'))]
-        strengths = {agent: str(ctx.setting(strengths_key(agent)) or '').strip() for agent in agent_choices()
-                     if strengths_key(agent) in settings.SCHEMA}
-        agents = {agent: strengths.get(agent) or agent_label(agent) for agent in agent_choices()
-                  if found_command(ctx, agent) is not None}
-        if not waiting or not agents:
-            return {}
-        rows = catalog_rows(store)
-        offered: dict[str, dict[str, dict[str, str | None]]] = {}
-        for agent in agents:
-            for setting in cast(list[dict[str, Any]], (rows.get(agent) or {}).get('settings') or []):
-                category = setting.get('category')
-                if category in jev.CATEGORIES:
-                    offered.setdefault(agent, {})[str(category)] = {
-                        str(choice.get('value')): cast(str | None, choice.get('name'))
-                        for choice in cast(list[dict[str, Any]], setting.get('options') or [])}
-        tickets = {record.id: {'id': record.id, 'task': record.task or '', 'note': record.note or '',
-                               'address': record.address or record.receiver_address or ''} for record in waiting}
-        with jev.within(jev.DEADLINE):
-            got = jev.choose_agents(ctx.folder, tickets, agents, offered, project=ctx.project)
-    except Exception as error:  # noqa: BLE001  a decision that fails leaves autostart as it always was
-        sys.stderr.write(f'Jev did not choose agents: {error}\n')
-        return {}
-    if got is None:
-        return {}
-    return {work_id: {key: str(value) for key, value in cast(dict[str, Any], decision.answer).items() if value}
-            for work_id, decision in got.decisions.items() if decision.sure}
 
 
 FRONTEND = frozenset({'gui', 'web', 'page', 'viewer', 'view', 'board', 'ui', 'frontend', 'graphical', 'interface',
@@ -2526,8 +2529,8 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
         return {'started': [], 'recovery': recovered,
                 'capacity_waiting': bool(opened) and slots(ctx, store)['machine_free'] == 0,
                 **merged_due(retry(ctx, store, opened, asked), start_due), **paused}
-    # Jev's choice of agent, model and effort for the tickets the person gave no agent, asked before the transaction
-    # below, so no network call is ever made inside it; nothing when Jev is off, H23.
+    # Assignment routing records runtime choices before dispatch starts a ticket. Starting never makes a new
+    # model decision or waits on a decision service.
     from .orchestration import service
     owner = service(ctx)
     eligible_roles = None if owner is None else {
@@ -2536,7 +2539,6 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     if owner is not None:
         owner.queue_routing(ctx, [record.id for record in opened
                                   if not record.taken and not record.held and record.id not in (eligible_roles or ())])
-    picks = jev_choices(ctx, store) if eligible_roles is None else jev_choices(ctx, store, eligible_roles)
     # The supervisor's retries first, so a session it resumes takes its slot before a new ticket does, and both share
     # the one count of the gate. UX review round 1, 2026-10-17 (dispatch-concurrency F7): a retry handed over in the
     # same pass left its slot to the next pass, which nothing then brought. A ticket's progress is reconciled where its
@@ -2621,11 +2623,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
             chosen = preferred(record, kept.get(record.id), default, store=store)  # the ticket's own choice, else its area
             healer = str(ctx.setting('dispatch_healing_agent') or AGENT_DEFAULT) if healing(record) else AGENT_DEFAULT
             if healer != AGENT_DEFAULT and not kept.get(record.id, {}).get('agent'):
-                chosen = healer  # the agent chosen for healing, over the area's and Jev's; the ticket's own still wins
-            picked = picks.get(record.id, {}).get('agent')  # else Jev's, when it is sure and the agent eligible
-            if picked and healer == AGENT_DEFAULT and not kept.get(record.id, {}).get('agent') \
-                    and (not agents or picked in agents):
-                chosen = picked
+                chosen = healer  # the agent chosen for healing, over the area's; the ticket's own still wins
             try:
                 agent = agent_named(chosen if not agents or chosen in agents else agents[0])
             except Stop:
@@ -2667,11 +2665,10 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
             given_back_reservation(store, record.id, reservation)
             continue
         try:
-            given = {key: value for key, value in picks.get(record.id, {}).items()
-                     if key != 'agent' and picks[record.id].get('agent') == agent}
+            given: dict[str, str] = {}
             level = str(ctx.setting('dispatch_healing_effort') or '').strip() if healing(record) else ''
             if level and not ticket_options(store, record.id).get('thought_level'):
-                given['thought_level'] = level  # over Jev's pick; the person's own choices still win
+                given['thought_level'] = level  # a saved ticket choice still wins
             started.append(run_reserved(context('dispatch', ctx.folder, project=ctx.project,
                                          nouns={'id': record.id, 'agent': agent,
                                                 **({'chosen': json.dumps(given)} if given else {})}), reservation,
@@ -3281,23 +3278,42 @@ def start(ctx: Context) -> dict[str, Any]:
     asked = batch_asked(str(ctx.nouns['batch'])) if ctx.nouns.get('batch') else time.time_ns()
     word = on_persons_word(ctx, f'Starting an agent on ticket {work_id}', [str(work_id)])
     automatic = not person_asks(ctx) and word is None
-    command = argv(start_command(ctx, agent))
-    if shutil.which(command[0]) is None:
-        raise Stop(f'{command[0]}, the start command of {agent}, is not found on this system.',
-                   f'metaform set --dispatch-{agent} "<command>"')
+    if not automatic:
+        runnable(ctx, agent)
     folder = store.project().path
     mcp_server(Path(folder))  # a server the runner could not choose is refused here, the ticket left in To do, BASE-052
     budget_stop(ctx, store, str(work_id))  # a reached token budget is the person's to raise, M01
     from .orchestration import service
     owner = service(ctx)
     if owner is not None:
+        runtime = runtime_settings(ctx, str(work_id))
+        if not automatic and runtime.get('agent') != agent:
+            edit_runtime(ctx, str(work_id), {'agent': agent})
+        record = ticket(store, str(work_id))
+        if not automatic and record.held and not record.taken:
+            startable(ctx, store, record, agent)
+            admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=False)
+            store.move_work(str(work_id), 'todo', kept=True)
         selected = owner.route(ctx, str(work_id))
-        # a specialist is set before a ticket is active: Jev's pick, else the Facilitator's publication, which
-        # starts the delivery itself. The person's own start, or their system agent's at their word, runs now with
-        # the agent they chose, as a worker, and takes the specialist when it is published: a start of theirs that
-        # answered 'needs_specialist' and started nothing was a block on their action (2026-10-20).
-        if not selected.get('role') and automatic:
+        held = owner.assignment(ctx, work_id=str(work_id))
+        if not automatic and held is not None:
+            # Admission precedes persistent personal launch authority, including required fallback descendants.
+            admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=False)
+            owner.reopen(ctx, str(work_id))
+            held = owner.ensure(ctx, str(work_id), persons=True)
+        if not selected.get('role'):
             return {'state': 'needs_specialist', 'work_id': work_id, 'reason': selected.get('reason')}
+        if held is None and selected.get('role'):
+            held = owner.ensure(ctx, str(work_id), role=str(selected['role']), persons=not automatic)
+        if held is not None and not owner.prepare_runtime(ctx, held):
+            return {'state': 'queued', 'work_id': work_id, 'reason': 'The Facilitator is preparing the ticket runtime.'}
+        runtime = runtime_settings(ctx, str(work_id))
+        agent = agent_named(str(runtime.get('agent') or agent))
+        ctx.nouns['agent'] = agent
+    command = argv(start_command(ctx, agent))
+    if shutil.which(command[0]) is None:
+        raise Stop(f'{command[0]}, the start command of {agent}, is not found on this system.',
+                   f'metaform set --dispatch-{agent} "<command>"')
     given, notices = launch_permissions(ctx, store, agent)
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():
@@ -3328,6 +3344,16 @@ def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | 
     launch without them, autostart's, leaves them to the project's settings."""
     store = ctx.require_store()
     agent, work_id = str(ctx.nouns['agent']), str(ctx.nouns['id'])
+    from .orchestration import service
+    owner = service(ctx)
+    if owner is not None and (held := owner.assignment(ctx, work_id=work_id)) is not None:
+        if not auto:
+            held = owner.ensure(ctx, work_id, persons=True)
+        if not owner.prepare_runtime(ctx, held):
+            given_back_reservation(store, work_id, reservation)
+            return {'state': 'queued', 'work_id': work_id, 'reason': 'The Facilitator is preparing the ticket runtime.'}
+        agent = agent_named(str(runtime_settings(ctx, work_id).get('agent') or agent))
+        ctx.nouns['agent'] = agent
     keep_launch(store, work_id, given or {'prompts': None, 'mode': None})
     started = start_runner(ctx, store, work_id, agent,
                            ['reservation=' + reservation,
@@ -6823,8 +6849,9 @@ def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
 
 
 def tune(ctx: Context) -> dict[str, Any]:
-    """A ticket's own model and effort, P015, kept in this module's tables and applied over dispatch_<agent>_<option>
-    to every session of the ticket; a running one takes them at once through session/set_config_option. The person's
+    """A ticket's own model and effort, P015, kept with its map settings and applied over dispatch_<agent>_<option>
+    to its sessions; a running one takes them at once through session/set_config_option. Without the map provider,
+    dispatch's original ticket_options still serves a manual tune. The person's
     own, since it changes what the ticket costs. A value the ticket's agent did not offer at its last session is
     refused with the values it offers; one for an agent that has not run here is kept with a notice."""
     persons_own(ctx, 'A ticket\'s model and effort')
@@ -6836,6 +6863,12 @@ def tune(ctx: Context) -> dict[str, Any]:
     live = running(store, record.id)
     agent = str(live['agent']) if live is not None else agent_for(  # the agent autostart would start on it
         ctx, record, preferred(record, ticket_settings(ctx).get(record.id), str(ctx.setting('dispatch_agent')), store=store))
+    if runtime_provider(ctx) is not None:
+        kept = edit_runtime(ctx, record.id, given, agent=agent)
+        edited: dict[str, Any] = {'work_id': record.id, **kept, 'agent': agent}
+        if live is not None:
+            edited['applied'] = tell(live, 'tune')
+        return edited
     notices: list[dict[str, str]] = []  # a write that does not fit is kept, with its notice, BASE-044
     for field, value in given.items():
         said = str(value).strip()

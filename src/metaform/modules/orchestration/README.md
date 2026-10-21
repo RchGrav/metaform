@@ -136,6 +136,19 @@ reading a saved assignment alone is not evidence that the runtime delivered it.
 
 ## Specialist selection and facilitation
 
+Assignment selects each ticket's agent, model and thinking level under BASE-066. Jev classifies the task and
+chooses from advertised dispatch options within one deadline. Precise coding uses Codex at Medium or higher.
+Front-end polish uses Claude. Planning uses the highest-capability advertised model. Research helpers use Low.
+Vague coding receives a Planner contribution that refines the original ticket before implementation.
+
+`runtime work=<id>` returns the saved choice or requests a Facilitator choice with the offered catalog.
+Only that ticket's commissioned Facilitator can submit `choice=<JSON>` containing agent, model, effort,
+task_type, confidence and reason. This uses the Facilitator's full model when Jev is off, uncredited or unanswered.
+The choice is saved in map `ticket_settings`, with decider and confidence. Publication requires runtime selection
+before continuing each in-place ticket. Runtime-only commissions preserve already assigned expertise.
+The card shows and edits the saved choice. Person overrides win. Dispatch applies it to that session without
+changing project defaults. Autostart does not classify the ticket again.
+
 Read `metaform://specialists` for the current expertise names, purposes and role URLs. The directory excludes system responsibilities and contains no role bodies. JEV selects a listed specialist or confidently selects none. A no-match, uncertain result, unavailable provider, missing key or unavailable OpenRouter credit commissions the Facilitator directly. An empty inventory does the same without paying for an empty decision.
 
 A ticket writer can assign expertise with `orchestration_claim work=<id> role=<name>` or explicitly hand off with `create=true`. Automatic routing preserves existing assignments and commissions the Facilitator for unassigned tickets without requiring a triage relay. The existing event-driven starter also drains legacy `triage` entries one per pass; unchanged cached decisions are handed off without another JEV lookup. Held tickets and explicit user stops remain effective. The ticket shows “Facilitator is selecting expertise” while its commission is pending.
