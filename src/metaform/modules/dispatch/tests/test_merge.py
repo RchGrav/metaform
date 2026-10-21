@@ -152,7 +152,7 @@ def _killed_at(monkeypatch, step):
 
 
 @pytest.mark.req('BASE-052')
-@pytest.mark.parametrize('step', ['merge-recursive', 'commit', 'read-tree', 'update-ref'])
+@pytest.mark.parametrize('step', ['merge-recursive', 'commit', 'checkout', 'update-ref'])
 def test_a_merge_killed_part_way_leaves_the_agents_branch_as_it_was_and_the_next_check_merges_it_once(
         dispatch, repo, run, monkeypatch, step):
     """A crash at each durable git step preserves ticket history and resumes delivery exactly once."""

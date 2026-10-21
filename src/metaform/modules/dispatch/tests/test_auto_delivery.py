@@ -100,13 +100,53 @@ def test_recovery_excludes_snapshot_and_never_commits_later_worktree_edits(dispa
     assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
 
 
-def test_advance_refuses_overlapping_uncommitted_files(repo):
+def test_advance_lands_beside_local_edits_and_keeps_staged_peer_work(repo):
+    """The person's rule, 2026-10-21: a landing never refuses for a dirty checkout. A locally modified file takes the
+    landed hunks and keeps its edit; a peer's staging elsewhere stays staged; paths clean in the checkout are taken as
+    landed, added and deleted alike; the index is left showing only the peers' own work."""
+    (repo / 'notes.txt').write_text('one\ntwo\nthree\nfour\nfive\nsix\n')
+    (repo / 'gone.txt').write_text('gone\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'more')
+    before = git(repo, 'rev-parse', 'HEAD')
+    tree = Path(merge.worktree_for(repo, 'advance-test'))
+    (tree / 'notes.txt').write_text('ONE\ntwo\nthree\nfour\nfive\nsix\n')  # the landed hunk, at the top
+    (tree / 'added.txt').write_text('added\n')
+    (tree / 'gone.txt').unlink()
+    git(tree, 'add', '-A')
+    git(tree, 'commit', '-qm', 'ticket')
+    landed = git(tree, 'rev-parse', 'HEAD')
+    (repo / 'notes.txt').write_text('one\ntwo\nthree\nfour\nfive\nSIX\n')  # a peer's unstaged edit, at the bottom
+    (repo / 'README.md').write_text('staged peer\n')  # a peer's staged work the landing does not touch
+    git(repo, 'add', 'README.md')
+    passed, report = merge.advance(repo, landed, before)
+    assert passed and report == '', report
+    assert git(repo, 'rev-parse', 'HEAD') == landed
+    assert (repo / 'notes.txt').read_text() == 'ONE\ntwo\nthree\nfour\nfive\nSIX\n'
+    assert (repo / 'added.txt').read_text() == 'added\n' and not (repo / 'gone.txt').exists()
+    assert git(repo, 'diff', '--name-only') == 'notes.txt', 'only the peer\'s edit is unstaged'
+    assert git(repo, 'diff', '--cached', '--name-only') == 'README.md' and git(repo, 'show', ':README.md') == 'staged peer'
+
+
+def test_advance_keeps_a_file_whose_local_edit_clashes_with_the_landed_hunks_and_names_it(dispatch, repo, run,
+                                                                                            monkeypatch):
+    """A clash never stops the landing or reopens the ticket: main moves, the file keeps its local edit, index entry
+    included, and one board-needs line names it for the system agent."""
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.signals import rows
+    run('set', '--dispatch-autostart', cwd=repo)
+    monkeypatch.setattr(module, 'stay_connected', lambda ctx, store: None)
     before = git(repo, 'rev-parse', 'HEAD')
     tree = Path(merge.worktree_for(repo, 'advance-test'))
     (tree / 'README.md').write_text('ticket\n')
     git(tree, 'commit', '-qam', 'ticket')
+    landed = git(tree, 'rev-parse', 'HEAD')
     (repo / 'README.md').write_text('peer\n')
-    passed, reason = merge.advance(repo, git(tree, 'rev-parse', 'HEAD'), before)
-    assert not passed and 'README.md' in reason
-    assert git(repo, 'rev-parse', 'HEAD') == before
-    assert (repo / 'README.md').read_text() == 'peer\n'
+    passed, report = merge.advance(repo, landed, before, ctx=context('dispatch', repo, project='proj'),
+                                   work_id=dispatch.id)
+    assert passed and 'README.md' in report, report
+    assert git(repo, 'rev-parse', 'HEAD') == landed
+    assert (repo / 'README.md').read_text() == 'peer\n' and git(repo, 'show', ':README.md') == 'base'
+    [line] = [one for one in rows(dispatch.store) if one.get('signal') == 'board-needs'
+              and 'README.md' in str(one.get('said'))]
+    assert line.get('signal_key') == f'landing:{dispatch.id}' and 'kept as they were' in str(line['said']), line

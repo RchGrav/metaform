@@ -1,5 +1,9 @@
 # Changelog
 
+## Local integration preserves dirty checkout edits (2026-10-21, code.scheduler.task#55 with code.dispatcher.agent#10)
+
+- `merge.advance` integrates beside existing checkout edits. Clean paths take the integrated content. Modified paths receive its hunks through a three-way merge in the working copy and, when staged, their index entries. Conflicting local paths remain unchanged and appear in one board-needs notice for the system agent. The ticket stays closed in every case. Previously, local edits in touched files failed integration with `Entry ... not uptodate`.
+
 ## Official Antigravity ACP (2026-10-21, code.dispatcher.agent#fe)
 
 - Google Antigravity replaces the retired Google CLI throughout dispatch, ticket agent choices, roundtable seats, pickers, setup and help. Removed the retired adapter, its setting declarations, hook branch, reminder setting and obsolete tests/docs.

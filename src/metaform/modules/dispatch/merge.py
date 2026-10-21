@@ -621,25 +621,136 @@ def _conflicting(folder: str | Path, said: str) -> bool:
 RELEASE = 'Newly committed feature, needs testing before the next release: '  # the release log ticket's task, VIEW-044
 
 
-def advance(project: Path, commit: str, before: str) -> tuple[bool, str]:
-    """Advance committed code while preserving unrelated staging and worktree edits.
-
-    Two-tree read-tree refuses overlapping edits and preserves unrelated index entries.
-    The compare-and-swap refuses a concurrent branch advance. A crash before the ref
-    update is recoverable: read-tree accepts entries already at the destination tree.
+def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id: str = '') -> tuple[bool, str]:
+    """Advance the checked-out branch from `before` to `commit` while keeping every local edit in the project
+    checkout, staged or not: helpers and the person work there, and on another project it is the person's own working
+    copy, so a landing never refuses for it (the person's rule, 2026-10-21). A path the landing changes is taken as
+    landed when the checkout has it clean; a locally modified path takes the landed hunks by a three-way merge into
+    its working copy and, when staged, into its index entry; a path whose local edits clash with the landed hunks is
+    left exactly as it was and named: in the report, and, given `ctx`, as one board-needs line for the system agent,
+    so the person merges it by hand while the ticket stays closed. The compare-and-swap on the ref refuses a
+    concurrent advance; then the taken paths go back to `before`, and a working copy already given the landed hunks
+    keeps them, which the retry's merge finds on both sides and takes once.
     """
     if git(project, 'rev-parse', 'HEAD').stdout.strip() != before:
-        return False, 'main changed during delivery; retry the merge'
-    changed = git(project, 'read-tree', '-m', '-u', before, commit)
-    if changed.returncode:
-        return False, (changed.stdout + changed.stderr).strip()[-1200:]
+        return False, 'the project branch changed during delivery; retry the merge'
+    listed = git(project, 'diff', '--name-status', '--no-renames', '-z', before, commit)
+    if listed.returncode:
+        return False, (listed.stdout + listed.stderr).strip()[-1200:]
+    parts = listed.stdout.split('\0')
+    changes = [(parts[at], parts[at + 1]) for at in range(0, len(parts) - 1, 2)]
+    taken: list[tuple[str, str]] = []  # clean paths taken as landed, with their status, for the rollback
+    merged: list[tuple[str, list[str]]] = []  # dirty paths given the landed hunks, with their index entry before
+    kept: list[str] = []  # paths left as they were: their local edits clash with the landed hunks
+    for status, path in changes:
+        local = git(project, 'status', '--porcelain', '-z', '--untracked-files=all', '--', path).stdout
+        if not local:
+            took = git(project, 'rm', '-q', '--', path) if status == 'D' else git(project, 'checkout', commit, '--', path)
+            if took.returncode:
+                return False, (took.stdout + took.stderr).strip()[-1200:]
+            taken.append((status, path))
+            continue
+        entry = git(project, 'ls-files', '-s', '--', path).stdout.split()
+        if _landed(project, status, path, before, commit):
+            merged.append((path, entry))
+        else:
+            kept.append(path)
     branch = dev_branch(project)
     moved = git(project, 'update-ref', f'refs/heads/{branch}', commit, before)
     if moved.returncode:
-        git(project, 'read-tree', '-m', '-u', commit, before)
+        for status, path in taken:
+            if status == 'A':
+                git(project, 'rm', '-q', '-f', '--', path)
+            else:
+                git(project, 'checkout', before, '--', path)
+        for path, entry in merged:
+            if len(entry) >= 2:
+                git(project, 'update-index', '--add', '--cacheinfo', f'{entry[0]},{entry[1]},{path}')
         return False, (moved.stdout + moved.stderr).strip()[-1200:]
-    return True, ''
+    if not kept:
+        return True, ''
+    report = 'kept as they were, their local edits clash with the landed hunks: ' + ', '.join(kept)
+    if ctx is None:
+        print(f'Landing {commit[:12]}: {report}', file=sys.stderr)
+    else:
+        _reported(ctx, work_id, commit, kept)
+    return True, report
 
+
+def _landed(project: Path, status: str, path: str, before: str, commit: str) -> bool:
+    """A locally modified path takes the landed change, its index entry and its working copy alike: True when it
+    did. False, with the path untouched, when the two sides clash: a landed deletion, a landed addition unlike the
+    local file, a local deletion, or hunks that overlap."""
+    file = project / path
+    if status == 'D' or not file.is_file():
+        return False
+    shown = git(project, 'ls-tree', commit, '--', path).stdout.split()
+    if len(shown) < 3:
+        return False
+    mode, landed_blob = shown[0], shown[2]
+    theirs = _blob(project, landed_blob)
+    if theirs is None:
+        return False
+    work = file.read_bytes()
+    if status == 'A':
+        return work == theirs and git(project, 'update-index', '--add', '--cacheinfo',
+                                      f'{mode},{landed_blob},{path}').returncode == 0
+    base = _blob(project, f'{before}:{path}')
+    if base is None:
+        return False
+    entry = git(project, 'ls-files', '-s', '--', path).stdout.split()
+    index = (_blob(project, entry[1]) if len(entry) >= 2 else None) or base
+    staged = index != base
+    in_index = _three_way(base, index, theirs) if staged else theirs
+    in_work = in_index if work == index else _three_way(base, work, theirs)
+    if in_index is None or in_work is None:
+        return False
+    blob = _stored(project, in_index) if staged else landed_blob
+    if blob is None or git(project, 'update-index', '--add', '--cacheinfo', f'{mode},{blob},{path}').returncode:
+        return False
+    file.write_bytes(in_work)
+    return True
+
+
+def _blob(project: Path, spec: str) -> bytes | None:
+    """The bytes of a blob, by object id or `<commit>:<path>`; None when there is none."""
+    found = subprocess.run(['git', 'cat-file', 'blob', spec], cwd=project, capture_output=True, check=False,
+                           stdin=subprocess.DEVNULL)
+    return found.stdout if found.returncode == 0 else None
+
+
+def _stored(project: Path, content: bytes) -> str | None:
+    """`content` written to the object store, its id; None when git refused it."""
+    found = subprocess.run(['git', 'hash-object', '-w', '--stdin'], cwd=project, input=content, capture_output=True,
+                           check=False)
+    return found.stdout.decode('ascii').strip() if found.returncode == 0 else None
+
+
+def _three_way(base: bytes, ours: bytes, theirs: bytes) -> bytes | None:
+    """`ours` given the change from `base` to `theirs`, a three-way merge; None when the two sides clash."""
+    with tempfile.TemporaryDirectory() as temp:
+        names: list[str] = []
+        for name, content in (('local', ours), ('base', base), ('landed', theirs)):
+            (Path(temp) / name).write_bytes(content)
+            names.append(str(Path(temp) / name))
+        found = subprocess.run(['git', 'merge-file', '-p', '-L', 'local', '-L', 'base', '-L', 'landed', *names],
+                               capture_output=True, check=False, stdin=subprocess.DEVNULL)
+    return found.stdout if found.returncode == 0 else None
+
+
+def _reported(ctx: Any, work_id: str, commit: str, kept: list[str]) -> None:
+    """One board-needs line for the system agent naming the files a landing left as they were, so the person merges
+    the landed hunks by hand; the ticket stays closed whatever the line meets."""
+    from .board import raised
+    try:
+        store = ctx.require_store()
+        record = store.ticket(work_id).work if work_id else None
+        name = ticket_title(store, record) if record is not None else f'landing {commit[:12]}'
+        raised(ctx, f'landing:{work_id or commit[:12]}', f'{name} landed in the project branch, but local edits in '
+               f'{", ".join(kept)} clash with its hunks; the files were kept as they were, so merge the landed hunks '
+               'by hand (git diff HEAD -- <file> shows both sides).', work_id=work_id)
+    except Exception as error:  # noqa: BLE001  the landing stands whatever its report meets
+        print(f'Landing report failed: {error}', file=sys.stderr)
 
 def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict[str, Any]:
     """One inbox line identifies the ticket and conflicting files. No branch is forced."""
@@ -692,7 +803,7 @@ def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) ->
             if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
                 return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
             if ours and git(project, 'rev-parse', f'{made}^').stdout.strip() == before:
-                passed, why = advance(project, made, before)
+                passed, why = advance(project, made, before, ctx=ctx, work_id=work_id)
                 if passed:
                     return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
                 return _blocked(ctx, store, own, work_id, why)
@@ -727,7 +838,8 @@ def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) ->
             if squashed.returncode:
                 passed, why = False, (squashed.stdout + squashed.stderr).strip()[-1200:]
             else:
-                passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before)
+                passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before,
+                                      ctx=ctx, work_id=work_id)
         if passed:
             return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
         _dropped(project, work_id)

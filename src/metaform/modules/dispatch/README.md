@@ -271,6 +271,11 @@ join work separate from its receiver element. Configured checks contribute verif
 Ticket branches and dirty worktrees stay intact. Repeated delivery recovers its journal without another feature
 commit. Direct closure clears a resolved fault ticket's light through the existing completion events.
 
+Local integration accepts a dirty project checkout (`merge.advance`, 2026-10-21). Clean paths take the integrated
+content. Modified paths receive its hunks through a three-way merge in the working copy and, when staged, their
+index entries. Conflicting local paths remain unchanged and appear in one board-needs notice. The ticket stays
+closed in every case.
+
 Ordinary completion and Full Auto integration never push. Explicit publishing and manual reviews remain
 available when requested. Runtime activation remains separate from ticket closure.
 
