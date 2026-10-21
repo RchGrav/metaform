@@ -45,19 +45,28 @@ import {loadWorkspace} from '/page/app/workspace/workspace.js';
  * as in every read, VIEW-017. */
 async function itemsOf(generation) {
   const found = new Map();
-  for (const layer of S.layers.filter(item => item.ready && item.kind !== 'base')) {
+  const layers = S.layers.filter(item => item.ready && item.kind !== 'base');
+  // every layer's pages read side by side, then merged in layer order: one after another, six layers took six
+  // round trips in a row at every load (2026-10-20)
+  const pages = await Promise.all(layers.map(async layer => {
+    const items = [];
     let after = null;
     do {
       const page = await read('layer-items',
         {layer: layer.name, in_context: 'true', limit: 500, ...(after ? {after} : {}), ...viewLayers()});
-      if (generation !== S.loading) return found;
-      for (const item of page.results) {
-        const entry = itemEntry(item, layer);
-        found.set(entry.key, entry);
-      }
+      if (generation !== S.loading) return items;
+      items.push(...page.results);
       after = page.next;
     } while (after);
-  }
+    return items;
+  }));
+  if (generation !== S.loading) return found;
+  layers.forEach((layer, at) => {
+    for (const item of pages[at]) {
+      const entry = itemEntry(item, layer);
+      found.set(entry.key, entry);
+    }
+  });
   return found;
 }
 function itemEntry(item, layer) {

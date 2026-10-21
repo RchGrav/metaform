@@ -48,7 +48,7 @@ export function readView() {
   VIEW.read = project;
   VIEW.reading = (async () => {
     let rows = [], view = {};
-    try { [rows, view] = await Promise.all([read('settings').then(found => found.settings || []),
+    try { [rows, view] = await Promise.all([read('settings', {prefix: 'web_'}).then(found => found.settings || []),
       read('view').then(found => found.view || {})]); } catch { return; }
     if (S.project === project) followView(rows, view);
   })();
@@ -107,7 +107,7 @@ function mascotHeard(event) {
   if (HEARD.reading) { HEARD.again = true; return; }
   HEARD.reading = true;
   const project = S.project;
-  read('settings').then(found => { if (S.project === project) followMascot(found.settings || []); })
+  read('settings', {keys: 'web_embody,web_mascot'}).then(found => { if (S.project === project) followMascot(found.settings || []); })
     .catch(() => { /* the next change reads again */ })
     .finally(() => {
       HEARD.reading = false;

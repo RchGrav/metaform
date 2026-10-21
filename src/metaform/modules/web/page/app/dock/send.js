@@ -116,7 +116,7 @@ export async function syncResume() {
   const project = S.project, box = $('#helpdesk .resume input'), stay = $('#helpdesk .stay input');
   if (!project) return;  // read with the project's own settings, once one is shown
   try {
-    const rows = (await read('settings')).settings || [];
+    const rows = (await read('settings', {keys: 'dispatch_resume_chats,dispatch_stay_connected'})).settings || [];
     const row = rows.find(one => one.key === 'dispatch_resume_chats');
     const kept = rows.find(one => one.key === 'dispatch_stay_connected');
     if (S.project === project && row) box.checked = row.value !== false;

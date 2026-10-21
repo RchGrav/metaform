@@ -1112,7 +1112,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/dispatch-prompts':
             return self.dispatch_prompts(query.get('project', [''])[-1])
         if url.path == '/api/settings':
-            return self.read_settings(query.get('project', [''])[-1])
+            return self.read_settings(query.get('project', [''])[-1], keys=query.get('keys', [''])[-1],
+                                      prefix=query.get('prefix', [''])[-1])
         if url.path == '/api/notices':  # what modules say needs the person, for the error surface's banners
             return self.module_notices(query.get('project', [''])[-1])
         if url.path in ('/api/phone-check', '/api/speech-voices'):  # asked for by a button, never on a page's read
@@ -2694,16 +2695,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send(400, {'error': next((line[len('Error: '):] for line in said if line.startswith('Error: ')), ' '.join(said)),
                         'next': next((line[len('Next: '):] for line in said if line.startswith('Next: ')), None)})
 
-    def read_settings(self, project_id: str) -> None:
+    def read_settings(self, project_id: str, keys: str = '', prefix: str = '') -> None:
         """The settings screen's read: every setting of the project's folder and every module with whether it is on,
-        as `configured` reads them."""
+        as `configured` reads them. With `keys`, a comma-separated list, or `prefix`, the settings named alone and no
+        modules: a part of the page that follows two settings read all 203 and the modules, 168 KB, at every load and
+        every settings change (2026-10-20)."""
         project = home.project(project_id)
         if project is None:
             return self.send(404, {'error': f'No project {project_id} is registered.', 'next': 'metaform list projects'})
         try:
-            self.send(200, configured(Path(project.path)))
+            found = configured(Path(project.path), listing=not (keys or prefix))
         except Stop as error:
-            self.refuse(error, 400)
+            return self.refuse(error, 400)
+        if keys or prefix:
+            named = {one.strip() for one in keys.split(',') if one.strip()}
+            found['settings'] = [row for row in found['settings']
+                                 if str(row.get('key')) in named or (prefix and str(row.get('key')).startswith(prefix))]
+        self.send(200, found)
 
     def settings_check(self, path: str, project_id: str) -> None:
         """What the settings screen asks for only when the person presses its button, since it may take a while: the
@@ -3804,7 +3812,7 @@ def refused(done: subprocess.CompletedProcess[str]) -> Stop:
     return Stop(said['error'], said['next'] or 'metaform config --show')
 
 
-def configured(folder: Path) -> dict[str, Any]:
+def configured(folder: Path, *, listing: bool = True) -> dict[str, Any]:
     """Every setting of a folder as `metaform config --show --json` describes it, each with what its declaration adds
     for the settings screen, and every module as `metaform list modules` lists it, with whether it is on and its
     summary or the reason it did not load. Both were read as the command line in the folder, two processes and about
@@ -3818,7 +3826,7 @@ def configured(folder: Path) -> dict[str, Any]:
     for row in rows:
         row.update(declared(row))
     modules: list[dict[str, Any]] = []
-    for item in loader.discover():
+    for item in loader.discover() if listing else []:
         state = 'error' if item.problem else ('on' if item.enabled else 'off')
         summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
         text = item.problem or summary or ''
