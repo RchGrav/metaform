@@ -1567,6 +1567,15 @@ def wipe_backup(project_id: str, snapshot: dict[str, Any]) -> str:
     write_private(folder / 'manifest.json', json.dumps(metadata, ensure_ascii=False))
     with (folder / 'manifest.json').open('rb') as saved:
         os.fsync(saved.fileno())
+    if os.name != 'nt':
+        for directory in (folder, *folder.parents):
+            descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            if directory == home():
+                break
     return stamp
 
 

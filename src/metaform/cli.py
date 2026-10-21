@@ -241,7 +241,8 @@ def list_(args: list[str], folder: Path) -> None:
         for kept in home.backups(project_id):
             out(f'{kept.name}  {kept.held}')
         for wiped in home.wipe_backups(project_id):
-            out(f'{wiped["stamp"]}  wipe  {wiped["board"] or "First board"}  {wiped["tickets"]} tickets')
+            out(f'{wiped["stamp"]}  wipe  {wiped["board"] or "First board"}  '
+                f'{counted(wiped["tickets"], "ticket", "tickets")}')
         return
     if args[:1] == ['origins'] and len(args) in (1, 2):
         for item in Store(_project_arg(folder, args[1] if len(args) == 2 else None)).origins():

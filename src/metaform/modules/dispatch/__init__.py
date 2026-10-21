@@ -5383,6 +5383,24 @@ def stop(ctx: Context) -> dict[str, Any]:
     try:
         row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'), gone_ok=True)
     except Stop:
+        starting = [entry for entry in launches() if entry.get('project') == store.project_id
+                    and entry.get('work_id') == ctx.nouns['id']] if not ctx.nouns.get('session') else []
+        if acting and starting:
+            work_id = str(ctx.nouns['id'])
+            persons_stopped(store, [work_id])
+            if owner is not None:
+                owner.stopped(ctx, work_id=work_id, by='user')
+            paused(ctx, store, None)
+            record = held_ticket(store, work_id)
+            if record is not None and (record.taken_by or '').startswith('dispatch starting '):
+                given_back_reservation(store, work_id, str(record.taken_by))
+            for entry in starting:
+                ended_launch_group(int(entry['pid']))
+            for session in sessions(store, work_id, verify=False):
+                if session.get('pid') in {entry['pid'] for entry in starting} and session['state'] == 'running':
+                    ended_gone(store, session, None)
+            return {'stopped': True, 'work_id': work_id, 'session_id': None, 'starting': True,
+                    'how': 'stopped while starting'}
         # At capacity one a waiting GC has ended its adapter. The user's Stop still names the delivery ticket,
         # including a not-yet-launched assignment, and must cancel its descendants and recorded continuations.
         assignment = owner.assignment(ctx, work_id=str(ctx.nouns['id'])) if owner is not None else None
@@ -5430,6 +5448,29 @@ def stop(ctx: Context) -> dict[str, Any]:
     return {**result, **({'stay_connected': False} if off else {}), **(QUEUE_PAUSED if held else {}),
             **on_word(ctx, word, f'stopped the agent on ticket {ticket_label(store, str(row["work_id"]))}',
                       [str(row['work_id'])], widen=False)}
+
+
+def stop_work(ctx: Context, work_ids: Sequence[str]) -> list[str]:
+    """Stop every session or admitted launch on selected tickets through the canonical stop."""
+    from dataclasses import replace
+    if not work_ids:
+        return []
+    store = ctx.require_store()
+    selected = set(work_ids)
+    running = [row for row in sessions(store, verify=False)
+               if row['work_id'] in selected and row['state'] == 'running']
+    stopped: list[str] = []
+    for row in running:
+        stop(replace(ctx, nouns={'id': row['work_id'], 'session': row['session_id']}))
+        stopped.append(str(row['session_id']))
+    # The gate may have admitted a runner before the wipe's halt, before its ACP session exists.
+    for entry in launches():
+        if entry.get('project') == store.project_id and entry.get('work_id') in selected:
+            if any(row.get('pid') == entry['pid'] for row in running):
+                continue
+            result = stop(replace(ctx, nouns={'id': entry['work_id']}))
+            stopped.append(str(result.get('session_id') or f'starting:{entry["pid"]}'))
+    return stopped
 
 
 # What a stop by the person that turned Full Auto off says. UX review round 1, 2026-10-17
@@ -7513,7 +7554,7 @@ MODULE = Module(
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the
     # record in its chat of what it did on it, `metaform.module.persons_word`
     provides=(Provides('base.holds', base_holds), Provides('dispatch.deaths', watch_deaths),
-              Provides('person.consent', ask_consent), Provides('work.overlap', overlap),
+              Provides('person.consent', ask_consent), Provides('work.overlap', overlap), Provides('work.stop', stop_work),
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
               Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt),
               Provides('dispatch.seats', seat_slots), Provides('work.in_force', fix_in_force)),

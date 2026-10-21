@@ -284,6 +284,7 @@ export function ticketsRead() {
  * tickets for map progress; archived done tickets stay behind the Archive's own paged read. */
 async function boardWindowTickets(cutoff) {
   const project = S.project, metaform = S.base;
+  if (!cutoff) return progressFrom(S.tickets || []);
   try {
     const found = await read('work', {done_since: cutoff, limit: 0});
     if (S.project === project && S.base === metaform) S.tickets = found.results || [];
@@ -317,6 +318,8 @@ export async function ticketsChanged() {
   const project = S.project, metaform = S.base;
   const boards = TICKETS.boards, wiped = TICKETS.wiped;
   const every = TICKETS.every || !S.tickets || boards, ids = every ? [] : [...TICKETS.named], messages = TICKETS.messages;
+  const named = boards ? new Set(TICKETS.named) : null;
+  const before = named && S.tickets ? S.tickets.filter(ticket => named.has(ticket.id)) : [];
   ticketsRead();
   if (!every && !ids.length && !messages) return;
   const cutoff = boards ? await drawBoards(wiped) : '';
@@ -328,12 +331,13 @@ export async function ticketsChanged() {
   if (S.project !== project || S.base !== metaform) return;
   if (!every && !got.length && !messages) return;
   S.progress = every ? got : progressFrom(S.tickets);
+  const affected = named ? [...before, ...S.tickets.filter(ticket => named.has(ticket.id))] : got;
   // A change to tickets adds and removes no node and no edge: each map marks the nodes whose work changed where they
   // are drawn, and neither is drawn again, VIEW-018.
   const changed = openWork();
   // and those whose ticket's steps changed, which pace their light; every one when every ticket was read
-  if (every) for (const id of S.elements.keys()) changed.add(id);
-  else for (const ticket of got) changed.add(ticket.node_kind === 'join' ? joinOf('p:' + ticket.node_id)?.receiver
+  if (every && !boards) for (const id of S.elements.keys()) changed.add(id);
+  else for (const ticket of affected) changed.add(ticket.node_kind === 'join' ? joinOf('p:' + ticket.node_id)?.receiver
     : ticket.node_id);
   markWork3d(changed);
   markWork2d(changed);
@@ -341,7 +345,7 @@ export async function ticketsChanged() {
   figures(S.tickets || []);
   boardFromTickets();
   drawAgentList();  // the full-size dock's rows say each ticket's steps
-  if (every || messages || got.some(atSelected)) workInPanel();
+  if (every && !boards || messages || affected.some(atSelected)) workInPanel();
 }
 export function boardFromTickets() {
   if ($('#board').hidden || !S.tickets) return;

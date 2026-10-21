@@ -965,7 +965,7 @@ def test_stop_cancels_the_session_and_ends_the_agent_process_group(dispatch):
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('QUAL-002')
-def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispatch, run):
+def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispatch, run, tmp_path):
     """A wiped ticket leaves no live runner or agent child holding it. The board uses dispatch's own stop, so ACP
     receives session/cancel and the runner records its session ended before its ticket goes."""
     run('map', 'boards', 'op=add', 'name=Past work', cwd=dispatch.folder)
@@ -989,6 +989,26 @@ def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispa
     assert dispatch.ticket().id == dispatch.id
     assert dispatch.session().extra['state'] == 'ended', 'restore keeps the stopped conversation ended'
     assert len(dispatch.received('session/new')) == 1, 'restore starts no replacement runner'
+
+    # A runner admitted before the wipe's halt can still be waiting for its adapter's first response.
+    ready = tmp_path / 'adapter-started'
+    slow = tmp_path / 'slow-adapter.py'
+    slow.write_text(f'import pathlib, time\npathlib.Path({str(ready)!r}).write_text("ready")\ntime.sleep(60)\n',
+                    encoding='utf-8')
+    run('set', '--dispatch-claude', f'"{sys.executable}" "{slow}"', cwd=dispatch.folder)
+    run('map', 'work', 'op=move', f'id={dispatch.id}', 'column=todo', cwd=dispatch.folder)
+    starting = json.loads(run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder,
+                              env=dispatch.env('hold')).stdout)
+    try:
+        eventually(ready.exists)
+        wiped_starting = json.loads(run('map', 'boards', 'op=wipe', 'name=Past work', '--json',
+                                        cwd=dispatch.folder).stdout)
+        assert wiped_starting['sessions_stopped'] == [f'starting:{starting["pid"]}']
+        assert gone([starting['pid']], limit=10)
+        assert dispatch.id not in {record.id for record in dispatch.store.work(limit=0).results}
+    finally:
+        from metaform.modules.dispatch import end_group
+        end_group(starting['pid'])
 
 
 @pytest.mark.req('BASE-052')

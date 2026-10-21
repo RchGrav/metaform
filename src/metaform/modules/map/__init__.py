@@ -1853,6 +1853,9 @@ def boards(ctx: Context) -> dict[str, Any]:
         if ctx.surface == 'mcp' or held_role(ctx):
             raise Stop('Wipe and restore are person_only. Use the Boards select on the page.',
                        'open the board on the page')
+        if 'name' not in ctx.nouns:
+            raise Stop('Name the board. An empty name means the first board.',
+                       f'metaform map boards op={op} name=<board>')
         return _wipe_restore_board(ctx, op, name)
     if op == 'list':
         with store.tables(write=False) as tx:
@@ -1910,16 +1913,21 @@ def boards(ctx: Context) -> dict[str, Any]:
 
 def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
     from metaform.data import on_base, project_work_rows, restore_project_work_rows
-    from metaform.module import call, context as command_context, surface
     store = ctx.require_store()
     if op == 'restore':
         stamp = str(ctx.nouns.get('backup') or '')
         snapshot = home.read_wipe_backup(store.project_id, stamp)
         if snapshot['name'] != name:
             raise Stop('The backup names another board.', 'metaform list backups')
+        bound = store.bound_base()
+        if (bound.id if bound else None) != snapshot['base']:
+            raise Stop('This backup belongs to another map.', 'metaform map bases')
+        existing = {one.id for one in store.work(ids=snapshot['work_ids'], limit=0).results}
+        restoring = [one for one in snapshot['work_ids'] if one not in existing]
+        # Retained history inserts first. A failure leaves all ticket rows untouched and can be retried.
+        restore_project_work_rows(store.project_id, snapshot.get('project_rows', []), restoring)
         with store.atomic():
             result = store.restore_board_rows(snapshot)
-        restore_project_work_rows(store.project_id, snapshot.get('project_rows', []), result['restored'])
         return {'board': name, 'backup': stamp, 'state': 'restored', **result}
     _numbering(store)
     with home.halted(store.project_id, 'wipe'):
@@ -1927,23 +1935,19 @@ def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
         snapshot['project_rows'] = project_work_rows(store.project_id, snapshot['work_ids'])
         stamp = home.wipe_backup(store.project_id, snapshot)
         stopped: list[str] = []
-        dispatch = next((one for one in surface(ctx.folder) if one.id == 'dispatch'), None)
+        stopping = next(((owner, service) for owner, service in provided(ctx.folder, 'work.stop')
+                         if owner == 'dispatch'), None)
         entries = [*snapshot['rows'], *(entry for project in snapshot['project_rows'] for entry in project['rows'])]
         sessions = {str(row['session_id']): row for entry in entries if entry['module'] == 'dispatch'
                     for row in entry['rows'] if row.get('state') == 'running' and row.get('session_id')}
-        if sessions and dispatch is None:
+        if sessions and stopping is None:
             raise Stop('Running sessions need dispatch to stop them. The backup is kept.', 'metaform enable dispatch')
-        if sessions and dispatch is not None:
-            stop_verb = next(one for one in dispatch.verbs if one.name == 'stop')
+        if stopping is not None:
+            owner, service = stopping
             with on_base(snapshot['base']):
-                for session_id, session in sessions.items():
-                    child = command_context('dispatch', ctx.folder, project=ctx.project,
-                                            nouns={'id': session['work_id'], 'session': session_id}, surface=ctx.surface,
-                                            client=ctx.client, session=ctx.session, identity=ctx.identity)
-                    child.consented = ctx.consented
-                    # Stored running sessions include dead runners. Dispatch's stop reconciles both itself.
-                    call(stop_verb.run, child)
-                    stopped.append(session_id)
+                child = dataclasses.replace(ctx, module=owner,
+                                            store=Store(store.project_id, base=snapshot['base'], module=owner))
+                stopped = service(child, snapshot['work_ids'])
         with store.atomic():
             store.wipe_board_rows(snapshot)
         if name and str(ctx.setting('board') or '') == name:
