@@ -137,6 +137,7 @@ class Transport:
             given_back_reservation,
             keep_launch,
             launches,
+            persons_start,
             resume_spawn,
             session_state,
             start_runner,
@@ -146,7 +147,7 @@ class Transport:
         work = str(held['work_id'])
         # a delivery the person started, or their system agent on their word, is no automatic start: Full Auto off
         # does not hold its launches; a halt still refuses them as it does every start
-        auto = not held.get('persons_start')
+        auto = not persons_start(ctx, recorded=bool(held.get('persons_start')))
         if held.get('stop'):
             return {'state': 'stopped'}
         # A delivery whose specialist role is still being made waits for its publication, which owns the start: a

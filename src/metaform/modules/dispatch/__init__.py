@@ -3312,7 +3312,7 @@ def start(ctx: Context) -> dict[str, Any]:
     # run refuses the rest of it (ux-verify-combined F1)
     asked = batch_asked(str(ctx.nouns['batch'])) if ctx.nouns.get('batch') else time.time_ns()
     word = on_persons_word(ctx, f'Starting an agent on ticket {work_id}', [str(work_id)])
-    automatic = not person_asks(ctx) and word is None
+    automatic = not persons_start(ctx, word)
     if not automatic:
         runnable(ctx, agent)
     folder = store.project().path
@@ -3362,7 +3362,7 @@ def start(ctx: Context) -> dict[str, Any]:
         # said before the ticket is taken; the gate counts again at the start. An agent's start is not the person's
         # retry of an agent that keeps failing.
         admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=automatic)
-        if person_asks(ctx) and owner is not None:
+        if not automatic and owner is not None:
             owner.reopen(ctx, str(work_id))
         store.take_work(work_id, by=reservation)
     started = run_reserved(ctx, reservation, given, asked=asked, auto=automatic)
@@ -4299,6 +4299,23 @@ def person_asks(ctx: Context) -> bool:
     consent-authority, 2026-10-17)."""
     return ctx.consented or (ctx.surface != 'mcp' and sender(ctx) is None
                              and not (ctx.surface == 'cli' and agent_caller()))
+
+
+def persons_start(ctx: Context, word: dict[str, Any] | None = None, *, recorded: bool | None = None) -> bool:
+    """Whether this start is the person's, using the same boundary as `on_persons_word`.
+
+    The page or an explicitly consented call is the person's. A CLI or MCP call outside dispatch is also theirs,
+    including their own AI tool: `caller.dispatched()` is None, so the word guard lets it through without a word.
+    A dispatched agent's call is automatic unless it carries the person's word or explicit consent; permission
+    to act without asking does not supply either. Full Auto holds only automatic starts; halts still hold all starts.
+
+    Orchestration supplies `recorded` from the originating assignment, since a later launch's caller can differ
+    from the caller who started that delivery. A recorded False stays automatic regardless of the launch context.
+    """
+    if recorded is not None:
+        return recorded
+    from metaform import caller
+    return ctx.surface not in ('mcp', 'cli') or ctx.consented or word is not None or caller.dispatched() is None
 
 
 def failing_path(project_id: str, agent: str) -> Path:
@@ -6557,9 +6574,9 @@ def resume(ctx: Context) -> dict[str, Any]:
         word = on_persons_word(ctx, f'Resuming the agent on ticket {work_id}', [work_id])
     except PersonsDecision:
         word = None
-    automatic = not person_asks(ctx) and word is None
+    automatic = not persons_start(ctx, word)
     # a worker's resume and a conversation's alike go through the gate, which refuses past the slots, VIEW-039
-    if assignment and owner is not None and person_asks(ctx):
+    if assignment and owner is not None and not automatic:
         admit(ctx, held, work_id, 'worker' if worker else 'summoned', agent=agent)
         owner.reopen(ctx, work_id)
     started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume',

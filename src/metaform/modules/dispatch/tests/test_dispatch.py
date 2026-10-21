@@ -992,6 +992,66 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
     assert not dispatch.log.exists()
 
 
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('surface', ['mcp', 'cli'])
+@pytest.mark.parametrize('halted', [False, True])
+def test_the_persons_tool_outside_dispatch_starts_with_full_auto_off(
+        dispatch, run, dispatch_runners, monkeypatch, surface, halted):
+    """A terminal AI tool outside dispatch carries the person's start on both surfaces; a held halt still wins."""
+    from metaform import caller
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.mcp.server import answer
+
+    run('set', '--agents-ask-first', cwd=dispatch.folder)
+    assert context('dispatch', dispatch.folder).setting('dispatch_autostart') is False
+    monkeypatch.setattr(caller, 'agent', lambda: 'Claude Code above this command')
+    monkeypatch.setattr(caller, 'dispatched', lambda: None)
+    for key, value in dispatch.env('hold').items():
+        if key.startswith('FAKE_'):
+            monkeypatch.setenv(key, value)
+
+    def start():
+        if surface == 'mcp':
+            error, blocks, result = asyncio.run(answer(dispatch.folder, 'dispatch_start',
+                                                      {'id': dispatch.id, 'agent': 'claude'}, client='claude-code'))
+            return error, '\n'.join(blocks), result
+        result = run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder, ok=False)
+        return result.returncode != 0, result.stdout + result.stderr, \
+            json.loads(result.stdout) if result.returncode == 0 else None
+
+    if halted:
+        with module.halting('proj', 'clear'):
+            error, text, _ = start()
+        assert error and 'The clear of this project is under way' in text, text
+        assert not dispatch.ticket().taken and not dispatch.log.exists()
+    else:
+        error, text, started = start()
+        assert not error, text
+        dispatch_runners.append((started, dispatch.folder, dispatch.log))
+        assert started['state'] == 'starting'
+        eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('surface', ['mcp', 'cli'])
+def test_a_dispatched_workers_own_start_stays_automatic_with_full_auto_off(dispatch, run, monkeypatch, surface):
+    """Permission to act without asking supplies no personal start authority to a dispatched worker."""
+    from metaform.modules.mcp.server import answer
+
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    monkeypatch.setenv('METAFORM_SESSION', 'worker-start')
+    if surface == 'mcp':
+        error, blocks, _ = asyncio.run(answer(dispatch.folder, 'dispatch_start',
+                                            {'id': dispatch.id, 'agent': 'claude'}, client='codex'))
+        text = '\n'.join(blocks)
+    else:
+        result = run('dispatch', 'start', dispatch.id, 'claude', cwd=dispatch.folder, ok=False)
+        error, text = result.returncode != 0, result.stdout + result.stderr
+    assert error and 'Full Auto is off' in text, text
+    assert not dispatch.ticket().taken and not dispatch.log.exists()
+
+
 @pytest.mark.req('VIEW-039')
 def test_dispatch_agents_refuses_an_automatic_start_and_never_the_persons(dispatch, run, dispatch_runners,
                                                                            monkeypatch):
@@ -1027,7 +1087,7 @@ def test_dispatch_agents_refuses_an_automatic_start_and_never_the_persons(dispat
     assert dispatch.process.wait(30) == 0
     resuming = context('dispatch', dispatch.folder, nouns={'id': dispatch.id})
     with monkeypatch.context() as patched:
-        patched.setattr(module, 'person_asks', lambda ctx: False)
+        patched.setenv('METAFORM_ROLE', 'worker')
         with pytest.raises(module.Refused, match='Full Auto is off|Every slot Full Auto may fill is in use'):
             module.resume(resuming)  # an automatic resume is refused: by Full Auto off, else by the slots
     resumed = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
