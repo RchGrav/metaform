@@ -181,22 +181,26 @@ function mapKey(event) {
   }
   walkTree(event, here);
 }
-/* On the map the arrows walk the join tree: Down to the node drawn nearest under, Up back the way it came or to the
- * parent, Left and Right along the parent's row and on past its ends. */
+/* Translate LR arrows to TB tree actions: Up runs Right, Down runs Left, Left runs Up, Right runs Down.
+ * History keys and the ordered walks inside a node or memory network are handled before this translation. */
+const ACROSS_KEYS = {ArrowRight: 'ArrowDown', ArrowLeft: 'ArrowUp', ArrowUp: 'ArrowRight', ArrowDown: 'ArrowLeft'};
+/* Walk the join tree through its logical actions: deeper, back along the trail or to the parent, or between siblings
+ * and on past the ends of their row. */
 function walkTree(event, here) {
-  if (event.key === 'ArrowDown') {
+  const key = M.vertical ? event.key : ACROSS_KEYS[event.key];
+  if (key === 'ArrowDown') {
     event.preventDefault();
     const next = below(here);
     if (next) { S.trail.push(here); select(next, true, true); }
-  } else if (event.key === 'ArrowUp') {
+  } else if (key === 'ArrowUp') {
     event.preventDefault();
     const parent = S.trail.length ? S.trail.pop() : parentOf(here);
     if (parent) select(parent, true, true);
-  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+  } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
     event.preventDefault();
     const parent = S.trail.length ? S.trail[S.trail.length - 1] : parentOf(here);
     const row = parent ? childrenOf(parent) : roots();
-    const at = row.indexOf(here), by = event.key === 'ArrowRight' ? 1 : -1;
+    const at = row.indexOf(here), by = key === 'ArrowRight' ? 1 : -1;
     if (at >= 0 && row[at + by]) { select(row[at + by], true, true); return; }
     // past the end of the row: the node drawn nearest beside it that way, whatever its parent, whose row it is in
     // then; with nothing drawn beyond, round the level of the tree

@@ -1522,38 +1522,67 @@ def keys_of(web):
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
 def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(run, web, mapped, browser):
-    """Left and right move between the nodes connected to the parent, down goes deeper, up goes
-    back to the parent."""
+    """Physical arrows perform requested tree actions through runtime orientation changes."""
+    from metaform.data import Store
+    store = Store('proj')
+    store.add_element('notes', 'code.loop.tock', name_length=1)
+    store.add_join('notes', 'exterior.cook', 'code.loop.tock', purpose='Count another beat.', ef='Ticks.')
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
     cook, kitchen, alarm, display, tick = (at[address] for address in (
         'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display', 'code.loop.tick'))
-    # cook's join holds the kitchen timer and the tick loop, a row of two in the order they are drawn across the map;
+    # The cook receives from three providers, ordered across the rendered map.
     # the kitchen timer receives from the alarm; the display, which nothing receives from, sits beside the cook.
-    still2d(page)
-    vertical = page.evaluate('window.metaform.vertical()')
-    across = {key: box_of(page, address)['x' if vertical else 'y']
-              for key, address in ((kitchen, 'code.timer.kitchen'), (tick, 'code.loop.tick'))}
-    row = sorted(across, key=across.get)
     press = lambda key: (page.keyboard.press(key), page.evaluate('window.metaform.selected()'))[1]
-    page.evaluate(f'window.metaform.select("{cook}")')
-    first = press('ArrowDown')
-    assert first in row  # down goes to a node the cook's join holds
-    other = row[1 - row.index(first)]
-    toward, back = ('ArrowRight', 'ArrowLeft') if row.index(first) == 0 else ('ArrowLeft', 'ArrowRight')
-    assert press(toward) == other  # left or right goes along the row to the other node of the same parent
-    assert press(back) == first  # and back again
-    if first != kitchen:
-        assert press(toward) == kitchen
-    walk = [press(key) for key in ('ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowRight', 'ArrowLeft')]
-    assert walk == [alarm, kitchen, cook, display, cook]
+    for direction in ('down', 'across', 'down'):
+        page.evaluate("direction => import('/page/app/map2d/fit.js').then(part => part.fitDirection2d(direction))",
+                      direction)
+        vertical = direction == 'down'
+        page.wait_for_function('vertical => window.metaform.vertical() === vertical', arg=vertical)
+        still2d(page)
+        deeper, parent, previous, following = (('ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight') if vertical
+                                               else ('ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'))
+        axis = 'x' if vertical else 'y'
+        siblings = (kitchen, tick, at['code.loop.tock'])
+        across = {key: page.evaluate('key => window.metaform.at2d(key)', key)[axis] for key in siblings}
+        row = sorted(across, key=across.get)
+        page.evaluate('key => window.metaform.select(key)', cook)
+        assert press(parent) == cook
+        assert press(deeper) in row
+        # Three siblings distinguish advancing from reversing, even when row ends wrap.
+        page.evaluate('key => window.metaform.select(key)', row[0])
+        assert press(following) == row[1], direction
+        assert press(following) == row[2], direction
+        assert press(previous) == row[1], direction
+        assert press(previous) == row[0], direction
+        page.evaluate('key => window.metaform.select(key)', cook)
+        first = press(deeper)
+        movement = following if row.index(kitchen) > row.index(first) else previous
+        for _ in range(abs(row.index(kitchen) - row.index(first))):
+            press(movement)
+        assert page.evaluate('window.metaform.selected()') == kitchen
+        assert [press(key) for key in (deeper, parent, parent, following, previous)] == [
+            alarm, kitchen, cook, display, cook]
+        page.evaluate('key => window.metaform.select(key)', alarm)
+        assert press(deeper) == alarm  # a leaf keeps its selection
+        page.evaluate('key => window.metaform.select(key)', kitchen)
+        assert press('Alt+ArrowLeft') == alarm
+        assert press('Alt+ArrowRight') == kitchen
+        # Text entry owns arrows in either layout.
+        page.keyboard.press('/')
+        assert page.locator('#search input').evaluate('(input) => input === document.activeElement')
+        assert press(deeper) == kitchen
+        page.keyboard.press('Escape')
     assert problems == []
 
 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
-def test_every_element_can_be_reached_with_the_arrow_keys(run, web, mapped, browser):
+@pytest.mark.parametrize('direction', ['down', 'across'])
+def test_every_element_can_be_reached_with_the_arrow_keys(run, web, mapped, browser, direction):
+    from metaform.modules.web import view
+    view.keep(view.OWNER, 'web_map_direction', direction)
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
@@ -9587,6 +9616,8 @@ def test_down_goes_to_the_child_drawn_closest_below_and_not_to_the_first(run, we
     """With seven nodes below, Down goes down the edge to the one drawn nearest under the selected node, about the
     middle one, so the walk does not swing to the far left; Left and Right still go across the same row."""
     from metaform.data import Store
+    from metaform.modules.web import view
+    view.keep(view.OWNER, 'web_map_direction', 'down')
     store = Store('proj')
     for n in range(1, 8):
         store.add_element('notes', f'code.alarm.audible.tone{n}', name_length=1)
@@ -9620,6 +9651,8 @@ def test_left_and_right_past_the_end_of_a_row_go_on_to_the_next_parents_nodes_on
     """At the end of one parent's nodes, Right goes on to the nodes of the next parent over on the same level, and Left
     the same way back, so no node of a level is out of reach; Up then goes to the parent of the node reached."""
     from metaform.data import Store
+    from metaform.modules.web import view
+    view.keep(view.OWNER, 'web_map_direction', 'down')
     store = Store('proj')
     store.add_element('notes', 'code.light.flash', name_length=2)
     store.add_join('notes', 'code.timer.kitchen', 'code.light.flash', purpose='Show it is done.', ef='Flashes.')
@@ -9665,6 +9698,8 @@ def test_past_the_end_of_a_row_the_node_drawn_beside_is_reached_whatever_level_i
     from playwright.sync_api import TimeoutError as Waited
 
     from metaform.data import Store
+    from metaform.modules.web import view
+    view.keep(view.OWNER, 'web_map_direction', 'down')
     store = Store('proj')
     for address in ('code.alarm.audible.tone1', 'code.alarm.audible.tone1.pitch', 'code.panel', 'code.panel.cover',
                     'code.panel.cover.latch'):
