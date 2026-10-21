@@ -977,7 +977,7 @@ def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispa
 
     wiped = json.loads(run('map', 'boards', 'op=wipe', 'name=Past work', '--json', cwd=dispatch.folder).stdout)
 
-    assert wiped['sessions_stopped'], wiped
+    assert wiped['sessions_stopped'] == [session_id], wiped
     assert dispatch.received('session/cancel') == [
         {'jsonrpc': '2.0', 'method': 'session/cancel', 'params': {'sessionId': session_id}}]
     assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()
@@ -985,6 +985,10 @@ def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispa
     assert dispatch.id not in {record.id for record in dispatch.store.work(limit=0).results}
     assert not [one for one in dispatch.items('session') if one.extra['work_id'] == dispatch.id
                 and one.extra['state'] == 'running']
+    run('map', 'boards', 'op=restore', 'name=Past work', f'backup={wiped["backup"]}', cwd=dispatch.folder)
+    assert dispatch.ticket().id == dispatch.id
+    assert dispatch.session().extra['state'] == 'ended', 'restore keeps the stopped conversation ended'
+    assert len(dispatch.received('session/new')) == 1, 'restore starts no replacement runner'
 
 
 @pytest.mark.req('BASE-052')

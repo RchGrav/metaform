@@ -24,6 +24,13 @@ Started from template 0.2.0.
 
 ## Verbs
 
+`boards op=wipe name=<board>` clears every ticket on that board after keeping an automatic backup and stopping its
+running sessions through dispatch. Empty `name=` clears the first board. Named boards are removed. The map stays.
+`boards op=restore name=<board> backup=<stamp>` inserts original tickets with their numbers, steps, links and
+settings. Existing ticket ids are skipped. Later work stays. `metaform list backups` lists wipe stamps beside clear
+backups. Wipe backups are kept permanently. Wipe and restore are person_only, refused over MCP. The page's Boards
+select offers Wipe this board and Restore for each backup.
+
 `markdown` writes the map, or with `address=` the part around one address, as a short Markdown document: each element's name, address, role and paths, from the sources layer, and each join's receiver, the elements it holds, its ef and its purpose, MAP-052, and `file=` writes the document to a file. It is a command only and never a tool.
 
 `mermaid` writes the map, or with `address=` that element and the elements one join away, as a Mermaid flowchart, P063: the elements and joins the web GUI's 2D map draws, each element a node named by what the project calls it, else its short name, over its address, and an edge for each element each join holds, pointing the way the join's information goes, its ifd: from the receiver to the element served when it sends or nothing is recorded, from the element to the receiver when it receives, `<-->` when both, as the 2D map's arrowheads point. The CQUs and the DE carry the classes `cqu` and `de`. Its YAML frontmatter gives the title and the 2D map's layout, ELK by network simplex. `direction=TB`, the default, or `LR`; `leave_out=` roots not drawn, comma-separated; `labels=purpose` or `labels=ef` puts each join's on its edges; `file=` writes it to a file such as `map.mmd`, which GitHub, VS Code and Obsidian draw. Mermaid with its default limits refuses a diagram over 50,000 characters or 500 edges, and those limits cannot be raised from the diagram, so such a diagram says so in a comment at its top, and with `file=` in a notice. The web GUI's Export menu saves and copies the same flowchart, written by the same writer, `metaform.outline.mermaid`, with the page's layers, the direction its 2D map runs and the roots it leaves out.

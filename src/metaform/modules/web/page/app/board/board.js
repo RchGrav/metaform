@@ -517,7 +517,7 @@ async function wipeBoard() {
   box.disabled = true;
   try {
     const made = await wrote('/api/board-wipe', {name});
-    if (made) toast(`Board wiped. Backup ${made.backup || made.stamp}. Sessions stopped: ${made.sessions_stopped}.`);
+    if (made) toast(`Board wiped. Backup ${made.backup}. Sessions stopped: ${made.sessions_stopped.length}.`);
   } finally { box.disabled = false; }
 }
 async function restoreBoard(chosen) {

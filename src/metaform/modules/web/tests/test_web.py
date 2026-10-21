@@ -9998,7 +9998,8 @@ def test_a_named_board_is_made_in_the_picker_and_a_card_moves_to_it_and_back(run
     page.click('#boardBtn')
     card = f'#board .card[data-id="{work}"]'
     page.wait_for_selector(card)
-    assert [one.text_content() for one in page.locator('#board .boards option').all()] == ['Board', 'New board…']
+    assert [one.text_content() for one in page.locator('#board .boards option').all()] == [
+        'Board · active', 'New board…', 'Wipe this board…']
     page.once('dialog', lambda dialog: dialog.accept('Later'))
     page.select_option('#board .boards', index=1)
     page.wait_for_selector('#board .boards option[value="Later"]', state='attached')  # an option of a closed select

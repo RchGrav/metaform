@@ -1909,7 +1909,7 @@ def boards(ctx: Context) -> dict[str, Any]:
 
 
 def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
-    from metaform.data import on_base, project_work_rows
+    from metaform.data import on_base, project_work_rows, restore_project_work_rows
     from metaform.module import call, context as command_context, surface
     store = ctx.require_store()
     if op == 'restore':
@@ -1919,6 +1919,7 @@ def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
             raise Stop('The backup names another board.', 'metaform list backups')
         with store.atomic():
             result = store.restore_board_rows(snapshot)
+        restore_project_work_rows(store.project_id, snapshot.get('project_rows', []), result['restored'])
         return {'board': name, 'backup': stamp, 'state': 'restored', **result}
     _numbering(store)
     with home.halted(store.project_id, 'wipe'):
@@ -1927,11 +1928,13 @@ def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
         stamp = home.wipe_backup(store.project_id, snapshot)
         stopped: list[str] = []
         dispatch = next((one for one in surface(ctx.folder) if one.id == 'dispatch'), None)
-        if dispatch is not None:
+        entries = [*snapshot['rows'], *(entry for project in snapshot['project_rows'] for entry in project['rows'])]
+        sessions = {str(row['session_id']): row for entry in entries if entry['module'] == 'dispatch'
+                    for row in entry['rows'] if row.get('state') == 'running' and row.get('session_id')}
+        if sessions and dispatch is None:
+            raise Stop('Running sessions need dispatch to stop them. The backup is kept.', 'metaform enable dispatch')
+        if sessions and dispatch is not None:
             stop_verb = next(one for one in dispatch.verbs if one.name == 'stop')
-            entries = [*snapshot['rows'], *(entry for project in snapshot['project_rows'] for entry in project['rows'])]
-            sessions = {str(row['session_id']): row for entry in entries if entry['module'] == 'dispatch'
-                        for row in entry['rows'] if row.get('state') == 'running' and row.get('session_id')}
             with on_base(snapshot['base']):
                 for session_id, session in sessions.items():
                     child = command_context('dispatch', ctx.folder, project=ctx.project,

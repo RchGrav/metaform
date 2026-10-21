@@ -1560,9 +1560,13 @@ def wipe_backup(project_id: str, snapshot: dict[str, Any]) -> str:
     folder = home() / 'backups' / 'wipe' / project_id / stamp
     mkdir_private(folder)
     write_private(folder / 'rows.json', json.dumps(snapshot, ensure_ascii=False))
+    with (folder / 'rows.json').open('rb') as saved:
+        os.fsync(saved.fileno())
     metadata = {'stamp': stamp, 'board': snapshot['name'], 'base': snapshot['base'],
                 'tickets': len(snapshot['work_ids']), 'columns': snapshot['columns']}
     write_private(folder / 'manifest.json', json.dumps(metadata, ensure_ascii=False))
+    with (folder / 'manifest.json').open('rb') as saved:
+        os.fsync(saved.fileno())
     return stamp
 
 

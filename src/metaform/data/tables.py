@@ -1489,6 +1489,29 @@ def project_work_rows(project_id: str, work_ids: Sequence[str]) -> list[dict[str
     return exported
 
 
+def restore_project_work_rows(project_id: str, entries: Sequence[Mapping[str, Any]], work_ids: Sequence[str]) -> int:
+    """Insert missing backed-up project rows, preserving live session state and all other existing row keys.
+
+    Backup store names resolve only against the project's existing module stores, so a backup cannot choose a path.
+    Each store has its own transaction, as other project-level reads and writes do, STORE-006.
+    """
+    if not work_ids:
+        return 0
+    known = {path.stem: path for path in project_stores(project_id)}
+    selected: list[tuple[Path, Sequence[Mapping[str, Any]]]] = []
+    for entry in entries:
+        store, rows = entry.get('store'), entry.get('rows')
+        if not isinstance(store, str) or store not in known or not isinstance(rows, list):
+            raise StoreError('The ticket backup names an unknown project module store or invalid rows.',
+                             'restore a backup of this project with its module stores present')
+        selected.append((known[store], cast(list[Mapping[str, Any]], rows)))
+    restored = 0
+    for path, rows in selected:
+        with project_transaction(path, write=True) as db:
+            restored += insert_work_rows(db, rows, work_ids, skip_existing=True)
+    return restored
+
+
 def delete_work_rows(db: sqlite3.Connection, work_ids: Sequence[str]) -> int:
     """Delete these tickets' rows through the store's declarations, removing their work rows after their children.
 
@@ -1511,9 +1534,10 @@ def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]
                      skip_existing: bool = False) -> int:
     """Insert backed-up raw ticket rows into this store, preserving each stored value and key.
 
-    Every declaration and row is checked before the first insert. Only the requested work ids are inserted, so a
-    caller can skip an existing ticket together with all its children. `skip_existing` retains project history
-    already held under a row's key. The caller owns the transaction and any deferred foreign-key checks.
+    Every declaration and row is checked before the first insert. Compatible added columns receive their current
+    defaults. Only the requested work ids are inserted, so a caller can skip an existing ticket with its children.
+    `skip_existing` retains project history already held under a row's key. The caller owns the transaction and any
+    deferred foreign-key checks.
     """
     if not work_ids:
         return 0
@@ -1527,9 +1551,17 @@ def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]
                 raise ValueError('each entry names its module and table declaration')
             table = Table.from_dict(cast(Mapping[str, Any], entry['table']))
             held = current.get((module, table.name))
-            if held is None or held.to_dict() != table.to_dict():
+            if held is None or physical(module, held) != physical(module, table) or held.key != table.key:
                 raise ValueError(f'{module}.{table.name} differs from its current persisted declaration')
             names = {column.name for column in table.columns}
+            held_columns = {column.name: column for column in held.columns}
+            if any(column.name not in held_columns or held_columns[column.name].kind != column.kind
+                   for column in table.columns):
+                raise ValueError(f'{module}.{table.name} removed a backed-up column or changed its type')
+            required = {str(row[1]) for row in db.execute(
+                f'PRAGMA table_info({_quoted(physical(module, held))})') if row[3] and row[4] is None}
+            if required - names:
+                raise ValueError(f'{module}.{table.name} requires added columns without defaults')
             if 'work_id' not in names:
                 raise ValueError(f'{module}.{table.name} has no work_id column')
             rows = entry['rows']
@@ -1547,7 +1579,7 @@ def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]
             checked.append((module, table, kept))
         except (KeyError, TypeError, ValueError) as error:
             raise StoreError(f'The ticket backup does not fit this store: {error}.',
-                             'restore a backup whose table declarations match this store') from None
+                             'restore a backup whose table declarations remain compatible with this store') from None
     checked.sort(key=lambda one: physical(one[0], one[1]) != 'work')
     inserted = 0
     command = 'INSERT OR IGNORE' if skip_existing else 'INSERT'

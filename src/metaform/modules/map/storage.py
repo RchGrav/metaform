@@ -603,15 +603,21 @@ def remove_work(tx: Tx, work_id: str) -> dict[str, Any]:
     2026-10-20: a ticket could be cancelled, which kept it in the Archive, but never deleted."""
     row = _work_row(tx, work_id)
     record = work_record(tx, row, ())
-    _ticket_changed(tx, work_id)
+    _remove_work_rows(tx, [work_id])
+    return {"removed": work_id, "address": record.address, "task": record.task}
+
+
+def _remove_work_rows(tx: Tx, work_ids: Sequence[str]) -> None:
+    """One deletion path for individual tickets and board wipes, including unloaded owners' declared rows."""
     from metaform.data import delete_work_rows
+    _ticket_changed(tx, *work_ids)
     # Stores created before the high-water marks must reserve their rows before deletion too.
     for table in ("work", "work_steps"):
         _next_work_row(tx, table)
     tables = tx.tables()
-    tables.delete("numbered", {"kind": "work", "item_id": work_id})
-    delete_work_rows(tx.db, [work_id])
-    return {"removed": work_id, "address": record.address, "task": record.task}
+    for work_id in work_ids:
+        tables.delete("numbered", {"kind": "work", "item_id": work_id})
+    delete_work_rows(tx.db, work_ids)
 
 
 def board_snapshot(tx: Tx, name: str) -> dict[str, Any]:
@@ -640,8 +646,7 @@ def wipe_board_rows(tx: Tx, snapshot: dict[str, Any]) -> None:
     if set(current["work_ids"]) != set(snapshot["work_ids"]):
         raise StoreError("The board changed while its sessions stopped. Its backup is kept. Wipe it again.",
                          "metaform map boards")
-    for work_id in snapshot["work_ids"]:
-        remove_work(tx, str(work_id))
+    _remove_work_rows(tx, snapshot["work_ids"])
     if snapshot["name"]:
         tx.tables().delete("boards", {"name": snapshot["name"]})
     tx.concern(kind="board-wipe")

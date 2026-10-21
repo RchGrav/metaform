@@ -1269,7 +1269,7 @@ def test_a_ticket_filed_with_no_board_lands_on_the_active_board(run, mapped):
     assert [one['name'] for one in boards if one['active']] == ['']
 
 
-def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned_rows(run, mapped, monkeypatch):
+def test_wipe_backs_up_every_board_column_and_restores_ids_numbers_and_owned_rows(run, mapped, monkeypatch):
     """A person can empty a board without losing its map, then insert its tickets beside work made since the wipe.
     Each wipe keeps its own backup. Forty-four removed tickets produce one map.changed carrying all their ids."""
     from metaform import changes, events
@@ -1278,6 +1278,7 @@ def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned
     from metaform.errors import Stop
     from metaform.modules.map import boards
 
+    run('enable', 'dispatch', cwd=mapped)
     store = Store('proj', module='map')
     dispatch = Store('proj', module='dispatch')
     node = Node('element', 'code.alarm.audible')
@@ -1285,7 +1286,8 @@ def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned
     records = []
     for column in ('backlog', 'todo', 'doing', 'done'):
         for number in range(11):
-            record = store.add_work(node, 'flawed', task=f'{column} task {number}', title=f'{column} {number}',
+            record = store.add_work(node, 'broken', kind='flawed', task=f'{column} task {number}',
+                                    title=f'{column} {number}',
                                     links=[Node('element', 'code.timer.kitchen')])
             with store.tables() as tx:
                 tx.insert('ticket_settings', {'work_id': record.id, 'board': 'past effort'})
@@ -1329,7 +1331,7 @@ def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned
     assert backup.is_file()
     raw = json.loads(backup.read_text(encoding='utf-8'))
     assert raw['board'] == board_row and set(raw['work_ids']) == ids
-    backed_up = {(part['module'], part['table']): part['rows'] for part in raw['rows']}
+    backed_up = {(part['module'], part['table']['name']): part['rows'] for part in raw['rows']}
     assert {row['work_id'] for row in backed_up['map', 'work']} == ids
     assert len(backed_up['map', 'work_links']) == 44
     assert backed_up['map', 'question_work'] == [{'message_id': asked.id, 'work_id': first}]
@@ -1347,7 +1349,7 @@ def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned
         assert all(not tx.rows(table, limit=0).results for table in tables)
     with dispatch.tables(write=False) as tx:
         assert not tx.rows('claim_work', limit=0).results and not tx.rows('lines', limit=0).results
-    listed_backups = run('list', 'backups', '--json', cwd=mapped).stdout
+    listed_backups = run('list', 'backups', 'proj', cwd=mapped).stdout
     assert stamp in listed_backups and 'past effort' in listed_backups and '44' in listed_backups
 
     with pytest.raises(Stop):

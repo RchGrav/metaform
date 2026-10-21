@@ -88,6 +88,7 @@ from .tables import (
     export_work_rows,
     insert_work_rows,
     project_work_rows,
+    restore_project_work_rows,
 )
 
 DataRow = _sqlite3.Row
@@ -237,6 +238,7 @@ __all__ = [
     'query_reads',
     'reading',
     'reference',
+    'restore_project_work_rows',
     'roots',
     'short_name',
     'shown_number',
