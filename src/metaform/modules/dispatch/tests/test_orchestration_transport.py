@@ -841,3 +841,32 @@ def test_delivered_completion_notification_stores_only_ticket_reference(dispatch
     stored = json.dumps(rows)
     assert 'Private report' not in stored and 'Private role' not in stored
     assert 'code.dispatcher.agent#7d complete' in stored
+
+
+@pytest.mark.kind('fixture')
+def test_roundtable_reference_waits_for_person_turn_without_waking_system(dispatch, monkeypatch):
+    import asyncio
+
+    from metaform.modules.dispatch import orchestration, runner
+
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'system': True})
+    system = runner.Session(ctx, Store('proj', module='dispatch'), dispatch.ticket(), 'claude', ['true'])
+    system.resume = 'existing-system-session'
+    turns = []
+    monkeypatch.setattr(system, 'turn', turns.append)
+    table, record = 'table-seven', 'docs/roundtables/7-results/export.json'
+    ident = f'roundtable-result-{table}'
+    orchestration.TRANSPORT.notify_user(ctx, {'message_id': ident, 'kind': 'roundtable_result',
+        'table': table, 'record': record, 'text': f'Roundtable {table}: {record}'}, ident)
+    asyncio.run(system.updates_due())
+    asyncio.run(system.updates_due())
+    assert turns == [] and len(system.inbox) == 1
+    said = system.inbox_said()
+    assert f'Roundtable {table}: {record}' in said
+    assert 'proposal_text' not in said and 'synthesis' not in said
+    # A notification delivered through the running session uses the same passive behavior.
+    system.inbox.clear()
+    system.inbox_add('live-reference', '', f'Roundtable {table}: {record}', False, passive=True)
+    assert turns == [] and len(system.inbox) == 1
+    system.inbox_add('ordinary-completion', '', 'Ticket 9 complete', False)
+    assert len(system.inbox) == 1, 'routine completions keep their previous behavior'

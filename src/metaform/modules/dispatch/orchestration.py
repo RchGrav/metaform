@@ -337,7 +337,8 @@ class Transport:
                           {'text': json.dumps(state, ensure_ascii=False), 'seq': seq + 2})
                 if isinstance(message, dict):  # what the system agent's inbox names it by, `update_entries`
                     add_line(tx, UPDATES, UPDATES, f'about:{message_id}', 'about', json.dumps(
-                        {key: message.get(key) for key in ('work_id', 'kind', 'state')}, ensure_ascii=False), seq + 2)
+                        {key: message.get(key) for key in ('work_id', 'kind', 'state', 'table', 'record')},
+                        ensure_ascii=False), seq + 2)
                 tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
         # Updates retain message ids and ticket status. Completion reports remain on their tickets.
         # A failed relay can retry the same id.
@@ -363,7 +364,7 @@ TRANSPORT = Transport()
 # Authenticated routing and delivery metadata remain available through dispatch_notes.
 MESSAGE_FIELDS = ('work_id', 'assignment_id', 'sender_assignment_id', 'sender_session_id', 'team_id',
                   'change_id', 'transition_id', 'return_to', 'state', 'update', 'ask', 'reply_to',
-                  'decision', 'board', 'epoch')
+                  'decision', 'board', 'epoch', 'table', 'record')
 
 
 CARRIED = ('delivered', 'read', 'replied')
@@ -390,6 +391,8 @@ def inbox_status(held: dict[str, Any]) -> str:
     short label, so tickets with the same local number are still inspectable without guessing an address.
     """
     sender = cast(dict[str, Any], held.get('from') or {})
+    if (held.get('update') or held.get('kind')) == 'roundtable_result':
+        return f'Roundtable {held.get("table")}: {held.get("record")}'
     item = str(sender.get('item') or held.get('work_id') or sender.get('work_id') or '')
     if not held.get('ask') and (held.get('update') or held.get('kind')) in (
             'result', 'role_publication', 'functional_assessment', 'functional_correction') and held.get('state') in (
@@ -408,9 +411,8 @@ def inbox_status(held: dict[str, Any]) -> str:
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
     """Whether an inbox entry needs the person, so it may start the system agent's turn: an agent's question waiting
-    on an answer, a recommendation the person decides, a failed result the person must act on, or an ended
-    roundtable whose report the person waits for."""
-    return ask or update in ('specification_recommendation', 'roundtable_report') or state == 'failed'
+    on an answer, a recommendation the person decides, or a failed result the person must act on."""
+    return ask or update == 'specification_recommendation' or state == 'failed'
 
 
 def user_updates(ctx: Context) -> list[str]:
@@ -437,7 +439,7 @@ def user_updates(ctx: Context) -> list[str]:
     return [ident for ident in updates if ident not in carried]
 
 
-def update_entries(ctx: Context, idents: list[str]) -> list[tuple[str, str, bool]]:
+def update_entries(ctx: Context, idents: list[str], *, passive: set[str] | None = None) -> list[tuple[str, str, bool]]:
     """Each project update as the system agent's inbox names it, by id: its ticket and kind, from the `about:<id>`
     line its notification keeps, never its words, and whether it needs the person."""
     from .signals import own_store
@@ -459,6 +461,8 @@ def update_entries(ctx: Context, idents: list[str]) -> list[tuple[str, str, bool
         held = about.get(ident) or {}
         work, update, state = str(held.get('work_id') or ''), str(held.get('kind') or 'update'), str(held.get('state') or '')
         item = str(named[work][0]) if work in named else helper_item(work) if helper_id(work) else work
+        if update == 'roundtable_result' and passive is not None:
+            passive.add(ident)
         entries.append((ident, inbox_status({**held, 'id': ident, 'from': {'item': item}}),
                         inbox_wakes(update, state, False)))
     return entries

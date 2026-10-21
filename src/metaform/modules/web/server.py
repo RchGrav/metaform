@@ -233,7 +233,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
-    '/api/roundtable-open'})
+    '/api/roundtable-open', '/api/roundtable-proposal'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -1467,6 +1467,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/roundtable-open': self.roundtable_open,
+                  '/api/roundtable-proposal': self.roundtable_proposal,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -2628,6 +2629,18 @@ class Handler(BaseHTTPRequestHandler):
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
             table = {'table': given['table']}
+            if given.get('proposal'):
+                return self.send(200, module_verb(given, 'roundtables', 'proposal', table))
+            if given.get('file'):
+                name = given['file']
+                if name not in ('export.json', 'mechanical-report.md', 'proposal.md'):
+                    return self.send(400, {'error': 'Choose the saved transcript or export.'})
+                status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
+                saved = str(status.get('saved') or '')
+                if not saved:
+                    return self.send(404, {'error': 'The table has no saved record yet.'})
+                _, folder = project_folder(given)
+                return self.file(folder.resolve(), f'{saved}/{name}')
             found = cast(dict[str, Any], module_verb(given, 'roundtables', 'events',
                                                      {**table, 'after': int(given.get('after') or 0)}))
             if given.get('whole'):
@@ -2637,6 +2650,16 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, ValueError) as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_proposal(self, given: dict[str, Any]) -> None:
+        try:
+            found = module_verb(given, 'roundtables', 'decide',
+                                {key: given.get(key) for key in ('table', 'action', 'digest')})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except (Stop, ValueError, OSError) as error:
+            return self.refuse(error, 400)
+        self.send(200, found)
 
     def roundtable_open(self, given: dict[str, Any]) -> None:
         """A table opened on the person's question, `roundtables open`, focused on the part at `address` when the

@@ -13257,3 +13257,74 @@ def test_an_agent_started_and_recalled_from_the_page_moves_no_part_drawn_on_a_la
     assert any('recalled' in toast for toast in page.evaluate('window.toasts')), page.evaluate('window.toasts')
     assert page.evaluate('document.querySelectorAll("#board button.recall").length') == 0
     assert not problems
+
+
+def test_roundtable_saved_files_are_read_from_its_own_record(run, web, mapped):
+    from metaform.data import Store
+
+    run('enable', 'roundtables', cwd=mapped)
+    saved = 'docs/roundtables/7-results'
+    record = mapped / saved
+    record.mkdir(parents=True)
+    (record / 'export.json').write_text('{"topics": []}\n', encoding='utf-8')
+    (record / 'mechanical-report.md').write_text('Full transcript.\n', encoding='utf-8')
+    (record / 'private.txt').write_text('Private.\n', encoding='utf-8')
+    store = Store('proj', module='roundtables')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'finished', 'topic': 'Results?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'ended', 'created': '2026-10-21T00:00:00Z',
+                             'followed': {'saved': saved, 'result_topics': []}})
+        tx.insert('tables', {'table_id': 'not-saved', 'topic': 'Pending?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'running', 'created': '2026-10-21T00:00:00Z'})
+    started(run)
+    url = '/api/roundtable?project=proj&table=finished&file='
+    status, body, _ = request(web, url + 'export.json')
+    assert status == 200 and json.loads(body) == {'topics': []}
+    status, body, _ = request(web, url + 'mechanical-report.md')
+    assert status == 200 and body == 'Full transcript.\n'
+    assert api(web, url + 'private.txt')[0] == 400
+    assert api(web, url + '..%2Fprivate.txt')[0] == 400
+    assert api(web, '/api/roundtable?project=proj&table=not-saved&file=export.json')[0] == 404
+    assert api(web, '/api/roundtable?project=proj&table=missing&file=export.json')[0] == 400
+
+
+def test_roundtable_proposal_review_and_person_decision_use_the_exact_revision(run, web, mapped):
+    import hashlib
+
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.roundtables import proposal
+
+    run('enable', 'roundtables', cwd=mapped)
+    saved = 'docs/roundtables/8-proposal'
+    folder = mapped / saved
+    folder.mkdir(parents=True)
+    text = '# Goal\nKeep proposed tickets as prose.\n'
+    (folder / 'proposal.md').write_text(text, encoding='utf-8')
+    store = Store('proj', module='roundtables')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'proposal', 'topic': 'What next?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'ended', 'created': '2026-10-21T00:00:00Z',
+                             'followed': {'saved': saved}})
+        tx.insert('proposals', {'table_id': 'proposal', 'state': 'planning', 'file': f'{saved}/proposal.md',
+                                'created': '2026-10-21T00:00:00Z'})
+    proposal.submit(context('roundtables', mapped, project='proj', nouns={'table': 'proposal'}))
+    started(run)
+    url = '/api/roundtable?project=proj&table=proposal'
+    status, reviewed = api(web, url + '&proposal=1')
+    assert status == 200 and reviewed['proposal_text'] == text
+    digest = reviewed['proposal']['digest']
+    assert digest == hashlib.sha256(text.encode()).hexdigest()
+    assert request(web, url + '&file=proposal.md')[1] == text
+    # An authenticated page write requires its Origin/cookie. No transcript body is returned on ordinary status.
+    assert 'proposal_text' not in api(web, url + '&whole=1')[1]['status']
+    response = request(web, '/api/roundtable-proposal', method='POST', body=json.dumps({
+        'project': 'proj', 'table': 'proposal', 'action': 'approve', 'digest': digest}),
+        headers={'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
+    assert response[0] == 200 and json.loads(response[1])['proposal']['state'] == 'approved', response
+    changed = '# Goal\nA different proposal.\n'
+    (folder / 'proposal.md').write_text(changed, encoding='utf-8')
+    stale = request(web, '/api/roundtable-proposal', method='POST', body=json.dumps({
+        'project': 'proj', 'table': 'proposal', 'action': 'approve', 'digest': digest}),
+        headers={'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
+    assert stale[0] == 400 and 'changed' in json.loads(stale[1])['error'].lower()

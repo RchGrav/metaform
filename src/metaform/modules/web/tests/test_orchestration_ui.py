@@ -228,3 +228,186 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         assert problems == []
     finally:
         run('dispatch', 'stop-all', cwd=mapped, ok=False)
+
+
+@pytest.mark.parametrize('answer_text', ['Use both topic results.', ''])
+def test_roundtable_result_shows_all_topics_before_paced_turns_and_survives_reopening(
+        run, web, mapped, browser, answer_text):  # noqa: F811 -- shared browser fixtures
+    """An ended table keeps its complete result even while earlier turns wait for their speaking time."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    result = {
+        'state': 'ended', 'topic': 'Keep every topic', 'seats': ['codex/sol'], 'seated': ['Sol'],
+        'answer': answer_text, 'saved': 'docs/roundtables/7-keep-every-topic',
+        'topics': [
+            {'number': 1, 'title': 'Storage', 'synthesis': {'ideas': [
+                {'id': 'I1', 'name': 'Keep files', 'summary': 'Save every turn.'},
+                {'id': 'I2', 'name': 'Keep rows', 'summary': 'Store searchable records.'}]},
+             'borda': {'order': ['I2', 'I1'], 'points': {'I1': 2, 'I2': 4}},
+             'host_summary': {'name': 'Host', 'text': 'Use searchable rows.'}},
+            {'number': 2, 'title': 'Delivery', 'synthesis': {'ideas': [
+                {'id': 'I1', 'name': 'Show results', 'summary': 'Keep results visible.'}]},
+             'borda': {'order': ['I1'], 'points': {'I1': 0}},
+             'host_summary': {'name': 'Host', 'text': 'Show results immediately.'}},
+        ],
+    }
+    final_answer = answer_text or 'The table ended without a final answer.'
+    requests = []
+    ended = False
+
+    def answer(route):
+        requests.append(route.request.url)
+        if 'table=' not in route.request.url:
+            route.fulfill(json={'seats': []})
+            return
+        after = int(route.request.url.split('after=')[1].split('&')[0])
+        events = []
+        if ended and not after:
+            events = [{'kind': 'turn', 'seat': 'Sol', 'text': f'Earlier turn {number}'} for number in range(3)]
+            events += [{'kind': 'summary', 'name': 'Host', 'text': 'Earlier topic answer.'},
+                       {'kind': 'end', **result}]
+        status = result if ended else {**result, 'state': 'running'}
+        route.fulfill(json={'events': events, 'latest': 5 if ended else 0, 'status': status})
+
+    page.route('**/api/roundtable?*', answer)
+    page.evaluate("""async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        Object.assign(stage.TABLE, {id: 'result-table', kind: 'roundtables:result-table'});
+        await stage.openRoundtable();
+    }""")
+    page.wait_for_selector('#roundtable[data-state="running"]')
+    assert page.locator('.rt-chair, .rt-say, .rt-hold, .rt-continue, .rt-advance, .rt-end').count() == 0
+    before = len(requests)
+    page.evaluate("""async () => {
+        const {tableChange} = await import('/page/app/roundtable/stage.js');
+        for (let n = 0; n < 20; n++) tableChange({kinds: ['roundtables', 'roundtables:another-table']});
+    }""")
+    assert len(requests) == before
+    ended = True
+    page.evaluate("""async () => {
+        const {tableChange} = await import('/page/app/roundtable/stage.js');
+        tableChange({kinds: ['roundtables', 'roundtables:result-table']});
+    }""")
+    page.wait_for_selector('#roundtable[data-state="ended"] .rt-results:not([hidden])')
+    assert page.locator('.rt-topic-result').count() == 2
+    assert page.locator('.rt-topic-result[data-topic="1"] .rt-borda tbody').inner_text() == (
+        '1\tKeep rows\t4\n2\tKeep files\t2')
+    assert page.locator('.rt-topic-result[data-topic="2"] .rt-borda tbody').inner_text() == '1\tShow results\t0'
+    assert 'Save every turn.' in page.locator('.rt-topic-result[data-topic="1"]').inner_text()
+    assert 'Use searchable rows.' in page.locator('.rt-topic-result[data-topic="1"]').inner_text()
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    # The end result arrives before the earlier turns finish their deliberate pacing.
+    assert page.locator('.rt-transcript .rt-turn').count() < 3
+    links = page.locator('.rt-records a').evaluate_all('(links) => links.map(link => link.getAttribute("href"))')
+    assert len(links) == 2
+    assert all('project=proj&table=result-table&file=' in link for link in links)
+    assert any('file=export.json' in link for link in links)
+    assert any('file=mechanical-report.md' in link for link in links)
+    page.click('.rt-leave')  # flushes the paced summaries, which must preserve the final answer
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    page.evaluate("""async () => {
+        const {openRoundtable} = await import('/page/app/roundtable/stage.js');
+        await openRoundtable();
+    }""")
+    page.wait_for_selector('#roundtable:not([hidden])')
+    page.wait_for_function('() => document.querySelector(".rt-state").textContent === "Ended"')
+    assert page.locator('.rt-topic-result').count() == 2
+    assert page.locator('.rt-records a').count() == 2
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    assert 'system agent is writing' not in page.locator('.rt-transcript').inner_text()
+    page.click('.rt-new')
+    page.wait_for_selector('.rt-setup:not([hidden])')
+    assert page.locator('.rt-topic-result').count() == 0
+    assert not problems
+
+
+@pytest.mark.parametrize('decision', ['approve', 'reject'])
+def test_roundtable_proposal_requires_review_of_current_file_before_person_decides(
+        run, web, mapped, browser, decision):  # noqa: F811 -- shared browser fixtures
+    """Proposal updates invalidate an old review. Only a person's click records a current decision."""
+    from urllib.parse import parse_qs, urlparse
+
+    started(run)
+    page, problems, _ = opened(browser, web)
+    proposal = {'state': 'planning', 'file': 'docs/roundtables/7-results/proposal.md', 'ticket': 'planner-ticket',
+                'error': 'The planner will retry after the failed write.'}
+    sequence = 0
+    reviews, decisions = [], []
+    text = '# Proposed work\nKeep every result. <script>window.proposalRan = true</script>'
+
+    def answer(route):
+        query = parse_qs(urlparse(route.request.url).query)
+        if query.get('proposal') == ['1']:
+            reviews.append(proposal['digest'])
+            route.fulfill(json={'table': 'proposal-table', 'proposal': proposal, 'proposal_text': text})
+            return
+        after = int(query.get('after', ['0'])[0])
+        events = [{'kind': 'proposal', 'proposal': proposal}] if after < sequence else []
+        body = {'events': events, 'latest': sequence}
+        if query.get('whole') == ['1']:
+            body['status'] = {'state': 'ended', 'topic': 'A reviewed proposal', 'seats': ['codex/sol'],
+                              'seated': ['Sol'], 'answer': 'Keep all results.', 'proposal': proposal}
+        route.fulfill(json=body)
+
+    def decide(route):
+        nonlocal proposal
+        body = route.request.post_data_json
+        decisions.append(body)
+        proposal = {**proposal, 'state': 'approved' if body['action'] == 'approve' else 'rejected'}
+        route.fulfill(json={'table': 'proposal-table', 'proposal': proposal})
+
+    page.route('**/api/roundtable?*', answer)
+    page.route('**/api/roundtable-proposal', decide)
+    page.evaluate("""async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        Object.assign(stage.TABLE, {id: 'proposal-table', kind: 'roundtables:proposal-table'});
+        await stage.openRoundtable();
+    }""")
+    page.wait_for_selector('.rt-proposal:not([hidden])')
+    assert page.locator('.rt-proposal-state').inner_text() == 'The planner is preparing a proposal.'
+    assert page.locator('.rt-proposal-error').inner_text() == proposal['error']
+    assert page.locator('.rt-approve').is_hidden()
+    assert page.locator('.rt-reject').is_hidden()
+    assert not reviews and not decisions
+
+    def announce():
+        page.evaluate("""async () => {
+            const {tableChange} = await import('/page/app/roundtable/stage.js');
+            tableChange({kinds: ['roundtables', 'roundtables:proposal-table']});
+        }""")
+
+    proposal = {**proposal, 'state': 'ready', 'digest': 'a' * 64, 'error': ''}
+    sequence += 1
+    announce()
+    page.wait_for_selector('.rt-review:not([hidden])')
+    assert page.locator('.rt-proposal-error').is_hidden()
+    assert page.locator('.rt-approve').is_disabled()
+    assert page.locator('.rt-reject').is_disabled()
+    assert page.locator('.rt-proposal-link').get_attribute('href').endswith('table=proposal-table&file=proposal.md')
+    assert not reviews and not decisions
+    page.click('.rt-review')
+    page.wait_for_function('() => !document.querySelector(".rt-approve").disabled')
+    assert page.locator('.rt-proposal-text').inner_text() == text
+    assert page.evaluate('() => window.proposalRan') is None
+    assert reviews == ['a' * 64] and not decisions
+    # An event announcing changed file content revokes permission to decide from the earlier review.
+    proposal = {**proposal, 'digest': 'b' * 64}
+    sequence += 1
+    announce()
+    page.wait_for_function('() => document.querySelector(".rt-approve").disabled')
+    assert page.locator('.rt-reject').is_disabled()
+    assert page.locator('.rt-proposal-text').is_hidden()
+    page.click('.rt-review')
+    page.wait_for_function('() => !document.querySelector(".rt-approve").disabled')
+    assert reviews == ['a' * 64, 'b' * 64]
+    assert not decisions
+    page.click(f'.rt-{decision}')
+    expected = 'Approved. Execution requires a separate work request.' if decision == 'approve' else 'Rejected.'
+    page.wait_for_function('(text) => document.querySelector(".rt-proposal-state").textContent === text', arg=expected)
+    assert len(decisions) == 1
+    assert {key: decisions[0][key] for key in ('table', 'action', 'digest')} == {
+        'table': 'proposal-table', 'action': decision, 'digest': 'b' * 64}
+    assert decisions[0]['project'] == 'proj'
+    assert page.locator('.rt-approve').is_hidden()
+    assert page.locator('.rt-reject').is_hidden()
+    assert not problems
