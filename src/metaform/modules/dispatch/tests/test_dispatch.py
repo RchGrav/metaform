@@ -234,10 +234,10 @@ def test_each_agent_has_its_start_command_as_a_setting(run):
     from metaform import loader, settings
     run('enable', 'dispatch')
     loader.get('dispatch')
-    # each pinned at the version the ACP Registry lists for claude-acp, codex-acp and gemini, P013
+    # each pinned at the version the ACP Registry lists for claude-acp, codex-acp and antigravity, P013
     assert settings.SCHEMA['dispatch_claude'].default == 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1'
     assert settings.SCHEMA['dispatch_codex'].default == 'npx -y @agentclientprotocol/codex-acp@2.2.2'
-    assert settings.SCHEMA['dispatch_gemini'].default == 'npx -y @google/gemini-cli@0.63.0 --acp'
+    assert settings.SCHEMA['dispatch_antigravity'].default == 'metaform dispatch adapter antigravity-acp@1.4.1'
 
 
 @pytest.mark.req('VIEW-042')
@@ -261,7 +261,7 @@ def test_a_test_home_starts_no_real_agent_by_itself(run, home, tmp_path):
     run('enable', 'dispatch')
     loader.get('dispatch')
     assert settings.value('dispatch_autostart', tmp_path / 'any') is False
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         assert settings.value(f'dispatch_{agent}', tmp_path / 'any') == f'"{sys.executable}" "{FAKE}"'
 
 
@@ -1911,7 +1911,7 @@ def test_the_glyphs_agent_takes_only_the_tickets_it_is_eligible_for_and_the_othe
     codex_only, anyone, claude_only = glyphed(
         dispatch, run, ('Codex only', 'kite', False), ('Anyone', 'kite', False), ('Claude only', 'kite', False))
     eligible(dispatch, run, codex_only, 'codex')
-    eligible(dispatch, run, claude_only, 'claude', 'gemini')
+    eligible(dispatch, run, claude_only, 'claude', 'antigravity')
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT * 4) == 0, dispatch.process.stderr.read().decode()
     assert dispatch.logged('work') == [dispatch.id, anyone, claude_only]
@@ -1944,7 +1944,7 @@ def test_autostart_starts_each_ticket_with_an_agent_eligible_for_it(dispatch, ru
     ('code.dispatcher.agent', None, [], 'codex'),
     (None, 'code.interface.graphical', [], 'claude'),
     ('code.unknown', None, ['src/metaform/modules/web/page/app.js'], 'claude'),
-    (None, None, [], 'gemini'),
+    (None, None, [], 'antigravity'),
 ])
 def test_ticket_agent_follows_area_unless_explicit(address, receiver, paths, expected):
     from metaform.data import WorkRecord
@@ -1952,9 +1952,9 @@ def test_ticket_agent_follows_area_unless_explicit(address, receiver, paths, exp
     record = WorkRecord(id='w', node_kind='element' if address else 'join', node_id='n', address=address,
                         receiver_address=receiver, provider_address=None, condition='', note=None, task='Fix it.',
                         held=False, reviewed=False, created='2026-10-14T00:00:00Z', done=None, resolution=None)
-    assert preferred(record, {'paths': paths}, 'gemini') == expected
-    assert preferred(record, {'agent': 'codex', 'paths': paths}, 'gemini') == 'codex'
-    assert preferred(record, {'agent': 'claude', 'paths': paths}, 'gemini') == 'claude'
+    assert preferred(record, {'paths': paths}, 'antigravity') == expected
+    assert preferred(record, {'agent': 'codex', 'paths': paths}, 'antigravity') == 'codex'
+    assert preferred(record, {'agent': 'claude', 'paths': paths}, 'antigravity') == 'claude'
 
 
 @pytest.mark.req('MAP-046')
@@ -2224,12 +2224,12 @@ def test_the_agents_are_listed_with_whether_each_is_found_here_and_the_default_a
         dispatch, run, dispatch_runners):
     listed = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)
     assert [(one['agent'], one['label'], one['available'], one['default']) for one in listed['agents']] == \
-        [('claude', 'Claude Code', True, True), ('codex', 'Codex', True, False), ('gemini', 'Gemini CLI', True, False)]
+        [('claude', 'Claude Code', True, True), ('codex', 'Codex', True, False), ('antigravity', 'Google Antigravity', True, False)]
     assert listed['default'] == 'claude' and listed['room'] == 8, 'Claude Code by default, UX review round 1'
-    run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=dispatch.folder)
-    gemini = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['agents'][2]
-    assert (gemini['available'], gemini['path'], gemini['next']) == \
-        (False, None, 'metaform set --dispatch-gemini "<command>"')
+    run('set', '--dispatch-antigravity', 'metaform-no-such-acp-adapter --acp', cwd=dispatch.folder)
+    antigravity = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['agents'][2]
+    assert (antigravity['available'], antigravity['path'], antigravity['next']) == \
+        (False, None, 'metaform set --dispatch-antigravity "<command>"')
     started = json.loads(run('dispatch', 'start', dispatch.id, 'codex', '--json', cwd=dispatch.folder,
                              env=dispatch.env('hold')).stdout)
     dispatch_runners.append((started, dispatch.folder, dispatch.log))
@@ -2940,9 +2940,9 @@ def test_the_system_agent_runs_on_its_own_agent_setting_not_the_workers_default(
     run('set', '--dispatch-system-agent', 'codex', cwd=dispatch.folder)
     module.system(context('dispatch', dispatch.folder, project='proj'))  # the person's own choice for it
     run('set', '--dispatch-system-agent', 'default', cwd=dispatch.folder)
-    run('set', '--dispatch-agent', 'gemini', cwd=dispatch.folder)
+    run('set', '--dispatch-agent', 'antigravity', cwd=dispatch.folder)
     module.system(context('dispatch', dispatch.folder, project='proj'))  # default follows the default agent
-    assert started == ['claude', 'codex', 'gemini'], started
+    assert started == ['claude', 'codex', 'antigravity'], started
 
 
 @pytest.mark.req('BASE-052')
@@ -3908,7 +3908,7 @@ def stay_connected(dispatch, run, monkeypatch, caps):
     from metaform.data import Store
     from metaform.module import context
     from metaform.modules import dispatch as module
-    for agent in ('claude', 'codex', 'gemini'):  # the fake, before anything could start
+    for agent in ('claude', 'codex', 'antigravity'):  # the fake, before anything could start
         assert str(FAKE) in settings.value(f'dispatch_{agent}', dispatch.folder)
     ctx = context('dispatch', dispatch.folder, project='proj')
     held = module.anchor(ctx, dispatch.store, NODE)  # this map has no roots, so the held ticket is at the node
@@ -4637,7 +4637,7 @@ class Lines:
 
 @pytest.mark.req('BASE-062')
 def test_serve_alone_tells_the_editor_by_notice_marks_its_messages_and_cancels_a_request(dispatch, run):
-    run('set', '--dispatch-serve-agent', 'gemini', '--dispatch-gemini', 'no-such-adapter-anywhere', cwd=dispatch.folder)
+    run('set', '--dispatch-serve-agent', 'antigravity', '--dispatch-antigravity', 'no-such-adapter-anywhere', cwd=dispatch.folder)
     editor = Lines(dispatch)
     try:
         editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
@@ -4866,7 +4866,7 @@ def test_serve_as_a_proxy_of_a_conductors_chain_carries_metaforms_mcp_server_ove
 def test_serve_alone_names_slash_commands_only_while_it_offers_them(dispatch, run):
     """Settings cleanup 2026-10-15: the commands are always offered where a module gives one; dispatch_serve_commands,
     which could turn them off, is gone."""
-    run('set', '--dispatch-serve-agent', 'gemini', '--dispatch-gemini', 'no-such-adapter-anywhere', cwd=dispatch.folder)
+    run('set', '--dispatch-serve-agent', 'antigravity', '--dispatch-antigravity', 'no-such-adapter-anywhere', cwd=dispatch.folder)
     editor = Lines(dispatch)
     try:
         editor.send({'id': 1, 'method': 'initialize', 'params': {'protocolVersion': 1, 'clientCapabilities': {
@@ -5313,7 +5313,7 @@ def test_a_registry_agent_is_pinned_installed_primed_and_started(dispatch, run, 
                          check=False)
     assert ran.returncode == 0, ran.stderr
     assert dispatch.ticket().done
-    [row] = [one.extra for one in dispatch.items('session')]
+    [row] = [one.extra for one in dispatch.items('session') if one.extra['agent'] == 'fakeacp']
     assert row['agent'] == 'fakeacp'
     assert any(entry.get('secret') == 'from-registry' and entry['argv'][-1] == '--acp' for entry in dispatch.entries())
     # a newer version listed later leaves the pin where it is until the person upgrades
@@ -5477,7 +5477,7 @@ def test_runtime_catalog_uses_installed_eligible_adapters_and_model_descriptions
     from metaform.modules.dispatch.orchestration import TRANSPORT
     runtime_offers(dispatch, 'codex')
     runtime_offers(dispatch, 'claude')
-    runtime_offers(dispatch, 'gemini')
+    runtime_offers(dispatch, 'antigravity')
     run('map', 'work', 'op=edit', f'id={dispatch.id}', 'eligible=["codex","claude"]', cwd=dispatch.folder)
     run('set', '--dispatch-claude', 'missing-adapter-for-runtime-test', cwd=dispatch.folder)
     ctx = context('dispatch', dispatch.folder, project='proj')
@@ -6019,3 +6019,154 @@ def test_a_runner_start_and_stop_announce_the_tables_and_tickets_they_wrote_and_
     assert {'ticket', 'session'} <= set(taken['kinds']), taken
     assert 'dispatch.agent_sessions' in taken['tables'] and taken['session_ids'] == ['fake-session-1'], taken
     assert ended['work_ids'] == [dispatch.id] and 'session' in ended['kinds'], ended
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.skipif(os.name == 'nt', reason='the fixture archive holds a POSIX shell script')
+def test_antigravity_starts_the_pinned_official_native_adapter(dispatch, run, tmp_path):
+    """The public agent id reaches ACP through the native pin, with no npm wrapper or model call."""
+    from metaform import settings
+    from metaform.modules.dispatch import registry
+    manifest = json.loads((MODULE / 'resources/registry/antigravity-acp.json').read_text(encoding='utf-8'))
+    assert (manifest['id'], manifest['version'], manifest['authors']) == ('antigravity-acp', '1.4.1', ['Google LLC'])
+    assert manifest['distribution']['binary']['linux-x86_64']['args'] == ['--uid=']
+    assert all(one['archive'].startswith('https://dl.google.com/agy-extensions/releases/')
+               for one in manifest['distribution']['binary'].values())
+    path = registry_of(tmp_path, id='antigravity-acp', name='Google Antigravity', version='1.4.1')
+    registry.pin(json.loads(path.read_text(encoding='utf-8'))['agents'][0])
+    default = settings.SCHEMA['dispatch_antigravity'].default
+    run('set', '--dispatch-antigravity', default, cwd=dispatch.folder)
+    env = dispatch.env('done')
+    env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env['PATH']
+    ran = subprocess.run([sys.executable, '-m', 'metaform', 'dispatch', 'run', dispatch.id, 'antigravity'],
+                         cwd=dispatch.folder, env=env, capture_output=True, text=True, timeout=60, check=False)
+    assert ran.returncode == 0, ran.stderr
+    assert dispatch.ticket().done
+    assert [one.extra['agent'] for one in dispatch.items('session')
+            if one.extra['agent'] != 'metaform'] == ['antigravity']
+    assert dispatch.received('initialize') and dispatch.received('session/new')
+
+
+def test_native_adapter_installs_once_and_preserves_companion_executables(dispatch, tmp_path, monkeypatch):
+    """Native archives can carry executable companions. Every native launch uses the same installed version."""
+    import io
+    import stat
+    import zipfile
+
+    from metaform.modules.dispatch import registry
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, 'w') as packed:
+        for name in ('agy_acp_server.par', 'localharness_external'):
+            info = zipfile.ZipInfo(name)
+            info.external_attr = (stat.S_IFREG | 0o755) << 16
+            packed.writestr(info, b'native-fixture')
+    downloads = []
+    monkeypatch.setattr(registry, '_fetch', lambda url: downloads.append(url) or archive.getvalue())
+    launched = []
+    monkeypatch.setattr(registry.os, 'execvpe', lambda path, words, env: launched.append((path, words, env)))
+    registry.adapter('antigravity-acp@1.4.1')
+    registry.adapter('antigravity-acp@1.4.1')
+    assert len(downloads) == 1 and downloads[0].startswith('https://dl.google.com/')
+    assert launched[0] == launched[1]
+    assert launched[0][2]['METAFORM_HOME'] == str(dispatch.home)
+    held = registry.snapshot('antigravity-acp', '1.4.1')
+    assert held is not None
+    assert launched[0][1] == registry.argv_of(held)
+    companion = registry.folder_of('antigravity-acp', '1.4.1') / 'localharness_external'
+    if os.name != 'nt':
+        assert companion.stat().st_mode & stat.S_IXUSR
+        assert not companion.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO)
+
+
+def test_retired_agent_settings_migrate_atomically_without_overwriting_new_choices(dispatch):
+    from metaform import home
+    from metaform.modules.dispatch import AGENTS
+    from metaform.modules.dispatch.migration import MARKER, migrate_settings
+
+    (home.home() / MARKER).unlink(missing_ok=True)
+    scope = home.path_key(dispatch.folder)
+    nested = home.path_key(dispatch.folder / 'nested')
+    home.save('global', 'dispatch', 'dispatch_gemini', ['npx -y @google/gemini-cli@0.63.0 --acp'])
+    home.save(scope, 'dispatch', 'dispatch_gemini', ['custom-acp --stdio'])
+    home.set_glue(scope, 'dispatch', 'dispatch_gemini', True)
+    home.save(scope, 'dispatch', 'dispatch_agent', ['gemini'])
+    home.save(scope, 'dispatch', 'dispatch_gemini_model', ['old-model'])
+    home.save(scope, 'dispatch', 'dispatch_antigravity_model', ['new-model'])
+    home.save(nested, 'dispatch', 'dispatch_gemini_effort', ['high'])
+    home.set_glue(nested, 'dispatch', 'dispatch_gemini_fast', True)
+    home.save(nested, 'dispatch', 'dispatch_gemini', ['npx -y @google/gemini-cli@0.63.0 --approval-mode=yolo --acp'])
+    home.save(scope, 'chassis', 'gemini_reminder', ['after-tool'])
+    home.save(scope, 'thirdparty', 'gemini_reminder', ['keep'])
+    home.save(nested, 'dispatch', 'dispatch_agent_options', ['gemini.mode=auto', 'codex.model=keep'])
+    home.save(scope, 'roundtables', 'roundtables_seats', ['claude/full', 'gemini/vendor-model', 'acp:gemini/pinned'])
+    home.save(scope, 'roundtables', 'roundtables_host', ['gemini/vendor-model'])
+    assert migrate_settings(AGENTS['antigravity'][1])
+    assert home.stored('global', 'dispatch', 'dispatch_antigravity') == [AGENTS['antigravity'][1]]
+    assert home.stored(scope, 'dispatch', 'dispatch_antigravity') == ['custom-acp --stdio']
+    assert home.glued(scope, 'dispatch', 'dispatch_antigravity')
+    assert home.stored(scope, 'dispatch', 'dispatch_agent') == ['antigravity']
+    assert home.stored(scope, 'dispatch', 'dispatch_antigravity_model') == ['new-model']
+    assert home.stored(nested, 'dispatch', 'dispatch_antigravity_effort') == ['high']
+    assert home.glued(nested, 'dispatch', 'dispatch_antigravity_fast')
+    assert not home.glued(nested, 'dispatch', 'dispatch_gemini_fast')
+    assert home.stored(nested, 'dispatch', 'dispatch_antigravity') == [
+        'npx -y @google/gemini-cli@0.63.0 --approval-mode=yolo --acp']
+    assert home.stored(scope, 'chassis', 'gemini_reminder') is None
+    assert home.stored(scope, 'thirdparty', 'gemini_reminder') == ['keep']
+    assert home.stored(nested, 'dispatch', 'dispatch_agent_options') == ['antigravity.mode=auto', 'codex.model=keep']
+    assert home.stored(scope, 'roundtables', 'roundtables_seats') == ['claude/full', 'antigravity/vendor-model', 'acp:antigravity/pinned']
+    assert home.stored(scope, 'roundtables', 'roundtables_host') == ['antigravity/vendor-model']
+    assert home.stored(scope, 'dispatch', 'dispatch_gemini') is None
+    assert not home.glued(scope, 'dispatch', 'dispatch_gemini')
+    assert migrate_settings(AGENTS['antigravity'][1]) == []
+
+
+def test_native_registry_upgrade_installs_before_selecting_and_keeps_environment(dispatch, run, tmp_path, monkeypatch):
+    from metaform import settings
+    from metaform.modules.dispatch import agent_choices, registry
+    path = registry_of(tmp_path, id='antigravity-acp', name='Google Antigravity', version='1.4.2')
+    run('set', '--dispatch-registry-url', str(path), cwd=dispatch.folder)
+    shown = json.loads(run('dispatch', 'registry', '--json', cwd=dispatch.folder).stdout)
+    own = next(one for one in shown['own'] if one['agent'] == 'antigravity')
+    assert own['next'] == 'metaform dispatch registry add=antigravity-acp'
+    added = json.loads(run('dispatch', 'registry', 'add=antigravity-acp', '--json', cwd=dispatch.folder).stdout)
+    assert added['changed'][0]['pinned'] == '1.4.2'
+    assert settings.value('dispatch_antigravity', dispatch.folder) == 'metaform dispatch adapter antigravity-acp@1.4.2'
+    assert 'antigravity-acp' not in agent_choices(), 'native install must not duplicate the public agent id'
+    launches = []
+    monkeypatch.setattr(registry.os, 'execvpe', lambda path, words, env: launches.append((path, words, env)))
+    registry.adapter('antigravity-acp@1.4.2')
+    assert launches[0][2]['FAKE_SECRET'] == 'from-registry'
+
+
+def test_retired_agent_settings_roll_back_one_database_and_retry(dispatch, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    from metaform import home
+    from metaform.modules.dispatch import AGENTS
+    from metaform.modules.dispatch.migration import MARKER, migrate_settings
+    marker = home.home() / MARKER
+    marker.unlink(missing_ok=True)
+    home.save('global', 'dispatch', 'dispatch_gemini', ['custom-acp'])
+    home.save('global', 'dispatch', 'dispatch_agent', ['gemini'])
+    original = home.settings_db
+
+    @contextmanager
+    def failing(scope, write=False):
+        with original(scope, write=write) as db:
+            if scope == 'global' and write:
+                db.set_authorizer(lambda action, *_: sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_UPDATE
+                                  else sqlite3.SQLITE_OK)
+            yield db
+    monkeypatch.setattr(home, 'settings_db', failing)
+    with pytest.raises(sqlite3.DatabaseError):
+        migrate_settings(AGENTS['antigravity'][1])
+    assert not marker.exists()
+    assert home.stored('global', 'dispatch', 'dispatch_gemini') == ['custom-acp']
+    assert home.stored('global', 'dispatch', 'dispatch_antigravity') is None
+    assert home.stored('global', 'dispatch', 'dispatch_agent') == ['gemini']
+    monkeypatch.setattr(home, 'settings_db', original)
+    assert migrate_settings(AGENTS['antigravity'][1])
+    assert home.stored('global', 'dispatch', 'dispatch_antigravity') == ['custom-acp']
+    assert home.stored('global', 'dispatch', 'dispatch_agent') == ['antigravity']

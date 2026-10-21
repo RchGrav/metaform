@@ -7,7 +7,7 @@ Only `SKILL.md` is installed; this README stays in the package.
 ## Where it is installed, and when
 
 - **Claude Code only**, at `~/.claude/skills/metaform-node/SKILL.md`, the folder Claude Code loads personal skills from. `metaform install claude` writes it, and so does `metaform provision claude`.
-- **Never the shared `~/.agents/skills`.** Claude Code does not read that folder. Codex and Gemini CLI do, and neither fills `$ARGUMENTS` nor honours `disable-model-invocation`. There the skill would be one more description listed to the model, with nothing to read.
+- **Never the shared `~/.agents/skills`.** Claude Code does not read that folder. Codex does, and it neither fills `$ARGUMENTS` nor honours `disable-model-invocation`. There the skill would be one more description listed to the model, with nothing to read.
 - **Only while map is on.** The skill runs `metaform map where`, so it exists only while the map module is enabled and on the command surface of the folder where install, provision, enable or disable runs. With map off, install and provision leave it out and remove a copy already there. `metaform enable map` writes it and `metaform disable map` removes it, from the command line or the settings screen. Both act only where Metaform set Claude Code up, by install or provision. A disabled map never leaves a skill whose command answers that map is off.
 - `metaform uninstall claude` removes it, with a backup, like the metaform skill.
 

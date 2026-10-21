@@ -31,7 +31,7 @@ from .wording import counted
 Say = Callable[[str], None]
 
 NEEDED = ('map', 'intake', 'mcp', 'web', 'dispatch')  # the modules the chain runs; dispatch ships off
-AGENT_TOOLS = ('claude', 'codex', 'gemini')  # AI tools that are also dispatch agents, in the order one is chosen
+AGENT_TOOLS = ('claude', 'codex', 'antigravity')  # AI tools that are also dispatch agents, in the order one is chosen
 SKIPPED = {'node_modules', '__pycache__', 'venv', 'env', 'dist', 'build', 'target', 'vendor', 'site-packages'}
 MOST_FILES = 20000  # a folder read stops here, so a home folder or a monorepo is read in seconds
 LANGUAGES = {
@@ -198,7 +198,7 @@ def connect(folder: Path, say: Say) -> None:
     if tools:
         say(f'AI tool: {tools[0]} found; connect it with metaform install {tools[0]}.')
         return
-    say('AI tool: none found to connect, such as Claude Code, Codex or Gemini CLI.')
+    say('AI tool: none found to connect, such as Claude Code, Codex or Google Antigravity.')
     say('  Install Claude Code, then run metaform start here again: it connects it to this project and starts the '
         'intake. The map works in the browser meanwhile.')
 

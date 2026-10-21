@@ -161,11 +161,6 @@ def tools() -> dict[str, Tool]:
              add=lambda entry: ['codex', 'mcp', 'add', 'metaform', '--', *entry],
              remove=['codex', 'mcp', 'remove', 'metaform'],
              add_url=lambda url: ['codex', 'mcp', 'add', 'metaform', '--url', url]),
-        Tool('gemini', 'Gemini CLI', _on_path('gemini'), 'gemini on PATH', lambda: user_home() / '.gemini' /
-             'settings.json', lambda: user_home() / '.gemini' / 'skills',
-             add=lambda entry: ['gemini', 'mcp', 'add', '--scope', 'user', 'metaform', *entry],
-             remove=['gemini', 'mcp', 'remove', '--scope', 'user', 'metaform'],
-             add_url=lambda url: ['gemini', 'mcp', 'add', '--scope', 'user', '--transport', 'http', 'metaform', url]),
         Tool('cursor', 'Cursor', _folder('.cursor'), 'the folder ~/.cursor', lambda: user_home() / '.cursor' /
              'mcp.json', lambda: user_home() / '.cursor' / 'skills', merge=True),
         Tool('vscode', 'VS Code', _on_path('code'), 'code on PATH', _vscode_config, lambda: None, key='servers',
@@ -175,8 +170,11 @@ def tools() -> dict[str, Tool]:
         Tool('copilot', 'Copilot CLI', _on_path('copilot'), 'copilot on PATH', lambda: None,
              lambda: user_home() / '.copilot' / 'skills', verified=False),
         Tool('factory', 'Factory', _on_path('droid'), 'droid on PATH', lambda: None, lambda: None, verified=False),
-        Tool('antigravity', 'Antigravity', _folder('.gemini', 'config'), 'the folder ~/.gemini/config', lambda: None,
-             lambda: user_home() / '.gemini' / 'config' / 'skills', verified=False),
+        Tool('antigravity', 'Google Antigravity',
+             lambda: shutil.which('agy') is not None or (user_home() / '.gemini' / 'config').is_dir(),
+             'agy on PATH or the folder ~/.gemini/config',
+             lambda: user_home() / '.gemini' / 'config' / 'mcp_config.json',
+             lambda: user_home() / '.gemini' / 'antigravity-cli' / 'skills', merge=True),
         Tool('claude-desktop', 'Claude Desktop', lambda: _desktop_config().parent.is_dir(), 'its config folder',
              _desktop_config, lambda: None, merge=True, verified=False),
         Tool('zed', 'Zed', _zed_present, 'its config folder', _zed_config, lambda: None, merge=True,
@@ -335,8 +333,8 @@ NODE_SKILL = 'metaform-node'  # the person-invoked node read, `/metaform-node <a
 
 def node_skill_path() -> Path:
     """Where Claude Code loads a personal skill. Claude Code alone gets the node skill: it fills `$ARGUMENTS` and keeps
-    a skill person-invoked with `disable-model-invocation`. Codex and Gemini CLI read the shared ~/.agents/skills, do
-    neither, and would list it to their model as one more description, so it is never written there."""
+    a skill person-invoked with `disable-model-invocation`. Codex reads the shared ~/.agents/skills, does
+    neither, and would list it to its model as one more description, so it is never written there."""
     return user_home() / '.claude' / 'skills' / NODE_SKILL / 'SKILL.md'
 
 
@@ -761,11 +759,12 @@ def _record(tool: str, wheel: Path | None, skill: Path | None) -> None:
                    (tool, str(wheel) if wheel is not None else '', str(skill) if skill else None, home.now()))
 
 
-_NATIVE_SKILLS = frozenset(('claude', 'codex', 'gemini', 'cursor'))
+_NATIVE_SKILLS = frozenset(('claude', 'codex', 'antigravity', 'cursor'))
 _SKILL_CLIENTS = {
     'claude': 'claude', 'claude code': 'claude', 'claude-code': 'claude',
     'codex': 'codex', 'codex-mcp-client': 'codex',
-    'gemini': 'gemini', 'gemini cli': 'gemini', 'gemini-cli': 'gemini',
+    'antigravity': 'antigravity', 'antigravity cli': 'antigravity', 'antigravity-cli': 'antigravity',
+    'google antigravity': 'antigravity',
     'cursor': 'cursor',
 }
 
@@ -1121,10 +1120,6 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         backup = _backup(config, backups) if (command is not None or tool.agent is not None) and config is not None \
             else None
         folder = tool.skills()
-        # Gemini's registration command also edits settings.json. Install the previewed hooks first,
-        # so its own config merge retains them and no prepared edit overwrites the new MCP entry.
-        if tool.name == 'gemini':
-            _apply_agent_changes(agent_changes[tool.name], backups)
         if tool.agent is not None and editors is not None and config is not None:
             try:
                 _merge(config, tool.agent(editors[0]), backup, tool.key, tool.jsonc)
@@ -1134,7 +1129,8 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         elif command is None:
             pass  # Skills and instruction pointers remain useful through the CLI.
         elif tool.merge and config is not None:
-            registered = {'url': url} if url else {'command': command[0], 'args': command[1:]}
+            url_key = 'serverUrl' if tool.name == 'antigravity' else 'url'
+            registered = {url_key: url} if url else {'command': command[0], 'args': command[1:]}
             try:
                 _merge(config, registered, backup, tool.key)
             except Stop as stop:  # this tool is left out; the others are still set up and proven, BASE-062
@@ -1157,8 +1153,7 @@ def install(words: list[str], say: Callable[[str], None]) -> None:
         # Recorded as soon as it is registered, so a later failure never hides it from the next run, MCP-019.
         _record(tool.name, editors[1] if tool.agent is not None and editors is not None else wheel,
                 folder / 'metaform' / 'SKILL.md' if folder else None)
-        if tool.name != 'gemini':
-            _apply_agent_changes(agent_changes[tool.name], backups)
+        _apply_agent_changes(agent_changes[tool.name], backups)
         # The harness of the binary that registered it never sees the first-run notice, D96; a merged config
         # names no binary, so it records none.
         if not tool.merge and tool.add is not None and (binary := shutil.which(tool.add(command or ['metaform'])[0])):
@@ -1314,8 +1309,6 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
         config = tool.config()
         if tool.name in registered and config is not None:
             _backup(config, backups)
-        if tool.name == 'gemini':
-            _apply_agent_changes(agent_changes[tool.name], backups)
         if tool.name in registered and tool.remove:
             result = _run(tool.name, tool.remove)
             if result.returncode != 0:
@@ -1323,8 +1316,7 @@ def uninstall(words: list[str], say: Callable[[str], None]) -> None:
                              f'metaform uninstall {tool.name}')
         elif tool.name in registered and config is not None:
             _unmerge(config, tool.key, tool.jsonc)
-        if tool.name != 'gemini':
-            _apply_agent_changes(agent_changes[tool.name], backups)
+        _apply_agent_changes(agent_changes[tool.name], backups)
         skill = installed.get(tool.name)
         if skill:
             _remove_file(Path(skill), backups)

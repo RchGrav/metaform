@@ -1038,7 +1038,7 @@ def exit_status(code: int | None) -> TerminalExitStatus:
     return TerminalExitStatus(exit_code=code, signal=None)
 
 
-PROVIDERS = {'claude': 'anthropic', 'codex': 'openai', 'gemini': 'gcp.gemini'}  # gen_ai.provider.name, semconv
+PROVIDERS = {'claude': 'anthropic', 'codex': 'openai', 'antigravity': 'gcp'}  # gen_ai.provider.name, semconv
 
 
 def usage_attributes(agent: str, name: str, version: str | None, session_id: str | None, usage: Any,

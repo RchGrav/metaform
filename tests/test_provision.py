@@ -252,7 +252,7 @@ def earlier_installs(home: Path, *, recorded: bool) -> list[str]:
         db.execute("INSERT INTO settings VALUES ('global', '', 'debug', 0, 'true')")
         db.executemany('INSERT INTO installs VALUES (?, ?, ?, ?)',
                        [(tool, 'original.whl', 'original/SKILL.md', '2026-10-02T12:00:00Z')
-                        for tool in ('claude', 'codex', 'gemini', 'vscode', 'cursor', 'retired')])
+                        for tool in ('claude', 'codex', 'antigravity', 'vscode', 'cursor', 'retired')])
         if recorded:
             db.execute(harness.HARNESSES)
             db.execute('INSERT INTO harnesses VALUES (?, ?, ?)',
@@ -269,8 +269,8 @@ def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, re
     from metaform import harness, install
     from metaform import home as metaform_home
     earlier_installs(home, recorded=recorded_before)
-    temporary = Path(tempfile.gettempdir()) / 'gemini' / 'gemini'
-    binaries = {'claude': str(HARNESS), 'codex': str(OTHER), 'gemini': str(temporary), 'code': None}
+    temporary = Path(tempfile.gettempdir()) / 'antigravity' / 'antigravity'
+    binaries = {'claude': str(HARNESS), 'codex': str(OTHER), 'code': None}
     looked_up = []
 
     def which(command):
@@ -285,7 +285,7 @@ def test_earlier_installs_are_known_after_the_home_upgrade(home, monkeypatch, re
         assert db.execute('SELECT * FROM settings').fetchall() == [('global', '', 'debug', 0, 'true')]
         assert db.execute('SELECT COUNT(*) FROM installs').fetchone() == (6,)
         rows = {key: (binary, done) for key, binary, done in db.execute('SELECT * FROM harnesses')}
-    assert sorted(looked_up) == ['claude', 'code', 'codex', 'gemini']
+    assert sorted(looked_up) == ['claude', 'code', 'codex']
     assert rows == {
         harness.key(HARNESS): (str(HARNESS), '2026-10-02T12:00:00Z'),
         harness.key(OTHER): ((str(OTHER.with_name('earlier')), '2026-10-03T12:00:00Z')

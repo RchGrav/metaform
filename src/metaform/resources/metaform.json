@@ -1512,7 +1512,7 @@
                 "mode": "add",
                 "reason": null,
                 "evidence": null,
-                "ef": "provides the configured Claude Code, Codex, or Gemini agent through its ACP adapter, project process environment, tool access, and streamed conversation protocol",
+                "ef": "provides the configured Claude Code, Codex, or Google Antigravity agent through its ACP adapter, project process environment, tool access, and streamed conversation protocol",
                 "element": null,
                 "held": [
                   "80e6bf98a2ed4450811e1923e3798579"
@@ -2225,7 +2225,7 @@
                 "mode": "add",
                 "reason": null,
                 "evidence": null,
-                "ef": "starts Claude Code, Codex or Gemini CLI on a ticket through its ACP adapter and streams the session to the ticket's node, queues messages and answers in order, interrupts or stops a turn, works an agent glyph's tickets in turn, autostarts waiting work, raises signals when an agent spins, fails repeatedly or waits on a permission, recovers dead runners by policy, starts the system agent and the conversation agents the person summons, starts a sentinel on an issue raised at a node whose chosen proposal becomes held tickets under a work claim, and holds a clean worktree merge for review before it lands",
+                "ef": "starts Claude Code, Codex or Google Antigravity on a ticket through its ACP adapter and streams the session to the ticket's node, queues messages and answers in order, interrupts or stops a turn, works an agent glyph's tickets in turn, autostarts waiting work, raises signals when an agent spins, fails repeatedly or waits on a permission, recovers dead runners by policy, starts the system agent and the conversation agents the person summons, starts a sentinel on an issue raised at a node whose chosen proposal becomes held tickets under a work claim, and holds a clean worktree merge for review before it lands",
                 "element": null,
                 "held": [
                   "4c88bdd11b5d4bfaaec9c307357e36a4"

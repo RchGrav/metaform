@@ -18,7 +18,7 @@ def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(
         run, home, project_folder, tmp_path, monkeypatch, selection):
     live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     fake = Path(__file__).with_name('fake_swarm_agent.py')
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{fake}"', cwd=project_folder)
     run('set', '--dispatch-agents', '1', '--dispatch-machine-agents', '1', '--dispatch-autostart',
         '--dispatch-record-on-finish', 'off', '--orchestration-reviews', '1', cwd=project_folder)  # one assessment, waited for

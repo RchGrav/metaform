@@ -25,7 +25,7 @@ Ordered by the build order in 00-index.md.
 17. MCP-010, MCP-016. The spec does not say how the installer finds `<source>`: the wheel it runs from, the output of `metaform build` and where that goes, or a distribution name. The case where it runs under uvx or `python <wheel>` is also open. Missing.
 18. MCP-013. Not given: the minimum Python version the check enforces, how each tool noun is detected, and the per-OS uv install command for the Next line. Missing.
 19. MCP-015. For tools registered through their own command, such as `claude mcp add`, the spec does not say which file is previewed and backed up, for example `~/.claude.json`. Also missing: the form of the single confirmation in the interactive path, and the timestamp format of the backup folder.
-20. MCP-021, MCP-014. The spec does not say whether `install claude` also writes `~/.agents/skills/`, although MCP-014 acceptance limits it to "skill folders for Claude". The skill text beyond two sentences is not given. Antigravity has a folder but no tool noun or detection rule. Ambiguous.
+20. MCP-021, MCP-014. The spec does not say whether `install claude` also writes `~/.agents/skills/`, although MCP-014 acceptance limits it to "skill folders for Claude". The skill text beyond two sentences is not given. Resolved 2026-10-21, code.dispatcher.agent#fe: Google Antigravity has its own tool noun, detection and MCP registration in MCP-016.
 21. MCP-024 acceptance. The automated run of steps 2 to 7 needs rules that are not given: whether install runs against faked tools, which intake fixture step 7 stores and through which calls, and which working folder the scripted client starts the server in. Missing.
 
 ## Other gaps

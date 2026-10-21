@@ -183,7 +183,7 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         f'os.environ["FAKE_ACP_LOG"] = {str(log)!r}\n'
         'os.environ["FAKE_ACP_MODE"] = "ask"\n'
         f'runpy.run_path({str(FAKE)!r}, run_name="__main__")\n', encoding='utf-8')
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{adapter}"', cwd=mapped)
     _, gc = managed_assignment(mapped)
     record_view_session(mapped, gc, 'gc-ui')

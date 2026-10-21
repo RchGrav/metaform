@@ -24,7 +24,7 @@ SPECIALIST_RESULT = 'SPECIALIST_RESULT: the route preserves its functional resul
 def swarm(run, home, project_folder, tmp_path, request):
     made = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     made.swarm_state = tmp_path / 'swarm-progress'
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
         run('dispatch', 'options', f'agent={agent}', 'prime=true', '--json', cwd=project_folder,
             env=made.env('ask', FAKE_SWARM_STATE=str(made.swarm_state)))

@@ -188,7 +188,7 @@ settings.number('board_done_days', 1, min=0, max=3650,
 def _glyph_choices(ctx: Context) -> list[str]:
     """Each agent type dispatch starts, by its dispatch_agent choices, with each character there is."""
     agent = settings.SCHEMA.get('dispatch_agent')
-    agents = agent.options(ctx.folder) if agent is not None else ['claude', 'codex', 'gemini']
+    agents = agent.options(ctx.folder) if agent is not None else ['claude', 'codex', 'antigravity']
     return [f'{one}={character}' for one in agents for character in CHARACTERS]
 
 

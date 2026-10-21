@@ -39,7 +39,7 @@ def _test_defaults(request, tmp_path):
     from metaform import home as metaform_home
     root = metaform_home.path_key(Path(tmp_path.anchor))
     command = f'"{sys.executable}" "{FAKE_AGENT}"'
-    values = [('dispatch_autostart', False), *((f'dispatch_{agent}', command) for agent in ('claude', 'codex', 'gemini'))]
+    values = [('dispatch_autostart', False), *((f'dispatch_{agent}', command) for agent in ('claude', 'codex', 'antigravity'))]
     return [(root, 'dispatch', key, 0, json.dumps(value)) for key, value in values]
 
 

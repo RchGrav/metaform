@@ -223,7 +223,7 @@ def test_the_system_agent_answers_through_dispatch_with_the_fake_agent(run, home
                                                                         monkeypatch, dispatch_runners):
     from metaform.data import Store
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):  # every agent is the fake, so no real one is ever started
+    for agent in ('claude', 'codex', 'antigravity'):  # every agent is the fake, so no real one is ever started
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
     store = Store('proj')
     store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
@@ -734,7 +734,7 @@ def test_a_raised_problem_is_the_system_agents_turn_once_it_starts(run, home, pr
     from metaform import module, settings
     from metaform.data import Store
     run('enable', 'dispatch')
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
     store = Store('proj')
     store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)

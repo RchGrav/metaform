@@ -134,7 +134,7 @@ def test_only_harnesses_known_to_discover_skills_are_deployed(deployment, monkey
 def test_client_names_match_only_known_native_harnesses(deployment, monkeypatch):
     original = deployment.tool
     for name, aliases in [('claude', ['Claude Code', 'claude-code']), ('codex', ['Codex', 'codex-mcp-client']),
-                          ('gemini', ['Gemini CLI', 'gemini-cli'])]:
+                          ('antigravity', ['Google Antigravity', 'Antigravity', 'Antigravity CLI', 'antigravity-cli'])]:
         tool = install.Tool(name, name, lambda: True, 'test', lambda: None, lambda: deployment.root)
         monkeypatch.setattr(install, 'tools', lambda name=name, tool=tool: {name: tool})
         install.install([name], deployment.output.append)

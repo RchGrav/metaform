@@ -41,7 +41,7 @@ REST = 10.0  # seconds a lane rests after its ticket is closed before a fresh on
 STALLED = 240.0  # a ticket worked this long without being closed is started again
 STAGGER = 1.0  # seconds between the agents' first starts, so they set off one after another
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', BASE_VARIABLE)
-AGENTS = ('claude', 'codex', 'gemini')
+AGENTS = ('claude', 'codex', 'antigravity')
 NEEDED = ('map', 'dispatch', 'web')  # the modules the demo runs; a build without them cannot show it
 
 

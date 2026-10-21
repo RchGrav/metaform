@@ -2211,6 +2211,94 @@ def eligible_of(record):
 
 
 @pytest.mark.req('MAP-058')
+def test_antigravity_ticket_choices_normalize_legacy_input_before_runtime_transport(run, mapped, monkeypatch):
+    from metaform.module import Context
+    from metaform.modules import map as module
+
+    made = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'task=Use Antigravity.',
+             'agent=antigravity', 'eligible=["antigravity"]', cwd=mapped)
+    assert made['map']['agent'] == 'antigravity'
+    assert eligible_of(made) == ['antigravity'] and not made.get('notices')
+    seen = []
+
+    class Transport:
+        def edit_runtime(self, ctx, work_id, nouns):
+            seen.append(dict(nouns))
+            return {}
+
+    monkeypatch.setattr(module, 'provided', lambda folder, service: [('dispatch', Transport())])
+    store = Store('proj', module='map')
+    ctx = Context(module='map', folder=mapped, store=store)
+    notices = []
+    module._keep(store, made['id'], {'agent': 'gemini', 'eligible': ['gemini', 'codex']}, notices, ctx)
+    assert seen[0] == {'agent': 'antigravity', 'eligible': ['antigravity', 'codex']} and not notices
+    with store.tables(write=False) as tx:
+        assert tx.get('ticket_settings', {'work_id': made['id']})['agent'] == 'antigravity'
+        assert tx.get('eligible', {'work_id': made['id']})['agents'] == ['antigravity', 'codex']
+    chosen = module.TICKET_RUNTIME.save(ctx, made['id'], {
+        'agent': 'gemini', 'model': 'retained-model', 'effort': 'high',
+        'decision': {'agent': 'gemini', 'reason': 'Keep this evidence.', 'confidence': 0.9}})
+    assert chosen == {'agent': 'antigravity', 'model': 'retained-model', 'effort': 'high',
+                      'decision': {'agent': 'antigravity', 'reason': 'Keep this evidence.', 'confidence': 0.9},
+                      'eligible': ['antigravity', 'codex']}
+    claimed = j(run, 'work', 'op=take', f'id={made["id"]}', 'by=antigravity session', cwd=mapped)
+    assert claimed['taken_by'] == 'antigravity session'
+
+
+@pytest.mark.req('STORE-029')
+@pytest.mark.req('MAP-058')
+def test_map_agent_identity_upgrade_preserves_ticket_data_and_retries_atomically(run, mapped, monkeypatch):
+    from metaform import home
+    from metaform.data.tables import declared
+
+    store = Store('proj', module='map')
+    work = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='Retain all ticket fields.')
+    untouched = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='Keep Codex.')
+    decision = {'agent': 'gemini', 'model': 'gemini-model-kept', 'effort': 'high',
+                'reason': 'gemini appears in evidence, not an agent field.', 'confidence': 0.85,
+                'extra': {'agent': 'unrelated'}}
+    with store.tables() as tx:
+        tx.insert('ticket_settings', {'work_id': work.id, 'agent': 'gemini', 'hold': 1, 'proof': 1,
+                                     'landed': '2026-10-20T00:00:00Z', 'epic': untouched.id, 'agents': 3,
+                                     'board': 'keep-board', 'model': 'gemini-model-kept', 'effort': 'high',
+                                     'decision': decision})
+        tx.insert('eligible', {'work_id': work.id, 'agents': ['codex', 'gemini', 'cursor']})
+        tx.insert('ticket_settings', {'work_id': untouched.id, 'agent': 'codex', 'decision': {'reason': 'Keep.'}})
+        before = tx.get('ticket_settings', {'work_id': work.id})
+        same = tx.get('ticket_settings', {'work_id': untouched.id})
+    path = home.store_path('proj', store.bound_base().id)
+    with sqlite3.connect(path) as db:
+        recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:map'").fetchone()[0])
+        recorded['version'] = 22
+        db.execute("UPDATE meta SET value=? WHERE key='module:map'", (json.dumps(recorded),))
+
+    upgrade = declared('map').upgrade
+    normalize = upgrade.__globals__['agent_name']
+
+    def interrupted(value):
+        if value == 'cursor':
+            raise RuntimeError('migration interrupted')
+        return normalize(value)
+
+    with monkeypatch.context() as patch:
+        patch.setitem(upgrade.__globals__, 'agent_name', interrupted)
+        with pytest.raises(RuntimeError, match='migration interrupted'), store.tables() as tx:
+            tx.get('ticket_settings', {'work_id': work.id})
+    with sqlite3.connect(path) as db:
+        assert json.loads(db.execute("SELECT value FROM meta WHERE key='module:map'").fetchone()[0])['version'] == 22
+        assert db.execute('SELECT agent FROM "map.ticket_settings" WHERE work_id=?', (work.id,)).fetchone()[0] == 'gemini'
+    with store.tables() as tx:
+        after = tx.get('ticket_settings', {'work_id': work.id})
+        assert after == {**before, 'agent': 'antigravity', 'decision': {**decision, 'agent': 'antigravity'}}
+        assert tx.get('ticket_settings', {'work_id': untouched.id}) == same
+        assert tx.get('eligible', {'work_id': work.id})['agents'] == ['codex', 'antigravity', 'cursor']
+        upgrade(tx, 22)
+        assert tx.get('ticket_settings', {'work_id': work.id}) == after
+        assert tx.get('eligible', {'work_id': work.id})['agents'] == ['codex', 'antigravity', 'cursor']
+    assert store.ticket(work.id).work.task == 'Retain all ticket fields.'
+
+
+@pytest.mark.req('MAP-058')
 @pytest.mark.req('STORE-045')
 @pytest.mark.req('BASE-046')
 def test_any_agent_is_eligible_by_default_and_the_eligible_agents_are_kept_in_the_map_modules_own_table(run, mapped):

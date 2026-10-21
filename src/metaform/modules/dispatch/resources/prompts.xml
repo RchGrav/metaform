@@ -488,7 +488,7 @@ Brief:
      folder, and is empty when it offers none, with no command enabled there, so the
      person is never told to type / for commands that are not there. Sent by metaform dispatch serve with no agent: set
      dispatch_serve_agent, or give it an adapter command, and free text goes to that agent instead. -->
-<serve_free_text><why/>Metaform is serving here on its own<commands/>. To talk with an agent through Metaform, set an agent with metaform set --dispatch-serve-agent claude (or codex, gemini), or register metaform dispatch serve -- &lt;adapter command&gt; with your editor.</serve_free_text>
+<serve_free_text><why/>Metaform is serving here on its own<commands/>. To talk with an agent through Metaform, set an agent with metaform set --dispatch-serve-agent claude (or codex, antigravity), or register metaform dispatch serve -- &lt;adapter command&gt; with your editor.</serve_free_text>
 
 <!-- The clause serve_free_text gains while Metaform offers its commands to editors as slash commands. It goes with
      what is offered: with no enabled module giving a command in the

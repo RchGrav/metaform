@@ -957,7 +957,7 @@ def extract(args: list[str], folder: Path) -> None:
 
 def provision(args: list[str], folder: Path) -> None:
     """Record that the agent is done provisioning the harness Metaform runs under, MCP-028 and D96."""
-    if len(args) == 1 and args[0] in ('claude', 'codex', 'gemini'):
+    if len(args) == 1 and args[0] in ('claude', 'codex', 'antigravity'):
         from . import install
         install.provision(args[0], out)
         return
@@ -1320,14 +1320,14 @@ _provision_skill = resources.files('metaform') / 'skill' / 'SKILL.md'
 _provision_skill_source = (f'extract {_provision_skill.at} from {_provision_skill.root.filename}'
                            if isinstance(_provision_skill, zipfile.Path) else f'copy {_provision_skill}')
 docs.command(Command('provision', 'Give an AI tool the installer does not know what it supports of Metaform.',
-                     ('metaform provision <claude|codex|gemini>', 'metaform provision done'),
+                     ('metaform provision <claude|codex|antigravity>', 'metaform provision done'),
                      description='The first metaform run under a tool Metaform has not recorded says so. Set up '
                                  'each feature below that the tool supports, skip any it cannot or you do not want, '
                                  'then run metaform provision done; runs under that tool then say nothing of it.',
                      details=f'Skill: {_provision_skill_source} into the tool\'s '
                              'global skills folder as metaform/SKILL.md, a real copy and never a link, and never '
                              'into a project folder. '
-                             'Global instructions: run metaform provision claude, codex or gemini to preview '
+                             'Global instructions: run metaform provision claude, codex or antigravity to preview '
                              'and back up additions to ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md '
                              '(under CODEX_HOME when set), or ~/.gemini/GEMINI.md. '
                              'Provision claude also writes the metaform-node skill into '
@@ -1335,10 +1335,7 @@ docs.command(Command('provision', 'Give an AI tool the installer does not know w
                              'surface, and removes it when map is not; other harnesses do not get it. '
                              'Hooks: provision claude also merges a passive PreToolUse reminder for Agent, Task, '
                              'Workflow and AskUserQuestion into ~/.claude/settings.json. It changes no permissions '
-                             'or tool arguments. Codex receives no hook. Gemini receives an AfterTool reminder '
-                             'for invoke_agent, delegate_to_agent and ask_user, after the action returns because '
-                             'BeforeTool cannot deliver passive context. Run metaform set --gemini-reminder off to use only '
-                             'global instructions, then rerun provision gemini or install gemini. '
+                             'or tool arguments. Codex and Google Antigravity receive no hook. '
                              f'Other harnesses: append this pointer: {prompt_files.chassis("global_instructions")} '
                              'Place it in the harness global instructions file, showing the '
                              'addition and backing up the file first. Set up only hooks that can pass a '

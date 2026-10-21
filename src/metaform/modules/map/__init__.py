@@ -75,7 +75,7 @@ from .glossary import item_read as term_read
 from .glossary import items_at as terms_at
 from .scoped import is_scoped
 from .scoped import resolve as resolve_scoped
-from .storage import DATA, TABLES
+from .storage import DATA, TABLES, runtime_values
 
 SOURCES = 'sources'  # the layer an element's refs go in, naming the code that realizes a part, STORE-025
 
@@ -1286,7 +1286,7 @@ UNLISTED = frozenset({'said', 'resolution', 'task'})
 # the web page's agents3d.js. Tickets with the same glyph signify one agent doing them one at a time.
 AGENT_GLYPHS = ('jelly', 'gearling', 'kite', 'moth', 'drone', 'snail', 'crystal', 'wisp', 'comet', 'beetle', 'slime',
                 'plane', 'puffer', 'owl', 'cubebot', 'mushroom', 'seahorse')
-TICKET_AGENTS = ('claude', 'codex', 'gemini')  # the agents a ticket can prefer, as dispatch starts them
+TICKET_AGENTS = ('claude', 'codex', 'antigravity')  # the agents a ticket can prefer, as dispatch starts them
 AGENT_TYPES = TICKET_AGENTS
 
 # The map module's own tables, STORE-045: `glyphs` keeps the agent glyph each ticket is assigned to, keyed by the work
@@ -2033,6 +2033,7 @@ def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
 def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice],
           ctx: Context | None = None) -> None:
     """Write a ticket's settings, when given, in the map module's own tables, STORE-045."""
+    nouns = runtime_values(nouns)
     changes: dict[str, Any] = {}
     runtime_fields = ('agent', 'model', 'effort')
     if ctx is not None and any(field in nouns for field in runtime_fields):
@@ -2118,7 +2119,8 @@ class TicketRuntime:
 
     def save(self, ctx: Context, work_id: str, values: dict[str, Any]) -> dict[str, Any]:
         store = self.store(ctx)
-        changes = {field: values[field] for field in ('agent', 'model', 'effort', 'decision') if field in values}
+        changes = runtime_values({field: values[field] for field in ('agent', 'model', 'effort', 'decision')
+                                  if field in values})
         if changes:
             with store.tables() as tx:
                 tx.concern(work_id=work_id, kind='ticket')
@@ -2324,7 +2326,7 @@ WORK_NOUNS = (
               {'type': 'object', 'properties': {'receiver': {'type': 'string'}, 'provider': {'type': 'string'},
                                                 'address': {'type': 'string'}}}]}}),
     _noun('by', 'take and move: who takes it; on the CLI, take identifies the claiming agent by its first word, '
-                'claude, codex or gemini. Over MCP the client name identifies the agent.'),
+                'claude, codex or antigravity. Over MCP the client name identifies the agent.'),
     _noun('column', 'move: backlog, todo, doing or done. todo puts a taken task back on the queue, keeping its log.',
           schema={'type': 'string', 'enum': ['backlog', 'todo', 'doing', 'done']}),
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
@@ -2335,8 +2337,9 @@ WORK_NOUNS = (
                   'on its own. While hold_agent_tickets is on, a ticket an agent of Metaform writes is held; while '
                   'agents_ask_first is on, releasing one is the person\'s decision.', 'bool'),
     _noun('reviewed', 'add and edit: it has been checked for correctness before being fired off.', 'bool'),
-    _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or gemini; the person can change it at any '
-                   'time, even while an agent works on it.', schema={'type': 'string', 'enum': ['claude', 'codex', 'gemini']}),
+    _noun('agent', 'add and edit: the agent this ticket prefers, claude, codex or antigravity; the person can change it '
+                   'at any time, even while an agent works on it.',
+          schema={'type': 'string', 'enum': ['claude', 'codex', 'antigravity']}),
     _noun('model', 'add and edit: the model this ticket uses, from dispatch options; none clears it. '
                    'The person can change it before the start.'),
     _noun('effort', 'add and edit: the thinking level this ticket uses, from dispatch options; none clears it. '
@@ -2345,9 +2348,9 @@ WORK_NOUNS = (
                   'the person lets it go; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '
                    'done one at a time.'),
-    _noun('eligible', 'add and edit: the eligible agent types as a JSON list, claude, codex or gemini; [] allows '
+    _noun('eligible', 'add and edit: the eligible agent types as a JSON list, claude, codex or antigravity; [] allows '
                      'Any agent, the default for existing and new tickets. Dispatch and agent claims honor it.', 'json',
-          {'type': 'array', 'items': {'type': 'string', 'enum': ['claude', 'codex', 'gemini']}}),
+          {'type': 'array', 'items': {'type': 'string', 'enum': ['claude', 'codex', 'antigravity']}}),
     _noun('after_work', 'add and edit: the work ids this ticket waits on, as a JSON list; no agent starts it '
                         'automatically until each of them is done. [] waits on none.', 'json',
           {'type': 'array', 'items': {'type': 'string'}}),

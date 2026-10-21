@@ -277,7 +277,7 @@ def test_install_replaces_an_entry_it_has_no_record_of_and_continues(run, machin
 
 @pytest.mark.req('MCP-014')
 def test_a_tool_that_is_not_detected_is_refused(run, machine):
-    result = run('install', 'gemini', cwd=machine['folder'], env=machine['env'], ok=False)
+    result = run('install', 'antigravity', cwd=machine['folder'], env=machine['env'], ok=False)
     assert result.returncode == 2 and result.stderr.splitlines()[-1].startswith('Next: metaform install')
 
 
@@ -716,10 +716,11 @@ def test_wheel_installation_precedes_ai_setup_prerequisites(run, machine):
 
 
 @pytest.mark.req('MCP-036', 'MCP-015')
-@pytest.mark.parametrize('tool,filename', [('claude', 'CLAUDE.md'), ('codex', 'AGENTS.md'), ('gemini', 'GEMINI.md')])
+@pytest.mark.parametrize('tool,filename', [('claude', 'CLAUDE.md'), ('codex', 'AGENTS.md'), ('antigravity', 'GEMINI.md')])
 def test_global_pointer_preserves_authored_bytes_and_has_a_backup(run, machine, home, tool, filename):
-    recorder(machine['bin'], 'gemini')
-    path = machine['user'] / f'.{tool}' / filename
+    recorder(machine['bin'], 'agy')
+    folder = '.gemini' if tool == 'antigravity' else f'.{tool}'
+    path = machine['user'] / folder / filename
     path.parent.mkdir(parents=True)
     original = b'# My rules\r\nKeep my work private.'
     path.write_bytes(original)
@@ -900,84 +901,56 @@ def test_provision_preview_runs_before_either_global_file_changes(home, machine,
     assert all(path.read_bytes() != content for path, content in before.items())
 
 
-@pytest.mark.req('MCP-036', 'MCP-028', 'MCP-020')
-def test_gemini_passive_reminder_preserves_settings_and_can_be_turned_off(run, machine, home):
-    import re
-
-    from metaform import prompt_files
-    settings = machine['user'] / '.gemini' / 'settings.json'
-    settings.parent.mkdir()
-    other = {'matcher': 'read_file', 'hooks': [{'type': 'command', 'command': 'my-check'}]}
-    original = {'mcpServers': {'other': {'command': 'other'}}, 'hooks': {'AfterTool': [other]}}
-    settings.write_text(json.dumps(original))
-    before = settings.read_bytes()
-    out = run('provision', 'gemini', cwd=machine['folder'], env=machine['env']).stdout
-    assert 'AfterTool' in out and 'after' in out
-    configured = json.loads(settings.read_text())
-    assert configured['mcpServers'] == original['mcpServers']
-    assert configured['hooks']['AfterTool'][0] == other
-    added = configured['hooks']['AfterTool'][1]
-    assert all(re.fullmatch(added['matcher'], tool) for tool in ('invoke_agent', 'delegate_to_agent', 'ask_user'))
-    assert not re.fullmatch(added['matcher'], 'read_file')
-    handler = added['hooks'][0]
-    shell = ['powershell', '-NoProfile', '-NonInteractive', '-Command'] if os.name == 'nt' else ['bash', '-c']
-    result = subprocess.run([*shell, handler['command']], cwd=machine['folder'],
-                            input='{}', text=True, capture_output=True, check=False)
-    assert result.returncode == 0 and not result.stderr
-    assert json.loads(result.stdout) == {'hookSpecificOutput': {
-        'hookEventName': 'AfterTool', 'additionalContext': prompt_files.chassis('work_reminder')}}
-    backups = list((home / 'backups' / 'provision').rglob('settings.json'))
-    assert len(backups) == 1 and backups[0].read_bytes() == before
-    run('provision', 'gemini', cwd=machine['folder'], env=machine['env'])
-    assert json.loads(settings.read_text()) == configured
-    run('set', '--gemini-reminder', 'off', cwd=machine['folder'], env=machine['env'])
-    run('provision', 'gemini', cwd=machine['folder'], env=machine['env'])
-    assert json.loads(settings.read_text()) == original
-    assert (settings.parent / 'GEMINI.md').exists()
-    run('uninstall', 'gemini', cwd=machine['folder'], env=machine['env'])
-    assert json.loads(settings.read_text()) == original
-
-
-@pytest.mark.req('MCP-036', 'MCP-015')
-def test_gemini_registration_preserves_the_previewed_hook_edits(run, machine):
-    from fakes import RECORDER, executable
-    body = RECORDER + '''
-config = pathlib.Path.home() / '.gemini' / 'settings.json'
-config.parent.mkdir(exist_ok=True)
-data = json.loads(config.read_text()) if config.exists() else {}
-servers = data.setdefault('mcpServers', {})
-if args[:2] == ['mcp', 'add']:
-    servers['metaform'] = {'command': 'registered-by-gemini'}
-elif args[:2] == ['mcp', 'remove']:
-    servers.pop('metaform', None)
-config.write_text(json.dumps(data))
-'''
-    executable(machine['bin'], 'gemini', body)
-    settings = machine['user'] / '.gemini' / 'settings.json'
-    settings.parent.mkdir()
-    other = {'matcher': 'read_file', 'hooks': [{'type': 'command', 'command': 'my-check'}]}
-    original = {'mcpServers': {'other': {'command': 'other'}}, 'hooks': {'AfterTool': [other]}}
-    settings.write_text(json.dumps(original))
+@pytest.mark.req('MCP-016', 'MCP-015', 'MCP-020')
+def test_antigravity_registration_preserves_config_and_uses_documented_skills(run, machine, home):
+    recorder(machine['bin'], 'agy')
+    config = machine['user'] / '.gemini' / 'config' / 'mcp_config.json'
+    config.parent.mkdir(parents=True)
+    original = {'mcpServers': {'other': {'command': 'other'}}, 'custom': {'keep': True}}
+    config.write_text(json.dumps(original))
+    before = config.read_bytes()
+    preferences = config.parent.parent / 'settings.json'
+    preferences.write_bytes(b'{"custom": true}')
+    skill = config.parent.parent / 'antigravity-cli' / 'skills' / 'metaform' / 'SKILL.md'
     for _ in range(2):
-        run('install', 'gemini', cwd=machine['folder'], env=machine['env'])
-        data = json.loads((machine['user'] / '.gemini' / 'settings.json').read_text())
-        assert data['mcpServers']['metaform'] == {'command': 'registered-by-gemini'}
-        assert data['mcpServers']['other'] == original['mcpServers']['other']
-        assert len(data['hooks']['AfterTool']) == 2
-    run('uninstall', 'gemini', cwd=machine['folder'], env=machine['env'])
-    assert json.loads(settings.read_text()) == original
+        out = run('install', 'antigravity', cwd=machine['folder'], env=machine['env']).stdout
+        data = json.loads(config.read_text())
+        assert data == {**original, 'mcpServers': {**original['mcpServers'], 'metaform': {
+            'command': 'uvx', 'args': entry(machine['wheel'])[1:]}}}
+        assert 'antigravity: server starts, 2 tools' in out
+        assert skill.read_bytes() == SKILL.read_bytes()
+        assert preferences.read_bytes() == b'{"custom": true}'
+    backups = list((home / 'backups' / 'install').rglob('mcp_config.json'))
+    assert any(path.read_bytes() == before for path in backups)
+    run('uninstall', 'antigravity', cwd=machine['folder'], env=machine['env'])
+    assert json.loads(config.read_text()) == original
+    assert not skill.exists()
+    assert preferences.read_bytes() == b'{"custom": true}'
+
+
+@pytest.mark.req('MCP-016', 'MCP-002')
+def test_antigravity_http_registration_uses_server_url(run, machine, monkeypatch):
+    from metaform import install
+    from metaform.probe import Proof
+    recorder(machine['bin'], 'agy')
+    url = 'http://127.0.0.1:7493/mcp'
+    monkeypatch.setattr(install, 'http_url', lambda folder, command: url)
+    monkeypatch.setattr(install, 'probe_http', lambda address: Proof(True, 2, instructions='Fake instructions.'))
+    run('install', 'antigravity', cwd=machine['folder'], env=machine['env'])
+    config = machine['user'] / '.gemini' / 'config' / 'mcp_config.json'
+    assert json.loads(config.read_text()) == {'mcpServers': {'metaform': {'serverUrl': url}}}
 
 
 @pytest.mark.req('MCP-036', 'MCP-015')
-@pytest.mark.parametrize('content', ['{broken', '{"hooks": {"AfterTool": {}}}'])
-def test_invalid_gemini_hooks_leave_global_instructions_unchanged(run, machine, content):
-    settings = machine['user'] / '.gemini' / 'settings.json'
-    settings.parent.mkdir()
-    settings.write_text(content)
-    result = run('provision', 'gemini', cwd=machine['folder'], env=machine['env'], ok=False)
-    assert result.returncode == 2 and str(settings) in result.stderr
-    assert settings.read_text() == content
-    assert not (settings.parent / 'GEMINI.md').exists()
+def test_antigravity_provision_keeps_preferences_untouched(run, machine):
+    preferences = machine['user'] / '.gemini' / 'settings.json'
+    preferences.parent.mkdir()
+    preferences.write_bytes(b'{unparsed preferences')
+    run('provision', 'antigravity', cwd=machine['folder'], env=machine['env'])
+    assert preferences.read_bytes() == b'{unparsed preferences'
+    assert (preferences.parent / 'GEMINI.md').is_file()
+    run('uninstall', 'antigravity', cwd=machine['folder'], env=machine['env'])
+    assert preferences.read_bytes() == b'{unparsed preferences'
 
 
 ACP_AGENT = '''

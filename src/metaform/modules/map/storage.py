@@ -1567,6 +1567,25 @@ def legacy_fold(db: DataConnection, correction: str, intake: str) -> None:
         db.execute(f"UPDATE {table} SET layer_id=? WHERE layer_id=?", (intake, correction))
 
 
+def agent_name(value: Any) -> Any:
+    """Keep the retired agent identifier readable at persisted and input boundaries."""
+    return 'antigravity' if value == 'gemini' else value
+
+
+def runtime_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Normalize agent identities without changing runtime selections or decision evidence."""
+    kept = dict(values)
+    if 'agent' in kept:
+        kept['agent'] = agent_name(kept['agent'])
+    eligible = kept.get('eligible')
+    if isinstance(eligible, list):
+        kept['eligible'] = [agent_name(value) for value in cast(list[Any], eligible)]
+    decision = kept.get('decision')
+    if isinstance(decision, dict) and 'agent' in decision:
+        kept['decision'] = {**decision, 'agent': agent_name(decision['agent'])}
+    return kept
+
+
 def upgrade(tx: Any, found: int) -> None:
     """The map's own tables brought from an earlier version of this module."""
     if found < 8:
@@ -1578,6 +1597,18 @@ def upgrade(tx: Any, found: int) -> None:
         for row in tx.rows('work', limit=0).results:
             if row['condition'] in renamed:
                 tx.update('work', {'row': row['row']}, {'condition': renamed[row['condition']]})
+    if found < 23:
+        for row in tx.rows('ticket_settings', limit=0).results:
+            before = {field: row[field] for field in ('agent', 'decision')}
+            after = runtime_values(before)
+            if after != before:
+                tx.update('ticket_settings', {'work_id': row['work_id']}, after)
+        for row in tx.rows('eligible', limit=0).results:
+            before = row['agents']
+            if isinstance(before, list):
+                after = [agent_name(value) for value in cast(list[Any], before)]
+                if after != before:
+                    tx.update('eligible', {'work_id': row['work_id']}, {'agents': after})
 
 
 TABLES = Tables(
@@ -1600,8 +1631,9 @@ TABLES = Tables(
     # never names; 20: the named board a ticket is on, `board` in ticket_settings, and the project's named boards with
     # each its own archive cutoff, `boards` (the person's need, 2026-10-20), a column and a table version 9 never names;
     # 21: their indexes, by board and by created; 22: nullable assignment model, effort and decision provenance,
-    # which older versions never name
-    version=22,
+    # which older versions never name; 23: the retired agent identity becomes antigravity in ticket runtime and
+    # eligibility values, without changing any table layout
+    version=23,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,

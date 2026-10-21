@@ -25,12 +25,12 @@ def test_task_and_card_api_keep_eligibility_with_glyph_and_board_order(run, web,
     node = store.element('code.alarm.audible')
     status, made = api(web, '/api/task', method='POST', headers=own_write(web), body=json.dumps({
         'project': 'proj', 'nodes': [f'element:{node.id}'], 'condition': 'unbuilt',
-        'task': 'Change the audible alarm', 'agent': 'codex', 'eligible': ['claude', 'gemini'],
+        'task': 'Change the audible alarm', 'agent': 'codex', 'eligible': ['claude', 'antigravity'],
     }))
     assert status == 200, made
     work_id = made['results'][0]['id']
     read = lambda: next(one for one in api(web, '/api/work?project=proj')[1]['results'] if one['id'] == work_id)
-    assert read()['map']['eligible'] == ['claude', 'gemini']
+    assert read()['map']['eligible'] == ['claude', 'antigravity']
     run('map', 'work', 'op=edit', f'id={work_id}', 'glyph=kite', cwd=mapped)
     store.move_work(work_id, 'todo', position=0)
     before = read()
@@ -67,7 +67,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     assert page.locator('#task .eligible summary').inner_text() == 'Eligible agents: Any agent'
     page.locator('#task .eligible summary').click()
     page.check('#task .eligible input[data-agent="claude"]')
-    page.check('#task .eligible input[data-agent="gemini"]')
+    page.check('#task .eligible input[data-agent="antigravity"]')
     page.fill('#task .text', 'Eligibility editor proof')
     page.select_option('#task .condition', 'unbuilt')
     with page.expect_response(lambda response: '/api/task' in response.url) as saved:
@@ -76,7 +76,7 @@ def test_task_editor_and_card_choose_multiple_agents_and_return_to_any(run, web,
     page.click('#boardBtn')
     card = page.locator(f'#board .card[data-id="{work_id}"]')
     card.locator('.ticket-settings > summary').click()  # the card keeps its agent, eligibility and glyph folded away
-    assert card.locator('.eligible summary').inner_text() == 'Eligible agents: Claude Code, Gemini CLI'
+    assert card.locator('.eligible summary').inner_text() == 'Eligible agents: Claude Code, Google Antigravity'
     card.locator('.eligible summary').click()
     with page.expect_response(lambda response: '/api/eligible' in response.url):
         card.locator('.eligible input.any').check()

@@ -110,10 +110,8 @@ Blocks: nothing; a real result can be added as a fixture when one is supplied.
 
 ## Step 8, installer, skill and build
 
-**Q20. Gemini's registration command. (MCP-016, E2)**
-The table's form is `gemini mcp add --scope user metaform uvx --from <source> metaform mcp serve`, with no `--` before the server's own arguments. The local `gemini mcp add --help` takes options after the command, so `--from` may be read as a Gemini option.
-Meanwhile: the command is built exactly as the table gives it; it is not proven against a real Gemini CLI.
-Blocks: nothing in the first working test, which registers Claude Code, Codex and Cursor.
+**Q20. Retired harness registration. (MCP-016, E2)**
+Withdrawn 2026-10-21, code.dispatcher.agent#fe. Google Antigravity uses its documented MCP configuration. The former CLI registration question no longer applies.
 
 **Q21. A built wheel's system modules as entry points. (BASE-041, BASE-037)**
 BASE-041 writes a `[metaform.modules]` entry point for every module the wheel carries, and those modules are also in the wheel's system place, so BASE-037's duplicate rule would report each one as an error once the wheel is installed.

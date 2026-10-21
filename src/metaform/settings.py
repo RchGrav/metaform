@@ -884,12 +884,6 @@ roles_without_authority = items(
             'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
                                 label='Roles without authority', category='automation', heading='Permissions')
 
-gemini_reminder = choice('gemini_reminder', ['after-tool', 'off'], 'after-tool', scope='global',
-                         help='Gemini setup installs a passive reminder after delegation and questioning, or none.',
-                         details='BeforeTool cannot deliver passive context. after-tool reinforces later decisions. '
-                                 'off keeps global instructions alone. Apply changes with metaform provision gemini '
-                                 'or metaform install gemini.')
-
 # Jev via OpenRouter, the decision model, CHANGE-ORDER-2026-10-07 item 6 (P185): on by default since 2026-10-20, the
 # person's decision, because it costs pennies and chooses the agent, model and thinking level for each ticket; the code
 # decides whether to ask it at all from its own checks, the key in the environment and OpenRouter credit left, so with

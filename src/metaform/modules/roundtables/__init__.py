@@ -10,7 +10,7 @@ synthesizer names the ideas, every seat ranks them and explains its choices, and
 - `open` opens a table on the person's question, which is the table's one topic and its whole frame: it is limited to
   no part and to no project. An Address given focuses it on that part: the opening then holds the part's context from
   the map, its element, the joins it receives and provides with their purposes and encounter functions, and the
-  memories at it. Seats are Metaform's own agents, `claude/<model>`, `codex/<model>` and `gemini/<model>`, which the
+  memories at it. Seats are Metaform's own agents, `claude/<model>`, `codex/<model>` and `antigravity/<model>`, which the
   engine runs through its own ACP client with dispatch's commands, and OpenRouter models by their id, which the engine
   calls itself.
 - The chair's controls are the engine's: `comment`, `hold`, `continue`, `advance`, `reseat` and `end`.
@@ -87,7 +87,7 @@ def _check_seats(seats: Any, folder: Path) -> list[str] | None:
 settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 'claude/fable'), person_only=True,
                label='Seats a table opens with', category='integrations', heading='Roundtables', check=_check_seats,
                help='The seats, in speaking order, of a table opened without any named, as the page\'s roundtable '
-                    'opens one: claude/<model>, codex/<model>, gemini/<model> or OpenRouter model ids. A model is a '
+                    'opens one: claude/<model>, codex/<model>, antigravity/<model> or OpenRouter model ids. A model is a '
                     'short name, such as opus or sol, which means the newest release of its family when the table '
                     'opens, or an exact value, such as gpt-6-sol, which pins one.')
 
@@ -122,7 +122,7 @@ def model_of(ctx: Context, agent: str, model: str) -> str | None:
 
 
 def seat_of(ctx: Context, given: str) -> str:
-    """A seat as the engine writes it: `claude/<model>`, `codex/<model>` and `gemini/<model>` are Metaform's agents,
+    """A seat as the engine writes it: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's agents,
     `acp:<agent>/<model>` on the engine's ACP client, the model resolved as the table opens; any other id is an
     OpenRouter model the engine checks."""
     text = given.strip()
@@ -132,10 +132,10 @@ def seat_of(ctx: Context, given: str) -> str:
             raise Stop(f'{text}: name the model the agent runs, such as {agent}/opus.', 'metaform roundtables open')
         return f'acp:{agent}/{model_of(ctx, agent, model.strip()) or model.strip()}'
     if text.startswith(('acp:', 'agent:', 'a2a:')):
-        raise Stop(f'{text} cannot sit: a seat is claude/<model>, codex/<model>, gemini/<model> or an OpenRouter '
+        raise Stop(f'{text} cannot sit: a seat is claude/<model>, codex/<model>, antigravity/<model> or an OpenRouter '
                    'model id, such as deepseek/deepseek-v4.1-flash.', 'metaform roundtables open')
     if not slash:
-        raise Stop(f'{text} is not a seat: write claude/<model>, codex/<model>, gemini/<model> or an OpenRouter '
+        raise Stop(f'{text} is not a seat: write claude/<model>, codex/<model>, antigravity/<model> or an OpenRouter '
                    'model id, such as deepseek/deepseek-v4.1-flash.', 'metaform roundtables open')
     return text
 
@@ -423,7 +423,7 @@ MODULE = Module(
     purpose='Opens a table of agents on the person\'s question, through the person\'s Roundtable 2 engine: the seats '
             'debate it, focused on a part only when an Address is given, Jev keeps what is new, the host summarises '
             'the answer, and the person\'s system agent writes the report. Details: metaform help roundtables.',
-    details='Seats are claude/<model>, codex/<model>, gemini/<model> or OpenRouter model ids. Each seat takes one '
+    details='Seats are claude/<model>, codex/<model>, antigravity/<model> or OpenRouter model ids. Each seat takes one '
             'of dispatch\'s agent slots. A table spends at most roundtables_spend dollars. Its events reach the bus as '
             'roundtables.event and other processes as map.changed of kind roundtables.',
     verbs=(
@@ -431,7 +431,7 @@ MODULE = Module(
              nouns=(Noun('topic', 'The question the table answers; it is the whole frame of the table.'),
                     Noun('address', 'The Address of a part to focus the table on; its context opens the table. Left '
                                     'out, the table is limited to no part.', required=False),
-                    Noun('seats', 'The seats in speaking order: claude/<model>, codex/<model>, gemini/<model> or an '
+                    Noun('seats', 'The seats in speaking order: claude/<model>, codex/<model>, antigravity/<model> or an '
                                   'OpenRouter model id; roundtables_seats when left out.', kind='json',
                          schema={'type': 'array', 'items': {'type': 'string'}}, required=False),
                     Noun('host', 'Who summarises the seats\' rankings; the first seat when left out.',

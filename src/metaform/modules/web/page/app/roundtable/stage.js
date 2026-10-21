@@ -214,7 +214,7 @@ async function startTable() {
  * opens, then each exact value under Specific version. Any other seat is an OpenRouter model id, typed. An agent that
  * has not run here has no list yet: its model is typed and checked as the table opens, and Read its list starts it
  * once, with no prompt, to read it. */
-const SEAT_AGENTS = ['claude', 'codex', 'gemini'];
+const SEAT_AGENTS = ['claude', 'codex', 'antigravity'];
 const OFFERED = new Map();  // each agent's model picks, read once each time the stage opens
 function addSeat(seat) {
   const [first, ...rest] = seat.replace(/^acp:/, '').split('/');

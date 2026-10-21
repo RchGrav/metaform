@@ -8,21 +8,20 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shlex
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from . import prompt_files, settings
+from . import prompt_files
 from .errors import Stop
 
 BEGIN = b'<!-- metaform:global:begin -->'
 END = b'<!-- metaform:global:end -->'
 DIGEST = b'<!-- metaform:global:sha256:'
 HOOK_MARK = ' # metaform-work-reminder'
-TOOLS = ('claude', 'codex', 'gemini')
+TOOLS = ('claude', 'codex', 'antigravity')
 
 
 @dataclass(frozen=True)
@@ -93,22 +92,15 @@ if not session or not os.path.exists(mark):
 """
 
 
-def _hook(tool: str) -> dict[str, Any]:
-    event = 'PreToolUse' if tool == 'claude' else 'AfterTool'
+def _hook() -> dict[str, Any]:
+    event = 'PreToolUse'
     payload = json.dumps({'hookSpecificOutput': {
         'hookEventName': event, 'additionalContext': prompt_files.chassis('work_reminder')}})
-    # Hex keeps quotes and line breaks out of argument passing, and JSON quotes out of Windows PowerShell 5.1's.
+    # Hex keeps quotes and line breaks out of argument passing.
     program = ONCE.format(payload=(payload + '\n').encode('utf-8').hex())
     code = f'import sys;exec(bytes.fromhex({program.encode("utf-8").hex()!r}).decode())' + HOOK_MARK
-    if tool == 'claude':
-        return {'matcher': '^(Agent|Task|Workflow|AskUserQuestion)$',
-                'hooks': [{'type': 'command', 'command': sys.executable, 'args': ['-c', code], 'timeout': 5}]}
-    # Gemini runs hooks in Bash on POSIX and PowerShell on Windows, not a direct argument vector.
-    words = [sys.executable, '-c', code]
-    command = ('& ' + ' '.join("'" + word.replace("'", "''") + "'" for word in words) if os.name == 'nt'
-               else shlex.join(words))
-    return {'matcher': '^(invoke_agent|delegate_to_agent|ask_user)$',
-            'hooks': [{'type': 'command', 'command': command, 'timeout': 5000}]}
+    return {'matcher': '^(Agent|Task|Workflow|AskUserQuestion)$',
+            'hooks': [{'type': 'command', 'command': sys.executable, 'args': ['-c', code], 'timeout': 5}]}
 
 
 def _ours(hook: Any) -> bool:
@@ -123,8 +115,8 @@ def _ours(hook: Any) -> bool:
                                                  for arg in cast(list[Any], arguments)))))
 
 
-def _settings(path: Path, tool: str, remove: bool) -> Change | None:
-    event = 'PreToolUse' if tool == 'claude' else 'AfterTool'
+def _settings(path: Path, remove: bool) -> Change | None:
+    event = 'PreToolUse'
     before = path.read_bytes() if path.exists() else None
     try:
         parsed: Any = json.loads(before) if before is not None else {}
@@ -148,7 +140,7 @@ def _settings(path: Path, tool: str, remove: bool) -> Change | None:
         elif not entry['hooks']:
             kept.append(entry)
     if not remove:
-        kept.append(_hook(tool))
+        kept.append(_hook())
     if entries == kept:
         return None
     if kept:
@@ -161,16 +153,15 @@ def _settings(path: Path, tool: str, remove: bool) -> Change | None:
         data.pop('hooks', None)
     after = (json.dumps(data, indent=2) + '\n').encode('utf-8')
     return Change(path, before, after, 'remove Metaform reminder' if remove else
-                  ('add passive PreToolUse reminder for Agent, Task, Workflow and AskUserQuestion' if tool == 'claude' else
-                   'add passive AfterTool reminder after delegation or questioning; cannot redirect the first call'))
+                  'add passive PreToolUse reminder for Agent, Task, Workflow and AskUserQuestion')
 
 
 def prepare(tool: str, user: Path, codex: Path, *, remove: bool = False) -> list[Change]:
-    """Only the three approved harnesses receive additions; Gemini supports passive context after tools."""
+    """Only supported harnesses receive pointers; Claude receives its passive reminder."""
     if tool not in TOOLS:
         return []
-    folder = codex if tool == 'codex' else user / f'.{tool}'
-    filename = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'gemini': 'GEMINI.md'}[tool]
+    folder = codex if tool == 'codex' else user / ('.gemini' if tool == 'antigravity' else f'.{tool}')
+    filename = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'antigravity': 'GEMINI.md'}[tool]
     path = folder / filename
     before = path.read_bytes() if path.exists() else None
     content = before or b''
@@ -190,26 +181,24 @@ def prepare(tool: str, user: Path, codex: Path, *, remove: bool = False) -> list
         after = content + (newline * 2 if content else b'') + block
     changes = [] if after == content else [Change(path, before, after, 'remove Metaform pointer' if remove else
                                                  prompt_files.chassis('global_instructions'))]
-    if tool in ('claude', 'gemini'):
-        remove_hook = remove or (tool == 'gemini' and settings.value('gemini_reminder', Path.cwd()) == 'off')
-        if change := _settings(folder / 'settings.json', tool, remove_hook):
-            changes.append(change)
+    if tool == 'claude' and (change := _settings(folder / 'settings.json', remove)):
+        changes.append(change)
     return changes
 
 
 def owned(tool: str, user: Path, codex: Path) -> bool:
     """Find only Metaform's additions, so provisioning alone can be undone without unregistering MCP."""
-    folder = codex if tool == 'codex' else user / f'.{tool}'
-    filename = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'gemini': 'GEMINI.md'}[tool]
+    folder = codex if tool == 'codex' else user / ('.gemini' if tool == 'antigravity' else f'.{tool}')
+    filename = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'antigravity': 'GEMINI.md'}[tool]
     path = folder / filename
     if path.is_file() and BEGIN in path.read_bytes():
         return True
     hooks = folder / 'settings.json'
-    if tool not in ('claude', 'gemini') or not hooks.is_file():
+    if tool != 'claude' or not hooks.is_file():
         return False
     try:
         data: Any = json.loads(hooks.read_bytes())
-        event = 'PreToolUse' if tool == 'claude' else 'AfterTool'
+        event = 'PreToolUse'
         return any(_ours(handler) for entry in data.get('hooks', {}).get(event, [])
                    for handler in entry.get('hooks', []))
     except (ValueError, UnicodeError, AttributeError, TypeError):

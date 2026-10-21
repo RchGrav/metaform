@@ -759,16 +759,16 @@ def save(scope: str, owner: str, key: str, members: list[Any], *, folder: Path |
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
         db.executemany('INSERT INTO settings(scope, owner, key, position, value) VALUES (?, ?, ?, ?, ?)',
                        [(scope, owner, key, position, json.dumps(member)) for position, member in enumerate(members)])
-    _settings_changed(scope, owner)
+    settings_changed(scope, owner)
 
 
 def clear(scope: str, owner: str, key: str) -> None:
     with settings_db(scope, write=True) as db:
         db.execute('DELETE FROM settings WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
-    _settings_changed(scope, owner)
+    settings_changed(scope, owner)
 
 
-def _settings_changed(scope: str, owner: str) -> None:
+def settings_changed(scope: str, owner: str) -> None:
     """Notify related projects after a setting commits, including global and inherited ancestor scopes.
 
     The owner names its settings in the event. The chassis treats every module alike, BASE-046.
@@ -794,7 +794,7 @@ def set_glue(scope: str, owner: str, key: str, on: bool, *, folder: Path | None 
             db.execute('INSERT OR IGNORE INTO glue(scope, owner, key) VALUES (?, ?, ?)', (scope, owner, key))
         else:
             db.execute('DELETE FROM glue WHERE scope=? AND owner=? AND key=?', (scope, owner, key))
-    _settings_changed(scope, owner)  # a glue changes what the screens show, so an open one reads again
+    settings_changed(scope, owner)  # a glue changes what the screens show, so an open one reads again
 
 
 def aliases_at(scope: str) -> dict[str, list[str]]:

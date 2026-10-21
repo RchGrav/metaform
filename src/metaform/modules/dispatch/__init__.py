@@ -244,15 +244,15 @@ TABLES = Tables(version=19, compatible_from=5, tables=(  # 19 adds an optional e
 ))
 PRIVATE = ('port', 'token', 'pid', 'nonce', 'recovery', 'origin')  # what only this module uses to reach a session
 # Dispatch's own agents, each started by default at the version the ACP Registry lists for it, claude-acp, codex-acp
-# and gemini, read 2026-10-12, so every start runs the same adapter until the person pins another, P013; `dispatch
+# and antigravity-acp, read 2026-10-21, so every start runs the same adapter until the person pins another, P013; `dispatch
 # registry` names a newer one. Any other agent of the registry is added by the person and pinned, registry.py.
 AGENTS = {
     'claude': ('Claude Code', 'npx -y @agentclientprotocol/claude-agent-acp@0.89.1'),
     'codex': ('Codex', 'npx -y @agentclientprotocol/codex-acp@2.2.2'),
-    'gemini': ('Gemini CLI', 'npx -y @google/gemini-cli@0.63.0 --acp'),
+    'antigravity': ('Google Antigravity', 'metaform dispatch adapter antigravity-acp@1.4.1'),
 }
 # The oldest Node.js every adapter above runs on, from their packages' engines, read 2026-10-15: claude-agent-acp
-# 0.89.1 needs node >=22, gemini-cli 0.63.0 >=20, codex-acp 2.2.2 names none. A build's README asks testers for it.
+# 0.89.1 needs node >=22, codex-acp 2.2.2 names none. Antigravity uses Google's native binary.
 NODE = '22'
 # A setting that decides which agents run, how they start, what they are permitted, how they are watched or when
 # their work lands is person_only: written by the person, never by an agent over MCP, CLI-011; Full Auto is
@@ -508,7 +508,7 @@ STRENGTHS = {
              'tasks; lighter variants for quick turns. Thinking level: low for pattern matching, formatting and minor '
              'adjustments; medium for everyday bugs, clear features and routine refactors; high or max for deep '
              'algorithmic complexity, multi-file codebases and hard-to-reproduce bugs.',
-    'gemini': 'large reads across many files'}
+    'antigravity': 'multi-step reasoning, multi-file editing and tool calling'}
 
 
 def strengths_key(agent: str) -> str:
@@ -948,7 +948,8 @@ def migrate_agent_options(ctx: Context | None = None) -> list[str]:
 
 def started(ctx: Context | None = None) -> list[str]:
     """Dispatch's one-time carry of agent settings that changed shape."""
-    return migrate_agent_options(ctx)
+    from .migration import migrate_settings
+    return [*migrate_settings(AGENTS['antigravity'][1]), *migrate_agent_options(ctx)]
 
 # How an agent's interactive prompts are answered, as the administrator sets it, read at each request so a change
 # reaches agents already running: approve-all answers each with its allow option; approve-reads answers a read or a
@@ -6595,6 +6596,18 @@ def registry_read(ctx: Context) -> dict[str, Any]:
         keep(pins)
     if adding:
         wanted = str(adding)
+        if wanted in ('antigravity', agent_registry.BUILTIN['antigravity']):
+            entry = found.get(agent_registry.BUILTIN['antigravity'])
+            if entry is None:
+                raise Stop('The ACP Registry lists no Google Antigravity adapter.', 'metaform dispatch registry')
+            held = agent_registry.pin(entry)
+            command = agent_registry.builtin_command('antigravity', entry)
+            settings.put('dispatch_antigravity', command, ctx.folder)
+            changed.append({'agent': 'antigravity', 'pinned': entry['version'], 'kind': held['kind'],
+                            'command': command, 'verified': held.get('verified')})
+            adding = None
+    if adding:
+        wanted = str(adding)
         if wanted in AGENTS or wanted in agent_registry.BUILTIN.values():
             mine = next((agent for agent, entry in agent_registry.BUILTIN.items() if wanted in (agent, entry)), wanted)
             raise Stop(f"{wanted} is dispatch's own {AGENTS[mine][0]}; its command is the dispatch_{mine} setting.",
@@ -6632,7 +6645,8 @@ def registry_read(ctx: Context) -> dict[str, Any]:
         current = str(ctx.setting(f'dispatch_{agent}'))
         own.append({'agent': agent, 'registry_id': entry_id, 'version': entry.get('version') if entry else None,
                     'command': current, 'registry_command': listed,
-                    'next': f'metaform set --dispatch-{agent} "{listed}"' if listed and listed != current else None})
+                    'next': (f'metaform dispatch registry add={entry_id}' if agent == 'antigravity' else
+                             f'metaform set --dispatch-{agent} "{listed}"') if listed and listed != current else None})
     agents: list[dict[str, Any]] = []
     for agent_id, entry in sorted(found.items()):
         chosen = agent_registry.way(entry)
@@ -6642,6 +6656,11 @@ def registry_read(ctx: Context) -> dict[str, Any]:
     return {'registry': url, 'read': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(float(read['fetched']))),
             **({'stale': read.get('error')} if read.get('stale') else {}), 'platform': agent_registry.platform(),
             'own': own, 'agents': agents, **({'changed': changed} if changed else {})}
+
+
+def adapter(ctx: Context) -> None:
+    """The native ACP adapter launcher. Replaces this process, preserving ACP's standard streams and signals."""
+    agent_registry.adapter(str(ctx.nouns['pin']))
 
 
 def publication(ctx: Context) -> dict[str, Any]:
@@ -7276,13 +7295,16 @@ from .orchestration import render as render_prompt
 MODULE = Module(
     id='dispatch',
     summary='Start an agent on a ticket through ACP, follow it, message it and stop it.',
-    purpose='Starts Claude Code, Codex or Gemini CLI on one ticket through the Agent Client Protocol, one session per '
+    purpose='Starts Claude Code, Codex or Google Antigravity on one ticket through the Agent Client Protocol, one session per '
             "ticket, in the project's folder with Metaform's MCP server. What the agent does shows as notes at the "
             "ticket's own window, and each permission it asks for is a question at the ticket's node. Details: metaform "
             'help dispatch.',
     details='Each agent runs your own installed command under your own login: --dispatch-claude, --dispatch-codex and '
-            '--dispatch-gemini set them. Metaform never reads or stores credentials.',
+            '--dispatch-antigravity set them. Metaform never reads or stores credentials.',
     verbs=(
+        Verb('adapter', adapter, 'Run the pinned native ACP adapter over standard input and output.',
+             nouns=(Noun('pin', 'The exact native adapter pin, antigravity-acp@1.4.1.'),),
+             surfaces=('cli',), needs_project=False, transport=True),
         Verb('signals', read_signals,
              'Read the signals raised on agent sessions, such as an agent that stopped with its ticket open. With '
              'active=false, the cleared ones too.',
@@ -7312,7 +7334,7 @@ MODULE = Module(
              switches=('dispatch_recovery',), open_world=True),
         Verb('start', start, 'Start an agent on a ticket; it returns at once, and the map shows the agent at work. On '
                              "a ticket with an agent glyph, the agent then works the glyph's other tickets in turn.",
-             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.'),
+             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or antigravity.'),
                     Noun('prompts', 'For this launch only, how its permission prompts are answered: approve-all, '
                                     'approve-reads or ask_all; dispatch_prompts when none is given. The person\'s own.',
                          required=False),
@@ -7320,7 +7342,7 @@ MODULE = Module(
                                  'dispatch_<agent>_<option> when none is given. The person\'s own.', required=False),
                     Noun('batch', 'The token of one Start all run, the same for each of its starts: a Stop all in '
                                   'the middle of the run refuses the rest of it.', required=False)),
-             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
+             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_antigravity'),
              examples=(('metaform dispatch start 198452e1... claude', 'Starts Claude Code on the ticket.'),
                        ('metaform dispatch start 198452e1... claude prompts=approve-reads mode=acceptEdits',
                         'Starts it allowing reads and its own edits without asking, for this launch only.')),
@@ -7336,15 +7358,15 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), surfaces=('cli',)),
         Verb('system', system, "Start the person's system agent, who talks with them about anything in the project, or "
                                'reuse the running one.',
-             nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
+             nouns=(Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',
                          required=False),
                     Noun('fresh', 'true: start a new conversation, resuming none whatever dispatch_resume_chats says.',
                          kind='bool', required=False)), open_world=True),
         Verb('agents', harnesses, 'List the agents dispatch can start, the default among them, how many more may '
                                   'be summoned and how many tickets may start now. Each comes with its name, its start '
                                   'command, and whether that command is found on this system.',
-             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
-             examples=(('metaform dispatch agents', 'Lists Claude Code, Codex and Gemini CLI with what each needs.'),
+             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_antigravity'),
+             examples=(('metaform dispatch agents', 'Lists Claude Code, Codex and Google Antigravity with what each needs.'),
                        ('metaform set --dispatch-agent claude', 'Makes Claude Code the default agent.')), effect='read',
              needs_project=False),
         Verb('registry', registry_read, 'List the agents of the ACP Registry dispatch can start, each with its version '
@@ -7379,7 +7401,7 @@ MODULE = Module(
         Verb('intake', intake, "Start an agent on this project's intake, recording the map as it follows the intake "
                                'prompt. An open page follows it. It counts as a summoned agent; one intake runs at a '
                                'time.',
-             nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
+             nouns=(Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',
                          required=False),
                     Noun('resume', 'true: start it although an intake is being recorded that no agent of Metaform\'s '
                                    'started, to resume that intake once no agent is still recording it.',
@@ -7395,7 +7417,7 @@ MODULE = Module(
                          kind='bool', required=False),
                     Noun('text', 'What the intake is for, a target or a request, as `intake prompt` takes it; '
                                  'nothing means this project.', required=False, many=True)),
-             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
+             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_antigravity'),
              examples=(('metaform dispatch intake agent=claude', 'Starts Claude Code on the intake of this project.'),
                        ('metaform dispatch intake -- "src/engine only"',
                         'Starts the default agent on an intake of what is asked.')), open_world=True,
@@ -7403,12 +7425,12 @@ MODULE = Module(
         Verb('helper', helper, "Start a helper agent with a brief and no ticket, for the person's system agent: a "
                                'figure on the map, steered and stopped like any agent, outside the worker slots. It '
                                "reports one line to the system agent's inbox when done and ends.",
-             nouns=(Noun('agent', 'claude, codex or gemini; the default agent, dispatch_agent, when none is given.',
+             nouns=(Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',
                          required=False),
                     Noun('wait', 'true: answer once the agent has made its session, state running, or with why it '
                                  'did not start, state failed.', kind='bool', required=False),
                     Noun('text', 'The brief: what to do, where, and what to report back.', many=True)),
-             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_gemini'),
+             switches=('dispatch_agent', 'dispatch_claude', 'dispatch_codex', 'dispatch_antigravity'),
              examples=(('metaform dispatch helper -- "Find why the page freezes on a node click; report the cause."',
                         'Starts the default agent on the brief; its thread reads with dispatch sessions id=<work id>.'),),
              open_world=True),
@@ -7453,7 +7475,7 @@ MODULE = Module(
         Verb('raise', raise_issue, 'Raise an issue on a node: a sentinel investigates it and brings proposals to the chat; '
                                    'the person chooses one, and it becomes held tickets.',
              nouns=(Noun('node', 'The address of the part the issue is about.'),
-                    Noun('agent', 'claude, codex or gemini; the configured agent by default.', required=False),
+                    Noun('agent', 'claude, codex or antigravity; the configured agent by default.', required=False),
                     Noun('text', 'What is wrong, in the person\'s words.', many=True)),
              examples=(('metaform dispatch raise code.alarm.audible -- "The alarm plays twice when the timer ends."',
                         'Starts the sentinel on the alarm with that report.'),),
@@ -7480,12 +7502,12 @@ MODULE = Module(
                     Noun('node', 'The address of a node.', required=False),
                     Noun('session', 'An agent session, as <work id>:<session id>, or an agent\'s name for the latest '
                                     'session of that name.', required=False),
-                    Noun('agent', 'claude, codex or gemini.', required=False)), open_world=True),
+                    Noun('agent', 'claude, codex or antigravity.', required=False)), open_world=True),
         Verb('prep', prep, "Start an agent in a merge's worktree to prepare its code for the person's review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge is under review.'),), open_world=True,
              listed=merge_waits),
         Verb('run', run, 'Run one ticket\'s ACP session in this process until it ends. start runs it detached.',
-             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or gemini.'),
+             nouns=(Noun('id', 'The work id of the ticket.'), Noun('agent', 'claude, codex or antigravity.'),
                     Noun('prep', 'true: help the person prepare a merge under review, in its worktree, VIEW-044.',
                          kind='bool', required=False),
                     Noun('system', 'true: the person\'s system agent, a conversation with no ticket work.',
@@ -7508,7 +7530,7 @@ MODULE = Module(
                          required=False),
                     Noun('chosen', 'Jev\'s choice of model and effort, as JSON by ACP category, applied under the '
                                    'person\'s own.', required=False)),
-             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_gemini'), surfaces=('cli',), open_world=True,
+             switches=('dispatch_claude', 'dispatch_codex', 'dispatch_antigravity'), surfaces=('cli',), open_world=True,
              person_decides=starts_held, page="the ticket's Start agent on the board"),
         Verb('message', message, 'Send a person\'s message to the agent working a ticket.',
              nouns=(Noun('target_project', 'Registered destination project; defaults to this project. Replies retain their original project.', required=False),
@@ -7678,7 +7700,7 @@ MODULE = Module(
         Verb('options', options, 'List the settings each agent offers, its model, effort, mode and the rest, as it '
                                  'offered them at its last session in this project, and the ones dispatch_<agent>_<option> '
                                  'gives it. prime=true starts the agent once to read them, with no prompt.',
-             nouns=(Noun('agent', 'claude, codex or gemini; every agent when none is given.', required=False),
+             nouns=(Noun('agent', 'claude, codex or antigravity; every agent when none is given.', required=False),
                     Noun('prime', 'true: start the agent, read its options from session/new, and close it.',
                          kind='bool', required=False)),
              examples=(('metaform dispatch options', 'Lists what each agent offered, or how to find out.'),
@@ -7702,7 +7724,7 @@ MODULE = Module(
              effect='remove', open_world=True),
         Verb('login', login, 'Log an agent in through ACP authenticate, with the login method it offers; the person '
                              'only. With no method, it lists the methods.',
-             nouns=(Noun('agent', 'claude, codex or gemini.'),
+             nouns=(Noun('agent', 'claude, codex or antigravity.'),
                     Noun('method', 'The id of one of the agent\'s auth methods.', required=False)),
              examples=(('metaform dispatch login codex', 'Lists the ways Codex can log in, or uses its only one.'),),
              surfaces=('cli',), open_world=True),
@@ -7716,7 +7738,7 @@ MODULE = Module(
                                     "Zed, JetBrains IDEs and other ACP clients mount it. With an agent behind it, the "
                                     "conversation passes through with Metaform's MCP server added and is recorded, so "
                                     "the page shows and steers it; alone, it answers Metaform's commands.",
-             nouns=(Noun('agent', 'claude, codex or gemini to pass through, none for Metaform alone; '
+             nouns=(Noun('agent', 'claude, codex or antigravity to pass through, none for Metaform alone; '
                                   'dispatch_serve_agent when none is given.', required=False),
                     Noun('command', 'An ACP adapter command to pass through instead, after --.', required=False,
                          many=True)),

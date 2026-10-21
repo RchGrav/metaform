@@ -1937,7 +1937,7 @@ class Handler(BaseHTTPRequestHandler):
         running one is reused; `fresh`, /new on My agent with none running, resumes no earlier conversation."""
         agent, fresh = given.get('agent'), given.get('fresh')
         if agent is not None and (not isinstance(agent, str) or not agent):
-            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+            return self.send(400, {'error': 'The agent is claude, codex or antigravity.'})
         if fresh is not None and not isinstance(fresh, bool):
             return self.send(400, {'error': 'fresh is true or false.'})
         self.dispatched(given, 'system', [*([f'agent={agent}'] if agent else []), *(['fresh=true'] if fresh else [])])
@@ -1967,7 +1967,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'Say what is wrong, in your words.'})
         agent = given.get('agent')
         if agent is not None and (not isinstance(agent, str) or not agent):
-            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+            return self.send(400, {'error': 'The agent is claude, codex or antigravity.'})
         self.dispatched(given, 'raise', [node, *([f'agent={agent}'] if agent else [])], text.strip())
 
     def talk(self, given: dict[str, Any]) -> None:
@@ -2326,7 +2326,7 @@ class Handler(BaseHTTPRequestHandler):
         if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
             return self.send(400, {'error': 'The dispatch module is not enabled.', 'next': 'metaform enable dispatch'})
         if not isinstance(value, str) or not value:
-            return self.send(400, {'error': 'The default agent is claude, codex or gemini.'})
+            return self.send(400, {'error': 'The default agent is claude, codex or antigravity.'})
         try:
             settings.checked('dispatch_agent', value, folder, typed=True)
             settings.put('dispatch_agent', value, folder)
@@ -2341,7 +2341,7 @@ class Handler(BaseHTTPRequestHandler):
         agent, text, resume = given.get('agent'), given.get('text'), given.get('resume')
         chosen, name = given.get('map'), given.get('name')
         if agent is not None and (not isinstance(agent, str) or not agent):
-            return self.send(400, {'error': 'The agent is claude, codex or gemini.'})
+            return self.send(400, {'error': 'The agent is claude, codex or antigravity.'})
         if text is not None and not isinstance(text, str):
             return self.send(400, {'error': 'What the intake is for is text.'})
         if resume is not None and not isinstance(resume, bool):

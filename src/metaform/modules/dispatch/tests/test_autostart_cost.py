@@ -22,7 +22,7 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
     held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held ticket').id
     run('map', 'work', 'op=edit', f'id={held}', 'hold=true', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', 'glyph=kite', cwd=dispatch.folder)
-    run('map', 'work', 'op=edit', f'id={second}', 'eligible=["gemini"]', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={second}', 'eligible=["antigravity"]', cwd=dispatch.folder)
     calls = Counter()
     get = Store.__getattr__
 
@@ -43,7 +43,7 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
     monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: start(ctx))
     monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
     result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert result['started'] == [{'id': first, 'agent': 'claude'}, {'id': second, 'agent': 'gemini'}]
+    assert result['started'] == [{'id': first, 'agent': 'claude'}, {'id': second, 'agent': 'antigravity'}]
     # one read decides there is something to start, and one inside the write transaction counts and reserves
     assert calls['work'] == 2, 'selection must not reread work to obtain map settings'
 

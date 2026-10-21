@@ -218,7 +218,7 @@ def test_a_section_opens_as_a_menu_of_its_settings_and_lists_are_alphabetical(ho
             assert 'Agent options' in top and 'dispatch_claude_mode' not in [getattr(one, 'key', one) for one in top]
             screen.setting_index = top.index('Agent options')
             screen._edit()  # Enter opens the section: the agents
-            assert screen.entries == ['Claude Code', 'Codex', 'Gemini CLI']
+            assert screen.entries == ['Claude Code', 'Codex', 'Google Antigravity']
             screen._side(1)  # → opens the agent's options, each by its label
             assert [one.label for one in screen.entries] == ['Agent', 'Effort', 'Fast mode', 'Mode', 'Model']
             screen.setting_index = 3

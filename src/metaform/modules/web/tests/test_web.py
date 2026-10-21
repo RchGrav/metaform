@@ -7841,7 +7841,7 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     run('enable', 'dispatch')
     status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
-    assert status == 400 and 'claude, codex, gemini' in said['error'], said
+    assert status == 400 and 'claude, codex, antigravity' in said['error'], said
     for path in ('/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-interrupt', '/api/dispatch-permit',
                  '/api/dispatch-configure'):
         status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
@@ -7931,12 +7931,12 @@ def test_the_page_lists_the_agents_with_whether_each_is_found_and_sets_the_defau
     for read in ('dispatch-agents', 'dispatch-sessions', 'dispatch-claims'):  # a project not registered is said
         assert api(web, f'/api/{read}?project=gone')[0] == 404, read
     run('enable', 'dispatch')
-    run('set', '--dispatch-gemini', 'metaform-no-such-acp-adapter --acp', cwd=mapped)
+    run('set', '--dispatch-antigravity', 'metaform-no-such-acp-adapter --acp', cwd=mapped)
     status, said = api(web, '/api/dispatch-agents', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'default': 'claude'}))
     assert status == 200 and said['enabled'] and said['default'] == 'claude' and said['room'] >= 1, said
     found = {one['agent']: (one['label'], one['available'], one['default']) for one in said['agents']}
-    assert found['claude'] == ('Claude Code', True, True) and found['gemini'] == ('Gemini CLI', False, False)
+    assert found['claude'] == ('Claude Code', True, True) and found['antigravity'] == ('Google Antigravity', False, False)
     assert api(web, '/api/dispatch-agents?project=proj')[1]['default'] == 'claude'
     kept = json.loads(run('config', '--json', cwd=mapped).stdout)
     assert next(entry for entry in kept if entry['key'] == 'dispatch_agent')['value'] == 'claude'
@@ -7974,7 +7974,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     page.wait_for_selector('#dispatch:not([hidden])')
     page.click('#dispatch .agentpicker .choice > .btn')                 # the agents dispatch knows, VIEW-039
     assert page.eval_on_selector_all('.listbox:not([hidden]) [role=option]', 'found => found.map(one => [one.dataset.value, one.firstChild.textContent])') \
-        == [['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini CLI']]
+        == [['claude', 'Claude Code'], ['codex', 'Codex'], ['antigravity', 'Google Antigravity']]
     page.keyboard.press('Escape')
     assert page.eval_on_selector_all('#dispatch .ticket', 'found => found.map(one => one.dataset.id)') == [work]
     choose_agent(page, '#dispatch', 'codex')               # not the first, so the choice is what starts
@@ -11115,7 +11115,7 @@ def test_permission_requests_off_screen_pop_up_stacked_and_allow_all_answers_the
     run('enable', 'dispatch')
     run('set', '--no-dispatch-worktrees', cwd=mapped)
     works = {}
-    for agent in ('claude', 'codex', 'gemini'):
+    for agent in ('claude', 'codex', 'antigravity'):
         works[agent] = Store('proj').add_work(Node('element', 'code.alarm.audible'), None, task=f'Notes by {agent}').id
         env = {'FAKE_ACP_LOG': str(log), 'FAKE_ACP_MODE': 'ask', **({'FAKE_ACP_ASK_AGAIN': str(again)}
                                                                     if agent == 'claude' else {})}
@@ -11171,12 +11171,12 @@ def test_permission_requests_off_screen_pop_up_stacked_and_allow_all_answers_the
     page.click('#confirm button.confirm')
     assert logged_by(log, lambda entry: entry.get('permission', {}).get('outcome', {}).get('optionId') == 'allow')
     page.wait_for_function('() => !document.querySelector("#asking .stackcount")', timeout=30000)
-    assert 'gemini' in shown()
+    assert 'antigravity' in shown()
     again.touch()                                                      # the session's later request: no pop-up
     assert logged_by(log, lambda entry: 'permission_again' in entry)['permission_again']['outcome'] \
         == {'outcome': 'selected', 'optionId': 'allow'}
     page.wait_for_timeout(1500)
-    assert 'gemini' in shown() and page.locator('#asking .stackcount').count() == 0
+    assert 'antigravity' in shown() and page.locator('#asking .stackcount').count() == 0
     assert problems == []
 
 

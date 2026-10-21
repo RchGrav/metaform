@@ -44,10 +44,9 @@ modules available.
      metaform help provision prints it for other harnesses. Edits reach those files when metaform provision runs again;
      metaform uninstall removes the pointer. Must be present: the code requires it. -->
 <global_instructions>This system orchestrates work using Metaform. You must use its active features. Read them with `metaform help agents`, or the metaform_instructions tool.</global_instructions>
-<!-- The reminder that metaform install and metaform provision install as a hook: Claude Code shows it before each Agent,
-     Task, Workflow or AskUserQuestion call, Gemini CLI after invoke_agent, delegate_to_agent or ask_user. Edits reach the
-     hook when metaform provision runs again. Turned off for Gemini CLI with the setting gemini_reminder, then provision;
-     for Claude Code, metaform uninstall claude removes it. Must be present: the code requires it. -->
+<!-- The reminder that metaform install and metaform provision install as a Claude Code hook before Agent,
+     Task, Workflow or AskUserQuestion calls. Edits reach the hook when metaform provision runs again;
+     metaform uninstall claude removes it. Must be present: the code requires it. -->
 <work_reminder>If this hands work to an agent: give it map where &lt;address&gt; for the node its work is in, and tell it to record what it learns at that node.</work_reminder>
 <!-- Tells the agent to stop and submit a trouble report when it cannot continue. Printed near the end of the guide,
      followed by <debug>, only while the setting debug is on. Turned off with the setting debug, which is off by default.

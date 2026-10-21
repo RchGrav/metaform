@@ -12,7 +12,7 @@ what moved. The engine's page server looks at its own store for those events abo
 own loop, in its own process, and nothing in Metaform waits on a clock for a change.
 
 Each process the bridge starts for the engine is given the person's environment without the identity of a Metaform
-agent session, so no seat is mistaken for one, and with dispatch's own commands for claude, codex and gemini as the
+agent session, so no seat is mistaken for one, and with dispatch's own commands for claude, codex and antigravity as the
 engine's ACP agents, unless the person set `ROUNDTABLE_AGENT_<NAME>` themselves.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ import httpx
 from metaform import home, settings
 from metaform.module import Stop
 
-AGENTS = ('claude', 'codex', 'gemini')  # Metaform's own agents, seated through the engine's ACP client
+AGENTS = ('claude', 'codex', 'antigravity')  # Metaform's own agents, seated through the engine's ACP client
 IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_AUTHORED_ROLE',
             'METAFORM_LEASE')
 CALL_LIMIT = 180.0  # seconds one engine call has, its process start included: a deadline on one request

@@ -12,8 +12,8 @@ on every hour, so pinning keeps the entry as it was when it was pinned, in the M
 `agents/<id>/<version>/agent.json`, with a binary agent's archive checked against its sha256 and unpacked beside it.
 The agent then starts from that snapshot, the same version on every start, until the person pins another.
 
-Claude Code, Codex and Gemini CLI are dispatch's own agents, their `dispatch_<agent>` commands pinned to the registry's
-versions of claude-acp, codex-acp and gemini; `upgrades` names a newer registry version of each without changing what
+Claude Code, Codex and Google Antigravity are dispatch's own agents, their `dispatch_<agent>` commands pinned to the registry's
+versions of claude-acp, codex-acp and antigravity-acp; `upgrades` names a newer registry version of each without changing what
 the person set.
 
 `publication` writes the entry that would publish `metaform dispatch serve` to the registry, for review: it is checked
@@ -44,7 +44,7 @@ from metaform import home
 from metaform.module import Stop
 
 URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json'
-BUILTIN = {'claude': 'claude-acp', 'codex': 'codex-acp', 'gemini': 'gemini'}  # dispatch's own agents, by registry id
+BUILTIN = {'claude': 'claude-acp', 'codex': 'codex-acp', 'antigravity': 'antigravity-acp'}
 CACHE = 'acp-registry.json'  # the registry as last read, in the Metaform home
 FOLDER = 'agents'  # the pinned entries and unpacked binaries, in the Metaform home
 FETCH_LIMIT = 30.0  # seconds one read of the registry or one download may take
@@ -189,6 +189,8 @@ def _unpacked(data: bytes, archive: str, into: Path) -> None:
                     descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                     with os.fdopen(descriptor, 'wb') as output, packed.open(member) as source:
                         shutil.copyfileobj(source, output)
+                    if os.name != 'nt':
+                        target.chmod(0o600 | ((member.external_attr >> 16) & stat.S_IXUSR))
         return
     raw = into / Path(name).name  # a raw binary, kept under its own name
     home.write_private(raw, data)
@@ -250,6 +252,31 @@ def argv_of(held: dict[str, Any]) -> list[str]:
     return [str(held['path']), *held['args']]
 
 
+def adapter(pin_name: str) -> None:
+    """Run the shipped native ACP adapter at its exact version, installing it once under a home file lock.
+
+    The manifest is Google's ACP Registry entry, read 2026-10-21. Other versions must first be explicitly pinned
+    through dispatch registry; this path never selects a moving registry version or handles credentials.
+    """
+    matched = PIN.fullmatch(pin_name)
+    if matched is None or matched['id'] != BUILTIN['antigravity']:
+        raise Stop(f'{pin_name!r} is not a native adapter pin.', 'metaform dispatch agents')
+    agent, version = matched['id'], matched['version']
+    folder = folder_of(agent, version)
+    home.mkdir_private(folder)
+    with home.file_lock(folder / 'install.lock'):
+        held = snapshot(agent, version)
+        if held is None:
+            entry = cast(dict[str, Any], json.loads(resources.files(__package__ or 'metaform.modules.dispatch').joinpath(
+                'resources', 'registry', 'antigravity-acp.json').read_text(encoding='utf-8')))
+            if entry['version'] != version:
+                raise Stop(f'{pin_name} is not installed and is not the shipped native adapter.',
+                           f'metaform dispatch registry add={agent}')
+            held = pin(entry)
+    words = argv_of(held)
+    os.execvpe(words[0], words, {**os.environ, **environment(agent, version)})
+
+
 def command(agent: str, version: str) -> str:
     """The start command of a pinned agent, as a setting holds one; stops when this version was never pinned here."""
     held = snapshot(agent, version)
@@ -293,8 +320,10 @@ def check_pins(values: Any, folder: Path) -> list[str] | None:
 
 
 def builtin_command(agent: str, entry: dict[str, Any]) -> str | None:
-    """The pinned start command of one of dispatch's own agents at an entry's version, its npx package; None when the
+    """The pinned start command of one of dispatch's own agents at an entry's version, its package or native launcher; None when the
     entry offers none."""
+    if agent == 'antigravity' and way(entry) is not None:
+        return f'metaform dispatch adapter {entry["id"]}@{entry["version"]}'
     spec = cast(dict[str, Any], cast(dict[str, Any], entry.get('distribution') or {}).get('npx') or {})
     package = str(spec.get('package') or '')
     if not package:

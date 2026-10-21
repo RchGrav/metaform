@@ -53,7 +53,8 @@ IDENTITY = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE
 VOUCH = 'METAFORM_PAGE_VOUCH'  # the web server's secret, given to a command it runs for a write from its own page
 # The AI tools whose processes are agents, by the name they run as: the harnesses and the ACP adapters dispatch runs.
 HARNESSES = frozenset({
-    'claude', 'claude-code', 'claude-agent-acp', 'claude-code-acp', 'codex', 'codex-acp', 'gemini', 'gemini-cli',
+    'claude', 'claude-code', 'claude-agent-acp', 'claude-code-acp', 'codex', 'codex-acp', 'agy', 'antigravity',
+    'antigravity-acp', 'agy_acp_server.par', 'agy_acp_server', 'localharness_external',
     'opencode', 'cursor-agent', 'aider', 'goose', 'qwen', 'amp', 'copilot', 'crush', 'cline', 'droid', 'auggie'})
 # Programs that run another by its path or package name, whose next arguments name the program they run.
 LAUNCHERS = frozenset({'node', 'nodejs', 'bun', 'deno', 'npx', 'npm', 'pnpm', 'pnpx', 'yarn', 'bunx', 'uv', 'uvx'})

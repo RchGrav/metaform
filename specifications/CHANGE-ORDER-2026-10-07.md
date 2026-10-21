@@ -115,7 +115,7 @@ This is what ends the shuddering; item 2 makes it possible and does not do it. D
   of ACP, and it caused the 981 restarts and made working agents unreachable. BASE-052 amendment drafted.
 - Messages and answers reach a working agent through the adapter's steering (`_session/steering`, advertised at
   initialize by claude-agent-acp 0.86.0) when offered, else as the next prompt. The runner reads what each adapter
-  supports; Codex and Gemini adapters may not offer it.
+  supports; an adapter without steering receives the message as its next prompt.
 - `dispatch_worktrees` on by default. Each agent in its own worktree on a branch per ticket; a project with no
   origin is given one before its first agent starts.
 - The runner, not the agent, commits: a checkpoint on the ticket's branch at every step filed and at session end;
