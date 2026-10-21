@@ -16,11 +16,15 @@ pytestmark = [pytest.mark.req('BASE-052'), pytest.mark.req('VIEW-042'), pytest.m
 
 
 @pytest.mark.parametrize('board', ['repair-queue', 'verification-lab'])
-def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(dispatch, run, monkeypatch, board):
-    initialize(dispatch.folder)
-    assert git(dispatch.folder, 'branch', '-m', 'main').returncode == 0
-    original = git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
-    assert not git(dispatch.folder, 'remote').stdout.strip()
+@pytest.mark.parametrize('repository_present', [True, False], ids=['git', 'non-git'])
+def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
+        dispatch, run, monkeypatch, board, repository_present):
+    original = None
+    if repository_present:
+        initialize(dispatch.folder)
+        assert git(dispatch.folder, 'branch', '-m', 'main').returncode == 0
+        original = git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
+        assert not git(dispatch.folder, 'remote').stdout.strip()
     run('map', 'boards', 'op=add', f'name={board}', cwd=dispatch.folder)
     run('set', '--board', board, cwd=dispatch.folder)
     first = dispatch.id
@@ -58,18 +62,28 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
             assert gone([row['pid'] for row in sessions], limit=20)
             for work_id, receipt in zip((first, second), receipts, strict=True):
                 assert receipt['work_id'] == work_id and receipt['state'] == 'committed'
-                assert receipt['branch'] == branch_of(work_id)
-                assert receipt['head'] == git(receipt['worktree'], 'rev-parse', 'HEAD').stdout.strip()
                 assert receipt['evidence']['verification']['passed'] is True
                 assert receipt['evidence']['verification']['command'] == check
-                assert receipt['evidence']['artifacts'] == ['feature.txt']
-                assert f'Metaform-Ticket: {work_id}' in git(
-                    receipt['worktree'], 'log', '-1', '--format=%B').stdout
+                assert receipt['evidence']['repository'] is repository_present
+                if repository_present:
+                    assert receipt['branch'] == branch_of(work_id)
+                    assert receipt['head'] == git(receipt['worktree'], 'rev-parse', 'HEAD').stdout.strip()
+                    assert receipt['evidence']['artifacts'] == ['feature.txt']
+                    assert f'Metaform-Ticket: {work_id}' in git(
+                        receipt['worktree'], 'log', '-1', '--format=%B').stdout
+                else:
+                    assert receipt['head'] is None and receipt['branch'] == ''
+                    assert receipt['worktree'] == str(dispatch.folder)
+                    assert receipt['evidence']['artifacts'] == []
             one, two = (dispatch.store.ticket(work_id).work for work_id in (first, second))
             assert one.done <= two.taken, 'the dependent worker started before fault closure'
             assert not dispatch.store.where('code.engine').work
-            assert git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip() == original
-            assert not git(dispatch.folder, 'ls-tree', 'HEAD', '--', 'feature.txt').stdout
+            if repository_present:
+                assert git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip() == original
+                assert not git(dispatch.folder, 'ls-tree', 'HEAD', '--', 'feature.txt').stdout
+            else:
+                assert not (dispatch.folder / '.git').exists()
+                assert (dispatch.folder / 'feature.txt').read_text() == 'changed by the fake agent\n'
         finally:
             run('dispatch', 'stop-all', cwd=dispatch.folder)
             server.close_backgrounds()

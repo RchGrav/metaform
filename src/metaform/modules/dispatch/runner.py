@@ -172,6 +172,7 @@ from .merge import (
     checkpoint,
     commit_fault,
     complete_ticket,
+    deliver_nonrepository,
     deliver_shared,
     file_fingerprint,
     repository,
@@ -4901,12 +4902,22 @@ class Session:
         """Commit attributable linked files once, before completion releases the shared checkout."""
         held = self.acp['ticket_git']
         if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
-                or (held['result'] is not None and held['result']['committed']
+                or (held['result'] is not None and (held['result']['committed'] or held['result'].get('not_required'))
                     and not held['result']['why']):
             return
         record = await asyncio.to_thread(ticket, self.store, self.work_id)
         if record.outcome in ('cancelled', 'failed') or not (record.done or await asyncio.to_thread(
                 work_over, self.store, record)):
+            return
+        if not await asyncio.to_thread(repository, self.folder):
+            delivery = await self.write(deliver_nonrepository, self.ctx, self.store, self.work_id)
+            result = {'committed': None, 'pushed': False, 'conflict': False,
+                      'why': str(delivery.get('reason') or ''), 'not_required': True}
+            if held['result'] != result:
+                held['result'] = result
+                async with self.lock:
+                    await self.note('ticket-commit', 'commit', json.dumps(result, ensure_ascii=False))
+                    await self.save_state()
             return
         index = await self.places()
         files = {path: fingerprint for path, fingerprint in held['files'].items()

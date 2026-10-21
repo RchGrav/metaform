@@ -350,3 +350,5 @@ reuses the supervisor's earliest `retry_due` timer. Named ticket events update o
 cancellation, completion and removal cancel their deadlines. Pending reminders share one Board inbox batch.
 Triage reads recorded reasons, releases valid work when its reason no longer applies, and cancels only work
 established as invalid or superseded with evidence. Explicit person stops retain their launch authority.
+
+Projects without Git complete after verification. Their completion record explicitly states that no repository exists and contains no invented commit ID. A Git project cannot use this path to bypass its feature commit requirement.

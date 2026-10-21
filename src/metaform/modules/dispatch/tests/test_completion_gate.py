@@ -1,5 +1,6 @@
 """Worker completion requires a current saved commit with successful verification."""
 import asyncio
+import json
 import time
 
 import pytest
@@ -35,6 +36,18 @@ def test_worker_done_without_saved_commit_stays_open_and_names_missing_evidence(
     assert dispatch.store.complete_delivery(dispatch.id).done is None
     with Store('proj', module='map').tables(write=False) as tx:
         assert tx.get('ticket_settings', {'work_id': dispatch.id})['landed'] == held['landed']
+
+
+@pytest.mark.parametrize('role', ['worker', 'talk', None])
+def test_session_role_comes_from_saved_state_instead_of_session_columns(dispatch, role):
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'prior-session', 'work_id': dispatch.id, 'agent': 'codex',
+                                     'state': 'ended', 'started': '2026-10-21', 'seq': 1})
+        if role is not None:
+            tx.insert('session_lines', {'session_id': 'prior-session', 'work_id': dispatch.id,
+                                        'name': 'state', 'kind': 'state', 'text': json.dumps({'role': role}), 'seq': 1})
+    record = dispatch.store.finish_work(dispatch.id, 'Verified result.')
+    assert bool(record.done) == (role == 'talk')
 
 
 @pytest.mark.parametrize('reason', ['Verification failed.', 'Git commit failed.'])

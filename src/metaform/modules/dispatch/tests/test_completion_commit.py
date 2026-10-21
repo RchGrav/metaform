@@ -1,6 +1,7 @@
 """Completion commits use successful writes, linked deliverables and retained ownership evidence."""
 import asyncio
 import json
+import sys
 
 import pytest
 
@@ -26,6 +27,46 @@ def initialize(folder):
     (folder / 'peer.py').write_text('before\n')
     assert git(folder, 'add', '-A').returncode == 0
     assert git(folder, 'commit', '-qm', 'base').returncode == 0
+
+
+@pytest.mark.parametrize('check_passes', [False, True])
+def test_nonrepository_completion_records_verification_without_inventing_commit(dispatch, run, monkeypatch, check_passes):
+    check = f'"{sys.executable}" -c "raise SystemExit({0 if check_passes else 1})"'
+    run('set', f'--dispatch-test-command={check}', cwd=dispatch.folder)
+    made = session_for(dispatch)
+    made.acp['ticket_git'] = {'baseline': {'': 'not a git checkout'}, 'files': {}, 'result': None}
+
+    async def note(*args):
+        pass
+
+    monkeypatch.setattr(made, 'note', note)
+    monkeypatch.setenv('METAFORM_ROLE', 'worker')
+    dispatch.store.finish_work(dispatch.id, 'Verified nonrepository result.')
+    asyncio.run(made.commit_done())
+    assert bool(dispatch.ticket().done) == check_passes
+    assert made.acp['ticket_git']['result']['committed'] is None
+    assert made.acp['ticket_git']['result']['not_required'] is True
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        receipt = tx.get('merges', {'work_id': dispatch.id})
+    assert receipt['head'] is None
+    assert receipt['evidence']['repository'] is False
+    assert receipt['evidence']['verification']['passed'] is check_passes
+    if not check_passes:
+        monkeypatch.delenv('METAFORM_ROLE')
+        run('set', f'--dispatch-test-command="{sys.executable}" -c "raise SystemExit(0)"', cwd=dispatch.folder)
+        monkeypatch.setenv('METAFORM_ROLE', 'worker')
+        asyncio.run(made.commit_done())
+        assert dispatch.ticket().done
+
+
+def test_repository_cannot_bypass_feature_commit_with_nonrepository_delivery(dispatch):
+    from metaform.modules.dispatch.merge import deliver_nonrepository
+
+    initialize(dispatch.folder)
+    result = deliver_nonrepository(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id)
+    assert 'repository' in result['reason']
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        assert tx.get('merges', {'work_id': dispatch.id}) is None
 
 
 def test_shared_verification_cannot_certify_dirty_content_as_saved_commit(dispatch, run, monkeypatch):

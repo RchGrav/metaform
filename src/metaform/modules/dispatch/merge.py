@@ -14,7 +14,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from metaform.data import Node, Store, WorkRecord
 
@@ -420,17 +420,19 @@ def verify_commit(ctx: Any, folder: Path, record: WorkRecord, commit: str) -> di
             git(folder, 'worktree', 'remove', '--force', str(candidate))
 
 
-def _saved(store: Store, record: WorkRecord, folder: Path, branch: str, commit: str,
-           checked: dict[str, Any], since: str = '') -> dict[str, Any]:
+def _saved(store: Store, record: WorkRecord, folder: Path, branch: str, commit: str | None,
+           checked: dict[str, Any], since: str = '', *, repository_present: bool = True) -> dict[str, Any]:
     """Journal the candidate before closure so restart and repeated delivery retain its evidence."""
     own = Store(store.project_id, module='dispatch')
-    changed = git(folder, 'diff', '--name-only', '-z', since, commit) if since else git(
-        folder, 'diff-tree', '--no-commit-id', '--name-only', '--root', '-r', '-z', commit)
+    artifacts: list[str] = []
+    if commit:
+        changed = git(folder, 'diff', '--name-only', '-z', since, commit) if since else git(
+            folder, 'diff-tree', '--no-commit-id', '--name-only', '--root', '-r', '-z', commit)
+        artifacts = [path for path in changed.stdout.split('\0') if path]
     reason = '' if checked['passed'] else str(checked['output'] or 'Ticket verification failed.')
     row = {'work_id': record.id, 'branch': branch, 'worktree': str(folder),
            'state': COMMITTED if checked['passed'] else FAILED, 'reason': reason, 'head': commit,
-           'evidence': {'verification': checked,
-                        'artifacts': [path for path in changed.stdout.split('\0') if path]},
+           'evidence': {'repository': repository_present, 'verification': checked, 'artifacts': artifacts},
            'ready': time.time(), 'deadline': time.time(), 'seq': time.time_ns()}
     with own.tables() as tx:
         if tx.update('merges', {'work_id': record.id}, row) is None:
@@ -486,6 +488,9 @@ def in_force(store: Store, work_id: str) -> bool:
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
     if row is not None:
+        evidence = row['evidence']
+        if isinstance(evidence, dict) and cast(dict[str, Any], evidence).get('repository') is False:
+            return row['state'] == COMMITTED and not row['reason']
         if row['state'] != MERGED or row['reason']:
             return False
         from .activation import in_force as active
@@ -769,6 +774,15 @@ def deliver_shared(ctx: Any, store: Store, work_id: str, commit: str = '') -> di
         return {'work_id': work_id, 'why': "Save this ticket's feature commit before completion."}
     return _saved(store, record, project, dev_branch(project) or '', commit,
                   verify_commit(ctx, project, record, commit))
+
+
+def deliver_nonrepository(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
+    """Verify work without a repository, retaining that fact instead of inventing a commit."""
+    project = Path(store.project().path)
+    if repository(project):
+        return {'reason': 'This project has a repository. Save its verified feature commit.'}
+    record = store.ticket(work_id).work
+    return _saved(store, record, project, '', None, verification(ctx, project, record), repository_present=False)
 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:

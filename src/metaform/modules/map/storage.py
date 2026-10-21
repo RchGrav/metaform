@@ -581,13 +581,6 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     if column == "backlog" and row["task"] not in CONVERSATION_TASKS:
         _remember_hold(tx, work_id, validate_hold_reason(hold_reason))
     notices: list[Notice] = []
-    proof = _proof(tx, work_id)
-    if column == "done" and row["done"] is None:
-        missing, delivery = _delivery_state(tx, work_id)
-        if delivery and row["condition"] in ("broken", "trouble") and proof is None:
-            prove_work(tx, work_id)
-        if missing:
-            return _landed(tx, row, row["resolution"], notices, missing=missing)
     _ticket_changed(tx, work_id)
     reopened = row["done"] is not None and column != "done"
     if column in ("todo", "backlog"):
@@ -671,17 +664,10 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     if row["done"] is not None:
         notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
-    proof = _proof(tx, work_id)
     if isinstance(why, str) and why.strip():
         tables = tx.tables()
         if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
             tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
-    if ended == "completed":
-        missing, delivery = _delivery_state(tx, work_id)
-        if delivery and row["condition"] in ("broken", "trouble") and proof is None:
-            prove_work(tx, work_id)
-        if missing:
-            return _landed(tx, row, _work_text(resolution, "resolution", notices), notices, missing=missing)
     _ticket_changed(tx, work_id)
     tx.execute(
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
@@ -699,34 +685,6 @@ def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
         return work_record(tx, row)
     return finish_work(tx, work_id, row["resolution"], proven=True)
 
-
-def _delivery_state(tx: Tx, work_id: str) -> tuple[tuple[str, ...], bool]:
-    """Read saved commit and verification evidence without running Git inside map transactions."""
-    if page_vouched():
-        return (), False  # an explicit human board action can close stale or superseded work
-    settings = tx.tables().get("ticket_settings", {"work_id": work_id})
-    required = bool(dispatched()) or bool(settings and (settings["proof"] or settings["landed"]))
-    try:
-        with Store(tx.project_id, module="dispatch").tables(write=False) as tables:
-            receipt = tables.get("merges", {"work_id": work_id})
-            if receipt is None and not required:
-                required = any(row["role"] == "worker" for row in tables.rows(
-                    "agent_sessions", {"work_id": work_id}, limit=0).results)
-    except StoreError:
-        receipt = None
-    needed = "Save this ticket's own verified feature commit with its completion evidence."
-    if receipt is None:
-        return ((needed,) if required else ()), required
-    evidence = receipt["evidence"]
-    verification = cast(dict[str, Any], evidence).get("verification") if isinstance(evidence, dict) else None
-    if receipt["state"] not in ("committed", "merged") or not receipt["head"] \
-            or not isinstance(verification, dict) or cast(dict[str, Any], verification).get("passed") is not True:
-        return (str(receipt["reason"] or needed),), True
-    staged = datetime.fromisoformat(str(settings["landed"])) \
-        if settings is not None and settings["landed"] else None
-    if staged is None or float(receipt["ready"]) < staged.timestamp():
-        return ("Verify this ticket's current saved commit. The previous completion record is older than this result.",), True
-    return ((str(receipt["reason"]),) if receipt["reason"] else ()), True
 
 
 def remove_work(tx: Tx, work_id: str) -> dict[str, Any]:
