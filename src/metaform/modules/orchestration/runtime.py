@@ -131,34 +131,27 @@ def _candidates(catalog: Mapping[str, Any], task_type: str,
     return choices
 
 
-def rejection(choice: Mapping[str, Any], catalog: Mapping[str, Any],
-              overrides: Mapping[str, Any] | None = None) -> str:
-    """Why a supplied choice was not recorded, and what this ticket offers for its task type."""
-    task_type = choice.get('task_type')
+def rejection_reason(choice: Mapping[str, Any], catalog: Mapping[str, Any],
+                     overrides: Mapping[str, Any] | None = None) -> str | None:
+    """Explain the first invalid field using the same policy as runtime selection."""
+    task_type, confidence = choice.get('task_type'), choice.get('confidence')
     if not isinstance(task_type, str) or task_type not in TASKS:
-        return f'task_type is one of: {", ".join(TASKS)}.'
-    offered: dict[str, tuple[dict[str, None], dict[str, None]]] = {}
-    for one in _candidates(catalog, task_type, overrides).values():
-        models, efforts = offered.setdefault(one['agent'], ({}, {}))
-        models[one['model']] = efforts[one['effort']] = None
-    if not offered:
-        return f'No offered agent, model and effort fits task_type {task_type}.'
-    listed = '; '.join(f'{agent} with model {", ".join(models)} and effort {", ".join(efforts)}'
-                       for agent, (models, efforts) in offered.items())
-    return f'For task_type {task_type}: {listed}. confidence is 0 to 1; reason is a non-empty sentence.'
+        return f"task_type: unknown value. Choose one of: {', '.join(TASKS)}."
+    if (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
+            or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+        return 'confidence: expected a finite number within 0..1.'
+    key = json.dumps([choice.get('agent'), choice.get('model'), choice.get('effort')], separators=(',', ':'))
+    if key not in _candidates(catalog, task_type, overrides):
+        return f'agent/model/effort: combination not offered for task_type {task_type} under ticket overrides.'
+    if not isinstance(choice.get('reason'), str) or not choice['reason'].strip():
+        return 'reason: expected non-empty text.'
+    return None
 
 
 def _validated(choice: Mapping[str, Any], catalog: Mapping[str, Any], decider: str,
                overrides: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
-    task_type, confidence = choice.get('task_type'), choice.get('confidence')
-    if (not isinstance(task_type, str) or task_type not in TASKS or isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))):
+    if rejection_reason(choice, catalog, overrides) is not None:
         return None
-    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
-        return None
-    key = json.dumps([choice.get('agent'), choice.get('model'), choice.get('effort')], separators=(',', ':'))
-    candidates = _candidates(catalog, str(task_type), overrides)
-    if key not in candidates or not isinstance(choice.get('reason'), str) or not choice['reason'].strip():
-        return None
-    return {**candidates[key], 'decider': decider, 'confidence': float(confidence),
-            'task_type': task_type, 'reason': choice['reason']}
+    return {**{key: choice[key] for key in ('agent', 'model', 'effort')},
+            'decider': decider, 'confidence': float(choice['confidence']),
+            'task_type': choice['task_type'], 'reason': choice['reason']}

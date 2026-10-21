@@ -412,8 +412,12 @@ class Orchestration:
             raise Stop(f'The choice was not recorded. {rejection(fallback, catalog, overrides)}',
                        f'metaform orchestration runtime work={work_id} choice=<choice>')
         if chosen is None:
-            return {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog, 'task_types': TASKS,
-                    'strengths': strengths_of(ctx, catalog)}
+            from .runtime import TASKS, rejection_reason, strengths_of
+            needed = {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog,
+                      'strengths': strengths_of(ctx, catalog), 'task_types': dict(TASKS)}
+            if fallback is not None:
+                needed['reason'] = rejection_reason(fallback, catalog, overrides)
+            return needed
         chosen['task_fingerprint'] = current
         saved = transport.keep_runtime(ctx, work_id, chosen)
         return {'state': 'selected', 'choice': saved}
