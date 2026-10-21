@@ -5280,6 +5280,12 @@ def stop(ctx: Context) -> dict[str, Any]:
             raise
         stopped_work = owner.stopped(ctx, work_id=str(ctx.nouns['id']), by='user')
         persons_stopped(store, stopped_work)
+        # a ticket the sessionless specialist owner held, waiting for its role, goes back to wait: the person's stop
+        # ended that delivery, so nothing holds it (2026-10-20)
+        for work in stopped_work:
+            record = ticket(store, work)
+            if record.taken and record.taken_by == f'Specialist {work}' and not record.done:
+                store.move_work(work, 'backlog' if record.held else 'todo', kept=True)
         held = paused(ctx, store, None)
         ended: list[dict[str, Any]] = []
         for child in sessions(store, verify=False):

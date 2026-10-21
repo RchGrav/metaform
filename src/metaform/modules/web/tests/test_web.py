@@ -7673,11 +7673,16 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
     status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
     assert status == 400 and 'claude, codex, gemini' in said['error'], said
-    for path in ('/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-stop', '/api/dispatch-interrupt',
-                 '/api/dispatch-permit', '/api/dispatch-configure'):
+    for path in ('/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-interrupt', '/api/dispatch-permit',
+                 '/api/dispatch-configure'):
         status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
                            body=json.dumps({'project': 'proj', **given[path]}))
         assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
+    # the person's Stop on a ticket no agent runs still names its delivery: its recorded assignment and descendants
+    # are cancelled and nothing starts in their place (orchestration, kept 2026-10-20)
+    status, said = api(web, '/api/dispatch-stop', method='POST', headers={**as_json, 'Origin': own},
+                       body=json.dumps({'project': 'proj', **given['/api/dispatch-stop']}))
+    assert status == 200 and said['stopped'] is True and said['work_id'] == work, said
     status, said = api(web, '/api/dispatch-broadcast', method='POST', headers={**as_json, 'Origin': own},
                        body=json.dumps({'project': 'proj', **given['/api/dispatch-broadcast']}))
     assert status == 400 and said['error'] == 'No agent is working on this project.', said
