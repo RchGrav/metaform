@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-10-21 — The Facilitator's commission names the ticket
+
+- A Facilitator's commission carries the request id, the proposed role name and the ticket's number, nothing of the ticket's content: the Facilitator reads the ticket itself for its text, note and functional context. The commission had copied the task, the note and the functional graph; one note of 1.9 MB copied whole made the commission the heaviest ticket on the board and was read by every surface that listed it (2026-10-20).
+
 ## 2026-10-20 — Automatic specialist fallback
 
 - Missing JEV keys, unavailable credits/providers and uncertain decisions directly commission the Facilitator instead of leaving a triage notice.

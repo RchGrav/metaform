@@ -17,7 +17,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from metaform import home
-from metaform.data import Column, Index, Node, Store, Table, Tables, TableTx, WorkRecord, functional_context
+from metaform.data import Column, Index, Node, Store, Table, Tables, TableTx, WorkRecord
 from metaform.module import (
     Context,
     Stop,
@@ -38,7 +38,6 @@ HELP = 'metaform help orchestration'
 ENDED = frozenset(('returned', 'delivered', 'failed', 'stopped', 'transferred'))
 ACTIVE = ('queued', 'running', 'waiting', 'blocked', 'suspended', 'interrupted')
 FACILITATORS = ('metaform://role/facilitator', 'metaform://role/role_creator')
-NOTE_CARRIED = 4000  # characters of a ticket's note a commission's task carries
 
 
 def now() -> str:
@@ -910,18 +909,14 @@ class Orchestration:
     @staticmethod
     def _commission(tx: TableTx, store: Store, owner: Mapping[str, Any],
                     request: Mapping[str, Any]) -> dict[str, Any]:
-        # Ticket text is included once; ids carry the continuation, not copies of every field. The ticket's note is
-        # cut to NOTE_CARRIED: one note of 1.9 MB, copied whole into its commission's task, made that ticket the
-        # heaviest on the board (2026-10-20); the Facilitator reads the ticket by its id for the rest.
-        record = store.ticket(str(owner['work_id'])).work
-        graph = functional_context(store, record)
-        note = record.note if isinstance(record.note, str) and len(record.note) <= NOTE_CARRIED else (
-            (record.note or '')[:NOTE_CARRIED] + f'… (cut; read the ticket {owner["work_id"]} for the whole)')
-        task = json.dumps({'request': {'request_id': request['request_id'], 'role': request['role'] or None,
-                                      'task': request['task'], 'functional_locations': request['functional_locations']},
-                           'ticket': str(owner['work_id']), 'note': note,
-                           'function': {key: value for key, value in graph.items() if key != 'markdown'}},
-                          ensure_ascii=False)
+        # The commission names the ticket by its number and carries nothing of its content: the Facilitator reads the
+        # ticket itself for its text, note and functional context. A copy grew with the ticket (one note of 1.9 MB,
+        # copied whole, made the commission the heaviest ticket on the board, 2026-10-20) and was read by every surface
+        # that listed the commission, while the ticket is one read away.
+        work_id = str(owner['work_id'])
+        numbered = store.numbers_of('work', [work_id]).get(work_id)
+        task = json.dumps({'request': {'request_id': request['request_id'], 'role': request['role'] or None},
+                           'ticket': numbered[0] if numbered else work_id}, ensure_ascii=False)
         node, places = location(store, None, owner)
         work = store.add_work(node, None, task=task, title=f'Create specialist role {request["role"] or "for this ticket"}')
         creator = new_assignment(tx, work, 'facilitator', parent=owner, task=task,
