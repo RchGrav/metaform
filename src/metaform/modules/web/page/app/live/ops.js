@@ -350,7 +350,10 @@ export async function ticketsChanged() {
 }
 export function boardFromTickets() {
   if ($('#board').hidden || !S.tickets) return;
-  B.tickets = boardTickets(S.tickets);
+  // S.tickets holds the open tickets only (load.js reads open: true); the done ones the board's own read brought in
+  // are kept, or the first live change empties Done (2026-10-21)
+  const live = new Set(S.tickets.map(ticket => ticket.id));
+  B.tickets = boardTickets([...B.tickets.filter(ticket => ticket.done && !live.has(ticket.id)), ...S.tickets]);
   drawBoard();
 }
 /* Each node's open work as the map read gives it, MAP-050: the states its open records hold, in row order, then what
