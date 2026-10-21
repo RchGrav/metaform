@@ -39,7 +39,10 @@ const shortName = (address, length) => {
 };
 function layerInView(layerId) {
   const layer = S.layers.find(item => item.id === layerId);
-  if (!layer || !layer.ready) return null;
+  if (!layer) return null;
+  // while an intake is followed the map shows its layer alone, building: its ops apply, every other layer's wait
+  if (following()) return layer.name === LIVE.layer ? layer : false;
+  if (!layer.ready) return null;
   if (layer.kind === 'base') return layer;
   const shown = S.view === null ? layer.on : S.view.has(layer.name);
   return shown ? layer : false;
@@ -73,7 +76,7 @@ function heldOf(ids) {
   });
 }
 export async function appliedOps() {
-  if (following() || !S.whole || typeof S.seq !== 'number') return false;
+  if (!S.whole || typeof S.seq !== 'number') return false;  // a map drawn whole, with the sequence it was drawn at
   const ops = await read('ops', {after: S.seq, limit: 0});
   if (!Array.isArray(ops) || !ops.length) return true;  // nothing of the map changed, so nothing is drawn
   if (ops.every(noted)) {  // what is said of a layer changed, not what is drawn: its record and its chip, no map read

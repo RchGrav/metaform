@@ -31,13 +31,18 @@ export const LIVE = {layer: null, base: null, seen: '', busy: false, again: fals
   drawn: -Infinity, brief: false, left: null, bases: false, intake: false};
 export const following = () => LIVE.layer !== null && S.base === LIVE.base;
 export async function loadLive() {
-  const page = await read('layer-graph', {layer: LIVE.layer});
+  // the sequence first, then the layer: an op written between the two is applied again, which changes nothing, and
+  // the ops after it are applied as the map's own are, `appliedOps`, instead of this whole read and redraw on every
+  // batch of records (2026-10-20: a reload and both maps redrawn every few seconds through an intake)
+  const [seq, page] = await Promise.all([read('sequence'), read('layer-graph', {layer: LIVE.layer})]);
   const text = JSON.stringify(page);
   if (text === LIVE.seen || !following()) return;
   LIVE.seen = text;
   S.elements = new Map(page.elements.map(entry => [entry.element.id, entry]));
   S.joins = page.joins.map(withProviders);
   S.items = new Map();
+  S.whole = {elements: S.elements, joins: S.joins};
+  S.seq = seq;
   draw3D(); renderLegend();
   drawIntake();  // the bar over the map counts the parts recorded so far
   await build2D();
@@ -333,6 +338,12 @@ async function readAgain() {
   const asked = intake || LIVE.layer !== null || intakeRunning();
   if (asked) {
     const found = await building();
+    // still following the same layer, and the batch is ops: the records since the sequence drawn are applied
+    if (found && found.layer === LIVE.layer && following() && opsOnly(named) && await appliedOps()) {
+      drawIntake();  // the bar over the map counts the parts recorded so far
+      await ticketsChanged();
+      return;
+    }
     if (found || LIVE.layer) { await follow(found); return; }
   }
   // the project's metaforms changed: show the active one, as on opening; else the ops since the drawn sequence,
