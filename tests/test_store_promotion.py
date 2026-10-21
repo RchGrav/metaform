@@ -183,13 +183,13 @@ def test_a_layout_20_store_is_read_into_the_log_and_the_old_file_is_kept_whole(h
     log.forget(path)
     before = dump(path)
     with open_store(path, write=False) as db:
-        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '21'
+        assert db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '23'
         assert {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")} >= {'ops', 'objects'}
-    kept = list((home / 'backups' / 'upgrade-21').glob('*/*/*.sqlite3'))
+    kept = list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.sqlite3'))
     assert len(kept) == 1 and dump(kept[0]) == before  # the old file, whole, never changed in place
     with open_store(path, write=False):
         pass
-    assert len(list((home / 'backups' / 'upgrade-21').glob('*/*/*.sqlite3'))) == 1
+    assert len(list((home / 'backups' / f'upgrade-{SCHEMA_VERSION}').glob('*/*/*.sqlite3'))) == 1
     assert store.history(original.id).to_dict() == history  # every version, in order
     assert store.where('stakeholder.cook.home').to_dict() == held
     assert store.promote_join(original.id, 'code.delivery').element == 'code.delivery'

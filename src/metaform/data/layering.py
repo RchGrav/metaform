@@ -13,6 +13,7 @@ projection, appended to the log at commit, STORE-046.
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -20,7 +21,7 @@ from .. import home
 from ..errors import StoreError
 from . import names, operations, rows, versions, views, writes
 from .ids import LAYER_NAME, TAG, is_id, new_id
-from .records import Layer, Notice, Outcome, Version
+from .records import Layer, Node, Notice, Outcome, Version
 from .selection import LayerRow, all_layers
 from .session import Tx
 from .versions import BASE_KINDS
@@ -370,6 +371,38 @@ def refine(tx: Tx, thing: str, changes: dict[str, Any] | None = None, *, remove:
     written = next(version for version in tx.base.versions[thing] if version.seq == made.seq)
     record = views.version(tx, kind, thing, written)
     return dataclasses.replace(record, notices=tuple(notices))
+
+
+def notes_beside(tx: Tx, reason: str, by: str) -> dict[str, Any]:
+    """Every note a current element or join of the base still holds, written before notes went beside it, moved to
+    its one item of the notes layer, layout 23: added there, or put before the note an item there already holds, and
+    the base's note cleared as a new version, so its history keeps the old text. Returns the counts and the ids moved,
+    never the text."""
+    report: dict[str, Any] = {'notes': 0, 'added': 0, 'merged': 0, 'moved': []}
+    noted = [(kind, ident, version) for kind in ('element', 'join') for ident, version in tx.base.currents(kind)
+             if versions.of_base(tx.base, version.layer_id) and str(version.fields.get('note') or '').strip()]
+    if not noted:
+        return report
+    made = create(tx, versions.NOTES_LAYER, versions.NOTES_MODULE, versions.NOTES_VARIABLE, kind='layer',
+                  mutable=True, hideable=True, ready=True)
+    held = {(str(version.fields['target_kind']), str(version.fields['target_id'])): (ident, version)
+            for ident, version in tx.base.currents('item', layer_id=made.id)}
+    for kind, ident, version in noted:
+        note = str(version.fields['note'])
+        beside = held.get((kind, ident))
+        if beside is None:
+            writes.add_item(tx, made.name, Node.of(kind, ident), note)
+            report['added'] += 1
+        else:
+            kept = json.loads(str(beside[1].fields['value']))
+            if note not in str(kept):
+                writes.edit(tx, beside[0], {'value': f'{note}\n\n{kept}'})
+            report['merged'] += 1
+        tx.emit('change', kind, ident, version.layer_id, {
+            'mode': 'version', 'reason': reason, 'evidence': None, 'by': by, **version.fields, 'note': None})
+        report['moved'].append(f'{kind}:{ident}')
+    report['notes'] = len(noted)
+    return report
 
 
 # Growing the base -----------------------------------------------------------------------------------------

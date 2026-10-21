@@ -26,7 +26,7 @@ from .records import ROLES, Element, Item, Join, Node, Notice, Outcome, Property
 from .rows import Row
 from .selection import LayerRow, all_layers
 from .session import Tx
-from .versions import BASE_KINDS
+from .versions import BASE_KINDS, NOTES_LAYER
 
 RecordT = TypeVar('RecordT', Element, Join, Item, Property, Version)
 
@@ -342,17 +342,14 @@ def split_changes(kind: str, changes: dict[str, Any], notices: list[Notice]) -> 
     return allowed
 
 
-BESIDE = 'critic'  # the layer a note about a part of the base goes in, the intake module's critic layer
-
-
 def base_only(kind: str, found: LayerRow, allowed: dict[str, Any], notices: list[Notice]) -> dict[str, Any]:
     """The changes a thing of the base takes: the base holds RE, PE, OP and EF only, Rich's rule of 2026-10-12, so a
     note written to an element or join of the base is named in a notice and not applied. Clearing one is applied, so
     a note written before the rule can leave the base."""
     if found.kind not in BASE_KINDS or kind not in ('element', 'join') or not allowed.get('note'):
         return allowed
-    notices.append(Notice('note', f'The base holds RE, PE, OP and EF only; a note goes to layer {BESIDE} at the same '
-                                  f'{kind}: metaform map knowledge op=add-item layer={BESIDE} node={kind}:<id> '
+    notices.append(Notice('note', f'The base holds RE, PE, OP and EF only; a note goes to layer {NOTES_LAYER} at the same '
+                                  f'{kind}: metaform map knowledge op=add-item layer={NOTES_LAYER} node={kind}:<id> '
                                   'value=<note>. note was not applied.'))
     return {key: value for key, value in allowed.items() if key != 'note'}
 

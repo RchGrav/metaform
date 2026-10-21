@@ -327,6 +327,60 @@ def test_layout_22_makes_every_ref_of_the_sources_layer_a_record_and_keeps_the_o
 
 
 @pytest.mark.req('MAP-020')
+@pytest.mark.req('STORE-029')
+def test_layout_23_moves_every_note_of_the_base_beside_it_once_and_keeps_the_old_text_in_history(home, store):
+    import json
+
+    from metaform.data import NOTES_LAYER, NOTES_MODULE, NOTES_VARIABLE, log
+    from metaform.data.session import Tx
+    from metaform.data.upgrade import notes_to_layer
+    _, _, inner = small_map(store)
+    notes = store.layer(NOTES_LAYER, NOTES_MODULE, NOTES_VARIABLE, kind='layer', mutable=True, hideable=True,
+                        ready=True)
+    store.add_item(notes.name, Node('join', inner.id), 'new note beside')
+    path = store_file(home, store)
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute('BEGIN IMMEDIATE')  # notes as code before the rule wrote them into the base, at layout 22
+        tx = Tx(db, None, '', True, base=log.load(db))
+        kitchen = tx.base.element_at('code.timer.kitchen')
+        for kind, ident, note in (('element', kitchen, 'private path /home/x/secret'), ('join', inner.id, 'old')):
+            version = tx.base.current(ident)
+            tx.emit('change', kind, ident, version.layer_id, {'mode': 'version', 'reason': None, 'evidence': None,
+                                                              **version.fields, 'note': note})
+        log.append(db, tx.pending, '2026-10-15T00:00:00Z')
+        db.execute("UPDATE meta SET value='22' WHERE key='schema_version'")
+        db.execute('COMMIT')
+    finally:
+        db.close()
+    assert store.element('code.timer.kitchen', raw=True).note is None  # opening upgrades it, under its lock
+    assert store.joins('code.timer.kitchen', raw=True).results[0].note is None
+    assert values(store.node(Node('element', kitchen), raw=True), NOTES_LAYER) == ['private path /home/x/secret']
+    assert values(store.node(Node('join', inner.id), raw=True), NOTES_LAYER) == ['old\n\nnew note beside']
+    db = sqlite3.connect(path, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    try:
+        version = db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        kept = db.execute("SELECT count(*) FROM ops WHERE json_extract(data, '$.note') = ?",
+                          ('private path /home/x/secret',)).fetchone()[0]
+        after = log.load(db)
+        db.execute('BEGIN IMMEDIATE')
+        again = notes_to_layer(db)
+        db.execute('COMMIT')
+    finally:
+        db.close()
+    assert version == '23'
+    assert kept == 1  # the history keeps the old text, LAYER-026
+    assert not [ident for kind in ('element', 'join') for ident, held in after.currents(kind) if held.fields.get('note')]
+    assert again['notes'] == 0  # run again, it finds nothing to move
+    [report] = (home / 'backups' / 'upgrade-23').glob('*/*/notes-layout-23.json')
+    counted = json.loads(report.read_text(encoding='utf-8'))
+    assert (counted['notes'], counted['added'], counted['merged']) == (2, 1, 1)
+    assert 'secret' not in report.read_text(encoding='utf-8')
+
+
+@pytest.mark.req('MAP-020')
 def test_a_join_reads_back_every_field_as_written(store):
     layer = knowledge(store, 'full')
     store.add_element(layer.name, 'code.a')
@@ -419,7 +473,7 @@ def test_a_join_holds_its_elements_in_rows_of_their_own_and_a_joins_identity_hol
     assert {op['data']['type'] for op in joins} == {'purpose'}  # MAP-054 adds the optional promotion address.
     assert sum(len(op['data']['held']) for op in joins) == 3  # a join holds its elements in order, STORE-046
     assert all(set(op['data']) >= {'type', 'receiver', 'purpose', 'ef', 'ifd', 'element', 'held'} for op in joins)
-    assert version == '22'
+    assert version == '23'
     assert 'correction_stack' not in tables
 
 

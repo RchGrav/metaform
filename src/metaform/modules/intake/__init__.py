@@ -35,6 +35,9 @@ from typing import Any, BinaryIO, Literal, cast
 
 from metaform import home, prompt_files, settings
 from metaform.data import (
+    NOTES_LAYER,
+    NOTES_MODULE,
+    NOTES_VARIABLE,
     Column,
     Element,
     GraphPage,
@@ -160,9 +163,8 @@ Notices = list[dict[str, str]]
 ADDRESS = 'namespace_address'  # the element's address, named as in the metaform's shape, MAP-040
 SOURCES = 'sources'  # the layer an element's refs go in
 # the layer a note given without a condition goes in, beside the map: the base holds RE, PE, OP and EF only, and
-# everything else said about a part is critic content, Rich's rule of 2026-10-12
-CRITIC = 'critic'
-NOTED = 'What the intake noted beside the map'  # the critic layer's variable; the map module declares it the same way
+# everything else said about a part is critic content, Rich's rule of 2026-10-12; the store moves older base notes there
+CRITIC = NOTES_LAYER
 # the layer an ok goes in: a part the intake checked and found doing its job, one item at its element or join, so the
 # read-back tells it from a part never checked, ticket 97085c0e; never a work record, since a part that works is no work
 CHECKED = 'checked'
@@ -622,7 +624,7 @@ def _beside(rec: Recording, kind: Literal['element', 'join'], thing_id: str, not
     """A note given with an element or a purpose record, as its one item of the critic layer, replacing what that item
     held: the base holds RE, PE, OP and EF only, so a note is kept beside it, never in it."""
     store = rec.store
-    made = store.layer(CRITIC, 'intake', NOTED, kind='layer', mutable=True, hideable=True, ready=True)  # read at once
+    made = store.layer(CRITIC, NOTES_MODULE, NOTES_VARIABLE, kind='layer', mutable=True, hideable=True, ready=True)  # read at once
     held = [item for item in store.layer_items(made.name, Node(kind, thing_id), limit=0).results
             if isinstance(item, Item)]
     if held:
@@ -1046,18 +1048,15 @@ NOTHING = 'No intake is being recorded. intake start begins one.'
 
 
 def _element_entry(found: Element, note: str | None = None) -> dict[str, Any]:
-    """An element as the read-back shows it, with its note from the critic layer, or the one a base written before
-    notes went beside it still holds."""
+    """An element as the read-back shows it, with its note from the critic layer; the base holds none, layout 23."""
     entry = {ADDRESS: found.address, 'short_name': found.short_name, 'name_length': found.name_length,
              'name': found.name, 'role': found.role}
-    note = note or found.note
     return {**entry, **({'note': note} if note else {})}
 
 
 def _join_entry(held: Join, note: str | None = None) -> dict[str, Any]:
     entry = {'receiver': held.receiver_address, 'type': held.type, 'purpose': held.purpose, 'ef': held.ef,
              'ifd': held.ifd, 'elements': [each.address for each in held.elements]}
-    note = note or held.note
     return {**entry, 'note': note} if note else entry
 
 

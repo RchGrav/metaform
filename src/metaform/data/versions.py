@@ -11,6 +11,11 @@ from .projection import OBJECT_KINDS, Projection, Version
 from .records import Notice
 
 BASE_KINDS = ('base',)
+# The layer a note about a part of the base goes in, as the intake module declares it: the base holds RE, PE, OP and
+# EF only, Rich's rule of 2026-10-12, so a note is kept beside it. The DAO's refusal, the intake and layout 23 read it.
+NOTES_LAYER = 'critic'
+NOTES_MODULE = 'intake'
+NOTES_VARIABLE = 'What the intake noted beside the map'
 ORDER = OBJECT_KINDS
 
 
@@ -31,7 +36,7 @@ def own_version(base: Projection, thing_id: str) -> Version | None:
     return added[-1] if added else None
 
 
-def _of_base(base: Projection, layer_id: str) -> bool:
+def of_base(base: Projection, layer_id: str) -> bool:
     layer = base.layers.get(layer_id)
     return layer is not None and layer.kind in BASE_KINDS
 
@@ -43,12 +48,12 @@ def orphaned_by(base: Projection, kind: str, thing_id: str) -> list[Notice]:
         joins = sorted(set(base.joins_received(thing_id)) | set(base.joins_holding(thing_id)))
         for join_id in joins:
             version = base.current(join_id)
-            if version is not None and _of_base(base, version.layer_id):
+            if version is not None and of_base(base, version.layer_id):
                 notices.append(Notice(join_id, f'Element {thing_id} was removed; join {join_id} still points at it '
                                                'and is orphaned.'))
         for property_id in base.properties_of(thing_id):
             version = base.current(property_id)
-            if version is not None and _of_base(base, version.layer_id):
+            if version is not None and of_base(base, version.layer_id):
                 notices.append(Notice(property_id, f'Element {thing_id} was removed; property {property_id} on it is '
                                                    'orphaned.'))
     return notices
