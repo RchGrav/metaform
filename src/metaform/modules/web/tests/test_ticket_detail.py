@@ -1,13 +1,12 @@
-"""Actual ticket reads, optimistic edits, and memory bodies opened on demand on the web surface."""
+"""Actual ticket reads, optimistic edits, the graph thumbnail and the specialist prompt on the web surface."""
 import json
 import os
 
 import pytest
 
 from metaform.data import Node, Store
-from metaform.module import Stop, context
+from metaform.module import context
 from metaform.modules.orchestration.state import SERVICE
-from metaform.modules.web.server import module_verb
 from metaform.modules.web.tests.test_web import api
 from metaform.modules.web.tests.test_web import browser as browser  # noqa: PLC0414
 from metaform.modules.web.tests.test_web import mapped as mapped  # noqa: PLC0414
@@ -76,7 +75,7 @@ def test_ticket_opens_with_named_graph_edits_and_refuses_stale_save(run, web, ma
     assert data['functionality']['requirements']
     assert data['functionality']['dependents']
     assert data['functionality']['markdown'].startswith('```mermaid')
-    assert 'entities' in data['memories'] and 'relations' in data['memories']
+    assert 'memories' not in data
     status, saved = post(web, work_id=work.id, revision=data['revision'], title='Countdown alarm',
                          task='Keep the countdown accurate.', note='Check the transition at zero.', kind='broken')
     assert status == 200
@@ -100,34 +99,6 @@ def test_ticket_edit_updates_owned_assignment_and_sends_only_change_notice(run, 
     assert direction['kind'] == 'user_direction'
     assert 'Use the new timing requirements.' not in direction['body']
     assert work.id in direction['body']
-
-
-def test_ticket_memory_lists_local_titles_and_opens_one_body(web, mapped):
-    work = ticket()
-    for name, at in [('countdown', 'code.timer.kitchen'), ('tone', 'code.alarm.audible')]:
-        module_verb({'project': 'proj'}, 'memory', 'create_entities', {'node': at,
-            'entities': [{'name': name, 'title': f'{name} behavior', 'entityType': 'behavior',
-                          'why': 'Timing must stay accurate.', 'observations': [f'{name} is observable.']}]})
-    module_verb({'project': 'proj'}, 'memory', 'create_relations', {
-        'relations': [{'from': 'countdown', 'to': 'tone', 'relationType': 'triggers'}]})
-    status, data = api(web, f'/api/ticket-detail?project=proj&work_id={work.id}')
-    assert status == 200
-    graph = data['memories']
-    assert [one['name'] for one in graph['entities']] == ['countdown']
-    assert graph['entities'][0]['title'] == 'countdown behavior'
-    assert 'observations' not in graph['entities'][0]
-    assert 'countdown is observable.' not in json.dumps(graph)
-    assert graph['relations'] == []
-    status, opened = api(web, '/api/memory-open_nodes?project=proj&node=element:code.timer.kitchen&name=countdown')
-    assert status == 200
-    assert [one['name'] for one in opened['entities']] == ['countdown']
-    assert opened['entities'][0]['observations'] == ['countdown is observable.']
-    assert opened['relations'] == [{'from': 'countdown', 'to': 'tone', 'relationType': 'triggers'}]
-    status, absent = api(web, '/api/memory-open_nodes?project=proj&node=element:code.timer.kitchen&name=tone')
-    assert status == 200 and absent['entities'] == []
-    with pytest.raises(Stop, match='more than one fact'):
-        module_verb({'project': 'proj'}, 'memory', 'add_observations', {
-            'observations': [{'entityName': 'countdown', 'contents': ['One fact. Another fact.']}]})
 
 
 @pytest.mark.browser
@@ -170,23 +141,18 @@ def test_card_edits_runtime_choice_before_start_and_refreshes_summary(run, web, 
 
 
 @pytest.mark.browser
-def test_board_card_opens_editable_ticket_and_fetches_one_memory_on_click(run, web, mapped, browser):
+def test_board_card_opens_ticket_with_graph_thumbnail_and_specialist_prompt(run, web, mapped, browser):
     work = ticket()
-    module_verb({'project': 'proj'}, 'memory', 'create_entities', {'node': 'code.timer.kitchen',
-        'entities': [
-            {'name': 'countdown', 'title': 'Countdown boundary', 'entityType': 'behavior',
-             'observations': ['Countdown reaches zero.']},
-            {'name': 'alarm', 'title': 'Alarm timing', 'entityType': 'behavior',
-             'observations': ['Alarm rings once.']}]})
+    ctx = context('orchestration', mapped, project='proj', nouns={'work': work.id, 'role': 'gc', 'session': 'worker'})
+    SERVICE.claim(ctx)
     other = mapped.parent / 'other-project'
     other.mkdir()
     run('add', 'project', 'another-project', str(other))
     page = browser.new_page(viewport={'width': 1280, 'height': 800})
-    errors, failed, memory_reads = [], [], []
+    errors, failed, role_reads = [], [], []
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.on('response', lambda response: failed.append((response.status, response.url)) if response.status >= 400 else None)
-    page.on('request', lambda request: memory_reads.append(request.url) if '/api/memory-open_nodes' in request.url
-            else None)
+    page.on('request', lambda request: role_reads.append(request.url) if '/api/agent-role' in request.url else None)
     try:
         page.goto(f'http://127.0.0.1:{web}/#p=proj')
         page.wait_for_function('() => window.metaform && document.querySelectorAll("#map2d svg g.node").length > 0')
@@ -199,20 +165,18 @@ def test_board_card_opens_editable_ticket_and_fetches_one_memory_on_click(run, w
         page.locator('#ticketDetail button[type=submit]').click()
         page.wait_for_function("() => document.querySelector('#ticketDetail [role=status]').textContent === 'Saved.'")
         assert Store('proj').ticket(work.id).work.task == 'Repair the countdown boundary.'
-        assert page.locator('#ticketDetail .ticket-graph').count() == 1
-        memories = page.locator('#ticketDetail .ticket-memories')
-        assert memories.locator('summary').all_text_contents() == ['Countdown boundary', 'Alarm timing']
-        assert memories.locator('.memory-body').all_text_contents() == ['', '']
-        assert not memory_reads
-        page.locator('#ticketDetail > .body > details.pane > summary').nth(1).click()
-        memories.locator('details[data-name=countdown] > summary').click()
-        memories.locator('details[data-name=countdown] .memory-body li').wait_for()
-        assert 'Countdown reaches zero.' in memories.inner_text()
-        assert 'Alarm rings once.' not in memories.inner_text()
-        assert len(memory_reads) == 1 and 'project=proj' in memory_reads[0] and 'name=countdown' in memory_reads[0]
-        memories.locator('details[data-name=countdown] > summary').click()
-        memories.locator('details[data-name=countdown] > summary').click()
-        assert len(memory_reads) == 1
+        assert page.locator('#ticketDetail .ticket-memories').count() == 0
+        thumb = page.locator('#ticketDetail .graph-thumb:not([disabled])')
+        thumb.locator('svg').wait_for()
+        thumb.click()
+        page.locator('.window.diagramwin .diagrambody svg').wait_for()
+        assert page.locator('.window.diagramwin .title').inner_text().startswith('Graph · ')
+        page.keyboard.press('Escape')
+        page.locator('#ticketDetail .specialist').click()
+        page.locator('#specialistPrompt .prompt').wait_for()
+        assert page.locator('#specialistPrompt .title').inner_text() == 'Specialist · GC'
+        assert page.locator('#specialistPrompt .prompt').inner_text().strip()
+        assert len(role_reads) == 1 and 'project=proj' in role_reads[0] and 'name=metaform' in role_reads[0]
         page.evaluate("async () => { (await import('/page/app/core/reads.js')).S.project = 'proj'; }")
         if os.environ.get('METAFORM_TICKET_SCREENSHOT'):
             page.locator('#ticketDetail').screenshot(path=os.environ['METAFORM_TICKET_SCREENSHOT'])

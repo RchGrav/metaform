@@ -201,15 +201,16 @@ function drawDiagram(code) {
   const keep = drawn => {
     DIAGRAMS.set(code, drawn);
     if (DIAGRAMS.size > 60) DIAGRAMS.delete(DIAGRAMS.keys().next().value);
+    return drawn;
   };
   const drawing = (async () => {
     if (!window.mermaid) return keep({error: 'the diagram library did not load.'});
     try {
       await window.mermaid.parse(code);
       const result = await window.mermaid.render(id, code, document.querySelector('#draw') || undefined);
-      keep({svg: result.svg});
+      return keep({svg: result.svg});
     } catch (error) {
-      keep({error: String(error?.message || error).split('\n').filter(Boolean).slice(0, 3).join(' ')});
+      return keep({error: String(error?.message || error).split('\n').filter(Boolean).slice(0, 3).join(' ')});
     } finally {
       for (const left of document.querySelectorAll(`#${id}, #d${id}`)) left.remove();
       DRAWING.delete(code);
@@ -218,7 +219,10 @@ function drawDiagram(code) {
   DRAWING.set(code, drawing);
   return drawing;
 }
-function svgOf(text) {
+/* One diagram's drawing, {svg} or {error}, from the kept drawings or drawn now; a drawing outside a chat row, such as
+ * a ticket's graph, shares the cache. */
+export const diagramOf = code => DIAGRAMS.has(code) ? Promise.resolve(DIAGRAMS.get(code)) : drawDiagram(code);
+export function svgOf(text) {
   const svg = document.importNode(new DOMParser().parseFromString(text, 'image/svg+xml').documentElement, true);
   for (const unsafe of svg.querySelectorAll('script')) unsafe.remove();
   const width = parseFloat(svg.getAttribute('width')) || svg.viewBox?.baseVal?.width || 0;
@@ -229,14 +233,14 @@ function svgOf(text) {
   return svg;
 }
 /* The diagram in a window of its own, as large as the person makes it, closed with Escape. */
-function enlargeDiagram(figure) {
+export function enlargeDiagram(figure, title = 'Diagram') {
   const drawn = figure.querySelector('svg');
   if (!drawn) return;
   const svg = drawn.cloneNode(true);
   svg.style.maxWidth = '';
   const close = () => { win.hidden = true; setTimeout(() => win.remove(), 0); };
-  const win = h('div', {class: 'window movable diagramwin large', role: 'dialog', 'aria-label': 'Diagram'},
-    h('div', {class: 'bar'}, h('span', {class: 'title'}, 'Diagram'),
+  const win = h('div', {class: 'window movable diagramwin large', role: 'dialog', 'aria-label': title},
+    h('div', {class: 'bar'}, h('span', {class: 'title'}, title),
       h('button', {class: 'close btn icon sm quiet', type: 'button', 'aria-label': 'Close', title: 'Close (Escape)',
         onclick: close}, h('i', {class: 'i i-close', 'aria-hidden': 'true'}))),
     h('div', {class: 'diagrambody'}, svg));

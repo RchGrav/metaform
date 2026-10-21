@@ -597,22 +597,42 @@ dl.facts dd.addr{font:var(--t-sm)/1.6 var(--mono);color:var(--signal)}
 #task .acts{display:flex;gap:6px}
 /* The floating window messages and a node's work history are read in, VIEW-030 and VIEW-036. */
 #float{width:420px;max-height:75vh}
-#ticketDetail{max-height:85vh;width:min(900px,calc(100vw - 24px))}
-#ticketDetail .titlebar .ref{margin-left:var(--s2);font:var(--t-xs) var(--mono)}
-#ticketDetail .body{overflow:auto;gap:var(--s3)}
-#ticketDetail .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s2)}
-#ticketDetail .head .address{color:var(--muted);font:var(--t-xs) var(--mono)}
-#ticketDetail .head .expertise{font:var(--t-sm) var(--sans)}
-#ticketDetail form{display:grid;gap:var(--s3)}
-#ticketDetail label{display:grid;gap:var(--s1)}
+/* A ticket opened from the board: its words to edit on the left; the node, its specialist and its graph beside them. */
+#ticketDetail{max-height:88vh;width:min(1080px,calc(100vw - 2 * var(--s3)))}
+#ticketDetail > .bar .ref{margin-left:var(--s1);font:500 var(--t-sm) var(--mono);color:var(--muted)}
+#ticketDetail > .body{grid-template-columns:minmax(0,1fr) 300px;gap:var(--s4);color:var(--text)}
+#ticketDetail > .body > p{grid-column:1 / -1}
+#ticketDetail form{display:grid;gap:var(--s3);align-content:start}
+#ticketDetail label{display:grid;gap:var(--s1);font:600 var(--t-xs)/1.3 var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+#ticketDetail input,#ticketDetail textarea,#ticketDetail select{font:var(--t-md)/1.5 var(--sans);letter-spacing:0;text-transform:none;color:var(--text)}
+#ticketDetail textarea,#ticketDetail input{width:100%;box-sizing:border-box}
+#ticketDetail input.ticket-title{font:600 var(--t-base)/1.4 var(--sans)}
+#ticketDetail textarea{resize:vertical}
 #ticketDetail .row{display:flex;align-items:end;gap:var(--s3)}
 #ticketDetail .row label.kind{min-width:160px}
-#ticketDetail .row [role=status]{color:var(--muted);font:var(--t-sm) var(--sans)}
-#ticketDetail textarea,#ticketDetail input{width:100%;box-sizing:border-box}
-#ticketDetail textarea{resize:vertical;line-height:1.45}
-#ticketDetail details.pane{border-top:1px solid var(--line);padding-top:var(--s2)}
-#ticketDetail details.pane summary{cursor:pointer;font-weight:600;padding:var(--s1) 0}
-#ticketDetail .ticket-graph{overflow:auto;min-height:260px;max-height:55vh;margin-top:var(--s2)}
+#ticketDetail .row [role=status]{margin:0;color:var(--muted);font:var(--t-sm) var(--sans)}
+#ticketDetail .ticket-side{display:grid;align-content:start;gap:var(--s3)}
+#ticketDetail .ticket-side section{display:grid;gap:var(--s1);padding:var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2)}
+#ticketDetail .ticket-side h4{margin:0;font:600 var(--t-xs)/1.3 var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+#ticketDetail .ticket-side h4:not(:first-child){margin-top:var(--s2)}
+#ticketDetail .ticket-side strong{font:600 var(--t-md)/1.4 var(--sans)}
+#ticketDetail .ticket-side .address{font:var(--t-xs)/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+#ticketDetail .ticket-side .quiet{margin:0;font:var(--t-sm)/1.45 var(--sans);color:var(--muted)}
+#ticketDetail .specialist{justify-self:start;max-width:100%;padding:var(--s1) var(--s2);border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel);color:var(--signal);font:600 var(--t-sm)/1.3 var(--sans);text-align:left;text-transform:capitalize;cursor:pointer}
+#ticketDetail .specialist:hover,#ticketDetail .specialist:focus-visible{border-color:var(--signal)}
+#ticketDetail .graph-thumb{display:block;width:100%;height:170px;padding:var(--s2);border:1px solid var(--line-2);border-radius:var(--r);background:var(--panel);cursor:zoom-in}
+#ticketDetail .graph-thumb:disabled{cursor:default}
+#ticketDetail .graph-thumb:not(:disabled):hover,#ticketDetail .graph-thumb:focus-visible{border-color:var(--signal)}
+#ticketDetail .graph-thumb .figure{display:grid;place-items:center;width:100%;height:100%;overflow:hidden;font:var(--t-sm) var(--sans);color:var(--muted)}
+#ticketDetail .graph-thumb svg{width:100%;height:100%;max-width:none!important;pointer-events:none}
+#ticketDetail .joins{display:grid;gap:var(--s2);margin:0;padding:0;list-style:none;font:var(--t-sm)/1.4 var(--sans)}
+#ticketDetail .joins small{display:block;color:var(--muted)}
+@media (max-width: 760px){#ticketDetail > .body{grid-template-columns:minmax(0,1fr)}}
+/* The prompt a ticket's specialist is sent, opened from the ticket. */
+#specialistPrompt{width:min(760px,calc(100vw - 2 * var(--s3)));max-height:80vh;resize:both;overflow:hidden}
+#specialistPrompt > .body{color:var(--text)}
+#specialistPrompt .purpose{margin:0;color:var(--muted)}
+#specialistPrompt .prompt{margin:0;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2);font:var(--t-sm)/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 #float > .body{gap:var(--s3)}
 #float .body .when{font:var(--t-xs) var(--mono);color:var(--muted)}
 .map2d .node.work-question,.map2d .cluster.work-question,.map2d path.work-question{--c:var(--question);animation:glow-pulse 1.6s ease-in-out infinite}

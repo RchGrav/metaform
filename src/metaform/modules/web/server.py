@@ -1752,15 +1752,6 @@ class Handler(BaseHTTPRequestHandler):
             work = store.ticket(given.get('work_id', '')).work
             fields = ticket_fields(store, work)
             graph = functional_context(store, work)
-            memories: Any = {'entities': [], 'relations': []}
-            try:
-                visible = chosen_layers(given, Path(store.project().path))
-                # Inspecting memories enables their layer for this read; node masks still apply.
-                memory_scope = {**given, 'layers': ','.join([*visible, 'memory'])} if visible else given
-                memories = module_verb(memory_scope, 'memory', 'read_unread',
-                                       {'node': f'{work.node_kind}:{work.node_id}'}, chosen=True)
-            except (Stop, StoreError) as error:
-                memories['unavailable'] = str(error)
             ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
             ctx.store = store
             routing = next((owner.routing_status(ctx, work.id) for _, owner in
@@ -1768,7 +1759,7 @@ class Handler(BaseHTTPRequestHandler):
             numbered = store.numbers_of('work', [work.id]).get(work.id)
             self.send(200, {'ticket': {**plain(work), **fields}, 'revision': ticket_revision(fields),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
-                            'functionality': graph, 'memories': plain(memories), 'routing': routing})
+                            'functionality': graph, 'routing': routing})
         except (Stop, StoreError) as error:
             self.refuse(error, 404)
 
