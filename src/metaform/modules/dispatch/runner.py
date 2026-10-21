@@ -2628,6 +2628,22 @@ class Session:
         self.spawn(self.fork_turn(child, text, capacity))
         return {'sent': True, 'fork': child}
 
+    async def native_child_message(self, child: str, text: str) -> dict[str, Any]:
+        """Queue native delivery through the parent, since native children do not offer ACP prompt turns."""
+        if self.ending or self.session_id is None:
+            return {'sent': False, 'child': child, 'error': 'The parent session has not started or is ending.'}
+        held = self.children[child]
+        native = re.sub(r':generation:\d+$', '', child) if self.agent == 'claude' else child
+        delivery = {'session_id': child, 'native_id': native, 'name': held.get('name'),
+                    'task': held.get('task'), 'message': text}
+        forwarded = prompt('native_child_message', delivery=json.dumps(delivery, ensure_ascii=False))
+        if not forwarded.strip():
+            return {'sent': False, 'child': child, 'error': 'The native child delivery prompt is empty.'}
+        async with self.lock:
+            await self.child_note(child, None, 'person', text)
+        self.turn(forwarded, first=True, typed=True)
+        return {'sent': True, 'child': child, 'queued': True, 'via': 'parent'}
+
     async def fork_turn(self, child: str, text: str, capacity: Path) -> None:
         """One turn of a fork, its words in its own thread."""
         held = self.children.get(child)
@@ -5176,8 +5192,14 @@ class Session:
                                           # an intake waiting for its first record, M04, said as the page reads it
                                           **({'phase': self.intake.get('phase')} if live and self.intake else {}),
                                           'how': None if live else self.how or 'the agent is no longer running'})
-            elif op == 'message' and asked.get('fork') in self.children and self.children[asked['fork']].get('fork'):
-                answer = await self.fork_message(str(asked['fork']), str(asked.get('text', '')))
+            elif op == 'message' and 'fork' in asked:
+                child = asked.get('fork')
+                if not isinstance(child, str) or child not in self.children:
+                    await self.reply(writer, {**said, 'sent': False, 'error': 'That child is not in this session.'})
+                    return
+                text = str(asked.get('text', ''))
+                answer = (await self.fork_message(child, text) if self.children[child].get('fork')
+                          else await self.native_child_message(child, text))
                 await self.reply(writer, {**said, **answer})
             elif op == 'message':
                 if self.ending or self.session_id is None:

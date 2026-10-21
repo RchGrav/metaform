@@ -11,10 +11,14 @@ import {MASCOT} from '/page/app/figures/mascot.js';
 import {BUBBLE, bubble, say, readFor, hush, CUT} from '/page/app/figures/cut.js';
 import {G} from '/page/app/map3d/graph3d.js';
 import {hovered} from '/page/app/map3d/pick3d.js';
-import {DOCK} from '/page/app/dock/embody.js';
+import {DOCK, HELD} from '/page/app/dock/embody.js';
 import {callSystem} from '/page/app/dock/commands.js';
 import {wrote} from '/page/app/board/history.js';
-import {D, agentAt} from '/page/app/agents/dispatch.js';
+import {D, agentAt, ticketOf} from '/page/app/agents/dispatch.js';
+import {agentName} from '/page/app/agents/pickers.js';
+import {workPart} from '/page/app/session/tools.js';
+import {notificationState} from '/page/app/session/orchestration.js';
+import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {bubbleAt, bubbleText} from '/page/app/figures/bubble3d.js';
 import {spokenOf, sameWords} from '/page/app/session/apps.js';
@@ -168,6 +172,10 @@ export function figureAt(x, y) {
   if (said) return said;
   return best?.id || null;
 }
+/* A click on any agent's figure, on either map, opens a chat with that agent with a box to write in: its session in
+ * any live state, working, waiting or idle, never the project's updates, which are read-only; with none yet, a
+ * specialist owner's or a ticket reserved and not started, the chat on its ticket, where a message is kept and read
+ * when its session starts, `holdQueued` in dock/send.js; a done ticket's figure walking home, its last session. */
 export function openFigure(workId) {
   const child = ROAM.figures.get(workId)?.child;
   if (child) {  // a subagent's figure opens its own thread, in its parent's chat
@@ -176,6 +184,10 @@ export function openFigure(workId) {
     drawHelpdesk();
     return;
   }
-  const session = D.sessions.filter(one => one.work_id === workId && one.state === 'running').at(-1);
-  agentAt(workId, session?.session_id || null);
+  const session = D.sessions.filter(one => one.work_id === workId && one.state === 'running'
+    && !notificationState(D.states?.[one.session_id])).at(-1);
+  const ticket = ticketOf(workId);
+  if (session || !ticket || ticket.done) return agentAt(workId, session?.session_id || null);
+  openHelpdesk(workId, `${agentName(ticket.map?.agent)} on ${workPart(workId)}`, HELD, null, null, {focus: true});
+  DOCK.chat.held = true;
 }

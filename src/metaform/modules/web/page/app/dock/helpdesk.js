@@ -9,7 +9,7 @@ import {ticketNode} from '/page/app/figures/agents.js';
 import {mascotHeard} from '/page/app/figures/ask.js';
 import {EASE} from '/page/app/camera/fly3d.js';
 import {asked} from '/page/app/selection/select.js';
-import {DOCK, clockOf, STANDBY, DOCKMOTION, dockGoingAway, embodyOffer, embodyRows,
+import {DOCK, clockOf, STANDBY, UPDATES_ONLY, DOCKMOTION, dockGoingAway, embodyOffer, embodyRows,
   dockState} from '/page/app/dock/embody.js';
 import {showChat, drawProposals, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
   chatActivity, drawAgentSessions} from '/page/app/dock/threads.js';
@@ -49,8 +49,8 @@ export async function drawHelpdesk(trouble) {
   drawAgentSessions();
   const notification = notificationState(state);
   $('#helpdesk .call').hidden = notification || Boolean(DOCK.live || DOCK.calling);
-  $('#helpdesk .compose').hidden = notification;
   $('#helpdesk .calls').hidden = notification;
+  sayWhere(notification);
   drawAsked(target, session, lines);
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
   drawProposals();
@@ -81,6 +81,16 @@ export async function drawHelpdesk(trouble) {
   deliverQueued(session);  // what was written while the agent was being reached, sent once it is there
   chatAway(session, changed);
   D.onAsking?.();  // the thread on screen changed: the pop-up leaves its requests to it, agents/asking.js
+}
+/* Notifications explain their read-only input. A child thread names the subagent receiving the message. */
+const SAY = $('#helpdesk .say').placeholder;
+function sayWhere(notification) {
+  const box = $('#helpdesk .say');
+  const kid = DOCK.child && (DOCK.subagents || []).find(one => one.session_id === DOCK.child);
+  const said = notification ? UPDATES_ONLY : kid ? `Message ${kid.name || 'this subagent'}` : SAY;
+  box.disabled = notification;
+  $('#helpdesk .send').disabled = notification;
+  if (box.placeholder !== said) box.placeholder = said;
 }
 /* The thread on view as dispatch reads it: its session, the running one or the one it is with, its state and its
  * lines, or a child session's lines when one is open. `moved` when the chat moved on while this was read, or a later
@@ -147,7 +157,8 @@ function chatHead(session, activity, busy, connecting) {
   const told = session ? sessionStatus(session) : null;
   const special = told && ['login', 'dead', 'restarting'].includes(told.reason);
   const status = $('#helpdesk .status');
-  status.textContent = notification ? 'Updates' : special ? told.words : session ? activity.label : connecting ? 'Connecting' : '';
+  status.textContent = notification ? 'Updates' : special ? told.words : session ? activity.label
+    : connecting ? DOCK.chat?.held ? 'Not started yet' : 'Connecting' : '';
   status.title = special ? told.why : session ? activity.note || activity.label
     : connecting ? DOCK.waiting || STANDBY : '';
   status.hidden = !status.textContent;
@@ -195,7 +206,8 @@ function askingRows() {
 /* The agent at work, said as a quiet typing row where its next words will come, its fuller note on hover. */
 function typingRows(session, activity, waiting, busy, connecting) {
   if (!(waiting || busy || (DOCK.calling && !DOCK.target))) return [];
-  const doing = waiting || connecting ? DOCK.waiting || STANDBY : `${agentName(session?.agent)} is working`;
+  const doing = waiting || connecting ? DOCK.waiting || STANDBY
+    : `${agentName(session?.agent)} is working; a message is read when its current step ends`;
   return [{key: 'waiting', text: doing, make: () => h('div',
     {class: 'waiting typingrow', role: 'status', title: activity.note || ''},
     h('span', {class: 'typing', 'aria-hidden': 'true'}, h('i'), h('i'), h('i')), h('span', {class: 'said'}, doing))}];

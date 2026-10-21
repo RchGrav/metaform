@@ -4884,19 +4884,46 @@ def message(ctx: Context) -> dict[str, Any]:
             raise Stop('A frame goes with a person\'s own message, as one the web GUI kept.',
                        f'metaform dispatch message {ctx.nouns["id"]} -- "<text>"')
         given_by['image'] = str(image)
-    row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
     from .orchestration import service
     owner = service(ctx)
+    try:
+        row = _running_or_stop(store, ctx.nouns['id'], ctx.nouns.get('session'))
+    except Stop:
+        kept = None if ctx.nouns.get('session') or 'audio' in given_by or 'image' in given_by \
+            else _kept_for_start(ctx, owner, str(ctx.nouns['id']), text)
+        if kept is None:
+            raise
+        return kept
     if owner is not None and owner.assignment(ctx, session_id=row['session_id']) is not None:
         owner.directed(ctx, row['session_id'], {'kind': 'user_direction', 'id': secrets.token_hex(16),
                                                'text': text, 'at': home.now(), 'from': {'kind': 'user'}})
     return _told(row, 'message', text=text, **given_by)
 
 
+def _kept_for_start(ctx: Context, owner: Any, work_id: str, text: str) -> dict[str, Any] | None:
+    """A person's message to a ticket whose agent has no session yet, a specialist owner's or one reserved and not
+    started: kept on its assignment as the person's direction, which its session takes as their own message when it
+    starts, the runner's `peer_note`, as a note to an agent between sessions waits for it. None when no assignment
+    holds the ticket open, so the message has no session to wait for."""
+    if owner is None:
+        return None
+    held = owner.assignment(ctx, work_id=work_id)
+    if held is None or held.get('stop') or held['state'] in ('returned', 'delivered', 'failed', 'stopped',
+                                                              'superseded'):
+        return None
+    note_id = secrets.token_hex(16)
+    events.announced(ctx.folder, ctx.surface, owner.queue_message, ctx, held['assignment_id'],
+                     {'id': note_id, 'kind': 'user_direction', 'text': text, 'at': home.now(),
+                      'from': {'kind': 'user'}}, key=note_id)
+    return {'held': True, 'work_id': work_id, 'assignment_id': held['assignment_id'], 'note': note_id,
+            'said': 'Kept on the ticket: its agent reads this when its session starts.'}
+
+
 def fork(ctx: Context) -> dict[str, Any]:
     """Fork a running agent's session with ACP's session/fork, where its agent offers it, P030: a side conversation
     that starts with everything the session knows, given the same Metaform server and identity, kept as a child thread
-    of the session; with text, that is its first turn, and a later message to it names it with fork=<id>."""
+    of the session; with text, that is its first turn. fork=<id> messages an existing child, with native subagents
+    reached through their parent's native messaging tool."""
     may_steer(ctx)
     store = ctx.require_store()
     given: Any = ctx.nouns.get('text') or []
@@ -7371,12 +7398,15 @@ MODULE = Module(
                         'Sends --json as written; after --, every word is the message, CLI-003.')), open_world=True,
                         listed=session_live),
         Verb('fork', fork, 'Fork a running agent\'s session into a side conversation that keeps everything it knows, '
-                           'where its agent offers session/fork; its thread is a child of the session\'s.',
+                           'where its agent offers session/fork, or message an existing child with fork=<id>. '
+                           'Native subagents receive messages through their parent.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
                          required=False),
-                    Noun('fork', 'A fork already made, to send it the text as its next turn.', required=False),
-                    Noun('text', 'The fork\'s first turn, or its next with fork=<id>.', required=False, many=True)),
+                    Noun('fork', 'An existing child session to receive the text; native subagents are reached '
+                                 'through their parent.', required=False),
+                    Noun('text', 'A new fork\'s first turn, or a message to the child named by fork.',
+                         required=False, many=True)),
              examples=(('metaform dispatch fork 198452e1... -- "What else did you consider?"',
                         'Asks a fork of the session, leaving the session itself at its work.'),), open_world=True,
                         listed=session_live),

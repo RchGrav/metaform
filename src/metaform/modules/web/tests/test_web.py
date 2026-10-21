@@ -6735,7 +6735,8 @@ def test_each_native_subagent_a_running_agent_reports_is_a_figure_of_its_own_tha
                 tx.insert('session_lines', line)
             else:
                 tx.update('session_lines', {'session_id': parent, 'name': f'subagent:{kid}'}, {'text': line['text']})
-        relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch'})  # the runner announces it
+        relay.deliver('map.changed', {'project': 'proj', 'tables': 'dispatch', 'work_ids': [worked.id],
+                                     'session_ids': [parent], 'kinds': ['session']})
 
     child('kid-a', 'running', 1)
     child('kid-b', 'running', 2)
@@ -6751,6 +6752,20 @@ def test_each_native_subagent_a_running_agent_reports_is_a_figure_of_its_own_tha
                            '=== "waiting"', timeout=15000)
     page.evaluate('''async () => (await import('/page/app/figures/ask.js')).openFigure('child:kid-a')''')
     page.wait_for_selector('#helpdesk .subagents button[aria-pressed="true"]:has-text("Reader kid-a")', timeout=15000)
+    sent = []
+
+    def child_message(route):
+        sent.append(route.request.post_data_json)
+        route.fulfill(json={'sent': True, 'child': 'kid-a', 'queued': True})
+
+    page.route('**/api/dispatch-message', child_message)
+    page.locator('#helpdesk .say').fill('Check the child result')
+    with page.expect_response('**/api/dispatch-message'):
+        page.locator('#helpdesk .say').press('Enter')
+    page.wait_for_function('() => document.querySelector("#helpdesk .say").value === ""')
+    assert sent and sent[-1]['fork'] == 'kid-a', sent
+    assert sent[-1]['session'] == parent and sent[-1]['work_id'] == worked.id, sent
+    assert sent[-1]['text'] == 'Check the child result', sent
     child('kid-a', 'completed', 1)
     page.wait_for_function('() => !window.metaform.figures().some(one => one.work_id === "child:kid-a")', timeout=20000)
     assert worked.id in page.evaluate(shown) and 'child:kid-b' in page.evaluate(shown)
@@ -7794,13 +7809,15 @@ def logged_by(log, check, limit=60):
 
 @pytest.mark.req('VIEW-039')
 @pytest.mark.req('VIEW-011')
-def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_next(run, web, mapped):
+def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_next(run, threaded, mapped, monkeypatch):
     import re
 
     from metaform.data import Node, Store
+    from metaform.modules.web import server
+    monkeypatch.setattr(server.chassis, 'page_caller', lambda *_: None)
+    web = threaded
     work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Write notes.txt').id
-    started(run)
-    own, as_json = f'http://127.0.0.1:{web}', {'Content-Type': 'application/json'}
+    own, as_json = f'http://127.0.0.1:{web}', own_write(web)
     given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
              '/api/dispatch-message': {'work_id': work, 'text': 'also run the tests'},
              '/api/dispatch-broadcast': {'text': 'stop and commit'},
@@ -7830,6 +7847,15 @@ def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_nex
         status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
                            body=json.dumps({'project': 'proj', **given[path]}))
         assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
+    # A recorded owner can keep a message before its session starts. An unassigned ticket above cannot.
+    from metaform.module import context
+    from metaform.modules.orchestration.state import SERVICE
+    run('enable', 'orchestration')
+    SERVICE.claim(context('orchestration', mapped, project='proj',
+                          nouns={'work': work, 'role': 'gc', 'mode': 'adaptive'}))
+    status, said = api(web, '/api/dispatch-message', method='POST', headers={**as_json, 'Origin': own},
+                       body=json.dumps({'project': 'proj', **given['/api/dispatch-message']}))
+    assert status == 200 and said['held'] is True, said
     # the person's Stop on a ticket no agent runs still names its delivery: its recorded assignment and descendants
     # are cancelled and nothing starts in their place (orchestration, kept 2026-10-20)
     status, said = api(web, '/api/dispatch-stop', method='POST', headers={**as_json, 'Origin': own},
@@ -10680,6 +10706,48 @@ def test_a_start_the_server_is_asked_for_is_refused_as_the_command_refuses_it(ru
                        body=json.dumps({'project': 'proj', 'work_id': free, 'agent': 'codex'}))
     assert status == 400 and 'not found' in said['error']
     assert store.ticket(free).work.taken is None
+
+
+@pytest.mark.req('VIEW-039')
+def test_a_message_to_a_ticket_whose_agent_has_not_started_is_kept_and_read_when_it_starts(
+        run, home, project_folder, threaded, tmp_path, monkeypatch):
+    """A click on an agent's figure whose ticket had no session yet, a specialist owner's or one reserved and not
+    started, opened a chat whose message went nowhere (2026-10-21). The message route keeps it on the ticket's
+    assignment, and the session reads it as the person's own message once it starts."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import own_store
+    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
+    from metaform.modules.orchestration.state import SERVICE
+    agent = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
+    gates = tmp_path / 'turns'
+    gates.mkdir()
+    for name, value in agent.env('replace', FAKE_ACP_TURN_GATES=str(gates)).items():
+        if name.startswith('FAKE_'):
+            monkeypatch.setenv(name, value)  # the runner the assignment launches is the fake agent, logging
+    # the ticket's agent, model and thinking level as the person chose them, so its own session launches without
+    # waiting for Jev or the Facilitator to choose them
+    with Store('proj', module='map').tables() as tx:
+        tx.insert('ticket_settings', {'work_id': agent.id, 'agent': 'claude'})
+    with own_store(agent.store).tables() as tx:
+        tx.insert('ticket_options', {'work_id': agent.id, 'model': 'default', 'effort': 'medium', 'seq': 1})
+    owner = context('orchestration', project_folder, project='proj', nouns={'work': agent.id, 'role': 'gc'})
+    SERVICE.claim(owner)
+    try:
+        status, said = api(threaded, '/api/dispatch-message', method='POST', headers=own_write(threaded),
+                           body=json.dumps({'project': 'proj', 'work_id': agent.id, 'text': 'start with the tests'}))
+        assert status == 200 and said['held'] is True, said
+        SERVICE.drain(owner)  # its launch: the session starts
+        eventually(lambda: agent.received('session/prompt'))
+        for turn in ('1', '2'):
+            (gates / turn).touch()  # its opening turns end, whichever of them carries the person's words
+        # read as the person wrote them, once, in the session's first turns, where notes kept for it are read
+        said = eventually(lambda: [block['text'] for one in agent.received('session/prompt')
+                                   for block in one['params']['prompt'] if 'start with the tests' in block.get('text', '')])
+        assert len(said) == 1 and '\n\nstart with the tests' in f'\n\n{said[0]}', said
+    finally:
+        run('dispatch', 'stop-all', cwd=project_folder, ok=False)
+        agent.close()
 
 
 @pytest.mark.req('BASE-052')

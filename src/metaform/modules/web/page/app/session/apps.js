@@ -485,18 +485,20 @@ export function threadRows(lines, {work, agent, session = null}) {
     else if (kind === 'elicitation') rows.push({key, text, make: () => elicitationRow(line, work, agent)});
     else if (kind === 'agent_notice') rows.push({key, text, make: () => noticeRow(line)});
     else if (kind === 'attachment') rows.push({key, text, make: () => attachmentCard(line, agent)});
-    else if (kind === 'peer') rows.push({key, text, make: () => peerRow(line)});
+    // a note from the person is their message kept on the ticket until its session started, dispatch's
+    // `_kept_for_start`: shown as theirs, as any message they send
+    else if (kind === 'peer' && line.data?.from?.kind !== 'user') rows.push({key, text, make: () => peerRow(line)});
     else if (kind === 'signal') {
       const words = signalWords(line.text);
       if (words) rows.push({key, text, make: () => h('div', {class: 'system signal'}, words)});
-    } else if (MESSAGES.includes(kind)) {
+    } else if (MESSAGES.includes(kind) || kind === 'peer') {
       const mine = kind !== 'agent_message_chunk', who = mine ? 'You' : agentName(agent);
-      const first = who !== sender, at = seenAt(key, line);
+      const first = who !== sender, at = seenAt(key, line), body = kind === 'peer' ? line.data.text || '' : line.text;
       sender = who;
-      if (mine) DOCK.heard.add(String(line.text).trim());
+      if (mine) DOCK.heard.add(String(body).trim());
       const toward = growing.get(index);
       if (toward) rows.push({key, text: `said\n${toward}\n${first}`, make: () => spokenRow(toward, who, first, at)});
-      else rows.push({key, text: `${text}\n${first}`, make: () => broadcastMark(line, messageRow(line.text,
+      else rows.push({key, text: `${text}\n${first}`, make: () => broadcastMark(line, messageRow(body,
         {mine, who, first, at}))});
     } else if (kind === 'agent_thought_chunk') rows.push({key, text, make: () => thoughtRow(line)});
     else if (SYSTEM_LINES.includes(kind)) {

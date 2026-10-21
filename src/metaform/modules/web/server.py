@@ -2424,7 +2424,7 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch_message(self, given: dict[str, Any]) -> None:
         """Send a person's message to the agent working a ticket with the dispatch module's message, VIEW-039; to the
         chat session it names, when it names one, as several editor sessions share one ticket, BASE-062. A message to a
-        fork of the session, named by `fork`, goes with the dispatch module's fork, which takes no recording."""
+        child of the session, named by `fork`, goes with the dispatch module's child-message path, as text."""
         work_id, text, session, forked = given.get('work_id'), given.get('text'), given.get('session'), given.get('fork')
         if not isinstance(work_id, str) or not work_id:
             return self.send(400, {'error': 'A message goes to the agent working a ticket: its work id.'})

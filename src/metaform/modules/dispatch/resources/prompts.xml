@@ -13,6 +13,15 @@
      dispatch. Off when the module is disabled or the folder's modules setting leaves it out. -->
 <connect>– dispatch: start an agent on a ticket, follow its work and stop it</connect>
 
+<!-- A message the person addressed to a native child thread, queued through its parent's existing turn path.
+     Native children do not accept ACP session/prompt. The parent uses its own native messaging tool so the child
+     receives the words and answers in its own thread. delivery is JSON with the exact child session id, native id,
+     name, task and message. Must not be deleted: the code requires it. Empty refuses delivery. -->
+<native_child_message>
+The person addressed the native child described below. Deliver its message unchanged through your native child messaging tool, SendMessage or send_message, so that child receives and answers it in its own thread. Address the exact native_id, using its name only if your tool requires a name. Do not answer on the child's behalf or act on its message yourself. If the tool cannot reach that child, report the delivery failure without choosing another recipient.
+<delivery/>
+</native_child_message>
+
 <!-- Dispatch's instructions: how agent slots are shared and why work on a busy part of the map waits in a queue.
      Returned by metaform_instructions with module dispatch, at metaform://instructions/dispatch, and by metaform instructions dispatch; printed in
      the command-line guide while connect_instructions is full.

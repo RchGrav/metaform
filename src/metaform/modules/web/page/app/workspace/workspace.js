@@ -16,6 +16,7 @@ import {ROAM} from '/page/app/figures/agents.js';
 import {BUBBLE} from '/page/app/figures/cut.js';
 import {NOTICES} from '/page/app/core/banner.js';
 import {ROAM2D} from '/page/app/figures/roam2d.js';
+import {openFigure} from '/page/app/figures/ask.js';
 import {VIEW_SETTINGS, shapes3d} from '/page/app/map3d/light.js';
 import {G, start3D, FRAMES} from '/page/app/map3d/graph3d.js';
 import {readoutBox} from '/page/app/map3d/readout.js';
@@ -129,8 +130,8 @@ function chatPane(on) {
   dockState('resting');
 }
 export const chatDocked = () => $('#dock').dataset.place === 'pane';
-/* An agent's figure on the 2D map opens the exact session it walks for, as its figure in 3D and its row under Agent
- * deployed do; the click goes to the figure, not to the box under it. */
+/* An agent's figure on the 2D map opens its agent's chat as its figure in 3D does, `openFigure`; the click goes to the
+ * figure, not to the box under it. */
 function openFigure2d(event) {
   const g = event.target.closest?.('g.agent2d');
   if (!g) return;
@@ -138,8 +139,7 @@ function openFigure2d(event) {
   if (!figure) return;
   event.stopPropagation();
   event.preventDefault();
-  const session = D.sessions.filter(one => one.work_id === figure.id && one.state === 'running').at(-1);
-  agentAt(figure.id, session?.session_id || null);
+  openFigure(figure.id);
 }
 $('#viewport').addEventListener('click', openFigure2d, true);
 /* The chat docked at a side of the page is as wide as the person drags its inner edge, kept in this browser as a view

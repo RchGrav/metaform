@@ -10,7 +10,8 @@ import {S, read} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
 import {MAC} from '/page/app/map2d/camera.js';
 import {openHelp} from '/page/app/keys/keys.js';
-import {DOCK, embodyHooks, embodiable, askEmbody, dockState, dockNote} from '/page/app/dock/embody.js';
+import {DOCK, HELD, UPDATES_ONLY, embodyHooks, embodiable, askEmbody, dockState,
+  dockNote} from '/page/app/dock/embody.js';
 import {drawTabs, interruptChat, onOther, showMine, listShown} from '/page/app/dock/threads.js';
 import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
 import {dockCommand, callSystem, talkAbout} from '/page/app/dock/commands.js';
@@ -37,6 +38,7 @@ const beingReached = chat => Boolean(chat?.starting) && Date.now() - chat.starti
  * resume has finished. What is written meanwhile waits behind it, in order. */
 function ensureAgent() {
   if (notificationState(DOCK.state)) return;
+  if (DOCK.chat?.held && !DOCK.session) { holdQueued(); return; }  // a ticket's agent with no session yet
   // being reached already
   if (DOCK.calling || DOCK.talking || (DOCK.target && !DOCK.session) || beingReached(DOCK.chat)) return;
   if (!DOCK.target) { callSystem(); return; }
@@ -49,14 +51,18 @@ function ensureAgent() {
   talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);
 }
 export function queuedRows() {
-  // a message sent is let go once the agent has it, or half a minute on
-  const settled = item => item.state === 'sent'
-    && (DOCK.heard.has((item.sent || item.text).trim()) || Date.now() - item.at > 30000);
+  // a message sent is let go once the agent has it, or half a minute on; one kept on its ticket once the agent has it
+  const settled = item => (item.state === 'sent' || item.state === 'held') && (DOCK.heard.has((item.sent || item.text)
+    .trim()) || item.state === 'sent' && Date.now() - item.at > 30000);
   DOCK.queue = DOCK.queue.filter(item => !settled(item));
-  return DOCK.queue.map((item, index) => ({key: `queued:${item.id}`, text: `${item.state}:${index}`,
-    make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0, at: item.at,
-      pending: {waiting: 'Sent once the agent is there', sending: 'Sending…', sent: 'Sent'}[item.state] || ''})}));
+  // one kept on its ticket stays in that ticket's thread, however long its agent takes to start
+  return DOCK.queue.filter(item => item.state !== 'held' || item.target === DOCK.target).map((item, index) => ({
+    key: `queued:${item.id}`,
+    text: `${item.state}:${index}`, make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0,
+      at: item.at, pending: {waiting: 'Sent once the agent is there', sending: 'Sending…', sent: 'Sent', held: HELD}[
+        item.state] || ''})}));
 }
+const unsent = item => item.state === 'waiting' || item.state === 'sending';
 let QUEUE_ID = 0;
 export async function deliverQueued(session) {
   if (DOCK.delivering || DOCK.calling || session?.state !== 'running' || session.session_id !== DOCK.session
@@ -85,16 +91,43 @@ export async function deliverQueued(session) {
   } finally { DOCK.delivering = false; }
   drawHelpdesk();
 }
+/* A ticket's agent with no session yet, a specialist owner's or a ticket reserved and not started: each message
+ * waiting goes to its ticket at once, which keeps it and gives it to the session when it starts as the person's own
+ * message, dispatch's `_kept_for_start`; in the thread it is marked as kept until the agent has it. */
+async function holdQueued() {
+  if (DOCK.delivering || !DOCK.queue.some(one => one.state === 'waiting')) return;
+  const work = DOCK.target;
+  DOCK.delivering = true;
+  try {
+    for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
+      if (DOCK.target !== work) return;
+      item.state = 'sending';
+      const lead = item.clicked ? `${item.clicked}\n\n` : '';
+      const taken = takeContext({work, session: null});
+      const said = lead + withContext(taken, item.text.slice(lead.length));
+      item.sent = said;
+      const done = await posted('/api/dispatch-message', {work_id: work, text: said});
+      if (!done.ok) {
+        contextBack(taken);
+        item.state = 'waiting';
+        startFailed(done.body?.error || 'The message was not kept.', done.body?.next);
+        return;
+      }
+      item.state = done.body?.held ? 'held' : 'sent';  // a session that started meanwhile has it already
+    }
+  } finally { DOCK.delivering = false; }
+  drawHelpdesk();
+}
 /* A start or a send that failed: why, in the chat, and every message still waiting back in the box, so nothing
  * written is lost. `system` when the start that failed was the system agent's, the one a question asked of the mascot
  * waits on; any other agent's failure leaves that question waiting. */
 export function startFailed(reason, next = null, system = false) {
   // what the person wrote, without the line about their click, which was never theirs to see in the box
-  const left = DOCK.queue.filter(item => item.state !== 'sent');
+  const left = DOCK.queue.filter(unsent);
   const waiting = left.map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
   // the message never went, so the click it named is still untold: the resend carries it while it is fresh
   if (left.some(item => item.clicked)) CLICKED.told = false;
-  DOCK.queue = DOCK.queue.filter(item => item.state === 'sent');
+  DOCK.queue = DOCK.queue.filter(item => !unsent(item));
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
   dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
@@ -157,7 +190,7 @@ const toSystem = () => !DOCK.target || DOCK.target === DOCK.mine || DOCK.chat?.s
  * agent's; with no agent there yet it waits in the thread, and one is reached. */
 async function sendMessage(event) {
   event.preventDefault();
-  if (notificationState(DOCK.state)) return;
+  if (notificationState(DOCK.state)) return dockNote(UPDATES_ONLY);
   if (DOCK.attaching) await DOCK.attaching;  // files still being saved go with the message
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;
@@ -168,10 +201,10 @@ async function sendMessage(event) {
   box.value = '';
   growSay();
   followLog(true);  // what the person sends is followed to the end of the thread
-  // a fork's thread on view is written to as the fork, which takes the words alone; an agent's own subagent is not
-  // written to, so what is written there goes to its parent. Words for a fork never wait for its parent's agent
+  // Every child thread names its recipient. Forks take their own turn; native children receive their words through
+  // their owner's native send-message tool. Neither becomes an unaddressed message to the parent.
   const open = DOCK.child && (DOCK.subagents || []).find(one => one.session_id === DOCK.child);
-  const fork = open?.fork === true ? DOCK.child : null;
+  const fork = open ? DOCK.child : null;
   // a frame of the share goes as a picture only to a running session whose agent takes pictures, never as words alone
   const frame = DOCK.frame;
   const refused = !frame ? null : fork ? 'A fork takes words only, so the frame was not sent.'
@@ -184,9 +217,9 @@ async function sendMessage(event) {
   // agent tells the system agent nothing, so it leaves the click untold. Set as it is taken, so a follow-up, or a click
   // made while this one goes, is never counted as this one's, and put back if the message fails
   if (told) CLICKED.told = true;
-  if (!fork && (!DOCK.live || DOCK.queue.some(item => item.state !== 'sent'))) {
-    DOCK.queue.push({id: ++QUEUE_ID, text: lead + text + attached, sent: '', clicked: told, state: 'waiting',
-      at: Date.now()});
+  if (!fork && (!DOCK.live || DOCK.queue.some(unsent))) {
+    DOCK.queue.push({id: ++QUEUE_ID, target: DOCK.target, text: lead + text + attached, sent: '', clicked: told,
+      state: 'waiting', at: Date.now()});
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
     drawHelpdesk();
@@ -200,6 +233,7 @@ async function sendMessage(event) {
     ...(fork ? {fork} : {}), ...audio, ...(frame ? {image: frame.jpeg} : {})});
   if (sent) {
     DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
+    if (sent.queued && sent.child) dockNote('Queued for this subagent.');
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else {  // the views' context and the click are kept for the resend
     contextBack(taken);

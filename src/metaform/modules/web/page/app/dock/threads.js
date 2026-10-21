@@ -36,7 +36,7 @@ export function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting for 
   const kind = source || chat?.source || sourceOf(workId);
   if (chat) Object.assign(chat, {label, waiting, source: kind, ...(session ? {session} : {})});
   else DOCK.chats.push(chat = {target: workId, session, label, waiting, mine: DOCK.mine === workId, since: Date.now(),
-    source: kind});
+    source: kind, held: false});
   showChat(chat, {focus});
   if (!$('#dock').className.startsWith('open')) dockState('open');
 }

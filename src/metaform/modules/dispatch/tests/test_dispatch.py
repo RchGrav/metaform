@@ -5109,6 +5109,76 @@ def test_the_client_files_and_terminal_settings_turn_them_off(dispatch, run):
 
 
 @pytest.mark.req('BASE-052')
+@pytest.mark.parametrize(('agent', 'child', 'native'), [
+    ('claude', 'native-agent:generation:2', 'native-agent'),
+    ('codex', 'native-thread', 'native-thread'),
+])
+def test_a_native_child_message_keeps_its_thread_and_queues_explicit_parent_delivery(dispatch, agent, child, native):
+    from unittest.mock import AsyncMock, Mock
+
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+
+    async def exercise():
+        held = runner.Session(context('dispatch', dispatch.folder, project='proj'),
+                              Store('proj', module='dispatch'), dispatch.ticket(), agent, [])
+        held.session_id = 'parent-session'
+        held.turns = 1  # the parent's current turn must finish before this delivery starts
+        held.children[child] = {'session_id': child, 'name': 'Explorer', 'task': 'Check the boundary.',
+                                'state': 'completed', 'started': '', 'lines': 0, 'named': set(), 'flow': None}
+        text = 'Check the next boundary.\nKeep "these words" unchanged.'
+        reader = AsyncMock()
+        reader.readline.return_value = json.dumps({'token': held.token, 'op': 'message',
+                                                   'fork': child, 'text': text}).encode() + b'\n'
+        writer = Mock(drain=AsyncMock())
+        await held.control(reader, writer)
+        result = json.loads(writer.write.call_args.args[0])
+        assert result['sent'] is True and result['queued'] is True
+        assert result['child'] == child and result['via'] == 'parent'
+        [forwarded] = held.pending
+        assert forwarded != text and 'SendMessage' in forwarded and 'send_message' in forwarded
+        assert 'Do not answer on the child' in forwarded
+        assert json.loads(forwarded.splitlines()[-1]) == {
+            'session_id': child, 'native_id': native, 'name': 'Explorer',
+            'task': 'Check the boundary.', 'message': text}
+        assert list(held.typed) == [True] and held.priority_count == 1
+        with held.store.tables(write=False) as tx:
+            lines = tx.rows('session_lines', limit=0).results
+        assert [(one['session_id'], one['kind'], one['text']) for one in lines] == [(child, 'person', text)]
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.parametrize('child', ['unknown-child', ''])
+def test_an_unknown_child_message_never_falls_back_to_the_parent(dispatch, child):
+    from unittest.mock import AsyncMock, Mock
+
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import runner
+
+    async def exercise():
+        held = runner.Session(context('dispatch', dispatch.folder, project='proj'),
+                              Store('proj', module='dispatch'), dispatch.ticket(), 'claude', [])
+        held.session_id = 'parent-session'
+        held.turns = 1
+        reader = AsyncMock()
+        reader.readline.return_value = json.dumps({'token': held.token, 'op': 'message',
+                                                   'fork': child, 'text': 'For the child only.'}).encode() + b'\n'
+        writer = Mock(drain=AsyncMock())
+        await held.control(reader, writer)
+        result = json.loads(writer.write.call_args.args[0])
+        assert result['sent'] is False and 'child' in result['error'].lower()
+        assert not held.pending
+        with held.store.tables(write=False) as tx:
+            assert not tx.rows('session_lines', limit=0).results
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.req('BASE-052')
 def test_a_fork_keeps_the_sessions_identity_and_has_a_thread_of_its_own(dispatch, run):
     """P030: dispatch fork asks the agent for session/fork, giving the fork the same Metaform server with the same
     identity, and its first turn and its end are in a child thread of the session."""

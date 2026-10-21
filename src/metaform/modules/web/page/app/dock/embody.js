@@ -37,6 +37,10 @@ export const clockOf = (when, day = false) => {
   return date.toLocaleString([], {hour: '2-digit', minute: '2-digit', ...dated});
 };
 export const STANDBY = 'Please stand by while we contact an agent for you.';
+// a ticket's agent with no session yet keeps what the person writes on its ticket, `holdQueued` in dock/send.js
+export const HELD = 'It reads this when it starts.';
+// the project's updates are read-only, said in the box in place of a message
+export const UPDATES_ONLY = 'Project updates are read-only: write to My agent to answer them';
 // the chat going into its tab, 'away', or coming out of it, 'back'
 export const DOCKMOTION = {anim: null, dir: null};
 export const dockGoingAway = () => Boolean(DOCKMOTION.anim)
