@@ -89,6 +89,7 @@ from metaform.module import (
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
 from .board import changed as board_changed
 from .board import waiting as board_waiting
+from .names import is_name
 from .progress import SOURCE as PROGRESS
 from .progress import blocked as rework_blocked
 from .progress import changed as progress_changed
@@ -1145,6 +1146,18 @@ def intake_store(store: Store, work_id: str) -> Store | None:
     except StoreError:
         pass
     return None
+
+
+def named_session(store: Store, name: str) -> dict[str, Any]:
+    """The latest session of the project with this name, the name dispatch gave it when it started, names.py: its
+    row, for a verb that takes a name where it takes a session id. Refused when no session has the name."""
+    from .names import latest
+    found: dict[str, Any] | None = None
+    with contextlib.suppress(StoreError), own_store(store).tables(write=False) as tx:
+        found = latest(tx, name)
+    if found is None:
+        raise Stop(f'No agent session is called {name}.', 'metaform dispatch sessions thread=false')
+    return found
 
 
 def session_state(store: Store, session_id: str) -> dict[str, Any] | None:
@@ -4783,8 +4796,11 @@ def talk(ctx: Context) -> dict[str, Any]:
     given = {key: str(ctx.nouns[key]) for key in ('id', 'node', 'session') if ctx.nouns.get(key)}
     if len(given) != 1:
         raise Stop('Talk names one thing: id=<work id>, node=<address>, question=<message id> or '
-                   'session=<work id>:<session id>.', 'metaform help dispatch talk')
+                   'session=<work id>:<session id> or <agent name>.', 'metaform help dispatch talk')
     (kind, ref), = given.items()
+    if kind == 'session' and is_name(ref):  # an agent's name: its latest session
+        held = named_session(store, ref)
+        ref = f'{held["work_id"]}:{held["session_id"]}'
     everyone = sessions(store)
     running = [row for row in everyone if row['state'] == 'running']
     if kind == 'id':
@@ -6133,7 +6149,7 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
 
 SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 ENDED_STATE = ('about', 'brief', 'intake', 'notification', 'title', 'role', 'authored_role_uri', 'assignment_id', 'team_id',
-               'latest_message_id', 'latest_message_text', 'updated_at')
+               'latest_message_id', 'latest_message_text', 'updated_at', 'name')
 # What the agents key keeps of an ended session's assignment: the fields its state and the Agents menu name it by.
 ENDED_ASSIGNMENT = ('assignment_id', 'authored_role_uri', 'team_id', 'gc_assignment_id', 'root_work_id',
                     'parent_assignment_id', 'reviewed_assignment_id', 'state', 'work_id')
@@ -6194,6 +6210,10 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     whichever map is active, PROJ-026."""
     store = ctx.require_store()
     work_id = ctx.nouns.get('id') or None
+    only: str | None = None  # an agent's name: its latest session alone
+    if work_id and is_name(work_id):
+        by_name = named_session(store, str(work_id))
+        work_id, only = str(by_name['work_id']), str(by_name['session_id'])
     if work_id and intake_id(work_id):
         store = intake_store(store, str(work_id)) or store
     lines: list[dict[str, Any]] = []
@@ -6350,6 +6370,11 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                 'assessment_work_id': assigned['work_id'] if reviewed else None,
                 'reviewed_work_id': reviewed.get('work_id'), 'reviewed_session_id': reviewed.get('owner_session_id'),
                 'reviewed_gc_id': reviewed.get('assignment_id')}
+    if only is not None:
+        found = [session for session in found if session['session_id'] == only]
+        lines = [line for line in lines if line['session_id'] == only]
+        states = {key: state for key, state in states.items() if key == only}
+        children = [child for child in children if child['parent'] == only]
     return {'sessions': [*({**{key: value for key, value in session.items() if key not in PRIVATE},
                             **session_work_status(session, [one for one in raised
                                                             if one.get('work_id') == session['work_id']])}
@@ -6575,9 +6600,12 @@ def resume(ctx: Context) -> dict[str, Any]:
     may_steer(ctx)
     store = ctx.require_store()
     work_id = str(ctx.nouns['id'])
+    wanted = ctx.nouns.get('session')
+    for name in (str(one) for one in (work_id, wanted) if one and is_name(one)):  # an agent's name: its latest session
+        by_name = named_session(store, name)
+        work_id, wanted = str(by_name['work_id']), str(by_name['session_id'])
     held = (intake_store(store, work_id) or store) if intake_id(work_id) else store
     found = sessions(held, work_id)
-    wanted = ctx.nouns.get('session')
     row = next((one for one in reversed(found) if one['session_id'] == wanted), None) if wanted else \
         (found[-1] if found else None)
     if row is None:
@@ -7233,10 +7261,13 @@ MODULE = Module(
         Verb('resume', resume, 'Resume an ended agent session in place, so the agent keeps its memory and its thread '
                                'goes on. It works where the agent can load or resume a session, and waits for your '
                                'next message.',
-             nouns=(Noun('id', 'The work id of the session\'s ticket, or an intake agent\'s work id.'),
-                    Noun('session', 'The session id; the latest session of the ticket when none is given.',
-                         required=False)),
-             examples=(('metaform dispatch resume 198452e1... session=4f2c...', 'Resumes that session.'),), open_world=True),
+             nouns=(Noun('id', 'The work id of the session\'s ticket, an intake agent\'s work id, or an agent\'s name, '
+                               'for the latest session of that name.'),
+                    Noun('session', 'The session id or the agent\'s name; the latest session of the ticket when none is '
+                                    'given.', required=False)),
+             examples=(('metaform dispatch resume 198452e1... session=4f2c...', 'Resumes that session.'),
+                       ('metaform dispatch resume cosmic-argon', 'Resumes the latest session called cosmic-argon.')),
+             open_world=True),
         Verb('permit', permit, 'Answer an agent\'s waiting permission request with one of its options, by its id or '
                                'its name, or its waiting question with your answer, as the person chooses it.',
              nouns=(Noun('id', 'The work id of the agent\'s ticket, or an intake agent\'s work id.'),
@@ -7293,7 +7324,8 @@ MODULE = Module(
                            'open or done; an agent at work on it is talked to directly.',
              nouns=(Noun('id', 'The work id of a ticket, open or done.', required=False),
                     Noun('node', 'The address of a node.', required=False),
-                    Noun('session', 'An agent session, as <work id>:<session id>.', required=False),
+                    Noun('session', 'An agent session, as <work id>:<session id>, or an agent\'s name for the latest '
+                                    'session of that name.', required=False),
                     Noun('agent', 'claude, codex or gemini.', required=False)), open_world=True),
         Verb('prep', prep, "Start an agent in a merge's worktree to prepare its code for the person's review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge is under review.'),), open_world=True,
@@ -7460,7 +7492,8 @@ MODULE = Module(
                          required=False)), surfaces=('cli',), open_world=True),
         Verb('sessions', read_sessions, 'List the agent sessions of a ticket, or of every ticket, each with its '
                                         'thread.',
-             nouns=(Noun('id', 'The work id of the ticket; none for every ticket.', required=False),
+             nouns=(Noun('id', 'The work id of the ticket, or an agent\'s name for the latest session of that name '
+                               'alone; none for every ticket.', required=False),
                     Noun('thread', 'false leaves the threads out, for a list of the sessions only.', kind='bool',
                          required=False),
                     Noun('since', "Only each thread's lines after this seq, for a caller that polls; all by default.",

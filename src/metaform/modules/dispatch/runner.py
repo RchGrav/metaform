@@ -173,6 +173,7 @@ from .merge import (
     ticket_message,
     ticket_title,
 )
+from .names import Ranking, free, ranked
 from .signals import THREAD_TABLES, add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
@@ -1296,6 +1297,9 @@ class Session:
                                     'about': str(ctx.nouns.get('talk') or 'system')
                                     if system and self.role != 'intake' else None,
                                     'role': self.role,
+                                    # its own name, an adjective and a noun chosen for its ticket, names.py, kept
+                                    # when it is resumed, so the person calls the same context back by it
+                                    'name': None,
                                     # the prompt versions the system agent's conversation was last sent its prompt
                                     # in, by name, so an edit saved while it runs reaches its next turn, `reopened`
                                     'opening': None}
@@ -1304,6 +1308,7 @@ class Session:
         self.offered = False  # the last session/new, load or resume answer named its modes or config options
         self.sources: dict[str, list[dict[str, str]]] | None = None  # the sources layer's paths, read when needed
         self.link_asked = False  # work_link, the request to link entry-point files, has gone with a prompt
+        self.naming: asyncio.Future[Ranking] | None = None  # the pairs its name is picked from, `ranking`
         # ACP's compaction signal said the agent's context was compacted, so its next turn opens with `compacted`, the
         # line that says what it works on and that what Metaform gave it once comes again, CTX-045 and CTX-046.
         self.recompacted = False
@@ -2038,12 +2043,13 @@ class Session:
     def compaction_line(self) -> str:
         """What a turn after a compaction opens with: first the directive and the links to the agent's instruction
         blocks, `agent_opening`, as its connect message opened, since the compaction removed what it read;
-        then what the agent works on, and that what Metaform gave it once comes again at its next use."""
+        then what the agent works on, that what Metaform gave it once comes again at its next use, and its name."""
         who = prompt('compacted_ticket', work_id=self.work_id, node=self.at) \
             if self.at and self.role in ('worker', 'prep') else ''
         opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
         role = prompt('role_resource', role=self.authored_role) if self.authored_role else ''
-        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who), role)
+        called = prompt('named', called=str(self.acp['name'])) if self.acp['name'] else ''  # it signs with its name
+        return '\n\n'.join(part for part in (opening, prompt('compacted', who=who), called, role)
                              if part)
 
     async def notice(self, said: dict[str, Any]) -> None:
@@ -3650,6 +3656,8 @@ class Session:
         if self.resume:  # the thread goes on where it ended: its lines keep their names and their order
             await asyncio.to_thread(self.continue_thread)
             await asyncio.to_thread(self.covers_kept)  # and the work the person's word started goes on
+        if not self.resume and not self.probe:  # its name's ranking, worked out while the agent starts
+            self.naming = asyncio.ensure_future(asyncio.to_thread(self.ranking))
         if self.role == 'worker' and not self.prep and self.folder == self.root and self.acp['ticket_git'] is None:
             self.acp['ticket_git'] = {'started': time.time_ns(),
                                       'peers': await asyncio.to_thread(self.commit_peers),
@@ -3751,6 +3759,8 @@ class Session:
         pinned = await asyncio.to_thread(self.store.bound_base)
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
                    origin=origin(), base=pinned.id if pinned is not None else None)
+        ranking = await self.naming if self.naming is not None else None
+        stated: list[tuple[str, int]] = []
         def take() -> None:
             # A worker takes its ticket and records its session together. A conversation takes nothing of the map,
             # so it writes no metaform, and one held on no map makes none, PROJ-026.
@@ -3787,6 +3797,12 @@ class Session:
                             resuming_path(str(self.session_id)).unlink()
                     else:
                         tx.insert('agent_sessions', row)
+                    if ranking is not None:
+                        # its name, the best pair no other running session holds, kept on its state line in the write
+                        # that records it, so a session starting beside it reads the name and takes the next pair
+                        self.acp['name'] = free(tx, ranking, str(self.session_id))
+                        stated.append(add_line(tx, str(self.session_id), self.work_id, 'state', 'state', json.dumps(
+                            {**self.acp, 'settings': self.settings()}, ensure_ascii=False), self.lines))
                 if not self.prep:
                     from .progress import begin
                     begin(self.store, ticket(self.store, self.work_id), str(self.session_id), str(self.runner))
@@ -3794,6 +3810,9 @@ class Session:
             self.took = not self.prep
             self.recorded = True
         await self.write(take)
+        for line, seq in stated:  # the state line its name went out on, as `note` keeps a line it wrote
+            self.named.add(line)
+            self.lines = max(self.lines, seq)
         owner = service(self.ctx)
         if owner is not None and not self.prep:
             persons = bool(self.ctx.nouns.get('persons'))
@@ -4119,6 +4138,21 @@ class Session:
                                f'Metaform speaks version {acp.PROTOCOL_VERSION}')
         return init
 
+    def ranking(self) -> Ranking:
+        """The pairs this session's name is picked from, best first for its ticket's title and task: a helper's
+        brief, the intake's request, else the ticket its work id names, the ticket a conversation is about included;
+        the role's own word when none can be read, since a session is never kept from starting for want of a name."""
+        try:
+            title, task = '', str(self.acp.get('brief') or self.request or '')
+            if not task and not intake_id(self.work_id) and not helper_id(self.work_id):
+                record = held_ticket(self.store, self.work_id)
+                if record is not None:
+                    numbered = self.store.numbers_of('work', [record.id]).get(record.id)
+                    title, task = str(numbered[1] or '') if numbered else '', record.task or record.note or ''
+            return ranked(Path(self.ctx.folder), title, task or self.role, self.work_id)
+        except Exception:  # noqa: BLE001
+            return ranked(None, '', self.role, self.work_id)
+
     def asked_for(self) -> str:
         """What the person asked the intake for, from the row its launch holds its slot in, so their words never go in
         an argument; taken before the session is made, while the row is still there, and cleared once read. Nothing
@@ -4177,6 +4211,8 @@ class Session:
                 self.acp['opening'] = held['opening']
             if held.get('brief'):  # a helper resumed keeps the brief it was started with, `helper_done`
                 self.acp['brief'] = held['brief']
+            if held.get('name'):  # a session resumed keeps its name, the one it is called back by
+                self.acp['name'] = held['name']
             carried =[key for key in CARRIED if held.get(key) not in (None, [], '')]
             self.acp.update({key: held[key] for key in carried})
             self.acp['before_resume'] = carried
@@ -4690,6 +4726,9 @@ class Session:
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
                         text = await asyncio.to_thread(self.rules, text)
+                        if fresh and self.acp['name']:  # its own name, told once, since it signs its messages so
+                            told = prompt('named', called=str(self.acp['name']))
+                            text = f'{told}\n\n{text}' if told else text
                         if line:  # said once, by whichever comes first, ahead of what comes again, the rules among
                             text = f'{line}\n\n{text}'  # them: an agent that lost its context reads its
                         if compacted and self.epoch_moved is not None:  # instruction links and ticket first

@@ -167,6 +167,22 @@ You are healing a fault the system found in itself; the ticket's note holds its 
      delivered tight and once. Empty sends nothing. Replaced the lock on writing unlinked files, withdrawn 2026-10-18. -->
 <work_link>Link the files that are entry points of the functionality you work on: dispatch_link file=&lt;path&gt; node=&lt;the element's Address&gt;. A linked entry point puts your work on the map, so later agents get that node's context.</work_link>
 
+<!-- The line that tells an agent its own name, an adjective and a noun from resources/names chosen for its ticket,
+     names.py. Sent to every agent dispatch names, once: at the head of its session's first turn, and again on the first
+     turn after its AI tool compacted its context, since the context that held it is gone. Not sent again when the
+     session is resumed, whose conversation already holds it. The agent signs its messages with the name, and the
+     person calls its context back by it. <called/> takes the name. Keep it to one line. Empty sends nothing. -->
+<named>Your name is <called/>; sign your messages with it.</named>
+
+<!-- What Jev is asked of each word of the name lists when a session is named and Jev is on, names.py: one question per
+     word, all over the one ticket, `ticket`, its title and task, in one request, answered from Jev's cache when the
+     same ticket is named again. <word/> takes the word. The probabilities rank the words; the first pair no running
+     session holds is the name. Without Jev, the ticket's own words are matched to the lists instead. -->
+<name_adjective>Does the adjective "<word/>" suit a short name for the agent working the ticket in `ticket`, by the most significant words of its title and task?</name_adjective>
+<name_noun>Does the noun "<word/>" suit a short name for the agent working the ticket in `ticket`, by the most significant words of its title and task?</name_noun>
+<name_true>The word says, literally or by a plain association, what the ticket's most significant words are about, so the name reminds a reader of the task.</name_true>
+<name_false>The word has nothing to do with what the ticket is about.</name_false>
+
 <!-- The message a worker's session is resumed with when the supervisor retries it, after it stopped without the
      person's stop and before its ticket was done: go on where it left off. <work_id/> is the ticket's id.
      A draft, written with the supervisor and awaiting the owner's approval of its wording.
