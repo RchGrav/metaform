@@ -217,7 +217,9 @@ def _ticket_changed(tx: Tx, *work_ids: str, kind: str = "ticket") -> None:
     """The tickets this write changes, said on its `map.changed`, so a dispatch runner reads only its own, BASE-053.
     `kind` says what changed: `ticket` for anything that can decide whether it starts or ends, `note` for its words
     alone, its note, title, links or reviewed mark, and `step` for its plan and steps, so the agent starter, which
-    starts nothing for words or steps, reads nothing for them (UX review round 1, runaway F3)."""
+    starts nothing for words or steps, reads nothing for them (UX review round 1, runaway F3). A record done says
+    `done` beside `ticket`, so what acts on a ticket's end alone, dispatch's plan report, reads nothing for any
+    other change (code.dispatcher.agent#10)."""
     for work_id in work_ids:
         tx.concern(work_id=work_id, kind=kind)
 
@@ -665,6 +667,7 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
             tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
     _ticket_changed(tx, work_id)
+    tx.concern(work_id=work_id, kind="done")  # beside `ticket`: heard by what acts on a ticket's end alone
     tx.execute(
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
         (now(), _work_text(resolution, "resolution", notices), ended, work_id),

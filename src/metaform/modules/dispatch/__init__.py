@@ -7310,7 +7310,7 @@ def merge_waits(folder: Path) -> bool:
     return project is not None and bool(due(Store(project)))
 
 
-from .orchestration import TRANSPORT
+from .orchestration import TRANSPORT, plan_changed
 from .orchestration import changed as orchestration_changed
 from .orchestration import render as render_prompt
 
@@ -7795,7 +7795,7 @@ MODULE = Module(
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed),
                    Subscription('map.changed', orchestration_changed), Subscription('map.changed', board_changed),
-                   Subscription('map.changed', hold_review_changed)),
+                   Subscription('map.changed', hold_review_changed), Subscription('map.changed', plan_changed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the

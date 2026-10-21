@@ -10,16 +10,19 @@ import contextlib
 import hashlib
 import json
 import time
+from collections import Counter
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, home, prompt_files
+from metaform.data import Store, StoreError
 from metaform.module import Context, Stop, provided
 
 SUSPENDED = 'orchestration suspended'
 UPDATES = 'conversation-orchestration-updates'
+PLAN_UPDATE = 'plan_report'  # the kind of project update that says a plan's last ticket is done, code.dispatcher.agent#10
 
 
 def service(ctx: Context) -> Any:
@@ -357,6 +360,31 @@ class Transport:
                                                 'assignment_id': None}, envelope))
         return {'state': 'delivered', 'session_id': UPDATES, 'message_id': message_id, 'text': body, 'pm': delivered_pm}
 
+    def plan_done(self, ctx: Context, store: Store, work_id: str, records: list[Any]) -> dict[str, Any] | None:
+        """One project update for a plan whose last ticket is done, `PLAN_UPDATE`: one line with the plan's tickets
+        by outcome, from its first ticket to the one just done, named by the plan's tickets so the same plan is said
+        once; None when it was said already. The person's system agent hears it in its inbox and is woken for it,
+        since the job it fanned out is done (code.dispatcher.agent#10, item 4)."""
+        from .signals import own_store
+        members = sorted(str(record.id) for record in records)
+        ident = f'plan:{hashlib.sha256(" ".join(members).encode()).hexdigest()[:16]}'
+        with own_store(ctx.require_store()).tables(write=False) as tx:
+            if tx.get('session_lines', {'session_id': UPDATES, 'name': f'notification:{ident}'}) is not None:
+                return None
+        counts = Counter(str(record.outcome or 'completed') for record in records)
+        numbered = store.numbers_of('work', members)
+        first = min(records, key=lambda record: str(record.created))
+        last = next((record for record in records if str(record.id) == work_id), first)
+
+        def named(record: Any) -> str:
+            ref, title = numbered.get(str(record.id), (str(record.id)[:8], None, None))[:2]
+            return f'{ref} "{title}"' if title else ref
+
+        ended = ', '.join(f'{count} {outcome}' for outcome, count in sorted(counts.items()))
+        text = f'Plan done: {len(records)} tickets, {ended}, from {named(first)} to {named(last)}.'
+        return self.notify_user(ctx, {'message_id': ident, 'kind': PLAN_UPDATE, 'state': 'completed',
+                                      'work_id': work_id, 'text': text}, ident)
+
 
 TRANSPORT = Transport()
 
@@ -411,8 +439,9 @@ def inbox_status(held: dict[str, Any]) -> str:
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
     """Whether an inbox entry needs the person, so it may start the system agent's turn: an agent's question waiting
-    on an answer, a recommendation the person decides, or a failed result the person must act on."""
-    return ask or update == 'specification_recommendation' or state == 'failed'
+    on an answer, a recommendation the person decides, a failed result the person must act on, or a plan whose
+    last ticket is done."""
+    return ask or update in ('specification_recommendation', PLAN_UPDATE) or state == 'failed'
 
 
 def user_updates(ctx: Context) -> list[str]:
@@ -524,6 +553,57 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
     if payload.get('project') != ctx.project or not transitions_changed(payload):
         return
     drain(ctx, payload.get('work_ids'))
+
+
+def plan_changed(payload: dict[str, Any], ctx: Context) -> None:
+    """map.changed: a ticket done, the change's kind `done`. When it was the last open ticket of its plan, the tickets
+    tied to it by `after_work` in either direction, the plan is done, and `Transport.plan_done` says so once to the
+    person's system agent (code.dispatcher.agent#10, item 4). Decided from the event first, so every other change
+    reads nothing; then one read of the map's `after` table, which keeps every plan's ties, and one of the plan's
+    tickets. A ticket tied to none is no plan and says nothing."""
+    kinds: Any = payload.get('kinds')
+    named: Any = payload.get('work_ids')
+    if not isinstance(kinds, list) or 'done' not in kinds or not isinstance(named, list) or not named:
+        return
+    if payload.get('project') != ctx.project:
+        return
+    held = ctx.require_store()
+    store = Store(held.project_id, base=payload['base_id']) if payload.get('base_id') else held
+    try:
+        with Store(store.project_id, module='map').tables(write=False) as tx:
+            rows = tx.rows('after', limit=0).results
+    except StoreError:
+        return
+    tied: dict[str, set[str]] = {}
+    for row in rows:
+        raw: Any = row['works']
+        for before in ([str(one) for one in cast(list[Any], raw)] if isinstance(raw, list) else []):
+            tied.setdefault(str(row['work_id']), set()).add(before)
+            tied.setdefault(before, set()).add(str(row['work_id']))
+    said: set[str] = set()
+    for work_id in [str(one) for one in cast(list[Any], named)]:
+        plan = plan_members(tied, work_id)
+        if len(plan) < 2 or plan & said:
+            continue
+        said |= plan
+        try:
+            records = store.work(ids=sorted(plan), limit=0).results
+        except StoreError:
+            return
+        if records and all(record.done is not None for record in records):
+            TRANSPORT.plan_done(ctx, store, work_id, list(records))
+
+
+def plan_members(tied: dict[str, set[str]], work_id: str) -> set[str]:
+    """The tickets of one plan: `work_id` and every ticket reached from it through `after_work` ties in either
+    direction, done or not, so a plan is the same set from its first ticket to its last."""
+    found, reach = {work_id}, [work_id]
+    while reach:
+        for other in tied.get(reach.pop(), ()):
+            if other not in found:
+                found.add(other)
+                reach.append(other)
+    return found
 
 
 def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, Any]:

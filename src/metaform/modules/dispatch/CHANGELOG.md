@@ -4,6 +4,11 @@
 
 - `merge.advance` integrates beside existing checkout edits. Clean paths take the integrated content. Modified paths receive its hunks through a three-way merge in the working copy and, when staged, their index entries. Conflicting local paths remain unchanged and appear in one board-needs notice for the system agent. The ticket stays closed in every case. Previously, local edits in touched files failed integration with `Entry ... not uptodate`.
 
+## Plan report to the system agent (2026-10-21, code.dispatcher.agent#10)
+
+- When the last ticket of a plan, the tickets tied by `after_work`, is done, one project update of kind `plan_report` says so, once for the plan: its tickets by outcome, from its first ticket to the one just done. It is heard on the `done` kind the map now says beside `ticket` on a ticket's end (`plan_changed`, a `map.changed` subscription that reads nothing for any other change), and it wakes the system agent, since the person waits for the job's end.
+
+
 ## Official Antigravity ACP (2026-10-21, code.dispatcher.agent#fe)
 
 - Google Antigravity replaces the retired Google CLI throughout dispatch, ticket agent choices, roundtable seats, pickers, setup and help. Removed the retired adapter, its setting declarations, hook branch, reminder setting and obsolete tests/docs.

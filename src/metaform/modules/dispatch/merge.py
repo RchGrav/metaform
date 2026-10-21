@@ -338,6 +338,20 @@ def checkpoint(folder: str | Path, work_id: str, said: str, *, completed: bool =
     return git(folder, 'rev-parse', 'HEAD').stdout.strip() if done.returncode == 0 else None
 
 
+def landing_base(project: str | Path, dev: str, branch: str) -> str:
+    """The base a ticket branch lands from: its recorded start, which keeps a legacy dirty snapshot out of the delta,
+    P009, unless the branch has merged the dev branch since, when their merge-base is later than that start and
+    holds no snapshot, so a three-way merge from it finds only the ticket's own changes; with no recorded start, the
+    merge-base. A start kept as the base after the branch merged dev found dev's own changes on both sides and
+    reported conflicts the branch had already resolved (2026-10-21)."""
+    base = git(project, 'merge-base', dev, branch).stdout.strip()
+    began = snapshot_of(project, branch)
+    if not began:
+        return base
+    if base and began != base and git(project, 'merge-base', '--is-ancestor', began, base).returncode == 0:
+        return base
+    return began
+
 def snapshot_of(project: str | Path, branch: str) -> str | None:
     """The recorded starting commit, or legacy dirty snapshot; None for branches without a recorded start."""
     found = git(project, 'rev-parse', '--verify', '--quiet', f'{SNAPSHOTS}/{branch}').stdout.strip()
@@ -847,7 +861,7 @@ def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) ->
         record = store.ticket(work_id).work
         if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
             return _blocked(ctx, store, own, work_id, 'ticket is not completed')
-        began = snapshot_of(project, branch) or git(project, 'merge-base', dev, branch).stdout.strip()
+        began = landing_base(project, dev, branch)
         if not began:
             return _blocked(ctx, store, own, work_id, 'ticket branch has no recorded starting commit')
         with own.tables() as tx:

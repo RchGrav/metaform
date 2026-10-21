@@ -330,6 +330,33 @@ def test_legacy_dirty_snapshot_is_excluded_when_its_ticket_branch_merges(dispatc
     assert 'Snapshot of uncommitted work' not in git(repo, 'log', '--format=%s')
 
 
+def test_a_ticket_branch_that_merged_the_dev_branch_lands_from_their_merge_base(dispatch, repo):
+    """A branch that merged dev after its recorded start lands from their merge-base, not from that start: dev's own
+    changes since then are not read as conflicts the branch has already resolved, and only the ticket's delta lands."""
+    from metaform.module import context
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+    folder = merge.worktree_for(repo, dispatch.id)
+    (repo / 'README.md').write_text('base\ndev line\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'dev moves on')
+    (folder / 'README.md').write_text('base\nbranch line\n', encoding='utf-8')
+    git(folder, 'commit', '-qam', 'branch edits the same place')
+    clashed = subprocess.run(['git', 'merge', '--no-edit', 'dev'], cwd=folder, capture_output=True, text=True,
+                             check=False)
+    assert clashed.returncode != 0, 'the branch meets dev\'s change and resolves it itself'
+    (folder / 'README.md').write_text('base\ndev line\nbranch line\n', encoding='utf-8')
+    git(folder, 'add', 'README.md')
+    git(folder, 'commit', '-qm', 'merge dev, resolved')
+    (folder / 'feature.txt').write_text('ticket feature\n', encoding='utf-8')
+    record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver only ticket changes.')
+    ctx = context('dispatch', repo, project='proj')
+    merge.finished(ctx, dispatch.store, record, folder)
+    landed = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
+    assert landed['merged'] and 'conflict' not in landed['why'], landed
+    assert (repo / 'README.md').read_text(encoding='utf-8') == 'base\ndev line\nbranch line\n'
+    assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'ticket feature\n'
+    assert git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == 'README.md\nfeature.txt'
+
+
 @pytest.mark.parametrize('outcome', ['cancelled', 'failed'])
 def test_uncompleted_worktree_keeps_edits_without_committing_until_abandoned(dispatch, repo, outcome):
     """Cancelled and failed tickets retain unfinished edits until expiry without creating commits."""

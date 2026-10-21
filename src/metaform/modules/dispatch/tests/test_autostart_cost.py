@@ -310,6 +310,63 @@ def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run,
     assert started() == [second], 'the next pass starts what the done ticket freed'
 
 
+@pytest.mark.req('VIEW-042')
+def test_the_last_ticket_of_a_plan_done_says_so_once_in_the_system_agents_inbox(dispatch, run, monkeypatch):  # noqa: F811
+    """code.dispatcher.agent#10, item 4: a plan is tickets tied by after_work; when its last ticket is done, one project
+    update of kind plan_report names the plan's tickets by outcome and wakes the system agent, once for the plan. A
+    change that ends no ticket reads nothing."""
+    from metaform.data import Store
+    from metaform.module import context
+    from metaform.modules.dispatch import orchestration
+
+    first = dispatch.id
+    second = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Second', 'title=Second',
+                            '--json', cwd=dispatch.folder).stdout)['id']
+    third = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Third', 'title=Third',
+                           '--json', cwd=dispatch.folder).stdout)['id']
+    run('map', 'work', 'op=edit', f'id={second}', f'after_work=["{first}"]', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={third}', f'after_work=["{first}", "{second}"]', cwd=dispatch.folder)
+    alone = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Alone').id  # tied to no plan
+
+    def reports():
+        with Store('proj', module='dispatch').tables(write=False) as tx:
+            return [row['text'] for row in tx.rows('session_lines', {'session_id': orchestration.UPDATES},
+                                                   limit=0).results if str(row['name']).startswith('notification:plan:')]
+
+    for work_id in (first, alone, second):
+        run('map', 'work', 'op=done', f'id={work_id}', 'resolution=Done.', 'why=It is done.', cwd=dispatch.folder)
+    assert reports() == [], 'a plan with an open ticket is not done, and a ticket tied to none is no plan'
+    run('map', 'work', 'op=done', f'id={third}', 'resolution=Done.', 'why=It is done.', cwd=dispatch.folder)
+    [said] = reports()
+    assert said == 'Plan done: 3 tickets, 3 completed, from code.engine#1 "Write notes.txt" to code.engine#3 "Third".', \
+        said
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    entries = orchestration.update_entries(ctx, orchestration.user_updates(ctx))
+    [(_, named, wakes)] = [entry for entry in entries if 'plan report' in entry[1]]
+    assert named == 'Ticket 3 — plan report' and wakes, "the plan's report wakes the system agent"
+    orchestration.plan_changed({'project': 'proj', 'kinds': ['ticket', 'done'], 'work_ids': [third]}, ctx)
+    assert len(reports()) == 1, 'the same plan is said once'
+    reads = Counter()
+    tables, get = Store.tables, Store.__getattr__
+
+    def counted_tables(self, *args, **kwargs):
+        reads['tables'] += 1
+        return tables(self, *args, **kwargs)
+
+    def counted(self, name):
+        if name == 'work':
+            reads['work'] += 1
+        return get(self, name)
+
+    monkeypatch.setattr(Store, 'tables', counted_tables)
+    monkeypatch.setattr(Store, '__getattr__', counted)
+    for payload in ({'project': 'proj', 'kinds': ['ticket'], 'work_ids': [third]},
+                    {'project': 'proj', 'kinds': ['note'], 'work_ids': [first]},
+                    {'project': 'proj', 'kinds': ['step', 'ticket'], 'work_ids': [second, first]}):
+        orchestration.plan_changed(payload, ctx)
+    assert (reads['tables'], reads['work']) == (0, 0), reads
+
+
 @pytest.mark.req('VIEW-045')
 @pytest.mark.parametrize('identity', [
     {'METAFORM_ROLE': 'system'}, {'METAFORM_ROLE': 'sentinel'}, {'METAFORM_ROLE': 'intake'},
