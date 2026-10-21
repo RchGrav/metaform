@@ -701,6 +701,32 @@ def test_a_page_open_through_a_restart_reconnects_to_the_new_server_and_is_told_
 
 
 @pytest.mark.req('VIEW-002')
+@pytest.mark.req('CLI-011')
+def test_a_page_open_through_a_restart_starts_a_ticket_without_a_reload(run, web, mapped, browser):
+    """An agent restarted the web GUI, 2026-10-21: the new process held none of the keys the old one gave its pages,
+    so every write of the person's from an open page was refused until a reload. The stream the page reopens on the
+    new process gives it a key of its own, and Start on a card is taken."""
+    from metaform.data import Node, Store
+    work = Store('proj').add_work(Node('element', 'exterior.cook'), None, task='Name the cook').id
+    run('enable', 'dispatch')
+    started(run)
+    page = opened(browser, web)[0]  # its stream's refused reconnects while no server runs are in its console
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.evaluate("document.addEventListener('metaform:reconnected', () => { document.body.dataset.reconnected = 1 })")
+    old = api(web, '/api/health')[1]['pid']
+    assert json.loads(run('web', 'restart', '--json').stdout)['state'] == 'restarted'
+    assert api(web, '/api/health')[1]['pid'] not in (None, old)
+    page.wait_for_function('() => document.body.dataset.reconnected', timeout=20000)
+    page.click('#boardBtn')
+    page.click(f'#board .card[data-id="{work}"] button.start')
+    page.wait_for_selector('#dispatch:not([hidden])')
+    with page.expect_response(lambda response: '/api/dispatch-start' in response.url) as sent:
+        page.click(f'#dispatch .ticket[data-id="{work}"] button.start')
+    assert sent.value.status == 200, sent.value.text()
+    assert sent.value.json()['work_id'] == work  # the start taken, the specialist then chosen for it
+
+
+@pytest.mark.req('VIEW-002')
 @pytest.mark.skipif(sys.platform == 'win32', reason='the hold tool runs on POSIX systems only')
 def test_with_the_hold_tool_the_watchdog_is_placed_as_a_hold_call_and_says_it_listens_through_a_pipe(
         run, home, web, tmp_path, monkeypatch):

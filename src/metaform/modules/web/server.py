@@ -1325,12 +1325,18 @@ class Handler(BaseHTTPRequestHandler):
             self.gui.schedule_dispatch(project)  # the page opened the project: its agent starter runs now
             self.gui.pages_changed(project)
         self.close_connection = True
+        # A page whose key this process never gave, an open page reconnecting after a restart, gets a key of its own
+        # with its stream, in the same HttpOnly cookie the page's load sets, so its later writes are the person's
+        # again without a reload; an agent's process gets none, as with the page, CLI-011.
+        keyed = None if self.gui.page_key_held(self.page_key_given()) else self.page_cookie()
         try:
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Connection', 'close')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            if keyed is not None:
+                self.send_header('Set-Cookie', keyed)
             self.end_headers()
             self.wfile.write(b': open\n\n')
             # first, the code this server runs, so a page opened on older code knows it once the server it reconnects
