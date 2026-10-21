@@ -3,6 +3,7 @@
 ## 2026-10-21 — The Facilitator's commission is one line
 
 - A commission is one line in the form every delivery between agents takes, the `commission` prompt: the requesting assignment's role and ticket number, that ticket's title cut to 80 characters, and `Select or create a specialist for <ticket>, role <name>, request <id>.`; it was a JSON object of the same request id, role and ticket number.
+- The role creator's procedure reads the commissioned ticket with `map_work id=TICKET`; it said `op=read`, which `map_work` refuses.
 
 ## 2026-10-21 — The Facilitator's commission names the ticket
 
