@@ -1269,6 +1269,125 @@ def test_a_ticket_filed_with_no_board_lands_on_the_active_board(run, mapped):
     assert [one['name'] for one in boards if one['active']] == ['']
 
 
+def test_wiping_a_board_backs_up_every_column_and_restores_ids_numbers_and_owned_rows(run, mapped, monkeypatch):
+    """A person can empty a board without losing its map, then insert its tickets beside work made since the wipe.
+    Each wipe keeps its own backup. Forty-four removed tickets produce one map.changed carrying all their ids."""
+    from metaform import changes, events
+    from metaform import home as metaform_home
+    from metaform.context import build
+    from metaform.errors import Stop
+    from metaform.modules.map import boards
+
+    store = Store('proj', module='map')
+    dispatch = Store('proj', module='dispatch')
+    node = Node('element', 'code.alarm.audible')
+    j(run, 'boards', 'op=add', 'name=past effort', cwd=mapped)
+    records = []
+    for column in ('backlog', 'todo', 'doing', 'done'):
+        for number in range(11):
+            record = store.add_work(node, 'flawed', task=f'{column} task {number}', title=f'{column} {number}',
+                                    links=[Node('element', 'code.timer.kitchen')])
+            with store.tables() as tx:
+                tx.insert('ticket_settings', {'work_id': record.id, 'board': 'past effort'})
+            store.move_work(record.id, column, by='codex')
+            records.append(record)
+    first = records[0].id
+    j(run, 'work', 'op=edit', f'id={first}', 'agent=codex', 'hold=true', 'glyph=owl',
+      'eligible=["codex"]', f'after_work=["{records[-1].id}"]', cwd=mapped)
+    store.plan_work(first, 3)
+    store.step_work(first, 'Keep this progress.')
+    asked = store.ask(node, 'Keep this question?', work=first, title='A linked question', why='It follows the ticket.')
+    with dispatch.tables() as tx:
+        tx.insert('lines', {'session_id': 'monitor:progress', 'name': first, 'work_id': first,
+                            'kind': 'progress', 'text': '{"progress":1}', 'seq': 1})
+        tx.insert('claim_work', {'work_id': first, 'claim_id': 'past-claim'})
+
+    tables = ('work', 'work_steps', 'work_links', 'ticket_settings', 'glyphs', 'eligible', 'after', 'question_work')
+    with store.tables(write=False) as tx:
+        saved = {table: [dict(row) for row in tx.rows(table, limit=0).results] for table in tables}
+        board_row = dict(tx.get('boards', {'name': 'past effort'}))
+        numbered = [dict(row) for row in tx.rows('numbered', {'kind': 'work'}, limit=0).results]
+    citations = {row['item_id']: f'{row["address"]}#{row["number"]:x}' for row in numbered}
+    ids = {record.id for record in records}
+    assert len(ids) == 44
+    addresses = ('stakeholder.cook.home', 'code.timer.kitchen', 'code.alarm.audible')
+    before_map = [store.element(address).id for address in addresses]
+    with pytest.raises(Stop):
+        boards(build('map', mapped, nouns={'op': 'wipe', 'name': 'past effort'}, surface='mcp'))
+    assert {record.id for record in store.work(open=None, limit=0).results} == ids
+
+    changes.take()
+    published = []
+    monkeypatch.setattr(events, 'publish', lambda topic, payload, source: published.append((topic, payload)) or [])
+    wiped = j(run, 'boards', 'op=wipe', 'name=past effort', cwd=mapped)
+    stamp = wiped['backup']
+    assert wiped['tickets'] == 44 and wiped['columns'] == dict.fromkeys(('backlog', 'todo', 'doing', 'done'), 11)
+    assert wiped['sessions_stopped'] == []
+    changed = [payload for topic, payload in published if topic == 'map.changed']
+    assert len(changed) == 1 and set(changed[0]['work_ids']) == ids
+    backup = metaform_home.home() / 'backups' / 'wipe' / 'proj' / stamp / 'rows.json'
+    assert backup.is_file()
+    raw = json.loads(backup.read_text(encoding='utf-8'))
+    assert raw['board'] == board_row and set(raw['work_ids']) == ids
+    backed_up = {(part['module'], part['table']): part['rows'] for part in raw['rows']}
+    assert {row['work_id'] for row in backed_up['map', 'work']} == ids
+    assert len(backed_up['map', 'work_links']) == 44
+    assert backed_up['map', 'question_work'] == [{'message_id': asked.id, 'work_id': first}]
+    assert backed_up['dispatch', 'claim_work'] == [{'work_id': first, 'claim_id': 'past-claim'}]
+    assert backed_up['dispatch', 'lines'][0]['text'] == '{"progress":1}'
+    listed = j(run, 'boards', cwd=mapped)
+    assert [board['name'] for board in listed['boards']] == ['']
+    assert any(wipe['stamp'] == stamp and wipe['board'] == 'past effort' and wipe['tickets'] == 44
+               for wipe in listed['wipes'])
+    assert not store.work(open=None, limit=0).results
+    assert [store.element(address).id for address in addresses] == before_map
+    for citation in citations.values():
+        assert run('map', 'item', citation, cwd=mapped, ok=False).returncode != 0
+    with store.tables(write=False) as tx:
+        assert all(not tx.rows(table, limit=0).results for table in tables)
+    with dispatch.tables(write=False) as tx:
+        assert not tx.rows('claim_work', limit=0).results and not tx.rows('lines', limit=0).results
+    listed_backups = run('list', 'backups', '--json', cwd=mapped).stdout
+    assert stamp in listed_backups and 'past effort' in listed_backups and '44' in listed_backups
+
+    with pytest.raises(Stop):
+        boards(build('map', mapped, nouns={'op': 'restore', 'name': 'past effort', 'backup': stamp}, surface='mcp'))
+    # An existing id is preserved, even when its current contents differ from its backed-up row.
+    duplicate = dict(saved['work'][-1])
+    duplicate['task'] = 'Already present. Keep this version.'
+    with store.tables() as tx:
+        tx.insert('work', duplicate)
+    new = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'task=Work since the wipe.', 'board=', cwd=mapped)
+    assert int(new['map']['item'].rpartition('#')[2], 16) > max(row['number'] for row in numbered)
+    published.clear()
+    restored = j(run, 'boards', 'op=restore', 'name=past effort', f'backup={stamp}', cwd=mapped)
+    assert set(restored['restored']) == ids - {duplicate['work_id']} and restored['skipped'] == [duplicate['work_id']]
+    changed = [payload for topic, payload in published if topic == 'map.changed']
+    assert len(changed) == 1 and set(changed[0]['work_ids']) == ids - {duplicate['work_id']}
+    assert store.ticket(new['id']).work.task == 'Work since the wipe.'
+    assert store.ticket(duplicate['work_id']).work.task == duplicate['task']
+    for work_id, citation in citations.items():
+        if work_id != duplicate['work_id']:
+            assert j(run, 'item', citation, cwd=mapped)['id'] == work_id
+    with store.tables(write=False) as tx:
+        assert tx.get('boards', {'name': 'past effort'}) == board_row
+        for table in tables:
+            expected = [row for row in saved[table] if row.get('work_id') != duplicate['work_id']]
+            actual = [dict(row) for row in tx.rows(table, limit=0).results
+                      if row.get('work_id') in ids - {duplicate['work_id']}]
+            assert actual == expected, table
+    with dispatch.tables(write=False) as tx:
+        assert tx.get('claim_work', {'work_id': first}) == {'work_id': first, 'claim_id': 'past-claim'}
+        assert tx.get('lines', {'session_id': 'monitor:progress', 'name': first})['text'] == '{"progress":1}'
+
+    # The first board remains available after its own wipe, retaining another permanent backup.
+    published.clear()
+    first_wipe = j(run, 'boards', 'op=wipe', 'name=', cwd=mapped)
+    assert first_wipe['tickets'] == 2
+    assert next(board for board in j(run, 'boards', cwd=mapped)['boards'] if board['first'])['tickets'] == 0
+    assert backup.is_file() and first_wipe['backup'] != stamp
+
+
 def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(run, mapped):
     """Assign and track work via Metaform like a kanban; the ticket is on the functionality it is
     assigned to, and links other nodes for reference. It keeps its kind in every column."""

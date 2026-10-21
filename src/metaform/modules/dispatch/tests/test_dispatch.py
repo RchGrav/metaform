@@ -964,6 +964,30 @@ def test_stop_cancels_the_session_and_ends_the_agent_process_group(dispatch):
 
 
 @pytest.mark.req('BASE-052')
+@pytest.mark.req('QUAL-002')
+def test_a_board_wipe_stops_its_running_session_before_removing_its_ticket(dispatch, run):
+    """A wiped ticket leaves no live runner or agent child holding it. The board uses dispatch's own stop, so ACP
+    receives session/cancel and the runner records its session ended before its ticket goes."""
+    run('map', 'boards', 'op=add', 'name=Past work', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'board=Past work', cwd=dispatch.folder)
+    dispatch.start('hold')
+    [grandchild] = eventually(lambda: dispatch.logged('grandchild'))
+    assert alive(grandchild)
+    session_id = dispatch.session().extra['session_id']
+
+    wiped = json.loads(run('map', 'boards', 'op=wipe', 'name=Past work', '--json', cwd=dispatch.folder).stdout)
+
+    assert wiped['sessions_stopped'], wiped
+    assert dispatch.received('session/cancel') == [
+        {'jsonrpc': '2.0', 'method': 'session/cancel', 'params': {'sessionId': session_id}}]
+    assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()
+    eventually(lambda: not alive(grandchild))
+    assert dispatch.id not in {record.id for record in dispatch.store.work(limit=0).results}
+    assert not [one for one in dispatch.items('session') if one.extra['work_id'] == dispatch.id
+                and one.extra['state'] == 'running']
+
+
+@pytest.mark.req('BASE-052')
 def test_the_session_ends_when_a_turn_ends_with_the_ticket_done(dispatch):
     dispatch.start('done')
     assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()

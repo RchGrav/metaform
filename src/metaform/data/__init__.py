@@ -78,7 +78,17 @@ from .refs import RESERVED as RESERVED_REF_NAMES
 from .session import BASE_VARIABLE, on_base
 from .session import Tx as DataTx
 from .store import Store
-from .tables import Column, Index, Table, Tables, TableTx
+from .tables import (
+    Column,
+    Index,
+    Table,
+    Tables,
+    TableTx,
+    delete_work_rows,
+    export_work_rows,
+    insert_work_rows,
+    project_work_rows,
+)
 
 DataRow = _sqlite3.Row
 DataConnection = _sqlite3.Connection
@@ -206,10 +216,13 @@ __all__ = [
     'WorkRecord',
     'as_object',
     'author',
+    'delete_work_rows',
     'export_document',
+    'export_work_rows',
     'functional_context',
     'history',
     'import_document',
+    'insert_work_rows',
     'is_work',
     'new_id',
     'now',
@@ -218,6 +231,7 @@ __all__ = [
     'parse_reference',
     'plain',
     'private_database',
+    'project_work_rows',
     'prompts',
     'query_read',
     'query_reads',

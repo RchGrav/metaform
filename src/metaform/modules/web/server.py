@@ -237,7 +237,7 @@ ADMIN_ROUTES = frozenset({
     '/api/activate-base',
     '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
-    '/api/mcp-call', '/api/board-line', '/api/board-add', '/api/board-remove',
+    '/api/mcp-call', '/api/board-line', '/api/board-add', '/api/board-remove', '/api/board-wipe', '/api/board-restore',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
 ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech-voices')
@@ -1441,6 +1441,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
                   '/api/board-add': self.add_board, '/api/board-remove': self.remove_board,
+                  '/api/board-wipe': self.wipe_board, '/api/board-restore': self.restore_board,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
                   '/api/intake-finish': self.intake_finish, '/api/intake-discard': self.intake_discard,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
@@ -1840,7 +1841,12 @@ class Handler(BaseHTTPRequestHandler):
     def list_boards(self, given: dict[str, str]) -> None:
         """The project's named boards with their open tickets, `map boards`, for the board's picker."""
         try:
-            self.send(200, plain(module_verb(given, 'map', 'boards', {}, chosen=bool(chosen_base(given)))))
+            found = cast(dict[str, Any], plain(module_verb(given, 'map', 'boards', {},
+                                                         chosen=bool(chosen_base(given)))))
+            boards = cast(list[dict[str, Any]], found.get('boards') or [])
+            for board in boards:
+                board['cutoff'] = board_cutoff({**given, 'on': str(board['name'])}, boards=boards)
+            self.send(200, found)
         except (Stop, StoreError) as error:
             self.refuse(error, 400)
 
@@ -1852,6 +1858,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A board has a name.'})
         try:
             made = module_verb(given, 'map', 'boards', {'op': 'add', 'name': name.strip()}, chosen=bool(chosen_base(given)))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
+
+    def wipe_board(self, given: dict[str, Any]) -> None:
+        """Back up and wipe one board through its canonical map verb, from the person's page only."""
+        name = given.get('name')
+        if not isinstance(name, str):
+            return self.send(400, {'error': 'Name the board to wipe, or use an empty name for the first board.'})
+        try:
+            made = module_verb(given, 'map', 'boards', {'op': 'wipe', 'name': name.strip()},
+                               chosen=bool(chosen_base(given)))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
+
+    def restore_board(self, given: dict[str, Any]) -> None:
+        """Insert one wipe backup through its canonical map verb, from the person's page only."""
+        name, backup = given.get('name'), given.get('backup')
+        if not isinstance(name, str) or not isinstance(backup, str) or not backup.strip():
+            return self.send(400, {'error': 'Restore names the board and its backup stamp.'})
+        try:
+            made = module_verb(given, 'map', 'boards', {'op': 'restore', 'name': name.strip(), 'backup': backup.strip()},
+                               chosen=bool(chosen_base(given)))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, plain(made))
@@ -3411,7 +3441,7 @@ def with_modules(given: dict[str, str], found: Any) -> Any:
     return data
 
 
-def board_cutoff(given: dict[str, str]) -> str:
+def board_cutoff(given: dict[str, str], *, boards: list[dict[str, Any]] | None = None) -> str:
     """The time the board's done tickets start at: board_done_days ago, or the board's archive cutoff when that is
     later. A ticket done before it is in the board's Archive; times compare as text, as `home.now` writes them."""
     project = home.project(given.get('project', ''))
@@ -3422,11 +3452,13 @@ def board_cutoff(given: dict[str, str]) -> str:
     since = datetime.fromtimestamp(time.time() - days * 86400, UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
     on = str(given.get('on') or '')
     if on:  # a named board keeps its own archive line, `map boards op=line`
-        try:
-            listed = cast(dict[str, Any], module_verb(given, 'map', 'boards', {}, chosen=bool(chosen_base(given))))
-        except (Stop, StoreError):
-            listed = {}
-        line = next((str(one.get('line') or '') for one in cast(list[dict[str, Any]], listed.get('boards') or [])
+        if boards is None:
+            try:
+                listed = cast(dict[str, Any], module_verb(given, 'map', 'boards', {}, chosen=bool(chosen_base(given))))
+            except (Stop, StoreError):
+                listed = {}
+            boards = cast(list[dict[str, Any]], listed.get('boards') or [])
+        line = next((str(one.get('line') or '') for one in boards
                      if one.get('name') == on), '')
         return max(since, line)
     return max(since, str(settings.value('board_line', folder) or ''))
@@ -3728,6 +3760,7 @@ def based(base: str | None) -> dict[str, str] | None:
 PERSONS_WRITES = frozenset({
     '/api/dispatch-permit', '/api/save-prompt',  # an answer to an agent's request or card; what agents are sent
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
+    '/api/board-wipe', '/api/board-restore',
     '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
     '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/orchestration-call',

@@ -1554,6 +1554,33 @@ def backups(project_id: str) -> tuple[Backup, ...]:
     return tuple(found)
 
 
+def wipe_backup(project_id: str, snapshot: dict[str, Any]) -> str:
+    """Keep raw board rows permanently before removal. Publish metadata only after rows are durable."""
+    stamp = now().replace(':', '').replace('-', '') + '-' + uuid.uuid4().hex[:8]
+    folder = home() / 'backups' / 'wipe' / project_id / stamp
+    mkdir_private(folder)
+    write_private(folder / 'rows.json', json.dumps(snapshot, ensure_ascii=False))
+    metadata = {'stamp': stamp, 'board': snapshot['name'], 'base': snapshot['base'],
+                'tickets': len(snapshot['work_ids']), 'columns': snapshot['columns']}
+    write_private(folder / 'manifest.json', json.dumps(metadata, ensure_ascii=False))
+    return stamp
+
+
+def wipe_backups(project_id: str) -> tuple[dict[str, Any], ...]:
+    """List wipe backups without loading ticket rows or transcripts. Metaform never removes them."""
+    folder = home() / 'backups' / 'wipe' / project_id
+    return tuple(json.loads(path.read_text(encoding='utf-8'))
+                 for path in sorted(folder.glob('*/manifest.json'), reverse=True))
+
+
+def read_wipe_backup(project_id: str, stamp: str) -> dict[str, Any]:
+    """Read only a backup stamp listed for this project, never an arbitrary path."""
+    if not any(one['stamp'] == stamp for one in wipe_backups(project_id)):
+        raise Stop(f'No wipe backup has the stamp {stamp!r}.', f'metaform list backups {project_id}')
+    return cast(dict[str, Any], json.loads(
+        (home() / 'backups' / 'wipe' / project_id / stamp / 'rows.json').read_text(encoding='utf-8')))
+
+
 @dataclass(frozen=True)
 class Restored:
     """A backup brought back, and the backup of what the project held before, when it held anything."""

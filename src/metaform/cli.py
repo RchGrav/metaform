@@ -237,8 +237,11 @@ def list_(args: list[str], folder: Path) -> None:
             out(f'{form.name}  {form.created}' + ('  (active)' if form.active else ''))
         return
     if args[:1] == ['backups'] and len(args) in (1, 2):
-        for kept in home.backups(_project_arg(folder, args[1] if len(args) == 2 else None)):
+        project_id = _project_arg(folder, args[1] if len(args) == 2 else None)
+        for kept in home.backups(project_id):
             out(f'{kept.name}  {kept.held}')
+        for wiped in home.wipe_backups(project_id):
+            out(f'{wiped["stamp"]}  wipe  {wiped["board"] or "First board"}  {wiped["tickets"]} tickets')
         return
     if args[:1] == ['origins'] and len(args) in (1, 2):
         for item in Store(_project_arg(folder, args[1] if len(args) == 2 else None)).origins():

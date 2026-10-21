@@ -19,7 +19,7 @@ import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {drawAgentList} from '/page/app/dock/threads.js';
 import {Q, renderMessages} from '/page/app/board/messages.js';
 import {B, unshown} from '/page/app/board/refs.js';
-import {drawBoard, boardTickets} from '/page/app/board/board.js';
+import {drawBoard, drawBoards, boardTickets} from '/page/app/board/board.js';
 import {renderAgents} from '/page/app/agents/dispatch.js';
 import {renderWork} from '/page/app/panel/object.js';
 import {buildEvent} from '/page/app/build/build.js';
@@ -254,19 +254,42 @@ export const opsOnly = named => Array.isArray(named) && named.length > 0 && name
 /* What the changes heard since the last ticket read said of tickets and messages, gathered over the batch from each
  * change's own words, map.changed's work_ids and kinds: the tickets they named, whether one named none and so may
  * have changed any (`every`), and whether one may have changed a message. */
-export const TICKETS = {named: new Set(), every: false, messages: false};
+export const TICKETS = {named: new Set(), every: false, messages: false, boards: false, wiped: false};
 const MESSAGE_KINDS = ['message', 'question'];
 const messageTable = table => table === 'messages' || table === 'map.question_work';
+export function bulkBoardChange(payload) {
+  const kinds = payload.kinds;
+  if (!Array.isArray(kinds)) return false;
+  for (let at = 0; at < kinds.length; at++) if (kinds[at] === 'board-wipe' || kinds[at] === 'board-restore') return true;
+  return false;
+}
 export function ticketsHeard(payload) {
   const ids = payload.work_ids;
   if (!Array.isArray(ids)) TICKETS.every = true;
   else for (let at = 0; at < ids.length; at++) TICKETS.named.add(ids[at]);
   const kinds = payload.kinds, tables = payload.tables;
+  if (bulkBoardChange(payload)) {
+    TICKETS.boards = true;
+    TICKETS.wiped ||= kinds.includes('board-wipe');
+    if (Array.isArray(tables) && tables.some(messageTable)) TICKETS.messages = true;
+  }
   if (Array.isArray(kinds)) { if (holdsAny(kinds, MESSAGE_KINDS)) TICKETS.messages = true; }
   else if (!Array.isArray(tables) || tables.some(messageTable)) TICKETS.messages = true;
 }
 /* A whole read of the map took the tickets and the messages: what was gathered is spent. */
-export function ticketsRead() { TICKETS.named.clear(); TICKETS.every = false; TICKETS.messages = false; }
+export function ticketsRead() {
+  TICKETS.named.clear(); TICKETS.every = false; TICKETS.messages = false; TICKETS.boards = false; TICKETS.wiped = false;
+}
+/* A wipe or restore changes one board at once. Read its visible time window once, including other boards' open
+ * tickets for map progress; archived done tickets stay behind the Archive's own paged read. */
+async function boardWindowTickets(cutoff) {
+  const project = S.project, metaform = S.base;
+  try {
+    const found = await read('work', {done_since: cutoff, limit: 0});
+    if (S.project === project && S.base === metaform) S.tickets = found.results || [];
+  } catch (error) { readFailed(error); }
+  return progressFrom(S.tickets || []);
+}
 /* The tickets a change named, read alone and put in S.tickets in place of what was held, a ticket gone taken out;
  * those that differ from what was held, as they were and as they are, so only their nodes are drawn again. */
 async function namedTickets(ids) {
@@ -292,11 +315,15 @@ async function namedTickets(ids) {
  * the selected node's panel drawn from them, VIEW-035 and VIEW-037. Tickets read as they were held draw nothing. */
 export async function ticketsChanged() {
   const project = S.project, metaform = S.base;
-  const every = TICKETS.every || !S.tickets, ids = every ? [] : [...TICKETS.named], messages = TICKETS.messages;
+  const boards = TICKETS.boards, wiped = TICKETS.wiped;
+  const every = TICKETS.every || !S.tickets || boards, ids = every ? [] : [...TICKETS.named], messages = TICKETS.messages;
   ticketsRead();
   if (!every && !ids.length && !messages) return;
+  const cutoff = boards ? await drawBoards(wiped) : '';
+  if (S.project !== project || S.base !== metaform) return;
   // the whole read gives the progress; the tickets named, those that differ from what was held
-  const [got] = await Promise.all([every ? progressOf() : ids.length ? namedTickets(ids) : [],
+  const [got] = await Promise.all([boards ? boardWindowTickets(cutoff) : every ? progressOf()
+    : ids.length ? namedTickets(ids) : [],
     messages ? renderMessages() : null]);
   if (S.project !== project || S.base !== metaform) return;
   if (!every && !got.length && !messages) return;

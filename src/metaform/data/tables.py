@@ -1453,6 +1453,113 @@ def export_modules(db: sqlite3.Connection) -> list[dict[str, Any]]:
     return exported
 
 
+def export_work_rows(db: sqlite3.Connection, work_ids: Sequence[str]) -> list[dict[str, Any]]:
+    """Raw rows owned by these tickets, found through every persisted table declaration in this store.
+
+    Stored JSON stays text, as in `export_modules`, so inserting a backup needs no value conversion. A project's
+    module store uses this same operation separately from its map's store.
+    """
+    if not work_ids:
+        return []
+    exported: list[dict[str, Any]] = []
+    placeholders = ', '.join('?' for _ in work_ids)
+    for module, table in recorded_tables(db):
+        if not any(column.name == 'work_id' for column in table.columns):
+            continue
+        names = [column.name for column in table.columns]
+        found = db.execute(f'SELECT {", ".join(_quoted(name) for name in names)} FROM '
+                           f'{_quoted(physical(module, table))} WHERE work_id IN ({placeholders}) '
+                           f'ORDER BY {", ".join(_quoted(name) for name in table.key)}', tuple(work_ids)).fetchall()
+        if found:
+            exported.append({'module': module, 'table': table.to_dict(),
+                             'rows': [dict(zip(names, tuple(row), strict=True)) for row in found]})
+    return exported
+
+
+def project_work_rows(project_id: str, work_ids: Sequence[str]) -> list[dict[str, Any]]:
+    """Raw rows these tickets own in existing project module stores, captured without changing retained history."""
+    if not work_ids:
+        return []
+    exported: list[dict[str, Any]] = []
+    for path in project_stores(project_id):
+        with project_transaction(path, write=False) as db:
+            rows = export_work_rows(db, work_ids)
+        if rows:
+            exported.append({'store': path.stem, 'rows': rows})
+    return exported
+
+
+def delete_work_rows(db: sqlite3.Connection, work_ids: Sequence[str]) -> int:
+    """Delete these tickets' rows through the store's declarations, removing their work rows after their children.
+
+    This reaches only the supplied store. A caller leaves project history live by supplying only the map's store.
+    """
+    if not work_ids:
+        return 0
+    declared = [(module, table) for module, table in recorded_tables(db)
+                if any(column.name == 'work_id' for column in table.columns)]
+    declared.sort(key=lambda one: physical(*one) == 'work')
+    placeholders = ', '.join('?' for _ in work_ids)
+    removed = 0
+    for module, table in declared:
+        removed += db.execute(f'DELETE FROM {_quoted(physical(module, table))} '
+                              f'WHERE work_id IN ({placeholders})', tuple(work_ids)).rowcount
+    return removed
+
+
+def insert_work_rows(db: sqlite3.Connection, entries: Sequence[Mapping[str, Any]], work_ids: Sequence[str], *,
+                     skip_existing: bool = False) -> int:
+    """Insert backed-up raw ticket rows into this store, preserving each stored value and key.
+
+    Every declaration and row is checked before the first insert. Only the requested work ids are inserted, so a
+    caller can skip an existing ticket together with all its children. `skip_existing` retains project history
+    already held under a row's key. The caller owns the transaction and any deferred foreign-key checks.
+    """
+    if not work_ids:
+        return 0
+    current = {(module, table.name): table for module, table in recorded_tables(db)}
+    checked: list[tuple[str, Table, list[Mapping[str, Any]]]] = []
+    selected = set(work_ids)
+    for entry in entries:
+        try:
+            module = entry['module']
+            if not isinstance(module, str) or not isinstance(entry['table'], Mapping):
+                raise ValueError('each entry names its module and table declaration')
+            table = Table.from_dict(cast(Mapping[str, Any], entry['table']))
+            held = current.get((module, table.name))
+            if held is None or held.to_dict() != table.to_dict():
+                raise ValueError(f'{module}.{table.name} differs from its current persisted declaration')
+            names = {column.name for column in table.columns}
+            if 'work_id' not in names:
+                raise ValueError(f'{module}.{table.name} has no work_id column')
+            rows = entry['rows']
+            if not isinstance(rows, list):
+                raise ValueError('rows must be a list')
+            kept: list[Mapping[str, Any]] = []
+            for row in cast(list[Any], rows):
+                if not isinstance(row, Mapping):
+                    raise ValueError(f'{module}.{table.name} requires one raw scalar value for every column')
+                raw = cast(Mapping[str, Any], row)
+                if set(raw) != names or not all(_scalar(value) for value in raw.values()):
+                    raise ValueError(f'{module}.{table.name} requires one raw scalar value for every column')
+                if raw['work_id'] in selected:
+                    kept.append(raw)
+            checked.append((module, table, kept))
+        except (KeyError, TypeError, ValueError) as error:
+            raise StoreError(f'The ticket backup does not fit this store: {error}.',
+                             'restore a backup whose table declarations match this store') from None
+    checked.sort(key=lambda one: physical(one[0], one[1]) != 'work')
+    inserted = 0
+    command = 'INSERT OR IGNORE' if skip_existing else 'INSERT'
+    for module, table, rows in checked:
+        names = [column.name for column in table.columns]
+        sql = (f'{command} INTO {_quoted(physical(module, table))}'
+               f'({", ".join(_quoted(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})')
+        for row in rows:
+            inserted += db.execute(sql, tuple(row[name] for name in names)).rowcount
+    return inserted
+
+
 def _scalar(value: Any) -> bool:
     return value is None or isinstance(value, (str, int, float)) and not isinstance(value, bool)
 

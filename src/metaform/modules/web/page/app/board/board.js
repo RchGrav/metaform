@@ -436,7 +436,8 @@ export function boardTickets(records) {
  * select work as the base's Activate and Remove on the main page: a browser that never chose a board shows the active
  * one. */
 const BOARD_KEY = project => `metaform.board.${project}`;
-export async function drawBoards() {
+const BOARDS = {all: [], wipes: []};
+export async function drawBoards(wiped = false) {
   const box = $('#board .boards');
   if (B.boardsOf !== S.project) {
     B.boardsOf = S.project;
@@ -444,23 +445,37 @@ export async function drawBoards() {
     try { kept = localStorage.getItem(BOARD_KEY(S.project)); } catch (error) { kept = null; }
     B.board = kept;
   }
-  let all = null;
-  try { all = (await read('boards')).boards || []; } catch (error) { all = null; }
-  if (all === null) {  // a read that failed changes nothing: the board shown stays, with the names it had
+  let found = null;
+  try { found = await read('boards'); } catch (error) { found = null; }
+  if (found === null) {  // a read that failed changes nothing: the board shown stays, with the names it had
     if (B.board === null) B.board = '';
     boardButtons();
     return;
   }
+  const all = found.boards || [];
+  BOARDS.all = all;
+  BOARDS.wipes = found.wipes || [];
   B.boards = all.filter(one => !one.first);
   B.active = (all.find(one => one.active) || {name: ''}).name;
+  if (wiped) {
+    B.board = '';
+    try { localStorage.setItem(BOARD_KEY(S.project), ''); } catch (error) { /* a browser that keeps nothing */ }
+  }
   // never chosen in this browser, or the board chosen was removed meanwhile: the active board is shown
   if (B.board === null || (B.board && !B.boards.some(one => one.name === B.board))) B.board = B.active;
   const activeMark = name => (name === B.active ? ' · active' : '');
   fill(box, [h('option', {value: ''}, `Board${B.boards.length ? ' (first)' : ''}${activeMark('')}`),
     ...B.boards.map(one => h('option', {value: one.name}, `${one.name} · ${one.open}${activeMark(one.name)}`)),
-    h('option', {value: '', 'data-new': '1'}, 'New board…')]);
+    h('option', {value: '', 'data-new': '1'}, 'New board…'),
+    h('option', {value: '', 'data-wipe': '1'}, 'Wipe this board…'),
+    BOARDS.wipes.length ? h('optgroup', {label: 'Wiped boards'}, ...BOARDS.wipes.map(one =>
+      h('option', {value: `restore:${one.stamp}`, 'data-backup': one.stamp, 'data-board': one.board},
+        `Restore ${one.board || 'Board (first)'} · ${one.tickets} tickets · ${one.stamp}`))) : null]);
   box.value = B.board;
+  B.cutoff = all.find(one => one.name === B.board)?.cutoff || B.cutoff;
   boardButtons();
+  // One bulk refresh reads the visible time window once, keeping open tickets on other boards for map progress.
+  return all.reduce((cutoff, one) => one.cutoff && (!cutoff || one.cutoff < cutoff) ? one.cutoff : cutoff, '');
 }
 /* Activate is offered for a board that is not the active one; Remove for a named board that is not active. */
 function boardButtons() {
@@ -492,6 +507,28 @@ async function removeBoard() {
 }
 $('#board .board-activate').onclick = activateBoard;
 $('#board .board-remove').onclick = removeBoard;
+async function wipeBoard() {
+  const name = B.board, board = BOARDS.all.find(one => one.name === name), box = $('#board .boards');
+  box.value = name;
+  if (!board) return;
+  const counts = BOARD.map(([column, label]) => `${label}: ${board.columns?.[column] || 0}`).join('\n');
+  if (!window.confirm(`Wipe ${name ? `board "${name}"` : 'the first board'}?\n\n${counts}\n\n`
+    + 'A backup is kept. Running sessions stop. The map stays.')) return;
+  box.disabled = true;
+  try {
+    const made = await wrote('/api/board-wipe', {name});
+    if (made) toast(`Board wiped. Backup ${made.backup || made.stamp}. Sessions stopped: ${made.sessions_stopped}.`);
+  } finally { box.disabled = false; }
+}
+async function restoreBoard(chosen) {
+  const box = $('#board .boards');
+  box.value = B.board;
+  box.disabled = true;
+  try {
+    const made = await wrote('/api/board-restore', {name: chosen.dataset.board || '', backup: chosen.dataset.backup});
+    if (made) toast(`Restored ${chosen.dataset.board || 'the first board'}.`);
+  } finally { box.disabled = false; }
+}
 const NEW_BOARD = Symbol('new board');
 async function chooseBoard(value) {
   if (value === NEW_BOARD) {
@@ -508,6 +545,8 @@ async function chooseBoard(value) {
 }
 $('#board .boards').onchange = event => {
   const chosen = event.currentTarget.selectedOptions[0];
+  if (chosen?.dataset.wipe) return wipeBoard();
+  if (chosen?.dataset.backup) return restoreBoard(chosen);
   chooseBoard(chosen?.dataset.new ? NEW_BOARD : event.currentTarget.value);
 };
 document.addEventListener('metaform:boards', () => { if (!$('#board').hidden) drawBoards(); });

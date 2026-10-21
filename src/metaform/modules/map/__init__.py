@@ -1848,23 +1848,41 @@ def boards(ctx: Context) -> dict[str, Any]:
     store = ctx.require_store()
     op = str(ctx.nouns.get('op') or 'list')
     name = str(ctx.nouns.get('name') or '').strip()
+    if op in ('wipe', 'restore'):
+        # Clearing a board belongs to the person, even when an agent's role permits steering other agents.
+        if ctx.surface == 'mcp' or held_role(ctx):
+            raise Stop('Wipe and restore are person_only. Use the Boards select on the page.',
+                       'open the board on the page')
+        return _wipe_restore_board(ctx, op, name)
     if op == 'list':
         with store.tables(write=False) as tx:
             named = [dict(row) for row in tx.rows('boards', by=('created',), limit=0).results]
             settings_rows = list(tx.rows('ticket_settings', limit=0).results)
         on = {str(row['work_id']): str(row['board'] or '') for row in settings_rows}
-        opened = [record.id for record in store.work(open=True, limit=0).results]
+        records = store.work(limit=0).results
         counts: dict[str, int] = {}
-        for work_id in opened:
-            counts[on.get(work_id, '')] = counts.get(on.get(work_id, ''), 0) + 1
+        columns: dict[str, dict[str, int]] = {}
+        for record in records:
+            board = on.get(record.id, '')
+            held_columns = columns.setdefault(board, dict.fromkeys(('backlog', 'todo', 'doing', 'done'), 0))
+            held_columns[record.column] += 1
+            if record.done is None:
+                counts[board] = counts.get(board, 0) + 1
         active = str(ctx.setting('board') or '')  # the active board, marked so the page and the person see it
-        return {'boards': [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None,
-                            'active': active == ''},
+        listed: list[dict[str, Any]] = [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None,
+                   'active': active == ''},
                            *({'name': str(row['name']), 'first': False, 'open': counts.get(str(row['name']), 0),
                               'line': row.get('line'), 'created': row['created'], 'active': active == str(row['name'])}
-                             for row in named)]}
+                             for row in named)]
+        for row in listed:
+            row['columns'] = columns.get(str(row['name']), dict.fromkeys(('backlog', 'todo', 'doing', 'done'), 0))
+            row['tickets'] = sum(row['columns'].values())
+        current_base = store.bound_base()
+        current = current_base.id if current_base else None
+        return {'boards': listed, 'wipes': [one for one in home.wipe_backups(store.project_id)
+                                          if one['base'] == current]}
     if op not in ('add', 'line', 'remove'):
-        raise Stop(f'No op {op!r}: list, add, line or remove.', 'metaform help map boards')
+        raise Stop(f'No op {op!r}: list, add, line, remove, wipe or restore.', 'metaform help map boards')
     if not name:
         raise Stop('Name the board.', f'metaform map boards op={op} name=<name>')
     with store.tables() as tx:
@@ -1888,6 +1906,47 @@ def boards(ctx: Context) -> dict[str, Any]:
     if str(ctx.setting('board') or '') == name:  # the active board removed: the first board is active again
         settings.put('board', '', ctx.folder)
     return {'board': name, 'state': 'removed'}
+
+
+def _wipe_restore_board(ctx: Context, op: str, name: str) -> dict[str, Any]:
+    from metaform.data import on_base, project_work_rows
+    from metaform.module import call, context as command_context, surface
+    store = ctx.require_store()
+    if op == 'restore':
+        stamp = str(ctx.nouns.get('backup') or '')
+        snapshot = home.read_wipe_backup(store.project_id, stamp)
+        if snapshot['name'] != name:
+            raise Stop('The backup names another board.', 'metaform list backups')
+        with store.atomic():
+            result = store.restore_board_rows(snapshot)
+        return {'board': name, 'backup': stamp, 'state': 'restored', **result}
+    _numbering(store)
+    with home.halted(store.project_id, 'wipe'):
+        snapshot = store.board_snapshot(name)
+        snapshot['project_rows'] = project_work_rows(store.project_id, snapshot['work_ids'])
+        stamp = home.wipe_backup(store.project_id, snapshot)
+        stopped: list[str] = []
+        dispatch = next((one for one in surface(ctx.folder) if one.id == 'dispatch'), None)
+        if dispatch is not None:
+            stop_verb = next(one for one in dispatch.verbs if one.name == 'stop')
+            entries = [*snapshot['rows'], *(entry for project in snapshot['project_rows'] for entry in project['rows'])]
+            sessions = {str(row['session_id']): row for entry in entries if entry['module'] == 'dispatch'
+                        for row in entry['rows'] if row.get('state') == 'running' and row.get('session_id')}
+            with on_base(snapshot['base']):
+                for session_id, session in sessions.items():
+                    child = command_context('dispatch', ctx.folder, project=ctx.project,
+                                            nouns={'id': session['work_id'], 'session': session_id}, surface=ctx.surface,
+                                            client=ctx.client, session=ctx.session, identity=ctx.identity)
+                    child.consented = ctx.consented
+                    # Stored running sessions include dead runners. Dispatch's stop reconciles both itself.
+                    call(stop_verb.run, child)
+                    stopped.append(session_id)
+        with store.atomic():
+            store.wipe_board_rows(snapshot)
+        if name and str(ctx.setting('board') or '') == name:
+            settings.put('board', '', ctx.folder)
+    return {'board': name, 'backup': stamp, 'state': 'wiped', 'tickets': len(snapshot['work_ids']),
+            'columns': snapshot['columns'], 'sessions_stopped': stopped}
 
 
 def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice],
@@ -2443,11 +2502,13 @@ MODULE = Module(
 ),
              person_decides=releases, page=RELEASE_PAGE),
         Verb('boards', boards, 'The project\'s named boards: list them with their open tickets, add one, archive a '
-                               'board\'s done tickets, or remove a board no ticket is on. The first board has no name. '
+                               'board\'s done tickets, remove an empty board, wipe with an automatic backup, or '
+                               'restore a wipe. Wipe and restore are person_only. The first board has no name. '
                                'A ticket is moved to a board with map work op=edit id=<id> board=<name>.',
              nouns=(Noun('op', 'list, the default; add; line, which puts every ticket done up to now on the board in '
-                               'its Archive; or remove.', required=False),
-                    Noun('name', 'The board\'s name, for add, line and remove.', required=False),
+                               'its Archive; remove; wipe; or restore.', required=False),
+                    Noun('name', 'The board\'s name. Empty names the first board for wipe and restore.', required=False),
+                    Noun('backup', 'restore: the wipe backup stamp from metaform list backups.', required=False),
                     Noun('line', 'line: the archive cutoff as a time, instead of now; an undo puts the one before '
                                  'back.', required=False))),
         Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',

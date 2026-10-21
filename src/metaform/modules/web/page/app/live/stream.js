@@ -17,7 +17,7 @@ import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
-  agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead} from '/page/app/live/ops.js';
+  agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead, bulkBoardChange} from '/page/app/live/ops.js';
 import {listBases, loadGraph, loadProject, fillProjects, goToProject} from '/page/app/loading/load.js';
 import {PANE_VIEWS, WS} from '/page/app/workspace/workspace.js';
 import {tableChange} from '/page/app/roundtable/stage.js';
@@ -276,7 +276,9 @@ export async function changed(event) {
   // the agent recording an intake has gone: what is building is read at once, so its bar goes, and no map is read
   if (allTables(named, table => table === 'intake.recorder')) return recordingNow().catch(error => toast(error.message));
   // the project's named boards changed, here or elsewhere: the board's picker reads them again if it is open
-  if (Array.isArray(named) && named.includes('map.boards')) document.dispatchEvent(new CustomEvent('metaform:boards'));
+  const bulkBoard = bulkBoardChange(event.payload);
+  if (!bulkBoard && Array.isArray(named) && named.includes('map.boards'))
+    document.dispatchEvent(new CustomEvent('metaform:boards'));
   // a setting changed, here or elsewhere: the settings screen reads again if it is open, F13
   if (Array.isArray(named) && named.some(table => /(^|\.)settings$/.test(String(table)))) {
     document.dispatchEvent(new CustomEvent('metaform:settings', {detail: named}));  // the tables it names
@@ -299,7 +301,7 @@ export async function changed(event) {
   // nor do the settings, the page's own view choices among them, each read where it is used: a key that steps a view
   // choice saves it, and a map read again for every save faded the edges out and in as the keys were pressed
   if (allTables(named, table => /(^|\.)settings$/.test(table))) return;
-  const tickets = ticketsOnly(event.payload);
+  const tickets = bulkBoard || ticketsOnly(event.payload);
   if (tickets && event.payload.base_id && event.payload.base_id !== S.base) return;  // another metaform's
   ticketsHeard(event.payload);  // the tickets and the messages it says it concerns, read once for the batch
   if (!tickets) {

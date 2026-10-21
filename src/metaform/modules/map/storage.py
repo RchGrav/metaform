@@ -148,6 +148,17 @@ def _ticket_changed(tx: Tx, *work_ids: str, kind: str = "ticket") -> None:
         tx.concern(work_id=work_id, kind=kind)
 
 
+def _next_work_row(tx: Tx, table: str) -> int:
+    """Keep raw ticket and step row identities available for a later board restore."""
+    key = f"map.row.{table}"
+    held = tx.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    current = int(tx.execute(f"SELECT COALESCE(MAX(row), 0) FROM {table}").fetchone()[0])
+    number = max(current, int(held[0]) if held else 0) + 1
+    tx.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+               (key, str(number)))
+    return number
+
+
 def _message_changed(tx: Tx, message_id: str) -> None:
     """A question or message this write changes, said on its `map.changed` with the ticket a question is linked to,
     the one whose agent waits on its answer, BASE-053."""
@@ -187,9 +198,10 @@ def add_work(
         (int(bool(held)),),
     ).fetchone()[0]
     tx.execute(
-        "INSERT INTO work(work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind, "
-        "position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO work(row, work_id, target_kind, target_id, condition, note, task, held, reviewed, created, kind, "
+        "position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
+            _next_work_row(tx, "work"),
             work_id,
             target_kind,
             thing,
@@ -439,8 +451,8 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     _ticket_changed(tx, work_id, kind="step")
     tx.execute("UPDATE work SET steps=?, steps_done=? WHERE work_id=?", (planned, done, work_id))
     tx.execute(
-        "INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)",
-        (work_id, done, _work_text(said, "said", notices), now()),
+        "INSERT INTO work_steps(row, work_id, number, said, at) VALUES (?, ?, ?, ?, ?)",
+        (_next_work_row(tx, "work_steps"), work_id, done, _work_text(said, "said", notices), now()),
     )
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
@@ -592,17 +604,67 @@ def remove_work(tx: Tx, work_id: str) -> dict[str, Any]:
     row = _work_row(tx, work_id)
     record = work_record(tx, row, ())
     _ticket_changed(tx, work_id)
-    for table in ("work_steps", "work_links", "plans", "reports"):
-        if any(column[1] == "work_id" for column in tx.execute(f"PRAGMA table_info({table})").fetchall()):
-            tx.execute(f"DELETE FROM {table} WHERE work_id=?", (work_id,))
+    from metaform.data import delete_work_rows
+    # Stores created before the high-water marks must reserve their rows before deletion too.
+    for table in ("work", "work_steps"):
+        _next_work_row(tx, table)
     tables = tx.tables()
-    for table in ("glyphs", "ticket_settings", "eligible", "after"):
-        tables.delete(table, {"work_id": work_id})
-    for linked in [one for one in tables.rows("question_work", limit=0).results if one["work_id"] == work_id]:
-        tables.delete("question_work", {"message_id": linked["message_id"]})
     tables.delete("numbered", {"kind": "work", "item_id": work_id})
-    tx.execute("DELETE FROM work WHERE work_id=?", (work_id,))
+    delete_work_rows(tx.db, [work_id])
     return {"removed": work_id, "address": record.address, "task": record.task}
+
+
+def board_snapshot(tx: Tx, name: str) -> dict[str, Any]:
+    """Capture ticket-owned store rows before a board is wiped."""
+    from metaform.data import export_work_rows
+    board = tx.tables().get("boards", {"name": name}) if name else None
+    if name and board is None:
+        raise StoreError(f"There is no board named {name!r}.", "metaform map boards")
+    found = tx.execute('SELECT w.* FROM work w LEFT JOIN "map.ticket_settings" s ON s.work_id=w.work_id '
+                       "WHERE COALESCE(s.board, '')=? ORDER BY w.row", (name,)).fetchall()
+    work_ids = [str(row["work_id"]) for row in found]
+    columns = dict.fromkeys(("backlog", "todo", "doing", "done"), 0)
+    for row in found:
+        column = "done" if row["done"] else "doing" if row["taken"] else "backlog" if row["held"] else "todo"
+        columns[column] += 1
+    selected = set(work_ids)
+    numbered = [dict(row) for row in tx.tables().rows("numbered", {"kind": "work"}, limit=0).results
+                if row["item_id"] in selected]
+    return {"name": name, "board": dict(board) if board else None, "base": tx.base_id, "work_ids": work_ids,
+            "columns": columns, "rows": export_work_rows(tx.db, work_ids), "numbered": numbered}
+
+
+def wipe_board_rows(tx: Tx, snapshot: dict[str, Any]) -> None:
+    """Remove only backed-up tickets, refusing a board changed during session shutdown."""
+    current = board_snapshot(tx, str(snapshot["name"]))
+    if set(current["work_ids"]) != set(snapshot["work_ids"]):
+        raise StoreError("The board changed while its sessions stopped. Its backup is kept. Wipe it again.",
+                         "metaform map boards")
+    for work_id in snapshot["work_ids"]:
+        remove_work(tx, str(work_id))
+    if snapshot["name"]:
+        tx.tables().delete("boards", {"name": snapshot["name"]})
+    tx.concern(kind="board-wipe")
+
+
+def restore_board_rows(tx: Tx, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Insert raw backup rows into this base, preserving subsequent work."""
+    from metaform.data import insert_work_rows
+    if tx.base_id != snapshot["base"]:
+        raise StoreError("This backup belongs to another map.", "metaform map bases")
+    existing = {str(row[0]) for row in tx.execute("SELECT work_id FROM work").fetchall()}
+    restored = [str(one) for one in snapshot["work_ids"] if one not in existing]
+    skipped = [str(one) for one in snapshot["work_ids"] if one in existing]
+    board = snapshot["board"]
+    if board and tx.tables().get("boards", {"name": board["name"]}) is None:
+        tx.tables().insert("boards", board)
+    insert_work_rows(tx.db, snapshot["rows"], restored)
+    for row in snapshot["numbered"]:
+        if row["item_id"] in restored:
+            tx.tables().insert("numbered", row)
+    _ticket_changed(tx, *restored)
+    tx.concern(kind="board-restore")
+    return {"restored": restored, "skipped": skipped}
 
 
 def _epic_of(tx: Tx, work_id: str) -> str | None:
@@ -671,8 +733,9 @@ def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice]) -> 
         (resolution, planned, done, now(), work_id),
     )
     tx.execute(
-        "INSERT INTO work_steps(work_id, number, said, at) VALUES (?, ?, ?, ?)",
-        (work_id, done, f"Fix landed, watching: {resolution or 'no resolution was given'}", now()),
+        "INSERT INTO work_steps(row, work_id, number, said, at) VALUES (?, ?, ?, ?, ?)",
+        (_next_work_row(tx, "work_steps"), work_id, done,
+         f"Fix landed, watching: {resolution or 'no resolution was given'}", now()),
     )
     tx.tables().update("ticket_settings", {"work_id": work_id}, {"landed": now()})
     notices.append(Notice("watching", "Fix landed, watching: this ticket closes only with proof that the fix held, "
@@ -1587,6 +1650,8 @@ DATA = Data(
                 step_work,
                 finish_work,
                 remove_work,
+                wipe_board_rows,
+                restore_board_rows,
                 prove_work,
                 answer,
                 approve,
@@ -1597,6 +1662,7 @@ DATA = Data(
                 number_items,
             )
         },
+        "board_snapshot": Operation(board_snapshot),
         "reply": Operation(close_message, write=True),
         "reopen": Operation(reopen_message, write=True),
         **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, reports, report, items_numbered,
