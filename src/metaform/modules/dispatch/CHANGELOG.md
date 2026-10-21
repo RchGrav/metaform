@@ -1,5 +1,9 @@
 # Changelog
 
+## Agents have names (2026-10-21)
+
+- Every session is named as it starts, an adjective and a noun from `resources/names`, chosen for its ticket's title and task through Jev when it is on, else by matching the ticket's words to the lists (`names.py`, ticket code.interface.graphical#1aa). The name is the first pair no running session holds, taken in the write that records the session; it is kept on the state line as `name`, carried on resume and kept by the agents key for ended sessions (`ENDED_STATE`). The agent is told it once, the new `named` prompt, at the head of its first turn and again after a compaction. `sessions id=`, `talk session=` and `resume` (`id` or `session`) take a name for the latest session of that name; `named_session` resolves it. New prompts `name_adjective`, `name_noun`, `name_true`, `name_false` are what Jev is asked. No table change.
+
 ## Completed ticket records (2026-10-21)
 
 - Shared-tree completions and worktree squashes retain ticket titles, resolutions, reasons and five identity trailers. Empty completions create empty commits. Cancelled and failed tickets create no completion commit. Dirty worktrees remain until abandoned-branch retention expires. Missing commits file numbered broken tickets on the original board.

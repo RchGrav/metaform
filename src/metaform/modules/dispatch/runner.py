@@ -2048,7 +2048,7 @@ class Session:
             if self.at and self.role in ('worker', 'prep') else ''
         opening = agent_opening(Path(self.folder), self.role, ','.join(self.withheld))
         role = prompt('role_resource', role=self.authored_role) if self.authored_role else ''
-        called = prompt('named', called=str(self.acp['name'])) if self.acp['name'] else ''  # it signs with its name
+        called = prompt('named', called=str(self.acp['name'])) if self.acp.get('name') else ''  # it signs with its name
         return '\n\n'.join(part for part in (opening, prompt('compacted', who=who), called, role)
                              if part)
 
@@ -4726,7 +4726,7 @@ class Session:
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
                         text = await asyncio.to_thread(self.rules, text)
-                        if fresh and self.acp['name']:  # its own name, told once, since it signs its messages so
+                        if fresh and self.acp.get('name'):  # its own name, told once, since it signs its messages so
                             told = prompt('named', called=str(self.acp['name']))
                             text = f'{told}\n\n{text}' if told else text
                         if line:  # said once, by whichever comes first, ahead of what comes again, the rules among

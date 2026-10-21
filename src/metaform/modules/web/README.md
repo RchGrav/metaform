@@ -204,6 +204,8 @@ Linux, macOS and Windows. On POSIX the server runs in a new session; on Windows 
 
 ## Resources owned
 
+An agent is named on the page by the name dispatch gave its session, first, then its ticket's number: in the agents key, the chat dock's head, tabs and list, and the Agents menu (`agentLabel`, `page/app/agents/dispatch.js`). A figure under the pointer, on either map, is named beside the pointer with the model and the thinking level its session runs, read from its settings as the dock's line shows them (`agentTip`, `page/app/map3d/readout.js`): one element, its words set only when the figure under the pointer changes, moved with the pointer, gone when the pointer leaves the figure; nothing is drawn on the figure.
+
 `page/`, the GUI's HTML, CSS and scripts: `page/app.js` starts the page from its parts under `page/app/<area>/<part>.js`, each one area of the page and under 500 lines, each importing the part before it first so the parts load in one fixed order; and `page/agent-glyphs/`, the flat icon of each agent figure, Metaform's own, VIEW-039; and `vendor/`, the bundled libraries with their licenses, VIEW-003. Under the home: `run/web.json`, the running server's record, with its address, process id and nonce; `run/web-watchdog.json`, its watchdog's process, port and restarts; `run/web-token`, the token for bind addresses other than loopback; `run/web.log`, what went wrong in the server.
 
 ## Installed and direct wheel
