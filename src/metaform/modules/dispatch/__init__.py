@@ -6277,8 +6277,9 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                                                            by=('session_id', 'seq'), limit=0,
                                                            after=json.dumps([int(since), ''])).results
                               if int(row['seq']) > int(since) and row['name'] != 'state']
+            requested_work = [str(work_id)] if work_id else ctx.nouns.get('ids') or []
             raised = signal_rows(tx, work_id, session_ids=wanted,
-                                 work_ids=list({str(session['work_id']) for session in stored}))
+                                 work_ids=sorted({*requested_work, *(str(session['work_id']) for session in stored)}))
     except StoreError:
         raised = read_signal_rows(store, work_id)  # as before: a store that cannot be read says so here
     open_work: list[WorkRecord] = list(store.work(open=True, limit=0).results) \

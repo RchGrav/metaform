@@ -468,7 +468,7 @@ def test_session_reads_select_live_rows_before_hydrating_and_page_ended_history(
 
     from metaform import module as chassis
     from metaform.data import Store, tables
-    from metaform.modules.dispatch import carry_conversations, read_sessions, release
+    from metaform.modules.dispatch import carry_conversations, read_sessions, release, signals
 
     run('enable', 'dispatch')
     store = Store('proj', module='dispatch')
@@ -490,6 +490,7 @@ def test_session_reads_select_live_rows_before_hydrating_and_page_ended_history(
                                     'kind': 'agent_message_chunk', 'text': 'Complete transcript.', 'seq': 2})
     # A long-running session belongs to the live hour after release, regardless of its old start time.
     release(store, 'current-work', 'claude long-run', False, 'long-run', 'finished')
+    signals.record(store, 'stopped-open', work_id='empty-work')
     carry_conversations(store)
     executed = []
     original = tables.TableTx._execute
@@ -529,6 +530,13 @@ def test_session_reads_select_live_rows_before_hydrating_and_page_ended_history(
                                                             'session_ids': json.dumps(['old-001'])}))[1]
     assert [one['session_id'] for one in scoped['sessions']] == ['old-001']
     assert api(web, '/api/dispatch-sessions?project=proj&ids=%7B%7D')[0] == 400
+    assert api(web, '/api/dispatch-sessions?project=proj&after=invalid')[0] == 400
+    assert api(web, '/api/dispatch-sessions?project=proj&history=true&limit=0')[0] == 400
+    no_argument = api(web, '/api/dispatch-sessions?project=proj')[1]
+    assert {one['session_id'] for one in no_argument['sessions']} == {'waiting', 'recent-end', 'long-run'}
+    scoped = api(web, '/api/dispatch-sessions?' + urlencode({'project': 'proj', 'thread': 'false',
+                                                            'ids': json.dumps(['empty-work'])}))[1]
+    assert scoped['sessions'] == [] and [one['signal'] for one in scoped['signals']] == ['stopped-open']
 
 
 @pytest.mark.req('VIEW-018')
