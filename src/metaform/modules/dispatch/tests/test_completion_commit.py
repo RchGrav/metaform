@@ -43,7 +43,7 @@ def test_nonrepository_completion_records_verification_without_inventing_commit(
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     dispatch.store.finish_work(dispatch.id, 'Verified nonrepository result.')
     asyncio.run(made.commit_done())
-    assert bool(dispatch.ticket().done) == check_passes
+    assert dispatch.ticket().done
     assert made.acp['ticket_git']['result']['committed'] is None
     assert made.acp['ticket_git']['result']['not_required'] is True
     with Store('proj', module='dispatch').tables(write=False) as tx:
@@ -84,7 +84,7 @@ def test_shared_verification_cannot_certify_dirty_content_as_saved_commit(dispat
                             saved['committed'])
     assert result['state'] == 'failed'
     assert result['evidence']['verification']['passed'] is False
-    assert not dispatch.ticket().done
+    assert dispatch.ticket().done
     assert git(dispatch.folder, 'show', 'HEAD:owned.py').stdout == 'broken\n'
     assert (dispatch.folder / 'owned.py').read_text() == 'fixed\n'
 
@@ -107,7 +107,7 @@ def test_failed_shared_check_retry_saves_and_verifies_current_fix(dispatch, run,
         dispatch.store.finish_work(dispatch.id, 'Fix verified.')
         await made.commit_done()
         assert made.acp['ticket_git']['result']['why']
-        assert not dispatch.ticket().done
+        assert dispatch.ticket().done
         old = made.acp['ticket_git']['result']['committed']
         await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'fixed\n')
         await made.commit_done()

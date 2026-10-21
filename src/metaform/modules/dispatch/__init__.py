@@ -3368,9 +3368,9 @@ def review(ctx: Context) -> dict[str, Any]:
 
 
 def merge(ctx: Context) -> dict[str, Any]:
-    """Explicitly integrate and publish the candidate after its checks pass, VIEW-044."""
+    """Integrate locally, publishing only when explicitly requested, VIEW-044."""
     from .merge import merge_due
-    return merge_due(ctx, ctx.require_store(), str(ctx.nouns['id']))
+    return merge_due(ctx, ctx.require_store(), str(ctx.nouns['id']), publish=bool(ctx.nouns.get('publish')))
 
 
 def _running_or_stop(store: Store, work_id: str, session_id: str | None = None, *,
@@ -7377,8 +7377,10 @@ MODULE = Module(
              switches=('dispatch_worktrees', 'dispatch_test_command'), effect='read'),
         Verb('review', review, "Hold a waiting candidate for the person's explicit review.",
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), listed=merge_waits),
-        Verb('merge', merge, 'Explicitly integrate and publish a ticket candidate after its checks pass.',
-             nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), surfaces=('cli',)),
+        Verb('merge', merge, 'Integrate a ticket candidate locally. Push only with publish=true.',
+             nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),
+                    Noun('publish', 'true explicitly requests publishing after local integration.',
+                         kind='bool', required=False)), surfaces=('cli',)),
         Verb('system', system, "Start the person's system agent, who talks with them about anything in the project, or "
                                'reuse the running one.',
              nouns=(Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',

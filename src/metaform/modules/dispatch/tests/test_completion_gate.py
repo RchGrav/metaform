@@ -98,9 +98,11 @@ def test_recurrence_reopens_resolved_work_and_new_resolution_closes_directly(dis
 def test_legacy_staged_result_closes_without_delivery_proof(dispatch, monkeypatch):
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     dispatch.store.take_work(dispatch.id, by='worker')
-    with dispatch.store.atomic() as tx:
+    with Store('proj', module='map')._write() as tx:
         tx.execute('UPDATE work SET resolution=? WHERE work_id=?', ('Legacy resolved result.', dispatch.id))
-        tx.tables().insert('ticket_settings', {'work_id': dispatch.id, 'landed': '2026-10-20T00:00:00Z', 'proof': 1})
+        values = {'landed': '2026-10-20T00:00:00Z', 'proof': 1}
+        if tx.tables().update('ticket_settings', {'work_id': dispatch.id}, values) is None:
+            tx.tables().insert('ticket_settings', {'work_id': dispatch.id, **values})
     receipt(dispatch, state='failed', passed=False, reason='Old delivery failed.')
     closed = dispatch.store.complete_delivery(dispatch.id)
     assert closed.done and closed.resolution == 'Legacy resolved result.'

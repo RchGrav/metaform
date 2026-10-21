@@ -446,7 +446,7 @@ Brief:
 
 <!-- Prepares a merge under review: bring the branch up to date with the dev branch, run the tests, commit, explain.
      Sent as the first message to the agent started from a merge under review on the web page, or with dispatch prep.
-     Must not be deleted: the code requires it. Merges wait for review only while dispatch_worktrees is on. -->
+     Must not be deleted: the code requires it. Used for explicitly requested merge preparation. -->
 <prep>
 @STATE_INIT:
   {Work_ID}:=[<work_id/>]; {Branch}:=[<branch/>]; {Dev}:=[<dev/>]; {State}:=PREPARE
