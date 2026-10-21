@@ -2677,12 +2677,31 @@ class Handler(BaseHTTPRequestHandler):
         dispatch not enabled there are none."""
         try:
             nouns: dict[str, Any] = {'id': given['id']} if given.get('id') else {}
-            if given.get('thread') == 'false':
-                nouns['thread'] = False
+            for key in ('session', 'after'):
+                if given.get(key):
+                    nouns[key] = given[key]
+            for key in ('thread', 'history', 'latest'):
+                if key in given:
+                    if given[key] not in ('true', 'false'):
+                        return self.send(400, {'error': f'{key} must be true or false.'})
+                    nouns[key] = given[key] == 'true'
+            for key in ('since', 'limit'):
+                if key in given:
+                    nouns[key] = int(given[key])
+            for key in ('ids', 'session_ids'):
+                if key in given:
+                    value: Any = json.loads(given[key])
+                    if not isinstance(value, list) or not all(isinstance(ref, str) for ref in cast(list[Any], value)):
+                        return self.send(400, {'error': f'{key} must be a list of ids.'})
+                    nouns[key] = value
             found = module_verb(given, 'dispatch', 'sessions', nouns, chosen=True)
+        except (ValueError, TypeError):
+            return self.send(400, {'error': 'Invalid session read arguments.'})
         except StoreError as error:  # the project is gone or its store cannot be read; a StoreError is a Stop too
             return self.refuse(error, 404)
-        except Stop:
+        except Stop as error:
+            if error.next_step == 'metaform dispatch sessions history=true':
+                return self.refuse(error, 400)
             return self.send(200, {'sessions': [], 'lines': [], 'states': {}})
         if given.get('thread') == 'false' and isinstance(found, dict):
             said(given, cast(list[dict[str, Any]], cast(dict[str, Any], found).get('sessions') or []))

@@ -108,7 +108,7 @@ async function readLine(one) {
   ASKING.reading.add(one.request);
   const project = S.project;
   try {
-    const found = await read('dispatch-sessions', {id: one.work_id});
+    const found = await read('dispatch-sessions', {id: one.work_id, session: one.session_id});
     if (S.project !== project) return;
     const line = (found.lines || []).find(row => row.kind === 'permission' && row.session_id === one.session_id
       && row.data?.request === one.request);

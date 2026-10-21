@@ -1629,7 +1629,7 @@ class Session:
         row = {key: value for key, value in self.extra('ended').items() if key != 'dispatch'}
         row.update(session_id=f'start-{self.runner}', pid=None, port=None, token=None,
                    started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
-                   origin=origin())
+                   origin=origin(), ended=home.now())
 
         def write(tx: Any) -> None:
             tx.insert('agent_sessions', row)
@@ -3704,7 +3704,7 @@ class Session:
         # Every conversation and worker stays on its launch project/base when another browser tab navigates.
         pinned = await asyncio.to_thread(self.store.bound_base)
         row.update(started=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), seq=time.time_ns() // 1_000_000,
-                   origin=origin(), base=pinned.id if pinned is not None else None)
+                   origin=origin(), base=pinned.id if pinned is not None else None, ended='')
         ranking = await self.naming if self.naming is not None else None
         stated: list[tuple[str, int]] = []
         def take() -> None:
@@ -3736,7 +3736,7 @@ class Session:
                             raise Stop(f'Session {self.session_id} has been resumed already.',
                                        f'metaform dispatch sessions id={self.work_id}')
                         # a conversation goes on where it hangs now, the map it began on cleared or restored since
-                        kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin', 'base',
+                        kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin', 'base', 'ended',
                                 *(('work_id',) if self.system else ()))
                         tx.update('agent_sessions', {'session_id': self.session_id}, {key: row[key] for key in kept})
                         with contextlib.suppress(OSError):  # its row holds it now, not the file its start left

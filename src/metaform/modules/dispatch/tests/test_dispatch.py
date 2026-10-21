@@ -1650,6 +1650,12 @@ def test_the_sessions_read_leaves_the_threads_out_when_asked(dispatch, run):
     dispatch.stop()
     ended = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)['states']
     assert set(ended.get(session, {})) <= set(ENDED_STATE), 'an ended session keeps only what names it'
+    detail = json.loads(run('dispatch', 'sessions', f'id={session}', '--json', cwd=dispatch.folder).stdout)
+    metadata = json.loads(run('dispatch', 'sessions', f'id={session}', 'thread=false', '--json',
+                              cwd=dispatch.folder).stdout)
+    assert detail['lines'] and metadata['lines'] == []
+    assert metadata['states'][session] == detail['states'][session]
+    assert len(metadata['states'][session]) > len(ended.get(session, {})), 'a named session retains its complete state'
 
 
 def name_of(run, dispatch, work_id):
@@ -1716,10 +1722,8 @@ def test_talk_resume_and_sessions_take_a_name_for_the_latest_session_of_that_nam
 @pytest.mark.req('VIEW-039')
 @pytest.mark.req('STORE-005')
 def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_have_ended(dispatch, run, monkeypatch):
-    """code.dispatcher.agent#3b, 2026-10-16: the agents key read each session's state line in a query of its own and
-    every line of every thread to find the signals, 0.25 s of the server's time on the live home. Its lines are now
-    read in one query for the states and one for the signals, whatever the number of sessions, and a later read in
-    the same process reads no ended session's state again."""
+    """The live list excludes old ended sessions before reading their state or children. History reads one cursor
+    page, with two bulk queries for its compact states and active signals. Repeated reads use no state cache."""
     from metaform.data import Store, tables
     from metaform.modules.dispatch import signals
     store = Store('proj', module='dispatch')
@@ -1735,7 +1739,15 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
                                         'kind': 'state', 'text': json.dumps(state), 'seq': 1})
             tx.insert('session_lines', {'session_id': session_id, 'name': 'line:2', 'work_id': dispatch.id,
                                         'kind': 'agent_message_chunk', 'text': 'Done.', 'seq': 2})
+            child = f'child-{number}'
+            tx.insert('session_lines', {'session_id': session_id, 'name': f'subagent:{child}',
+                                        'work_id': dispatch.id, 'kind': 'subagent',
+                                        'text': json.dumps({'session_id': child, 'state': 'completed'}), 'seq': 3})
+            tx.insert('session_lines', {'session_id': child, 'name': 'line:1', 'work_id': dispatch.id,
+                                        'kind': 'agent_message_chunk', 'text': 'Child words.', 'seq': 1})
     signals.record(store, 'stopped-open', work_id=dispatch.id, session_id='ended-39')
+    signals.record(store, 'stopped-open', work_id=dispatch.id, session_id='ended-38')
+    signals.record(store, 'stopped-open', work_id=dispatch.id, session_id='ended-38', active=False)
     from metaform.modules.dispatch import carry_conversations
     carry_conversations(store)  # what the metaform holds of the conversations, none here, is carried once by itself
     executed = []
@@ -1753,15 +1765,31 @@ def test_the_agents_key_read_makes_the_same_few_queries_however_many_sessions_ha
     # the signals are the project's since version 18, `dispatch.signals` (UX review round 2, combined F4)
     read_from = ('FROM "dispatch.lines"', 'FROM "dispatch.session_lines"', 'FROM "dispatch.signals"')
     lines = [sql for sql in executed if any(table in sql for table in read_from)]
+    assert lines == [], 'unselected history materializes no states, signals or children'
+    assert read['sessions'] == read['lines'] == read['signals'] == read['subagents'] == []
+    assert read['states'] == {} and read['next'], 'unknown legacy end times belong to cursor history'
+    cursor = read['next']
+    executed.clear()
+    ctx = chassis.context('dispatch', dispatch.folder, project='proj',
+                          nouns={'thread': False, 'after': cursor, 'limit': 40})
+    read = read_sessions(ctx)
+    lines = [sql for sql in executed if any(table in sql for table in read_from)]
     assert len(lines) == 2 and all(' WHERE ' in sql for sql in lines), lines
     assert len(read['sessions']) == 40 and [one['signal'] for one in read['signals']] == ['stopped-open']
+    assert read['signals'][0]['session_id'] == 'ended-39'
+    assert read['lines'] == read['subagents'] == [] and read['next'] is None
     assert read['states'] == {f'ended-{number}': {'about': 'system' if number < 2 else None, 'intake': None}
                               for number in range(40)}
     executed.clear()
     assert read_sessions(ctx)['states'] == read['states']
-    assert len([sql for sql in executed if any(table in sql for table in read_from)]) == 1, executed  # the signals
-    shown = json.loads(run('dispatch', 'sessions', 'thread=false', '--json', cwd=dispatch.folder).stdout)
+    assert len([sql for sql in executed if any(table in sql for table in read_from)]) == 2, executed
+    shown = json.loads(run('dispatch', 'sessions', 'thread=false', f'after={cursor}', 'limit=40', '--json',
+                           cwd=dispatch.folder).stdout)
     assert shown['states'] == read['states'] and shown['signals'] == read['signals']
+    detail = read_sessions(chassis.context('dispatch', dispatch.folder, project='proj', nouns={'id': 'ended-39'}))
+    assert len(detail['states']['ended-39']['commands']) == 50
+    assert [line['text'] for line in detail['lines'] if line['kind'] == 'agent_message_chunk'] == ['Done.']
+    assert detail['subagents'][0]['lines'][0]['text'] == 'Child words.'
 
 
 # ------------------------------------------------------------------ one agent per glyph, VIEW-040
@@ -2160,6 +2188,7 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
     dispatch.stop()
     assert dispatch.process.wait(30) == 0
     assert dispatch.session().extra['state'] == 'ended' and dispatch.ticket().taken_by == 'claude fake-session-1'
+    assert re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', dispatch.session().extra['ended'])
     before = len(read(run, dispatch)['lines'])
     started = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
                              env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
@@ -2169,6 +2198,7 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
     assert load['params']['sessionId'] == 'fake-session-1'
     assert Path(load['params']['cwd']).resolve() == dispatch.folder.resolve()
     eventually(lambda: dispatch.session().extra['state'] == 'running')
+    assert dispatch.session().extra['ended'] == '', 'resuming clears the previous end time'
     assert len(dispatch.items('session')) == 1, 'the ended session itself runs again'
     resumed = read(run, dispatch)['states']['fake-session-1']
     assert resumed['resumed'] == 'load'

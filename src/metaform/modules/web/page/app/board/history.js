@@ -19,7 +19,9 @@ export async function ticketsOf(id) { return (await read('work', {node: targetOf
 export async function history(id) {
   let tickets, dispatched = [];
   try { tickets = await ticketsOf(id); } catch (error) { toast(error.message); return; }
-  try { dispatched = (await read('dispatch-sessions', {thread: 'false'})).sessions || []; } catch (error) { toast(error.message); }
+  try { if (tickets.length) dispatched = (await read('dispatch-sessions',
+    {ids: JSON.stringify(tickets.map(ticket => ticket.id)), thread: 'false'})).sessions || []; }
+  catch (error) { toast(error.message); }
   Object.assign(F, {id: null, which: null, ids: new Set(), drawn: new Map()});
   $('#float .title').textContent = `Work history · ${calledOf(id)}`;
   fill($('#float .body'), tickets.length ? [...tickets].reverse().map(ticket => historyTicket(ticket, dispatched))
@@ -67,7 +69,7 @@ function historyTicket(ticket, dispatched) {
  * records stay here, on the node, and only the session's conversation is a thread. */
 function dispatchRow(one, ticket) {
   const open = async () => {
-    await renderAgents();
+    await renderAgents([one.session_id], true);
     agentAt(one.work_id, one.session_id);
   };
   return h('div', {class: 'dispatch'},

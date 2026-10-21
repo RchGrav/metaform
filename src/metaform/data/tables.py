@@ -305,6 +305,15 @@ def _decode(column: Column, value: Any) -> Any:
     return value
 
 
+def _ordered(value: Any) -> tuple[int, Any]:
+    """SQLite's ascending storage-class order, for merging batches of indexed reads."""
+    if value is None:
+        return (0, 0)
+    if isinstance(value, (int, float)):
+        return (1, value)
+    return (2 if isinstance(value, str) else 3, value)
+
+
 def _schema_statements(name: str, schema: str) -> list[str]:
     statements: list[str] = []
     pending = ''
@@ -1270,6 +1279,48 @@ class TableTx:
         last = kept[-1]
         names = [column.name for column in declared.columns]
         return Page(results, json.dumps([last[names.index(name)] for name in rest]))
+
+    def rows_in(self, table: str, column: str, values: Sequence[Any], *,
+                where: Mapping[str, Any] | None = None, by: Sequence[str] = ()) -> tuple[Row, ...]:
+        """The rows whose indexed column matches any given value, with optional equal columns, in index order.
+
+        The column and `where` together name an index's leading columns. Repeated values are read once, bindings
+        are batched below SQLite's parameter limit, and an empty selection opens no store and issues no SQL.
+        """
+        declared = self.declared.table(table)
+        given = dict(where or {})
+        if column in given:
+            raise StoreError(f'{column} is named both in where and in the values selected from {table}.',
+                             f'leave {column} out of where')
+        prefix, rest, _ = self._plan(declared, {**given, column: None}, tuple(by))
+        selected = tuple(dict.fromkeys(_encode(declared.column(column), value) for value in values))
+        if not selected:
+            return ()
+        self._table(table)
+        if not self._present:
+            return ()
+        fixed = tuple(name for name in prefix if name != column)
+        bindings = [_encode(declared.column(name), given[name]) for name in fixed]
+        batch_size = 900 - len(bindings)
+        if batch_size < 1:
+            raise StoreError(f'The selection from {table} has too many equal columns for a batch.',
+                             'give fewer than 900 equal columns')
+        order = tuple(name for name in prefix + rest if name not in given)
+        start = self._select(declared) + ' WHERE ' + (self._equal(fixed) + ' AND ' if fixed else '')
+        suffix = f' ORDER BY {", ".join(_quoted(name) for name in order)}'
+        found: list[sqlite3.Row] = []
+        for offset in range(0, len(selected), batch_size):
+            batch = selected[offset:offset + batch_size]
+            sql = start + f'{_quoted(column)} IN ({", ".join("?" for _ in batch)})' + suffix
+            found.extend(self._execute(sql, [*bindings, *batch]).fetchall())
+        if len(selected) > batch_size:
+            names = [column.name for column in declared.columns]
+            keys = tuple(names.index(name) for name in declared.key)
+            places = tuple(names.index(name) for name in order)
+            # SQLite affinity can make distinct bound values match the same key across batches.
+            found = list({tuple(row[place] for place in keys): row for row in found}.values())
+            found.sort(key=lambda row: tuple(_ordered(row[place]) for place in places))
+        return tuple(self._row(declared, row) for row in found)
 
     def found_rows(self, table: str, *, limit: int = LIMIT, after: str | None = None) -> Page[Row]:
         """Inside the module's upgrade: the rows of a table as the version found held them, every column that version

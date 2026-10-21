@@ -16,11 +16,12 @@ import {renderLegend} from '/page/app/views/lens.js';
 import {build2DSoon, markWork2d} from '/page/app/map2d/build.js';
 import {select, workPill, MERGE, renderMerges} from '/page/app/selection/select.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
+import {DOCK} from '/page/app/dock/embody.js';
 import {drawAgentList} from '/page/app/dock/threads.js';
 import {Q, renderMessages} from '/page/app/board/messages.js';
 import {B, unshown} from '/page/app/board/refs.js';
 import {drawBoard, drawBoards, boardTickets} from '/page/app/board/board.js';
-import {renderAgents} from '/page/app/agents/dispatch.js';
+import {D, renderAgents} from '/page/app/agents/dispatch.js';
 import {renderWork} from '/page/app/panel/object.js';
 import {buildEvent} from '/page/app/build/build.js';
 import {LIVE, following, recordingNow, changed} from '/page/app/live/stream.js';
@@ -405,15 +406,9 @@ function workInPanel() {
   }
   renderWork(join ? `join:${join.id}` : `element:${id}`, id);
 }
-/* A line an agent wrote, or its session begun or ended: what it concerns is read again, at most once every BATCH and
- * never under the person's hands, once for however many lines came meanwhile. The agents key, the sessions read whole,
- * only for a change to a session, a signal, a permission or a question (`sessions`); the open chat only for a change
- * to its own ticket, or one that does not say whose (`works`, map.changed's work_ids). An agent streams about five
- * lines a second, and reading every session for each one kept the page, and the server, always reading. Only a change
- * that concerns merges, `whole` (`mergesConcerned`), reads the merges again, as does the stream opening again. */
-const BATCH = 500;
-const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyone: false, works: new Set(), chat: false,
-  at: -Infinity};
+/* A dispatch event reads only the sessions it names that this view uses. Changes received during a read merge into
+ * the next pass. Opening the stream explicitly reads the live list to recover changes missed while disconnected. */
+const AGENTS = {busy: false, again: false, whole: false, sessions: false, everyone: false, ids: new Set(), chat: false};
 /* Whether no agents read is pending or running, for a check that must count reads a change of its own causes. */
 export const agentsIdle = () => !AGENTS.busy && !AGENTS.sessions && !AGENTS.chat && !AGENTS.whole;
 // a thread's own lines, the project's, and the signals beside the map, dispatch's THREAD_TABLES
@@ -444,29 +439,50 @@ export function mergesConcerned(payload) {
  * commit, `merge` for a ticket's work merged into the dev branch. The board's Archive reads its first page again. */
 const COMMIT_KINDS = ['commit', 'merge'];
 export const commitsConcerned = payload => Array.isArray(payload.kinds) && holdsAny(payload.kinds, COMMIT_KINDS);
-export async function agentsChanged(whole = false, sessions = true, works = null) {
-  if (whole) AGENTS.whole = true;
-  if (sessions) {  // the tickets the changes named, gathered over the batch; one that names none reads every one
-    AGENTS.sessions = true;
-    if (works === null || !works.length) AGENTS.everyone = true;
-    else for (let at = 0; at < works.length; at++) AGENTS.works.add(works[at]);
+/* A known session, an open thread, or a new session on work shown by the map or board concerns this page. */
+function sessionShown(id, works) {
+  let known = false;
+  for (const one of D.sessions) if (one.session_id === id) {
+    known = true;
+    if (one.state === 'running' || one.state === 'waiting') return true;
   }
-  if (works === null || (MERGE.chat && works.includes(MERGE.chat))) AGENTS.chat = true;
+  for (const chat of DOCK.chats) if (chat.session === id) return true;
+  if (works !== null) for (const work of works) {
+    if (work === DOCK.target) return true;
+    if (S.tickets) for (const ticket of S.tickets) if (ticket.id === work) return true;
+    if (!$('#board').hidden) for (const ticket of B.tickets) if (ticket.id === work) return true;
+  }
+  if (!$('#agentbox').hidden) for (const row of $('#agentbox .agent-sessions').children)
+    if (row.dataset.session === id) return true;
+  return !known;  // a newly started agent can work on another base or have no ticket
+}
+export async function agentsChanged(whole = false, sessions = true, works = null, sessionIds = null) {
+  if (whole) AGENTS.whole = true;
+  if (sessions && sessionIds === null) {  // an explicit stream open, never a map.changed fallback
+    AGENTS.sessions = true;
+    AGENTS.everyone = true;
+  } else if (sessions) for (const id of sessionIds) {
+    if (!sessionShown(id, works)) continue;
+    AGENTS.sessions = true;
+    AGENTS.ids.add(id);
+  }
+  if (sessionIds === null || DOCK.session && sessionIds.includes(DOCK.session)
+    || DOCK.child && sessionIds.includes(DOCK.child)
+    || !DOCK.session && MERGE.chat && works?.includes(MERGE.chat)) AGENTS.chat = true;
   if (!AGENTS.sessions && !AGENTS.chat && !AGENTS.whole) return;
   if (AGENTS.busy) { AGENTS.again = true; return; }
   AGENTS.busy = true;
   try {
     do {
-      await settled(AGENTS.at + BATCH);
+      await Promise.resolve();  // changes already queued merge without a timer or a read delay
       AGENTS.again = false;
-      AGENTS.at = performance.now();
       if (AGENTS.whole) { AGENTS.whole = false; renderMerges(); }
-      const agents = AGENTS.sessions, chat = AGENTS.chat, only = AGENTS.everyone ? null : [...AGENTS.works];
+      const agents = AGENTS.sessions, chat = AGENTS.chat, only = AGENTS.everyone ? null : [...AGENTS.ids];
       AGENTS.sessions = false;
       AGENTS.everyone = false;
-      AGENTS.works.clear();
+      AGENTS.ids.clear();
       AGENTS.chat = false;
-      await Promise.all([agents ? renderAgents(only) : null, chat && MERGE.chat ? drawHelpdesk() : null]);
+      await Promise.all([agents ? renderAgents(only, true) : null, chat && MERGE.chat ? drawHelpdesk() : null]);
     } while (AGENTS.again);
   } catch (error) { toast(error.message); } finally { AGENTS.busy = false; }
 }

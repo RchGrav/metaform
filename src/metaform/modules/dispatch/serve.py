@@ -1293,7 +1293,7 @@ class Record:
         self.server = await asyncio.start_server(self.control, '127.0.0.1', 0)
         self.port = int(self.server.sockets[0].getsockname()[1])
         mine = {'state': 'running', 'pid': os.getpid(), 'port': self.port, 'token': self.token, 'how': None,
-                'runner': self.session.token, 'origin': origin()}
+                'runner': self.session.token, 'origin': origin(), 'ended': ''}
         session_id = self.session.session_id
 
         def write(tx: Any) -> None:
@@ -1469,7 +1469,7 @@ class Record:
         if self.server is not None:
             self.server.close()
         await self.table(lambda tx: tx.update('agent_sessions', {'session_id': session_id},
-                                              {'state': 'ended', 'how': how}), 'agent_sessions')
+                                              {'state': 'ended', 'how': how, 'ended': home.now()}), 'agent_sessions')
 
     async def peer_state(self, envelope: dict[str, Any], state: str) -> None:
         sender = cast(dict[str, Any], envelope.get('from') or {})

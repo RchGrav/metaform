@@ -87,7 +87,8 @@ export async function drawHelpdesk(trouble) {
  * draw began, whose read is the newer and draws instead; reads land in any order, and one that lands last is not
  * newest; `other` when a waiting thread finds its session already open in another tab, which it gives way to. */
 async function readThread(target, openedSession, chat, draw) {
-  const found = await read('dispatch-sessions', {id: target});
+  const found = await read('dispatch-sessions', {id: target,
+    ...(openedSession ? {session: openedSession} : {latest: 'true'})});
   if (DOCK.target !== target || DOCK.session !== openedSession || draw !== DRAWS) return {moved: true};
   const sessions = found.sessions || [];
   let session = DOCK.session ? sessions.find(one => one.session_id === DOCK.session)

@@ -18,6 +18,12 @@ and writes them in `with ctx.require_store().tables() as tx:`, STORE-045.
 `place='project'` keeps it in the project, kept by a clear. hello's `visit`,
 `note` and `notes` show it.
 
+Read selected children with `tx.rows_in(table, column, values, where=..., by=...)`.
+The column and equal `where` columns must begin a declared index. It returns
+a tuple in index order, reads repeated values once, batches SQLite bindings,
+and issues no SQL for an empty selection. Use it to read only records the
+current view needs.
+
 
 A module owns composite DAO operations with `data=Data(operations={...})`,
 importing `Data`, `DataTx` and `Operation` from `metaform.data`. Its handler

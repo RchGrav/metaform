@@ -460,6 +460,77 @@ COUNT_READS = """() => { window.readsOf = {}; const real = window.fetch;
     window.readsOf[path] = (window.readsOf[path] || 0) + 1; return real(url, ...rest); }; }"""
 
 
+@pytest.mark.req('VIEW-039')
+@pytest.mark.req('STORE-005')
+def test_session_reads_select_live_rows_before_hydrating_and_page_ended_history(run, web, mapped, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    from urllib.parse import urlencode
+
+    from metaform import module as chassis
+    from metaform.data import Store, tables
+    from metaform.modules.dispatch import carry_conversations, read_sessions, release
+
+    run('enable', 'dispatch')
+    store = Store('proj', module='dispatch')
+    current = datetime.now(UTC)
+    stamp = lambda hours: (current - timedelta(hours=hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    with store.tables() as tx:
+        for number in range(105):
+            sid = f'old-{number:03}'
+            tx.insert('agent_sessions', {'session_id': sid, 'work_id': 'old-work', 'agent': 'claude',
+                                         'state': 'ended', 'started': stamp(30), 'ended': stamp(2), 'seq': number})
+            tx.insert('session_lines', {'session_id': sid, 'name': 'state', 'work_id': 'old-work',
+                                        'kind': 'state', 'text': json.dumps({'commands': ['x' * 10000],
+                                                                           'title': sid}), 'seq': 1})
+        for sid, state, ended in [('waiting', 'waiting', ''), ('recent-end', 'ended', stamp(0.5)),
+                                  ('long-run', 'running', '')]:
+            tx.insert('agent_sessions', {'session_id': sid, 'work_id': 'current-work', 'agent': 'claude',
+                                         'state': state, 'started': stamp(30), 'ended': ended, 'seq': 1000})
+        tx.insert('session_lines', {'session_id': 'old-000', 'work_id': 'old-work', 'name': 'line:2',
+                                    'kind': 'agent_message_chunk', 'text': 'Complete transcript.', 'seq': 2})
+    # A long-running session belongs to the live hour after release, regardless of its old start time.
+    release(store, 'current-work', 'claude long-run', False, 'long-run', 'finished')
+    carry_conversations(store)
+    executed = []
+    original = tables.TableTx._execute
+
+    def counted(tx, sql, params):
+        if sql.startswith('SELECT'):
+            executed.append((sql, params))
+        return original(tx, sql, params)
+
+    monkeypatch.setattr(tables.TableTx, '_execute', counted)
+    ctx = chassis.context('dispatch', mapped, project='proj', nouns={'thread': False})
+    live = read_sessions(ctx)
+    assert {one['session_id'] for one in live['sessions']} == {'waiting', 'recent-end', 'long-run'}
+    assert live['next'] and live['lines'] == []
+    state_reads = [(sql, params) for sql, params in executed if 'FROM "dispatch.session_lines"' in sql]
+    assert len(state_reads) == 1 and set(state_reads[0][1]) == {'state', 'waiting', 'recent-end', 'long-run'}
+    assert all(' WHERE ' in sql for sql, _ in executed if 'FROM "dispatch.agent_sessions"' in sql)
+    started(run, mapped)
+    direct = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]
+    assert {one['session_id'] for one in direct['sessions']} == {'waiting', 'recent-end', 'long-run'}
+    cursor, seen = direct['next'], []
+    while cursor:
+        status, page = api(web, '/api/dispatch-sessions?' + urlencode({'project': 'proj', 'thread': 'false',
+                                                                      'after': cursor, 'limit': 20}))
+        assert status == 200 and len(page['sessions']) <= 20
+        seen.extend(one['session_id'] for one in page['sessions'])
+        cursor = page['next']
+    assert seen == [f'old-{number:03}' for number in range(105)]
+    detail = api(web, '/api/dispatch-sessions?project=proj&id=old-000')[1]
+    assert [one['session_id'] for one in detail['sessions']] == ['old-000']
+    assert detail['states']['old-000']['commands'] == ['x' * 10000]
+    assert [one['text'] for one in detail['lines']] == ['Complete transcript.']
+    scoped = api(web, '/api/dispatch-sessions?' + urlencode({'project': 'proj', 'thread': 'false',
+                                                            'ids': json.dumps(['current-work'])}))[1]
+    assert {one['session_id'] for one in scoped['sessions']} == {'waiting', 'recent-end', 'long-run'}
+    scoped = api(web, '/api/dispatch-sessions?' + urlencode({'project': 'proj', 'thread': 'false',
+                                                            'session_ids': json.dumps(['old-001'])}))[1]
+    assert [one['session_id'] for one in scoped['sessions']] == ['old-001']
+    assert api(web, '/api/dispatch-sessions?project=proj&ids=%7B%7D')[0] == 400
+
+
 @pytest.mark.req('VIEW-018')
 def test_an_agents_thread_lines_read_no_session_again_and_a_change_to_its_session_reads_them(run, web, mapped, browser):
     """A handler acts on the events that concern it: a line of a thread no open chat shows reads nothing, a session's
@@ -8378,7 +8449,8 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-1', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'Hello from the line', 'seq': 1})
-    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch',
+               'work_ids': [worked.id], 'session_ids': [f's-{worked.id}'], 'kinds': ['session']}
     relay.deliver('map.changed', payload)  # as the runner's process announces it
     page.wait_for_selector('#agents:not([hidden]) .agent', timeout=10000)
     page.click('#agents .agent')
@@ -8388,7 +8460,7 @@ def test_a_line_of_an_agents_thread_reads_the_agents_again_and_never_the_map(run
         tx.insert('session_lines', {'session_id': f's-{worked.id}', 'name': 'said-2', 'work_id': worked.id,
                             'kind': 'agent_message_chunk', 'text': 'and a second line', 'seq': 2})
     heard = page.evaluate('window.metaform.heard()')
-    relay.deliver('map.changed', payload)  # as the runner's process announces it
+    relay.deliver('map.changed', {**payload, 'kinds': ['line']})  # as the runner's process announces it
     page.wait_for_function('() => document.querySelector("#helpdesk .log").innerText.includes("a second line")',
                            timeout=10000)
     assert not [url for url in reads if '/api/graph' in url or '/api/memory-graph' in url], reads
@@ -8846,7 +8918,8 @@ def test_the_chat_dock_stays_with_its_session_when_a_newer_session_of_the_ticket
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
     live_session(worked.id)
     thread_line(worked.id, 1, 'Our first conversation')
-    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch'}
+    payload = {'project': 'proj', 'base_id': store.active_base().id, 'tables': 'dispatch',
+               'work_ids': [worked.id], 'session_ids': [f's-{worked.id}'], 'kinds': ['session']}
     relay.deliver('map.changed', payload)
     page.wait_for_selector('#agents:not([hidden]) .agent-row button.chat', timeout=10000)
     page.click('#agents .agent-row button.chat')
@@ -8859,7 +8932,7 @@ def test_the_chat_dock_stays_with_its_session_when_a_newer_session_of_the_ticket
                                'pid': runner.pid, 'port': dispatch_control_port(), 'token': 'newer',
                                'started': '2026-10-03T00:01:00Z', 'seq': 100000})
     thread_line(worked.id, 1, 'Another conversation', session='newer')
-    relay.deliver('map.changed', payload)
+    relay.deliver('map.changed', {**payload, 'session_ids': ['newer']})
     page.wait_for_function('() => [...document.querySelectorAll("#agents .agent")]'
                            '.some(one => one.dataset.session === "newer")', timeout=10000)
     page.wait_for_timeout(1000)  # the dock's read for the same change

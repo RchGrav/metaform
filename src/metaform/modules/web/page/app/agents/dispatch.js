@@ -32,11 +32,11 @@ import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 import {nodeIn} from '/page/app/graph/data.js';
-
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
  * The dispatch module starts, messages and stops an agent on a ticket, BASE-052; the page asks it to through three
  * writes, VIEW-011. What an agent does is read from the dispatch layer at its ticket's node with each map change. */
-export const D = {sessions: [], starting: false, readFor: null};
+export const D = {sessions: [], starting: false, signals: [], states: {}, subagents: [], claims: [],
+  proposals: {}, asking: [], onAsking: null, next: null, historyBusy: false, menuMost: 40};
 export const SESSIONS_DRAWN = [];  // what a later part draws again with the sessions, such as the broadcast window
 /* The signals of an agent waiting on the person: a permission request, or a question of its own, ACP's elicitation. */
 export const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
@@ -321,24 +321,31 @@ overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .bt
  * session's thread. An ended session leaves the key and the map; its log stays in the node's work history, VIEW-036.
  * Sessions are the dispatch module's own tables, never the map. */
 let WHOLE_READS = 0;  // the reads of every agent begun, so one that lands after a later one's is let go
-export async function renderAgents(only = null) {
-  if (FRAMED) return;
-  const project = S.project, metaform = S.base, shown = `${project}/${metaform}`;
-  // a change that names its tickets reads those tickets alone and merges them in, once the whole has been read here
-  const some = Array.isArray(only) && only.length > 0 && D.readFor === shown;
+const PENDING = {project: null, base: null, whole: null};
+export async function renderAgents(only = null, bySession = false) {
+  if (FRAMED || Array.isArray(only) && !only.length) return;
+  const project = S.project, metaform = S.base;
+  const some = Array.isArray(only);
+  // A live-list snapshot must land before a later event's records, so it cannot overwrite them afterwards.
+  while (some && PENDING.whole && PENDING.project === project && PENDING.base === metaform) await PENDING.whole;
+  if (S.project !== project || S.base !== metaform) return;
   const whole = some ? WHOLE_READS : ++WHOLE_READS;
-  const {found, claimed} = some ? await readTickets(only) : await readDispatch();
+  const reading = some ? readSelected(only, bySession) : readDispatch();
+  if (!some) Object.assign(PENDING, {project, base: metaform, whole: reading});
+  const {found, claimed} = await reading;
+  if (PENDING.whole === reading) PENDING.whole = null;
   if (S.project !== project || S.base !== metaform) return;  // the answer for a project the person has left
   // reads land in any order: a read of every agent begun after this one is the newer, and draws instead
   if (whole !== WHOLE_READS) return;
-  if (some) mergeTickets(only, found);
+  if (some) mergeSessions(only, found, bySession);
   else {
     D.sessions = found.sessions || [];
     // a login needed is read from the signals, `sessionStatus`, and a spinning or stuck agent's figure circles
     // restlessly, `moodOf`
     D.signals = found.signals || [];
     D.states = found.states || {};  // each session's state, the intake guard's phase among it, `drawIntake`
-    D.readFor = shown;
+    D.next = found.next || null;
+    D.menuMost = 40;
   }
   followStart(D.sessions);
   setupNotice();
@@ -409,31 +416,37 @@ function followStart(sessions) {
   if (G && nodeIn(G.graphData(), node)) follow3d(node);
   autoZoom2d(node);
 }
-/* The sessions of the tickets a change named, each ticket read on its own; the claims are not read again, as no
- * session change moves them. A failed read keeps what was drawn. */
-async function readTickets(works) {
-  const reads = works.map(id => read('dispatch-sessions', {id, thread: 'false'})
-    .catch(error => { readFailed(error); return null; }));
-  const found = {sessions: [], signals: [], states: {}, subagents: [], failed: []};
-  const answers = await Promise.all(reads);
-  for (let at = 0; at < works.length; at++) {
-    const one = answers[at];
-    if (one === null) { found.failed.push(works[at]); continue; }
-    found.sessions.push(...(one.sessions || []));
-    found.signals.push(...(one.signals || []));
-    Object.assign(found.states, one.states || {});
-    found.subagents.push(...(one.subagents || []));
-  }
-  return {found, claimed: null};
+/* One batch of named sessions or shown tickets. Claims do not change with a session. */
+async function readSelected(ids, bySession) {
+  try { return {found: await read('dispatch-sessions', {thread: 'false',
+    [bySession ? 'session_ids' : 'ids']: JSON.stringify(ids)}), claimed: null}; }
+  catch (error) { readFailed(error); return {found: null, claimed: null}; }
 }
-/* The named tickets' sessions, signals, states and subagents in place of what was read for them before. */
-function mergeTickets(works, found) {
-  const read = new Set(works.filter(id => !found.failed.includes(id)));
-  const theirs = new Set(D.sessions.filter(one => read.has(one.work_id)).map(one => one.session_id));
-  D.sessions = D.sessions.filter(one => !read.has(one.work_id)).concat(found.sessions);
-  D.signals = (D.signals || []).filter(one => !read.has(one.work_id)).concat(found.signals);
-  D.states = Object.assign(D.states || {}, found.states);
-  D.subagents = (D.subagents || []).filter(one => !theirs.has(one.parent)).concat(found.subagents);
+export function mergeSessions(ids, found, bySession = true) {
+  if (!found) return;
+  const named = new Set(ids), field = bySession ? 'session_id' : 'work_id';
+  const theirs = bySession ? named : new Set(D.sessions.filter(one => named.has(one.work_id)).map(one => one.session_id));
+  D.sessions = D.sessions.filter(one => !named.has(one[field])).concat(found.sessions || [])
+    .sort((one, two) => one.seq - two.seq);
+  D.signals = D.signals.filter(one => !named.has(one[field])).concat(found.signals || []);
+  for (const id of theirs) D.states[id] = null;
+  Object.assign(D.states, found.states || {});
+  D.subagents = D.subagents.filter(one => !theirs.has(one.parent)).concat(found.subagents || []);
+}
+/* Ended sessions are read only when the person asks for another history page. */
+export async function readSessionHistory() {
+  if (D.historyBusy || !D.next) return;
+  const project = S.project, whole = WHOLE_READS;
+  D.historyBusy = true;
+  drawAgentSessions();
+  try {
+    const found = await read('dispatch-sessions', {history: 'true', after: D.next, limit: 50, thread: 'false'});
+    if (S.project !== project || whole !== WHOLE_READS) return;
+    mergeSessions((found.sessions || []).map(one => one.session_id), found);
+    D.next = found.next || null;
+    D.menuMost += (found.sessions || []).length;
+  } catch (error) { readFailed(error); }
+  finally { D.historyBusy = false; drawAgentSessions(); }
 }
 /* The sessions and the claims dispatch holds for the project; the threads are read for the open window only. A failed
  * read keeps the agents drawn as last read. The conversations are the project's whatever its map holds, so they are

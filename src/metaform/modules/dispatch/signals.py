@@ -169,10 +169,14 @@ def rows(store: Store, work_id: str | None = None, active: bool = True) -> list[
         return read_rows(tx, work_id, active)
 
 
-def read_rows(tx: Any, work_id: str | None = None, active: bool = True) -> list[dict[str, Any]]:
+def read_rows(tx: Any, work_id: str | None = None, active: bool = True, *,
+              session_ids: Sequence[str] | None = None, work_ids: Sequence[str] = ()) -> list[dict[str, Any]]:
     """`rows`, read in the caller's transaction on dispatch's tables."""
-    rows = tx.rows(TABLE, {'kind': 'signal', **({'work_id': work_id} if work_id else {})}, by=('kind',),
-                   limit=0).results
+    if session_ids is not None:
+        rows = tx.rows_in(TABLE, 'session_id', [*session_ids, *(f'work:{ref}' for ref in work_ids)])
+    else:
+        rows = tx.rows(TABLE, {'kind': 'signal', **({'work_id': work_id} if work_id else {})}, by=('kind',),
+                       limit=0).results
     found = [json.loads(row['text']) for row in rows]
     held = _held_bases(found)
     return sorted((row for row in found if row['active'] == active and (not row.get('base') or row['base'] in held)),

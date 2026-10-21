@@ -618,7 +618,7 @@
  },
  "cloud": null,
  "dispatch": {
-  "version": 18,
+  "version": 19,
   "compatible_from": 5,
   "tables": {
    "agent_sessions": {
@@ -638,6 +638,12 @@
       "TEXT",
       false,
       null
+     ],
+     "ended": [
+      "text",
+      "TEXT",
+      false,
+      "''"
      ],
      "how": [
       "text",
@@ -722,6 +728,32 @@
      [
       false,
       [
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "state",
+        0,
+        "BINARY"
+       ],
+       [
+        "ended",
+        0,
+        "BINARY"
+       ],
        [
         "seq",
         0,
@@ -1474,6 +1506,32 @@
         "BINARY"
        ],
        [
+        "kind",
+        0,
+        "BINARY"
+       ],
+       [
+        "seq",
+        0,
+        "BINARY"
+       ],
+       [
+        "name",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "session_id",
+        0,
+        "BINARY"
+       ],
+       [
         "seq",
         0,
         "BINARY"
@@ -1536,6 +1594,12 @@
       "TEXT",
       false,
       null
+     ],
+     "ended": [
+      "text",
+      "TEXT",
+      false,
+      "''"
      ],
      "how": [
       "text",

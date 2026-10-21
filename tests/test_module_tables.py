@@ -188,6 +188,85 @@ def test_every_read_and_delete_is_planned_on_an_index_and_a_where_no_index_start
         db.close()
 
 
+@pytest.mark.parametrize('key', [('who', 'entry_id'), ('entry_id', 'who')])
+def test_rows_in_batches_selected_keys_with_fixed_columns_in_global_index_order(ledger, user_module, traced,
+                                                                              monkeypatch, key):
+    from metaform.data import TableTx
+
+    user_module('ledger', LEDGER_V1.replace("key=('entry_id',)", f'key={key!r}'))
+    loader.reset()
+    store = Store('proj', module='ledger')
+    with store.tables() as tx:
+        for number in range(905):
+            tx.insert('entries', {'entry_id': f'e{number:04}', 'who': 'ada', 'amount': number})
+        tx.insert('entries', {'entry_id': 'other', 'who': 'bob'})
+    bindings = []
+    execute = TableTx._execute
+
+    def bounded(self, sql, params):
+        bindings.append(tuple(params))
+        assert len(params) <= 900
+        return execute(self, sql, params)
+
+    monkeypatch.setattr(TableTx, '_execute', bounded)
+    del traced[:]
+    selected = [f'e{number:04}' for number in range(904, -1, -1)]
+    with store.tables(write=False) as tx:
+        rows = tx.rows_in('entries', 'entry_id', [*selected, *selected, "x'); DELETE FROM entries; --"],
+                          where={'who': 'ada'})
+    assert [row['entry_id'] for row in rows] == sorted(selected)
+    assert [len(params) for params in bindings] == [900, 8]
+    statements = [sql for sql in traced if sql.startswith('SELECT ') and '"ledger.entries"' in sql]
+    assert len(statements) == 2
+    db = sqlite3.connect(store_file())
+    try:
+        for sql in statements:
+            assert all(row[3].startswith('SEARCH ') for row in db.execute('EXPLAIN QUERY PLAN ' + sql))
+    finally:
+        db.close()
+
+
+def test_rows_in_reads_an_index_prefix_and_rejects_unindexed_columns(ledger, traced):
+    fill(ledger)
+    with ledger.tables(write=False) as tx:
+        rows = tx.rows_in('entries', 'who', ['bob', 'ada', 'ada'], by=('who',))
+        assert [row['entry_id'] for row in rows] == ['e1', 'e3', 'e2']
+        with pytest.raises(StoreError):
+            tx.rows_in('entries', 'amount', [5])
+        with pytest.raises(StoreError):
+            tx.rows_in('entries', 'who', ['ada'], by=('amount',))
+        with pytest.raises(StoreError):
+            tx.rows_in('entries', 'who', ['ada'], where={'who': 'bob'})
+    statements = [sql for sql in traced if sql.startswith('SELECT ') and '"ledger.entries"' in sql and ' IN (' in sql]
+    db = sqlite3.connect(store_file())
+    try:
+        assert len(statements) == 1
+        assert any('INDEX "ledger.entries:who"' in row[3] or 'INDEX ledger.entries:who' in row[3]
+                   for row in db.execute('EXPLAIN QUERY PLAN ' + statements[0]))
+    finally:
+        db.close()
+
+
+def test_rows_in_empty_selection_opens_no_store_or_sql(ledger, traced):
+    with ledger.tables(write=False) as tx:
+        del traced[:]
+        assert tx.rows_in('entries', 'entry_id', []) == ()
+        assert traced == []
+
+
+def test_rows_in_keeps_sqlite_null_order_when_merging_index_batches(ledger, user_module):
+    user_module('ledger', LEDGER_V1.replace("Index(('who',))", "Index(('who', 'amount'))"))
+    loader.reset()
+    store = Store('proj', module='ledger')
+    fill(store)
+    with store.tables() as tx:
+        tx.update('entries', {'entry_id': 'e1'}, {'amount': None})
+    selected = [*(f'absent{number}' for number in range(899)), 'bob', 'ada']
+    with store.tables(write=False) as tx:
+        rows = tx.rows_in('entries', 'who', selected, by=('who', 'amount'))
+    assert [(row['entry_id'], row['amount']) for row in rows] == [('e1', None), ('e3', 2), ('e2', 7)]
+
+
 def test_one_transaction_reaches_one_store_and_a_write_that_raises_leaves_nothing(ledger):
     with pytest.raises(StoreError), ledger.tables() as tx:
         tx.insert('entries', {'entry_id': 'e1', 'who': 'ada'})

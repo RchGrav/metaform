@@ -17,7 +17,7 @@ import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
 import {narrowPage} from '/page/app/dock/place.js';
-import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel} from '/page/app/agents/dispatch.js';
+import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel, readSessionHistory} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
@@ -261,9 +261,9 @@ export function sessionTask(session, state = D.states?.[session.session_id]) {
     : ticket?.held ? 'Conversation' : null;
   return conversation || ticket?.task || ticket?.map?.title || ticket?.note || `ticket ${session.work_id}`;
 }
-/* The dock holds the stops made in this browser, so the person can bring back an agent stopped by mistake; the Agents
- * menu holds every session, each with how it ended. */
+/* The dock holds the stops made in this browser. The Agents menu reads older sessions only on request. */
 const RESUMED = new Set();
+const SESSION_HISTORY = {more: null};
 export function drawAgentSessions() {
   const again = D.sessions.filter(one => one.state === 'running' && RESUMED.delete(one.session_id));
   if (again.length) forgetStops(...again.map(one => one.session_id));
@@ -271,6 +271,13 @@ export function drawAgentSessions() {
   const dock = $('#helpdesk .stopped-agents'), menu = $('#agentbox .agent-sessions');
   dock.hidden = !stopped.length;
   menu.hidden = !D.sessions.length;
+  if (!SESSION_HISTORY.more) {
+    SESSION_HISTORY.more = h('button', {type: 'button', class: 'btn sm session-history', onclick: readSessionHistory},
+      'Older sessions');
+    menu.after(SESSION_HISTORY.more);
+  }
+  SESSION_HISTORY.more.hidden = !D.next;
+  SESSION_HISTORY.more.disabled = D.historyBusy;
   // the signals by session, mapped once: filtering every signal for every session made each redraw cost sessions
   // times signals, 1,119 by 642 on every event the page heard (2026-10-20)
   const signalsOf = new Map();
@@ -284,9 +291,8 @@ export function drawAgentSessions() {
       signalsOf.get(session.session_id) || null]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
-  keyedFill(menu, D.sessions.slice(-MENU_MOST).map(row(false)));  // the latest; older ones are read at their node
+  keyedFill(menu, D.sessions.slice(-D.menuMost).map(row(false)));
 }
-const MENU_MOST = 40;
 function sessionRow(session, forget = false) {
   const state = D.states?.[session.session_id], notification = notificationState(state);
   const stopped = stoppedByPerson(session), name = nameOf(session) || agentName(session.agent);
@@ -392,7 +398,7 @@ async function stopThread(event) {
   STOPPING.add(sessionId);
   button.disabled = true;
   try {
-    const found = await read('dispatch-sessions', {id: work, thread: 'false'});
+    const found = await read('dispatch-sessions', {id: work, session: sessionId, thread: 'false'});
     const session = (found.sessions || []).find(one => one.session_id === sessionId);
     if (session?.state !== 'running') return;
     const ticket = ticketOf(work), name = found.states?.[sessionId]?.name || agentName(session.agent);

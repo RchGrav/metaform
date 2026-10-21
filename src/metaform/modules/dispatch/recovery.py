@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+from metaform import home
 from metaform.module import Context
 
 from .signals import own_store
@@ -281,7 +282,8 @@ def recover(ctx: Context) -> dict[str, Any]:
                 own.move_work(work_id, 'todo', kept=True)
                 with own.tables() as tx:
                     tx.update('agent_sessions', {'session_id': row['session_id']},
-                              {'state': 'ended', 'how': 'its verified dead runner was recovered automatically'})
+                              {'state': 'ended', 'how': 'its verified dead runner was recovered automatically',
+                               'ended': home.now()})
             result['released'].append(work_id)
             from .progress import refresh
             refresh(ctx, own, ticket(own, work_id))
@@ -348,7 +350,8 @@ def settle(ctx: Context) -> list[str]:
             if not latest or dict(latest[0]) != row:
                 continue
             with own.tables() as tx:
-                tx.update('agent_sessions', {'session_id': row['session_id']}, {'state': 'ended', 'how': DEAD})
+                tx.update('agent_sessions', {'session_id': row['session_id']},
+                          {'state': 'ended', 'how': DEAD, 'ended': home.now()})
         settled.append(str(row['session_id']))
         # the board shows the crash and what comes of it, UX review round 1, 2026-10-17 (interrupt-failure-recovery
         # F5): settle published nothing, so a dead runner's resume came unannounced

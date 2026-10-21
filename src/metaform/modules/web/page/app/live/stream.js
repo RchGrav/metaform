@@ -29,6 +29,7 @@ import {tableChange} from '/page/app/roundtable/stage.js';
 // project's metaforms; intake: one may have begun or ended an intake's recording
 export const LIVE = {layer: null, base: null, seen: '', busy: false, again: false, whole: false, named: null, done: 0,
   drawn: -Infinity, brief: false, left: null, bases: false, intake: false};
+const NO_SESSIONS = [];
 export const following = () => LIVE.layer !== null && S.base === LIVE.base;
 export async function loadLive() {
   // the sequence first, then the layer: an op written between the two is applied again, which changes nothing, and
@@ -296,7 +297,8 @@ export async function changed(event) {
   if (agents) {
     const payload = event.payload;
     const works = Array.isArray(payload.work_ids) ? payload.work_ids : null;
-    agentsChanged(mergesConcerned(payload), sessionsConcerned(payload), works);
+    const sessions = Array.isArray(payload.session_ids) ? payload.session_ids : NO_SESSIONS;
+    agentsChanged(mergesConcerned(payload), sessionsConcerned(payload), works, sessions);
   }
   // an agent's own tables, its thread, sessions and settings, change no map
   if (named === 'dispatch' || allTables(named, table => table.startsWith('dispatch.'))) return;

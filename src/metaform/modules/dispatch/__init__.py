@@ -38,6 +38,7 @@ import time
 import uuid
 from collections.abc import Callable, Collection, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -144,7 +145,7 @@ REMOTE_AGENT = False  # it launches agents on this machine, which a hosted sandb
 SESSION = (Column('session_id', required=True), Column('work_id', required=True), Column('agent', required=True),
            Column('state', required=True), Column('nonce'), Column('pid', 'int'), Column('port', 'int'),
            Column('token'), Column('how'), Column('started', required=True), Column('seq', 'int', required=True),
-           Column('runner'), Column('recovery', 'json'), Column('origin'), Column('base'))
+           Column('runner'), Column('recovery', 'json'), Column('origin'), Column('base'), Column('ended', default=''))
 LINE = (Column('session_id', required=True), Column('name', required=True), Column('work_id', required=True),
         Column('kind', required=True), Column('text', required=True), Column('seq', 'int', required=True))
 ATTEMPT = (Column('work_id', required=True), Column('session_id', required=True),
@@ -160,12 +161,13 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
 # nothing raised on an agent is lost when the map shown changes (UX review round 2, 2026-10-17, combined F4). The
 # signals `lines` still holds, written by runners on older code, are carried into it by carry_conversations(); only a
 # table is added, so version 5's code still reads and writes the tables.
-TABLES = Tables(version=18, compatible_from=5, tables=(  # 5: agents do not ask; 6, 7, 10 to 18 only add
+TABLES = Tables(version=19, compatible_from=5, tables=(  # 19 adds an optional end timestamp and session indexes
     # The conversations with agents, the project's whatever its maps: each session and the lines of its thread.
     Table('agent_sessions', place='project', key=('session_id',), columns=SESSION,
-          indexes=(Index(('work_id', 'seq')), Index(('seq',)))),
+          indexes=(Index(('work_id', 'seq')), Index(('seq',)), Index(('state', 'ended', 'seq')))),
     Table('session_lines', place='project', key=('session_id', 'name'), columns=LINE,
-          indexes=(Index(('session_id', 'seq')), Index(('work_id', 'seq')), Index(('kind', 'work_id', 'seq')))),
+          indexes=(Index(('session_id', 'seq')), Index(('work_id', 'seq')), Index(('kind', 'work_id', 'seq')),
+                   Index(('session_id', 'kind', 'seq')))),
     # What the agents and the modules raise for the person, the project's whatever map is shown: one line per signal,
     # its text the signal with the metaform it was raised on, `base`, signals.py.
     Table('signals', place='project', key=('session_id', 'name'), columns=LINE,
@@ -1319,7 +1321,8 @@ def hand_over(store: Store, work_id: str, agent: str, session_id: str, runner: s
         if previous is None or previous['work_id'] != work_id or runner and previous.get('runner') != runner:
             return {'state': 'gone'}
         if previous['state'] == 'running':
-            tx.update('agent_sessions', {'session_id': session_id}, {'state': 'ended', 'how': HANDED})
+            tx.update('agent_sessions', {'session_id': session_id}, {'state': 'ended', 'how': HANDED,
+                                                                   'ended': home.now()})
     path = handed_path(session_id)
     home.mkdir_private(path.parent)
     home.write_private(path, json.dumps({'carried': carried}))
@@ -1779,7 +1782,8 @@ def release(store: Store, work_id: str, by: str, took: bool, session_id: str | N
                     return  # a late release must never end or clear permissions on the session's latest resume
                 if previous is not None and previous['state'] == 'running':
                     tx.concern(work_id=work_id, session_id=session_id, kind='session')
-                    tx.update('agent_sessions', {'session_id': session_id}, {'state': 'ended', 'how': how})
+                    tx.update('agent_sessions', {'session_id': session_id}, {'state': 'ended', 'how': how,
+                                                                           'ended': home.now()})
             if took and runner and previous is not None and previous['state'] == 'running':
                 from .progress import finish
                 finish(store, work_id, runner, how)
@@ -3160,7 +3164,8 @@ def reset(ctx: Context) -> dict[str, Any]:
                     if latest != row:
                         continue
                     tx.update('agent_sessions', {'session_id': row['session_id']},
-                              {'state': 'ended', 'how': 'its runner was gone; ended by dispatch reset'})
+                              {'state': 'ended', 'how': 'its runner was gone; ended by dispatch reset',
+                               'ended': home.now()})
                 if record is not None:
                     from .progress import finish
                     finish(at, row['work_id'], str(row.get('runner') or ''),
@@ -4577,7 +4582,8 @@ def runner_gone(entry: dict[str, Any]) -> dict[str, Any] | None:
         with own.tables() as tx:
             for row in tx.rows('agent_sessions', {'work_id': work_id}, limit=0).results:
                 if row['state'] == 'running' and row.get('pid') == entry.get('pid'):
-                    tx.update('agent_sessions', {'session_id': row['session_id']}, {'state': 'ended', 'how': DEAD})
+                    tx.update('agent_sessions', {'session_id': row['session_id']},
+                              {'state': 'ended', 'how': DEAD, 'ended': home.now()})
                     tx.concern(work_id=work_id, session_id=str(row['session_id']), kind='session')
     except (StoreError, OSError):
         pass
@@ -6147,63 +6153,78 @@ def threaded(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[st
     return kept, states
 
 
-SUBAGENTS_READ = 50  # the most of a running session's subagents the agents key reads, for their figures
 ENDED_STATE = ('about', 'brief', 'intake', 'notification', 'title', 'role', 'authored_role_uri', 'assignment_id', 'team_id',
                'latest_message_id', 'latest_message_text', 'updated_at', 'name')
 # What the agents key keeps of an ended session's assignment: the fields its state and the Agents menu name it by.
 ENDED_ASSIGNMENT = ('assignment_id', 'authored_role_uri', 'team_id', 'gc_assignment_id', 'root_work_id',
                     'parent_assignment_id', 'reviewed_assignment_id', 'state', 'work_id')
-# What the agents key kept of each ended session's state, by project and session id, with the stored row it was read
-# for, `ended_mark`; None for a session that kept no state. A session's state line holds about 50 KB, its commands
-# mostly, and reading and parsing every ended session's on every read was the most of this read's cost,
-# code.dispatcher.agent#3b. A row that runs again changes its runner, pid and port, so its state is read again.
-ENDED_STATES: dict[tuple[str, str], tuple[tuple[Any, ...], dict[str, Any] | None]] = {}
-
-
-LISTED_MOST = 40  # the newest sessions the agents key lists beyond the running and each open ticket's latest
-ENDED_WORDS = 300  # characters of how and why an ended session ended that the agents key carries
-
-
-def agents_key_view(found: list[dict[str, Any]], raised: list[dict[str, Any]],
-                    open_ids: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """What the agents key lists: every running session, each open ticket's latest session, and the newest
-    LISTED_MOST, an ended one's words of how and why cut to ENDED_WORDS; and the active signals of a listed session
-    or of an open ticket. The page's Agents menu, its figures and its cards show no more. Every session since the
-    project began, 1,097 with each one's state, made this read 2.1 MB on every event the page heard, and the menu
-    1,097 rows redrawn against 524 signals each (the person's stalls of seconds a click, 2026-10-20). Every session
-    stays readable by its id, at its node."""
-    def cut(value: Any) -> Any:
-        return value[:ENDED_WORDS] + '…' if isinstance(value, str) and len(value) > ENDED_WORDS else value
-    latest = {str(row['work_id']): str(row['session_id']) for row in found if str(row['work_id']) in open_ids}
-    listed = set(latest.values()) | {str(row['session_id']) for row in found[-LISTED_MOST:]}  # rows come oldest first
-    kept: list[dict[str, Any]] = []
-    for row in found:
-        live = row.get('state') == 'running'
-        if live or str(row['session_id']) in listed:
-            kept.append(row if live else {**row, 'how': cut(row.get('how')), 'reason': cut(row.get('reason'))})
-    shown = {str(row['session_id']) for row in kept}
-    signals = [one for one in raised
-               if str(one.get('session_id') or '') in shown or str(one.get('work_id') or '') in open_ids]
-    return kept, signals
-
-
 def held_here(row: dict[str, Any]) -> bool:
     """Whether a stored session row is recorded running by this home, so its runner may still be at work on it; one
     another home started reads as ended here, session_status."""
     return row['state'] == 'running' and not (row.get('origin') and foreign(row))
 
 
-def ended_mark(row: dict[str, Any]) -> tuple[Any, ...] | None:
-    """What identifies a stored session row as ended, which its runner writes once at its end: None for a row still
-    recorded running here, whose runner may yet change its state."""
-    if held_here(row):
-        return None
-    return row['state'], row.get('how'), row.get('runner'), row.get('pid'), row.get('port'), row['seq']
+def session_page(tx: Any, given: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+    """Select before hydrating: named sessions or tickets, live sessions, or one cursor page of old ended sessions.
+    Unknown legacy end times sort into history. The cursor fixes the hour boundary throughout a history walk."""
+    work_id, session_id = given.get('id'), given.get('session')
+    if 'session_ids' in given:
+        rows = tx.rows_in('agent_sessions', 'session_id', given['session_ids'])
+    elif 'ids' in given:
+        rows = tx.rows_in('agent_sessions', 'work_id', given['ids'], by=('work_id', 'seq'))
+    elif session_id:
+        row = tx.get('agent_sessions', {'session_id': session_id})
+        rows = (row,) if row is not None and (not work_id or row['work_id'] == work_id) else ()
+    elif work_id:
+        row = tx.get('agent_sessions', {'session_id': work_id})
+        rows = (row,) if row is not None else tx.rows('agent_sessions', {'work_id': work_id},
+                                                     by=('work_id', 'seq'), limit=0).results
+    else:
+        cutoff = (datetime.now(UTC) - timedelta(hours=1)).strftime(STAMP)
+        after = given.get('after')
+        cursor = None
+        if after:
+            try:
+                decoded = json.loads(after)
+                cutoff, cursor = decoded['cutoff'], decoded['after']
+                datetime.strptime(cutoff, STAMP).replace(tzinfo=UTC)
+                if cursor is not None and (not isinstance(cursor, list) or len(cast(list[Any], cursor)) != 3
+                                           or not isinstance(cursor[0], str) or not isinstance(cursor[1], int)
+                                           or not isinstance(cursor[2], str)):
+                    raise ValueError
+            except (ValueError, TypeError, KeyError):
+                raise Stop('Invalid session history cursor.', 'metaform dispatch sessions history=true') from None
+        history = given.get('history') is True or bool(after)
+        if history:
+            limit = int(given['limit']) if 'limit' in given else 50
+            if not 1 <= limit <= 500:
+                raise Stop('Session page limit must be from 1 to 500.', 'metaform dispatch sessions history=true')
+            page = tx.rows('agent_sessions', {'state': 'ended'}, by=('state', 'ended', 'seq'),
+                           limit=limit, after=json.dumps(cursor) if cursor is not None else None)
+            rows = tuple(row for row in page.results if str(row.get('ended') or '') < cutoff)
+            next_key = json.loads(page.next) if page.next and len(rows) == len(page.results) else None
+        else:
+            active = tx.rows_in('agent_sessions', 'state', ('running', 'waiting', 'starting'),
+                                by=('state', 'ended', 'seq'))
+            recent = tx.rows('agent_sessions', {'state': 'ended'}, by=('state', 'ended', 'seq'),
+                             after=json.dumps([cutoff, -1, '']), limit=0).results
+            rows = (*active, *recent)
+            next_key = None
+        probe = tx.rows('agent_sessions', {'state': 'ended'}, by=('state', 'ended', 'seq'), limit=1,
+                        after=json.dumps(next_key) if next_key is not None else None).results
+        more = (not history or next_key is not None) and bool(probe) and str(probe[0].get('ended') or '') < cutoff
+        next_page = json.dumps({'cutoff': cutoff, 'after': next_key}) if more else None
+        selected = [dict(row) for row in rows]
+        return (selected if history else sorted(selected, key=lambda row: (row['seq'], row['session_id']))), next_page
+    found = sorted((dict(row) for row in rows), key=lambda row: (row['seq'], row['session_id']))
+    if given.get('latest') and found:
+        found = [max(found, key=lambda row: (row['state'] in ('running', 'waiting'), row['seq'], row['session_id']))]
+    return found, None
 
 
 def read_sessions(ctx: Context) -> dict[str, Any]:
-    """The sessions of one ticket or of every ticket, each with the lines of its thread in order, for the page's agent
-    window and a node's work history, VIEW-036 and VIEW-039; with thread=false, the sessions alone, for the agents key.
+    """Live sessions by default, a cursor page of ended history on request, or the named tickets and sessions.
+    Detail reads retain complete threads; thread=false supplies metadata for the agents key and board.
     Each session's state is under `states` by its session id, so a session row reads the same on every surface, and
     a tool call's or a permission request's line carries its structure as `data`. What only reaches a running session
     is left out. An intake agent's session is found in whatever metaform it is kept in; every conversation is the project's,
@@ -6221,9 +6242,8 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
     stored: list[dict[str, Any]] = []
     raised: list[dict[str, Any]] = []
     since = ctx.nouns.get('since')
-    agents_key = ctx.nouns.get('thread') is False and not work_id
-    marks: dict[str, tuple[Any, ...] | None] = {}
-    kept: dict[str, dict[str, Any] | None] = {}  # the agents key's ended sessions whose state it read before
+    agents_key = ctx.nouns.get('thread') is False and not work_id and not ctx.nouns.get('session')
+    next_page: str | None = None
     # One transaction reads the session rows, the lines wanted of them and the signals, before any runner is asked for
     # its status, code.dispatcher.agent#3b; what a row recorded running needs is read for it, and dropped below for
     # one whose runner turns out to be gone.
@@ -6234,28 +6254,20 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         pass
     try:
         with own.tables(write=False) as tx:
-            stored = [dict(row) for row in (tx.rows('agent_sessions', {'work_id': work_id}, by=('work_id', 'seq'), limit=0)
-                                            if work_id else tx.rows('agent_sessions', by=('seq',), limit=0)).results]
-            if agents_key:
-                marks = {str(row['session_id']): ended_mark(row) for row in stored}
-            for session_id, mark in marks.items():
-                cached = ENDED_STATES.get((store.project_id, session_id))
-                if mark is not None and cached is not None and cached[0] == mark:
-                    kept[session_id] = cached[1]
-            wanted = {str(session['session_id']) for session in stored} - set(kept)
+            stored, next_page = session_page(tx, ctx.nouns)
+            if work_id and len(stored) == 1 and stored[0]['session_id'] == work_id:
+                work_id = str(stored[0]['work_id'])
+            wanted = [str(session['session_id']) for session in stored]
             if wanted and (ctx.nouns.get('thread') is False or since is not None):
-                if agents_key and all(marks.get(session_id) is None for session_id in wanted):
-                    # only sessions recorded running here, a few at most: each one's state line by its key
-                    for session_id in sorted(wanted):
-                        lines += [dict(row) for row in tx.rows('session_lines', {'session_id': session_id, 'name': 'state'},
-                                                               limit=1).results]
-                else:
-                    # Every wanted session's state line in one read of the (kind, work_id) index, not one read each,
-                    # code.dispatcher.agent#3b.
-                    lines += [dict(row) for row in tx.rows('session_lines', {'kind': 'state',
-                                                                     **({'work_id': work_id} if work_id else {})},
-                                                           by=('kind',), limit=0).results
-                              if row['session_id'] in wanted and row['name'] == 'state']
+                lines += [dict(row) for row in tx.rows_in('session_lines', 'session_id', wanted,
+                                                         where={'name': 'state'})]
+            if ctx.nouns.get('thread') is not False and since is None:
+                lines += [dict(row) for row in tx.rows_in('session_lines', 'session_id', wanted,
+                                                         by=('session_id', 'seq'))]
+            elif ctx.nouns.get('thread') is False:
+                live_ids = [str(session['session_id']) for session in stored if held_here(session)]
+                lines += [dict(row) for row in tx.rows_in('session_lines', 'session_id', live_ids,
+                                                         where={'kind': 'subagent'}, by=('session_id', 'kind', 'seq'))]
             for session in stored:
                 if ctx.nouns.get('thread') is not False and since is not None:
                     # Only the lines begun after `since`, one range of the (session_id, seq) index read from the
@@ -6265,18 +6277,12 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                                                            by=('session_id', 'seq'), limit=0,
                                                            after=json.dumps([int(since), ''])).results
                               if int(row['seq']) > int(since) and row['name'] != 'state']
-                elif ctx.nouns.get('thread') is not False:
-                    lines += [dict(row) for row in tx.rows('session_lines', {'session_id': session['session_id']},
-                                                           by=('session_id', 'seq'), limit=0).results]
-                elif held_here(session):  # its subagents' lines, for their figures, VIEW-035
-                    lines += [dict(row) for row in tx.rows('session_lines', {'session_id': session['session_id']},
-                                                           after=json.dumps(['subagent:']),
-                                                           limit=SUBAGENTS_READ).results
-                              if str(row['name']).startswith('subagent:')]
-            raised = signal_rows(tx, work_id)
+            raised = signal_rows(tx, work_id, session_ids=wanted,
+                                 work_ids=list({str(session['work_id']) for session in stored}))
     except StoreError:
         raised = read_signal_rows(store, work_id)  # as before: a store that cannot be read says so here
-    open_work: list[WorkRecord] = list(store.work(open=True, limit=0).results) if agents_key else []
+    open_work: list[WorkRecord] = list(store.work(open=True, limit=0).results) \
+        if agents_key and any(held_here(row) for row in stored) else []
     found = verified(store, stored, open_work if agents_key else None)
     if ctx.nouns.get('thread') is False:  # the subagents only of sessions whose runner holds them
         live = {session['session_id'] for session in found if session.get('state') == 'running'}
@@ -6288,15 +6294,6 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         running = {session['session_id'] for session in found if session.get('state') == 'running'}
         states = {key: state if key in running else {name: state[name] for name in ENDED_STATE if name in state}
                   for key, state in states.items()}
-        for session in found:
-            session_id = str(session['session_id'])
-            mark = marks.get(session_id)
-            if mark is not None and session_id not in kept and session_id not in running:
-                ENDED_STATES[(store.project_id, session_id)] = (mark, states.get(session_id))
-        found, raised = agents_key_view(found, raised, {record.id for record in open_work})  # every ended state cached
-        copies = {key: dict(state) for key, state in kept.items() if state is not None}  # callers may change them
-        states = {key: copies[key] if key in copies else states[key]
-                  for key in (str(session['session_id']) for session in found) if key in copies or key in states}
     # A subagent the agent started, when it advertises them, is a child session of its own, P016: its line in the
     # parent's thread names it, and its own thread is kept under its session id, read here with it.
     children: list[dict[str, Any]] = []
@@ -6334,7 +6331,8 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                 owner.assignment(ctx, work_id=str(work_id))
             assignments = [scoped] if scoped is not None else []
         else:
-            assignments = owner.assignments(ctx)
+            assignments = [assigned for ref in sorted({str(session['work_id']) for session in found})
+                           if (assigned := owner.assignment(ctx, work_id=ref)) is not None]
         by_work = {str(one['work_id']): one for one in assignments}
         by_id = {str(one['assignment_id']): one for one in assignments}
         if work_id and assignments:
@@ -6357,7 +6355,6 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                 # 462 sessions, 2026-10-19), read and parsed on each change the page hears. Its thread's read has them.
                 assigned = {key: assigned.get(key) for key in ENDED_ASSIGNMENT}
                 directions = []
-            # a new dict: the state held for an ended session, ENDED_STATES, is kept as it was read
             sid = str(session['session_id'])
             states[sid] = {**states.get(sid, {}),
                 'orchestration': assigned, 'authored_role_uri': assigned['authored_role_uri'],
@@ -6379,7 +6376,7 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
                             **session_work_status(session, [one for one in raised
                                                             if one.get('work_id') == session['work_id']])}
                            for session in found), *starting],
-            'lines': lines, 'signals': raised, 'states': states, 'subagents': children}
+            'lines': lines, 'signals': raised, 'states': states, 'subagents': children, 'next': next_page}
 
 
 def harnesses(ctx: Context) -> dict[str, Any]:
@@ -7490,13 +7487,22 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('session', 'The session id, for one of several on the ticket; the latest when none is given.',
                          required=False)), surfaces=('cli',), open_world=True),
-        Verb('sessions', read_sessions, 'List the agent sessions of a ticket, or of every ticket, each with its '
-                                        'thread.',
+        Verb('sessions', read_sessions, 'Read live sessions, named sessions or tickets, or a cursor page of history.',
              nouns=(Noun('id', 'The work id of the ticket, or an agent\'s name for the latest session of that name '
                                'alone; none for every ticket.', required=False),
+                    Noun('session', 'One session of the named ticket.', required=False),
+                    Noun('ids', 'Only these ticket ids.', kind='json', required=False,
+                         schema={'type': 'array', 'items': {'type': 'string'}}),
+                    Noun('session_ids', 'Only these session ids.', kind='json', required=False,
+                         schema={'type': 'array', 'items': {'type': 'string'}}),
+                    Noun('latest', 'Only the newest running session, otherwise the newest session.',
+                         kind='bool', required=False),
+                    Noun('history', 'Read one page of sessions ended before the live hour.', kind='bool', required=False),
+                    Noun('limit', 'History page size, from 1 to 500; 50 by default.', kind='int', required=False),
+                    Noun('after', 'The next cursor from the preceding read.', required=False),
                     Noun('thread', 'false leaves the threads out, for a list of the sessions only.', kind='bool',
                          required=False),
-                    Noun('since', "Only each thread's lines after this seq, for a caller that polls; all by default.",
+                    Noun('since', "Only each thread's lines after this seq; all by default.",
                          kind='int', required=False)), effect='read'),
         Verb('handoff', handoff, 'Read a ticket handed to you by its id: the ticket, the node it is at and the counts '
                                  'there with the calls that read them, and one line saying to work it with map_work.',

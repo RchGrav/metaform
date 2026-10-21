@@ -566,6 +566,8 @@ export async function renderBoard() {
   if (S.project !== project || S.base !== metaform) return;  // a later choice's read draws its own tickets
   B.cutoff = found.cutoff || '';
   B.tickets = boardTickets(found.results || []);
+  await renderAgents(B.tickets.map(ticket => ticket.id));
+  if (S.project !== project || S.base !== metaform) return;
   drawBoard();
 }
 /* The Archive: the project folder's git history, VIEW-037, since a done ticket becomes its commit and is shed after.
