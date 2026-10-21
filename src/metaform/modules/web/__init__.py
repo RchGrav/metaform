@@ -1225,7 +1225,7 @@ MODULE = Module(
         Verb('embody', embody, 'Take a body of your own on the map, one of the characters, unless the person chose yours.',
              nouns=(Noun('character', 'The character, such as owl, beetle or puffer.'),), effect='read', open_world=False,
              listed=gui_running),
-        Verb('viewing', viewing, 'Read what the person is looking at now: the selection, each view, the open panes, the nodes in view and where their 3D view is.',
+        Verb('viewing', viewing, 'Read what the person is looking at now: the selection, each view, the open panes, the nodes in view and where their 3D view is; and the page\'s vitals: frame times, long tasks and how long their presses waited.',
              effect='read', open_world=False, listed=gui_running),
         Verb('come', come, "Bring your figure, or else the person's mascot, to the person to get their attention: their view, pointer or what it points at.",
              nouns=(Noun('to', 'view, in front of their 3D view, the default; pointer, under their mouse pointer; or hit, beside what the pointer points at.',
