@@ -1839,12 +1839,9 @@ def _board(store: Store, name: Any) -> str | None:
 
 
 def boards(ctx: Context) -> dict[str, Any]:
-    """The project's named boards, the person's need of 2026-10-20: a board gets a name, a new one can be made, a past
-    one opened again, and a ticket moved from one board to another with map work op=edit id= board=, so work for a new
-    effort goes to that effort's board. The first board has no name and is always there. Each board keeps its own
-    Archive behind its line; nothing is deleted. op list, the default, gives each board with its open tickets; add
-    makes one; line puts every ticket done up to now on that board in its Archive; remove takes away a board no
-    ticket is on."""
+    """List and organize boards. The first board has no name and always remains. Each board keeps its Archive line.
+    Remove requires an empty named board. Wipe backs up ticket-owned rows before stopping agents and deleting work;
+    restore inserts those original rows beside subsequent work. Wipe backups remain available permanently."""
     store = ctx.require_store()
     op = str(ctx.nouns.get('op') or 'list')
     name = str(ctx.nouns.get('name') or '').strip()
