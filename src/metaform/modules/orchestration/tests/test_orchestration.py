@@ -371,6 +371,28 @@ def test_stopped_descendants_and_interrupt_direction_survive_recovery(project, m
         SERVICE.bind(ctx(project), grandchild['assignment_id'], 'too-late')
 
 
+def test_stop_all_preserves_existing_descendant_stops(project):
+    gc = root(project)
+    child = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement countdown.'))
+    SERVICE.bind(ctx(project), child['assignment_id'], 'child')
+    grandchild = SERVICE.delegate(ctx(project, 'child', role='investigator', task='Trace countdown.'))
+    unrelated = root(project, 'other-gc')
+    SERVICE.stopped(ctx(project), work_id=child['work_id'], by='user', direction='Keep this ticket stopped.')
+    before = {one['work_id']: SERVICE.assignment(ctx(project), work_id=one['work_id'])
+              for one in (child, grandchild)}
+
+    SERVICE.stopped(ctx(project), work_id=gc['work_id'], by='user', every=True)
+
+    assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['stop']['every']
+    for work_id, original in before.items():
+        retained = SERVICE.assignment(ctx(project), work_id=work_id)
+        assert retained['stop'] == original['stop']
+        assert retained['stop_history'] == original['stop_history']
+    SERVICE.reopen(ctx(project), gc['work_id'])
+    assert all(SERVICE.assignment(ctx(project), work_id=work_id)['state'] == 'stopped' for work_id in before)
+    assert SERVICE.assignment(ctx(project), work_id=unrelated['work_id'])['stop'] is None
+
+
 def test_unrelated_change_burst_reads_no_assignment(project, monkeypatch):
     def unexpected(*args, **kwargs):
         pytest.fail('An unrelated event read orchestration state.')

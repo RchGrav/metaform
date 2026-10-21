@@ -827,6 +827,8 @@ class Orchestration:
             stopping_ids = {row['assignment_id'] for row in rows}
             changed: list[str] = []
             for row in rows:
+                if every and row.get('stop'):
+                    continue  # Stop all must not make an existing individual stop resumable by Full Auto.
                 if row['assignment_id'] != root['assignment_id'] and row['authored_role_uri'] in FACILITATORS:
                     waiters = tx.rows('role_requests', {'creator_assignment_id': row['assignment_id'],
                                                        'state': 'commissioned'}, limit=0).results
