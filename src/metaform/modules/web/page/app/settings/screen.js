@@ -728,11 +728,16 @@ function settingControl(row, id, label) {
       if (!await confirmRisk(label, choice, said[choice])) { select.value = row.value ?? ''; return; }
       saveSetting(row, choice, {confirm: true});
     };
+    // a choice by the name its pickers show, such as `sol — 6.1 Sol`, under its heading, such as Specific version
+    const names = row.choice_names || {}, groups = row.choice_groups || {};
+    const option = choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
+      disabled: !choices.includes(choice)}, (names[choice] || choiceWords(choice, worded))
+      + (risky.includes(choice) ? ' (risky)' : ''));
+    const headed = [...new Set(listed.map(choice => groups[choice]).filter(Boolean))];
     const select = h('select', {'aria-label': label, 'data-focus': id, onchange: chosen,
       onkeydown: event => arrowSelect(event, select, risky)},
-      listed.map(choice => h('option', {value: choice, selected: choice === row.value, title: said[choice] || null,
-        disabled: !choices.includes(choice)}, choiceWords(choice, worded)
-        + (risky.includes(choice) ? ' (risky)' : ''))));
+      listed.filter(choice => !groups[choice]).map(option),
+      headed.map(group => h('optgroup', {label: group}, listed.filter(choice => groups[choice] === group).map(option))));
     // while it offers no more than its default, the command that reads its choices from their source, such as an
     // agent's models, is a button beside it
     const reads = row.choices_from ? h('button', {type: 'button', class: 'btn sm quiet',

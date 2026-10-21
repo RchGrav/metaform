@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import contextvars
 import ctypes
+import difflib
 import hashlib
 import inspect
 import json
@@ -644,6 +645,104 @@ def option_values(setting: dict[str, Any]) -> list[str]:
     return [str(choice.get('value')) for choice in cast(list[dict[str, Any]], setting.get('options') or [])]
 
 
+# A versioned id ending in its family's word, as Codex names its models: gpt-6.1-sol is version 6.1 of sol.
+VERSIONED = re.compile(r'-(\d+(?:\.\d+)*)-([a-z]+)$')
+
+
+def short_names(setting: dict[str, Any]) -> dict[str, str]:
+    """Each short name a person writes for one of an agent's choices and the value it means now, in the agent's order:
+    a one-word value is the agent's own alias, as Claude's opus is, and means itself; the word that ends versioned ids
+    names the newest of them, as sol names gpt-6.1-sol until gpt-6.2-sol is offered. Read from the agent's current
+    choices each time, so a new release is picked up with no change here. Only a model has them."""
+    if option_key(setting) != 'model':
+        return {}
+    values = [value for value in option_values(setting) if value != AGENT_DEFAULT]
+    found = {value: value for value in values if value.isalpha() and value.islower()}
+    newest: dict[str, tuple[int, ...]] = {}
+    for value in values:
+        if (versioned := VERSIONED.search(value)) and versioned[2] not in found.keys() - newest.keys():
+            version = tuple(int(part) for part in versioned[1].split('.'))
+            if versioned[2] not in newest or version > newest[versioned[2]]:
+                found[versioned[2]], newest[versioned[2]] = value, version
+    return found
+
+
+def resolve_choice(setting: dict[str, Any], given: str) -> str | None:
+    """The value a person's word means among an agent's choices: the value itself, a short name, or the choice's own
+    name, such as Opus 5.5; None when it means none of them."""
+    text = given.strip()
+    choices = cast(list[dict[str, Any]], setting.get('options') or [])
+    if any(str(choice.get('value')) == text for choice in choices):
+        return text
+    folded = text.casefold()
+    shorts = {name.casefold(): value for name, value in short_names(setting).items()}
+    if folded in shorts:
+        return shorts[folded]
+    return next((str(choice.get('value')) for choice in choices if str(choice.get('name') or '').casefold() == folded),
+                None)
+
+
+def unknown_choice(agent: str, setting: dict[str, Any], given: str) -> str:
+    """Why a word means none of an agent's choices: what it offers, short names first, and the nearest valid one."""
+    shorts = short_names(setting)
+    known = [*shorts, *(value for value in option_values(setting) if value not in shorts)]
+    text = given.strip()
+    nearest = difflib.get_close_matches(text, known, n=1, cutoff=0.3) or \
+        [value for value in known if text.casefold() in value.casefold()][:1]
+    families = [short for short, value in shorts.items() if short != value]
+    return (f'{agent_label(agent)} offers {str(setting.get("name") or option_key(setting)).lower()} '
+            f'{", ".join(known) or "none"}, not {text}'
+            + (f'; {", ".join(families)} each mean the newest release of their family' if families else '')
+            + (f'; nearest is {nearest[0]}' + (f', now {shorts[nearest[0]]}' if shorts.get(nearest[0], nearest[0])
+                                               != nearest[0] else '') if nearest else '') + '.')
+
+
+def model_for(store: Store | None, agent: str, given: str) -> str | None:
+    """The exact model a person's word means for one of the agents now, as `dispatch.models` offers it to the
+    roundtables module: a short name such as sol is its family's newest release, a value or the model's own name is
+    itself. None when the agent has not run in this project, so nothing can be checked; a word that means none of its
+    models is refused with what it offers and the nearest one."""
+    offered = offered_option(store, agent, 'model')
+    if offered is None:
+        return None
+    found = resolve_choice(offered, given)
+    if found is None:
+        raise Stop(unknown_choice(agent, offered, given), f'metaform dispatch options agent={agent}')
+    return found
+
+
+def picker_entries(setting: dict[str, Any]) -> list[dict[str, Any]]:
+    """One of an agent's selects as every picker lists it: Default first with what it resolves to, then each short
+    name with what it means now, then every exact value under Specific version, each by its own name. `value` is what
+    is stored: a short name, so a stored choice follows the family's newest release."""
+    choices = cast(list[dict[str, Any]], setting.get('options') or [])
+    named = {str(choice.get('value')): str(choice.get('name') or choice.get('value')) for choice in choices}
+    own = next((choice for choice in choices if str(choice.get('value')) == AGENT_DEFAULT), None)
+    current = named.get(str(setting.get('current')))
+    if own is not None:  # the agent's own default, by its name and what it says it is, as Default (recommended)
+        name, said = str(own.get('name') or 'Default'), str(own.get('description') or '')
+        resolved = said if name.casefold().startswith('default') else name
+        label = name if name.casefold().startswith('default') else 'Default'
+    else:
+        label, resolved = 'Default', current or ''
+    entries = [{'value': AGENT_DEFAULT, 'label': f'{label} — {resolved}' if resolved else label, 'group': None,
+                'description': None}]
+    shorts = short_names(setting)
+    for short, value in shorts.items():
+        resolved = named.get(value, value) + (f' ({value})' if value != short and named.get(value) != value else '')
+        entries.append({'value': short, 'label': f'{short} — {resolved}', 'group': None,
+                        'description': next((choice.get('description') for choice in choices
+                                             if str(choice.get('value')) == value), None)})
+    for choice in choices:
+        value = str(choice.get('value'))
+        if value != AGENT_DEFAULT and value not in shorts:
+            pinned = bool(shorts)  # beside short names, an exact value pins one version
+            entries.append({'value': value, 'label': f'{named[value]} ({value})' if pinned and named[value] != value
+                            else named[value], 'group': 'Specific version' if pinned else None,
+                            'description': choice.get('description')})
+    return entries
+
+
 # Each agent's own default for one of its options is a setting of its own, dispatch_<agent>_<name>, so setting one
 # never touches another, P199, Rich 2026-10-14: (name, label, the option's ACP category, or its id when it has none).
 # Every agent has the four categories; an option with no category is a setting only where it is named here.
@@ -667,11 +766,12 @@ def offered_option(store: Store | None, agent: str, key: str) -> dict[str, Any] 
 
 
 def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
-    """A setting's choices: default, then each value the agent offered for the option at its last session here; only
-    default until it has run once, or `dispatch options agent=<agent> prime=true` has asked it."""
+    """A setting's choices: default, then each short name and each value the agent offered for the option at its last
+    session here, as its pickers list them; only default until it has run once, or `dispatch options agent=<agent>
+    prime=true` has asked it."""
     def choices(ctx: Context) -> list[str]:
         offered = offered_option(ctx.store, agent, key)
-        return [AGENT_DEFAULT, *(value for value in (option_values(offered) if offered else []) if value != AGENT_DEFAULT)]
+        return [one['value'] for one in picker_entries(offered)] if offered else [AGENT_DEFAULT]
     return choices
 
 
@@ -680,11 +780,33 @@ def option_words(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
     def words(ctx: Context) -> dict[str, str]:
         offered = offered_option(ctx.store, agent, key) or {}
         said = {AGENT_DEFAULT: f'Leave it to {agent_label(agent)}: Metaform sends nothing for it.'}
+        described: dict[str, str] = {}
         for choice in cast(list[dict[str, Any]], offered.get('options') or []):
             if (value := str(choice.get('value'))) != AGENT_DEFAULT:
                 said[value] = ': '.join(str(part) for part in (choice.get('name'), choice.get('description')) if part)
+                described[value] = str(choice.get('description') or '')
+        for short, value in short_names(offered).items():
+            if short != value:
+                said[short] = f'The newest {short}, now {value}; a newer release is used once {agent_label(agent)} ' \
+                              f'offers it. {described.get(value, "")}'.strip()
         return said
     return words
+
+
+def option_names(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
+    """Each choice by the name its pickers show, `picker_entries`."""
+    def names(ctx: Context) -> dict[str, str]:
+        offered = offered_option(ctx.store, agent, key)
+        return {one['value']: one['label'] for one in picker_entries(offered)} if offered else {}
+    return names
+
+
+def option_groups(agent: str, key: str) -> Callable[[Context], dict[str, str]]:
+    """The heading each choice sits under in its pickers, Specific version for an exact value beside short names."""
+    def groups(ctx: Context) -> dict[str, str]:
+        offered = offered_option(ctx.store, agent, key)
+        return {one['value']: one['group'] for one in picker_entries(offered) if one['group']} if offered else {}
+    return groups
 
 
 # A value that lets the agent act without asking, named so by the agents that offer one, as bypassPermissions, yolo or
@@ -717,10 +839,12 @@ for _agent, (_name, _command) in AGENTS.items():
     for _key, _label, _option in option_settings(_agent):
         settings.choice(_key, option_choices(_agent, _option), AGENT_DEFAULT, person_only=True, label=_label,
                         section=f'Agent options/{_name}', choice_help=option_words(_agent, _option),
+                        choice_names=option_names(_agent, _option), choice_groups=option_groups(_agent, _option),
                         risky=option_risky(_agent, _option),
                         choices_from=f'metaform dispatch options agent={_agent} prime=true',
-                        help=f'{_name}\'s {_label.lower()} for every session it starts here: a value it offers, or '
-                             f'default to leave it to {_name}.',
+                        help=f'{_name}\'s {_label.lower()} for every session it starts here: a value it offers, '
+                             + ('a short name such as opus or sol, which means the newest release of its family, '
+                                if _option == 'model' else '') + f'or default to leave it to {_name}.',
                         details=f'The choices are what {_name} offered at its last session in this project; until it '
                                 f'has run once there is only default: start it, or run dispatch options agent={_agent} '
                                 'prime=true, which starts it, reads its options and closes it without a prompt. Applied '
@@ -1923,7 +2047,8 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
         if offered is None:
             notices.append({'where': field, 'message': f'{agent} has not run here; {field} is kept unchecked.'})
         elif values[field] not in offered:
-            raise Stop(f'{agent_label(agent)} offers {field} {", ".join(offered) or "none"}, not {values[field]}.',
+            raise Stop(unknown_choice(agent, offered_option(store, agent, 'model' if field == 'model'
+                                                            else 'thought_level') or {}, str(values[field])),
                        f'metaform dispatch options agent={agent}')
     overrides = {**overrides, **{field: values[field] for field in fields if field in given}}
     overrides = {field: value for field, value in overrides.items() if value is not None}
@@ -6928,7 +7053,7 @@ def launched(store: Store, work_id: str, pid: int) -> dict[str, Any]:
 
 async def options(ctx: Context) -> dict[str, Any]:
     """What each agent offered at its last session in this project, P199: its settings with their names and choices,
-    the value dispatch_<agent>_<option> gives each, its auth methods and its extensions. An agent that has not run has
+    `picks`, the list every picker shows (`picker_entries`), the value dispatch_<agent>_<option> gives each, its auth methods and its extensions. An agent that has not run has
     none yet, and its next step primes it: prime=true starts it, makes one session with no MCP server and no prompt,
     reads what session/new answered, and closes it, so no tokens are spent."""
     store = ctx.require_store()
@@ -6953,6 +7078,7 @@ async def options(ctx: Context) -> dict[str, Any]:
                           'category': one.get('category'), 'type': one.get('type'), 'current': one.get('current'),
                           'choices': [{key: choice.get(key) for key in ('value', 'name', 'description')}
                                       for choice in cast(list[dict[str, Any]], one.get('options') or [])],
+                          'picks': picker_entries(one) if one.get('type') != 'boolean' else [],
                           'chosen': chosen.get(agent, {}).get(option_key(one)),
                           'setting': next((key for key, _, option in option_settings(agent)
                                            if option == option_key(one)), None)} for one in offered],
@@ -6985,14 +7111,15 @@ def persons_answer(ctx: Context, what: str) -> None:
 
 
 def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
-    """The values an agent offered for one of its settings at its last session, by ACP category or id; None when it
-    has not run in this project, so nothing can be checked."""
+    """The values an agent offered for one of its settings at its last session, by ACP category or id, then a model's
+    short names; None when it has not run in this project, so nothing can be checked."""
     row = catalog_rows(store).get(agent)
     if row is None:
         return None
     for setting in cast(list[dict[str, Any]], row.get('settings') or []):
         if option_key(setting) == key:
-            return option_values(setting)
+            values = option_values(setting)
+            return [*values, *(short for short in short_names(setting) if short not in values)]
     return []
 
 
@@ -7029,8 +7156,8 @@ def tune(ctx: Context) -> dict[str, Any]:
                             f'is kept unchecked; metaform dispatch options agent={agent} prime=true lists what it '
                             'offers.'})
         elif said not in offered:
-            raise Stop(f'{agent_label(agent)} offers {field} {", ".join(offered) or "none"} at its last session here, '
-                       f'not {said}.', f'metaform dispatch options agent={agent}')
+            raise Stop(unknown_choice(agent, offered_option(store, agent, key) or {}, said),
+                       f'metaform dispatch options agent={agent}')
     with own_store(store).tables() as tx:
         tx.concern(work_id=record.id, kind='ticket')  # its event names the ticket, BASE-053
         held = tx.get('ticket_options', {'work_id': record.id})
@@ -7630,7 +7757,8 @@ MODULE = Module(
               Provides('person.consent', ask_consent), Provides('work.overlap', overlap), Provides('work.stop', stop_work),
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
               Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt),
-              Provides('dispatch.seats', seat_slots), Provides('work.in_force', fix_in_force)),
+              Provides('dispatch.seats', seat_slots), Provides('dispatch.models', model_for),
+              Provides('work.in_force', fix_in_force)),
     start=started,
     stop=None,
     status=None,

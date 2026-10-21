@@ -86,6 +86,12 @@ class Setting:
     # it is picked; a choice without one shows as its value alone. A function of a Context reads them as choices are.
     choice_help: Mapping[str, str] | Callable[..., Mapping[str, str]] = field(default_factory=dict[str, str],
                                                                              compare=False)
+    # A select's choices by the names its pickers show, such as `opus — Opus 5.5` for opus, and the heading a choice
+    # sits under, such as Specific version; a choice without a name shows as its value. Functions of a Context too.
+    choice_names: Mapping[str, str] | Callable[..., Mapping[str, str]] = field(default_factory=dict[str, str],
+                                                                              compare=False)
+    choice_groups: Mapping[str, str] | Callable[..., Mapping[str, str]] = field(default_factory=dict[str, str],
+                                                                               compare=False)
     # Where the setting sits among its owner's, as a path of headings, such as `Agent options/Claude Code`: the
     # settings screen and the page group the settings of one section under it, a menu in a menu. None: at the top.
     section: str | None = None
@@ -138,6 +144,18 @@ class Setting:
             from .context import build
             return dict(self.choice_help(build(self.owner, folder or Path.cwd())))
         return dict(self.choice_help)
+
+    def names(self, folder: Path | None = None) -> tuple[dict[str, str], dict[str, str]]:
+        """Each choice's name in its pickers, and the heading it sits under: declared, or the owning module's
+        functions of a Context."""
+        found: list[dict[str, str]] = []
+        for given in (self.choice_names, self.choice_groups):
+            if callable(given):
+                from .context import build
+                found.append(dict(given(build(self.owner, folder or Path.cwd()))))
+            else:
+                found.append(dict(given))
+        return found[0], found[1]
 
     def risks(self, folder: Path | None = None) -> set[str]:
         """The choices that are confirmed before they are stored: the declared ones, or the owning module's function
@@ -698,6 +716,12 @@ def describe(folder: Path, *, choices: bool = True) -> list[dict[str, Any]]:
                 with suppress(Exception):
                     if helps := setting.helps(folder):
                         entry['choice_help'] = helps
+                with suppress(Exception):
+                    names, groups = setting.names(folder)
+                    if names:
+                        entry['choice_names'] = names
+                    if groups:
+                        entry['choice_groups'] = groups
             if choices and setting.kind == 'select' and setting.risky:
                 with suppress(Exception):
                     entry['risky'] = sorted(setting.risks(folder))

@@ -171,6 +171,39 @@ def gone(paths_of: Any, limit: float = 30.0) -> bool:
     return True
 
 
+def test_a_seats_short_name_means_the_newest_release_of_its_family_as_the_table_opens(run, tmp_path):
+    """A seat's model is a short name or an exact value, resolved from the agent's current models when the table
+    opens: sol is the newest sol, and a new release is picked up with no change; Claude's own alias is itself; a word
+    that is none of the agent's models is refused naming its families and the nearest; an agent that has not run here
+    is kept unchecked."""
+    from metaform.module import Stop, context
+    folder = tmp_path / 'proj'
+    folder.mkdir()
+    run('add', 'project', 'proj', str(folder))
+    run('enable', 'dispatch', cwd=folder)
+    from metaform.modules.roundtables import seat_of  # as loaded now: a run loads the modules again
+
+    def offers(agent: str, *values: str) -> None:
+        with Store('proj', module='dispatch').tables() as tx:
+            tx.delete('catalog', {'agent': agent, 'version': '9'})
+            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
+                                  'seq': time.time_ns(), 'settings': [
+                {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select', 'current': values[0],
+                 'options': [{'value': value, 'name': value} for value in values]}]})
+    ctx = context('roundtables', folder, project='proj')
+    assert seat_of(ctx, 'codex/sol') == 'acp:codex/sol', 'not run here: kept as written'
+    offers('codex', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol')
+    offers('claude', 'default', 'opus', 'fable', 'claude-opus-5')
+    assert [seat_of(ctx, seat) for seat in ('codex/sol', 'codex/astra', 'codex/gpt-6-sol', 'claude/fable')] == \
+        ['acp:codex/gpt-6.1-sol', 'acp:codex/gpt-6-astra', 'acp:codex/gpt-6-sol', 'acp:claude/fable']
+    offers('codex', 'gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6-astra')
+    assert seat_of(ctx, 'codex/sol') == 'acp:codex/gpt-6.2-sol', 'the new release, with no change'
+    with pytest.raises(Stop, match='sol, astra each mean the newest release of their family'):
+        seat_of(ctx, 'codex/nope')
+    refused = run('set', '--roundtables-seats=claude/opus,codex/astr', cwd=folder, ok=False)
+    assert 'nearest is astra, now gpt-6-astra' in refused.stdout + refused.stderr
+
+
 @needs_engine
 @pytest.mark.timeout(LIMIT + 60)
 def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_heard_as_it_runs_to_its_answer(

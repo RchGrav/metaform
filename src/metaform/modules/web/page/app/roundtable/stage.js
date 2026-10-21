@@ -4,8 +4,8 @@
  * this part is what the person sees of it.
  *
  * Entering it, from the Roundtable button of the selected part or the T key, the person asks their question, keeps the
- * default seats (roundtables_seats) or names their own, and starts. The 3D map sinks back, dimmed, pushed away and
- * softly blurred, and goes on moving behind the stage. On the stage each seat is a figure, its agent's character, in a
+ * default seats (roundtables_seats) or picks their own, each an agent and one of its models, and starts. The 3D map
+ * sinks back, dimmed, pushed away and softly blurred, and goes on moving behind the stage. On the stage each seat is a figure, its agent's character, in a
  * shallow arc across the screen, facing the person, its name under it. The seat with the floor steps forward and says
  * its turn in a word bubble whose tail points at it; a turn Jev vetoes fades from its bubble; the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
@@ -26,7 +26,9 @@ import * as THREE from 'three';
 import {createAgent, drawGlyph, releaseGlyph, eyeOf, orientAgent} from '/page/agents3d.js';
 import {$, h, fill, reduced} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
-import {S} from '/page/app/core/reads.js';
+import {S, read} from '/page/app/core/reads.js';
+import {agentName, pickerOptions} from '/page/app/agents/pickers.js';
+import {posted} from '/page/app/intake/intake.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {SEATS, Seated, LOOK, bubbleText} from '/page/app/figures/bubble3d.js';
 import {glyphOfType} from '/page/app/figures/walk.js';
@@ -94,12 +96,12 @@ UI.foot = h('div', {class: 'rt-foot'},
   h('div', {class: 'rt-chair'}, UI.comment, ...Object.values(UI.acts), UI.leave), UI.transcript);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
-UI.chosen = h('input', {type: 'text', 'aria-label': 'The seats, in speaking order',
-  title: 'claude/<model>, codex/<model>, gemini/<model> or OpenRouter model ids, in speaking order'});
+UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
+UI.addSeat = h('button', {type: 'button', class: 'btn sm quiet', onclick: () => addSeat('claude/opus')}, 'Add a seat');
 UI.where = h('span', {class: 'rt-where'});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
-  h('h2', {}, 'Roundtable', UI.where), UI.question, h('label', {}, 'Seats ', UI.chosen),
+  h('h2', {}, 'Roundtable', UI.where), UI.question, h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat),
   h('div', {class: 'rt-setupacts'}, UI.start, h('button', {class: 'btn quiet', type: 'button',
     onclick: () => leaveStage()}, 'Cancel')));
 UI.root = h('div', {id: 'roundtable', class: 'roundtable', hidden: true, role: 'region', 'aria-label': 'Roundtable'},
@@ -131,7 +133,8 @@ export async function openRoundtable() {
   UI.question.focus();
   try {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}`);
-    if (!UI.chosen.value) UI.chosen.value = (found.seats || []).join(', ');
+    OFFERED.clear();  // each agent's models read again, as it offers them now
+    if (!UI.seatList.children.length) for (const seat of found.seats || []) addSeat(String(seat));
   } catch (error) { toast(error.message); }
 }
 function showStage() {
@@ -190,7 +193,7 @@ const seatKey = n => `roundtable:${TABLE.id}:${n}`;
 async function startTable() {
   const topic = UI.question.value.trim();
   if (!topic) { toast('Ask the table a question.'); UI.question.focus(); return; }
-  const listed = UI.chosen.value.split(/[,\s]+/).map(one => one.trim()).filter(Boolean);
+  const listed = seatsChosen();
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
@@ -203,6 +206,72 @@ async function startTable() {
   TABLE.topic = topic;
   UI.setup.hidden = true;
   await readTable(true);
+}
+
+/* ---------- the seats ---------- */
+/* Each seat an agent picker and a model picker. Metaform's agents list their models as every model picker does,
+ * `pickerOptions`: the short names, such as sol, which follow the newest release of their family when the table
+ * opens, then each exact value under Specific version. Any other seat is an OpenRouter model id, typed. An agent that
+ * has not run here has no list yet: its model is typed and checked as the table opens, and Read its list starts it
+ * once, with no prompt, to read it. */
+const SEAT_AGENTS = ['claude', 'codex', 'gemini'];
+const OFFERED = new Map();  // each agent's model picks, read once each time the stage opens
+function addSeat(seat) {
+  const [first, ...rest] = seat.replace(/^acp:/, '').split('/');
+  const agent = SEAT_AGENTS.includes(first) && rest.length ? first : '';
+  const who = h('select', {'aria-label': 'Agent', onchange: () => modelPicker(row, who.value, '')},
+    SEAT_AGENTS.map(one => h('option', {value: one, selected: one === agent}, agentName(one))),
+    h('option', {value: '', selected: !agent}, 'OpenRouter model'));
+  const row = h('li', {class: 'rt-pick'}, who, h('span', {class: 'rt-model'}),
+    h('button', {type: 'button', class: 'btn sm quiet', title: 'Remove this seat', 'aria-label': 'Remove this seat',
+      onclick: () => row.remove()}, '×'));
+  UI.seatList.append(row);
+  modelPicker(row, agent, agent ? rest.join('/') : seat);
+}
+async function modelPicker(row, agent, model) {
+  const box = row.querySelector('.rt-model');
+  if (!agent) {
+    fill(box, h('input', {type: 'text', value: model, 'aria-label': 'OpenRouter model id', spellcheck: 'false',
+      placeholder: 'deepseek/deepseek-v4.1-flash'}));
+    return;
+  }
+  if (!OFFERED.has(agent)) {
+    OFFERED.set(agent, read('dispatch-options', {agent}).then(found => (found.agents?.[0]?.settings || [])
+      .find(one => one.key === 'model')).catch(() => null));
+  }
+  const offered = await OFFERED.get(agent);
+  if (!row.isConnected || row.querySelector('select').value !== agent) return;
+  // the agent's own default only where it offers one, as Claude's Default (recommended); the engine sends the value
+  const picks = (offered?.picks || []).filter(one => one.value !== 'default'
+    || (offered.choices || []).some(choice => choice.value === 'default'));
+  if (!picks.length) {
+    fill(box, h('input', {type: 'text', value: model, spellcheck: 'false', 'aria-label': `${agentName(agent)} model`,
+      placeholder: 'opus', title: `${agentName(agent)} has not run here, so its models are not known yet`}),
+    h('button', {type: 'button', class: 'btn sm quiet', title: 'Starts it once, with no prompt, and reads the models '
+      + 'it offers', onclick: () => readModels(row, agent)}, 'Read its list'));
+    return;
+  }
+  const listed = model && !picks.some(one => one.value === model)
+    ? [{value: model, label: model, group: null, description: null}, ...picks] : picks;
+  fill(box, h('select', {'aria-label': `${agentName(agent)} model`},
+    pickerOptions(listed, model || picks.find(one => one.value !== 'default')?.value)));
+}
+async function readModels(row, agent) {
+  toast(`Starting ${agentName(agent)} once to read its models…`);
+  const done = await posted('/api/settings/choices', {key: `dispatch_${agent}_model`});
+  if (!done.ok) { toast(done.body.error || 'Its models could not be read.'); return; }
+  OFFERED.delete(agent);
+  const typed = row.querySelector('.rt-model input')?.value.trim() || '';
+  modelPicker(row, agent, typed);
+}
+/* The seats as `roundtables open` takes them, in speaking order: agent/model, or an OpenRouter id. */
+function seatsChosen() {
+  return [...UI.seatList.children].flatMap(row => {
+    const agent = row.querySelector('select').value;
+    const model = (row.querySelector('.rt-model select, .rt-model input')?.value || '').trim();
+    if (!model) return [];
+    return agent ? [`${agent}/${model}`] : model.split(/[,\s]+/).filter(Boolean);
+  });
 }
 
 /* ---------- the table's events ---------- */

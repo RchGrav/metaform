@@ -1748,6 +1748,12 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .rt-setup h2{margin:0;font:700 var(--t-lg) var(--sans)}
 .rt-setup label{display:grid;gap:4px;color:var(--muted)}
 .rt-setupacts{display:flex;gap:var(--s2);justify-content:flex-end}
+.rt-seatsetup{display:grid;gap:4px;color:var(--muted)}
+.rt-seatlist{list-style:none;margin:0;padding:0;display:grid;gap:var(--s1)}
+.rt-pick{display:flex;gap:var(--s1);align-items:center}
+.rt-model{display:flex;gap:var(--s1);flex:1;min-width:0}
+.rt-model>select,.rt-model>input{flex:1;min-width:0}
+.rt-seatsetup>button{justify-self:start}
 /* The next step once an intake the page followed finishes, intake.js `offerNext`: one card near the top of the map,
  * below the intake's bar and the agents list, so neither is covered. */
 .nextcard{position:fixed;z-index:40;left:50%;top:196px;transform:translateX(-50%);display:grid;gap:var(--s2);

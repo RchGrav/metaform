@@ -53,6 +53,16 @@ export function forgetHarnesses() {
 }
 const harness = agent => HARNESS.agents.find(one => one.agent === agent) || null;
 export const agentName = agent => harness(agent)?.label || agent || 'An agent';
+/* One shared list for every model picker, from an agent's `picks` (dispatch options): Default with what it resolves
+ * to, then each short name with what it means now, then the exact values under their heading, Specific version. The
+ * value kept is the entry's own, a short name following its family's newest release. */
+export function pickerOptions(picks, chosen) {
+  const option = one => h('option', {value: one.value, title: one.description || null, selected: one.value === chosen},
+    one.label);
+  const groups = [...new Set(picks.filter(one => one.group).map(one => one.group))];
+  return [...picks.filter(one => !one.group).map(option),
+    ...groups.map(group => h('optgroup', {label: group}, picks.filter(one => one.group === group).map(option)))];
+}
 /* One of a session's settings as its chosen option is named, the word the dock's line shows for it: a switch that is
  * on by its own name, a select by its option's. */
 export function optionWords(setting) {

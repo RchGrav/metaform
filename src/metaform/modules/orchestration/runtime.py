@@ -1,11 +1,12 @@
 """Assignment-time runtime decisions over the installed agents' advertised choices."""
 from __future__ import annotations
 
+import difflib
 import json
 import math
 from collections.abc import Mapping, Sequence
 from importlib import resources
-from typing import Any
+from typing import Any, cast
 
 from metaform import jev, prompt_files, settings
 from metaform.data import WorkRecord
@@ -140,6 +141,12 @@ def rejection_reason(choice: Mapping[str, Any], catalog: Mapping[str, Any],
     if (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
             or not math.isfinite(confidence) or not 0 <= confidence <= 1):
         return 'confidence: expected a finite number within 0..1.'
+    offered = cast(Mapping[str, Any], catalog.get(str(choice.get('agent'))) or {})
+    models = list(cast(Mapping[str, Any], offered.get('models') or {}))
+    if models and choice.get('model') not in models:  # a short name such as sol, or an exact value, is offered
+        nearest = difflib.get_close_matches(str(choice.get('model')), models, n=1, cutoff=0.3)
+        return (f"model: {choice.get('agent')} offers no {choice.get('model')}; it offers {', '.join(models)}"
+                + (f'; nearest is {nearest[0]}.' if nearest else '.'))
     key = json.dumps([choice.get('agent'), choice.get('model'), choice.get('effort')], separators=(',', ':'))
     if key not in _candidates(catalog, task_type, overrides):
         return f'agent/model/effort: combination not offered for task_type {task_type} under ticket overrides.'

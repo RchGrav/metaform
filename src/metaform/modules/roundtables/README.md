@@ -45,7 +45,7 @@ Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, and 
 
 - `roundtables_engine`, `roundtable`, global, the person's: the command that runs the engine.
 - `roundtables_spend`, 2, the person's: the most US dollars one table spends through OpenRouter; `open` may only lower it.
-- `roundtables_seats`, `claude/opus`, `claude/sonnet`, `claude/haiku`, the person's: the seats, in speaking order, of a table opened without any named, as the page's stage opens one.
+- `roundtables_seats`, `claude/opus`, `codex/astra`, `codex/sol`, `claude/fable`, the person's: the seats, in speaking order, of a table opened without any named, as the page's stage opens one. A model is a short name, such as `opus` or `sol`, which means the newest release of its family when the table opens, or an exact value, such as `gpt-6-sol`, which pins one; one the agent does not offer is refused, naming the nearest.
 
 ## Events
 

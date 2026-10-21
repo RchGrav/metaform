@@ -145,6 +145,7 @@ from . import (
     prompt,
     release,
     require_eligible,
+    resolve_choice,
     resuming_path,
     runner_of,
     session_cost,
@@ -1883,6 +1884,8 @@ class Session:
                                                              f'{key}={value} was not applied.')
                 done.append({'key': key, 'value': value, 'error': 'not offered'})
                 continue
+            if found.get('type') != 'boolean':  # a short name, such as sol, means its family's newest release now
+                value = resolve_choice(found, value) or value
             current = found.get('current')
             if str(current).casefold() == value.casefold():
                 continue
@@ -2365,8 +2368,8 @@ class Session:
                 sent: Any = given
             else:
                 choices = cast(list[dict[str, Any]], found['options'])
-                option = next((one for one in choices if one['value'] == value), None) or next(
-                    (one for one in choices if str(one['name']).casefold() == value.strip().casefold()), None)
+                resolved = resolve_choice(found, value)  # its value, a short name such as sol, or its own name
+                option = next((one for one in choices if one['value'] == resolved), None)
                 if option is None:
                     listed = ', '.join(f"{one['name']} ({one['value']})" for one in choices)
                     return {'error': f'{value} is none of the choices of {found["name"]}: {listed}.'}

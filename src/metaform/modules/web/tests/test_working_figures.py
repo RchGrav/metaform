@@ -711,7 +711,8 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
         }""")
         page.wait_for_selector('#work .roundtablebtn')
         page.evaluate("() => document.querySelector('#work .roundtablebtn').click()")  # the panel redraws as it loads
-        page.wait_for_function('() => document.querySelector(".rt-setup input").value.includes("stub/orion")')
+        page.wait_for_function('() => [...document.querySelectorAll(".rt-setup .rt-model input")]'
+                               '.some(one => one.value === "stub/orion")')
         sunk = page.evaluate("""() => ({sunk: document.querySelector('#big3d').classList.contains('roundtable'),
             filter: getComputedStyle(document.querySelector('#stage')).filter})""")
         assert sunk['sunk'] and 'blur' in sunk['filter'] and 'brightness' in sunk['filter'], sunk
@@ -800,7 +801,9 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
         page.keyboard.press('t')
         page.wait_for_selector('.rt-setup:not([hidden])')
         page.fill('.rt-setup textarea', 'Is a second alarm needed?')
-        page.fill('.rt-setup input', 'stub/vega, stub/orion')
+        for _ in range(2):  # the seats kept from the first table, less Claude's and Orion's
+            page.click('.rt-pick:nth-child(2) [aria-label="Remove this seat"]')
+        page.fill('.rt-pick:nth-child(1) .rt-model input', 'stub/vega, stub/orion')
         page.click('.rt-setup .rt-start')
         page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "running"',
                                timeout=120000)

@@ -14,7 +14,8 @@ import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, ta
 import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork, named} from '/page/app/task/task.js';
-import {HARNESS, agentName, agentSelect} from '/page/app/agents/pickers.js';
+import {HARNESS, agentName, agentSelect, pickerOptions} from '/page/app/agents/pickers.js';
+import {posted} from '/page/app/intake/intake.js';
 import {WS} from '/page/app/workspace/workspace.js';
 
 /* Show the agent dispatch will start before the ticket runs: its saved choice, then its area, then the
@@ -109,19 +110,30 @@ function runtimeControls(ticket, agent, change, settings) {
           ? ['effort', 'thought_level'].includes(one.key) || one.category === 'thought_level'
           : one.key === 'model' || one.category === 'model');
         const choices = option?.choices || [], current = option?.chosen ?? option?.current;
-        const name = choices.find(one => one.value === current)?.name || current;
+        // the agent's own default is a ticket's choice only where the agent offers one; Project setting sends nothing
+        const listed = (option?.picks || []).filter(one => one.value !== 'default'
+          || choices.some(choice => choice.value === 'default'));
+        const name = listed.find(one => one.value === current)?.label || current;
         const chosen = kept[key] || '';
         fill(picks[index], h('option', {value: '', selected: !chosen},
           name ? `Project setting: ${name}` : 'Project setting'),
-        chosen && !choices.some(one => one.value === chosen)
+        chosen && !listed.some(one => one.value === chosen)
           ? h('option', {value: chosen, selected: true}, chosen) : null,
-        choices.map(one => h('option', {value: one.value, title: one.description || '',
-          selected: one.value === chosen}, one.name || one.value)));
+        pickerOptions(listed, chosen));
         picks[index].disabled = !choices.length;
       });
-      hint.textContent = found?.next ? 'Choices appear after this agent has run here.'
-        : 'Changes apply to this ticket’s next start.';
+      fill(hint, found?.next ? [`${agentName(agent)} has not run here, so its models are not known yet. `,
+        h('button', {type: 'button', class: 'btn sm quiet', title: 'Starts it once, with no prompt, and reads the '
+          + 'models and thinking levels it offers', onclick: readOffered}, 'Read its list')]
+        : 'Changes apply to this ticket’s next start.');
     } catch (error) { hint.textContent = error.message; reading = null; }
+  };
+  const readOffered = async event => {
+    event.currentTarget.disabled = true;
+    hint.textContent = `Starting ${agentName(agent)} once to read its list…`;
+    const done = await posted('/api/settings/choices', {key: `dispatch_${agent}_model`});
+    if (!done.ok) { hint.textContent = done.body.error || 'Its list could not be read.'; return; }
+    reading = load();
   };
   settings?.addEventListener('toggle', () => {
     if (settings.open && !reading) reading = load();

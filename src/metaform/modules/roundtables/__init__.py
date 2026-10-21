@@ -43,7 +43,7 @@ from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Stop, Verb, node_items
+from metaform.module import Context, Module, Noun, Stop, Verb, context, node_items, provided
 
 from . import engine, follow
 
@@ -64,10 +64,32 @@ settings.text('roundtables_engine', 'roundtable', scope='global', person_only=Tr
 settings.number('roundtables_spend', 2, min=0, max=100, person_only=True, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
                 help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.')
-settings.items('roundtables_seats', ('claude/opus', 'claude/sonnet', 'claude/haiku'), person_only=True,
-               label='Seats a table opens with', category='integrations', heading='Roundtables',
+
+
+def _check_seats(seats: Any, folder: Path) -> list[str] | None:
+    """Each of dispatch's agents' seats names a model it offers, by short name or exact value, checked as a table
+    checks it when it opens; one whose agent has not run here is kept unchecked, with a notice."""
+    ctx = context('roundtables', folder)
+    notices: list[str] = []
+    for seat in cast(list[Any], seats or []):
+        agent, _, model = str(seat).strip().removeprefix('acp:').partition('/')
+        if agent not in engine.AGENTS or not model.strip():
+            continue
+        try:
+            if model_of(ctx, agent, model.strip()) is None:
+                notices.append(f'{agent} has not run here, so {seat} is kept unchecked; metaform dispatch options '
+                               f'agent={agent} prime=true starts it once and reads its models.')
+        except Stop as error:
+            raise settings.SettingError(error.message, error.next_step) from error
+    return notices or None
+
+
+settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 'claude/fable'), person_only=True,
+               label='Seats a table opens with', category='integrations', heading='Roundtables', check=_check_seats,
                help='The seats, in speaking order, of a table opened without any named, as the page\'s roundtable '
-                    'opens one: claude/<model>, codex/<model>, gemini/<model> or OpenRouter model ids.')
+                    'opens one: claude/<model>, codex/<model>, gemini/<model> or OpenRouter model ids. A model is a '
+                    'short name, such as opus or sol, which means the newest release of its family when the table '
+                    'opens, or an exact value, such as gpt-6-sol, which pins one.')
 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone, since the person's system agent writes the report from the saved record.
@@ -90,15 +112,25 @@ TABLES = Tables(version=2, tables=(
 
 # ------------------------------------------------------------------ seats and the opening
 
-def seat_of(given: str) -> str:
+def model_of(ctx: Context, agent: str, model: str) -> str | None:
+    """The exact model a seat's word means now, through dispatch's `dispatch.models`: a short name such as sol is its
+    family's newest release, and a word that is none of the agent's models is refused naming the nearest. None when
+    the agent has not run here or dispatch is off, so nothing can check it."""
+    for _, resolve in provided(ctx.folder, 'dispatch.models'):
+        return cast(str | None, resolve(ctx.store, agent, model))
+    return None
+
+
+def seat_of(ctx: Context, given: str) -> str:
     """A seat as the engine writes it: `claude/<model>`, `codex/<model>` and `gemini/<model>` are Metaform's agents,
-    `acp:<agent>/<model>` on the engine's ACP client; any other id is an OpenRouter model the engine checks."""
+    `acp:<agent>/<model>` on the engine's ACP client, the model resolved as the table opens; any other id is an
+    OpenRouter model the engine checks."""
     text = given.strip()
     agent, slash, model = text.removeprefix('acp:').partition('/')
     if agent in engine.AGENTS:
         if not slash or not model.strip():
             raise Stop(f'{text}: name the model the agent runs, such as {agent}/opus.', 'metaform roundtables open')
-        return f'acp:{agent}/{model.strip()}'
+        return f'acp:{agent}/{model_of(ctx, agent, model.strip()) or model.strip()}'
     if text.startswith(('acp:', 'agent:', 'a2a:')):
         raise Stop(f'{text} cannot sit: a seat is claude/<model>, codex/<model>, gemini/<model> or an OpenRouter '
                    'model id, such as deepseek/deepseek-v4.1-flash.', 'metaform roundtables open')
@@ -209,7 +241,7 @@ def open_table(ctx: Context) -> dict[str, Any]:
         raise Stop('A table opens on a question.', 'metaform roundtables open')
     given = ctx.nouns.get('seats') or ctx.setting('roundtables_seats')
     listed = cast(list[Any], json.loads(given) if isinstance(given, str) else given)
-    seats = [seat_of(str(one)) for one in listed]
+    seats = [seat_of(ctx, str(one)) for one in listed]
     if not seats:
         raise Stop('A table has seats.', 'metaform roundtables open')
     most = float(ctx.setting('roundtables_spend'))
@@ -217,7 +249,7 @@ def open_table(ctx: Context) -> dict[str, Any]:
     if not 0 <= spend <= most:
         raise Stop(f'spend is 0 to ${most:g}, roundtables_spend; only the person raises it.',
                    'metaform roundtables open')
-    roles = {key: seat_of(str(ctx.nouns[key])) if ctx.nouns.get(key) else None
+    roles = {key: seat_of(ctx, str(ctx.nouns[key])) if ctx.nouns.get(key) else None
              for key in ('host', 'synthesizer')}
     roles['host'] = roles['host'] or seats[0]  # never the engine's own default, which seats an agent nobody chose
     text = opening(ctx, address, topic)

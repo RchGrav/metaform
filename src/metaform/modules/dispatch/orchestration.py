@@ -79,12 +79,13 @@ class Transport:
     """The orchestration module uses this provider instead of importing dispatch internals."""
 
     def runtime_catalog(self, ctx: Context, work_id: str) -> dict[str, Any]:
-        """Installed, eligible adapters and their advertised model descriptions and thinking levels.
+        """Installed, eligible adapters and their advertised model descriptions and thinking levels; a model's short
+        name, such as sol, is a choice too and means its family's newest release when the session starts.
 
         Reading a catalog starts no process and sends no prompt. Missing options remain empty so the assignment
         owner can request an options-only prime before choosing.
         """
-        from . import agent_choices, catalog_rows, found_command, option_key
+        from . import agent_choices, catalog_rows, found_command, option_key, short_names
         eligible = cast(list[str], self.runtime_settings(ctx, work_id).get('eligible') or [])
         rows = catalog_rows(ctx.require_store())
         result: dict[str, Any] = {}
@@ -104,6 +105,9 @@ class Transport:
                                                  (choice.get('name'), choice.get('description')) if part) or value
                     elif key == 'thought_level':
                         efforts.append(value)
+                if key == 'model':  # a short name first, such as sol, which means its family's newest release now
+                    models = {**{short: f'newest {short}, now {value}: {models.get(value, value)}'
+                                 for short, value in short_names(option).items() if short != value}, **models}
             result[agent] = {'models': models, 'efforts': efforts}
         return result
 

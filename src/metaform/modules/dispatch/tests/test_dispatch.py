@@ -5486,6 +5486,41 @@ def test_runtime_catalog_uses_installed_eligible_adapters_and_model_descriptions
                                  'efforts': ['medium', 'high']}}
 
 
+def test_model_pickers_list_default_then_short_names_then_specific_versions_and_tune_takes_a_short_name(dispatch,
+                                                                                                         run):
+    """Every model picker lists Default with what it resolves to, then each short name with what it means now, then
+    each exact value under Specific version; the Facilitator's runtime choice offers the short names too, and tune
+    keeps one, refusing a word that is none of the agent's models with its families named."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    offered = {'claude': [('default', 'Default (recommended)', 'Fable 5.1'), ('opus', 'Opus 5.5', None),
+                          ('fable', 'Fable 5.1', None), ('claude-opus-5', 'Opus 5', None)],
+               'codex': [('gpt-6.1-sol', '6.1 Sol', None), ('gpt-6-astra', '6 Astra', None), ('gpt-6-sol', '6 Sol', None)]}
+    with module.own_store(dispatch.store).tables() as tx:
+        for agent, models in offered.items():
+            tx.insert('catalog', {'agent': agent, 'version': '9', 'name': agent, 'seen': '2026-10-21T00:00:00Z',
+                                  'seq': time.time_ns(), 'settings': [
+                {'id': 'model', 'name': 'Model', 'category': 'model', 'type': 'select', 'current': models[0][0],
+                 'options': [{'value': value, 'name': name, 'description': said} for value, name, said in models]},
+                {'id': 'reasoning', 'category': 'thought_level', 'type': 'select', 'options': [{'value': 'high'}]}]})
+    listed = json.loads(run('dispatch', 'options', '--json', cwd=dispatch.folder).stdout)['agents']
+    picks = {one['agent']: [(pick['label'], pick['group']) for setting in one['settings'] if setting['key'] == 'model'
+                            for pick in setting['picks']] for one in listed}
+    assert picks['claude'] == [('Default (recommended) — Fable 5.1', None), ('opus — Opus 5.5', None),
+                               ('fable — Fable 5.1', None), ('Opus 5 (claude-opus-5)', 'Specific version')]
+    assert picks['codex'] == [('Default — 6.1 Sol', None), ('sol — 6.1 Sol (gpt-6.1-sol)', None),
+                              ('astra — 6 Astra (gpt-6-astra)', None), ('6.1 Sol (gpt-6.1-sol)', 'Specific version'),
+                              ('6 Astra (gpt-6-astra)', 'Specific version'), ('6 Sol (gpt-6-sol)', 'Specific version')]
+    catalog = TRANSPORT.runtime_catalog(context('dispatch', dispatch.folder, project='proj'), dispatch.id)
+    assert list(catalog['codex']['models'])[:2] == ['sol', 'astra'], catalog
+    run('set', '--dispatch-codex-model', 'sol', cwd=dispatch.folder)  # the settings screen's choice, a short name
+    run('dispatch', 'tune', dispatch.id, 'model=astra', cwd=dispatch.folder)
+    assert module.ticket_options(dispatch.store, dispatch.id)['model'] == 'astra'
+    refused = run('dispatch', 'tune', dispatch.id, 'model=nope', cwd=dispatch.folder, ok=False)
+    assert 'sol, astra each mean the newest release of their family' in refused.stdout + refused.stderr
+
+
 def test_ticket_runtime_edits_replace_legacy_tune_values_and_keep_launch_permissions(dispatch, run):
     from metaform.data import Store
     from metaform.module import context

@@ -7,7 +7,8 @@ import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {DOCK} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker, optionWords} from '/page/app/agents/pickers.js';
+import {HARNESS, readHarnesses, agentName, summonAgent, summonPicker, optionWords, pickerOptions}
+  from '/page/app/agents/pickers.js';
 import {countOf, skipsPrompts} from '/page/app/session/tools.js';
 import {posted} from '/page/app/intake/intake.js';
 
@@ -117,8 +118,8 @@ function optionSelect(agent, setting) {
   const pick = h('select', {'aria-label': setting.name, disabled: !setting.setting,
     title: setting.setting ? null : 'Metaform has no setting for this option; the agent keeps its own.',
     onchange: () => keepAgentOption(agent, setting, pick.value, pick)},
-  (setting.options || []).map(option => h('option', {value: option.value, selected: option.value === setting.current},
-    option.name || option.value)));
+  // the setting's own list, `picks`: Default, the short names, then each exact value; one not chosen is Default
+  pickerOptions(setting.picks || [], setting.chosen ?? 'default'));
   return h('label', {class: 'setting'}, h('span', {}, setting.name), pick);
 }
 /* The intake's agent's model, thinking and the rest, chosen before it starts, as the chat offers them before a call;
@@ -141,18 +142,19 @@ export async function drawIntakeSettings() {
  * metaform set asks for --confirm. */
 async function keepAgentOption(agent, setting, value, pick) {
   const option = (setting.options || []).find(one => one.value === value);
+  const named = (setting.picks || []).find(one => one.value === value)?.label || value;
   const risky = skipsPrompts(option);
   if (risky && !await confirmAct({title: `Let ${agentName(agent)} act without asking?`,
     text: [`${option.name || value}: every session ${agentName(agent)} starts here skips its own permission prompts. `
       + 'It edits files and runs commands without asking you first.'],
     verb: 'Yes, keep it', cancel: 'Keep it as it is'})) {
-    pick.value = setting.current;
+    pick.value = setting.chosen ?? 'default';
     return;
   }
   const done = await posted('/api/settings', {key: setting.setting, value, ...(risky ? {confirm: true} : {})});
   if (!done.ok) return toast(done.body.error || 'That choice was not kept.');
   refreshPreCall();  // the line says the choice at once
-  toast(`${agentName(agent)} starts with ${setting.name} ${value}.`);
+  toast(`${agentName(agent)} starts with ${setting.name} ${named}.`);
 }
 /* Slash commands: typing / at the start of a message offers the commands, the chat's own and the agent's, as the
  * agent named them; Up and Down choose, Enter or Tab takes one, Escape closes the list. */
