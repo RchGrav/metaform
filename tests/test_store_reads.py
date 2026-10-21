@@ -330,3 +330,18 @@ def test_a_list_read_given_a_cursor_it_never_returned_stops_with_a_next_step(sto
     with pytest.raises(StoreError) as stopped:
         store.layers(after='intake-1')
     assert stopped.value.next_step
+    # A ticket id passed as the cursor of the row-keyed reads stops the same way, not with a ValueError.
+    for read in (store.work, store.messages):
+        with pytest.raises(StoreError) as stopped:
+            read(open=True, after='bc5ff55239874ee7b1c8cf240d374636')
+        assert stopped.value.next_step
+
+
+def test_work_pages_resume_and_where_decorates_open_work(store):
+    small_map(store)
+    node = Node('element', 'code.timer.kitchen')
+    records = [store.add_work(node, 'broken', task=f'Repair {number}') for number in range(3)]
+    first = store.work(node, limit=1)
+    rest = store.work(node, after=first.next, limit=0)
+    assert [row.id for row in (*first.results, *rest.results)] == [row.id for row in records]
+    assert store.where('code.timer.kitchen').element.address == 'code.timer.kitchen'

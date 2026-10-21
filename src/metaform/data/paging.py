@@ -37,14 +37,20 @@ def paged(fetch: Callable[[str | None, int], list[Any]], build: Callable[[Any], 
             return Page(tuple(results), None)
 
 
-def sliced(values: tuple[T, ...], limit: int, after: str | None) -> Page[T]:
-    """A page of a list already read whole: for the few reads allowed to read their whole table, STORE-005. Its
-    cursor is the position the next page starts at."""
+def row_cursor(after: str | None) -> int:
+    """The number a page resumes after, for lists keyed by row or position; a cursor no page returned, such as an
+    id, is the caller's error with its next step, not a crash."""
     text = '' if after is None else str(after)
     if text and not (text.isascii() and text.isdigit()):
         raise StoreError(f'{after!r} is not a cursor of this list: a cursor is the next a page of it returned.',
                          'read the list again without after, then pass the next it returns')
-    start = int(text or 0)
+    return int(text or 0)
+
+
+def sliced(values: tuple[T, ...], limit: int, after: str | None) -> Page[T]:
+    """A page of a list already read whole: for the few reads allowed to read their whole table, STORE-005. Its
+    cursor is the position the next page starts at."""
+    start = row_cursor(after)
     if not limit:
         return Page(values[start:], None)
     end = start + limit
