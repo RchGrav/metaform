@@ -86,6 +86,11 @@ def ticket_message(store: Store, record: WorkRecord, agent: str = '', name: str 
         f'Metaform-Board: {board}'.rstrip(), f'Metaform-Agent: {author}'.rstrip()))))
 
 
+def repository(folder: str | Path) -> bool:
+    """Whether the folder is inside a git repository: only there can a completed ticket have a commit to miss."""
+    return git(folder, 'rev-parse', '--is-inside-work-tree', limit=20).returncode == 0
+
+
 def commit_fault(store: Store, record: WorkRecord, why: str) -> None:
     """A missing completion commit is one numbered broken ticket, which lights its board node."""
     node = Node('element', 'code.dispatcher.agent')

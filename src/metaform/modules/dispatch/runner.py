@@ -171,6 +171,7 @@ from .merge import (
     commit_fault,
     complete_ticket,
     file_fingerprint,
+    repository,
     ticket_message,
     ticket_title,
 )
@@ -4905,7 +4906,10 @@ class Session:
         held['result'] = result
         if not result['committed']:
             result['why'] = result['why'] or 'The completed ticket has no commit.'
-            await self.write(commit_fault, self.store, record, str(result['why']))
+            # A folder with no repository has no commit to miss, so no fault is filed for it: filed, the fault took the
+            # one worker slot ahead of the waiting ticket, which never started (2026-10-21).
+            if await asyncio.to_thread(repository, self.folder):
+                await self.write(commit_fault, self.store, record, str(result['why']))
         async with self.lock:
             await self.note('ticket-commit', 'commit', json.dumps(result, ensure_ascii=False))
             await self.save_state()
