@@ -234,6 +234,11 @@ With Autostart agents checked, `autostart` is also a supervisor, P012: a worker'
 
 ## Sync and async
 
+Startup and restart check runner status before the reservation transaction. Inside that transaction, scheduling
+uses stored session rows and reuses checked status only for unchanged runner identities and sequences. New or
+changed running rows block startup. Admission runs before reservation and again at the spawn gate. Runner socket
+waits and legacy spending transfers therefore hold no reservation write lock.
+
 `run` and `wait` are coroutines, as are the runner's ACP handlers. `start`, `message`, `stop` and `handoff` are plain functions, and the listener hands each change to the runner's loop with `call_soon_threadsafe`. The runner makes each store call in a worker thread, so its loop is never held by a write.
 
 ## Layers

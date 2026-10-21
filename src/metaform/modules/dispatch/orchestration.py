@@ -139,11 +139,13 @@ class Transport:
             admit,
             agent_named,
             given_back_reservation,
+            glyph_of,
             keep_launch,
             launches,
             persons_start,
             resume_spawn,
             session_state,
+            sessions,
             start_runner,
             startable,
             ticket,
@@ -200,6 +202,7 @@ class Transport:
                 row = None  # a changed ticket agent starts its own adapter instead of resuming another agent's session
             launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
             words = [f'assignment={held["assignment_id"]}']
+            checked_sessions = sessions(store, work if glyph_of(launch_ctx, ticket(store, work)) is None else None)
             if row is not None:
                 kept = session_state(store, str(row['session_id'])) or {}
                 capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
@@ -214,7 +217,7 @@ class Transport:
                             return {'state': 'completed', 'work_id': work}
                         took = not record.taken
                         if took:
-                            startable(launch_ctx, store, record, agent)
+                            startable(launch_ctx, store, record, agent, checked_sessions=checked_sessions)
                             store.take_work(work, by=by)
                     if took or record.taken_by == by:
                         try:
@@ -238,7 +241,7 @@ class Transport:
                 if record.taken:
                     store.move_work(work, 'todo', kept=True)
                     record = ticket(store, work)
-                startable(launch_ctx, store, record, agent)
+                startable(launch_ctx, store, record, agent, checked_sessions=checked_sessions)
                 store.take_work(work, by=reservation)
             keep_launch(store, work, {'prompts': None, 'mode': None})
             try:

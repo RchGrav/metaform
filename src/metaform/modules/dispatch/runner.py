@@ -150,6 +150,7 @@ from . import (
     runner_of,
     session_cost,
     session_state,
+    sessions,
     start_command,
     start_environment,
     start_failed,
@@ -826,14 +827,16 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         folder = await asyncio.to_thread(worktree_of, store, work_id)
         return await moved_on(store, await Session(ctx, store, held, agent, command, folder, prep=True).run())
 
-    def reserve(record: WorkRecord) -> WorkRecord:
+    def reserve(record: WorkRecord, checked_sessions: Sequence[dict[str, Any]] | None = None) -> WorkRecord:
+        if checked_sessions is None:
+            checked_sessions = sessions(store, record.id if glyph_of(ctx, record) is None else None)
         with store.atomic():
             record = ticket(store, record.id)
             reservation = ctx.nouns.get('reservation')
             if reservation and record.taken_by == reservation:
                 require_eligible(ctx, record, agent)
                 return record
-            startable(ctx, store, record, agent)
+            startable(ctx, store, record, agent, checked_sessions=checked_sessions)
             reservation = 'dispatch starting ' + secrets.token_hex(16)
             record = store.take_work(record.id, by=reservation)
             ctx.nouns['reservation'] = reservation
@@ -876,9 +879,10 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         if glyph is None:
             return await moved_on(store, ended if len(worked) == 1 else {**ended, 'worked': worked})
         def following(glyph: str) -> WorkRecord | None:
+            checked_sessions = sessions(store)
             with store.atomic():
                 found = next_ticket(ctx, store, glyph, agent=agent, exclude=tuple(worked))
-                return reserve(found) if found is not None else None
+                return reserve(found, checked_sessions) if found is not None else None
         try:
             found = (await asyncio.to_thread(events.announced, ctx.folder, ctx.surface, following, glyph))[0] \
                 if over or ended.get('ended') == 'cannot continue without an answer' else None
