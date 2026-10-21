@@ -104,3 +104,14 @@ def test_cleanup_failure_still_closes_listener_and_schedules_recovery(monkeypatc
     assert timers == [2] and background.failures == 1
     assert faults and 'database temporarily unavailable' in faults[0]['message']
     background.close()
+
+
+def test_watch_built_after_its_module_reload_reads_its_settings(store, project_folder):
+    from metaform import loader, settings
+    surface(project_folder)
+    settings.put('autoticket_similarity', '0.7', project_folder)
+    ctx = context('autoticket', project_folder, project='proj')
+    loader.reset()  # a reload withdraws autoticket's settings; the server still holds its background service
+    assert 'autoticket_similarity' not in settings.SCHEMA
+    watching = Watch(ctx, ctx.require_store())
+    assert watching.threshold == 0.7 and watching.mode == 'errors'

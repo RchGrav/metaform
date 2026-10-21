@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from metaform import home, settings
+from metaform import module as chassis
 from metaform.data import Store, TableTx
 from metaform.module import Context
 
@@ -84,9 +85,20 @@ class Lease(threading.Thread):
         self.letting.set()
 
 
+def setting(key: str, folder: Any) -> Any:
+    """One of autoticket's settings. The web server holds its services through their module's reloads, and a reload
+    withdraws the module's settings until the modules are found again: a setting withdrawn now is read once they are."""
+    try:
+        return settings.value(key, folder)
+    except KeyError:
+        chassis.refresh_modules()
+        chassis.installed()  # finding the modules declares autoticket's settings again
+        return settings.value(key, folder)
+
+
 def similarity(folder: Any) -> float:
     try:
-        return float(settings.value('autoticket_similarity', folder))
+        return float(setting('autoticket_similarity', folder))
     except (TypeError, ValueError):
         return grouping.THRESHOLD
 
@@ -267,7 +279,7 @@ class Watch:
         self.leases: dict[str, Lease] = {}  # every watched log's lease, taken here or waited on
         self.known: list[tuple[int, tuple[int, ...]]] = []  # every group written, in the order made
         self.threshold = similarity(ctx.folder)
-        self.mode = str(settings.value('autoticket_capture', ctx.folder) or 'errors')
+        self.mode = str(setting('autoticket_capture', ctx.folder) or 'errors')
         self.secrets = secret_values(ctx.folder)
         self.rules: list[re.Pattern[str]] = []
         self.written_at = 0.0

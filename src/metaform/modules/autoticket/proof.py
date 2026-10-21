@@ -39,10 +39,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import events, settings
+from metaform import events
 from metaform import module as chassis
 from metaform.data import Store, StoreError, WorkRecord
 from metaform.module import Context
+
+from .watch import setting
 
 TEST = re.compile(r'\btest[:=]\s*`?([\w./-]+\.py::[\w.:\[\]-]+)`?')  # a pytest node id named in a resolution
 TEST_LIMIT = 600.0  # seconds a named test may run, a deadline on the one run
@@ -159,7 +161,7 @@ class Quiet:
             self.look(work_id)
 
     def minutes(self) -> float:
-        return float(settings.value('autoticket_quiet_minutes', self.ctx.folder) or 30)
+        return float(setting('autoticket_quiet_minutes', self.ctx.folder) or 30)
 
     def heard(self, payload: dict[str, Any]) -> None:
         """`map.changed`: each ticket it names that autoticket filed is looked at once, on a change of its tickets or of a
