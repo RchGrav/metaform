@@ -6254,7 +6254,8 @@ def read_sessions(ctx: Context) -> dict[str, Any]:
         pass
     try:
         with own.tables(write=False) as tx:
-            stored, next_page = session_page(tx, ctx.nouns)
+            # a name resolved above to its ticket and session: the page is read for those, not for the name (2026-10-21)
+            stored, next_page = session_page(tx, {**ctx.nouns, 'id': work_id, 'session': only} if only else ctx.nouns)
             if work_id and len(stored) == 1 and stored[0]['session_id'] == work_id:
                 work_id = str(stored[0]['work_id'])
             wanted = [str(session['session_id']) for session in stored]
