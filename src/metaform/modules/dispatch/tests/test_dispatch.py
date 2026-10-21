@@ -2217,6 +2217,28 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
 
 
 @pytest.mark.req('BASE-052')
+def test_missing_rollout_ends_resume_and_preserves_thread_without_another_fault(dispatch, run, dispatch_runners):
+    dispatch.start('hold', FAKE_ACP_LOAD='1')
+    eventually(lambda: dispatch.logged('grandchild'))
+    dispatch.stop()
+    assert dispatch.process.wait(30) == 0
+    before = read(run, dispatch)['lines']
+    started = json.loads(run('dispatch', 'resume', dispatch.id, '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_LOAD='1', FAKE_ACP_MISSING_ROLLOUT='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    eventually(lambda: dispatch.session().extra.get('how', '').startswith('session unavailable:'))
+    after = read(run, dispatch)
+    assert not after['states']['fake-session-1']['capabilities']['load']
+    assert not after['states']['fake-session-1']['capabilities']['resume']
+    assert all(line in after['lines'] for line in before if line['kind'] != 'state')
+    assert any('Read its retained thread with a new agent.' in line['text'] for line in after['lines'])
+    assert not [line for line in after['lines'] if line['kind'] == 'failed']
+    refused = run('dispatch', 'resume', dispatch.id, cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0
+    assert 'a new agent can read its thread instead' in refused.stdout + refused.stderr
+
+
+@pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 def test_the_agents_are_listed_with_whether_each_is_found_here_and_the_default_a_start_leaves_as_it_is(
         dispatch, run, dispatch_runners):

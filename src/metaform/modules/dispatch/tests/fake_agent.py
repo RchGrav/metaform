@@ -516,6 +516,10 @@ def main():
                       if os.environ.get('FAKE_ACP_CLEAR') == '1' else [])]})
         elif method == 'session/load' and os.environ.get('FAKE_ACP_LOAD') == '1':
             SESSION = message['params']['sessionId']
+            if os.environ.get('FAKE_ACP_MISSING_ROLLOUT') == '1':
+                send({'jsonrpc': '2.0', 'id': ident, 'error': {'code': -32603, 'message': 'Internal error',
+                      'data': {'details': f'no rollout found for thread id {SESSION}'}}})
+                continue
             update({'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Replayed history'}})
             send({'jsonrpc': '2.0', 'id': ident, 'result': made()})
         elif method == 'session/set_mode' and RICH:

@@ -3685,6 +3685,8 @@ class Session:
                 raise RuntimeError(f'{self.name} needs a login before it makes a session: metaform dispatch login '
                                    f'{self.agent}') from None
             raise
+        if self.ended.is_set():  # missing native context ended a resume without making a replacement session
+            return
         self.apply(made)
         if self.ending:
             return
@@ -4088,13 +4090,37 @@ class Session:
         else session/load, which replays the history the thread already holds and is not written again."""
         caps = cast(dict[str, Any], self.acp['capabilities'])
         session_id = cast(str, self.resume)
-        if caps.get('resume'):
-            self.acp['resumed'] = 'resume'
-            return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers)
-        if caps.get('load'):
-            self.acp['resumed'] = 'load'
-            self.replaying = True
-            return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers)
+        try:
+            if caps.get('resume'):
+                self.acp['resumed'] = 'resume'
+                return await self.conn.resume_session(session_id=session_id, cwd=self.folder, mcp_servers=servers)
+            if caps.get('load'):
+                self.acp['resumed'] = 'load'
+                self.replaying = True
+                return await self.conn.load_session(cwd=self.folder, session_id=session_id, mcp_servers=servers)
+        except acp.RequestError as error:
+            # Codex may return a session ID before any rollout is persisted. A failed first prompt leaves
+            # no native context to resume, even though the adapter supports the operation in general.
+            data: Any = error.data
+            detail = cast(dict[str, Any], data).get('details') if isinstance(data, dict) else None
+            if error.code != -32603 or detail != f'no rollout found for thread id {session_id}':
+                raise
+            caps['resume'], caps['load'] = False, False
+            self.acp['resumed'] = None
+            self.how = f'session unavailable: {self.name} no longer has native context for {session_id}'
+            await self.save_state()  # existing retry and conversation paths now treat this session as unavailable
+            await self.note(None, 'notice', f'{self.how}. Read its retained thread with a new agent. '
+                            f'Next: metaform dispatch talk session={self.work_id}:{session_id}')
+            def unavailable(tx: Any) -> None:
+                row = tx.get('agent_sessions', {'session_id': session_id})
+                if row is not None and row['state'] == 'ended' and row.get('runner') == self.runner:
+                    tx.update('agent_sessions', {'session_id': session_id}, {'how': self.how})
+            await self.table(unavailable, name='agent_sessions')
+            with contextlib.suppress(OSError):
+                resuming_path(session_id).unlink()
+            self.recorded = True  # cleanup publishes the existing session's end without claiming a new session
+            self.ended.set()
+            return None
         raise RuntimeError(f'{self.name} offers neither session/resume nor session/load, so session {session_id} '
                            'cannot be resumed')
 
