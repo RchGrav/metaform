@@ -29,14 +29,15 @@ settings.number('orchestration_reviews', 0, min=0, max=10,
                 help='Bound independent reviews of one delivery. Findings reopen that ticket; zero disables automatic reviews.')
 
 ROLE_DUTIES = (
-    ('triage', 'Prepare functional tickets and communicate with the user.', 'prompt.dispatch:system'),
+    ('triage', 'The Liaison: interview the person, prepare functional tickets and hand the Planner their intent.',
+     'prompt.dispatch:system'),
     ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'prompt.orchestration:gc'),
-    ('functionality', 'Independently assess functional quality and reconcile specifications with C(T).',
-     'prompt.orchestration:functionality'),
+    ('functionality', ('The Harsh Critic: independently assess delivered work and functional quality against C(T); '
+                       'approve, or reject with corrective tickets.'), 'prompt.orchestration:functionality'),
     ('investigator', 'Establish behavior, causes, dependencies and implementation entry points.',
      'prompt.orchestration:investigator'),
     ('requirements', 'Express requested outcomes and consequential requirements precisely.', 'prompt.orchestration:requirements'),
-    ('planner', 'Develop an executable approach for the current assignment.', 'prompt.orchestration:planner'),
+    ('planner', 'Build the goal, plan, tickets and implementation order before facilitation.', 'prompt.orchestration:planner'),
     ('implementer', 'Produce the assigned change and establish its effect.', 'prompt.orchestration:implementer'),
     ('verifier', 'Assess whether observed behavior establishes the requested outcome.', 'prompt.orchestration:verifier'),
     ('reviewer', 'Examine requested behavior and implementation quality as separate judgments.', 'prompt.orchestration:reviewer'),
@@ -47,7 +48,8 @@ ROLE_DUTIES = (
     ('synthesizer', 'Reconcile findings into a faithful combined result.', 'prompt.orchestration:synthesizer'),
     ('dogfood', 'Expose user-experience failures by using the actual product.', 'prompt.orchestration:dogfood'),
     ('release', 'Prepare the assigned release candidate and materials.', 'prompt.orchestration:release'),
-    ('facilitator', 'Create or reuse specialist expertise and continue the original ticket.', 'prompt.orchestration:role_creator'),
+    ('facilitator', 'Assign specialists to tickets, create or reuse their expertise, and carry the critic\'s corrections.',
+     'prompt.orchestration:role_creator'),
     # Retained for already recorded assignments; new commissions use facilitator.
     ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'prompt.orchestration:role_creator'),
 )
