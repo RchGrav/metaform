@@ -995,9 +995,9 @@ def test_start_refuses_a_ticket_already_taken(dispatch, run):
 @pytest.mark.req('BASE-052')
 @pytest.mark.parametrize('surface', ['mcp', 'cli'])
 @pytest.mark.parametrize('halted', [False, True])
-def test_the_persons_tool_outside_dispatch_starts_with_full_auto_off(
-        dispatch, run, dispatch_runners, monkeypatch, surface, halted):
-    """A terminal AI tool outside dispatch carries the person's start on both surfaces; a held halt still wins."""
+def test_the_persons_tool_outside_dispatch_starts_and_resumes_with_full_auto_off(
+        dispatch, run, dispatch_runners, monkeypatch, tmp_path, surface, halted):
+    """An external AI tool carries personal start and resume authority on both surfaces; a held halt still wins."""
     from metaform import caller
     from metaform.module import context
     from metaform.modules import dispatch as module
@@ -1005,32 +1005,54 @@ def test_the_persons_tool_outside_dispatch_starts_with_full_auto_off(
 
     run('set', '--agents-ask-first', cwd=dispatch.folder)
     assert context('dispatch', dispatch.folder).setting('dispatch_autostart') is False
-    monkeypatch.setattr(caller, 'agent', lambda: 'Claude Code above this command')
-    monkeypatch.setattr(caller, 'dispatched', lambda: None)
-    for key, value in dispatch.env('hold').items():
+    for key, value in dispatch.env('hold', FAKE_ACP_LOAD='1').items():
         if key.startswith('FAKE_'):
             monkeypatch.setenv(key, value)
+    harness = tmp_path / 'claude.py'
+    harness.write_text(
+        'import subprocess, sys\n'
+        'from metaform import caller\n'
+        'assert caller.dispatched() is None\n'
+        'result = subprocess.run([sys.executable, "-m", "metaform", *sys.argv[1:]], capture_output=True, text=True)\n'
+        'sys.stdout.write(result.stdout)\n'
+        'sys.stderr.write(result.stderr)\n'
+        'sys.exit(result.returncode)\n', encoding='utf-8')
 
-    def start():
+    def invoke(verb):
         if surface == 'mcp':
-            error, blocks, result = asyncio.run(answer(dispatch.folder, 'dispatch_start',
-                                                      {'id': dispatch.id, 'agent': 'claude'}, client='claude-code'))
+            with monkeypatch.context() as tool:
+                tool.setattr(caller, 'agent', lambda: 'Claude Code above this command')
+                tool.setattr(caller, 'dispatched', lambda: None)
+                nouns = {'id': dispatch.id, **({'agent': 'claude'} if verb == 'start' else {})}
+                error, blocks, result = asyncio.run(answer(dispatch.folder, f'dispatch_{verb}', nouns,
+                                                          client='claude-code'))
             return error, '\n'.join(blocks), result
-        result = run('dispatch', 'start', dispatch.id, 'claude', '--json', cwd=dispatch.folder, ok=False)
+        # Bypass the run fixture's terminal vouch: a real harness ancestor must remain visible to caller.agent().
+        result = subprocess.run([sys.executable, str(harness), 'dispatch', verb, dispatch.id,
+                                 *(['claude'] if verb == 'start' else []), '--json'], cwd=dispatch.folder,
+                                env=dispatch.env('hold', FAKE_ACP_LOAD='1'), capture_output=True, text=True,
+                                timeout=LIMIT, check=False)
         return result.returncode != 0, result.stdout + result.stderr, \
             json.loads(result.stdout) if result.returncode == 0 else None
 
     if halted:
         with module.halting('proj', 'clear'):
-            error, text, _ = start()
+            error, text, _ = invoke('start')
         assert error and 'The clear of this project is under way' in text, text
         assert not dispatch.ticket().taken and not dispatch.log.exists()
     else:
-        error, text, started = start()
+        error, text, started = invoke('start')
         assert not error, text
         dispatch_runners.append((started, dispatch.folder, dispatch.log))
         assert started['state'] == 'starting'
         eventually(lambda: dispatch.ticket().taken_by == 'claude fake-session-1')
+        dispatch.stop()
+        eventually(lambda: dispatch.session().extra['state'] == 'ended')
+        error, text, resumed = invoke('resume')
+        assert not error, text
+        dispatch_runners.append((resumed, dispatch.folder, dispatch.log))
+        assert (resumed['state'], resumed['session_id']) == ('starting', 'fake-session-1')
+        eventually(lambda: dispatch.received('session/load'))
 
 
 @pytest.mark.req('BASE-052')
