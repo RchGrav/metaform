@@ -75,9 +75,9 @@
         "sha256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
       },
       {
-        "path": "three-addons/loaders/RGBELoader.js",
-        "release_path": "examples/jsm/loaders/RGBELoader.js",
-        "sha256": "f0e87d0008d9484d31358b32befd1bf80e4301f77573cc9a7cf7d871cc3f64b4"
+        "path": "three-addons/environments/RoomEnvironment.js",
+        "release_path": "examples/jsm/environments/RoomEnvironment.js",
+        "sha256": "85869bdd22f7cf0b22e68dcefe6cb710480af0f5c901a76f7a7764fd07fc8014"
       }
     ]
   },

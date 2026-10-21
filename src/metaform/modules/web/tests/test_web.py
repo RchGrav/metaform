@@ -2013,8 +2013,10 @@ def test_in_every_theme_the_elements_are_glass_and_the_page_loads_nothing_from_o
 @pytest.mark.req('VIEW-025')
 def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_draws(run, web, mapped, browser):
     """What is behind the glass reaches it through the pictures the page draws each frame, as drei's component does.
-    It is read with the frosting and the absorption off, since with them what is behind is blurred into the node's
-    own color: another element set behind the cook shows through the cook, and moving it away changes the cook."""
+    The glass is clear, so it is read as it is: the kitchen timer, which the cook's join reaches, is set behind the cook,
+    and the join's line running back to it shows through the cook; moved away, the line leaves the cook another way
+    and the cook changes. A node's body behind another is faint through it: the pictures hold a node's far wall only,
+    and a far wall is mostly the ground it tints (2026-10-21)."""
     from metaform.data import Store
     store = Store('proj')
     for record in store.work(None, None, True, limit=0).results:  # nothing lit, nothing drawn in characters
@@ -2025,8 +2027,8 @@ def test_what_is_behind_a_node_reaches_its_glass_through_the_pictures_the_page_d
     page.emulate_media(reduced_motion='reduce')           # the distortion is still
     page.reload()
     page.wait_for_function('() => window.metaform && window.metaform.loaded() && window.metaform.linkColors().length > 0')
-    page.evaluate('window.metaform.glass(true, {roughness: 0, attenuationDistance: 1e9, transmission: 1})')
-    behind = store.element('code.alarm.audible').id
+    page.evaluate('window.metaform.glass(true, {roughness: 0, transmission: 1})')  # the glass is clear as it is
+    behind = store.element('code.timer.kitchen').id
     staged(page, {cook: (2000, 0, 0), behind: (2000, 0, -40)},
            ({'x': 2000, 'y': 0, 'z': 80}, {'x': 2000, 'y': 0, 'z': 0}))
     node = page.evaluate(f'window.metaform.screen3d("{cook}")')
@@ -4930,8 +4932,10 @@ def test_the_light_of_a_node_spreads_past_its_outline_and_stays_behind_a_node_ne
     page.wait_for_timeout(800)
     dark = pixels(page, [on_near, beyond, ground])
     assert sum(dark[1]) < sum(dark[2]) + 6, dark          # with the light gone, that point is background again
-    # the nearer node is drawn the same whether the node behind it gives off light or not
-    assert all(abs(one - two) <= 3 for one, two in zip(shown[0], dark[0])), (shown[0], dark[0])
+    # the nearer node is drawn the same whether the node behind it gives off light or not: no halo reaches it (a halo
+    # is the twenty and more the open point shows); the little the clear glass refracts of the lit node beside it is
+    # the glass letting light through, VIEW-025, not the pass (2026-10-21)
+    assert all(abs(one - two) <= 10 for one, two in zip(shown[0], dark[0])), (shown[0], dark[0])
     assert problems == []
 
 
