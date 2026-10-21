@@ -1628,8 +1628,8 @@ def remember(run, folder, command, value, node=None):
     address carries, MCP-037; its title is its first observation."""
     if command == 'create_entities':
         value = [{'why': f'Kept for the test of {one["name"]}.', **one} for one in value]
-    confirmed = ('--confirm',) if command.startswith('delete_') else ()  # the person's decision, CLI-011
-    return run('memory', command, json.dumps(value), *([f'node={node}'] if node else []), *confirmed, cwd=folder)
+    # deleting memories is the agents' own upkeep, no confirm (the owner, 2026-10-20: agents keep memories current)
+    return run('memory', command, json.dumps(value), *([f'node={node}'] if node else []), cwd=folder)
 
 
 def entity(name, *observations, kind='behavior'):
