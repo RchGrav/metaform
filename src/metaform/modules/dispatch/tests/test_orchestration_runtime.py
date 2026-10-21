@@ -26,6 +26,9 @@ def swarm(run, home, project_folder, tmp_path, request):
     for agent in ('claude', 'codex', 'gemini'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{FAKE}"', cwd=project_folder)
     run('set', '--dispatch-agents', '1', '--dispatch-machine-agents', '1', cwd=project_folder)
+    # one independent assessment of each delivery, which these scenarios wait for: the project default is none
+    # since the owner's restoration (orchestration_reviews 0), so the fixture asks for it (2026-10-20)
+    run('set', '--orchestration-reviews', '1', cwd=project_folder)
     # The fixture adapter completes the explicit result/check-in work itself. An optional after-finish note turn
     # is a separate dispatch contract and would not add evidence to this delivery scenario.
     run('set', '--dispatch-record-on-finish', 'off', '--dispatch-autostart', cwd=project_folder)
@@ -125,12 +128,15 @@ def pm_evidence(swarm, scenario, expected):
     assert observed['role'] == 'triage'
     seen = [one['pm_observation'] for one in swarm.entries()
             if 'pm_observation' in one and one['session'] == observed['session']]
-    assert any('new in your inbox' in text for text in seen)
+    # the person's system agent is woken for its digest at most every fifteen minutes, one line of counts, never an
+    # inbox line per update (2026-10-20); the updates stay whole where it reads them, below
+    assert not any('new in your inbox' in text for text in seen)
     bodies = [text for text in expected if text != 'C(T)']  # C(T) is in every role's instructions too
     assert not any(text in turn for text in bodies for turn in seen), 'No update body reaches its turns.'
-    updates = '\n'.join(one['text'] for one in records('dispatch', 'session_lines')
-                         if str(one['name']).startswith('notification:'))
-    assert all(text in updates for text in expected), 'Each update stays whole where it is read.'
+    # each update stays whole on the assignment it came from, where the PM reads it with a call; its notification
+    # line is one phrase naming the ticket
+    held = json.dumps(records('orchestration', 'assignments'), ensure_ascii=False)
+    assert all(text in held for text in expected), 'Each update stays whole where it is read.'
     assert observed['capacity']['machine_used'] == 0
     assert observed['capacity']['machine_limit'] == 1
     session = observed['session']
@@ -169,7 +175,8 @@ def delivery_evidence(swarm, scenario):
     assert critic['reviewed_assignment_id'] == root['assignment_id']
     assert critic['team_id'] != root['team_id'] and critic['parent_assignment_id'] is None
     assert root['candidate'] == critic['candidate']
-    assert 'GC_VALIDATED' in json.loads(critic['task'])['report']['body']
+    # the assessment's task says what to assess and where to read the report; the GC's validation is its evidence
+    assert swarm.id in critic['task'] and 'GC_VALIDATED' in json.dumps(root['evidence'])
     assert SPECIALIST_RESULT in (swarm.folder / 'candidate.txt').read_text()
 
     logged = swarm.entries()
@@ -180,27 +187,30 @@ def delivery_evidence(swarm, scenario):
     assert {one['role'] for one in contexts} >= {'gc', 'implementer', 'functionality'}
     assert not any('"tools": {' in one['recipient_context'] for one in contexts)
     common = next(one['text'] for one in resolve_agent_role(swarm.folder, 'gc', project='proj')['components']
-                  if one['name'] == 'orchestration:common')
+                  if one['name'] == 'prompt.orchestration:common')  # the canonical prompt identity, CTX-082
     for role in ('gc', 'implementer'):
         own = [one for one in contexts if one['role'] == role]
         assert not any(common in one['recipient_context'] for one in own)
         resources = [one['role_resource'] for one in logged if one['role'] == role and 'role_resource' in one]
         assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in resources) == 1
     receipts = records('agents', 'receipts')
-    assert any(one['name'] == 'orchestration:common' and one['actual_version_id'] and
+    assert any(one['name'] == 'prompt.orchestration:common' and one['actual_version_id'] and
                one['component']['text'] == common for one in receipts)
     resumed = [one for one in logged if 'session_loaded' in one]
     assert {'gc', 'implementer'} <= {one['role'] for one in resumed}
+    # the return reaches the worker as an inbox line naming the specialist's ticket, read whole with a call, never
+    # the result's text in its prompt (every message works like an inbox, 2026-10-20)
     worker_returns = [one for one in contexts if one['role'] == 'implementer' and
-                      SPECIALIST_RESULT in one['recipient_context']]
-    assert worker_returns, 'The immediate worker actually received its specialist result in an ACP prompt.'
+                      ' complete' in one['recipient_context']]
+    assert worker_returns, 'The immediate worker actually received its specialist return in an ACP prompt.'
     assert not any('RETAINED_WORKER_DRAFT' in one['recipient_context'] for one in worker_returns)
     assert any('RETAINED_WORKER_DRAFT' in json.dumps(one.get('assignment_context', {})) for one in logged
                if one['role'] == 'implementer')
-    gc_returns = [one for one in contexts if one['role'] == 'gc' and 'WORKER_INTEGRATED' in one['recipient_context']]
-    assert gc_returns, 'The GC actually received the integrated worker result.'
+    gc_returns = [one for one in contexts if one['role'] == 'gc' and ' complete' in one['recipient_context']]
+    assert gc_returns, 'The GC actually received the worker\'s return as an inbox line in an ACP prompt.'
     assert any(one.get('specialist_grounding', {}).get('entities') for one in logged)
-    assert any('GC_VALIDATED' in one.get('text', '') for one in records('dispatch', 'session_lines')
+    # the person's system agent is told in one line that the ticket completed; the report is a read away (2026-10-20)
+    assert any(' complete' in one.get('text', '') for one in records('dispatch', 'session_lines')
                if one['session_id'] == 'conversation-orchestration-updates')
     worker_calls = [one for one in logged if one.get('mcp_tool', {}).get('name') == 'orchestration_call']
     assert len(worker_calls) == 1 and worker_calls[0]['role'] == 'implementer'
@@ -212,8 +222,12 @@ def delivery_evidence(swarm, scenario):
 def test_capacity_one_gc_worker_specialist_return_and_independent_fqc(swarm):
     assignments, logged = delivery_evidence(swarm, 'nested')
     assert len(assignments) == 4
-    assert len([one for one in logged if 'session_created' in one]) == 4
-    assert len([one for one in logged if 'session_loaded' in one]) == 2
+    # the swarm's four sessions; the person's system agent, woken for its digest, and a Facilitator making a
+    # specialist may run beside them (2026-10-20)
+    created = [one for one in logged if 'session_created' in one]
+    assert {one['role'] for one in created} >= {'gc', 'implementer', 'investigator', 'functionality'}
+    assert len([one for one in created if one['role'] not in ('triage', 'facilitator', 'role_creator')]) == 4
+    assert len([one for one in logged if 'session_loaded' in one and one['role'] in ('gc', 'implementer')]) == 2
     transitions = records('orchestration', 'transitions')
     assert len([one for one in transitions if one['kind'] == 'suspend' and one['state'] == 'delivered']) == 2
     pm_evidence(swarm, 'nested', ['GC_VALIDATED', 'FQC_ACCEPTED'])
@@ -261,7 +275,8 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     assert critic['reviewed_assignment_id'] == root['assignment_id']
     assert critic['team_id'] != root['team_id'] and critic['parent_assignment_id'] is None
     assert critic['candidate'] == root['candidate']
-    assert 'GC_VALIDATED' in json.loads(critic['task'])['report']['body']
+    # the assessment's task says what to assess and where to read the report; the GC's validation is its evidence
+    assert swarm.id in critic['task'] and 'GC_VALIDATED' in json.dumps(root['evidence'])
 
     logged = swarm.entries()
     requested = next(one['gc_self_request'] for one in logged if 'gc_self_request' in one)
@@ -333,7 +348,7 @@ def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_rea
     first = wait_for(swarm, lambda: next((one for one in swarm.entries() if 'compaction_ready' in one), None))
     runner = first['runner_identity']
     common = next(one['text'] for one in resolve_agent_role(swarm.folder, 'gc', project='proj')['components']
-                  if one['name'] == 'orchestration:common')
+                  if one['name'] == 'prompt.orchestration:common')  # the canonical prompt identity, CTX-082
     (swarm.swarm_state / 'compact').touch()
     wait_for(swarm, lambda: any(one['session_id'] == runner and one['epoch'] == 1
                                for one in records('agents', 'contexts')))
@@ -348,7 +363,7 @@ def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_rea
     before = next(one['compaction_grounding'] for one in swarm.entries() if 'compaction_grounding' in one)
     assert restored['memory']['entities'] == before['entities']
     receipts = [one for one in records('agents', 'receipts') if one['session_id'] == runner]
-    for name in ('orchestration:common', 'memory:entity:route-grounding'):
+    for name in ('prompt.orchestration:common', 'memory:entity:route-grounding'):
         assert {one['epoch'] for one in receipts if one['name'] == name} == {0, 1}
     contexts = [one['recipient_context'] for one in swarm.entries()
                 if one['role'] == 'gc' and 'recipient_context' in one]

@@ -299,7 +299,10 @@ def gc_requests_role(assignment, stage, text):
 
 
 def assessment(assignment):
-    reviewed = json.loads(assignment['task'])
+    try:
+        reviewed = json.loads(assignment['task'])
+    except ValueError:  # the assessment's task is words now: what to assess and where to read its report
+        reviewed = assignment['task']
     actual = Path('candidate.txt').read_text()
     assert SPECIALIST_RESULT in actual
     log(fqc_observation={'reviewed': reviewed, 'actual': actual,
