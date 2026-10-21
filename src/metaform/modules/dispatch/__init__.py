@@ -177,6 +177,7 @@ TABLES = Tables(version=19, compatible_from=5, tables=(  # 19 adds an optional e
     # and the signals raised on tickets and sessions, signals.py.
     Table('sessions', key=('session_id',), columns=SESSION, indexes=(Index(('work_id', 'seq')), Index(('seq',)))),
     Table('lines', key=('session_id', 'name'), columns=LINE,
+          on_remove=(('work', 'work_id', 'delete'),),
           indexes=(Index(('session_id', 'seq')), Index(('work_id', 'seq')), Index(('kind', 'work_id', 'seq')))),
     Table('merges', place='project', key=('work_id',),
           columns=(Column('work_id', required=True), Column('branch', required=True), Column('worktree', required=True),

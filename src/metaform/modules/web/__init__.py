@@ -177,20 +177,12 @@ settings.choice('web_mascot_mischief', ['calm', 'playful', 'chaotic'], 'playful'
                         'node it passes; chaotic does both more often. It never takes the pointer or blocks a click.',
                 label='Mascot mischief', heading='Mascot and agents')
 # The board shows the work in hand, not the project's history: the open tickets and those done in the last few days.
-# Older done tickets stay records at their parts of the map, read with `map work open=false`, the ticket history and the
-# board's Archive; the server reads only what the board shows, so a project with hundreds of done tickets opens at once.
+# Older records stay until Archive done tickets sheds those retained in Git.
 settings.number('board_done_days', 1, min=0, max=3650,
                 help='Days a done ticket stays on the board; older ones are in its Archive.',
-                details="0 shows no done ticket. Nothing is deleted: an archived ticket is read in the board's "
-                        'Archive, with metaform map work open=false and in its part\'s ticket history.',
+                details='0 shows no done ticket. Archive done tickets removes records whose completion commits '
+                        'retain their citations in Git.',
                 label='Done tickets stay on the board for', heading='Board')
-# The board's archive cutoff: every ticket done before this time is in the Archive, whatever board_done_days says.
-# The board's Archive done tickets sets it to now; resetting it brings back the done tickets board_done_days shows.
-settings.text('board_line', '',
-              help="The board's archive cutoff: tickets done before this time are in its Archive.",
-              details='Set to now by Archive done tickets on the board; empty, board_done_days alone decides. Nothing is '
-                      'deleted either way.',
-              label='Board archive cutoff', category='advanced', heading='Board')
 
 
 def _glyph_choices(ctx: Context) -> list[str]:

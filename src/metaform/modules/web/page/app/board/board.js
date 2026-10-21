@@ -694,18 +694,15 @@ $('#board .archive .more').onclick = event => renderArchive(event.currentTarget.
 for (const control of ['.by-board', '.by-node', '.since', '.until', '.words']) {
   $(`#board .archive ${control}`).addEventListener('change', () => renderArchive());
 }
-/* Archive done tickets: every ticket done up to now goes to the Archive in one step; nothing is deleted, and Undo puts the
- * line that was before back. */
+/* Completed commits retain archived tickets. Missing Git proof keeps their records. */
 $('#board .line-in-sand').onclick = async () => {
   const board = B.board;  // the board shown keeps its own Archive and line
   const set = await wrote('/api/board-line', {board});
   if (!set) return;
   await renderBoard();
-  undoable('Everything done up to now is in the Archive.', async () => {
-    const back = await wrote('/api/board-line', {line: set.was, board});
-    await renderBoard();
-    return Boolean(back);
-  });
+  const kept = set.kept || [];
+  toast(`${(set.removed || []).length} tickets archived in Git.` +
+    (kept.length ? ` ${kept.length} kept: ${kept.map(one => `${one.item}: ${one.fault}`).join(' ')}` : ''));
 };
 $('#boardBtn').onclick = async () => {
   if (WS.reveal('board')) return;

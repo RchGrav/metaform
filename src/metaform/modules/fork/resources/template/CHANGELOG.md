@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `DataTx.cleanup(kind, identity)` applies recorded removal rules in the current transaction, including absent owners.
+
 - `TableTx.rows_in(table, column, values, *, where=None, by=())` reads selected rows in index order as a tuple. The selected column and equal `where` columns must form a declared index's prefix. Repeated values are read once. Queries use at most 900 bindings, including `where`, and retain global index order across batches. Empty selections issue no SQL. This lets modules read children for selected records without scanning every child.
 
 - A module's prompts.xml may hold `<rules>`, MCP-031: `<rule why="the reason">One sentence.</rule>`, each a rule an agent keeps while it works with the module. A rule without a why, or with no sentence, is a faulty declaration: the loader refuses the module and names the rule. `prompt_files.rules(folder)` reads them, as `(rule, why)` pairs in the order written, and `prompt_files.module_rules(id)` a loaded module's. The MCP server gathers the rules of every enabled module on the folder's surface into one block at the end of `metaform://glossary`, after the tool index, each line `[<module>] <rule> Why: <why>` under mcp's `rules_heading`, so an agent reads each once with the glossary. The template carries an empty `<rules></rules>` with the form in its comment; memory's rule shows one.

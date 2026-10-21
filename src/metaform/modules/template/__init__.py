@@ -43,7 +43,8 @@ and marks those reads `Operation(handler, retained=True)`; it imports only
 public APIs and its own helpers, without importing this runtime initializer.
 `Table.from_sql(name, schema, on_remove=...)` adopts an existing SQL table
 with its rows, constraints and indexes. Recorded removal rules survive an
-absent owner. Map's storage shows legacy table adoption and upgrades.
+absent owner. `tx.cleanup(kind, identity)` applies those rules atomically when
+a module removes its own record. Map's storage shows ticket cleanup and upgrades.
 
 A module adds to the read of a node, `map where` and `map node`, with
 `node_read=`: a function of the context and the node read, which returns plain

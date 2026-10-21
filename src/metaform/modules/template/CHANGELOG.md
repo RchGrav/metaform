@@ -4,6 +4,8 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `DataTx.cleanup(kind, identity)` applies recorded removal rules in the current transaction, including absent owners.
+
 - 2026-10-19: `AgentRoleDefinition.specialist` defaults to true for reusable expertise. Framework responsibilities declare false and are excluded from automatic specialist matching. `agents_specialists` lists metadata and role URLs without duty bodies. `metaform.data.functional_context(store, work)` provides immediate requirements, dependents, canonical names and Markdown. The orchestration module routes pending tickets through JEV or triage and exposes cached OpenRouter credit observations.
 
 - 2026-10-19: MCP discovery follows module ownership. `metaform://modules` publishes active module ids and summaries; `metaform://<module>/tools` publishes that module's commands. Remove `category=` from `Verb` declarations; the category field and central tables are gone. No MCP registry edit is needed for a new module. `metaform_catalog module=<id>` selects one module, and `search=<words>` supports approximate names. Startup no longer sends all command schemas to stateless clients. Settings-screen categories are unchanged.

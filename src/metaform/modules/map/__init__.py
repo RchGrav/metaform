@@ -67,6 +67,7 @@ from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
 
+from . import ticket_history
 from .around import told
 from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
@@ -102,6 +103,12 @@ settings.boolean('hold_agent_tickets', False, person_only=True, label='Hold tick
 settings.number('node_summary_bytes', 2048, min=512,
                 help='The bytes an agent is given about the node it works on, in map where, a ticket read and the '
                      'hand-off. What does not fit, code paths first, is counted with the call that reads it.')
+# Preserve the existing web-owned key so saved cutoffs survive the shared operation.
+with settings.owned_by('web'):
+    settings.text('board_line', '',
+                  help='The first board\'s archive cutoff. Archive done tickets retains completed work in Git.',
+                  details='Tickets with completion commits leave the store at the line. Tickets without commits stay.',
+                  label='Board archive cutoff', category='advanced', heading='Board')
 
 
 def _check_board(name: Any, folder: Path) -> list[str] | None:
@@ -424,6 +431,7 @@ def _missing(store: Store, address: str) -> Stop:
     return Stop(message, f'metaform map children address={shlex.quote(prefix)}')
 
 
+@ticket_history.per_call
 def where(ctx: Context) -> Any:
     """One read of an address: what relies on it and what it relies on, with the counts at it and around it,
     STORE-025 and MCP-039; the entry with no address. `<scope>@<layer>` reads what that layer holds at the scope, P165,
@@ -1403,6 +1411,7 @@ def messages(ctx: Context) -> Any:
                                                                   **_paging(ctx))), notices)
 
 
+@ticket_history.per_call
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
@@ -1494,14 +1503,23 @@ def work(ctx: Context) -> Any:
                         _written(ctx, store, added, 'add', notices))
     if op == 'distribute':
         return _with_notices(_glyphed(store, _distribute(store, nouns['agents'])), notices)
+    if op == 'read':
+        # Live tickets win. A shed ticket's citation reads its completed commit instead.
+        try:
+            work_id = _work_id(store, str(nouns['id']))
+            ticket = store.ticket(work_id)
+        except (Stop, StoreError):
+            committed = ticket_history.resolve(store.project_id, str(nouns['id']))
+            if committed is not None:
+                return _with_notices(committed, notices)
+            raise
+        return _with_notices(_with_work_modules(ctx, ticket), notices)
     work_id = _work_id(store, str(nouns['id']))
     word = _orchestrating(ctx, store, op, work_id, nouns)
     if op == 'remove':  # the person deletes a ticket for good, 2026-10-20; an agent on it is stopped by the caller
         with store.atomic():
             removed = store.remove_work(work_id)
         return _with_notices(removed, notices)
-    if op == 'read':
-        return _with_notices(_with_work_modules(ctx, store.ticket(work_id)), notices)
     if op == 'take':
         with store.atomic():
             _claim(ctx, store, work_id, nouns.get('by'))
@@ -1838,10 +1856,48 @@ def _board(store: Store, name: Any) -> str | None:
     return wanted
 
 
+def _shed(store: Store, name: str, line: str) -> dict[str, Any]:
+    """Remove completed records only when Git retains their exact citation on dev."""
+    commits = ticket_history.read(store.project_id)
+    records = store.work(open=False, limit=0).results
+    kept_settings = _settings(store, [record.id for record in records])
+    numbers = _work_numbers(store, [record.id for record in records])
+    removed: list[str] = []
+    kept: list[dict[str, str]] = []
+    for record in records:
+        if not record.done or record.done > line or str(kept_settings.get(record.id, {}).get('board') or '') != name:
+            continue
+        item = str(numbers.get(record.id, {}).get('item') or record.id)
+        commit = commits.tickets.get(record.id)
+        target = f'{record.node_kind}:{record.address if record.node_kind == "element" else record.node_id}'
+        fault = commits.fault or ('No completion commit on the active dev branch.' if commit is None else
+                                 'The completion commit does not preserve this ticket number.'
+                                 if commit['item'] != item else
+                                 'The completion commit predates this ticket completion.'
+                                 if commit['done'] < record.done else
+                                 'The completion commit does not preserve this ticket resolution.'
+                                 if record.resolution and not any(
+                                     f'\n\n{prefix}{record.resolution}\n\n' in f'{commit["body"]}\n\n'
+                                     for prefix in ('', 'Resolution: ')) else
+                                 'The completion commit does not preserve this ticket attachment.'
+                                 if commit['target'] != target else
+                                 'The completion commit does not preserve this ticket state.'
+                                 if f'\n\nTicket state:\n{store.work_snapshot(record.id)}\n\n' not in
+                                 f'{commit["body"]}\n\n' else None)
+        if fault:
+            kept.append({'id': record.id, 'item': item, 'fault': fault})
+            continue
+        store.remove_work(record.id)
+        removed.append(record.id)
+    return {'removed': removed, 'kept': kept}
+
+
+@ticket_history.per_call
 def boards(ctx: Context) -> dict[str, Any]:
-    """List and organize boards. The first board has no name and always remains. Each board keeps its Archive line.
-    Remove requires an empty named board. Wipe backs up ticket-owned rows before stopping agents and deleting work;
-    restore inserts those original rows beside subsequent work. Wipe backups remain available permanently."""
+    """List and organize boards. The first board has no name and always remains. The archive line sheds
+    completed tickets whose Git commits retain their citations, keeping records without proof. Remove requires
+    an empty named board. Wipe backs up ticket-owned rows before stopping agents and deleting work; restore
+    inserts those original rows beside subsequent work. Wipe backups remain available permanently."""
     store = ctx.require_store()
     op = str(ctx.nouns.get('op') or 'list')
     name = str(ctx.nouns.get('name') or '').strip()
@@ -1869,8 +1925,8 @@ def boards(ctx: Context) -> dict[str, Any]:
             if record.done is None:
                 counts[board] = counts.get(board, 0) + 1
         active = str(ctx.setting('board') or '')  # the active board, marked so the page and the person see it
-        listed: list[dict[str, Any]] = [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None,
-                   'active': active == ''},
+        listed: list[dict[str, Any]] = [{'name': '', 'first': True, 'open': counts.get('', 0),
+                                        'line': ctx.setting('board_line'), 'active': active == ''},
                            *({'name': str(row['name']), 'first': False, 'open': counts.get(str(row['name']), 0),
                               'line': row.get('line'), 'created': row['created'], 'active': active == str(row['name'])}
                              for row in named)]
@@ -1883,6 +1939,32 @@ def boards(ctx: Context) -> dict[str, Any]:
                                           if one['base'] == current]}
     if op not in ('add', 'line', 'remove'):
         raise Stop(f'No op {op!r}: list, add, line, remove, wipe or restore.', 'metaform help map boards')
+    if op == 'line':
+        _board(store, name)
+        line = str(ctx.nouns.get('line') or '').strip()
+        # An empty cutoff resets visibility. Repeating a cutoff retries tickets whose commits arrived later.
+        if 'line' not in ctx.nouns:
+            line = home.now()
+        if line:
+            try:
+                cutoff = datetime.fromisoformat(line)
+                if cutoff.tzinfo is None:
+                    raise ValueError('The cutoff needs a timezone.')
+                line = cutoff.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+            except ValueError:
+                raise Stop('The archive cutoff must be an ISO timestamp with a timezone.',
+                           'metaform map boards op=line') from None
+            ticket_history.read(store.project_id)  # Read Git before taking the store's write lock.
+        with store.atomic(), store.tables() as tx:
+            held = tx.get('boards', {'name': name}) if name else None
+            was = held.get('line') if held else ctx.setting('board_line')
+            result: dict[str, Any] = _shed(store, name, line) if line else {
+                'removed': [], 'kept': []}
+            if name:
+                tx.update('boards', {'name': name}, {'line': line})
+        if not name:
+            settings.put('board_line', line, ctx.folder)
+        return {'board': name, 'state': 'archived', 'line': line, 'was': was, **result}
     if not name:
         raise Stop('Name the board.', f'metaform map boards op={op} name=<name>')
     with store.tables() as tx:
@@ -1894,11 +1976,6 @@ def boards(ctx: Context) -> dict[str, Any]:
             return {'board': name, 'state': 'added'}
         if held is None:
             raise Stop(f'There is no board named {name!r}.', 'metaform map boards')
-        if op == 'line':
-            was = held.get('line')
-            line = str(ctx.nouns.get('line') or '').strip() or home.now()  # a time given puts an earlier line back
-            tx.update('boards', {'name': name}, {'line': line})
-            return {'board': name, 'state': 'archived', 'line': line, 'was': was}
         if tx.rows('ticket_settings', {'board': name}, limit=1).results:
             raise Stop(f'Tickets are still on the board {name!r}: move them first with map work op=edit id= board=.',
                        f'metaform map work board="{name}"')
@@ -2161,13 +2238,19 @@ def _work_id(store: Store, given: str) -> str:
     return str(found['id'])
 
 
+@ticket_history.per_call
 def map_item_read(ctx: Context, address: str, number: int) -> dict[str, Any] | None:
     """The work record, question, message, code link or glossary term numbered `number` at `address`, MCP-037: its
     kind, title, why, body and links; None when map holds none there."""
     if ctx.store is None:
         return None
     _numbering(ctx.store)
-    return ctx.store.item_at(address, number) or term_read(ctx.store, address, number)
+    stored = ctx.store.item_at(address, number) or term_read(ctx.store, address, number)
+    if stored is not None:
+        return stored
+    committed = ticket_history.resolve(ctx.store.project_id, f'{address}#{number:x}')
+    return {**committed, 'kind': 'commit', 'id': committed['hash'], 'title': committed['subject'],
+            'text': committed['body'], 'address': address, 'number': number} if committed else None
 
 
 def map_items_at(ctx: Context, address: str, before: int | None, limit: int) -> list[dict[str, Any]]:
@@ -2510,11 +2593,13 @@ MODULE = Module(
                                'restore a wipe. Wipe and restore are person_only. The first board has no name. '
                                'A ticket is moved to a board with map work op=edit id=<id> board=<name>.',
              nouns=(Noun('op', 'list, the default; add; line, which puts every ticket done up to now on the board in '
-                               'its Archive; remove; wipe; or restore.', required=False),
-                    Noun('name', 'The board\'s name. Empty names the first board for wipe and restore.', required=False),
+                               'Git history when their commits retain their citations; remove; wipe; or restore.',
+                               required=False),
+                    Noun('name', 'The board\'s name. Empty names the first board for line, wipe and restore.',
+                         required=False),
                     Noun('backup', 'restore: the wipe backup stamp from metaform list backups.', required=False),
-                    Noun('line', 'line: the archive cutoff as a time, instead of now; an undo puts the one before '
-                                 'back.', required=False))),
+                    Noun('line', 'line: the archive cutoff as an ISO timestamp, instead of now; a prior cutoff '
+                                 'changes visibility without restoring shed records.', required=False))),
         Verb('ask', ask, 'Write a question at a node, for the record: the person asks, never an agent.',
              nouns=(Noun('node', 'Where the question applies: an element, by address; with provider, the purpose '
                                  'it holds as receiver.'),

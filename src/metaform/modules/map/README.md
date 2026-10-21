@@ -47,6 +47,21 @@ Move a ticket to another node with `work op=edit id=<work id> node=<address>`, o
 
 `work id=<work id>` hands an agent its task with knowledge and enabled modules' node memories at its attachment and reference links. Review the knowledge layers first, read the other agents' memories there, and record your own memories at the nodes you work on. A node's compact read shows each taken ticket's ownership and `age_seconds`, measured since it was taken. Completed tickets leave open work and appear under `past_work`, newest first, as references with their completion time and age; `work id=<past work id>` reads the resolution and step log when wanted. The GUI's board and work history show relative age since take or completion.
 
+`boards op=line [name=<board>]` archives tickets completed before the cutoff. A ticket leaves the store only when its
+completion commit is on the branch checked out in the registered project folder and retains its exact citation.
+Tickets without that proof stay in the store, listed under `kept` with a fault. Removed tickets lose their steps,
+reference links, settings and base progress lines. Project conversations stay. `work id=<address>#<n>` and `item`
+resolve a removed ticket through its `Metaform-Number` trailer, returning the commit hash, subject, body and files.
+Project counters keep citation numbers from being reused. Node past-work references and brief counts combine live
+records with Git history, without counting both copies of a ticket. Each command shares one Git history read and
+the next command reads Git again. A prior or empty cutoff changes visibility without restoring removed records.
+Completion commits include a canonical `Ticket state` JSON snapshot of the map-owned ticket rows and citation
+metadata. Shedding requires an exact match, so later notes, tasks, steps, links or settings keep a record until a
+new completion commit preserves them. Older commits remain readable by citation, but records without this snapshot
+stay in the store. The completion writer reads the snapshot through `store.work_snapshot(work_id)`.
+Join tickets require `Metaform-Target` attachment proof. A commit must preserve the current resolution and must
+not predate the current completion, so reopening does not allow an older resolution to replace the newer record.
+
 Put a stopped agent's ticket back with `work op=move id=<work id> column=todo`; its ownership is cleared and its progress log is kept. Assignment already uses `work op=edit id=<work id> glyph=<name>`, or `work op=distribute agents=<n>` for several agents; the dispatch module starts the assigned tickets. A later take starts a new taken age.
 
 Who writes a ticket goes by the role the dispatch runner gives an agent, MAP-050. The person on the page always may, and so may the agents that serve them and a session the person runs outside dispatch. The roles named in the person-only setting `roles_without_authority`, `worker` and `prep` by default, are refused `work op=add` and `knowledge op=add-item` with a `task`, and their `condition` and `kind` on `work op=edit` are ignored with a notice, on the CLI and over MCP. The person sets it to `none` to lift this. `reply` stays refused over MCP for a permission request whatever the role, since answering one is the person's act.

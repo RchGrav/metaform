@@ -81,7 +81,10 @@ def ticket_message(store: Store, record: WorkRecord, agent: str = '', name: str 
     board = str(settings['board'] or '') if settings else ''
     agent = agent or (record.taken_by or '').split(' ', 1)[0]
     author = ' '.join(part for part in (agent, name or (agent_label(agent) if agent else '')) if part)
-    return '\n\n'.join((subject, record.resolution or '', f'Why: {why or ""}'.rstrip(), '\n'.join((
+    target = f'{record.node_kind}:{address if record.node_kind == "element" else record.node_id}'
+    snapshot = f'Ticket state:\n{store.work_snapshot(record.id)}'
+    return '\n\n'.join((subject, record.resolution or '', f'Why: {why or ""}'.rstrip(), snapshot, '\n'.join((
+        f'Metaform-Target: {target}',
         f'{TRAILER}: {record.id}', f'Metaform-Number: {handle}', f'Metaform-Node: {address}',
         f'Metaform-Board: {board}'.rstrip(), f'Metaform-Agent: {author}'.rstrip()))))
 

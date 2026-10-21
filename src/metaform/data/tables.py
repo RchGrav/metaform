@@ -412,7 +412,13 @@ def recorded_tables(db: sqlite3.Connection) -> Generator[tuple[str, Table], None
 
 def cleanup(db: sqlite3.Connection, kind: str, identity: str) -> None:
     """Apply each owner's declared removal of a native reference in the current DAO transaction."""
+    from .. import loader
+    active = {module.id: module.tables for module in loader.enabled() if module.tables is not None}
     for module, table in recorded_tables(db):
+        current = active.get(module)
+        if current is not None:
+            table = next((entry for entry in current.tables if entry.name == table.name and entry.place == table.place),
+                         table)
         for native, column, action in table.on_remove:
             if native != kind:
                 continue

@@ -2264,33 +2264,22 @@ class Handler(BaseHTTPRequestHandler):
         self.dispatch_autostart(given)
 
     def board_line(self, given: dict[str, Any]) -> None:
-        """The board's Archive done tickets: board_line set to now, so every ticket done up to now is in the Archive and
-        none is deleted; with `line`, set to that, as the Undo puts the one before back. Answers with the line it set
-        and the one before."""
+        """Archive through the map's shared operation, including Git proof and kept faults."""
         project = home.project(str(given.get('project', '')))
         if project is None:
             return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
                                    'next': 'metaform list projects'})
-        folder, line = Path(project.path), given.get('line', home.now())
+        line = given.get('line', home.now())
         if not isinstance(line, str):
             return self.send(400, {'error': 'The archive cutoff is a time as text.'})
-        board = given.get('board')
-        if isinstance(board, str) and board:  # a named board keeps its own line, `map boards op=line`
-            try:
-                done = cast(dict[str, Any], module_verb(given, 'map', 'boards', {
-                    'op': 'line', 'name': board, **({'line': line} if 'line' in given else {})},
-                    chosen=bool(chosen_base(given))))
-            except (Stop, StoreError) as error:
-                return self.refuse(error, 400)
-            return self.send(200, {'line': str(done.get('line') or ''), 'was': str(done.get('was') or ''),
-                                   'board': board})
-        was = str(settings.value('board_line', folder) or '')
+        board = str(given.get('board') or '')
         try:
-            settings.checked('board_line', line, folder, typed=True)
-            settings.put('board_line', line, folder)
-        except (settings.SettingError, Stop) as error:
+            done = cast(dict[str, Any], module_verb(given, 'map', 'boards', {
+                'op': 'line', 'name': board, **({'line': line} if 'line' in given else {})},
+                chosen=bool(chosen_base(given))))
+        except (Stop, StoreError) as error:
             return self.refuse(error, 400)
-        self.send(200, {'line': line, 'was': was})
+        self.send(200, {**done, 'was': str(done.get('was') or '')})
 
     def dispatch_agents(self, given: dict[str, Any]) -> None:
         """The agents the page offers to start, VIEW-039: each one's name, whether its start command is found on this

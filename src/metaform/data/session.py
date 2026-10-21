@@ -100,6 +100,11 @@ class Tx:
         from .operations import invoke
         return invoke(self, name, *args, **kwargs)
 
+    def cleanup(self, kind: str, identity: str) -> None:
+        """Apply owners' recorded removal rules in this transaction, including absent modules."""
+        from .operations import cleanup
+        cleanup(self, kind, identity)
+
     def tables(self) -> Any:
         """The operation owner's base-level tables on this same transaction."""
         from . import tables

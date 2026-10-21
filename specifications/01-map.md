@@ -589,6 +589,19 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-051 A completed task is kept as past work at its node
 
+- Amendment, 2026-10-21, code.interface.graphical#1ae: At a board's archive line, completed tickets whose completion
+  commits are on the registered project folder's checked-out branch leave the store with their steps, links,
+  settings and base progress lines. The commit must retain the ticket id in `Metaform-Ticket` and its exact citation
+  in `Metaform-Number`. Tickets lacking that proof stay, and the result lists their faults under `kept`. Git holds
+  removed tickets' history. `map work id=<address>#<n>` returns their commit hash, subject, body and files. Numbers
+  remain unique through the project's counter. Node past-work references and brief counts include Git history,
+  deduplicate stored ticket ids and read Git once per call without timed caching. Project conversations stay.
+  `Metaform-Target` preserves join attachment identities so their counts remain at their joins. Join tickets without
+  attachment proof stay in the store. Commits predating a ticket's current completion do not permit removal.
+  The commit body must preserve the current resolution, including when reopening and completion share a second.
+  Its `Ticket state` JSON must also match the current persisted map-owned ticket rows and citation metadata,
+  including notes, tasks, steps, links and settings. Older commits without a snapshot remain readable but do not
+  permit shedding their store records.
 - Requirement: A completed task leaves the task list and the node's label, and its record stays at the node as past work.
 - What this means: An agent is not made to read past work; it is told past work is there. Each entry shows its age, recent or long ago, and carries the agent's work log. A work record done with its resolution, MAP-046, is kept the same way.
 - Why: A finished task no longer steers anyone, so it leaves the list and the label. Kept at the node, it tells a later agent what was done there and when, if it wants to know, without spending the agent's context on history it does not need.

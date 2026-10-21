@@ -289,6 +289,7 @@ def test_shared_completion_preserves_peer_edits_and_carries_ticket_record(dispat
     message = git(repo, 'log', '-1', '--format=%B')
     assert message.splitlines()[0] == 'Owned feature'
     assert 'Feature delivered.\n\nWhy: Keep history independently readable.' in message
+    assert 'Metaform-Target: element:code.engine' in message
     assert message.splitlines()[-5:] == [f'Metaform-Ticket: {dispatch.id}', f'Metaform-Number: {handle}',
                                         'Metaform-Node: code.engine', f'Metaform-Board: {board}'.rstrip(),
                                         f'Metaform-Agent: claude {made.name}']
@@ -349,7 +350,7 @@ def test_empty_worktree_completion_lands_as_empty_ticket_commit(dispatch, repo):
     assert git(repo, 'rev-parse', 'HEAD^{tree}') == git(repo, 'rev-parse', 'HEAD^^{tree}')
     message = git(repo, 'log', '-1', '--format=%B')
     assert 'No changes required.\n\nWhy: Existing behavior suffices.' in message
-    assert message.count('Metaform-') == 5
+    assert message.count('Metaform-') == 6
 
 
 def test_missing_completion_commit_files_one_numbered_broken_ticket(dispatch, repo, monkeypatch):
@@ -469,7 +470,7 @@ def test_existing_checkpoint_trailer_does_not_replace_completed_ticket_record(di
     assert git(repo, 'rev-list', '--count', 'HEAD') == '3'
     message = git(repo, 'log', '-1', '--format=%B')
     assert 'Ticket completed.\n\nWhy: Preserve the final record.' in message
-    assert message.count('Metaform-') == 5
+    assert message.count('Metaform-') == 6
 
 
 def test_already_landed_merge_recovers_after_ticket_cancellation(dispatch, repo, monkeypatch):

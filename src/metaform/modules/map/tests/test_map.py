@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -586,6 +588,266 @@ def test_a_ticket_removed_is_gone_with_its_steps_and_settings(run, mapped):
     assert gone not in [one['id'] for one in j(run, 'work', cwd=mapped)['results']]
     refused = run('map', 'work', f'id={gone}', cwd=mapped, ok=False)
     assert refused.returncode != 0 and 'No work record' in refused.stderr
+
+
+@pytest.mark.parametrize('board', ['', 'release'])
+@pytest.mark.parametrize('dispatch_enabled', [True, False])
+def test_archive_sheds_only_committed_tickets_and_resolves_their_numbers(
+        run, mapped, monkeypatch, board, dispatch_enabled):
+    from metaform.data import parse_reference
+    from metaform.module import node_brief
+
+    run('enable', 'dispatch', cwd=mapped)
+
+    def git(*words):
+        return subprocess.run(['git', *words], cwd=mapped, text=True, capture_output=True, check=True).stdout.strip()
+
+    git('init', '-b', 'dev')
+    git('config', 'user.email', 'tests@example.test')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'Initial')
+    if board:
+        j(run, 'boards', 'op=add', f'name={board}', cwd=mapped)
+    store = Store('proj', module='map')
+
+    def ticket(task, on=board):
+        return j(run, 'work', 'op=add', 'node=code.alarm.audible', f'task={task}', f'board={on}', cwd=mapped)
+
+    missing = ticket('Missing commit')
+    side = ticket('Unmerged')
+    mismatch = ticket('Wrong citation')
+    other = ticket('Other board', '') if board else None
+    opened = ticket('Still open')
+    gone = ticket('Committed')
+    j(run, 'work', 'op=edit', f'id={gone["id"]}', 'links=["code.timer.kitchen"]', cwd=mapped)
+    j(run, 'work', 'op=plan', f'id={gone["id"]}', 'steps=1', cwd=mapped)
+    j(run, 'work', 'op=step', f'id={gone["id"]}', 'said=Verified', cwd=mapped)
+    for one in (gone, missing, side, mismatch, *([other] if other else [])):
+        store.finish_work(one['id'], 'Delivered', 'Verified')
+    dispatch = Store('proj', module='dispatch')
+    with dispatch.tables() as tx:
+        for one in (gone, missing):
+            tx.insert('lines', {'session_id': 'monitor:progress', 'name': one['id'], 'work_id': one['id'],
+                                'kind': 'progress', 'text': 'Done', 'seq': 1})
+    with dispatch.tables() as tx:
+        tx.insert('session_lines', {'session_id': 'conversation', 'name': 'message', 'work_id': gone['id'],
+                                    'kind': 'peer', 'text': 'Retained conversation', 'seq': 1})
+    if not dispatch_enabled:
+        run('disable', 'dispatch', cwd=mapped)
+    else:
+        # An existing installation can still hold the old declaration before dispatch next writes its tables.
+        from metaform import home
+        with sqlite3.connect(home.store_path('proj', store.bound_base().id)) as db:
+            declared = json.loads(db.execute("SELECT value FROM meta WHERE key='module:dispatch'").fetchone()[0])
+            for table in declared['tables']:
+                table.pop('on_remove', None)
+            db.execute("UPDATE meta SET value=? WHERE key='module:dispatch'", (json.dumps(declared),))
+
+    def commit(one, item=None):
+        message = (f'Completed\n\nResolution: Delivered\n\nTicket state:\n{store.work_snapshot(one["id"])}\n\n'
+                   f'Metaform-Ticket: {one["id"]}\n'
+                   f'Metaform-Number: {item or one["map"]["item"]}\nMetaform-Node: code.alarm.audible\n'
+                   f'Metaform-Board: {board}\nMetaform-Agent: test\n')
+        git('add', 'feature.txt')
+        git('commit', '--allow-empty', '-m', message)
+        return git('rev-parse', 'HEAD')
+
+    (mapped / 'feature.txt').write_text('Delivered\n')
+    sha = commit(gone)
+    commit(mismatch, 'code.alarm.audible#fff')
+    git('checkout', '-b', 'unmerged')
+    commit(side)
+    git('checkout', 'dev')
+    before = store.where('code.alarm.audible')
+    assert len(before.past_work) == (5 if other else 4), 'Live records and commits count once'
+    done = j(run, 'boards', 'op=line', f'name={board}', cwd=mapped)
+    assert done['removed'] == [gone['id']]
+    assert store.ticket(opened['id']).work.done is None
+    assert {one['id'] for one in done['kept']} == {missing['id'], side['id'], mismatch['id']}
+    assert all(one['fault'] for one in done['kept'])
+    with pytest.raises(StoreError, match='No work record'):
+        store.ticket(gone['id'])
+    with store.tables(write=False) as tx:
+        assert tx.get('ticket_settings', {'work_id': gone['id']}) is None
+        assert tx.get('numbered', {'kind': 'work', 'item_id': gone['id']}) is None
+        assert not tx.rows('work_steps', {'work_id': gone['id']}, limit=0).results
+        assert not tx.rows('work_links', {'work_id': gone['id']}, limit=0).results
+    if not dispatch_enabled:
+        run('enable', 'dispatch', cwd=mapped)
+    with dispatch.tables(write=False) as tx:
+        assert [row['work_id'] for row in tx.rows('lines', limit=0).results] == [missing['id']]
+    with dispatch.tables(write=False) as tx:
+        assert tx.get('session_lines', {'session_id': 'conversation', 'name': 'message'})['text'] == 'Retained conversation'
+    recovered = j(run, 'work', f'id={gone["map"]["item"]}', cwd=mapped)
+    assert recovered['hash'] == sha and recovered['subject'] == 'Completed'
+    assert 'Resolution: Delivered' in recovered['body'] and recovered['files'] == ['feature.txt']
+    assert j(run, 'work', f'id={gone["id"]}', cwd=mapped)['hash'] == sha
+    cited = j(run, 'item', gone['map']['item'], cwd=mapped)
+    assert cited['hash'] == sha and cited['body'] == recovered['body']
+    next_ticket = ticket('Next number')
+    assert parse_reference(next_ticket['map']['item'])[1] > parse_reference(gone['map']['item'])[1]
+
+    logs = []
+    real_run = subprocess.run
+
+    def counted(words, *args, **kwargs):
+        if words[:2] == ['git', 'log'] and kwargs.get('cwd') == mapped:
+            logs.append(words)
+        return real_run(words, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', counted)
+    brief = node_brief(mapped, 'code.alarm.audible')
+    assert f'{5 if other else 4} earlier runs' in brief
+    assert len(logs) == 1
+    after = store.where('code.alarm.audible')
+    assert len(after.past_work) == len(before.past_work)
+    assert len(logs) == 2, 'The next call reads Git again'
+    commit(missing)
+    retried = j(run, 'boards', 'op=line', f'name={board}', f'line={done["line"]}', cwd=mapped)
+    assert retried['removed'] == [missing['id']], 'The same cutoff retries records after their commits arrive'
+    j(run, 'boards', 'op=line', f'name={board}', f'line={done["was"] or ""}', cwd=mapped)
+    assert store.ticket(side['id']).work.done
+
+
+@pytest.mark.parametrize('detached', [False, True])
+def test_archive_keeps_tickets_when_git_history_cannot_be_read(run, mapped, detached):
+    if detached:
+        for words in (('init', '-b', 'dev'), ('-c', 'user.name=Test', '-c', 'user.email=tests@example.test',
+                                             'commit', '--allow-empty', '-m', 'Initial'),
+                      ('checkout', '--detach')):
+            subprocess.run(['git', *words], cwd=mapped, check=True, capture_output=True)
+    ticket = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'task=Keep completion evidence', cwd=mapped)
+    store = Store('proj')
+    store.finish_work(ticket['id'], 'Delivered')
+    result = j(run, 'boards', 'op=line', cwd=mapped)
+    assert result['removed'] == []
+    assert len(result['kept']) == 1 and result['kept'][0]['id'] == ticket['id']
+    assert result['kept'][0]['fault']
+    assert store.ticket(ticket['id']).work.resolution == 'Delivered'
+
+
+@pytest.mark.parametrize('same_second', [False, True])
+def test_archive_preserves_join_history_and_keeps_reopened_tickets_without_current_commits(
+        run, mapped, monkeypatch, same_second):
+    from datetime import UTC, datetime, timedelta
+
+    from metaform import home
+    from metaform.modules.dispatch.merge import ticket_message
+
+    def git(*words):
+        return subprocess.run(['git', *words], cwd=mapped, capture_output=True, text=True, check=True).stdout.strip()
+
+    git('init', '-b', 'dev')
+    git('config', 'user.email', 'tests@example.test')
+    git('config', 'user.name', 'Test')
+    store = Store('proj')
+    join = store.joins('code.timer.kitchen').results[0]
+    earlier = (datetime.now(UTC) - timedelta(seconds=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    later = (datetime.now(UTC) + timedelta(seconds=10)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    cutoff = (datetime.now(UTC) + timedelta(seconds=20)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    with monkeypatch.context() as clock:
+        clock.setattr(home, 'now', lambda: earlier)
+        attached = store.add_work(Node('join', join.id), None, task='Join work', title='Join work')
+        legacy = store.add_work(Node('join', join.id), None, task='Legacy join', title='Legacy join')
+        reopened = store.add_work(Node('element', 'code.timer.kitchen'), None, task='First attempt', title='Retry')
+        for ticket in (attached, legacy, reopened):
+            store.finish_work(ticket.id, 'First completion')
+    for ticket in (attached, legacy, reopened):
+        message = ticket_message(store, store.ticket(ticket.id).work)
+        if ticket.id == legacy.id:
+            message = '\n'.join(line for line in message.splitlines() if not line.startswith('Metaform-Target:'))
+        git('commit', '--allow-empty', '-m', message)
+    if same_second:
+        later = datetime.fromisoformat(git('log', '-1', '--format=%cI')).strftime('%Y-%m-%dT%H:%M:%SZ')
+    with monkeypatch.context() as clock:
+        clock.setattr(home, 'now', lambda: later)
+        store.move_work(reopened.id, 'todo')
+        store.finish_work(reopened.id, 'Later completion without its commit')
+    result = j(run, 'boards', 'op=line', f'line={cutoff}', cwd=mapped)
+    assert result['removed'] == [attached.id]
+    faults = {ticket['id']: ticket['fault'] for ticket in result['kept']}
+    assert ('resolution' if same_second else 'predates') in faults[reopened.id]
+    assert 'attachment' in faults[legacy.id]
+    assert store.ticket(reopened.id).work.resolution == 'Later completion without its commit'
+    assert len(store.where('code.timer.kitchen').past_work) == 1
+    assert len(store.ticket(legacy.id).at.past_work) == 2
+
+
+@pytest.mark.parametrize('changed', ['note', 'task', 'steps', 'links', 'settings'])
+def test_archive_keeps_same_second_completion_until_current_ticket_state_is_committed(run, mapped, monkeypatch, changed):
+    from datetime import UTC, datetime, timedelta
+
+    from metaform import home
+    from metaform.modules.dispatch.merge import ticket_message
+
+    def git(*words):
+        return subprocess.run(['git', *words], cwd=mapped, capture_output=True, text=True, check=True).stdout.strip()
+
+    git('init', '-b', 'dev')
+    git('config', 'user.email', 'tests@example.test')
+    git('config', 'user.name', 'Test')
+    store = Store('proj')
+    ticket = j(run, 'work', 'op=add', 'node=code.timer.kitchen', 'task=Repeat verification', cwd=mapped)
+    store.move_work(ticket['id'], 'todo')
+    store.finish_work(ticket['id'], 'Verified')
+    old = ticket_message(store, store.ticket(ticket['id']).work)
+    git('commit', '--allow-empty', '-m', old)
+    committed_at = datetime.fromisoformat(git('log', '-1', '--format=%cI')).astimezone(UTC)
+    second = committed_at.strftime('%Y-%m-%dT%H:%M:%SZ')
+    with monkeypatch.context() as clock:
+        clock.setattr(home, 'now', lambda: second)
+        store.move_work(ticket['id'], 'todo')
+        if changed in ('note', 'task'):
+            store.edit_work(ticket['id'], {changed: 'New verification evidence absent from completion commit'})
+        elif changed == 'steps':
+            store.step_work(ticket['id'], 'New verification evidence absent from completion commit')
+        elif changed == 'links':
+            store.edit_work(ticket['id'], {'links': [Node('element', 'code.alarm.audible')]})
+        else:
+            own = Store('proj', module='map')
+            with own.tables() as tx:
+                if tx.get('ticket_settings', {'work_id': ticket['id']}) is None:
+                    tx.insert('ticket_settings', {'work_id': ticket['id'], 'hold': 1})
+                else:
+                    tx.update('ticket_settings', {'work_id': ticket['id']}, {'hold': 1})
+                assert tx.get('ticket_settings', {'work_id': ticket['id']})['hold'] == 1
+        store.finish_work(ticket['id'], 'Verified')
+    cutoff = (committed_at + timedelta(seconds=20)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    held = j(run, 'boards', 'op=line', f'line={cutoff}', cwd=mapped)
+    assert held['removed'] == []
+    assert held['kept'][0]['id'] == ticket['id'] and 'state' in held['kept'][0]['fault']
+    current = store.ticket(ticket['id']).work
+    assert current.resolution == 'Verified' and current.done == second
+    fresh = ticket_message(store, current)
+    assert fresh != old
+    git('commit', '--allow-empty', '-m', fresh)
+    archived = j(run, 'boards', 'op=line', f'line={cutoff}', cwd=mapped)
+    assert archived['removed'] == [ticket['id']]
+    recovered = j(run, 'work', f'id={ticket["map"]["item"]}', cwd=mapped)
+    assert 'Ticket state:\n' in recovered['body']
+
+
+def test_archive_keeps_legacy_completion_without_state_but_still_resolves_its_citation(run, mapped):
+    from metaform.modules.dispatch.merge import ticket_message
+
+    def git(*words):
+        return subprocess.run(['git', *words], cwd=mapped, capture_output=True, text=True, check=True).stdout.strip()
+
+    git('init', '-b', 'dev')
+    git('config', 'user.email', 'tests@example.test')
+    git('config', 'user.name', 'Test')
+    store = Store('proj')
+    ticket = j(run, 'work', 'op=add', 'node=code.timer.kitchen', 'task=Legacy completion', cwd=mapped)
+    store.finish_work(ticket['id'], 'Verified')
+    message = ticket_message(store, store.ticket(ticket['id']).work)
+    legacy = message.replace(f'\n\nTicket state:\n{store.work_snapshot(ticket["id"])}', '')
+    git('commit', '--allow-empty', '-m', legacy)
+    held = j(run, 'boards', 'op=line', cwd=mapped)
+    assert held['removed'] == [] and 'state' in held['kept'][0]['fault']
+    store.remove_work(ticket['id'])
+    recovered = j(run, 'work', f'id={ticket["map"]["item"]}', cwd=mapped)
+    assert recovered['hash'] == git('rev-parse', 'HEAD')
+    assert recovered['body'].strip() == legacy.strip()
 
 
 @pytest.mark.req('LAYER-025')

@@ -249,11 +249,15 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 
 Completed tickets commit their own linked deliverables, then push the current branch to its configured upstream.
 This behavior has no setting. Completion includes proof work whose fix has landed. Commit subjects use the ticket
-title. Commit bodies retain the resolution and its why. Five trailers retain ticket identity: `Metaform-Ticket`
+title. Commit bodies retain the resolution, its why and a canonical `Ticket state` JSON snapshot of map-owned ticket
+rows and citation metadata. The archive compares that snapshot with current state before deleting a ticket, so a
+same-second completion with unchanged resolution cannot discard newer notes or progress. Five trailers retain
+ticket identity: `Metaform-Ticket`
 (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address), `Metaform-Board` (board name, empty for
 the first board), and `Metaform-Agent` (agent id and name). Empty completions make empty commits with the same
-message. Worktree review still owns landing consent. Its existing squash becomes the ticket commit and is pushed
-after landing.
+message. `Metaform-Target` preserves the attachment as `element:<address>` or `join:<id>` so archive counts keep
+join work separate from its receiver element. Worktree review still owns landing consent. Its existing squash
+becomes the ticket commit and is pushed after landing.
 
 New ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked
 files stay in the shared checkout. The recorded starting commit still excludes dirty startup snapshots from

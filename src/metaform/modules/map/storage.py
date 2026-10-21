@@ -58,6 +58,8 @@ from metaform.data import (
     DataTx as Tx,
 )
 
+from . import ticket_history
+
 Row = DataRow
 ANSWERS = ("A", "B", "C")
 # The kinds of item map numbers at an address, MCP-037: a work record, and a question or message, by their own ids.
@@ -750,7 +752,7 @@ def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice]) -> 
 
 def _past_work(tx: Tx, target: Node) -> tuple[PastWork, ...]:
     """Completed work at this node, newest first, without loading the agent's log, MAP-051."""
-    return tuple(
+    stored = tuple(
         PastWork(str(row["work_id"]), str(row["done"]))
         for row in tx.execute(
             "SELECT work_id, done FROM work WHERE target_kind=? AND target_id=? AND done IS NOT NULL "
@@ -758,6 +760,15 @@ def _past_work(tx: Tx, target: Node) -> tuple[PastWork, ...]:
             (target.kind, target.id),
         )
     )
+    address = tx.rows.node_address(target.kind, target.id)
+    if address is None:
+        return stored
+    attachment = f'{target.kind}:{address if target.kind == "element" else target.id}'
+    live = {str(row[0]) for row in tx.execute('SELECT work_id FROM work')}
+    shed = (PastWork(record['item'], record['done'])
+            for work_id, record in ticket_history.read(tx.project_id).tickets.items()
+            if work_id not in live and record['target'] == attachment)
+    return tuple(sorted((*stored, *shed), key=lambda record: record.done, reverse=True))
 
 
 def ticket(tx: Tx, work_id: str, *, selection: Sequence[str] | None = None, raw: bool = False) -> Ticket:
@@ -779,6 +790,17 @@ def ticket(tx: Tx, work_id: str, *, selection: Sequence[str] | None = None, raw:
         if item.read_first
     )
     return Ticket(record, at, linked, read_first=first)
+
+
+def work_snapshot(tx: Tx, work_id: str) -> str:
+    """The ticket's persisted map state, kept in its completion commit and compared before shedding it."""
+    from metaform.data import export_work_rows
+    _work_row(tx, work_id)
+    rows = [{'table': entry['table']['name'], 'rows': entry['rows']}
+            for entry in export_work_rows(tx.db, [work_id]) if entry['module'] == 'map']
+    numbered = tx.tables().get('numbered', {'kind': 'work', 'item_id': work_id})
+    return json.dumps({'version': 1, 'rows': sorted(rows, key=lambda entry: entry['table']), 'numbered': numbered},
+                      ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
 def work(
@@ -1670,8 +1692,8 @@ DATA = Data(
         "board_snapshot": Operation(board_snapshot),
         "reply": Operation(close_message, write=True),
         "reopen": Operation(reopen_message, write=True),
-        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, reports, report, items_numbered,
-                                                                numbers_of, item_at, listed_items)},
+        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, work_snapshot, reports, report,
+                                                                items_numbered, numbers_of, item_at, listed_items)},
     },
     decorate=decorate,
     item_write=item_write,
