@@ -12,7 +12,6 @@ import {css} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {layerColor} from '/page/app/header/layers.js';
 import {ticketNode} from '/page/app/figures/agents.js';
-import {LABELS} from '/page/app/map3d/labels.js';
 import {G, nodeSize, wake3d} from '/page/app/map3d/graph3d.js';
 import {M} from '/page/app/map2d/build.js';
 import {D, ticketOf} from '/page/app/agents/dispatch.js';
@@ -270,10 +269,12 @@ function drawBehind(renderer) {
   const scene = G.scene(), camera = G.camera(), glass = [], was = renderer.getRenderTarget();
   scene.traverseVisible(object => { if (object.material?.userData?.back) glass.push(object); });
   if (!glass.length) return;
-  const moving = scene.children.filter(child => child.visible && !mapPart(child));
+  // Everything but the glass itself is in its pictures: the map, its labels, the agents' figures and the mascot, so
+  // all of it is read through the glass (2026-10-21). A figure that moves draws the pictures again, as the camera
+  // moving does.
   if (!behindChanged(scene, camera)) return;
   BEHIND.drawn++;
-  for (const object of [...glass, ...moving]) object.visible = false;
+  for (const object of glass) object.visible = false;
   renderer.setRenderTarget(BEHIND.back);
   renderer.render(scene, camera);
   // The far wall takes the node's tint; a lit node's light leaves its glass outward, by its near wall alone.
@@ -290,7 +291,6 @@ function drawBehind(renderer) {
   renderer.setRenderTarget(BEHIND.main);
   renderer.render(scene, camera);
   for (const object of glass) object.material = object.material.userData.front;
-  for (const object of moving) object.visible = true;
   renderer.setRenderTarget(was);
 }
 /* The room the glass reflects, VIEW-025: three.js's room environment, a plain room with soft lights in its walls and
@@ -307,8 +307,6 @@ export function environment3d() {
 }
 /* A part of the map, seen through the glass: the graph's nodes and links, the labels, the page's batches of fibers
  * and nodes, and the lights. */
-const mapPart = child => child.isLight || child.isInstancedMesh || child === LABELS.group
-  || child.children.some(part => part.__graphObjType);
 /* Whether anything of the map seen through the glass changed since the pictures were drawn: the camera, and every
  * part of the map, where it is, how it is turned and sized, whether it is shown, its color, light and opacity, a
  * label's picture, a batch's instances. Each value is kept in a row and the row compared with the last one drawn. */
@@ -331,8 +329,12 @@ function keepObject(object) {
     if (material.emissive) { keep(material.emissive.r); keep(material.emissive.g); keep(material.emissive.b); }
     keep(material.emissiveIntensity ?? 0); keep(material.opacity); keep(material.map?.version ?? 0);
   }
+  // the label atlas: its pages' pictures and its quads, so a label repainted or moved is drawn again through the glass
+  if (Array.isArray(material)) for (const one of material) keep(one.map?.version ?? 0);
   if (object.isInstancedMesh) {
     keep(object.count); keep(object.instanceMatrix.version); keep(object.instanceColor?.version ?? 0);
+  }
+  if (object.isInstancedMesh || object.userData.atlas === true) {
     for (const attribute of Object.values(object.geometry.attributes)) keep(attribute.version);
   }
   if (object.isLight) { keep(object.intensity); keep(object.color.r); keep(object.color.g); keep(object.color.b); }
@@ -342,7 +344,7 @@ function behindChanged(scene, camera) {
   for (const value of camera.matrixWorld.elements) keep(value);
   for (const value of camera.projectionMatrix.elements) keep(value);
   if (scene.background?.isColor) { keep(scene.background.r); keep(scene.background.g); keep(scene.background.b); }
-  for (const child of scene.children) if (child.visible && mapPart(child)) child.traverseVisible(keepObject);
+  for (const child of scene.children) if (child.visible) child.traverseVisible(keepObject);
   const kept = BEHIND.kept, n = KEEP.n;
   let same = !BEHIND.stale && kept && kept.length === n;
   for (let i = 0; same && i < n; i++) same = kept[i] === KEEP.values[i];

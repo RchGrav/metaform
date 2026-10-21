@@ -11,7 +11,7 @@ import {placed, CORNERS, walk, AHEAD, TOWARD, easeBoth, STIFF, ACTS, actGap, moo
 import {MASCOT, mascotGlyph, mascot3d, mascotDriven} from '/page/app/figures/mascot.js';
 import {placeBubble, CUT, cut3d} from '/page/app/figures/cut.js';
 import {eyes3d, approachPoint} from '/page/app/figures/eyes.js';
-import {G, STAGE} from '/page/app/map3d/graph3d.js';
+import {G} from '/page/app/map3d/graph3d.js';
 import {AT, tags} from '/page/app/map3d/labels.js';
 
 /* Where a figure means to be on its node this frame, `WANT`, and what it looks at, if anything but the way it goes:
@@ -246,6 +246,7 @@ function stepFigure(id, figure, data, size, lift, passed) {
       mesh.userData.update(0, {move: {speed: 0, stride: 0, state: 'attend'}});
     }
     else mesh.position.set(target.x, target.y + ballOf(target) + size, target.z);
+    heldSize(mesh);  // the limit of key 6 holds here too; it was skipped on this path (2026-10-21)
     if (figure.done) gone(id, figure);
     return;
   }
@@ -421,16 +422,21 @@ function leaving(figure, {id, home, size, lift, pose}) {
 /* How a figure is drawn this frame: its size, its arrival, the thread on view drawn larger, never more than ROAM.most
  * pixels tall close up; the way it faces, what it looks at or the way it goes, turned by a flourish's spin and tipped
  * by a bow; and its body's own motion. */
+/* Never more than ROAM.most pixels tall close up, so a figure the camera has flown near stays a figure, while held:
+ * the limit of key 6, `holdAgentSize`, on every figure however it is drawn. */
+function heldSize(mesh) {
+  if (!ROAM.held) return;
+  // the canvas's own height, as the mascot's limit reads it: the stage size kept apart was stale, and a stale or empty
+  // height let a figure stand a thousand times taller than the limit (2026-10-21: key 6 held only the mascot)
+  const far = Math.max(1, G.camera().position.distanceTo(mesh.position));
+  const most = ROAM.most * 2 * far * Math.tan((G.camera().fov || 50) * Math.PI / 360)
+    / Math.max(1, G.renderer().domElement.clientHeight) / 1.6;
+  if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
+}
 function drawFigure(figure, size, grown, passed, {state, scale, tall, turn, bow, face}) {
   const mesh = figure.mesh, m = figure.motion;
   mesh.scale.set(size * scale * grown, size * scale * tall * grown, size * scale * grown);
-  // never more than ROAM.most pixels tall close up, so a figure the camera has flown near stays a figure, while held
-  if (ROAM.held) {
-    const far = Math.max(1, G.camera().position.distanceTo(mesh.position));
-    const most = ROAM.most * 2 * far * Math.tan((G.camera().fov || 50) * Math.PI / 360)
-      / Math.max(1, STAGE.height) / 1.6;
-    if (mesh.scale.x > most) mesh.scale.multiplyScalar(most / mesh.scale.x);
-  }
+  heldSize(mesh);
   if (face) AHEAD.subVectors(face, mesh.position); else AHEAD.copy(figure.heading);
   if (turn) AHEAD.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
   mesh.userData.gaze = state === 'attend' && figure.stage === 'circling' ? face : null;

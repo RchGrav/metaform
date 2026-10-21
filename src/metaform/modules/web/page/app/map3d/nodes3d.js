@@ -239,8 +239,11 @@ function atlasPage(index) {
   const texture = new THREE.CanvasTexture(canvas);
   Object.assign(texture, {colorSpace: THREE.SRGBColorSpace, minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter, generateMipmaps: false});
+  // Tested against what is nearer, so a nearer node or edge hides it on screen; it writes no depth, so a letter never
+  // cuts out what is drawn after it; faded by its own depth. Text inside a node or behind it is read through the glass,
+  // refracted: the atlas is a part of the map, so it is in both pictures the glass reads, `drawBehind` (2026-10-21).
   const material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide, depthTest: true,
-    depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false});  // faded by its own depth
+    depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false});
   const bank = index - index % ATLAS.bankSize;
   material.onBeforeCompile = shader => {
     const count = Math.min(ATLAS.bankSize, ATLAS.pages.length - bank);
@@ -290,6 +293,7 @@ function atlasReserve(count) {
   } else {
     const mesh = new THREE.Mesh(geometry, ATLAS.pages.map(page => page.material));
     Object.assign(mesh, {frustumCulled: false, renderOrder: 10});
+    mesh.userData.atlas = true;  // its quads are watched for the glass's pictures, `keepObject`
     mesh.raycast = () => {};  // labels never replace nodes in picking
     ATLAS.mesh = mesh;
     ATLAS.scene.add(mesh);

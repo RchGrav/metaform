@@ -835,6 +835,27 @@ const BUILD = {
 
 // Build one agent; `harness` names the agent it stands for.
 const _wq = new THREE.Quaternion(), _wp = new THREE.Vector3(), _ev = new THREE.Euler();
+/* A material whose every pixel is held at BRIGHTEST or under, a little over full brightness, so the bloom takes only
+ * a trace of a figure and never makes a blob of it: the clamp is the last line of its fragment shader, as the Space
+ * theme's gain is the last line of the flow's. A material is patched once, however many figures share it, and a
+ * patch already on it runs first. */
+const BRIGHTEST = 1.25;  // the person's choice, 2026-10-21
+const UNBLOOMED = new WeakSet();
+function unbloomed(material) {
+  if (UNBLOOMED.has(material)) return;
+  UNBLOOMED.add(material);
+  const theirs = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (theirs) theirs(shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace(/}\s*$/, `  gl_FragColor.rgb = min(gl_FragColor.rgb, vec3(${BRIGHTEST.toFixed(2)}));\n}`);
+  };
+  const key = material.customProgramCacheKey;
+  material.customProgramCacheKey = () => 'unbloomed:' + (key ? key.call(material) : '');
+  material.needsUpdate = true;
+}
+const ROOM_ON_FIGURES = 0.02;  // the share of the room's light a figure reflects; the glass takes 0.9. The room's
+// lamps are drawn at fifty times full brightness, so a figure's clearcoat mirrored them over full white even at a
+// sixth, and the bloom spread that over the whole body; at a fiftieth the brightest lamp reaches full white and no more.
 export function createAgent(name, { harness = 'other' } = {}) {
   if (!BUILD[name]) throw new Error(`unknown agent glyph: ${name}`);
   const agent = new THREE.Group(); agent.name = `agent-${name}`;
@@ -844,6 +865,17 @@ export function createAgent(name, { harness = 'other' } = {}) {
   agent.add(gait); gait.add(fit); fit.add(centre); centre.add(body);
   FOUND_EYES = [];
   const anim = BUILD[name](body);
+  // The room the glass reflects, `environment3d`, lights every physical material in the scene; a figure's clearcoat
+  // mirrored its lights and burned white under the bloom (2026-10-21). A figure takes only a little of the room, and
+  // nothing of a figure is ever over full brightness, `unbloomed`: the bloom spreads what is over it, and a figure
+  // is a figure, never a light.
+  body.traverse(part => {
+    const materials = Array.isArray(part.material) ? part.material : part.material ? [part.material] : [];
+    for (const material of materials) {
+      if ('envMapIntensity' in material) material.envMapIntensity = ROOM_ON_FIGURES;
+      unbloomed(material);
+    }
+  });
   const seeing = FOUND_EYES;
   const eyeRest = seeing.map(eye => eye.quaternion.clone());
 

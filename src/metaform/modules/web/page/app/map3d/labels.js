@@ -159,7 +159,8 @@ function labelFor(node) {
   LABELS.plane ??= new THREE.PlaneGeometry(1, 1);
   // It is tested against what is nearer, so a nearer node or edge hides it, but writes no depth of its own and is
   // drawn after the map, so it never cuts out an edge or a node behind it: written into the depth, each letter and
-  // its outline hid every edge drawn after it, however far behind.
+  // its outline hid every edge drawn after it, however far behind. Through the glass it is read refracted, from the
+  // atlas in the glass's pictures (2026-10-21).
   const sprite = new THREE.Mesh(LABELS.plane, new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide,
     depthTest: true, depthWrite: false, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false}));
   // its own fade by depth, `layerLabel`, is its haze: the scene's, `depth3d`, would fade it twice
