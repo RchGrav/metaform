@@ -21,7 +21,7 @@ def test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket(
     for agent in ('claude', 'codex', 'gemini'):
         run('set', f'--dispatch-{agent}', f'"{sys.executable}" "{fake}"', cwd=project_folder)
     run('set', '--dispatch-agents', '1', '--dispatch-machine-agents', '1', '--dispatch-autostart',
-        '--dispatch-record-on-finish', 'off', cwd=project_folder)
+        '--dispatch-record-on-finish', 'off', '--orchestration-reviews', '1', cwd=project_folder)  # one assessment, waited for
     for name, value in live.env('ask', FAKE_SWARM_SCENARIO='direct', FAKE_SWARM_STATE=str(tmp_path / 'state')).items():
         if name.startswith('FAKE_'):
             monkeypatch.setenv(name, value)

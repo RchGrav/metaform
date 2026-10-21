@@ -128,14 +128,14 @@ def pm_evidence(swarm, scenario, expected):
     assert observed['role'] == 'triage'
     seen = [one['pm_observation'] for one in swarm.entries()
             if 'pm_observation' in one and one['session'] == observed['session']]
-    # the person's system agent is woken for its digest at most every fifteen minutes, one line of counts, never an
-    # inbox line per update (2026-10-20); the updates stay whole where it reads them, below
-    assert not any('new in your inbox' in text for text in seen)
+    # the person's system agent is woken for its digest at most every fifteen minutes, and at once, in one line, for
+    # what needs the person, such as a strict-mode recommendation (2026-10-20); no update body reaches its turns
     bodies = [text for text in expected if text != 'C(T)']  # C(T) is in every role's instructions too
     assert not any(text in turn for text in bodies for turn in seen), 'No update body reaches its turns.'
     # each update stays whole on the assignment it came from, where the PM reads it with a call; its notification
     # line is one phrase naming the ticket
-    held = json.dumps(records('orchestration', 'assignments'), ensure_ascii=False)
+    held = json.dumps([records('orchestration', 'assignments'), records('orchestration', 'changes')],
+                      ensure_ascii=False)  # a recommendation's reason is on its change record
     assert all(text in held for text in expected), 'Each update stays whole where it is read.'
     assert observed['capacity']['machine_used'] == 0
     assert observed['capacity']['machine_limit'] == 1
@@ -256,7 +256,7 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     history = [one for one in records('agents', 'definition_history') if one['name'] == 'route_specialist']
     assert len(history) == 1 and history[0]['version_id'] == generated[0]['version_id']
     duty_receipts = [one for one in records('agents', 'receipts')
-                     if one['name'] == 'agents:generated_proj_route_specialist']
+                     if one['name'] == 'prompt.agents:generated_proj_route_specialist']
     assert len(duty_receipts) == 2 and {one['actual_version_id'] for one in duty_receipts} == {
         generated[0]['version_id']}
 
@@ -303,7 +303,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     assert request['child_assignment_id'] == specialist['assignment_id']
     definition = next(one for one in records('agents', 'definitions') if one['name'] == 'route_specialist')
     duty = [one for one in records('agents', 'receipts')
-            if one['name'] == 'agents:generated_proj_route_specialist']
+            if one['name'] == 'prompt.agents:generated_proj_route_specialist']
     assert len(duty) == 1 and duty[0]['actual_version_id'] == definition['version_id']
     assert any('You are the Route Specialist.' in json.dumps(one.get('role_resource', {}))
                for one in logged if one['role'] == 'route_specialist')
@@ -330,7 +330,8 @@ def test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_g
     actual = next(one['bmad_installed_observation'] for one in swarm.entries() if 'bmad_installed_observation' in one)
     assert actual['source'] == source and actual['task'].startswith('CR: review timer controls')
     assert 'Preserve the functional return after resumption.' in actual['task']
-    assert any('BMAD_INSTALLED_REVIEW' in one['bmad_caller_received']['text'] for one in swarm.entries()
+    # the caller is told in one line that the specialist's ticket completed; the result is on its assignment
+    assert any('BMAD_INSTALLED_REVIEW' in one['bmad_caller_received']['result'] for one in swarm.entries()
                if 'bmad_caller_received' in one)
     discovery = next(one['bmad_discovery'] for one in swarm.entries() if 'bmad_discovery' in one)
     role = next(one for one in discovery['roles'] if one['name'] == 'bmad.bmm.dev')
@@ -417,10 +418,11 @@ def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommenda
                     one['kind'] == 'agent_message_chunk']
     assert any('C(T)' in one['text'] and change['reason'] in one['text'] for one in notice_lines)
     assert not swarm.questions(), 'Adaptive visibility is an actual message and does not ask approval.'
-    contexts = [one['recipient_context'] for one in logged if one.get('role') == 'gc' and 'recipient_context' in one]
     if mode == 'adaptive':
         assert (swarm.folder / 'OPERATIVE.md').read_text() == change['content']
-        assert any('change_order' in one and change['current_revision'] in one for one in contexts)
+        # the change order reaches the GC as an inbox line naming its revision, on the GC's next turn
+        wait_for(swarm, lambda: any(change['current_revision'] in one['recipient_context'] for one in swarm.entries()
+                                    if one.get('role') == 'gc' and 'recipient_context' in one))
         root = next(one for one in assignments if one['work_id'] == swarm.id)
         assert root['attempt'] == 2 and root['state'] == 'delivered'
         assert not any(one['authored_role_uri'] == 'metaform://role/gc' and one['parent_assignment_id']
@@ -428,7 +430,8 @@ def test_independent_fqc_change_order_reaches_gc_and_user_with_strict_recommenda
         assert len([one for one in assignments if one['reviewed_assignment_id'] == root['assignment_id']]) == 1
     else:
         assert (swarm.folder / 'OPERATIVE.md').read_text() == change['before_content']
-        assert any('recommendation' in one for one in contexts)
+        wait_for(swarm, lambda: any('recommendation' in one['recipient_context'] for one in swarm.entries()
+                                    if one.get('role') == 'gc' and 'recipient_context' in one))
         assert not any('correction_delivered' in one for one in logged)
     capacities = [one['capacity'] for one in logged if 'capacity' in one]
     assert capacities and all(one['used'] == one['machine_used'] == 1 for one in capacities)
@@ -515,6 +518,7 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
                                    'interrupted_recipient' in one for one in swarm.entries()))
         restored = next(one for one in reversed(swarm.entries()) if one['session'] == session and
                         one['pid'] != adapter and 'interrupted_recipient' in one)
-        assert 'RETAINED_SPECIALIST_STATE' in restored['interrupted_recipient']['text']
+        # the retained state is on the assignment the resumed specialist reads, never in its turn's text
+        assert 'RETAINED_SPECIALIST_STATE' in json.dumps(restored['interrupted_recipient']['assignment'])
         assert any(one.get('session_loaded') == session and one['pid'] != adapter for one in swarm.entries())
         assert following()['pending_direction'] == held['pending_direction']

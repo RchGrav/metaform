@@ -420,7 +420,7 @@ def communications(assignment, stage, text):
         member = next(one for one in cli('orchestration', 'team')['members']
                       if one['authored_role_uri'] == 'metaform://role/investigator')
         sent = cli('dispatch', 'interrupt', id=member['work_id'], session=member['owner_session_id'],
-                   direction='NEW_GC_DIRECTION: keep RETAINED_SPECIALIST_STATE and validate the restored result.')
+                   direction='NEW_GC_DIRECTION: keep the retained specialist state and validate the restored result.')
         log(gc_owned_interruption=sent)
         gate('finish-gc')
     elif ROLE == 'implementer':
@@ -459,7 +459,8 @@ def communications(assignment, stage, text):
             progress(stage=2)
             log(specialist_reply=reply, peer_context=text)
             gate('finish-specialist')
-        elif stage >= 2 and 'NEW_GC_DIRECTION:' in text:
+        elif stage >= 2 and ('NEW_GC_DIRECTION:' in text or any(  # a direction retained across a crash is read
+                'NEW_GC_DIRECTION' in str(one.get('body')) for one in assignment.get('pending_direction') or [])):
             assert 'RETAINED_SPECIALIST_STATE' not in text
             assert 'RETAINED_SPECIALIST_STATE' in json.dumps(assignment)
             log(interrupted_recipient={'assignment': assignment, 'text': text})
