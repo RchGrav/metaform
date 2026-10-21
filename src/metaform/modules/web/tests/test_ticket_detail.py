@@ -85,6 +85,21 @@ def test_ticket_opens_with_named_graph_edits_and_refuses_stale_save(run, web, ma
     assert Store('proj').ticket(work.id).work.task == 'Keep the countdown accurate.'
 
 
+def test_a_ticket_named_by_address_and_number_is_found_with_its_board_and_an_unknown_number_is_not(run, web, mapped):
+    work = ticket()
+    item = Store('proj').numbers_of('work', [work.id])[work.id][0]
+    run('map', 'boards', 'op=add', 'name=20261020', cwd=mapped)
+    run('map', 'work', f'id={work.id}', 'op=edit', 'board=20261020', cwd=mapped)
+    encoded = item.replace('#', '%23')
+    status, said = api(web, f'/api/lookup?project=proj&refs={encoded}+code.timer.kitchen%23ffff')
+    assert status == 200
+    assert (said['found'][item]['kind'], said['found'][item]['id'], said['found'][item]['board']) == (
+        'ticket', work.id, '20261020')
+    assert said['found']['code.timer.kitchen#ffff']['kind'] is None
+    _, data = api(web, f'/api/ticket-detail?project=proj&work_id={work.id}')
+    assert data['board'] == '20261020' and data['ticket']['column'] == 'todo'
+
+
 def test_ticket_edit_updates_owned_assignment_and_sends_only_change_notice(run, web, mapped):
     work = ticket()
     ctx = context('orchestration', mapped, project='proj', nouns={'work': work.id, 'role': 'gc', 'session': 'worker'})

@@ -85,7 +85,8 @@ export function nodeChip(target, role, find = partAt) {
  * a path in the project. Each is drawn as plain text; once the server says what it stands for it becomes a link that
  * opens it in place, so an unknown code stays plain. */
 // an intake agent's work id, intake-<hex>, is not a ticket, so its hex is never taken for one
-const REF = /\b(?:[A-Z]{2,6}-\d{3}|D\d{2,4}|(?<!intake-)[0-9a-f]{8,32}|(?:[\w.-]+\/)+[\w.-]+\.\w{1,6})\b/g;
+// a ticket as the system agent names it, `<address>#<n>`, the number in hex, comes first so its address is not cut
+const REF = /(?<![\w.-])[\w.-]+#[0-9a-fA-F]{1,15}\b|\b(?:[A-Z]{2,6}-\d{3}|D\d{2,4}|(?<!intake-)[0-9a-f]{8,32}|(?:[\w.-]+\/)+[\w.-]+\.\w{1,6})\b/g;
 export function linked(text) {
   text = String(text ?? '');
   const parts = [];
@@ -201,12 +202,24 @@ function clickRef(event) {
   if (!span) return;
   event.preventDefault();
   event.stopPropagation();
-  popRef(span, true);
+  openRef(span);
+}
+/* A ticket named by its number opens in its own panel, which says its board and column; any other reference opens its
+ * popover. */
+async function openRef(span) {
+  const ref = span.dataset.ref;
+  if (!ref.includes('#')) return popRef(span, true);
+  const found = await looked(ref);
+  if (found?.kind !== 'ticket') return popRef(span, true);
+  POP.hidden = true;
+  const project = S.project, base = S.base || '';
+  const {ticketDetail} = await import('/page/app/board/detail.js');
+  ticketDetail(found.id, project, base);
 }
 function pressRef(event) {
   if ((event.key !== 'Enter' && event.key !== ' ') || !event.target.classList?.contains('ref-link')) return;
   event.preventDefault();
-  popRef(event.target, true);
+  openRef(event.target);
 }
 document.addEventListener('click', clickRef, true);
 document.addEventListener('keydown', pressRef);

@@ -63,6 +63,7 @@ from metaform.data import (
     WorkRecord,
     functional_context,
     on_base,
+    parse_reference,
     plain,
     prompts,
     query_read,
@@ -1757,7 +1758,8 @@ class Handler(BaseHTTPRequestHandler):
             routing = next((owner.routing_status(ctx, work.id) for _, owner in
                             chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
-            self.send(200, {'ticket': {**plain(work), **fields}, 'revision': ticket_revision(fields),
+            self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column}, 'revision': ticket_revision(fields),
+                            'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
                             'functionality': graph, 'routing': routing})
         except (Stop, StoreError) as error:
@@ -3571,6 +3573,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
 
 SPEC_CODE = re.compile(r'^(?:[A-Z]{2,6}-\d{3}|D\d{2,4})$')  # a record's code in specifications/*.md: VIEW-042, D120
 HEX_REF = re.compile(r'^[0-9a-f]{8,32}$')  # a ticket's or a message's id, whole or its first characters
+ITEM_REF = re.compile(r'^[\w.-]+#[0-9a-fA-F]{1,15}$')  # an item's reference, `<address>#<n>`, as the system agent names tickets
 FILE_LINES = 80  # how much of a file a reference shows
 
 
@@ -3613,6 +3616,9 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
         specs = [(path, path.read_text(encoding='utf-8', errors='replace').splitlines())
                  for path in sorted((folder / 'specifications').glob('*.md'))]
         found.update((code, spec_record(folder, code, specs)) for code in codes)
+    items = [ref for ref in refs if ITEM_REF.match(ref)]
+    if items:
+        found.update((ref, item_reference(project.project_id, ref)) for ref in items)
     ids = [ref for ref in refs if HEX_REF.match(ref)]
     if ids:
         store = Store(project.project_id)
@@ -3643,6 +3649,36 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
         if ref not in found:
             found[ref] = file_reference(folder, ref)
     return found
+
+
+def board_of(project_id: str, work_id: str, base: str | None = None) -> str:
+    """The named board a ticket is on, '' for the first board."""
+    try:
+        with Store(project_id, base=base or None, module='map').tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': work_id})
+    except StoreError:
+        return ''
+    return str(row.get('board') or '') if row else ''
+
+
+def item_reference(project_id: str, ref: str) -> dict[str, Any] | None:
+    """The ticket numbered at `<address>#<n>`, as a lookup answers a ticket, with its board; None when that number
+    holds no ticket, so the page leaves it plain text."""
+    parsed = parse_reference(ref)
+    if parsed is None:
+        return None
+    store = Store(project_id)
+    try:
+        held = store.item_at(*parsed)
+        record = store.ticket(str(held['id'])).work if held and held.get('kind') == 'work' else None
+    except (Stop, StoreError):
+        return None
+    if record is None:
+        return None
+    return {'kind': 'ticket', 'id': record.id, 'item': ref, 'title': short(record.task or record.note or record.id),
+            'task': short(record.task), 'note': short(record.note), 'condition': record.condition,
+            'column': record.column, 'done': record.done, 'resolution': short(record.resolution),
+            'address': record.address, 'board': board_of(project_id, record.id)}
 
 
 def file_reference(folder: Path, ref: str) -> dict[str, Any] | None:
