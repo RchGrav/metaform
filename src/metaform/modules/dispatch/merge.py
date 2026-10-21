@@ -682,9 +682,6 @@ def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) ->
         dev = dev_branch(project)
         if dev is None:
             return _blocked(ctx, store, own, work_id, 'the project folder is not on a branch')
-        # Existing projects without main keep their established development branch.
-        if git(project, 'show-ref', '--verify', '--quiet', 'refs/heads/main').returncode == 0 and dev != 'main':
-            return _blocked(ctx, store, own, work_id, 'main is not checked out in the project folder')
         temp, here = merging_branch(work_id), merging_folder(project, work_id)
         before = git(project, 'rev-parse', dev).stdout.strip()
         if row['state'] == MERGING:

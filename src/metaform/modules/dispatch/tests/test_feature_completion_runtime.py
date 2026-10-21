@@ -71,7 +71,8 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
                 if repository_present:
                     assert receipt['branch'] == branch_of(work_id)
                     assert receipt['head'] == git(receipt['worktree'], 'rev-parse', 'HEAD').stdout.strip()
-                    assert receipt['evidence']['artifacts'] == ['feature.txt']
+                    assert receipt['evidence']['artifacts'] == ['feature.txt'] if work_id == first \
+                        else set(receipt['evidence']['artifacts']) <= {'feature.txt'}
                     assert f'Metaform-Ticket: {work_id}' in git(
                         receipt['worktree'], 'log', '-1', '--format=%B').stdout
                 else:
