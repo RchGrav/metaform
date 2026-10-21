@@ -1,16 +1,8 @@
-"""Worktrees and the review-or-merge flow, VIEW-044.
+"""Land completed tickets as individual commits, push them, then activate their code.
 
-With `dispatch_worktrees` on, each ticket's agent works in a git worktree of its own, on a branch made from the active
-dev branch. When its ticket is done, the worktree's changes are committed there, the project's test command is run in
-it and git checks that the branch merges into the active dev branch with no conflict. When both pass, the merge waits
-`dispatch_review_minutes` for a person's review; the web GUI shows Review. With no review by then, both checks run
-again and the branch is merged into the active dev branch, and a ticket says the feature was merged without review and
-needs testing before the next release. A person who clicks Review takes the merge over: the countdown is cancelled
-and never restarts.
-
-How its words are read here, recorded in VIEW-044 as interpretations: the merge check is git finding no conflicts;
-"the tests clear" is the project's test command, `dispatch_test_command`, passing in the worktree, and with none set no
-merge is ever offered; the active dev branch is the branch checked out in the project folder.
+Only the delta from the recorded ticket start is merged. Legacy startup snapshots and
+shared uncommitted files never enter the feature commit. Merge journals recover interrupted
+delivery without rewriting either branch. Explicit legacy reviews remain under human control.
 """
 from __future__ import annotations
 
@@ -20,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -404,10 +397,9 @@ def tests_pass(folder: str | Path, command: str) -> tuple[bool, str]:
 
 
 def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[str, Any] | None:
-    """A done ticket's worktree: its changes committed with the ticket's trailer, then, for a ticket completed, the
-    tests and the merge check run, and when both pass the merge waits for review. A ticket cancelled or failed is not
-    offered: uncommitted work stays in its worktree without another commit, P192, until
-    dispatch_abandoned_branch_days have passed, P017. Returns the merge row, or None when there is nothing to merge."""
+    """Commit the completed ticket's worktree, then land, push and activate its final delta.
+    Repeated completion preserves its feature commit. Cancelled and failed work stays uncommitted.
+    """
     project = Path(store.project().path)
     if not (Path(folder) / '.git').is_file() or Path(folder).resolve() == project.resolve():
         return None  # not a worktree: the shared checkout is neither committed nor removed, as checkpoint
@@ -416,6 +408,19 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         if not git(folder, 'status', '--porcelain').stdout.strip():
             removed(project, folder)
         return None
+    own = Store(store.project_id, module='dispatch')
+    with own.tables(write=False) as tx:
+        previous = tx.get('merges', {'work_id': record.id})
+    with Store(store.project_id, module='map').tables(write=False) as tx:
+        settings = tx.get('ticket_settings', {'work_id': record.id})
+    landed = str(settings['landed'] or '') if settings else ''
+    fresh = previous is not None and (not landed or float(previous['ready']) >= datetime.fromisoformat(landed).timestamp())
+    if fresh and previous is not None and previous['state'] == MERGED and dict(previous).get('head') \
+            and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
+            and not git(folder, 'status', '--porcelain').stdout.strip():
+        # A proof window can notify the runner repeatedly. Its already delivered
+        # feature remains one commit until that agent changes its branch again.
+        return dict(previous)
     try:
         committed = checkpoint(folder, record.id, ticket_message(store, record), completed=True)
     except (OSError, subprocess.SubprocessError) as error:
@@ -428,28 +433,31 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     since = snapshot_of(project, branch) or dev
     if dev is None or git(project, 'rev-list', '--count', f'{since}..{branch}').stdout.strip() in ('', '0'):
         return None
-    passed, said = tests_pass(folder, str(ctx.setting('dispatch_test_command')))
-    merges, why = clean_merge(project, branch) if passed else (False, said)
     row = {'work_id': record.id, 'branch': branch, 'worktree': str(folder),
-           'state': READY if passed and merges else FAILED, 'reason': '' if passed and merges else why,
-           'ready': time.time(), 'deadline': time.time() + 60 * int(ctx.setting('dispatch_review_minutes')),
+           'state': READY, 'reason': '',
+           'head': committed,
+           'ready': time.time(), 'deadline': time.time(),
            'seq': time.time_ns()}
-    own = Store(store.project_id, module='dispatch')
     with own.tables() as tx:
         if tx.update('merges', {'work_id': record.id}, row) is None:
             tx.insert('merges', row)
-    return row
+    merge_due(ctx, store, record.id)
+    with own.tables(write=False) as tx:
+        delivered = tx.get('merges', {'work_id': record.id})
+    return dict(delivered) if delivered is not None else row
 
 
 def in_force(store: Store, work_id: str) -> bool:
-    """Whether a ticket's work is in the project folder: it has no worktree of its own, which its merge removes, and no
-    merge of it waits."""
-    if (Path(store.project().path) / FOLDER / work_id[:12] / '.git').exists():
-        return False
+    """Whether delivery is recorded and the fault's source has loaded the changed code."""
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
-    return row is None or row['state'] == MERGED
+    if row is not None:
+        if row['state'] != MERGED or row['reason']:
+            return False
+        from .activation import in_force as active
+        return active(store, work_id)
+    return not (Path(store.project().path) / FOLDER / work_id[:12] / '.git').exists()
 
 
 def due(store: Store) -> list[dict[str, Any]]:
@@ -564,119 +572,127 @@ def _conflicting(folder: str | Path, said: str) -> bool:
 RELEASE = 'Newly committed feature, needs testing before the next release: '  # the release log ticket's task, VIEW-044
 
 
-def _logged(ctx: Any, store: Store, work_id: str, dev: str, branch: str) -> None:
-    """The release log of a merge made without review, VIEW-044: a ticket held in Backlog, so no agent starts it by
-    itself and a merged ticket never writes and starts its own successor (UX review round 1, runaway F5). Written once,
-    though a merge resumed after a crash comes here again; a merge of a release log's own ticket writes none."""
-    record = store.ticket(work_id).work
-    if (record.task or '').startswith(RELEASE):
-        return
-    note = f'Merged into {dev} without review, from {branch}, after its tests passed: work {work_id}.'
-    if any(other.note == note for other in store.work(open=None, limit=0).results):
-        return
-    store.add_work(Node.of(record.node_kind, record.node_id), None, note=note, held=True,
-                   task=f'{RELEASE}{record.task or record.note or work_id}')
+def advance(project: Path, commit: str, before: str) -> tuple[bool, str]:
+    """Advance committed code while preserving unrelated staging and worktree edits.
+
+    Two-tree read-tree refuses overlapping edits and preserves unrelated index entries.
+    The compare-and-swap refuses a concurrent branch advance. A crash before the ref
+    update is recoverable: read-tree accepts entries already at the destination tree.
+    """
+    if git(project, 'rev-parse', 'HEAD').stdout.strip() != before:
+        return False, 'main changed during delivery; retry the merge'
+    changed = git(project, 'read-tree', '-m', '-u', before, commit)
+    if changed.returncode:
+        return False, (changed.stdout + changed.stderr).strip()[-1200:]
+    branch = dev_branch(project)
+    moved = git(project, 'update-ref', f'refs/heads/{branch}', commit, before)
+    if moved.returncode:
+        git(project, 'read-tree', '-m', '-u', commit, before)
+        return False, (moved.stdout + moved.stderr).strip()[-1200:]
+    return True, ''
+
+
+def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict[str, Any]:
+    """One inbox line identifies the ticket and conflicting files. No branch is forced."""
+    from .orchestration import TRANSPORT
+    with own.tables() as tx:
+        previous = tx.get('merges', {'work_id': work_id})
+        changed = previous is not None and previous['reason'] != why
+        tx.update('merges', {'work_id': work_id}, {'state': FAILED, 'reason': why})
+    if changed:
+        try:
+            title = ticket_title(store, store.ticket(work_id).work)
+            TRANSPORT.notify_user(ctx, {'text': f'{title} blocked: {" ".join(why.split())}',
+                                       'work_id': work_id, 'kind': 'ticket-commit', 'state': 'blocked'},
+                                  f'ticket-merge:{work_id}')
+        except Exception as exc:  # noqa: BLE001  the durable reason survives notification failure
+            print(f'Ticket merge notification failed: {exc}', file=sys.stderr)
+    return {'work_id': work_id, 'merged': False, 'why': why}
 
 
 def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
-    """At the deadline, with no review, one merge at a time, P018 and P011: the branch's own work, since the snapshot it
-    began from, rebased onto the active dev branch in a worktree of the merge's own, on a branch of its own, the tests
-    run there again, squashed into one commit with the ticket's trailer, and the dev branch fast-forwarded to it, which
-    only a folder with no uncommitted change to a tracked file takes; then the worktrees, the branches and the snapshot
-    are removed, P192, and the held ticket that says the feature needs testing before the next release is written.
-    Anything that no longer passes is not merged; a folder with uncommitted changes, or another merge under way, leaves
-    it waiting.
-
-    The agent's branch and worktree are never moved, and the merge is journaled: its row reads `merging` from before
-    the first git step to the last. A merge killed part way is found so on the next call, under the queue's lock, so it
-    is not still running: when the dev branch already holds its commit it is finished, and otherwise its own worktree
-    and branch are dropped and it is made again from the agent's branch as it was. Only a genuine conflict is said
-    with `conflict:` (UX review round 1, interrupt F7: a merge killed after its soft reset left the agent's work only
-    staged, and the next attempt reported a conflict that did not exist)."""
+    """Merge only ticket changes into one new commit. Never replay or rewrite ticket history."""
     from . import work_over
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
-        row = tx.get('merges', {'work_id': work_id})
-    if row is not None and row['state'] == MERGED:
+        found = tx.get('merges', {'work_id': work_id})
+    if found is None:
+        project = Path(store.project().path)
+        committed = git(project, 'log', '-1', '--format=%H', '--fixed-strings', '--grep',
+                        f'{TRAILER}: {work_id}').stdout.strip()
+        if committed:
+            return deliver_shared(ctx, store, work_id)
+    if found is not None and found['state'] == MERGED:
         return _delivered(ctx, store, own, Path(store.project().path), work_id)
-    if row is None or row['state'] not in (READY, MERGING):
+    if found is None or found['state'] not in (READY, MERGING, FAILED):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
-    row = dict(row)
+    row = dict(found)
     project = Path(store.project().path)
     folder, branch = str(row['worktree']), str(row['branch'])
     with Queued(project) as first:
         if not first:
-            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; this one waits'}
+            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; retry delivery'}
         dev = dev_branch(project)
         if dev is None:
-            return {'work_id': work_id, 'merged': False, 'why': 'the project folder is not on a branch'}
+            return _blocked(ctx, store, own, work_id, 'the project folder is not on a branch')
+        # Existing projects without main keep their established development branch.
+        if git(project, 'show-ref', '--verify', '--quiet', 'refs/heads/main').returncode == 0 and dev != 'main':
+            return _blocked(ctx, store, own, work_id, 'main is not checked out in the project folder')
         temp, here = merging_branch(work_id), merging_folder(project, work_id)
-        if row['state'] == MERGING:  # left part way by a merge that died: finish it, or begin it again
-            # the dev branch holds its squashed commit when the merge's own branch is a commit of this ticket's, by its
-            # trailer, that dev has: only the fast-forward puts one there
+        before = git(project, 'rev-parse', dev).stdout.strip()
+        if row['state'] == MERGING:
             made = git(project, 'rev-parse', '--verify', '--quiet', temp).stdout.strip()
             ours = bool(made) and f'{TRAILER}: {work_id}' in git(project, 'log', '-1', '--format=%B', made).stdout
             if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
                 return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+            if ours and git(project, 'rev-parse', f'{made}^').stdout.strip() == before:
+                passed, why = advance(project, made, before)
+                if passed:
+                    return _merged(ctx, store, own, project, work_id, dev, folder, branch)
+                return _blocked(ctx, store, own, work_id, why)
             _dropped(project, work_id)
-            with own.tables() as tx:
-                tx.update('merges', {'work_id': work_id}, {'state': READY, 'reason': ''})
         record = store.ticket(work_id).work
         if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
-            with own.tables() as tx:
-                tx.update('merges', {'work_id': work_id}, {'state': FAILED, 'reason': 'ticket is not completed'})
-            return {'work_id': work_id, 'merged': False, 'why': 'ticket is not completed'}
-        if git(project, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
-            return {'work_id': work_id, 'merged': False,
-                    'why': 'the project folder has uncommitted changes; the merge waits until they are committed'}
-        passed, why = clean_merge(project, branch)
-        outcome: dict[str, Any] = {'state': FAILED, 'reason': why}
-        began = ''
-        if passed:
-            with own.tables() as tx:  # the journal: from here to the end the merge reads `merging`
-                tx.update('merges', {'work_id': work_id}, {'state': MERGING, 'reason': ''})
+            return _blocked(ctx, store, own, work_id, 'ticket is not completed')
+        began = snapshot_of(project, branch) or git(project, 'merge-base', dev, branch).stdout.strip()
+        if not began:
+            return _blocked(ctx, store, own, work_id, 'ticket branch has no recorded starting commit')
+        with own.tables() as tx:
+            tx.update('merges', {'work_id': work_id}, {'state': MERGING})
+        _dropped(project, work_id)
+        made = git(project, 'worktree', 'add', '-b', temp, str(here), before)
+        if made.returncode:
+            return _blocked(ctx, store, own, work_id, (made.stdout + made.stderr).strip()[-1200:])
+        # Explicit base excludes legacy startup snapshots. merge-recursive is also
+        # available on Git versions before merge-tree gained --write-tree.
+        merged = git(here, 'merge-recursive', began, '--', before, branch)
+        if merged.returncode:
+            why = 'conflict: ' + (merged.stdout + merged.stderr).strip()[-3000:]
             _dropped(project, work_id)
-            began = snapshot_of(project, branch) or git(project, 'merge-base', dev, branch).stdout.strip()
-            made = git(project, 'worktree', 'add', '-b', temp, str(here), branch)
-            if made.returncode != 0:
-                outcome['reason'] = 'git: ' + (made.stdout + made.stderr).strip()[-400:]
-                passed = False
+            return _blocked(ctx, store, own, work_id, why)
+        command = str(ctx.setting('dispatch_test_command') or '')
+        passed, why = tests_pass(here, command) if command.strip() else (True, '')
+        record = store.ticket(work_id).work
+        if passed and (record.outcome in ('cancelled', 'failed') or not work_over(store, record)):
+            passed, why = False, 'ticket is not completed'
         if passed:
-            moved = git(here, 'rebase', '--onto', dev, began)
-            if moved.returncode != 0:
-                said = (moved.stdout + moved.stderr).strip()
-                outcome['reason'] = ('conflict: ' if _conflicting(here, said) else 'git: ') + said[-400:]
-                git(here, 'rebase', '--abort')
-                passed = False
-        if passed:
-            passed, said = tests_pass(here, str(ctx.setting('dispatch_test_command')))
-            outcome['reason'] = said
-        if passed:
-            record = store.ticket(work_id).work
-            if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
-                passed = False
-                outcome['reason'] = 'ticket is not completed'
-        if passed:
-            git(here, 'reset', '--soft', dev)
             squashed = git(here, 'commit', '--allow-empty', '--cleanup=verbatim', '-q', '-m',
                            ticket_message(store, record))
-            done = git(project, 'merge', '--ff-only', temp) if squashed.returncode == 0 else squashed
-            if done.returncode == 0:
-                return _merged(ctx, store, own, project, work_id, dev, folder, branch)
-            outcome['reason'] = 'git: ' + (done.stdout + done.stderr).strip()[-400:]
+            if squashed.returncode:
+                passed, why = False, (squashed.stdout + squashed.stderr).strip()[-1200:]
+            else:
+                passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before)
+        if passed:
+            return _merged(ctx, store, own, project, work_id, dev, folder, branch)
         _dropped(project, work_id)
-    with own.tables() as tx:
-        tx.update('merges', {'work_id': work_id}, outcome)
-    return {'work_id': work_id, 'merged': False, 'why': outcome['reason']}
+        return _blocked(ctx, store, own, work_id, why)
 
 
 def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev: str, folder: str,
             branch: str) -> dict[str, Any]:
-    """The end of a merge whose commit the dev branch holds: its release log written, its worktrees, branches and
-    snapshot removed, and its row merged, each step safe to run again."""
-    _logged(ctx, store, work_id, dev, branch)
+    """Journal the landed commit, retaining the ticket branch and all its worktree files."""
     _dropped(project, work_id)
-    removed(project, folder, branch)
+    # Keep ticket branches and worktrees. Another session may still own uncommitted files there.
     with own.tables() as tx:
         tx.update('merges', {'work_id': work_id}, {'state': MERGED, 'reason': PUSH_PENDING})
     return _delivered(ctx, store, own, project, work_id)
@@ -685,18 +701,41 @@ def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev
 def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) -> dict[str, Any]:
     """A committed merge's pending push survives crashes. Explicit retries never repeat its squash."""
     pushed = push_ticket(project)
-    if pushed['why']:
+    activation: dict[str, Any] = {}
+    why = pushed['why'] or ('' if pushed['pushed'] else 'push pending: configure the branch upstream')
+    if pushed['pushed']:
+        from .activation import delivered
+        activation = delivered(ctx, store, own, project, work_id)
+        if not activation['active']:
+            why = activation['why'] or 'runtime activation pending'
+    if why:
         from .orchestration import TRANSPORT
         try:
             record = store.ticket(work_id).work
-            TRANSPORT.notify_user(ctx, {'text': f'{ticket_title(store, record)}: {pushed["why"]}',
+            TRANSPORT.notify_user(ctx, {'text': f'{ticket_title(store, record)} blocked: {why}',
                                         'work_id': work_id, 'kind': 'ticket-commit', 'state': 'blocked'},
                                   f'ticket-commit:{work_id}')
         except Exception as exc:  # noqa: BLE001  notification failure cannot undo a completed merge
             print(f'Ticket push notification failed: {exc}', file=sys.stderr)
     with own.tables() as tx:
-        tx.update('merges', {'work_id': work_id}, {'reason': pushed['why']})
-    return {'work_id': work_id, 'merged': True, **pushed}
+        tx.update('merges', {'work_id': work_id}, {'reason': why})
+        tx.concern(work_id=work_id, kind='ticket')
+    if not why:
+        store.complete_delivery(work_id)
+    return {'work_id': work_id, 'merged': True, **pushed, 'why': why, **activation}
+
+
+def deliver_shared(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
+    """Give an attributable shared-checkout commit the same durable delivery gate."""
+    project = Path(store.project().path)
+    dev = dev_branch(project) or ''
+    own = Store(store.project_id, module='dispatch')
+    with own.tables() as tx:
+        row = {'work_id': work_id, 'branch': dev, 'worktree': str(project), 'state': MERGED,
+               'reason': PUSH_PENDING, 'ready': time.time(), 'deadline': time.time(), 'seq': time.time_ns()}
+        if tx.update('merges', {'work_id': work_id}, row) is None:
+            tx.insert('merges', row)
+    return _delivered(ctx, store, own, project, work_id)
 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:

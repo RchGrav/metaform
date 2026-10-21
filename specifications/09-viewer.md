@@ -780,6 +780,22 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 
 ### VIEW-044 A worktree that passes its tests and merges cleanly waits fifteen minutes for review, then merges itself, unless the person steps in
 
+- Amendment, 2026-10-21, confirmed: An agent's completed ticket automatically lands its own committed delta
+  into main as one feature commit and pushes it. Existing projects without main retain their development branch.
+  Legacy startup snapshots never enter that delta. Configured checks must pass. An unset test command does not
+  strand completed work. Shared staged and unstaged files remain intact. Overlaps and merge conflicts stop delivery
+  and send one inbox line naming the ticket and files. Ticket branches remain unchanged. Explicit legacy manual
+  reviews remain under human control. Delivery records recover crashes without replaying feature commits.
+  Changed running web code restarts through `metaform web restart`; its page survives the restart. MCP servers and
+  runners load changes at their next session and remaining old process identities are reported. Code keeps a worker's
+  ticket open until merge, push and runtime activation are recorded. Faults additionally require independent proof:
+  a recurrence-free window or a named regression test on running code. Closing a ticket never substitutes for proof.
+  The proof clock starts only after the relevant source runs the fix and fails closed when readiness is unknown.
+  Why: completed branch work and processes holding old code left the same faults recurring after purported fixes.
+  Acceptance: bare-remote fixtures prove automatic push, one feature commit, snapshot exclusion and preservation of
+  peer staging. Runtime checks prove restart readiness. Completion and proof regressions keep undelivered or old-code
+  fixes open and prevent premature fault proof.
+
 - Amendment, 2026-10-20, code.dispatcher.agent#7e, confirmed: Ticket completion commits the ticket's own deliverable
   files by default, with no setting. Completion includes proof landing. Shared-checkout commits preserve peer staging and
   unrelated edits. Startup dirty paths, overlapping writers and changed write fingerprints block uncertain

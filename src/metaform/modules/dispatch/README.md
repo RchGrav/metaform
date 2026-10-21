@@ -261,8 +261,16 @@ ticket identity: `Metaform-Ticket`
 (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address), `Metaform-Board` (board name, empty for
 the first board), and `Metaform-Agent` (agent id and name). Empty completions make empty commits with the same
 message. `Metaform-Target` preserves the attachment as `element:<address>` or `join:<id>` so archive counts keep
-join work separate from its receiver element. Worktree review still owns landing consent. Its existing squash
-becomes the ticket commit and is pushed after landing.
+join work separate from its receiver element. Completed worktrees automatically merge only their own delta into
+one feature commit on main, then push. Existing projects without main retain their development branch. Explicit
+legacy manual reviews remain under human control. Configured checks run before landing; an unset test command
+does not strand work. Overlapping edits stop delivery and name conflicting files in the system inbox. Ticket
+branches and dirty worktrees stay intact. Repeated delivery recovers its journal without another feature commit.
+
+After push, changed web code restarts through `metaform web restart`. MCP servers and runners take new code at
+their next session; activation records name old process identities. Worker completion stays open until delivery
+is recorded. Faults additionally require independent proof after their source runs current code. The proof clock
+never starts while a required restart or old source process remains pending.
 
 New ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked
 files stay in the shared checkout. The recorded starting commit still excludes dirty startup snapshots from

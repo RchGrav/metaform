@@ -12,8 +12,8 @@ Each ticket it files is marked, `map.storage.prove_work`, to close only with pro
   fault and passes: run once, when the watch starts, in a thread of its own with a time limit. A test whose file is not
   in the project folder is said in the ticket's note, never dropped without a word.
 
-The watch starts when the fix runs, not on the agent's word: at once for work done in the project folder, and once its
-worktree has merged for work done in one, `work.in_force` (dispatch, VIEW-044). Until then the ticket says "Fix landed,
+The watch starts when the fix runs, not on the agent's word: after its commit is merged, pushed and activated,
+`work.in_force` (dispatch, VIEW-044). Until then the ticket says "Fix landed,
 waiting to merge" and nothing counts. A recurrence from code loaded before the fix came into force, by the fault's
 `loaded`, is noted on the ticket with what puts the fix in force, `before_fix`, and does not count against it; any
 other recurrence while it is watched gives the ticket back with the fix that did not hold, `faults.tell`, which clears
@@ -27,7 +27,6 @@ kind ticket naming tickets, or of a merge, reads only those it filed, by key, an
 """
 from __future__ import annotations
 
-import calendar
 import json
 import os
 import re
@@ -36,6 +35,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -81,11 +81,11 @@ def named_test(resolution: str | None, folder: Path) -> tuple[str, bool] | None:
 
 def in_force(folder: Path, store: Store, work_id: str) -> bool:
     """Whether a ticket's fix runs from the project folder, as each module that knows says, `work.in_force`: dispatch's
-    merge of a worktree; with none, it is in force once it landed."""
+    merge and runtime activation; with none, it is in force once it landed."""
     try:
         return all(check(store, work_id) for _, check in chassis.provided(folder, 'work.in_force'))
-    except Exception:  # noqa: BLE001  a module that cannot say leaves the fix in force, as with none
-        return True
+    except Exception:  # noqa: BLE001  a module that cannot establish running code leaves proof waiting
+        return False
 
 
 def kept(store: Store, work_id: str) -> dict[str, Any]:
@@ -103,8 +103,8 @@ def keep(store: Store, work_id: str, value: dict[str, Any]) -> None:
 
 
 def seconds(at: str) -> float:
-    """A store time, `YYYY-MM-DDTHH:MM:SSZ`, as seconds since the epoch."""
-    return float(calendar.timegm(time.strptime(at, '%Y-%m-%dT%H:%M:%SZ')))
+    """A UTC store time, including fractional seconds, as seconds since the epoch."""
+    return datetime.fromisoformat(at).timestamp()
 
 
 def before_fix(folder: Path, store: Store, work_id: str, landed: str, loaded: float | None,
@@ -113,7 +113,8 @@ def before_fix(folder: Path, store: Store, work_id: str, landed: str, loaded: fl
     waits to merge, or the code that raised it was loaded, `loaded`, before the fix came into force. A fault that does
     not say when its code was loaded counts."""
     if not in_force(folder, store, work_id):
-        return 'seen while the fix waits to merge: the quiet window starts once it is in the project folder'
+        return ('seen while the fix waits to merge or restart: the quiet window starts once the merged fix '
+                'is in running code')
     if loaded is None:
         return None
     held = kept(store, work_id)
@@ -156,6 +157,7 @@ class Quiet:
         self.clock, self.timer, self.test, self.spawn = clock, timer, test, spawn
         self.lock = threading.Lock()
         self.armed: dict[str, tuple[Any, float, str, float]] = {}  # work id: timer, armed at, landed, seconds counted
+        self.waiting: set[str] = set()
         self.closed = False
         for work_id in self.filed(None):
             self.look(work_id)
@@ -171,8 +173,13 @@ class Quiet:
         if self.closed or payload.get('project') not in (None, self.store.project_id):
             return
         tables, kinds, ids = payload.get('tables'), payload.get('kinds'), payload.get('work_ids')
-        merged = 'dispatch.merges' in [*(tables if isinstance(tables, list) else ()),
-                                       *cast(list[Any], payload.get('dispatch_tables') or [])]
+        dispatch: list[Any] = [*(cast(list[Any], tables) if isinstance(tables, list) else ()),
+                    *cast(list[Any], payload.get('dispatch_tables') or [])]
+        merged = bool({'dispatch.merges', 'dispatch.activations'}.intersection(dispatch))
+        if {'dispatch.agent_sessions', 'dispatch.sessions'}.intersection(dispatch):
+            for work_id in tuple(self.waiting):
+                self.look(work_id)
+            return
         if not merged and tables is not None and (not isinstance(tables, list) or 'work' not in tables):
             return
         if not merged and isinstance(kinds, list) and 'ticket' not in kinds:
@@ -197,27 +204,32 @@ class Quiet:
         landed = landed_of(self.store, work_id)
         record = self.record(work_id)
         held = kept(self.store, work_id)
+        active = landed is not None and not record.done and in_force(Path(self.ctx.folder), self.store, work_id)
         with self.lock:
             armed = self.armed.get(work_id)
-            if armed is not None and armed[2] == landed and not record.done:
+            if armed is not None and armed[2] == landed and active:
                 return
             if armed is not None:
                 armed[0].cancel()
                 del self.armed[work_id]
         if landed is None:
+            self.waiting.discard(work_id)
             if held:
                 self.forget(work_id)
             return
         if record.done or self.closed:
+            self.waiting.discard(work_id)
             return
         same = held.get('landed') == landed
-        if not in_force(Path(self.ctx.folder), self.store, work_id):
+        if not active:
+            self.waiting.add(work_id)
             if not (same and held.get('waiting')):
                 keep(self.store, work_id, {'landed': landed, 'waiting': True})
                 events.announced(self.ctx.folder, self.ctx.surface, self.store.step_work, work_id,
-                                 'Fix landed, waiting to merge: the quiet window starts once it is in the project '
-                                 'folder.')
+                                 'Fix landed, waiting to merge or restart: the quiet window starts once the fix '
+                                 'is in running code.')
             return
+        self.waiting.discard(work_id)
         since = float(held['since']) if same and held.get('since') else time.time()
         counted = float(held.get('counted') or 0) if same else 0.0
         if not (same and held.get('since')):
@@ -279,6 +291,9 @@ class Quiet:
             return
         record = self.record(work_id)
         if record.done:
+            return
+        if not in_force(Path(self.ctx.folder), self.store, work_id):
+            self.look(work_id)
             return
         resolution = f'{record.resolution or "Fixed."}\nProven: {how}.'
         events.announced(self.ctx.folder, self.ctx.surface, self.store.finish_work, work_id, resolution,

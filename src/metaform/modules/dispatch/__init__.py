@@ -162,7 +162,7 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
 # nothing raised on an agent is lost when the map shown changes (UX review round 2, 2026-10-17, combined F4). The
 # signals `lines` still holds, written by runners on older code, are carried into it by carry_conversations(); only a
 # table is added, so version 5's code still reads and writes the tables.
-TABLES = Tables(version=19, compatible_from=5, tables=(  # 19 adds an optional end timestamp and session indexes
+TABLES = Tables(version=21, compatible_from=5, tables=(  # additive activation records and delivered branch identity
     # The conversations with agents, the project's whatever its maps: each session and the lines of its thread.
     Table('agent_sessions', place='project', key=('session_id',), columns=SESSION,
           indexes=(Index(('work_id', 'seq')), Index(('seq',)), Index(('state', 'ended', 'seq')))),
@@ -183,8 +183,10 @@ TABLES = Tables(version=19, compatible_from=5, tables=(  # 19 adds an optional e
     Table('merges', place='project', key=('work_id',),
           columns=(Column('work_id', required=True), Column('branch', required=True), Column('worktree', required=True),
                    Column('state', required=True), Column('reason'), Column('ready', 'real', required=True),
-                   Column('deadline', 'real', required=True), Column('seq', 'int', required=True)),
+                   Column('deadline', 'real', required=True), Column('seq', 'int', required=True), Column('head')),
           indexes=(Index(('state',)),)),
+    Table('activations', place='project', key=('work_id',),
+          columns=(Column('work_id', required=True), Column('value', 'json', required=True))),
     # An issue waiting for its node, oldest first, or, with `started`, its sentinel launched before its
     # session is made, VIEW-045.
     Table('raised', key=('work_id',),

@@ -172,6 +172,7 @@ from .merge import (
     checkpoint,
     commit_fault,
     complete_ticket,
+    deliver_shared,
     file_fingerprint,
     repository,
     ticket_message,
@@ -1375,6 +1376,7 @@ class Session:
         self.terminal_count = 0
         self.servers: list[McpServerStdio] = []  # the MCP servers its session was given, given again to a fork
         self.stop_record_asked = False  # the turn asking a stopped or failed worker to record was decided, P033
+        self.delivery_asked = False  # missing delivery steps are sent once, without a repeated completion turn
         self.interrupted = False  # the last turn ended by the person's interrupt, so no recording turn follows it
         # An intake agent's first Metaform call and first record, M04: when its first turn began, the seconds each
         # took, and whether it was steered; and its clock, which steers it once when no call has come in time.
@@ -4868,7 +4870,8 @@ class Session:
         """Commit attributable linked files once, before completion releases the shared checkout."""
         held = self.acp['ticket_git']
         if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
-                or (held['result'] is not None and held['result']['committed'] and not held['result']['why']):
+                or (held['result'] is not None and held['result']['committed'] and held['result'].get('pushed')
+                    and not held['result']['why']):
             return
         record = await asyncio.to_thread(ticket, self.store, self.work_id)
         if record.outcome in ('cancelled', 'failed') or not (record.done or await asyncio.to_thread(
@@ -4879,6 +4882,7 @@ class Session:
                  if placed(index, path)[1]}
         title = await asyncio.to_thread(ticket_title, self.store, record)
         overlaps = await asyncio.to_thread(self.commit_overlaps, set(files))
+        previous_result = held['result']
         previous_commit = held['result']['committed'] if held['result'] is not None else None
         try:
             result = ({'committed': None, 'pushed': False, 'conflict': False,
@@ -4892,6 +4896,12 @@ class Session:
         except (OSError, subprocess.SubprocessError) as error:
             result = {'committed': None, 'pushed': False, 'conflict': False, 'why': str(error)}
         held['result'] = result
+        if result['committed'] and result.get('pushed'):
+            delivery = await asyncio.to_thread(deliver_shared, self.ctx, self.store, self.work_id)
+            if delivery.get('why'):
+                result['why'] = str(delivery['why'])
+        if result == previous_result:
+            return
         if not result['committed']:
             result['why'] = result['why'] or 'The completed ticket has no commit.'
             # A folder with no repository has no commit to miss, so no fault is filed for it: filed, the fault took the
@@ -4925,6 +4935,22 @@ class Session:
         self.finishing = True
         try:
             await self.commit_done()
+            record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            if self.role == 'worker' and self.folder != self.root and not record.done:
+                from .merge import finished as deliver_worktree
+                await self.write(deliver_worktree, self.ctx, self.store, record, Path(self.folder))
+                record = await asyncio.to_thread(ticket, self.store, self.work_id)
+            if not record.done:
+                if not self.delivery_asked and not self.turns:
+                    self.delivery_asked = True
+                    with self.store.tables(write=False) as tables:
+                        delivery = tables.get('merges', {'work_id': self.work_id})
+                    missing = 'Merge ticket commits into main, push and activate changed code.'
+                    if delivery:
+                        missing = str(delivery['reason'] or ('Fault proof must clear the fault light.'
+                                      if delivery['state'] == 'merged' else missing))
+                    self.turn(prompt('delivery_pending', missing=missing))
+                return
             if self.role == 'worker':  # while Full Auto is on, the system agent checks the fault lights it may clear
                 from .board import finished
                 try:

@@ -830,6 +830,66 @@ def test_a_recurrence_from_code_loaded_before_the_fix_is_noted_and_does_not_coun
     watch.close()
 
 
+def test_runtime_check_errors_leave_proof_waiting_and_named_tests_unrun(run, project, monkeypatch):
+    from metaform import module
+    store = mapped(project)
+    real = module.provided
+
+    def unavailable(store, work_id):
+        raise OSError('Runtime inspection unavailable')
+
+    monkeypatch.setattr(module, 'provided', lambda folder, kind: [('dispatch', unavailable)]
+                        if kind == 'work.in_force' else real(folder, kind))
+    clocks, runs = Timers(), []
+    (project / 'tests').mkdir()
+    (project / 'tests' / 'test_waiting.py').write_text('def test_fix():\n    pass\n')
+    watch = quiet(project, clocks, monkeypatch, spawn=lambda function, *args: runs.append(args))
+    web_fault(project)
+    [filed] = tickets(store)
+    landed(run, project, filed.id, 'Fixed it. test: tests/test_waiting.py::test_fix')
+    clocks.advance(60 * 60)
+    assert not store.ticket(filed.id).work.done and not clocks.armed() and not runs
+    assert 'waiting to merge or restart' in store.ticket(filed.id).work.said[-1].said
+    watch.close()
+
+
+def test_quiet_deadline_rechecks_runtime_before_closing(run, project, monkeypatch):
+    from metaform import module
+    store = mapped(project)
+    real = module.provided
+    active = [True]
+    monkeypatch.setattr(module, 'provided', lambda folder, kind: [('dispatch', lambda store, work_id: active[0])]
+                        if kind == 'work.in_force' else real(folder, kind))
+    clocks = Timers()
+    watch = quiet(project, clocks, monkeypatch)
+    web_fault(project)
+    [filed] = tickets(store)
+    landed(run, project, filed.id)
+    active[0] = False
+    clocks.advance(30 * 60)
+    assert not store.ticket(filed.id).work.done and not clocks.armed()
+    active[0] = True
+    watch.heard({'project': 'proj', 'tables': ['dispatch.activations'], 'work_ids': [filed.id]})
+    assert [made.seconds for made in clocks.armed()] == [30 * 60]
+    clocks.advance(30 * 60)
+    assert store.ticket(filed.id).work.done
+    watch.close()
+
+
+def test_fractional_landing_times_preserve_old_code_recurrence_detection(run, project):
+    from metaform.modules.autoticket.proof import seconds
+    assert seconds('1970-01-01T00:00:01.125000Z') == 1.125
+    assert seconds('1970-01-01T00:00:01Z') == 1.0
+    store = mapped(project)
+    web_fault(project)
+    [filed] = tickets(store)
+    landed(run, project, filed.id)
+    web_fault(project, 4, loaded=time.time() - 3600)
+    record = store.ticket(filed.id).work
+    assert record.resolution == 'Fixed the KeyError in graph.'
+    assert 'seen from code loaded before the fix' in record.note
+
+
 def test_a_named_test_not_in_the_project_folder_is_said_on_the_ticket(run, project, monkeypatch):
     store = mapped(project)
     runs = []
