@@ -504,12 +504,8 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
         missing, delivery = _delivery_state(tx, work_id)
         if delivery and row["condition"] in ("broken", "trouble") and proof is None:
             prove_work(tx, work_id)
-            proof = _proof(tx, work_id)
         if missing:
             return _landed(tx, row, row["resolution"], notices, missing=missing)
-    if column == "done" and proof is not None and row["done"] is None:
-        # moved to done on the board is a done, and a ticket that closes only with proof is not closed on a move
-        return _landed(tx, row, row["resolution"], notices)
     _ticket_changed(tx, work_id)
     reopened = row["done"] is not None and column != "done"
     if column in ("todo", "backlog"):
@@ -582,9 +578,9 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
     """Mark a work record done, keeping its resolution beside it, the why of that resolution with its number, MCP-037,
     and how it ended, `outcome`: a terminal state of the one status vocabulary, completed unless the person cancelled
     it or it failed, so a cancelled ticket never reads as completed, P232; a record already done keeps its first
-    resolution and outcome. A ticket that closes only with proof, `prove_work`, completes only `proven`: until then
-    its fix lands and it is watched, `_landed`; cancelled or failed it ends as any ticket does. Its landing is kept once
-    it closes, so the module that proved it can still tell a recurrence from code older than the fix."""
+    resolution and outcome. Fault tickets require delivery evidence, `prove_work`: pending delivery keeps the
+    resolution and leaves the ticket open. A delivered fix closes immediately. `proven` remains accepted for callers
+    using the former proof API and never bypasses delivery. Cancelled or failed work ends without delivery."""
     ended = status.known(outcome, "map work op=done id=<id>")
     if ended not in status.TERMINAL:
         raise StoreError(f"A work record ends {', '.join(status.TERMINAL)}, not {ended}.", "map work op=done id=<id>")
@@ -602,11 +598,8 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         missing, delivery = _delivery_state(tx, work_id)
         if delivery and row["condition"] in ("broken", "trouble") and proof is None:
             prove_work(tx, work_id)
-            proof = _proof(tx, work_id)
         if missing:
             return _landed(tx, row, _work_text(resolution, "resolution", notices), notices, missing=missing)
-    if proof is not None and ended == "completed" and not proven:
-        return _landed(tx, row, _work_text(resolution, "resolution", notices), notices)
     _ticket_changed(tx, work_id)
     tx.execute(
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
@@ -617,13 +610,11 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
 
 
 def complete_delivery(tx: Tx, work_id: str) -> WorkRecord:
-    """Close staged ordinary work after dispatch records its pushed, activated merge. Faults still need proof."""
+    """Close staged work, including faults, after dispatch records successful delivery."""
     row = _work_row(tx, work_id)
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
-    if row["done"] is not None or settings is None or not settings["landed"] or settings["proof"]:
+    if row["done"] is not None or settings is None or not settings["landed"]:
         return work_record(tx, row)
-    if row["condition"] in ("broken", "trouble"):
-        return prove_work(tx, work_id)
     return finish_work(tx, work_id, row["resolution"], proven=True)
 
 
@@ -632,7 +623,7 @@ def _delivery_state(tx: Tx, work_id: str) -> tuple[tuple[str, ...], bool]:
     if page_vouched():
         return (), False  # an explicit human board action can close stale or superseded work
     settings = tx.tables().get("ticket_settings", {"work_id": work_id})
-    required = bool(dispatched()) or bool(settings and settings["landed"] and not settings["proof"])
+    required = bool(dispatched()) or bool(settings and (settings["proof"] or settings["landed"]))
     try:
         with Store(tx.project_id, module="dispatch").tables(write=False) as tables:
             receipt = tables.get("merges", {"work_id": work_id})
@@ -765,9 +756,7 @@ def _epic_reopened(tx: Tx, work_id: str) -> None:
 
 
 def prove_work(tx: Tx, work_id: str) -> WorkRecord:
-    """The ticket closes only with proof: a done on it lands the fix and leaves it open, watched, until the module
-    that filed it proves the fix held and closes it `proven`, as autoticket does for the tickets of its error groups.
-    Kept with the ticket's settings, so it holds through a reopen."""
+    """Require delivery evidence for this fault ticket, retained through recurrence and reopen."""
     _work_row(tx, work_id)
     tables = tx.tables()
     if tables.update("ticket_settings", {"work_id": work_id}, {"proof": 1}) is None:
@@ -776,30 +765,27 @@ def prove_work(tx: Tx, work_id: str) -> WorkRecord:
 
 
 def _proof(tx: Tx, work_id: str) -> Any:
-    """The settings row of a ticket that closes only with proof, or None for any other."""
+    """The settings row of a ticket requiring fault delivery evidence, or None for any other."""
     row = tx.tables().get("ticket_settings", {"work_id": work_id})
     return row if row is not None and row["proof"] else None
 
 
 def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice], *,
-            missing: tuple[str, ...] = ()) -> WorkRecord:
-    """A done on a ticket that closes only with proof, on an agent's word: the fix lands, kept as its resolution and
-    said as a step, and the ticket stays open in its column. Pending delivery uses the same staged marker so the
-    runner can finish and merge its work. Only runtime activation starts the fault proof clock."""
+            missing: tuple[str, ...]) -> WorkRecord:
+    """Keep the result pending delivery so dispatch can merge it. Say exactly what prevents closure."""
     work_id = str(row["work_id"])
     _ticket_changed(tx, work_id)
     done = int(row["steps_done"] or 0) + 1
     planned = None if row["steps"] is None else max(int(row["steps"]), done)
     tx.execute(
         "UPDATE work SET resolution=?, steps=?, steps_done=?, taken=COALESCE(taken, ?), "
-        "taken_by=COALESCE(taken_by, 'watching') WHERE work_id=?",
+        "taken_by=COALESCE(taken_by, 'delivery') WHERE work_id=?",
         (resolution, planned, done, now(), work_id),
     )
     tx.execute(
         "INSERT INTO work_steps(row, work_id, number, said, at) VALUES (?, ?, ?, ?, ?)",
         (_next_work_row(tx, "work_steps"), work_id, done,
-         ("Delivery pending: " + " ".join(missing)) if missing else
-         f"Fix landed, watching: {resolution or 'no resolution was given'}", now()),
+         "Delivery pending: " + " ".join(missing), now()),
     )
     tables = tx.tables()
     settings = tables.get("ticket_settings", {"work_id": work_id})
@@ -807,9 +793,7 @@ def _landed(tx: Tx, row: Any, resolution: str | None, notices: list[Notice], *,
         datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
     if tables.update("ticket_settings", {"work_id": work_id}, {"landed": landed}) is None:
         tables.insert("ticket_settings", {"work_id": work_id, "landed": landed})
-    notices.append(Notice("delivery", "Ticket stays open. Missing: " + " ".join(missing)) if missing else
-                   Notice("watching", "Fix landed, watching: this ticket closes only with proof that the fix held, "
-                                      "so it stays open in its column until then."))
+    notices.append(Notice("delivery", "Ticket stays open. Missing: " + " ".join(missing)))
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 

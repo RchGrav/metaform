@@ -530,7 +530,7 @@ def test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes(ru
     assert len(filed) == 5
     assert not any('thumbnail' in record.task for record in filed)
     run('map', 'work', 'op=done', f'id={filed[0].id}', 'resolution=Fixed.', 'why=Tested.', cwd=project)
-    now = tickets(store)  # the done one is watched, open until proven, and like a held one it takes no slot
+    now = tickets(store)  # pending delivery takes no agent slot
     assert len(now) == 6 and any('thumbnail' in record.task for record in now)
 
 
@@ -605,8 +605,8 @@ def test_a_burst_of_changes_that_do_not_close_an_autoticket_ticket_reads_nothing
 
 
 def test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled(run, project, monkeypatch):
-    from metaform import events
     from metaform.module import context
+    from metaform.modules.autoticket.tests.test_fault_closure import delivered
     from metaform.modules.orchestration.state import SERVICE
 
     store = mapped(project)
@@ -614,17 +614,14 @@ def test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled
     [original] = tickets(store)
     ctx = context('orchestration', project, project='proj')
     first = SERVICE.ensure(ctx, original.id)
-    SERVICE.bind(ctx, first['assignment_id'], 'repair-one')
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
+    SERVICE.bind(ctx, first['assignment_id'], 'repair-one', persons=True)
+    run('enable', 'dispatch', cwd=project)
     SERVICE.returned(ctx, original.id, 'Repaired.', evidence=['Reproduction passes.'])
-    events.announce(project, 'cli')  # the change the agent's call announces when it ends
-    assert not store.ticket(original.id).work.done  # its fix landed: watched until proven
-    clocks.advance(30 * 60)
-    watch.close()
-    assert store.ticket(original.id).work.done
+    assert not store.ticket(original.id).work.done
+    delivered(store, project, original.id)
+    assert store.complete_delivery(original.id).done
     web_fault(project, 2)
-    [reopened] = tickets(store)
+    reopened = store.ticket(original.id).work
     assert reopened.id == original.id
     assert 'Previous resolution' in reopened.note
     second = SERVICE.ensure(ctx, reopened.id)
@@ -633,272 +630,9 @@ def test_recurrence_reopens_same_issue_and_assignment_but_cancel_stays_cancelled
     store.finish_work(original.id, 'No longer wanted.', 'User choice.', outcome='cancelled')
     web_fault(project, 3)
     assert store.ticket(original.id).work.outcome == 'cancelled'
-    assert tickets(store) == []
-
-
-class Timers:
-    """A clock the test moves and timers that fire only when it has moved past them: the quiet window, no waiting."""
-
-    def __init__(self):
-        self.now = 0.0
-        self.made = []
-
-    def clock(self):
-        return self.now
-
-    def timer(self, seconds, function, args=()):
-        made = Timer(self, seconds, function, args)
-        self.made.append(made)
-        return made
-
-    def armed(self):
-        return [made for made in self.made if made.at is not None and not made.cancelled and not made.fired]
-
-    def advance(self, seconds):
-        self.now += seconds
-        for made in self.armed():
-            if made.at <= self.now:
-                made.fired = True
-                made.function(*made.args)
-
-
-class Timer:
-    def __init__(self, timers, seconds, function, args):
-        self.timers, self.seconds, self.function, self.args = timers, seconds, function, args
-        self.daemon, self.at, self.cancelled, self.fired = False, None, False, False
-
-    def start(self):
-        self.at = self.timers.now + self.seconds
-
-    def cancel(self):
-        self.cancelled = True
-
-
-def quiet(project, clocks, monkeypatch, test=lambda node, folder: (False, 'not run'), spawn=None):
-    """The quiet-window watch as the project's background runs it, with the test's clock and test run, handed each
-    map.changed as the web server that holds it hands it every change, its own and other processes'."""
-    from metaform import events
-    from metaform.module import context
-    from metaform.modules.autoticket.proof import Quiet
-    watch = Quiet(context('autoticket', project), clock=clocks.clock, timer=clocks.timer, test=test,
-                  spawn=spawn or (lambda function, *args: None))
-    real = events.publish
-
-    def publish(topic, payload, source):
-        delivered = real(topic, payload, source)
-        if topic == 'map.changed':
-            watch.heard(dict(payload))
-        return delivered
-    monkeypatch.setattr(events, 'publish', publish)
-    return watch
+    assert original.id not in [record.id for record in tickets(store)]
 
 
 def lights(store, address='code.server.web'):
-    """The fault lights at an element: its open work records of condition broken or trouble."""
+    """The fault lights: open work records of condition broken or trouble."""
     return [record for record in tickets(store) if record.address == address and record.condition in ('broken', 'trouble')]
-
-
-def landed(run, project, work_id, resolution='Fixed the KeyError in graph.'):
-    run('map', 'work', 'op=take', f'id={work_id}', cwd=project)
-    return run('map', 'work', 'op=done', f'id={work_id}', f'resolution={resolution}', 'why=Tested.', cwd=project)
-
-
-def test_a_fixed_ticket_stays_open_through_the_quiet_window_and_closes_with_proof_after_it(run, project, monkeypatch):
-    store = mapped(project)
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    assert filed.kind == 'broken' and [record.id for record in lights(store)] == [filed.id]  # the light is on
-    landed(run, project, filed.id)
-    record = store.ticket(filed.id).work
-    assert not record.done and record.column == 'doing' and record.resolution == 'Fixed the KeyError in graph.'
-    assert record.said[-1].said.startswith('Fix landed, watching')
-    assert [made.seconds for made in clocks.armed()] == [30 * 60]  # one timer, set when the fix landed
-    clocks.advance(30 * 60 - 1)
-    assert not store.ticket(filed.id).work.done and lights(store)
-    clocks.advance(1)
-    closed = store.ticket(filed.id).work
-    assert closed.done and closed.outcome == 'completed' and 'Proven: its fault did not recur' in closed.resolution
-    assert lights(store) == [] and clocks.armed() == []  # the light goes off with the proof
-    watch.close()
-
-
-def test_a_recurrence_inside_the_quiet_window_keeps_the_ticket_open(run, project, monkeypatch):
-    store = mapped(project)
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    clocks.advance(10 * 60)
-    web_fault(project, 5)
-    record = store.ticket(filed.id).work
-    assert not record.done and record.column == 'todo' and record.resolution is None  # given back to be fixed again
-    assert 'did not hold: Fixed the KeyError in graph.' in record.note and "KeyError: 'node 5'" in record.note
-    assert clocks.armed() == []  # the recurrence cancelled the window
-    clocks.advance(60 * 60)
-    assert not store.ticket(filed.id).work.done and lights(store)
-    assert [one.id for one in tickets(store)] == [filed.id]
-    watch.close()
-
-
-def test_a_recurrence_after_close_reopens_the_same_ticket_with_the_new_evidence(run, project, monkeypatch):
-    store = mapped(project)
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    clocks.advance(30 * 60)
-    assert store.ticket(filed.id).work.done and lights(store) == []
-    web_fault(project, 7)
-    [reopened] = tickets(store)
-    assert reopened.id == filed.id and reopened.kind == 'broken' and not reopened.done
-    assert 'a fix that did not hold: Fixed the KeyError in graph.' in reopened.note
-    assert "KeyError: 'node 7'" in reopened.note  # the new evidence
-    assert [record.id for record in lights(store)] == [filed.id]  # the light is on again
-    landed(run, project, filed.id, 'Fixed it again.')
-    assert not store.ticket(filed.id).work.done  # it closes only with proof again
-    watch.close()
-
-
-def test_a_test_named_in_the_resolution_that_passes_proves_the_fix(run, project, monkeypatch):
-    store = mapped(project)
-    (project / 'tests').mkdir()
-    (project / 'tests' / 'test_graph.py').write_text('def test_graph_reads_every_node():\n    pass\n')
-    ran, runs = [], []
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch, test=lambda node, folder: (ran.append(node), (True, '1 passed'))[1],
-                  spawn=lambda function, *args: runs.append((function, args)))
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id, 'Fixed the KeyError; test: tests/test_graph.py::test_graph_reads_every_node')
-    [(function, args)] = runs  # the named test runs once, in a thread of its own, here run when the test says
-    function(*args)
-    assert store.ticket(filed.id).work.done
-    assert ran == ['tests/test_graph.py::test_graph_reads_every_node']
-    assert 'Proven: the test tests/test_graph.py::test_graph_reads_every_node' in store.ticket(filed.id).work.resolution
-    assert clocks.armed() == [] and lights(store) == []
-    watch.close()
-
-
-def test_a_fix_in_a_worktree_is_watched_only_once_it_has_merged(run, project, monkeypatch):
-    """With the fix still in its worktree nothing counts, and a recurrence then is noted, not held against the fix;
-    once dispatch says it merged, the watch starts and the window proves it."""
-    from metaform import module
-    store = mapped(project)
-    merged = []
-    real = module.provided
-    monkeypatch.setattr(module, 'provided', lambda folder, kind: [('dispatch', lambda store, work_id: bool(merged))]
-                        if kind == 'work.in_force' else real(folder, kind))
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    record = store.ticket(filed.id).work
-    assert record.said[-1].said.startswith('Fix landed, waiting to merge') and clocks.armed() == []
-    clocks.advance(60 * 60)
-    web_fault(project, 3)
-    record = store.ticket(filed.id).work
-    assert not record.done and record.column == 'doing' and 'seen while the fix waits to merge' in record.note
-    merged.append(True)
-    watch.heard({'project': 'proj', 'tables': 'dispatch', 'dispatch_tables': ['dispatch.merges']})
-    assert store.ticket(filed.id).work.said[-1].said == 'Fix merged, watching.'
-    assert [made.seconds for made in clocks.armed()] == [30 * 60]
-    clocks.advance(30 * 60)
-    assert store.ticket(filed.id).work.done and lights(store) == []
-    watch.close()
-
-
-def test_a_recurrence_from_code_loaded_before_the_fix_is_noted_and_does_not_count(run, project, monkeypatch):
-    store = mapped(project)
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    web_fault(project, 4, loaded=time.time() - 3600)  # a web server started an hour before the fix
-    record = store.ticket(filed.id).work
-    assert not record.done and record.column == 'doing' and record.resolution == 'Fixed the KeyError in graph.'
-    assert 'seen from code loaded before the fix' in record.note and 'metaform web restart' in record.note
-    assert [made.seconds for made in clocks.armed()] == [30 * 60]  # the window still runs
-    web_fault(project, 5, loaded=time.time() + 1)  # restarted after the fix: it did not hold
-    record = store.ticket(filed.id).work
-    assert record.column == 'todo' and 'did not hold' in record.note and clocks.armed() == []
-    watch.close()
-
-
-def test_runtime_check_errors_leave_proof_waiting_and_named_tests_unrun(run, project, monkeypatch):
-    from metaform import module
-    store = mapped(project)
-    real = module.provided
-
-    def unavailable(store, work_id):
-        raise OSError('Runtime inspection unavailable')
-
-    monkeypatch.setattr(module, 'provided', lambda folder, kind: [('dispatch', unavailable)]
-                        if kind == 'work.in_force' else real(folder, kind))
-    clocks, runs = Timers(), []
-    (project / 'tests').mkdir()
-    (project / 'tests' / 'test_waiting.py').write_text('def test_fix():\n    pass\n')
-    watch = quiet(project, clocks, monkeypatch, spawn=lambda function, *args: runs.append(args))
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id, 'Fixed it. test: tests/test_waiting.py::test_fix')
-    clocks.advance(60 * 60)
-    assert not store.ticket(filed.id).work.done and not clocks.armed() and not runs
-    assert 'waiting to merge or restart' in store.ticket(filed.id).work.said[-1].said
-    watch.close()
-
-
-def test_quiet_deadline_rechecks_runtime_before_closing(run, project, monkeypatch):
-    from metaform import module
-    store = mapped(project)
-    real = module.provided
-    active = [True]
-    monkeypatch.setattr(module, 'provided', lambda folder, kind: [('dispatch', lambda store, work_id: active[0])]
-                        if kind == 'work.in_force' else real(folder, kind))
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    active[0] = False
-    clocks.advance(30 * 60)
-    assert not store.ticket(filed.id).work.done and not clocks.armed()
-    active[0] = True
-    watch.heard({'project': 'proj', 'tables': ['dispatch.activations'], 'work_ids': [filed.id]})
-    assert [made.seconds for made in clocks.armed()] == [30 * 60]
-    clocks.advance(30 * 60)
-    assert store.ticket(filed.id).work.done
-    watch.close()
-
-
-def test_fractional_landing_times_preserve_old_code_recurrence_detection(run, project):
-    from metaform.modules.autoticket.proof import seconds
-    assert seconds('1970-01-01T00:00:01.125000Z') == 1.125
-    assert seconds('1970-01-01T00:00:01Z') == 1.0
-    store = mapped(project)
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id)
-    web_fault(project, 4, loaded=time.time() - 3600)
-    record = store.ticket(filed.id).work
-    assert record.resolution == 'Fixed the KeyError in graph.'
-    assert 'seen from code loaded before the fix' in record.note
-
-
-def test_a_named_test_not_in_the_project_folder_is_said_on_the_ticket(run, project, monkeypatch):
-    store = mapped(project)
-    runs = []
-    clocks = Timers()
-    watch = quiet(project, clocks, monkeypatch, spawn=lambda function, *args: runs.append(args))
-    web_fault(project)
-    [filed] = tickets(store)
-    landed(run, project, filed.id, 'Fixed it; test: tests/test_gone.py::test_graph_reads_every_node')
-    note = store.ticket(filed.id).work.note
-    assert runs == [] and 'tests/test_gone.py::test_graph_reads_every_node' in note
-    assert 'is not in the project folder, so it was not run' in note
-    watch.close()

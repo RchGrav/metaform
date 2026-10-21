@@ -1,4 +1,4 @@
-"""Worker completion keeps tickets open until durable delivery and fault proof succeed."""
+"""Worker completion keeps tickets open until durable delivery succeeds."""
 import asyncio
 import time
 
@@ -47,13 +47,12 @@ def test_merged_ticket_waits_for_push_and_activation(dispatch, monkeypatch, reas
     assert closed.done and closed.resolution == 'Fixed.'
 
 
-def test_fault_ticket_waits_for_proof_after_delivery(dispatch, monkeypatch):
+def test_fault_ticket_closes_immediately_after_delivery(dispatch, monkeypatch):
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     dispatch.store.prove_work(dispatch.id)
     dispatch.store.finish_work(dispatch.id, 'Fixed.', 'Verified behavior.')
     receipt(dispatch)
-    assert dispatch.store.complete_delivery(dispatch.id).done is None
-    assert dispatch.store.finish_work(dispatch.id, 'Proof passed.', proven=True).done
+    assert dispatch.store.complete_delivery(dispatch.id).done
 
 
 def test_reopened_ticket_cannot_reuse_prior_delivery_receipt(dispatch, monkeypatch):
@@ -69,13 +68,13 @@ def test_reopened_ticket_cannot_reuse_prior_delivery_receipt(dispatch, monkeypat
     assert dispatch.store.complete_delivery(dispatch.id).done
 
 
-def test_worker_fault_requires_independent_proof_even_without_autoticket(dispatch, monkeypatch):
+def test_worker_fault_closes_after_delivery_even_without_autoticket(dispatch, monkeypatch):
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     dispatch.store.edit_work(dispatch.id, {'condition': 'broken', 'kind': 'broken'})
     dispatch.store.finish_work(dispatch.id, 'Fixed.', 'Verified behavior.')
     receipt(dispatch)
-    assert dispatch.store.complete_delivery(dispatch.id).done is None
-    assert dispatch.store.finish_work(dispatch.id, 'Delivery finished.').done is None
+    assert dispatch.store.complete_delivery(dispatch.id).done
+    assert dispatch.store.finish_work(dispatch.id, 'Delivery finished.').done
     with Store('proj', module='map').tables(write=False) as tx:
         assert tx.get('ticket_settings', {'work_id': dispatch.id})['proof']
 

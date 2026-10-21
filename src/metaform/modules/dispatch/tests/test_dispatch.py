@@ -1300,18 +1300,16 @@ def test_the_persons_stop_turns_autostart_off_and_reset_leaves_the_ticket_they_s
     assert dispatch.ticket().taken_by == 'claude fake-session-1', 'it waits for the person'
 
 
-def test_reset_leaves_a_ticket_whose_fix_landed_and_is_watched(dispatch, run):
-    """A ticket that closes only with proof, whose fix landed with no agent's take (a done from the board or the
-    command line), waits for its proof and is no agent's work: reset leaves it with its landing and its resolution
-    (code.scheduler.task#9)."""
+def test_reset_leaves_a_ticket_with_delivery_pending(dispatch, run):
+    """Reset preserves submitted repairs until their delivery completes."""
     from metaform.data import Store
     dispatch.store.prove_work(dispatch.id)
     dispatch.store.finish_work(dispatch.id, 'Fixed the notes.', 'Tested.')
     reset = json.loads(run('dispatch', 'reset', '--json', cwd=dispatch.folder).stdout)
     assert dispatch.id not in reset['released'] and dispatch.id not in reset['kept_for_you']
-    assert reset['watching'] == [dispatch.id]
+    assert reset['pending_delivery'] == [dispatch.id]
     record = dispatch.ticket()
-    assert not record.done and record.taken_by == 'watching' and record.resolution == 'Fixed the notes.'
+    assert not record.done and record.taken_by == 'delivery' and record.resolution == 'Fixed the notes.'
     with Store('proj', module='map').tables(write=False) as tx:
         assert tx.get('ticket_settings', {'work_id': dispatch.id})['landed']
 

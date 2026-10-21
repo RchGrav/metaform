@@ -253,7 +253,7 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 ## Ticket commits
 
 Completed tickets commit their own linked deliverables, then push the current branch to its configured upstream.
-This behavior has no setting. Completion includes proof work whose fix has landed. Commit subjects use the ticket
+This behavior has no setting. Completion includes fault work whose result awaits delivery. Commit subjects use the ticket
 title. Commit bodies retain the resolution, its why and a canonical `Ticket state` JSON snapshot of map-owned ticket
 rows and citation metadata. The archive compares that snapshot with current state before deleting a ticket, so a
 same-second completion with unchanged resolution cannot discard newer notes or progress. Five trailers retain

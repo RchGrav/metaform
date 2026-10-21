@@ -418,7 +418,7 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
     if fresh and previous is not None and previous['state'] == MERGED and dict(previous).get('head') \
             and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
             and not git(folder, 'status', '--porcelain').stdout.strip():
-        # A proof window can notify the runner repeatedly. Its already delivered
+        # Delivery retries can notify the runner repeatedly. Its already delivered
         # feature remains one commit until that agent changes its branch again.
         return dict(previous)
     try:

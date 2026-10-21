@@ -5,8 +5,7 @@ feedback, `faults.py`; log entries from the logs it reads as they grow and never
 time reading each log under a lease, `watch.py`. Both are grouped by the similarity method of onhold's log viewer,
 `grouping.py`. A group never seen before becomes one ticket at once, at the element that owns its file; a recurring one
 is counted on its open ticket; at most `autoticket_open_most` that are not held are open at once. A ticket it files
-closes only with proof, `proof.py`: its fault not recurring for `autoticket_quiet_minutes` after the fix landed, or a
-test the resolution names passing; a fault that returns reopens its own ticket.
+closes once its repair is delivered; a fault that returns reopens its own ticket.
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ from metaform import prompt_files, settings
 from metaform.data import Column, Index, Table, Tables, WorkRecord
 from metaform.module import Context, Module, Noun, Provides, Status, Stop, Subscription, Verb
 
-from . import background, faults, proof, sources
+from . import background, faults, sources
 from .watch import Watch, first_line, ranked, shown, state
 
 SUPPORTED_OS = ('linux', 'macos')  # it follows logs as tail -F does and reaches hosts through ssh and a POSIX shell
@@ -56,9 +55,6 @@ def _similarity_check(value: Any, folder: Any) -> list[str] | None:
 settings.number('autoticket_open_most', 5, min=1, max=100, label='Open at most',
                 help='How many tickets autoticket filed may be open and not held at once; each further kind of error '
                      'waits as a group and is filed when one of them is done. A held ticket takes no place.')
-settings.number('autoticket_quiet_minutes', 30, min=1, max=10080, label='Quiet minutes',
-                help='How many minutes of the project\'s work, while its server runs, a fault must stay away after its '
-                     'fix landed before the ticket closes as proven; a test named in the resolution can prove it sooner.')
 settings.text('autoticket_similarity', '0.45', check=_similarity_check, label='Similarity',
               help='The Dice coefficient at which two entries are the same kind of error, above 0 and at most 1; '
                    '0.45 is onhold\'s value.')
@@ -329,7 +325,7 @@ MODULE = Module(
              nouns=(Noun('limit', 'How many groups; all when left out.', 'int', required=False),), effect='read'),
     ),
     subscriptions=(Subscription(faults.TOPIC, faults.raised), Subscription('map.changed', faults.freed)),
-    provides=(Provides('project.background', background.start), Provides('project.background', proof.start)),
+    provides=(Provides('project.background', background.start),),
     status=status,
     default='list',
     tables=TABLES,

@@ -409,6 +409,11 @@ These terms are used exactly as defined in the Canonical Intake.
   - The notes the bases held were moved once, on 2026-10-15: 9 in the metaform base app-internal-refactor and 25 in the mgm base main, each word for word as one item of layer `critic` at the same element or join, and each base element or join was refined to hold none. Refining keeps every version, so the op log still holds the old text. No other base of any registered project held one.
   - Build: `data/writes.py` `base_only`, called by `writes.edit` and `layering.refine`; intake `_beside` and `_noted`. Acceptance: `test_notes_missing_and_join_refs_are_kept_as_the_intake_records_them`.
 
+- Amendment, confirmed 2026-10-21: a fault ticket closes immediately when its repair has been delivered. A worker's done before delivery leaves it open and names the missing steps. Completion removes its open broken condition from the map, turning off its fault light. The same fault recurring reopens the same fault group's ticket with condition broken and restores its light, preserving its previous resolution and new evidence. Explicit cancellation and disabled reopening remain effective. No background proof period or resolution-test runner delays closure. The map retains `prove_work` and its `proof` setting as the fault delivery requirement, preserving existing tickets without a schema change.
+  - Why: completed repairs must clear their lights. Recurrence capture restores attention when a repair fails.
+  - Build: map `finish_work`, `move_work`, `complete_delivery` and `_delivery_state`. Autoticket `reopen_fault` retains group identity. Delivery owns its merge and activation evidence outside map transactions.
+  - Acceptance: `test_done_after_delivery_closes_fault_and_recurrence_restores_same_light`, `test_fault_done_names_missing_delivery_and_keeps_light`, `test_board_done_after_delivery_closes_fault_immediately`.
+
 ### MAP-047 An intake result is judged by what it says about the project
 
 - Requirement: An intake result is judged by running the intake on a real project and grading the map on four things: it stays functionality based; it is accurate and thorough, missing no aspect of the functionality; it speaks to the project itself, never to the types of its elements; and its count of elements and joins does not blow up.

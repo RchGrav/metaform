@@ -857,7 +857,7 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         if ended.get('ended') in (TERMINATED, HANDED):  # it reads nothing more: a store it cannot reach is no error
             return ended if len(worked) == 1 else {**ended, 'worked': worked}
         record = await asyncio.to_thread(ticket, store, record.id)
-        over = await asyncio.to_thread(work_over, store, record)  # done, or its fix landed and is watched
+        over = await asyncio.to_thread(work_over, store, record)  # closed, or its result awaits delivery
         if folder is not None and over:  # its work committed, tested and checked to merge, VIEW-044
             from .merge import finished
             await asyncio.to_thread(events.announced, ctx.folder, ctx.surface, finished, ctx, store, record, folder)
@@ -4705,7 +4705,7 @@ class Session:
             record = await asyncio.to_thread(ticket, self.store, self.work_id)
             if self.turns or self.ending:  # a message can arrive while the ticket is read
                 return
-            if await asyncio.to_thread(work_over, self.store, record):  # done, or its fix landed and is watched
+            if await asyncio.to_thread(work_over, self.store, record):  # closed, or its result awaits delivery
                 await self.ticket_done()
                 return
             # Otherwise the agent stopped with its ticket open: the session stays, idle and reachable, and the

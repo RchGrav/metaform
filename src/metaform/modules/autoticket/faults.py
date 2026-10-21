@@ -206,7 +206,7 @@ def matched(terms: tuple[int, ...], known: list[tuple[int, tuple[int, ...]]], th
 
 def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '') -> None:
     """Reopen a completed canonical issue once: the fix that did not hold and the new evidence go into its note, it
-    stays of kind broken with its fault light, condition broken, on again, and it closes only with proof again."""
+    stays of kind broken with its fault light, condition broken, on again, and it requires delivery evidence again."""
     with store.atomic():
         current = store.ticket(work_id).work
         if current.done and current.outcome != 'cancelled':
@@ -220,7 +220,7 @@ def reopen_fault(store: Store, work_id: str, last_seen: str, evidence: str = '')
 
 
 def not_held(store: Store, work_id: str, landed: str, last_seen: str, evidence: str = '') -> None:
-    """A recurrence while a ticket's fix is watched: the fix did not hold, so the ticket goes back to To do, its
+    """A recurrence while a ticket's repair awaits delivery: the fix did not hold, so the ticket goes back to To do, its
     landing and resolution cleared, with that fix and the new evidence in its note, to be repaired again."""
     with store.atomic():
         current = store.ticket(work_id).work
@@ -235,7 +235,7 @@ def not_held(store: Store, work_id: str, landed: str, last_seen: str, evidence: 
 def tell(ctx: Context, store: Store, touched: Iterable[int], by_agent: dict[int, str],
          latest: dict[int, str] | None = None, loaded: dict[int, float | None] | None = None) -> int:
     """Each group counted: on its open ticket, its count and last seen written in that ticket's note; raised by an
-    agent working a ticket autoticket filed, counted on that ticket; on a ticket whose fix landed and is watched, that
+    agent working a ticket autoticket filed, counted on that ticket; on a ticket whose repair awaits delivery, that
     fix did not hold and the ticket goes back to To do, `not_held`; recurrence reopens its canonical ticket unless
     the person cancelled it or disabled reopening. A recurrence that comes before the fix is in force, from code loaded
     before it or while it waits to merge, `proof.before_fix`, counts against nothing: it is noted on the ticket with
@@ -322,7 +322,7 @@ def noted(note: str, rows: list[dict[str, Any]]) -> str:
 
 def file_waiting(ctx: Context, store: Store) -> int:
     """File the waiting groups, oldest first, while fewer than `autoticket_open_most` tickets it filed are open and not
-    held or watched: a held ticket waits for the person and a watched one for its proof, and neither starts agent work,
+    held or awaiting delivery: neither starts further agent work,
     so neither takes a slot. Each group is claimed first,
     so two processes never file one group twice. Returns how many were filed."""
     if not settings.value('autoticket_file', ctx.folder):
@@ -357,9 +357,9 @@ def file_waiting(ctx: Context, store: Store) -> int:
 
 
 def resting(store: Store, work_ids: list[str]) -> set[str]:
-    """Those of these tickets the person holds, `map_work hold=true`, or whose fix landed and is watched, kept in the
+    """Those of these tickets the person holds, `map_work hold=true`, or whose repair awaits delivery, kept in the
     map module's own table: a hold keeps agents and automatic starts off a ticket as the Backlog's held mark does, and a
-    watched ticket waits only for its proof, so neither is agent work. Read by key; none without the map module."""
+    submitted repair waits only for delivery, so neither is agent work. Read by key; none without the map module."""
     if not work_ids:
         return set()
     try:
@@ -397,8 +397,8 @@ def held_why(row: dict[str, Any], folder: Any = None) -> str | None:
 
 def ticket(store: Store, row: dict[str, Any]) -> Any:
     """The ticket for a group: kind broken, at its element, its task the evidence, how to reproduce it and that the fix
-    proves itself; held for the person, with why, when its feedback asks a design choice. Its condition broken is the
-    fault light at its element, and it closes only with proof, `proof.py`, so the light goes off only with the proof."""
+    is checked; held for the person, with why, when its feedback asks a design choice. Condition broken lights its
+    element until delivery closes the ticket. Recurrence reopens the same ticket and restores its light."""
     count = int(row['count'])
     example = str(row['example'])
     task = prompt_files.required(
@@ -417,9 +417,9 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
 
 
 def freed(payload: dict[str, Any], ctx: Context) -> None:
-    """`map.changed`: a ticket autoticket filed may be done, held or watched, its slot free for a waiting group. Decided
+    """`map.changed`: a ticket autoticket filed may be done, held or awaiting delivery, its slot free for a waiting group. Decided
     from the event alone: one naming tables other than `work`, or only words, steps or sessions of tickets, concerns it
-    not; one naming tickets reads whether any of them is one it filed and done, held or watched; one that does not say what it concerns
+    not; one naming tickets reads whether any of them is one it filed and done, held or awaiting delivery; one that does not say what it concerns
     may have closed any, so the waiting groups are looked at once. A held ticket released takes a slot and files
     nothing; `file_waiting` reads each ticket's held mark when it counts, so the next pass counts it."""
     store = ctx.store

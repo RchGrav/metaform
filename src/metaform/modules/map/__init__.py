@@ -1557,8 +1557,8 @@ def work(ctx: Context) -> Any:
     # what the work built belongs on the map in use: each gap at the ticket's node, or where its session linked a
     # file, is said with the refine call that closes it, LAYER-025; the ticket is done either way, BASE-044
     notices += store.landing(finished.node_kind, finished.node_id, finished.id)
-    # a ticket that closes only with proof is still open: its fix landed and it is watched, `storage.prove_work`
-    return _written(ctx, store, finished, 'done' if finished.done else 'watch', notices)
+    # Delivery failures name the missing evidence while preserving the submitted result.
+    return _written(ctx, store, finished, 'done' if finished.done else 'delivery', notices)
 
 
 def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: list[Notice]) -> Any:
