@@ -534,15 +534,19 @@ def test_a_sixth_group_waits_while_five_are_open_and_is_filed_when_one_closes(ru
     assert len(now) == 6 and any('thumbnail' in record.task for record in now)
 
 
-def test_five_held_feedback_tickets_take_no_slot_and_a_web_fault_is_filed(run, project):
-    from metaform import settings
-    settings.put('autoticket_hold_feedback', True, project)
+@pytest.mark.parametrize('source', ['feedback', 'web', 'page', 'mcp', 'run', 'log'])
+def test_fault_creation_never_adds_implicit_hold(run, project, source):
+    """Feedback origin and a saved obsolete policy cannot turn repair work into a hold."""
+    from metaform import home
+    home.save(home.path_key(project), 'autoticket', 'autoticket_hold_feedback', [True], folder=project)
     store = mapped(project)
-    for words in SIX[:5]:
-        raise_fault(project, source='feedback', message=words, reproduce='Read the help.')
-    assert len(tickets(store)) == 5 and all(record.held for record in tickets(store))
-    web_fault(project)
-    assert any("KeyError: 'node 0'" in record.task and not record.held for record in tickets(store))
+    raise_fault(project, source=source, message='Remove failing cache adapter', reproduce='Read the help.')
+    filed = tickets(store)
+    assert len(filed) == 1
+    assert not filed[0].held and filed[0].column == 'todo'
+    assert 'Held for the person:' not in filed[0].note
+    shown = json.loads(run('map', 'work', f'id={filed[0].id}', '--json', cwd=project).stdout)
+    assert not shown.get('map', {}).get('hold')
 
 
 def test_five_dispatch_held_tickets_take_no_slot_and_a_web_fault_is_filed(run, project):
@@ -554,7 +558,7 @@ def test_five_dispatch_held_tickets_take_no_slot_and_a_web_fault_is_filed(run, p
     filed = tickets(store)
     assert len(filed) == 5 and not any('thumbnail' in record.task for record in filed)
     for record in filed:
-        run('map', 'work', 'op=edit', f'id={record.id}', 'hold=true', cwd=project)
+        run('map', 'work', 'op=edit', f'id={record.id}', 'hold=true', 'hold_reason=Wait for triage', cwd=project)
     assert any('thumbnail' in record.task for record in tickets(store))
     web_fault(project)
     assert any("KeyError: 'node 0'" in record.task for record in tickets(store))

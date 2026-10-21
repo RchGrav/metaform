@@ -36,9 +36,4 @@ How to reproduce it: <reproduce/>
 The fix comes with a check that proves this error no longer happens: a test that fails before the fix and passes after it, or the reproduction above run again without the error. Say in your resolution what the check was and what it showed. The ticket's note counts each time the error comes back while the ticket is open. Complete delivery before closing the ticket. Missing delivery leaves it open and names the missing steps. Successful delivery closes it immediately and clears its fault light. If the fault returns, its existing ticket reopens and its light returns.
 
 Repair the existing purpose under the project's effective automation policy. Ordinary engineering choices are part of doing the repair. If an action changes that purpose or requires approval under that policy, record the precise action and reason; continue independent authorized work. Do not infer a need for approval from words in the error message.</ticket>
-<!-- Why a ticket filed for a feedback report waits for the person, in Backlog: written at the start of its note. -->
-<held_design>Feedback says how Metaform should work, and what to change is a design choice.</held_design>
-<!-- Why a ticket filed for an error naming deleting or removing data waits for the person, in Backlog: written at the
-     start of its note. -->
-<held_data>The error is about deleting or removing data, so its fix may delete or remove data.</held_data>
 </prompts>

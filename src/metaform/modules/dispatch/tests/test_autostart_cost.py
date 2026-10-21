@@ -20,7 +20,7 @@ def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeyp
     first = dispatch.id
     second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Second ticket').id
     held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held ticket').id
-    run('map', 'work', 'op=edit', f'id={held}', 'hold=true', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={held}', 'hold=true', 'hold_reason=Wait for release', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={first}', 'eligible=["claude"]', 'glyph=kite', cwd=dispatch.folder)
     run('map', 'work', 'op=edit', f'id={second}', 'eligible=["antigravity"]', cwd=dispatch.folder)
     calls = Counter()
@@ -193,9 +193,10 @@ def test_a_held_ticket_waits_in_backlog_for_the_person_and_autostart_never_start
                                                                                     monkeypatch):
     """UX review round 1, orchestrator F5: held=true put a ticket in Backlog, and autostart started it after To do."""
     run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
-    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Planned, held', held=True).id
+    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Planned, held', held=True,
+                                   hold_reason='Wait for release').id
     kept = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held from agents').id
-    run('map', 'work', 'op=edit', f'id={kept}', 'hold=true', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={kept}', 'hold=true', 'hold_reason=Wait for release', cwd=dispatch.folder)
     started = _passes(dispatch, monkeypatch)
     assert started() == [dispatch.id], 'only the To do ticket starts'
     assert dispatch.store.ticket(held).work.taken is None and dispatch.store.ticket(held).work.column == 'backlog'
@@ -224,61 +225,47 @@ def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run,
 
 
 @pytest.mark.req('VIEW-045')
-def test_a_ticket_an_agent_writes_is_held_so_no_work_starts_its_own_successor(dispatch, run):  # noqa: F811
-    """UX review round 1, runaway F5: with hold_agent_tickets on, a ticket written by an agent of Metaform waits in
-    Backlog for the person; off, the default since 2026-10-18, it goes on the board ready, so a project heals itself."""
-    ready = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Fix it', 'title=Fix it',
-                           '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'}).stdout)
+@pytest.mark.parametrize('identity', [
+    {'METAFORM_ROLE': 'system'}, {'METAFORM_ROLE': 'sentinel'}, {'METAFORM_ROLE': 'intake'},
+    {'METAFORM_ROLE': 'talk'}, {'METAFORM_ROLE': '', 'METAFORM_SESSION': 's-1'},
+    {'METAFORM_ROLE': ''},
+])
+@pytest.mark.parametrize('reviewed', [False, True])
+def test_agent_creation_never_adds_implicit_hold(dispatch, run, identity, reviewed):  # noqa: F811
+    """Source identity, review state and a saved obsolete policy cannot hold new work."""
+    from metaform import home
+    home.save(home.path_key(dispatch.folder), 'map', 'hold_agent_tickets', [True], folder=dispatch.folder)
+    ready = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}',
+                          'task=Fix it', 'title=Fix it', f'reviewed={str(reviewed).lower()}',
+                          '--json', cwd=dispatch.folder, env=identity).stdout)
     assert ready['held'] is False, ready
-    run('set', '--hold-agent-tickets', cwd=dispatch.folder)
-    said = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Follow up',
-                          'title=Follow up', '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': 'system'}).stdout)
-    assert said['held'] is True, said
-    assert 'waits in Backlog' in json.dumps(said)
-    mine = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Mine', 'title=Mine',
-                          '--json', cwd=dispatch.folder, env={'METAFORM_ROLE': ''}).stdout)
-    assert mine['held'] is False, "the person's own ticket goes to To do"
+    assert not ready.get('map', {}).get('hold'), ready
+    assert ready['column'] == 'todo', ready
 
 
-@pytest.mark.req('VIEW-045')
-def test_a_held_ticket_is_released_only_by_the_person_whatever_path_an_agent_takes(dispatch, run):  # noqa: F811
-    """UX review round 2, held-and-signals F3 and F4: a sentinel moved its own held proposal to To do and autostart
-    started it, an intake agent started one with dispatch start, a system agent edited held=false, and an agent with
-    METAFORM_ROLE cleared wrote an unheld ticket. Releasing is the person's decision: their terminal, or the page."""
-    run('set', '--agents-ask-first', cwd=dispatch.folder)  # these check asking, off by default since 2026-10-18
+@pytest.mark.req('MAP-060')
+@pytest.mark.parametrize('role', ['sentinel', 'talk', 'intake', 'system'])
+def test_reason_based_unholding_needs_no_person_approval_but_explicit_start_does(dispatch, run, role):  # noqa: F811
+    """Ordinary release stays available under ask-first without granting explicit start authority."""
     folder = dispatch.folder
-    run('set', '--hold-agent-tickets', cwd=folder)  # the person asks to approve what agents write
-    # every identity name the runner sets says an agent writes, not the role alone
-    cleared = json.loads(run('map', 'work', 'op=add', f'node=element:{dispatch.node.id}', 'task=Proposal',
-                             'title=Proposal', '--json', cwd=folder,
-                             env={'METAFORM_ROLE': '', 'METAFORM_SESSION': 's-1'}).stdout)
-    assert cleared['held'] is True, cleared
-    held = cleared['id']
-    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=true', cwd=folder)  # the person holds this one
-    calls = (('map', 'work', 'op=move', f'id={held}', 'column=todo'),
-             ('map', 'work', 'op=move', f'id={held}', 'column=doing'),
-             ('map', 'work', 'op=edit', f'id={held}', 'held=false'),
-             ('map', 'work', 'op=take', f'id={held}'),
-             ('dispatch', 'start', held, 'claude'),
-             ('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=false'),
-             ('dispatch', 'start', dispatch.id, 'claude'))
-    for role in ('sentinel', 'talk', 'intake', 'system'):
-        for call in calls:
-            refused = run(*call, cwd=folder, env={'METAFORM_ROLE': role}, ok=False)
-            said = refused.stdout + refused.stderr
-            assert refused.returncode != 0 and "the person's decision" in said, (role, call, said)
-            assert '"Proposal"' in said or '"Write notes.txt"' in said, said  # named as the person reads it
-    record = dispatch.store.ticket(held).work
-    assert record.held and record.taken is None and dispatch.store.ticket(dispatch.id).work.taken is None
-    # the person releases it at their own terminal, with no --confirm; their hold's letting go is theirs too
-    moved = json.loads(run('map', 'work', 'op=move', f'id={held}', 'column=todo', '--json', cwd=folder).stdout)
-    assert moved['held'] is False
-    let_go = json.loads(run('map', 'work', 'op=edit', f'id={dispatch.id}', 'hold=false', '--json', cwd=folder).stdout)
-    assert let_go['map']['hold'] is False
-    # what an agent may still do with a held ticket: read it, note it, and put it back in Backlog
-    again = run('map', 'work', 'op=edit', f'id={held}', 'held=true', 'note=Seen', cwd=folder,
-                env={'METAFORM_ROLE': 'system'})
-    assert again.returncode == 0 and dispatch.store.ticket(held).work.held
+    run('set', '--agents-ask-first', cwd=folder)
+    identity = {'METAFORM_ROLE': role, 'METAFORM_SESSION': 'review-session'}
+    for mode in ('held', 'backlog', 'hold'):
+        record = dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Proposal {mode}', title=f'Proposal {mode}',
+                                         held=mode != 'hold', hold_reason='Wait for prerequisite review')
+        if mode == 'hold':
+            run('map', 'work', 'op=edit', f'id={record.id}', 'hold=true',
+                'hold_reason=Wait for prerequisite review', cwd=folder)
+        refused = run('dispatch', 'start', record.id, 'claude', cwd=folder, env=identity, ok=False)
+        said = refused.stdout + refused.stderr
+        assert refused.returncode != 0 and "the person's decision" in said, said
+        assert dispatch.store.ticket(record.id).work.taken is None
+        call = ('op=move', 'column=todo') if mode == 'backlog' else ('op=edit', f'{mode}=false')
+        released = json.loads(run('map', 'work', *call, f'id={record.id}', '--json',
+                                  cwd=folder, env=identity).stdout)
+        assert not released['held']
+        assert not released.get('map', {}).get('hold')
+        assert dispatch.store.ticket(record.id).work.taken is None
 
 
 @pytest.mark.req('BASE-052')
@@ -286,7 +273,8 @@ def test_a_glyphs_next_ticket_is_never_one_waiting_on_an_open_ticket(dispatch, r
     from metaform.module import context
     from metaform.modules import dispatch as module
 
-    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held', held=True).id
+    held = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Held', held=True,
+                                   hold_reason='Wait for release').id
     waiting = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Waiting').id
     ready = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Ready').id
     for one in (held, waiting, ready):

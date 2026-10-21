@@ -91,6 +91,9 @@ from metaform.module import (
 from . import registry as agent_registry  # by another name: unloading a module drops its submodules' names
 from .board import changed as board_changed
 from .board import waiting as board_waiting
+from .hold_review import HOLD_REVIEW_TABLES
+from .hold_review import changed as hold_review_changed
+from .hold_review import reconcile as review_holds
 from .names import is_name
 from .progress import SOURCE as PROGRESS
 from .progress import blocked as rework_blocked
@@ -162,7 +165,7 @@ SPEND = (Column('session_id', required=True), Column('seq', 'int', required=True
 # nothing raised on an agent is lost when the map shown changes (UX review round 2, 2026-10-17, combined F4). The
 # signals `lines` still holds, written by runners on older code, are carried into it by carry_conversations(); only a
 # table is added, so version 5's code still reads and writes the tables.
-TABLES = Tables(version=21, compatible_from=5, tables=(  # additive activation records and delivered branch identity
+TABLES = Tables(version=22, compatible_from=5, tables=(  # additive activation and persisted hold-review deadlines
     # The conversations with agents, the project's whatever its maps: each session and the lines of its thread.
     Table('agent_sessions', place='project', key=('session_id',), columns=SESSION,
           indexes=(Index(('work_id', 'seq')), Index(('seq',)), Index(('state', 'ended', 'seq')))),
@@ -239,6 +242,7 @@ TABLES = Tables(version=21, compatible_from=5, tables=(  # additive activation r
     # The work the person's word started, one row per word of a system agent's session: the word itself (`id`, `text`,
     # `at`), the tickets it covers and those of it the person stopped, `Session.covers` in runner.py. Written only by
     # that session's runner, and taken out when that work is done or the person stops the session.
+    *HOLD_REVIEW_TABLES,
     Table('word_covers', place='project', key=('session_id', 'word_id'),
           columns=(Column('session_id', required=True), Column('word_id', required=True),
                    Column('word', 'json', required=True), Column('tickets', 'json', required=True),
@@ -2628,9 +2632,10 @@ def autostart(ctx: Context) -> dict[str, Any]:
     routed: list[dict[str, Any]] = owner.route_pending(ctx) if owner is not None else []
     continued = drain(ctx)  # restart/reconnect reconciliation of explicitly recorded continuations
     start_raised(ctx, store, asked)  # the person raised these, so they start whether Full Auto is checked or not
+    hold_review_due = review_holds(ctx)
     connected = stay_connected(ctx, store, asked)  # the person's own, whether Full Auto is checked or not
     started = start_work(ctx, store, recovered, asked)
-    due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None)) if one is not None]
+    due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None), hold_review_due) if one is not None]
     return {**started, **connected,
             'more': bool(started.get('more') or owner is not None and owner.routing_waiting(ctx)),
             **({'specialist_routing': {
@@ -7787,7 +7792,8 @@ MODULE = Module(
     tables=TABLES,
     subscriptions=(Subscription('work.requeued', requeued), Subscription('dispatch.rework-limit', rework_limit),
                    Subscription('signal.raised', collect), Subscription('map.changed', progress_changed),
-                   Subscription('map.changed', orchestration_changed), Subscription('map.changed', board_changed)),
+                   Subscription('map.changed', orchestration_changed), Subscription('map.changed', board_changed),
+                   Subscription('map.changed', hold_review_changed)),
     work_read=work_read,
     # person.consent: ask_consent, the consent card in a dispatched agent's chat its MCP server asks the person through
     # person.word and person.word.acted: the person's message that started the system agent's turn in flight, and the

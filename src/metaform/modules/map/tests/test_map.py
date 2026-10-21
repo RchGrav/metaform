@@ -1091,7 +1091,7 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     join = store.joins('code.timer.kitchen').results[0]
     before = json.loads(run('query', 'graph', 'limit=0', '--json', cwd=mapped).stdout)
     added = j(run, 'work', 'op=add', 'node=code.alarm.audible', 'condition=unbuilt', 'note=in the spec, not built',
-              'task=build the piezo driver', 'held=true', cwd=mapped)
+              'task=build the piezo driver', 'held=true', 'hold_reason=Await hardware inspection.', cwd=mapped)
     assert (added['node_kind'], added['address'], added['condition'], added['held'], added['reviewed'], added['done']) == (
         'element', 'code.alarm.audible', 'unbuilt', True, False, None)
     on_join = j(run, 'work', 'op=add', f'node=join:{join.id}', 'condition=broken', 'task=fix the tone', cwd=mapped)
@@ -1567,10 +1567,10 @@ def test_wipe_backs_up_every_board_column_and_restores_ids_numbers_and_owned_row
                                     links=[Node('element', 'code.timer.kitchen')])
             with store.tables() as tx:
                 tx.insert('ticket_settings', {'work_id': record.id, 'board': 'past effort'})
-            store.move_work(record.id, column, by='codex')
+            store.move_work(record.id, column, by='codex', hold_reason='Keep this board for later review.')
             records.append(record)
     first = records[0].id
-    j(run, 'work', 'op=edit', f'id={first}', 'agent=codex', 'hold=true', 'glyph=owl',
+    j(run, 'work', 'op=edit', f'id={first}', 'agent=codex', 'hold=true', 'hold_reason=Await board review.', 'glyph=owl',
       'eligible=["codex"]', f'after_work=["{records[-1].id}"]', cwd=mapped)
     store.plan_work(first, 3)
     store.step_work(first, 'Keep this progress.')
@@ -1670,7 +1670,7 @@ def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(
     """Assign and track work via Metaform like a kanban; the ticket is on the functionality it is
     assigned to, and links other nodes for reference. It keeps its kind in every column."""
     made = json.loads(run('map', 'work', 'op=add', 'title=A ticket', 'node=code.alarm.audible', 'condition=broken', 'task=quieter tone',
-                          'links=["element:code.timer.kitchen"]', 'held=true', '--json', cwd=mapped).stdout)
+                          'links=["element:code.timer.kitchen"]', 'held=true', 'hold_reason=Await tone review.', '--json', cwd=mapped).stdout)
     assert ([link['address'] for link in made['links']], made['held']) == (['code.timer.kitchen'], True)
     doing = json.loads(run('map', 'work', 'op=move', f'id={made["id"]}', 'column=doing', 'by=codex', '--json',
                            cwd=mapped).stdout)

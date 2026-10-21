@@ -12,6 +12,7 @@ import {chatButton} from '/page/app/dock/send.js';
 import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, taskWords, ago, dated, ticketHead}
   from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
+import {requestHoldReason, holdReason} from '/page/app/board/holds.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork, named} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect, pickerOptions} from '/page/app/agents/pickers.js';
@@ -85,7 +86,7 @@ function ticketControls(ticket, settings = null) {
     // only while an agent runs on it: an ended agent's ticket offers Back to To do on its card (UX recheck 2026-10-17)
     ticket.taken && !ticket.done && D.sessions.some(one => one.work_id === ticket.id && one.state === 'running')
       ? recallButton(ticket) : null,
-    ticket.done ? null : holdButton(kept, change));
+    ticket.done ? null : holdButton(ticket, change));
   return box;
 }
 /* Runtime choices belong to this ticket. Read the agent's offered values only when its settings are opened. */
@@ -181,25 +182,32 @@ function recallButton(ticket) {
     title: 'Recall the agent working this ticket; the ticket goes back on the board', onclick: recall}, 'Recall agent');
 }
 /* Hold hides the ticket from agents and automatic starts; Release shows it to them again. */
-function holdButton(kept, change) {
-  return h('button', {class: kept.hold ? 'btn sm hold on' : 'btn sm hold', type: 'button',
-    title: kept.hold ? 'Release it: agents and automatic starts see it again'
+function holdButton(ticket, change) {
+  const held = ticket.held || ticket.map?.hold;
+  return h('button', {class: held ? 'btn sm hold on' : 'btn sm hold', type: 'button',
+    title: held ? 'Release it: agents and automatic starts see it again'
       : 'Hold it: hidden from agents and automatic starts',
-    onclick: event => change({hold: !kept.hold}, event.target)}, kept.hold ? 'Release hold' : 'Hold');
+    onclick: event => {
+      const hold = !held, hold_reason = hold ? requestHoldReason() : null;
+      if (hold && hold_reason === null) return;
+      change(hold ? {hold, hold_reason} : {hold: false, held: false}, event.currentTarget);
+    }}, held ? 'Release hold' : 'Hold');
 }
 /* A card's node chips: the part it is assigned and those it links for reference. */
 const assignedOf = ticket => ({kind: ticket.node_kind, id: ticket.node_id, address: ticket.address,
   ends: [ticket.receiver_address, ticket.provider_address]});
 function card(ticket, place, total, find) {
   const settings = h('details', {class: 'ticket-settings', onclick: event => event.stopPropagation()},
-    h('summary', {}, ticket.map?.hold ? 'Held · agent settings' : 'Agent settings'));
+    h('summary', {}, ticket.held || ticket.map?.hold ? 'Held · agent settings' : 'Agent settings'));
   settings.append(ticketControls(ticket, settings));
   // the place counted when it is clicked, not when it was made: a card a move elsewhere left as it was is not made again
   const move = async (to, by = 0) => {
     const column = columnOf(ticket);
     const at = B.tickets.filter(one => columnOf(one) === column).sort(cardOrder).findIndex(one => one.id === ticket.id);
     const position = to ?? Math.max(0, at + by);
-    if (await wrote('/api/move', {work_id: ticket.id, column, position})) await renderBoard();
+    const hold_reason = column === 'backlog' ? requestHoldReason() : null;
+    if (column === 'backlog' && hold_reason === null) return;
+    if (await wrote('/api/move', {work_id: ticket.id, column, position, hold_reason})) await renderBoard();
   };
   const open = () => {
     const project = S.project, base = S.base || '';
@@ -210,6 +218,7 @@ function card(ticket, place, total, find) {
     // its number and one-line title first, so a ticket is found by either at a glance; the body shows on Inspect
     h('div', {class: 'lead'}, ticketHead(ticket)),
     cardTop(ticket),
+    holdReason(ticket),
     h('div', {class: 'nodes'}, nodeChip(assignedOf(ticket), 'assigned', find),
       ...(ticket.links || []).map(link => nodeChip(link, 'ref', find))),
     cardProgress(ticket),
@@ -217,7 +226,7 @@ function card(ticket, place, total, find) {
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
     cardActs(ticket, place, total, move),
     settings);
-  if (ticket.map?.hold) box.classList.add('on-hold');
+  if (ticket.held || ticket.map?.hold) box.classList.add('on-hold');
   box.addEventListener('dragstart', event => {
     event.dataTransfer.setData('text/plain', ticket.id);
     box.classList.add('dragging');
@@ -414,10 +423,16 @@ async function dropCard(event, cards, column) {
   const after = others.findIndex(above);
   const moved = B.tickets.find(ticket => ticket.id === id), from = moved ? columnOf(moved) : null;
   const was = moved ? B.tickets.filter(ticket => columnOf(ticket) === from).sort(cardOrder).indexOf(moved) : -1;
-  if (!await wrote('/api/move', {work_id: id, column, position: after < 0 ? others.length : after, by: 'user'})) return;
+  const hold_reason = column === 'backlog' ? requestHoldReason() : null;
+  if (column === 'backlog' && hold_reason === null) return;
+  if (!await wrote('/api/move', {work_id: id, column, position: after < 0 ? others.length : after,
+    by: 'user', hold_reason})) return;
   await renderBoard();
   if (from && from !== column) undoable(`Moved to ${COLUMN_NAMES[column]}.`, async () => {
-    const back = await wrote('/api/move', {work_id: id, column: from, position: Math.max(0, was), by: 'user'});
+    const hold_reason = from === 'backlog' ? requestHoldReason() : null;
+    if (from === 'backlog' && hold_reason === null) return false;
+    const back = await wrote('/api/move', {work_id: id, column: from, position: Math.max(0, was),
+      by: 'user', hold_reason});
     await renderBoard();
     return Boolean(back);
   });
@@ -520,6 +535,27 @@ async function removeBoard() {
 }
 $('#board .board-activate').onclick = activateBoard;
 $('#board .board-remove').onclick = removeBoard;
+$('#board .unhold-all').onclick = async event => {
+  const button = event.currentTarget;
+  const scope = {project: S.project, base: S.base};
+  button.disabled = true;
+  try {
+    const preview = await read('held-work', scope), held = preview.results || [];
+    const review = held.map(ticket => h('span', {class: 'held-work-review', 'data-id': ticket.id},
+      h('strong', {}, ticket.title || ticket.task || ticket.id), h('br'),
+      h('small', {}, `${ticket.id} · ${ticket.map?.board || 'First board'} · ${ticket.base}`), h('br'),
+      ticket.map?.hold_reason?.trim() ? `Reason and release risk: ${ticket.map.hold_reason}`
+        : 'No hold reason or release-risk explanation was recorded.'));
+    if (!await confirmAct({title: `Release ${held.length} work hold${held.length === 1 ? '' : 's'}?`,
+      text: [held.length ? 'Review every hold before releasing it. Autostart controls automatic starts.'
+        : 'No open work tickets are held.', ...review], verb: 'Unhold all', cancel: 'Keep holds', danger: false})) return;
+    const result = await wrote('/api/unhold-all', {...scope, revision: preview.revision, hold_preview: held});
+    if (result) toast(result.review_changed > 0
+      ? `Released ${result.changed} held tickets. ${result.review_changed} holds remain for another review.`
+      : `Released ${result.changed} held ticket${result.changed === 1 ? '' : 's'}.`);
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+};
 async function wipeBoard() {
   const name = B.board, board = BOARDS.all.find(one => one.name === name), box = $('#board .boards');
   box.value = name;

@@ -256,6 +256,22 @@ def test_routing_off_carries_once_into_a_jev_decisions_without_paperclip_route(f
     assert paperclip.carry_route() == [], 'once per home'
 
 
+def test_linking_external_issue_never_adds_implicit_hold(folder, server, monkeypatch):
+    created = []
+
+    def add_work(store, node, condition, **fields):
+        record = Store.__getattr__(store, 'add_work')(node, condition, **fields)
+        created.append(record)
+        return record
+
+    monkeypatch.setattr(Store, 'add_work', add_work, raising=False)
+    issue = server.issue('issue-linked', title='Repair alarm')
+    shown = verb(folder, 'link', issue=issue['id'], address='code.alarm.audible')
+    record = Store('proj').ticket(shown['ticket']).work
+    assert record.taken_by.startswith('paperclip ')
+    assert not created[0].held and not record.held
+
+
 def test_send_creates_the_issue_and_links_it_and_a_refused_create_gives_the_ticket_back(folder, server):
     store = Store('proj')
     work_id = ticket('Wire the beeper')

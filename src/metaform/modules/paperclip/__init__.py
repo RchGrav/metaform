@@ -390,9 +390,10 @@ def link(ctx: Context) -> dict[str, Any]:
     client = _client(ctx)
     issue = _object(_call('read the issue', client.issue, issue_id))
     title = str(issue.get('title') or issue_id)
-    record = store.add_work(Node('element', address), None, title=title[:120],
-                            task=str(issue.get('description') or title), held=True)
-    record = store.take_work(record.id, by=f"paperclip {issue.get('identifier') or issue['id']}")
+    with store.atomic():
+        record = store.add_work(Node('element', address), None, title=title[:120],
+                                task=str(issue.get('description') or title))
+        record = store.take_work(record.id, by=f"paperclip {issue.get('identifier') or issue['id']}")
     row: dict[str, Any] = {'issue_id': str(issue['id']), 'identifier': issue.get('identifier'),
                            'company_id': issue.get('companyId'), 'work_id': record.id, 'address': address,
                            'works': 'paperclip', 'state': issue.get('status'), 'synced': now()}

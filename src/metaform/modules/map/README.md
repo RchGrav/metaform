@@ -70,7 +70,7 @@ Who writes a ticket goes by the role the dispatch runner gives an agent, MAP-050
 
 Set a ticket's Eligible agents with `work op=add ... eligible='["claude"]'` or `work op=edit id=<work id> eligible='["claude", "codex"]'`. An empty list restores Any agent, which is the default for existing and new tickets. The map module keeps the list in `"map.eligible"`, keyed by `work_id`, and shows it under `map` on ticket reads. Dispatch and direct `op=take` claims honor it. A direct MCP claim uses the initialized client name, while a CLI claim uses the first word of `by`. Unidentified agents cannot claim restricted tickets. Moving a card to Doing remains a person's action.
 
-A ticket can wait on others: `work op=edit id=<work id> after_work='["<work id>", ...]'` (each an id or an `<address>#<n>`), and `after_work='[]'` waits on none. The map module keeps the list in `"map.after"`, keyed by `work_id`, and shows it under `map` on ticket reads; dispatch starts no such ticket by itself, and `dispatch start` refuses it, while any of them is open. A held ticket (`held=true`, the Backlog) waits for the person: autostart and Start all never start it. A ticket an agent of Metaform writes (any METAFORM_ROLE) is always held, with a notice. A ticket's change says its kind on `map.changed`: `note` for its note, title or links alone, `step` for its plan and steps, `ticket` for the rest (UX review round 1, 2026-10-17).
+A ticket can wait on others: `work op=edit id=<work id> after_work='["<work id>", ...]'` (each an id or an `<address>#<n>`), and `after_work='[]'` waits on none. The map module keeps the list in `"map.after"`, keyed by `work_id`, and shows it under `map` on ticket reads; dispatch starts no such ticket by itself, and `dispatch start` refuses it, while any of them is open. A held ticket (`held=true`, the Backlog) waits for release: autostart and Start all never start it. Holds require an explicit user or deliberate agent action with a fresh `hold_reason` recorded on the ticket. Creation never adds a hold because of source, role, feedback, filing or review state. Autostart controls automatic starts. Reason-based unholding needs no person approval, including with `agents_ask_first` on. Explicit start and stop authority remain unchanged. A ticket's change says its kind on `map.changed`: `note` for its note, title or links alone, `step` for its plan and steps, `ticket` for the rest.
 
 ## A layer at a scope: `<scope>@<layer>`
 
@@ -150,3 +150,11 @@ metaform map node element:code.engine
 ```
 
 `exclude` records material outside the intake scope or code conflicting with a superseding specification. Its note links the affected material and the specification or scope reason for review. Unrelated folders are excluded from functional capture; proposed gitignore changes are recorded for review. Marking a record preserves files and does not change gitignore. Unneeded migration code is marked for review. A store at an earlier layout is updated by Metaform when it opens it.
+
+Explicit holds require a fresh nonblank `hold_reason` on `hold=true`, `held=true` and moves into Backlog.
+The hold author answers: "Please explain why this ticket is on hold. State whether it is unsafe to unhold, and why."
+General notes and previous reasons never substitute for a new explanation. `work id=<id>` reads retained
+`hold_history`; release preserves it. `work op=unhold_all` releases open executable work across project boards
+and bases, leaves prerequisites intact, excludes reserved conversations and closed work, and returns changed count.
+Board previews recorded explanations before confirmation and rejects a stale preview. Ordinary reason-based
+unholding needs no approval, including with `agents_ask_first` on. Autostart controls automatic starts.

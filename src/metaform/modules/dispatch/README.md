@@ -344,3 +344,10 @@ metaform dispatch stop <work id>
 ```
 
 Stored choices migrate once per home and once per map upgrade: command settings, default agents, option settings, roundtable seats, ticket agents and eligibility. Explicit Antigravity settings win collisions. A custom command keeps its value. The retired shipped command becomes the native launcher. Historical sessions retain their original identities. Google’s documented Antigravity `.gemini` paths remain intact.
+
+Explicit work holds retain dedicated reasons. Held work receives a triage review deadline every 15 minutes while
+Autostart permits automatic starts. `hold_review.py` stores deadlines in project-owned `hold_reviews` rows and
+reuses the supervisor's earliest `retry_due` timer. Named ticket events update only those deadlines. Release,
+cancellation, completion and removal cancel their deadlines. Pending reminders share one Board inbox batch.
+Triage reads recorded reasons, releases valid work when its reason no longer applies, and cancels only work
+established as invalid or superseded with evidence. Explicit person stops retain their launch authority.

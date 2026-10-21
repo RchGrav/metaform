@@ -13,7 +13,8 @@ function. So one kind of error is one group however often it repeats, and the wo
 raises never make two errors one. A group never seen before is filed as a ticket of kind broken at the element that owns its file, `watch.file_address`;
 a group that recurs while its ticket is open has its count and last seen written in that ticket's note. At most
 `autoticket_open_most` filed tickets are open and not held at once: the rest wait as groups, and the oldest is filed
-when one of those tickets is done or held. A fault raised by an agent working a ticket autoticket filed is counted on that ticket. Feedback is held only when the person enables that policy. Recurrences reopen their canonical ticket;
+when one of those tickets is done or held. A fault raised by an agent working a ticket autoticket filed is counted on
+that ticket. Filing never adds a hold. Recurrences reopen their canonical ticket;
 explicitly cancelled work stays cancelled. Error wording never imposes an approval gate.
 
 Event rules, CLAUDE.md section 2: the faults that arrive while a pass for the same project runs merge into its next
@@ -28,7 +29,6 @@ import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from importlib import resources
-from pathlib import Path
 from typing import Any, cast
 
 from metaform import events, prompt_files, settings
@@ -388,16 +388,9 @@ def waits(row: dict[str, Any], at: float) -> bool:
     return False
 
 
-def held_why(row: dict[str, Any], folder: Any = None) -> str | None:
-    """Only explicit capture policy holds a report. Words in a symptom do not authorize or forbid its remedy."""
-    if row['source'] == 'feedback' and settings.value('autoticket_hold_feedback', folder):
-        return prompt_files.text(HERE, 'held_design') or 'Feedback asks how Metaform should work: a design choice.'
-    return None
-
-
 def ticket(store: Store, row: dict[str, Any]) -> Any:
     """The ticket for a group: kind broken, at its element, its task the evidence, how to reproduce it and that the fix
-    is checked; held for the person, with why, when its feedback asks a design choice. Condition broken lights its
+    is checked. Filing adds no hold, regardless of source. Condition broken lights its
     element until delivery closes the ticket. Recurrence reopens the same ticket and restores its light."""
     count = int(row['count'])
     example = str(row['example'])
@@ -406,12 +399,10 @@ def ticket(store: Store, row: dict[str, Any]) -> Any:
         first=str(row['first_seen']), last=str(row['last_seen']), sample=example,
         source=SOURCES.get(str(row['source']), str(row['source'])),
         reproduce=str(row['reproduce'] or 'not known; the sample above is all that was seen'))
-    why = held_why(row, Path(store.project().path))
-    note = '\n'.join([*([f'Held for the person: {why}'] if why else []), line(row)])
     title = f'{TITLES.get(str(row["source"]), "Error")}: {first_line(example)}'[:120]
     with store.atomic():
-        record = store.add_work(Node('element', str(row['address'])), 'broken', kind='broken', title=title, note=note,
-                                task=task, held=why is not None)
+        record = store.add_work(Node('element', str(row['address'])), 'broken', kind='broken', title=title, note=line(row),
+                                task=task)
         store.prove_work(record.id)
     return record
 

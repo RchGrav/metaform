@@ -924,47 +924,38 @@ def test_a_dispatched_system_agents_switch_runs_once_on_the_persons_allow_in_its
         made.close()
 
 
-@pytest.mark.req('VIEW-045')
+@pytest.mark.req('MAP-060')
 @pytest.mark.req('MCP-006')
-def test_a_dispatched_system_agent_releases_a_held_ticket_only_on_the_persons_allow_in_its_chat(
+def test_a_dispatched_system_agent_unholds_from_reason_review_without_person_consent(
         run, home, mapped, tmp_path):
-    """UX review round 2, held-and-signals F4: releasing a held ticket is the person's act. The dispatched system
-    agent's move of one to To do waits on a consent card naming the ticket; Allow releases it, Decline leaves the
-    other held. Every agent the runner could start is the fake agent."""
-    run('set', '--agents-ask-first', cwd=mapped)  # these check asking, off by default since 2026-10-18
-    import threading
-
+    """A real dispatched caller can release either flag under ask-first without a consent card or person's word."""
+    run('set', '--agents-ask-first', cwd=mapped)
     from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually, read
     made = Dispatch(run, home, mapped, tmp_path)
     store = Store('proj')
     first, second = (store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task=f'Proposal {n}',
-                                    title=f'Proposal {n}', held=True).id for n in (1, 2))
+                                    title=f'Proposal {n}', held=True,
+                                    hold_reason='Wait for prerequisite review').id for n in (1, 2))
+    third = store.add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Proposal 3', title='Proposal 3').id
+    run('map', 'work', 'op=edit', f'id={third}', 'hold=true', 'hold_reason=Wait for prerequisite review', cwd=mapped)
     try:
         made.start('hold', 'system=true')
         runner = eventually(lambda: next((row['runner'] for row in read(run, made)['sessions']
                                           if row.get('state') == 'running' and row.get('runner')), None))
-        cards: list[dict] = []
-
-        def person():  # on the page: Allow the first card, Decline the second
-            for choice in ('accept', 'decline'):
-                card = eventually(lambda: next((one['data'] for one in read(run, made)['lines']
-                                                if one['kind'] == 'elicitation' and one['data'].get('consent')
-                                                and one['data']['state'] == 'waiting'), None), limit=60)
-                run('dispatch', 'permit', made.id, card['request'], '--', choice, cwd=mapped, isolated=True)
-                cards.append(card)
-        answering = threading.Thread(target=person)
-        answering.start()
 
         async def check(client):
-            return (await called(client, 'map_work', {'op': 'move', 'id': first, 'column': 'todo'}),
-                    await called(client, 'map_work', {'op': 'move', 'id': second, 'column': 'todo'}))
-        allowed, declined = consenting(home, mapped, check, answers=(), env={
+            async with asyncio.timeout(15):
+                return (await called(client, 'map_work', {'op': 'move', 'id': first, 'column': 'todo'}),
+                        await called(client, 'map_work', {'op': 'edit', 'id': second, 'held': False}),
+                        await called(client, 'map_work', {'op': 'edit', 'id': third, 'hold': False}))
+        results = consenting(home, mapped, check, answers=(), env={
             'METAFORM_ROLE': 'system', 'METAFORM_WORK': made.id, 'METAFORM_SESSION': runner})
-        answering.join(timeout=60)
-        assert allowed.is_error is False, text(allowed)
-        assert declined.is_error is True, text(declined)
-        assert 'Proposal 1' in json.dumps(cards[0]) and 'Proposal 2' in json.dumps(cards[1])
-        assert store.ticket(first).work.held is False and store.ticket(second).work.held is True
+        assert all(result.is_error is False for result in results), [text(result) for result in results]
+        assert not store.ticket(first).work.held and not store.ticket(second).work.held
+        shown = json.loads(run('map', 'work', f'id={third}', '--json', cwd=mapped).stdout)
+        assert shown['map']['hold'] is False
+        assert not any(one['kind'] == 'elicitation' and one['data'].get('consent')
+                       for one in read(run, made)['lines'])
     finally:
         made.stop()
         made.close()

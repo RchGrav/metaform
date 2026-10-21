@@ -5,6 +5,7 @@ import {h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {S, read} from '/page/app/core/reads.js';
 import {wrote, movable, COLUMN_NAMES} from '/page/app/board/history.js';
+import {holdReason} from '/page/app/board/holds.js';
 import {diagramOf, svgOf, enlargeDiagram} from '/page/app/session/text.js';
 import {authoredRole} from '/page/app/session/orchestration.js';
 
@@ -129,6 +130,7 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
         h('code', {class: 'address'}, functionality.address || '')),
       h('section', {}, h('h4', {}, 'Board'), h('strong', {class: 'board-name'}, data.board || 'First board'),
         h('span', {class: 'board-column'}, ` · ${COLUMN_NAMES[ticket.column] || ''}`)),
+      holdReason(ticket),
       h('section', {}, h('h4', {}, 'Specialist'), specialist(data.routing, scope)),
       h('section', {}, h('h4', {}, 'Graph'), graphThumb(functionality, serial), ...joinList(functionality))));
   } catch (error) {

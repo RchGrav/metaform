@@ -1,6 +1,6 @@
 ---
 name: sentinel
-description: "investigate an issue the person raised on a part of the map and bring them proposals grounded in what the investigation found; the person chooses one, or talks it over, and the chosen one becomes held tickets"
+description: "investigate an issue the person raised on a part of the map and bring them proposals grounded in what the investigation found; the person chooses one, or talks it over, and the chosen one becomes work tickets"
 metadata:
   ing.metaform.address: "prompt.skill.sentinel"
   ing.metaform.discover: "false"

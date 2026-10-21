@@ -221,7 +221,8 @@ GATE_HEADER, CLASSES_HEADER, ACCOUNT_HEADER = 'X-Metaform-Gate', 'X-Metaform-Cla
 # workspace.run. A write not listed is admin, so a new one is refused to members until it is classed here.
 WRITE_ROUTES = frozenset({
     '/api/apply-layers', '/api/answer', '/api/reopen', '/api/read', '/api/task', '/api/state', '/api/element',
-    '/api/note', '/api/move', '/api/distribute', '/api/ticket', '/api/remove-ticket', '/api/eligible', '/api/memory',
+    '/api/note', '/api/unhold-all', '/api/move', '/api/distribute', '/api/ticket', '/api/remove-ticket',
+    '/api/eligible', '/api/memory',
     '/api/ignore',
     '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak',
     '/api/voice/note', '/api/page-faults'})
@@ -710,6 +711,10 @@ class Server(ThreadingHTTPServer):
         agent starter again, so a session whose runner is gone, as after a restart, is still resumed; nothing polls,
         QUAL-015. A runner that saw its own session stop comes back for it as well; a second pass finds it done."""
         if not isinstance(due, (int, float)):
+            with self.dispatch_lock:
+                held = self.retry_timers.pop(project, None)
+                if held is not None:
+                    held[1].cancel()
             return
         with self.dispatch_lock:
             held = self.retry_timers.get(project)
@@ -1148,6 +1153,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.item({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/agent-view':
             return self.agent_view({key: values[-1] for key, values in query.items() if key != 't'})
+        if url.path == '/api/held-work':
+            return self.held_work({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path == '/api/ticket-detail':
             return self.ticket_detail({key: values[-1] for key, values in query.items() if key != 't'})
         if url.path.startswith('/api/memory-'):
@@ -1434,7 +1441,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/answer': self.answer_question, '/api/reopen': self.reopen_question, '/api/read': self.read_note, '/api/task': self.give_work, '/api/state': self.set_state,
                   '/api/element': self.add_part, '/api/restore': self.restore, '/api/add-project': self.add_project, '/api/report': self.problem_report,
                   '/api/page-faults': self.page_faults, SHOWN: self.shown,
-                  '/api/note': self.add_note, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
+                  '/api/note': self.add_note, '/api/unhold-all': self.unhold_all, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/remove-ticket': self.remove_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk, '/api/raise': self.raise_issue,
@@ -1720,13 +1727,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'The part is unbuilt, under construction, built or broken, or its state is not given.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
+            if given.get('hold'):
+                from metaform.modules.map.storage import validate_hold_reason
+                validate_hold_reason(given.get('hold_reason'))
             with store.atomic():
                 targets = [Node.parse(node) for node in cast(list[str], nodes)]
                 written = [store.add_work(targets[0], None, task=text.strip(), held=bool(given.get('held')),
-                                          links=targets[1:], kind=given.get('kind'))]
+                                          links=targets[1:], kind=given.get('kind'),
+                                          hold_reason=given.get('hold_reason'))]
                 if condition:
                     _stage(store, targets[0], condition)
-            kept = {key: given[key] for key in ('agent', 'hold', 'eligible') if given.get(key) is not None}
+            kept = {key: given[key] for key in ('agent', 'hold', 'eligible', 'hold_reason') if given.get(key) is not None}
             if kept:  # the ticket's preferred agent and the person's hold, kept by the map module
                 module_verb(given, 'map', 'work', {'op': 'edit', 'id': written[0].id, **kept}, chosen=True)
         except (Stop, StoreError) as error:
@@ -1757,10 +1768,12 @@ class Handler(BaseHTTPRequestHandler):
             routing = next((owner.routing_status(ctx, work.id) for _, owner in
                             chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
-            self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column}, 'revision': ticket_revision(fields),
+            self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column,
+                                       **ticket_hold(store, work.id)}, 'revision': ticket_revision(fields),
                             'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
-                            'functionality': graph, 'routing': routing})
+                            'functionality': graph, 'routing': routing,
+                            'hold_history': list(store.work_hold_history(work.id))})
         except (Stop, StoreError) as error:
             self.refuse(error, 404)
 
@@ -1782,7 +1795,11 @@ class Handler(BaseHTTPRequestHandler):
                     before = ticket_fields(store, store.ticket(work_id).work)
                     if given['revision'] != ticket_revision(before):
                         return self.send(409, {'error': 'This ticket changed since you opened it. Reload before saving.'})
-                    edited = store.edit_work(work_id, fields)
+                    edited = store.edit_work(work_id, {**fields, **{key: given[key] for key in
+                        ('held', 'hold_reason') if key in given}})
+                    if 'hold' in given:
+                        store.set_work_hold(work_id, hold=bool(given['hold']),
+                                            hold_reason=given.get('hold_reason'))
                     after = ticket_fields(store, edited)
                     revision = ticket_revision(after)
                     if before != after:
@@ -1794,7 +1811,8 @@ class Handler(BaseHTTPRequestHandler):
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
-        changes = {key: given[key] for key in ('agent', 'model', 'effort', 'hold', 'glyph', 'board') if key in given}
+        changes = {key: given[key] for key in
+                   ('agent', 'model', 'effort', 'hold', 'held', 'hold_reason', 'glyph', 'board') if key in given}
         if not changes:
             return self.send(400, {'error': 'A ticket change gives an agent, model, thinking level, hold, glyph or board.'})
         try:
@@ -2027,10 +2045,36 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A place in a column is a whole number.'})
         try:
             store = opened({'project': str(given.get('project', '')), 'base': str(given.get('base') or '')})
-            moved = store.move_work(work_id, column, position, given.get('by'))
+            moved = store.move_work(work_id, column, position, given.get('by'),
+                                    hold_reason=given.get('hold_reason'))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, {'results': plain([moved])})
+
+    def held_work(self, given: dict[str, Any]) -> None:
+        """Preview held work and its recorded reasons before the person's bulk release."""
+        from metaform.modules.map.holds import held_work_project
+        try:
+            held = held_work_project(opened(given))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, {'results': held, 'revision': held_work_revision(held)})
+
+    def unhold_all(self, given: dict[str, Any]) -> None:
+        """Release open work holds through the shared map operation."""
+        if not isinstance(given.get('revision'), str) or not isinstance(given.get('hold_preview'), list):
+            return self.send(400, {'error': 'Review held work before releasing it.'})
+        try:
+            if 'revision' in given:
+                from metaform.modules.map.holds import held_work_project
+                if given['revision'] != held_work_revision(held_work_project(opened(given))):
+                    return self.send(409, {'error': 'Held work changed. Review its reasons again before releasing.'})
+            made = module_verb(given, 'map', 'work', {'op': 'unhold_all',
+                               **({'hold_preview': given['hold_preview']} if 'hold_preview' in given else {})},
+                               chosen=True)
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
 
     def distribute_tickets(self, given: dict[str, Any]) -> None:
         """Give the tickets not done and not taken the glyphs of N agents, in turn, VIEW-040, with the map module's
@@ -3383,6 +3427,18 @@ def ticket_fields(store: Store, work: WorkRecord) -> dict[str, str]:
             'note': work.note or '', 'kind': work.kind or ''}
 
 
+def held_work_revision(rows: list[dict[str, Any]]) -> str:
+    return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+
+
+def ticket_hold(store: Store, work_id: str) -> dict[str, Any]:
+    bound = store.bound_base()
+    with Store(store.project_id, base=bound.id if bound else None,
+               module='map').tables(write=False) as tx:
+        row = tx.get('ticket_settings', {'work_id': work_id})
+    return {'hold': bool(row['hold']), 'hold_reason': row.get('hold_reason')} if row else {}
+
+
 def ticket_revision(fields: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
 
@@ -3517,7 +3573,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
             for row in rows('ticket_settings', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
                     board=row.get('board') or '',
-                    **{field: row[field] for field in ('model', 'effort', 'decision') if row.get(field) is not None})
+                    **{field: row[field] for field in ('model', 'effort', 'decision', 'hold_reason') if row.get(field) is not None})
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
             # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every
@@ -3794,7 +3850,7 @@ PERSONS_WRITES = frozenset({
     '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/orchestration-call',
     # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
     # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
-    '/api/move', '/api/ticket', '/api/distribute'})
+    '/api/move', '/api/ticket', '/api/distribute', '/api/unhold-all'})
 
 
 class _Vouched(threading.local):

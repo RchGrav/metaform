@@ -48,6 +48,7 @@ from metaform.data import (
     WorkLink,
     WorkRecord,
     as_object,
+    is_work,
     new_id,
     now,
     paged,
@@ -70,6 +71,76 @@ ANSWERS = ("A", "B", "C")
 NUMBERED = ("work", "message")
 WORK_FIELDS = ("condition", "kind", "note", "task", "held", "reviewed")
 REPORT_KINDS = ("report", "feedback", "shape")
+CONVERSATION_TASKS = frozenset({"Conversation with the system agent", "Sessions from editors"})
+
+
+def validate_hold_reason(value: Any) -> str:
+    """Validate the newly supplied reason, independently of existing ticket notes or reasons."""
+    if not isinstance(value, str) or not value.strip():
+        raise StoreError("An explicit hold requires a nonblank hold_reason.",
+                         "supply hold_reason explaining why this ticket must wait")
+    return value.strip()
+
+
+def _remember_hold(tx: Tx, work_id: str, reason: str) -> None:
+    tables = tx.tables()
+    if tables.update("ticket_settings", {"work_id": work_id}, {"hold_reason": reason}) is None:
+        tables.insert("ticket_settings", {"work_id": work_id, "hold_reason": reason})
+    tables.insert("hold_history", {"id": new_id(), "work_id": work_id, "reason": reason, "at": now()})
+
+
+def set_work_hold(tx: Tx, work_id: str, *, hold: bool, hold_reason: Any = None) -> WorkRecord:
+    """Set the explicit execution hold, retaining each deliberate reason after release."""
+    row = _work_row(tx, work_id)
+    if hold and row["task"] not in CONVERSATION_TASKS:
+        _remember_hold(tx, work_id, validate_hold_reason(hold_reason))
+    tables = tx.tables()
+    if tables.update("ticket_settings", {"work_id": work_id}, {"hold": int(hold)}) is None:
+        tables.insert("ticket_settings", {"work_id": work_id, "hold": int(hold)})
+    _ticket_changed(tx, work_id)
+    return work_record(tx, row)
+
+
+def work_hold_history(tx: Tx, work_id: str) -> tuple[dict[str, Any], ...]:
+    """Read every reason explicitly recorded for this ticket, including released holds."""
+    _work_row(tx, work_id)
+    tx.tables().get("hold_history", {"id": ""})
+    return tuple(dict(row) for row in tx.execute(
+        'SELECT id, work_id, reason, at FROM "map.hold_history" WHERE work_id=? ORDER BY rowid', (work_id,)))
+
+
+def held_work(tx: Tx) -> tuple[dict[str, Any], ...]:
+    """Read open executable holds and their recorded explanations on this base."""
+    tx.tables().get("ticket_settings", {"work_id": ""})
+    rows = tx.execute(
+        'SELECT w.*, s.hold, s.hold_reason, s.board FROM work w '
+        'LEFT JOIN "map.ticket_settings" s ON s.work_id=w.work_id '
+        "WHERE w.done IS NULL AND COALESCE(w.outcome, '') NOT IN ('cancelled', 'superseded', 'failed') "
+        'AND (w.held<>0 OR COALESCE(s.hold, 0)<>0) '
+        "AND COALESCE(w.task, '') NOT IN (?, ?) ORDER BY w.row", tuple(sorted(CONVERSATION_TASKS)))
+    return tuple({'id': str(row['work_id']), 'task': row['task'], 'note': row['note'], 'held': bool(row['held']),
+                  'map': {'hold': bool(row['hold']), 'hold_reason': row['hold_reason'], 'board': row['board'] or ''}}
+                 for row in rows if is_work(row['condition'], row['task']))
+
+
+def unhold_all_work(tx: Tx) -> int:
+    """Release open executable tickets on this base without moving or rewriting their context."""
+    changed = [row['id'] for row in held_work(tx)]
+    for work_id in changed:
+        tx.execute("UPDATE work SET held=0 WHERE work_id=?", (work_id,))
+        tx.tables().update("ticket_settings", {"work_id": work_id}, {"hold": 0})
+    _ticket_changed(tx, *changed)
+    return len(changed)
+
+
+def unhold_reviewed_work(tx: Tx, preview: list[dict[str, Any]]) -> dict[str, int]:
+    """Validate reviewed work inside the same write transaction that releases its holds."""
+    actual = held_work(tx)
+    fields = ('id', 'task', 'note', 'held', 'map')
+    expected = [{key: row.get(key) for key in fields} for row in preview]
+    if sorted(expected, key=lambda row: str(row['id'])) != sorted(actual, key=lambda row: str(row['id'])):
+        return {'changed': 0, 'review_changed': len(actual)}
+    return {'changed': unhold_all_work(tx), 'review_changed': 0}
 
 
 def joins_at(tx: Tx, element_id: str) -> list[str]:
@@ -184,6 +255,7 @@ def add_work(
     links: Any = (),
     kind: Any = None,
     title: Any = None,
+    hold_reason: Any = None,
 ) -> WorkRecord:
     """Write the condition of an element or join as its own record, apart from the map, STORE-042; a ticket carries
     its kind beside it. It takes the next number at its node's address with its title, MCP-037: the title given, else
@@ -191,6 +263,7 @@ def add_work(
     notices: list[Notice] = []
     stage, ticket_kind = _condition(condition, notices), _kind(kind)  # both checked before anything is written
     stated = _work_text(task, "task", notices)
+    reason = validate_hold_reason(hold_reason) if held and stated not in CONVERSATION_TASKS else None
     _shown(stage, stated)
     target_kind, thing = work_target(tx, node, notices)
     _backfill(tx)
@@ -222,6 +295,8 @@ def add_work(
         ),
     )
     _link(tx, work_id, links, notices)
+    if reason is not None:
+        _remember_hold(tx, work_id, reason)
     _number(tx, "work", work_id, target_kind, thing, _titled(title, task, note))
     _ticket_changed(tx, work_id)
     _ticket_changed(tx, work_id, kind="filed")  # new on the board: dispatch's `board.changed` reads it, no other change
@@ -249,8 +324,12 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
     given = as_object(changes)
     if given is None:
         raise StoreError("The changes to a work record are an object of its fields.", "metaform help map work")
+    if given.get("held") and given.get("task", before["task"]) not in CONVERSATION_TASKS:
+        _remember_hold(tx, work_id, validate_hold_reason(given.get("hold_reason")))
     _ticket_changed(tx, work_id, kind="note" if given and set(given) <= WORDS_ONLY else "ticket")
     for key in sorted(given):
+        if key == "hold_reason":
+            continue
         if key == "node":
             kind, thing = work_target(tx, given[key], notices)
             moved = (kind, thing) != (str(before["target_kind"]), str(before["target_id"]))
@@ -488,7 +567,8 @@ def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRe
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
-def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None, kept: bool = False) -> WorkRecord:
+def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any = None, kept: bool = False,
+              hold_reason: Any = None) -> WorkRecord:
     """Put a ticket in a column of the board, and at a place in it, MAP-048: backlog holds it, to do frees it, doing
     takes it and done finishes it; a ticket moved back out of doing or done is open and untaken again. `kept` leaves
     every place as it is, the ticket's own too: a reservation given back to To do and taken at once, in one atomic
@@ -498,6 +578,8 @@ def move_work(tx: Tx, work_id: str, column: Any, position: Any = None, by: Any =
     row = _work_row(tx, work_id)
     if column not in COLUMNS:
         raise StoreError(f"{column!r} is not a column: backlog, todo, doing or done.", "metaform help map work")
+    if column == "backlog" and row["task"] not in CONVERSATION_TASKS:
+        _remember_hold(tx, work_id, validate_hold_reason(hold_reason))
     notices: list[Notice] = []
     proof = _proof(tx, work_id)
     if column == "done" and row["done"] is None:
@@ -1679,8 +1761,9 @@ TABLES = Tables(
     # each its own archive cutoff, `boards` (the person's need, 2026-10-20), a column and a table version 9 never names;
     # 21: their indexes, by board and by created; 22: nullable assignment model, effort and decision provenance,
     # which older versions never name; 23: the retired agent identity becomes antigravity in ticket runtime and
-    # eligibility values, without changing any table layout
-    version=23,
+    # eligibility values, without changing any table layout; 24: latest explicit hold reason and retained reason
+    # history, in nullable settings and a new table that earlier versions never name
+    version=24,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1698,8 +1781,13 @@ TABLES = Tables(
         # and assignment runtime, `model`, `effort`, `decision`, which the person can change before the start
         columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
                  Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int'),
-                 Column('board'), Column('model'), Column('effort'), Column('decision', 'json')),
+                 Column('board'), Column('model'), Column('effort'), Column('decision', 'json'), Column('hold_reason')),
         indexes=(Index(('board',)),),
+    ), Table(
+        'hold_history', place='metaform', key=('id',),
+        columns=(Column('id', required=True), Column('work_id', required=True), Column('reason', required=True),
+                 Column('at', required=True)),
+        indexes=(Index(('work_id',)),),
     ), Table(
         # the project's named boards besides its first: each with its own archive cutoff, `line`, the time before
         # which its done tickets are in its Archive; a ticket names its board in ticket_settings (the person's need,
@@ -1747,6 +1835,9 @@ DATA = Data(
             fn.__name__: Operation(fn, write=True)
             for fn in (
                 add_work,
+                set_work_hold,
+                unhold_all_work,
+                unhold_reviewed_work,
                 edit_work,
                 retarget_work,
                 move_message,
@@ -1772,7 +1863,8 @@ DATA = Data(
         "board_snapshot": Operation(board_snapshot),
         "reply": Operation(close_message, write=True),
         "reopen": Operation(reopen_message, write=True),
-        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, work_snapshot, reports, report,
+        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, work_snapshot, work_hold_history, held_work,
+                                                                reports, report,
                                                                 items_numbered, numbers_of, item_at, listed_items)},
     },
     decorate=decorate,

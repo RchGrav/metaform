@@ -51,7 +51,7 @@ def test_a_record_with_an_empty_condition_is_taken_worked_and_says_it_waits_on_t
 
 def test_a_ticket_moves_through_the_columns_of_the_board_in_order(store):
     small_map(store)
-    first = store.add_work(KITCHEN, None, task='first', held=True)
+    first = store.add_work(KITCHEN, None, task='first', held=True, hold_reason='Wait for planned start.')
     second = store.add_work(KITCHEN, None, task='second')
     assert (first.column, second.column) == ('backlog', 'todo')
     moved = store.move_work(first.id, 'todo', position=0)
@@ -80,18 +80,18 @@ def test_a_ticket_links_other_nodes_for_reference(store):
 def test_reordering_a_ticket_preserves_its_assignment_progress_and_completion(store, column):
     from dataclasses import replace
     small_map(store)
-    first = store.add_work(KITCHEN, None, task='first', held=column == 'backlog')
-    second = store.add_work(KITCHEN, None, task='second', held=column == 'backlog', links=[ALARM])
+    first = store.add_work(KITCHEN, None, task='first', held=column == 'backlog', hold_reason='Wait for planned start.')
+    second = store.add_work(KITCHEN, None, task='second', held=column == 'backlog', links=[ALARM], hold_reason='Wait for planned start.')
     if column == 'doing':
         store.take_work(first.id, by='claude')
         store.take_work(second.id, steps=3, by='codex')
         store.step_work(second.id, 'Traced the tone.')
     elif column == 'done':
         store.finish_work(first.id, 'built')
-        store.edit_work(second.id, {'held': True})
+        store.edit_work(second.id, {'held': True, 'hold_reason': 'Wait for planned start.'})
         store.finish_work(second.id, 'fixed')
     before = store.ticket(second.id).work
-    moved = store.move_work(second.id, column, position=0, by='user')
+    moved = store.move_work(second.id, column, position=0, by='user', hold_reason='Wait for planned start.')
     assert replace(moved, position=before.position) == before
     assert moved.position == 0 and store.ticket(first.id).work.position == 1
 

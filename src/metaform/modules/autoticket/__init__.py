@@ -40,8 +40,6 @@ settings.boolean('autoticket_file', True, label='Create repair tickets', categor
                  help='Turn captured fault groups into actionable tickets; capture continues when this is off.')
 settings.boolean('autoticket_reopen', True, label='Reopen recurring faults', category='automation', heading='Fault capture', person_only=True,
                  help='Reopen the same completed repair when its fault returns, preserving its evidence and history.')
-settings.boolean('autoticket_hold_feedback', False, label='Hold feedback for triage', category='automation', person_only=True,
-                 heading='Fault capture', help='Hold new feedback tickets for your decision instead of automatic repair.')
 
 
 def _similarity_check(value: Any, folder: Any) -> list[str] | None:

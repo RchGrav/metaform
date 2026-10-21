@@ -28,7 +28,7 @@ Nothing.
 
 ## Prompts
 
-`resources/prompts.xml` holds `instructions`; `ticket`, the task of a ticket it files, with its fills `message`, `source`, `count`, `first`, `last`, `sample` and `reproduce`; `held_design` and `held_data`, why a ticket waits for the person; and an empty `connect`, `counts` and `rules`. The wording of `ticket`, `held_design` and `held_data` awaits the person's approval. The status hook reads two more prompts that are not in the file yet: `intake_step`, sent at connect to an intake agent while no log is configured, and `connect_notice`, sent at connect to the person's own agent in that state. Their wording is the person's to approve; the drafts are in `artifacts/specs-draft/autoticket-prompts.md`. While a prompt is absent or empty nothing is sent.
+`resources/prompts.xml` holds `instructions`; `ticket`, the task of a ticket it files, with its fills `message`, `source`, `count`, `first`, `last`, `sample` and `reproduce`; and an empty `connect`, `counts` and `rules`. The status hook reads `intake_step`, sent at connect to an intake agent while no log is configured, and `connect_notice`, sent at connect to the person's own agent in that state. While a prompt is absent or empty nothing is sent.
 
 ## Verbs
 
@@ -67,7 +67,7 @@ Faults and log entries are grouped by onhold's method. A fault's fingerprint is 
 - A group that recurs while its ticket is open has its line in that ticket's note rewritten: `autoticket group <n>: seen <count> times, first <t>, last <t>: <message>`.
 - A fault raised by an agent working a ticket autoticket filed (`work_id`) is counted on that ticket, never filed anew.
 - At most `autoticket_open_most` tickets it filed are open and not held at once; the rest wait as groups. A held ticket starts no agent work, so it takes no place, and faults keep being filed while the person has not read the held ones.
-- Feedback, whose answer is a design choice, and an error whose message names deleting or removing data, are filed held in Backlog, the why at the start of the note. The task also tells the agent to stop and leave the choice to the person when the fix turns out to be one.
+- Filing never adds a hold, including feedback reports and errors naming deleting or removing data. Autostart controls automatic starts. A deliberate hold requires an explicit action with its reason recorded on the ticket.
 - A fault ticket requires delivery evidence. Its worker records the check that passes with the repair. A done before delivery keeps the ticket open and names the missing steps. Once delivery succeeds, done closes it immediately and its fault light goes out.
 - Faults from code loaded before the repair are retained in the ticket note with the restart or reload needed. They do not invalidate the repair. A recurrence from current code returns a pending repair to To do with its previous resolution and new evidence.
 - A recurrence after the ticket closed reopens the same ticket, never a new one, unless the person cancelled it or turned `autoticket_reopen` off: the previous resolution, as the fix that did not hold, and the new evidence go into its note, it stays of kind broken, its light comes on again and requires delivery evidence again, `reopen_fault`.
@@ -119,4 +119,4 @@ metaform map work kind=broken          # the tickets it filed
 ```
 
 
-The web supervisor owns a watcher for every registered project, even with no browser page open. `autoticket_watch`, `autoticket_file`, `autoticket_reopen` and `autoticket_hold_feedback` are independent Full Auto policy controls. Register actual logs with `metaform autoticket add log=<path>`; the watcher never invents paths. Local file rotation and recorded offsets survive reconnects through the existing watch leases. Watcher failures publish an actionable fault and retry with bounded backoff. Error text mentioning removal or deletion does not create an approval gate.
+The web supervisor owns a watcher for every registered project, even with no browser page open. `autoticket_watch`, `autoticket_file` and `autoticket_reopen` are independent Full Auto policy controls. Register actual logs with `metaform autoticket add log=<path>`; the watcher never invents paths. Local file rotation and recorded offsets survive reconnects through the existing watch leases. Watcher failures publish an actionable fault and retry with bounded backoff. Error text mentioning removal or deletion does not create an approval gate.

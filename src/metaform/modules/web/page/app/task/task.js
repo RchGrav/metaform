@@ -9,6 +9,7 @@ import {MAP2D, plain2d, mermaidReady} from '/page/app/map2d/build.js';
 import {labelOf} from '/page/app/map2d/inside.js';
 import {defaultAgent, eligibilityPicker, renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
+import {requestHoldReason} from '/page/app/board/holds.js';
 import {startAgent} from '/page/app/agents/dispatch.js';
 import {agentPicker, PICKERS} from '/page/app/agents/pickers.js';
 
@@ -272,8 +273,10 @@ async function putTask() {
   const project = S.project, metaform = S.base, generation = K.generation;
   const agent = PICKERS.task?.value(), startNow = $('#task .start-agent').checked;
   const eligible = [...K.eligible];
+  const held = $('#task .backlog').checked, hold_reason = held ? requestHoldReason() : null;
+  if (held && hold_reason === null) return;
   const written = await wrote('/api/task', {task, nodes, condition: $('#task .condition').value || null,
-    kind: $('#task .ticket-kind').value || null, held: $('#task .backlog').checked, agent, eligible});
+    kind: $('#task .ticket-kind').value || null, held, hold_reason, agent, eligible});
   if (project !== S.project || metaform !== S.base || generation !== K.generation) {
     if (written) toast(`Task saved in ${project}. Open that map to start its agent.`);
     return;

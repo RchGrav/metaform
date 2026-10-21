@@ -50,11 +50,11 @@ The part's **stage** and the ticket's **kind** (broken, flawed, enhancement, pla
 
 ### 2.2 Critic findings light nodes (decided)
 
-Restore critics writing findings, now as held tickets with a kind, which light their nodes in the critic's color. Only three sources ever light a node: the intake, a critic pass the person runs, and the person. A worker never does. Each light is one ticket and goes out when that ticket is done.
+Restore critics writing findings as work tickets with a kind, which light their nodes in the critic's color. Only three sources ever light a node: the intake, a critic pass the person runs, and the person. A worker never does. Each light is one ticket and goes out when that ticket is done.
 
 ### 2.3 The sentinel's turn and the person's Accept (decided)
 
-The sentinel marks its proposals ready, which makes the node flash in its color. The person accepts a proposal from the right-click menu or the chat, which writes its tickets held and stops the flashing.
+The sentinel marks its proposals ready, which makes the node flash in its color. The person accepts a proposal from the right-click menu or the chat, which writes its work tickets without implicit holds and stops the flashing. Autostart controls automatic starts.
 
 ### 2.4 The attention rule, drawn (decided, after 2.1 to 2.3)
 
