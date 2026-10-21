@@ -325,15 +325,8 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     assert prompts[0].removeprefix(prompt_files.module('mcp', 'connect_rules') + '\n\n') == 'What is new?', \
         'Routine entries are never named on a turn: no inbox line, no body, no memory notice.'
     assert prompts[1] == 'And now?', prompts[1]
-    # routine entries are counted toward one status line, at most every fifteen minutes and only when status changed:
-    # the agent is told to check, and given no ticket
-    from metaform.modules import dispatch as module
-    assert system.digest_count == 23 and system.digest_handle is not None
-    system.digest_handle.cancel()
-    system.digest_due()
-    [digest] = sent(monkeypatch, system)
-    assert digest == module.prompt('inbox_digest', count='23', kinds='10 complete, 10 progress, 3 board finished') and 'Evidence' not in digest and len(digest) < 300, digest
-    assert system.digest_count == 0 and system.digest_handle is None
+    # routine entries start no turn and no status line ever: they stay in their threads, read with dispatch notes
+    assert not system.pending
 
     monkeypatch.setattr(peering, 'caller', lambda store: (None, peering.sessions(store, dispatch.id)[0]))
     listed = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'limit': 30}))['notes']
@@ -520,6 +513,177 @@ def test_assigned_ticket_is_taken_only_for_a_runner_start(dispatch, monkeypatch,
         assert not dispatch.store.ticket(dispatch.id).work.taken
         assert len(started) == (outcome == 'failed')
     assert SERVICE.assignment(ctx, work_id=dispatch.id)['assignment_id'] == held['assignment_id']
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.parametrize('operation', ['start', 'new', 'run', 'launch', 'resume'])
+def test_startup_status_probes_leave_the_map_writable(dispatch, monkeypatch, operation):
+    """A runner's status reply must not wait while startup holds the map's write transaction."""
+    import sqlite3
+    from contextlib import closing
+
+    import metaform.modules.dispatch as package
+    from metaform import home
+
+    store = dispatch.store
+    bound = store.bound_base()
+    path = home.store_file(store.project_id, bound.name)
+    row = {'session_id': 'old-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+           'started': home.now(), 'seq': 1, 'runner': 'old-runner', 'pid': 123, 'port': 456, 'token': 'test'}
+    with package.own_store(store).tables() as tx:
+        tx.insert('agent_sessions', row)
+    if operation == 'new':
+        store.take_work(dispatch.id, by='claude old-session')
+        monkeypatch.setattr(package, '_running_or_stop', lambda *args: row)
+        monkeypatch.setattr(package, 'ended_by_person', lambda *args: {})
+    probes = []
+
+    def status_reply(*args, **kwargs):
+        # A second connection models another runner trying to reserve work while this one answers its status.
+        with closing(sqlite3.connect(path, isolation_level=None, timeout=0.001)) as other:
+            try:
+                other.execute('BEGIN IMMEDIATE')
+            except sqlite3.OperationalError as error:
+                probes.append(str(error))
+            else:
+                other.execute('COMMIT')
+                probes.append('writable')
+        return {'state': 'ended', 'session_id': 'old-session', 'activity': 'idle'}
+
+    monkeypatch.setattr(package, 'runner_of', lambda pid: dispatch.id)
+    monkeypatch.setattr(package, 'tell', status_reply)
+    monkeypatch.setattr(package, 'run_reserved', lambda *args, **kwargs: {'state': 'queued'})
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    if operation == 'run':
+        import asyncio
+
+        from metaform.modules.dispatch import runner
+
+        async def ended(self):
+            return {'ended': runner.TERMINATED}
+
+        monkeypatch.setenv('METAFORM_BASE', '')
+        monkeypatch.setattr(runner, 'admit_self', lambda *args, **kwargs: None)
+        monkeypatch.setattr(runner.Session, 'run', ended)
+        ctx.switches['dispatch_worktrees'] = False
+        assert asyncio.run(runner.sessions_run(ctx))['ended'] == runner.TERMINATED
+    elif operation in {'launch', 'resume'}:
+        from metaform.modules.dispatch import orchestration
+
+        monkeypatch.setattr(package, 'launches', list)
+        monkeypatch.setattr(package, 'admit', lambda *args, **kwargs: None)
+        monkeypatch.setattr(package, 'start_runner', lambda *args, **kwargs: {'pid': 1})
+        monkeypatch.setattr(package, 'resume_spawn', lambda *args, **kwargs: {'pid': 1})
+        monkeypatch.setattr(package, 'session_state', lambda *args: {'capabilities': {'resume': True}})
+        monkeypatch.setattr(orchestration, '_row', lambda *args: row if operation == 'resume' else None)
+        monkeypatch.setattr(orchestration, 'service', lambda ctx: None)
+        result = orchestration.Transport().launch(ctx, {'work_id': dispatch.id, 'assignment_id': 'assignment'},
+                                                  'transition')
+        assert result['state'] == 'queued'
+    else:
+        result = getattr(package, operation)(ctx)
+        assert result['state'] == 'queued'
+    owner = store.ticket(dispatch.id).work.taken_by
+    assert owner == 'claude old-session' if operation == 'resume' else owner.startswith('dispatch starting ')
+    assert probes and set(probes) == {'writable'}, probes
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.parametrize('operation', ['start', 'new', 'launch', 'resume'])
+@pytest.mark.parametrize('changed', [False, True])
+def test_startup_rechecks_sessions_registered_after_its_status_snapshot(dispatch, monkeypatch, operation, changed):
+    """A new runner cannot be mistaken for the ended runner checked before the reservation."""
+    import metaform.modules.dispatch as package
+    from metaform import home
+
+    store = dispatch.store
+    row = {'session_id': 'old-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+           'started': home.now(), 'seq': 1, 'runner': 'old-runner', 'pid': 123}
+    if changed or operation in {'new', 'resume'}:
+        with package.own_store(store).tables() as tx:
+            tx.insert('agent_sessions', row)
+    if operation == 'new':
+        store.take_work(dispatch.id, by='claude old-session')
+        monkeypatch.setattr(package, '_running_or_stop', lambda *args: row)
+        monkeypatch.setattr(package, 'ended_by_person', lambda *args: {})
+    original = package.sessions
+    snapshots = []
+
+    def sessions(at, *args, **kwargs):
+        found = original(at, *args, **kwargs)
+        if 'verify' not in kwargs and not at.in_atomic and not snapshots:
+            snapshots.append(found)
+            with package.own_store(at).tables() as tx:
+                if changed:
+                    tx.update('agent_sessions', {'session_id': 'old-session'}, {'runner': 'new-runner', 'seq': 2})
+                else:
+                    tx.insert('agent_sessions', {**row, 'session_id': 'new-session', 'runner': 'new-runner'})
+        return found
+
+    monkeypatch.setattr(package, 'sessions', sessions)
+    monkeypatch.setattr(package, 'runner_of', lambda pid: dispatch.id)
+    monkeypatch.setattr(package, 'tell', lambda *args, **kwargs: {
+        'state': 'ended', 'session_id': 'old-session', 'activity': 'idle'})
+    monkeypatch.setattr(package, 'run_reserved', lambda *args, **kwargs: pytest.fail('An unchecked session blocks start.'))
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    with pytest.raises(Stop, match='already has an agent session'):
+        if operation in {'launch', 'resume'}:
+            from metaform.modules.dispatch import orchestration
+
+            def unchecked(*args, **kwargs):
+                pytest.fail('An unchecked session blocks launch.')
+
+            monkeypatch.setattr(package, 'launches', list)
+            monkeypatch.setattr(package, 'admit', lambda *args, **kwargs: None)
+            monkeypatch.setattr(package, 'start_runner', unchecked)
+            monkeypatch.setattr(package, 'resume_spawn', unchecked)
+            monkeypatch.setattr(package, 'session_state', lambda *args: {'capabilities': {'resume': True}})
+            monkeypatch.setattr(orchestration, '_row', lambda *args: row if operation == 'resume' else None)
+            monkeypatch.setattr(orchestration, 'service', lambda ctx: None)
+            orchestration.Transport().launch(ctx, {'work_id': dispatch.id, 'assignment_id': 'assignment'}, 'transition')
+        else:
+            getattr(package, operation)(ctx)
+    assert snapshots
+    assert store.ticket(dispatch.id).work.taken_by == ('claude old-session' if operation == 'new' else None)
+
+
+@pytest.mark.kind('fixture')
+def test_reopening_work_invalidates_status_derived_from_its_previous_completion(dispatch, monkeypatch):
+    import metaform.modules.dispatch as package
+    from metaform import home
+
+    row = {'session_id': 'old-session', 'work_id': dispatch.id, 'agent': 'claude', 'state': 'running',
+           'started': home.now(), 'seq': 1, 'runner': 'old-runner', 'pid': 123}
+    with package.own_store(dispatch.store).tables() as tx:
+        tx.insert('agent_sessions', row)
+    checked = [{**row, 'state': 'ended', 'how': 'the ticket is done'}]
+    monkeypatch.setattr(package, 'tell', lambda *args, **kwargs: pytest.fail('Reservation must not probe sockets.'))
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with dispatch.store.atomic(), pytest.raises(Stop, match='already has an agent session'):
+        package.startable(ctx, dispatch.store, dispatch.store.ticket(dispatch.id).work, 'claude',
+                          checked_sessions=checked)
+
+
+@pytest.mark.kind('fixture')
+def test_completed_work_still_releases_its_glyph_with_an_unchanged_running_session_row(dispatch, monkeypatch, run):
+    import metaform.modules.dispatch as package
+    from metaform import home
+
+    store = dispatch.store
+    other = store.add_work(dispatch.node, None, task='Earlier work.').id
+    for work in (dispatch.id, other):
+        run('map', 'work', 'op=edit', f'id={work}', 'glyph=kite', cwd=dispatch.folder)
+    store.finish_work(other, 'Earlier work completed.')
+    row = {'session_id': 'old-session', 'work_id': other, 'agent': 'claude', 'state': 'running',
+           'started': home.now(), 'seq': 1, 'runner': 'old-runner', 'pid': 123}
+    with package.own_store(store).tables() as tx:
+        tx.insert('agent_sessions', row)
+    checked = [{**row, 'state': 'ended', 'how': 'the ticket is done'}]
+    monkeypatch.setattr(package, 'tell', lambda *args, **kwargs: pytest.fail('Reservation must not probe sockets.'))
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with store.atomic():
+        package.startable(ctx, store, store.ticket(dispatch.id).work, 'claude', checked_sessions=checked)
+    assert not store.ticket(dispatch.id).work.taken
 
 
 @pytest.mark.kind('fixture')

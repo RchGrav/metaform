@@ -50,6 +50,7 @@ from metaform.data import (
     now,
     paged,
     reference,
+    row_cursor,
     shown_open,
     sliced,
     status,
@@ -827,7 +828,7 @@ def work(
 
     def fetch(cursor: str | None, count: int) -> list[Row]:
         where: list[str] = ["row > ?"]
-        params: list[Any] = [int(cursor or 0)]
+        params: list[Any] = [row_cursor(cursor)]
         if target is not None and around:
             held = joins_at(tx, target[1])
             marks = ', '.join('?' for _ in held) or "''"
@@ -875,7 +876,7 @@ def messages(
 
     def fetch(cursor: str | None, count: int) -> list[Row]:
         where: list[str] = ["row > ?"]
-        params: list[Any] = [int(cursor or 0)]
+        params: list[Any] = [row_cursor(cursor)]
         if target is not None:
             where.append("target_kind=? AND target_id=?")
             params.extend(target)

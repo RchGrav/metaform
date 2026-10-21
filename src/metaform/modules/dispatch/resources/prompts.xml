@@ -144,7 +144,8 @@ Use the project evidence and your judgment to resolve ordinary work choices and 
      ticket's id. Must not be deleted: the code requires it. -->
 <work>
 Work ticket <work_id/> with map_work and the specialist role you were given. Use the supplied current assignment and specification. <record/>
-When your fix is merged and put into the running code, close the ticket to turn off its red light. If the issue persists or verification finds a problem, the system raises a ticket and the red light comes back.
+When your fix is submitted, close the ticket to turn off its red light. If the issue persists or verification finds a problem, the system raises a ticket and the red light comes back.
+An error ticket is yours end to end: find its cause, fix the cause, add a test that fails before the fix and passes after, submit, close. Make sure it cannot recur.
 </work>
 
 <!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the
@@ -396,14 +397,6 @@ When you send a note, result or update with the dispatch_note tool, fill its sum
 <inbox_new>
 <count/> new in your inbox: <items/>.
 </inbox_new>
-
-<!-- The status line the person's system agent is woken with at most every fifteen minutes, and only when ticket status
-     changed since its last: routine entries, a ticket complete, progress, a board item finished, are counted and never
-     named, so the agent is told to check and is given nothing, since every token of its context counts. <count/> is
-     how many changes were counted, <kinds/> the same by kind (complete, board finished, peer...). The agent reads what it chooses with dispatch_sessions thread=false and
-     dispatch_notes. Empty sends nothing. -->
-<inbox_digest><count/> ticket changes since your last status line: <kinds/>. Check before stating anything: dispatch_sessions thread=false, map_work, dispatch_notes. Report only what you checked, each problem by ticket address#n. Significant work since last commit -> have it reviewed.</inbox_digest>
-
 <!-- A helper's first message: the person's system agent started it with dispatch helper and a brief, for quick
      work it hands off so it stays reachable in the chat. <brief/> is the brief as the system agent wrote it. The helper
      works on no ticket, is shown on the map and in the agents list like any agent, and ends when its turn ends, its

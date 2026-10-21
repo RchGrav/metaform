@@ -1638,7 +1638,8 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
     category, shown under `dispatch` in `map work id=<id>`, BASE-035; nothing on a ticket dispatch holds nothing of."""
     if ctx.store is None:
         return None
-    found = sessions(ctx.store, record.id)
+    # A work hook can supply scheduling metadata inside a reservation. Socket probes belong before its write lock.
+    found = sessions(ctx.store, record.id, verify=not ctx.store.in_atomic)
     from .signals import rows
     signals = rows(ctx.store, record.id)
     chosen = ticket_options(ctx.store, record.id)  # the ticket's own model and effort, P015, shown where it is read
@@ -1730,10 +1731,12 @@ def handle(store: Store, work_id: str) -> str:
     return found[0] if found else work_id
 
 
-def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> None:
+def startable(ctx: Context, store: Store, record: WorkRecord, agent: str, *,
+              checked_sessions: Sequence[dict[str, Any]] | None = None) -> None:
     """Refuse a ticket done, taken or already holding a session, and an occupied glyph, VIEW-039 and VIEW-040:
     tickets with one glyph are one agent's, done one at a time. Each refusal names the tickets by their handle and
-    title."""
+    title. Reservation callers verify sessions before taking the write lock, then recheck their stored identities
+    here. A new or changed running row remains occupied until it can be verified outside the transaction."""
     require_eligible(ctx, record, agent)
     this = called(store, [record.id])[record.id]
     if record.done:
@@ -1762,7 +1765,16 @@ def startable(ctx: Context, store: Store, record: WorkRecord, agent: str) -> Non
         if occupied is not None:
             raise Stop(f'Agent {glyph} is at work on {called(store, [occupied.id])[occupied.id]}; the tickets with its '
                        'glyph are done one at a time.', f'metaform map work id={handle(store, occupied.id)}')
-    for session in sessions(store, record.id if glyph is None else None):
+    found = sessions(store, record.id if glyph is None else None) if checked_sessions is None else sessions(
+        store, record.id if glyph is None else None, verify=False)
+    checked = {row['session_id']: row for row in checked_sessions or ()}
+    for session in found:
+        previous = checked.get(session['session_id'])
+        if session.get('state') == 'running' and previous is not None and all(
+                session.get(key) == previous.get(key) for key in ('runner', 'pid', 'port', 'token', 'seq')):
+            checked_work = held_ticket(store, session['work_id']) if previous.get('how') == 'the ticket is done' else None
+            if checked_work is None or checked_work.done:
+                session = previous
         if session.get('state') != 'running':
             continue
         if session['work_id'] == record.id:
@@ -3496,6 +3508,10 @@ def start(ctx: Context) -> dict[str, Any]:
                    f'metaform set --dispatch-{agent} "<command>"')
     given, notices = launch_permissions(ctx, store, agent)
     reservation = 'dispatch starting ' + secrets.token_hex(16)
+    # Admission can carry legacy spend across stores. The spawn gate repeats it under its own capacity lock.
+    admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=automatic)
+    record = ticket(store, str(work_id))
+    checked_sessions = sessions(store, record.id if glyph_of(ctx, record) is None else None)
     with store.atomic():
         record = ticket(store, work_id)
         if not automatic and record.taken and record.taken_by == f'Specialist {work_id}':
@@ -3503,10 +3519,7 @@ def start(ctx: Context) -> dict[str, Any]:
             # it over now, and the role follows when it is published (2026-10-20: their Start was refused as taken)
             store.move_work(str(work_id), 'backlog' if record.held else 'todo', kept=True)
             record = ticket(store, work_id)
-        startable(ctx, store, record, agent)
-        # said before the ticket is taken; the gate counts again at the start. An agent's start is not the person's
-        # retry of an agent that keeps failing.
-        admit(ctx, store, str(work_id), 'worker', asked=asked, agent=agent, auto=automatic)
+        startable(ctx, store, record, agent, checked_sessions=checked_sessions)
         if not automatic and owner is not None:
             owner.reopen(ctx, str(work_id))
         store.take_work(work_id, by=reservation)
@@ -5975,10 +5988,12 @@ def new(ctx: Context) -> dict[str, Any]:
         return {**converse(ctx, store, work_id, agent, [] if about == 'system' else [f'talk={about}']),
                 'ended': session_id}
     reservation = 'dispatch starting ' + secrets.token_hex(16)
+    record = ticket(store, work_id)
+    checked_sessions = sessions(store, record.id if glyph_of(ctx, record) is None else None)
     with store.atomic():  # the ticket the ended session held is taken again at once, so no other start takes it between
         if ticket(store, work_id).taken_by == f'{agent} {session_id}':
             store.move_work(work_id, 'todo', kept=True)  # taken again at once: no place changes
-        startable(ctx, store, ticket(store, work_id), agent)
+        startable(ctx, store, ticket(store, work_id), agent, checked_sessions=checked_sessions)
         store.take_work(work_id, by=reservation)
     ctx.nouns['agent'] = agent
     given: dict[str, str | None] = {'prompts': None, 'mode': None, **launch_options(store, work_id)}

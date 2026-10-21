@@ -18,7 +18,7 @@ from .numbers import parse as parse_reference
 from .numbers import reference
 from .numbers import shown as shown_number
 from .operations import Data, Operation
-from .paging import LIMIT, paged, sliced
+from .paging import LIMIT, paged, row_cursor, sliced
 from .projection import Projection
 from .records import (
     COLUMNS,
@@ -240,6 +240,7 @@ __all__ = [
     'reference',
     'restore_project_work_rows',
     'roots',
+    'row_cursor',
     'short_name',
     'shown_number',
     'shown_open',
