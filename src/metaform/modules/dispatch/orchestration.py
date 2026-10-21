@@ -150,6 +150,8 @@ class Transport:
         auto = not persons_start(ctx, recorded=bool(held.get('persons_start')))
         if held.get('stop'):
             return {'state': 'stopped'}
+        if store.ticket(work).work.done:
+            return {'state': 'completed', 'work_id': work}
         # A delivery whose specialist role is still being made waits for its publication, which owns the start: a
         # runner started here only read that state and ended at once, SUSPENDED, and the launch left pending started
         # another on every pass of the agent starter (783 runner starts on one ticket, 2026-10-20).

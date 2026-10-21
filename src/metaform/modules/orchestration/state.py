@@ -1015,6 +1015,8 @@ class Orchestration:
             parent = row_for(tx, assignment_id=parent['assignment_id']) or dict(parent)
             if parent.get('stop'):
                 raise Stop('The requesting assignment was stopped before its role request.', HELP)
+            if store.ticket(str(parent['work_id'])).work.done:
+                raise Stop('The requesting ticket was closed before its role request.', HELP)
             responsible_gc = gc['assignment_id']
             made = tx.insert('role_requests', {'request_id': request_id,
                 'caller_assignment_id': parent['assignment_id'], 'gc_assignment_id': gc_id, 'role': name,
@@ -1245,7 +1247,20 @@ class Orchestration:
             current_gc = row_for(tx, assignment_id=gc['assignment_id']) or gc
             record = store.ticket(str(current_gc['work_id'])).work
             source = row_for(tx, assignment_id=blocked_by) if blocked_by else None
-            if record.outcome == 'cancelled' or (blocked_by and (source is None or not
+            is_blocker = blocked_by is not None or 'work_so_far' in report
+            if is_blocker and blocked_by is None:
+                # Older blocker transitions recorded the report and key only. Their matching suspension and
+                # sender retain the source; delivery reviews have an empty report and need no blocker guard.
+                candidates = [current_gc]
+                for event in tx.rows('transitions', {'assignment_id': gc['assignment_id']}, limit=0).results:
+                    payload = event['payload']
+                    if event['kind'] == 'send' and payload.get('kind') == 'blocked' and payload.get('report') == report:
+                        sender = row_for(tx, assignment_id=payload.get('sender_assignment_id'))
+                        if sender:
+                            candidates.append(sender)
+                source = next((one for one in candidates if tx.get('transitions', {
+                    'transition_id': identity(one['assignment_id'], 'suspend', key)})), None)
+            if record.outcome == 'cancelled' or (is_blocker and (source is None or not
                     self.blocked_assessment_allowed(tx, store, current_gc, source))):
                 return {'state': 'completed', 'queued': False, 'reason': 'Assessment no longer applies.'}
             if current_gc.get('stop'):

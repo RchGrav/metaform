@@ -517,15 +517,19 @@ def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(pr
 
 
 @pytest.mark.parametrize('outcome', ['cancelled', 'completed'])
-def test_blocked_commission_under_closed_gc_creates_no_assessment(project, outcome):
+@pytest.mark.parametrize('source', ['commission', 'delivery'])
+def test_blocked_commission_under_closed_gc_creates_no_assessment(project, outcome, source):
     store, _ = project
     gc = root(project)
-    request = SERVICE.delegate(ctx(project, 'gc-one', role='unpublished_alarm_expertise', task='Inspect alarm.'))
-    SERVICE.bind(ctx(project), request['creator_assignment_id'], 'creator')
+    session = 'gc-one'
+    if source == 'commission':
+        request = SERVICE.delegate(ctx(project, 'gc-one', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+        SERVICE.bind(ctx(project), request['creator_assignment_id'], 'creator')
+        session = 'creator'
     store.finish_work(gc['work_id'], 'Closed by the person.', outcome=outcome)
     before = {one.id for one in store.work(limit=0).results}
 
-    SERVICE.check_in(ctx(project, 'creator', state='blocked', summary='Publication held.', key='held'))
+    SERVICE.check_in(ctx(project, session, state='blocked', summary='Publication held.', key='held'))
     transport_events = SERVICE.pending(ctx(project))
 
     assert {one.id for one in store.work(limit=0).results} == before
@@ -572,6 +576,27 @@ def test_closed_ticket_never_requests_runtime_commission(project, monkeypatch, o
     assert {one.id for one in store.work(limit=0).results} == before
 
 
+@pytest.mark.parametrize('outcome', ['cancelled', 'completed'])
+def test_closed_ticket_consumes_stale_launch_before_runtime_selection(project, monkeypatch, outcome):
+    from metaform.modules.dispatch.orchestration import Transport as DispatchTransport
+
+    store, _ = project
+    gc = root(project)
+    with implementation.own(ctx(project)).tables() as tx:
+        implementation.transition(tx, gc, 'launch', {}, 'stale')
+    store.finish_work(gc['work_id'], 'Closed by the person.', outcome=outcome)
+    actual = DispatchTransport()
+
+    def unexpected_runtime(*args, **kwargs):
+        pytest.fail('A stale launch reached runtime selection.')
+
+    monkeypatch.setattr(SERVICE, 'prepare_runtime', unexpected_runtime)
+    monkeypatch.setattr(implementation, 'provided', lambda folder, kind: [('dispatch', actual)])
+    SERVICE.drain(ctx(project))
+
+    assert not any(one['kind'] == 'launch' for one in SERVICE.pending(ctx(project)))
+
+
 def test_pending_blocked_assessment_skips_gc_closed_before_recovery(project, monkeypatch):
     store, _ = project
     gc = root(project)
@@ -587,6 +612,54 @@ def test_pending_blocked_assessment_skips_gc_closed_before_recovery(project, mon
     SERVICE.drain(ctx(project))
 
     assert {one.id for one in store.work(limit=0).results} == before
+    assert not any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
+
+
+def test_runtime_selection_cannot_commission_after_concurrent_cancellation(project, monkeypatch):
+    store, _ = project
+    gc = root(project)
+
+    def cancelled_during_selection(*args, **kwargs):
+        store.finish_work(gc['work_id'], 'Cancelled during runtime selection.', outcome='cancelled')
+        return {'state': 'needs_choice'}
+
+    monkeypatch.setattr(SERVICE, 'runtime', cancelled_during_selection)
+    before = {one.id for one in store.work(limit=0).results}
+    with pytest.raises(Stop, match='closed before its role request'):
+        SERVICE.prepare_runtime(ctx(project), gc)
+    assert {one.id for one in store.work(limit=0).results} == before
+
+
+@pytest.mark.parametrize('source', ['delivery', 'commission', 'assessment', 'cancelled', 'completed'])
+def test_legacy_blocked_transition_recovers_source_before_assessment(project, monkeypatch, source):
+    store, _ = project
+    gc = root(project)
+    if source == 'commission':
+        request = SERVICE.delegate(ctx(project, 'gc-one', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+        blocked = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
+    elif source == 'assessment':
+        blocked = assess(ctx(project, 'gc-one', summary='Inspect alarm.', key='original'))
+    else:
+        blocked = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Inspect alarm.'))
+    SERVICE.bind(ctx(project), blocked['assignment_id'], 'blocked-worker')
+    with monkeypatch.context() as patch:
+        patch.setattr(SERVICE, 'assessment', lambda *args, **kwargs: None)
+        SERVICE.check_in(ctx(project, 'blocked-worker', state='blocked', summary='Alarm cannot ring.', key='legacy'))
+    held = SERVICE.assignment(ctx(project), assignment_id=blocked['assignment_id'])
+    key = implementation.identity(blocked['assignment_id'], 'check_in', 'legacy')
+    payload = {'report': held['last_check_in'], 'key': key}
+    with implementation.own(ctx(project)).tables() as tx:
+        event = implementation.transition(tx, gc, 'assessment', payload, key)
+        tx.update('transitions', {'transition_id': event['transition_id']}, {'payload': payload})
+    if source in ('cancelled', 'completed'):
+        store.finish_work(gc['work_id'], 'Closed before recovery.', outcome=source)
+    before = {one.id for one in store.work(limit=0).results}
+    transport(monkeypatch, project)
+
+    SERVICE.drain(ctx(project))
+
+    after = {one.id for one in store.work(limit=0).results}
+    assert len(after - before) == (1 if source == 'delivery' else 0)
     assert not any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
 
 
