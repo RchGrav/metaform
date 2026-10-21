@@ -532,11 +532,9 @@ const BUILD = {
     const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BufferGeometry().setFromPoints(tris.flat())), new THREE.LineBasicMaterial({ color: INK }));
     root.add(edge);
     eyes(root, { y: 0.07, z: 0.25, gap: 0.08, r: 0.04 });
-    return (t) => {
-      root.rotation.z = Math.sin(t * 1.1) * 0.25;
-      root.rotation.x = Math.sin(t * 0.9) * 0.06;
-      root.position.y = Math.sin(t * 1.1 + 1) * 0.06;
-    };
+    // folded paper is rigid: it banks only into a turn and pitches only with its path, `orientAgent`, and never
+    // rocks its wings or bobs on a clock of its own
+    return () => {};
   },
 
   puffer(root) {
@@ -906,8 +904,8 @@ export function createAgent(name, { harness = 'other' } = {}) {
         squash = crouch * 0.2 - (stroke.phase < 0.375 ? stroke.air * 0.12 : 0) + Math.exp(-landed * 14) * 0.12;
       } else if (motion.go === 'walk' || motion.go === 'creep') {
         y = Math.abs(Math.sin(stroke.phase * Math.PI * 2)) * motion.lift * 1.6 * Math.min(1, m.speed * 2);
-      } else if (moving && (motion.go === 'hover' || motion.go === 'dart' || motion.go === 'glide')) {
-        pitch = m.speed * (motion.go === 'hover' ? 0.28 : 0.1);  // a hover tips into the way it goes
+      } else if (moving && motion.go === 'hover') {
+        pitch = m.speed * 0.28;  // a hover tips into the way it goes; a glider's or dart's nose stays on its path
       }
       if (!moving && m.state !== 'sleep' && motion.go !== 'hop' && motion.idle.includes('bob'))
         y += Math.sin(t * 1.3 + (motion.phase || 0) * 6.28) * 0.05;
@@ -983,6 +981,9 @@ const _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ');
 // lean into a turn, as a body moving through air or water does.
 const UPRIGHT = new Set(['snail', 'beetle', 'slime', 'mushroom', 'seahorse']);
 const LEAN = 0.09, MOST_LEAN = 0.35;   // radians of lean for each radian a second of turn, and the most
+// A character whose corner is `bank`, a wing in the air, rolls into its turn as an aircraft does, about 15 degrees
+// circling its node, as the 2D map leans it more
+const BANK = 0.5, MOST_BANK = 0.6;
 // Turn the agent's +Z toward a direction, upright, smoothing over a few frames.
 // Built from yaw and a small pitch, so facing straight backward never flips.
 // `smoothing` is the share of the way turned in a frame at 60 frames a second; given the frame's `dt` in seconds, the
@@ -991,8 +992,9 @@ const LEAN = 0.09, MOST_LEAN = 0.35;   // radians of lean for each radian a seco
 export function orientAgent(agent, direction, smoothing = 0.2, dt = null, aligned = false) {
   const h = Math.hypot(direction.x, direction.z);
   if (h < 1e-6 && (!aligned || Math.abs(direction.y) < 1e-6)) return;
+  const banks = agent.userData.motion?.corner === 'bank', most = banks ? MOST_BANK : MOST_LEAN;
   const lean = UPRIGHT.has(agent.userData.glyph) ? 0
-    : Math.max(-MOST_LEAN, Math.min(MOST_LEAN, -(agent.userData.turnRate || 0) * LEAN));
+    : Math.max(-most, Math.min(most, -(agent.userData.turnRate || 0) * (banks ? BANK : LEAN)));
   _e.set(-Math.atan2(direction.y, h) * (aligned ? 1 : 0.35), Math.atan2(direction.x, direction.z), lean);
   _q.setFromEuler(_e);
   agent.quaternion.slerp(_q, dt === null ? smoothing : 1 - Math.pow(1 - smoothing, Math.max(0, dt) * 60));

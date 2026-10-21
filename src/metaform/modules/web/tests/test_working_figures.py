@@ -130,6 +130,56 @@ def test_working_figures_hold_separate_places_face_the_label_and_resume_after_an
     assert problems == []
 
 
+def test_a_paper_plane_keeps_its_wings_level_flying_straight_banks_into_a_turn_and_noses_along_its_path(
+        run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.wait_for_function('() => window.metaform.loaded()')
+    found = page.evaluate("""async () => {
+        const THREE = await import('three');
+        const {createAgent, orientAgent, motionOf} = await import('/page/agents3d.js');
+        const dt = 1 / 60, roll = new THREE.Euler(0, 0, 0, 'YXZ'), q = new THREE.Quaternion();
+        const p = new THREE.Vector3(), dir = new THREE.Vector3();
+        // the body's drawn roll, pitch and height over 8 s of a path, after 2 s to settle
+        const fly = path => {
+            const agent = createAgent('plane'); agent.userData.motion = motionOf('plane', 'probe');
+            const body = agent.children[0].children[0].children[0].children[0];
+            const seen = {roll: [Infinity, -Infinity], pitch: [Infinity, -Infinity], high: [Infinity, -Infinity]};
+            for (let i = 0; i < 600; i++) {
+                const t = i * dt, aligned = path(t, agent.position, dir);
+                orientAgent(agent, dir, aligned ? 1 : .16, dt, aligned);
+                agent.updateMatrixWorld(true);
+                agent.userData.update(dt, {move: {speed: 1, stride: t, state: 'travel'}});
+                agent.updateMatrixWorld(true);
+                if (i < 120) continue;
+                body.getWorldQuaternion(q); roll.setFromQuaternion(q, 'YXZ'); body.getWorldPosition(p);
+                for (const [key, value] of [['roll', roll.z], ['pitch', roll.x], ['high', p.y - agent.position.y]]) {
+                    seen[key][0] = Math.min(seen[key][0], value); seen[key][1] = Math.max(seen[key][1], value);
+                }
+            }
+            return Object.fromEntries(Object.entries(seen).map(([key, [lo, hi]]) =>
+                [key, key === 'high' ? [lo, hi] : [lo * 180 / Math.PI, hi * 180 / Math.PI]]));
+        };
+        const lap = 2 * Math.PI / 12;  // circling its node: a right turn, lap 12 s
+        return {
+            straight: fly((t, at, d) => { at.set(0, 0, t * 2); d.set(0, 0, 1); return true; }),
+            turn: fly((t, at, d) => { at.set(Math.cos(lap * t) * 3, 0, Math.sin(lap * t) * 3);
+                d.set(-Math.sin(lap * t), 0, Math.cos(lap * t)); return false; }),
+            descent: fly((t, at, d) => { d.set(0, -Math.tan(.26), 1).normalize(); at.copy(d).multiplyScalar(t * 2);
+                return true; }),
+        };
+    }""")
+    straight, turn, descent = found['straight'], found['turn'], found['descent']
+    # flying straight: wings level, nose on the path, no bob
+    assert max(map(abs, straight['roll'] + straight['pitch'])) < .5, found
+    assert straight['high'][1] - straight['high'][0] < 1e-3, found
+    # in a steady turn: a steady bank into the turn, right wing down
+    assert 10 < turn['roll'][0] and turn['roll'][1] - turn['roll'][0] < .5, found
+    # in a descent: the nose follows the path down, 15 degrees
+    assert all(abs(one - 14.9) < 1 for one in descent['pitch']), found
+    assert problems == []
+
+
 @pytest.mark.req('VIEW-005')
 def test_the_agent_view_ends_a_met_sign_and_sees_from_the_eyes_near_plane(
         run, web, mapped, browser):  # noqa: F811 -- imported fixtures keep their names for discovery
