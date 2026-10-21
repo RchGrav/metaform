@@ -355,3 +355,5 @@ Recommendation: Metaform runs only inside the agent's harness. Launching a harne
 
 
 **D123. Retired passive reminder.** Withdrawn 2026-10-21, code.dispatcher.agent#fe. Google Antigravity does not inherit the retired harness's AfterTool setting or hook. Supported global instructions supply the pointer, MCP-036. No equivalent hook is claimed without official evidence.
+
+**VIEW-008. Left-to-right sibling key order.** Answered, 2026-10-21, code.server.hosting#d, operative revision 9d3bfd95. Up selects the previous sibling. Down selects the next sibling. Sibling order follows rendered coordinates. Right goes deeper. Left returns to the parent. This engineering choice preserves existing join traversal while matching screen direction. Three distinct sibling targets verify the order.

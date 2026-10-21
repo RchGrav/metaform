@@ -1521,18 +1521,48 @@ def keys_of(web):
 
 @pytest.mark.req('VIEW-008')
 @pytest.mark.req('VIEW-012')
-def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(run, web, mapped, browser):
-    """Physical arrows perform requested tree actions through runtime orientation changes."""
+def test_sibling_arrows_follow_three_distinct_rendered_targets(run, web, mapped, browser):
+    """Three siblings distinguish screen direction from reversed traversal with two-node wrapping."""
     from metaform.data import Store
+
     store = Store('proj')
-    store.add_element('notes', 'code.loop.tock', name_length=1)
-    store.add_join('notes', 'exterior.cook', 'code.loop.tock', purpose='Count another beat.', ef='Ticks.')
+    for number in range(3):
+        address = f'code.alarm.audible.tone{number}'
+        store.add_element('notes', address, name_length=1)
+        store.add_join('notes', 'code.alarm.audible', address, purpose=f'Play tone {number}.',
+                       ef=f'Plays tone {number}.')
+    started(run)
+    page, problems, _ = opened(browser, web)
+    _, at = keys_of(web)
+    tones = [at[f'code.alarm.audible.tone{number}'] for number in range(3)]
+    for direction in ('down', 'across', 'down'):
+        page.evaluate("direction => import('/page/app/map2d/fit.js').then(part => part.fitDirection2d(direction))",
+                      direction)
+        vertical = direction == 'down'
+        page.wait_for_function('vertical => window.metaform.vertical() === vertical', arg=vertical)
+        still2d(page)
+        axis = 'x' if vertical else 'y'
+        positions = {key: page.evaluate('key => window.metaform.at2d(key)', key)[axis] for key in tones}
+        assert len(set(positions.values())) == 3
+        row = sorted(tones, key=positions.get)
+        previous, following = ('ArrowLeft', 'ArrowRight') if vertical else ('ArrowUp', 'ArrowDown')
+        for key, expected in ((previous, row[0]), (following, row[2])):
+            page.evaluate('key => window.metaform.select(key)', row[1])
+            page.keyboard.press(key)
+            assert page.evaluate('window.metaform.selected()') == expected, (direction, key, positions)
+    assert problems == []
+
+
+@pytest.mark.req('VIEW-008')
+@pytest.mark.req('VIEW-012')
+def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(run, web, mapped, browser):
+    """Physical arrows follow the rendered axes, including after orientation changes on the same page."""
     started(run)
     page, problems, _ = opened(browser, web)
     _, at = keys_of(web)
     cook, kitchen, alarm, display, tick = (at[address] for address in (
         'exterior.cook', 'code.timer.kitchen', 'code.alarm.audible', 'code.timer.kitchen.display', 'code.loop.tick'))
-    # The cook receives from three providers, ordered across the rendered map.
+    # cook's join holds the kitchen timer and the tick loop, a row of two in the order they are drawn across the map;
     # the kitchen timer receives from the alarm; the display, which nothing receives from, sits beside the cook.
     press = lambda key: (page.keyboard.press(key), page.evaluate('window.metaform.selected()'))[1]
     for direction in ('down', 'across', 'down'):
@@ -1542,26 +1572,20 @@ def test_arrow_keys_go_deeper_back_to_the_parent_and_across_the_parents_nodes(ru
         page.wait_for_function('vertical => window.metaform.vertical() === vertical', arg=vertical)
         still2d(page)
         deeper, parent, previous, following = (('ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight') if vertical
-                                               else ('ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'))
+                                               else ('ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'))
         axis = 'x' if vertical else 'y'
-        siblings = (kitchen, tick, at['code.loop.tock'])
-        across = {key: page.evaluate('key => window.metaform.at2d(key)', key)[axis] for key in siblings}
+        across = {key: page.evaluate('key => window.metaform.at2d(key)', key)[axis] for key in (kitchen, tick)}
         row = sorted(across, key=across.get)
         page.evaluate('key => window.metaform.select(key)', cook)
-        assert press(parent) == cook
-        assert press(deeper) in row
-        # Three siblings distinguish advancing from reversing, even when row ends wrap.
-        page.evaluate('key => window.metaform.select(key)', row[0])
-        assert press(following) == row[1], direction
-        assert press(following) == row[2], direction
-        assert press(previous) == row[1], direction
-        assert press(previous) == row[0], direction
-        page.evaluate('key => window.metaform.select(key)', cook)
+        assert press(parent) == cook, (direction, page.evaluate('window.metaform.vertical()'))
         first = press(deeper)
-        movement = following if row.index(kitchen) > row.index(first) else previous
-        for _ in range(abs(row.index(kitchen) - row.index(first))):
-            press(movement)
-        assert page.evaluate('window.metaform.selected()') == kitchen
+        assert first in row
+        other = row[1 - row.index(first)]
+        toward, back = (following, previous) if row.index(first) == 0 else (previous, following)
+        assert press(toward) == other
+        assert press(back) == first
+        if first != kitchen:
+            assert press(toward) == kitchen
         assert [press(key) for key in (deeper, parent, parent, following, previous)] == [
             alarm, kitchen, cook, display, cook]
         page.evaluate('key => window.metaform.select(key)', alarm)

@@ -181,10 +181,10 @@ function mapKey(event) {
   }
   walkTree(event, here);
 }
-/* Translate LR arrows to TB tree actions: Up runs Right, Down runs Left, Left runs Up, Right runs Down.
+/* Translate physical arrows to the top-to-bottom tree actions when the rendered map runs left to right.
  * History keys and the ordered walks inside a node or memory network are handled before this translation. */
-const ACROSS_KEYS = {ArrowRight: 'ArrowDown', ArrowLeft: 'ArrowUp', ArrowUp: 'ArrowRight', ArrowDown: 'ArrowLeft'};
-/* Walk the join tree through its logical actions: deeper, back along the trail or to the parent, or between siblings
+const ACROSS_KEYS = {ArrowRight: 'ArrowDown', ArrowLeft: 'ArrowUp', ArrowUp: 'ArrowLeft', ArrowDown: 'ArrowRight'};
+/* Walk the join tree along its rendered axes: deeper, back along the trail or to the parent, or between siblings
  * and on past the ends of their row. */
 function walkTree(event, here) {
   const key = M.vertical ? event.key : ACROSS_KEYS[event.key];
