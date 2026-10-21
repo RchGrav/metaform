@@ -377,7 +377,7 @@ class Orchestration:
     def runtime(self, ctx: Context, work_id: str,
                 fallback: Mapping[str, Any] | None = None) -> dict[str, Any]:
         """Choose once at assignment. Missing Jev decisions belong to the Facilitator's full model."""
-        from .runtime import TASKS, choose, rejection, strengths_of
+        from .runtime import TASKS, choose, strengths_of
         transports = [one for _, one in provided(ctx.folder, 'orchestration.transport')
                       if hasattr(one, 'runtime_catalog')]
         if not transports:
@@ -408,9 +408,6 @@ class Orchestration:
         catalog = transport.runtime_catalog(ctx, work_id)
         # Explicit person choices restrict inference. Automatic choices can change after a Planner refines the task.
         chosen = choose(ctx, record, catalog, fallback=fallback, overrides=overrides)
-        if chosen is None and fallback is not None:
-            raise Stop(f'The choice was not recorded. {rejection(fallback, catalog, overrides)}',
-                       f'metaform orchestration runtime work={work_id} choice=<choice>')
         if chosen is None:
             from .runtime import TASKS, rejection_reason, strengths_of
             needed = {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog,
