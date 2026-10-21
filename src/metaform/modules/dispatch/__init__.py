@@ -3790,8 +3790,10 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
         raise Refused(f'Full Auto is off, so {called(store, [work_id])[work_id]} does not start by itself. '
                       'Start it yourself, or check Full Auto.', 'metaform dispatch autostart')
     # Only the active board is worked, 2026-10-21: a start the system makes by itself for a ticket on a board set
-    # aside is refused, Full Auto on or off, so old boards stay aside; the person's own start of it still runs.
-    if auto and kind in ('worker', 'helper'):
+    # aside is refused, Full Auto on or off, so old boards stay aside; the person's own start of it still runs. A
+    # helper, the Facilitator's commission among them, serves a ticket already admitted and is never set aside: with
+    # commissions refused, every routing sat at 'Facilitator is selecting expertise' and no Start could take a ticket.
+    if auto and kind == 'worker':
         aside = set_aside(ctx, str(work_id))
         if aside is not None:
             raise Refused(f'{called(store, [work_id])[work_id]} is on {aside}, which is set aside: only the active '

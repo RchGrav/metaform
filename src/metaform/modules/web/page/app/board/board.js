@@ -387,8 +387,13 @@ export async function drawBoards() {
     try { kept = localStorage.getItem(BOARD_KEY(S.project)); } catch (error) { kept = null; }
     B.board = kept;
   }
-  let all = [];
-  try { all = (await read('boards')).boards || []; } catch (error) { all = []; }
+  let all = null;
+  try { all = (await read('boards')).boards || []; } catch (error) { all = null; }
+  if (all === null) {  // a read that failed changes nothing: the board shown stays, with the names it had
+    if (B.board === null) B.board = '';
+    boardButtons();
+    return;
+  }
   B.boards = all.filter(one => !one.first);
   B.active = (all.find(one => one.active) || {name: ''}).name;
   // never chosen in this browser, or the board chosen was removed meanwhile: the active board is shown
