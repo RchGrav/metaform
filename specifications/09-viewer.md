@@ -780,8 +780,7 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 ### VIEW-044 A worktree that passes its tests and merges cleanly waits fifteen minutes for review, then merges itself, unless the person steps in
 
 - Amendment, 2026-10-20, code.dispatcher.agent#7e, confirmed: Ticket completion commits the ticket's own deliverable
-  files by default, with no setting. The commit subject contains its Address, number and title, with the existing
-  `Metaform-Ticket` trailer. Completion includes proof landing. Shared-checkout commits preserve peer staging and
+  files by default, with no setting. Completion includes proof landing. Shared-checkout commits preserve peer staging and
   unrelated edits. Startup dirty paths, overlapping writers and changed write fingerprints block uncertain
   attribution. Explicit functional links identify deliverables. Temporary and diagnostic output is excluded.
   Worktree landing retains the existing review flow and squash commit, then pushes. Both paths push the current
@@ -790,6 +789,18 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   Why: Each finished ticket must remain independently reviewable on the remote without claiming another agent's
   changes. Acceptance: Local bare-remote tests prove ticket-only commits beside staged and unstaged peer edits,
   rejected-push merges, conflict notification, write attribution and repeated completion recovery.
+
+- Amendment, 2026-10-21, code.dispatcher.agent#e3, confirmed: Every completed ticket creates a commit, including an
+  empty completion. Its subject is the stored ticket title. Its body retains the resolution and its why. Its five
+  trailers are `Metaform-Ticket` (work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address),
+  `Metaform-Board` (board name, empty for the first board), and `Metaform-Agent` (agent id and name). Shared-tree
+  commits include only files attributable to the session's successful tool calls, through the existing private
+  index. Cancelled and failed tickets create no completion commit. Uncommitted cancelled or failed worktrees remain
+  until abandoned-branch retention expires. A completed ticket without its commit files one broken ticket at
+  `code.dispatcher.agent`, named by the completed ticket's number, on its board. Its broken condition lights the
+  board node. Why: The commit preserves the ticket's lasting record in searchable Git history. Acceptance: Existing
+  dispatch merge tests prove full messages, ownership isolation, empty commits, terminal outcomes and missing-commit
+  faults. Worktree review and landing consent remain required.
 
 - Requirement: When an agent's worktree passes its tests and the merge check finds it can merge, the web page shows a Review notice for it. If fifteen minutes pass with no manual review, and the tests still pass and it still merges, the worktree is merged into the active dev branch automatically and logged as a newly committed feature that needs testing before the next release. If the person clicks Review, the countdown is cancelled for good and the work is the person's from then on. A window then offers an agent's help to prepare the code so it does not conflict with the ongoing work. Yes opens a chat with an agent that prepares the code for review, and No does not restart the countdown. The chat window has the form of a customer service window in the lower right corner and shows that the agent is coming while it starts.
 - What this means:

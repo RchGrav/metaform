@@ -68,6 +68,44 @@ def ticket_title(store: Store, record: WorkRecord) -> str:
     return f'{handle} {title}'.splitlines()[0]
 
 
+def ticket_message(store: Store, record: WorkRecord, agent: str = '', name: str = '') -> str:
+    """The completed ticket's lasting record, shared by direct commits and worktree squashes."""
+    from . import agent_label
+    address = record.address or record.receiver_address or record.provider_address or 'work'
+    numbered = store.numbers_of('work', [record.id]).get(record.id)
+    handle, title, why = numbered or (f'{address}#{record.id[:8]}', None, None)
+    subject = (title or record.task or record.note or record.condition or 'Work').splitlines()[0]
+    base = store.bound_base()
+    with Store(store.project_id, base=base.id if base else None, module='map').tables(write=False) as tx:
+        settings = tx.get('ticket_settings', {'work_id': record.id})
+    board = str(settings['board'] or '') if settings else ''
+    agent = agent or (record.taken_by or '').split(' ', 1)[0]
+    author = ' '.join(part for part in (agent, name or (agent_label(agent) if agent else '')) if part)
+    return '\n\n'.join((subject, record.resolution or '', f'Why: {why or ""}'.rstrip(), '\n'.join((
+        f'{TRAILER}: {record.id}', f'Metaform-Number: {handle}', f'Metaform-Node: {address}',
+        f'Metaform-Board: {board}'.rstrip(), f'Metaform-Agent: {author}'.rstrip()))))
+
+
+def commit_fault(store: Store, record: WorkRecord, why: str) -> None:
+    """A missing completion commit is one numbered broken ticket, which lights its board node."""
+    node = Node('element', 'code.dispatcher.agent')
+    numbered = store.numbers_of('work', [record.id]).get(record.id)
+    handle = numbered[0] if numbered else record.id
+    note = f'Completed ticket {handle} ({record.id}) has no commit.'
+    with store.atomic():
+        if any(other.note == note for other in store.work(node=node, open=True, limit=0).results):
+            return
+        fault = store.add_work(node, 'broken', kind='broken', title=f'Missing commit for {handle}', note=note,
+                               task=f'{why}\nRecover the completed ticket commit without including peer edits. '
+                                    f'Verify git log --fixed-strings --grep="{TRAILER}: {record.id}".')
+        base = store.bound_base()
+        own = Store(store.project_id, base=base.id if base else None, module='map')
+        with own.tables() as tx:
+            settings = tx.get('ticket_settings', {'work_id': record.id})
+            if settings and settings['board']:
+                tx.insert('ticket_settings', {'work_id': fault.id, 'board': settings['board']})
+
+
 def _deliverable(path: str) -> bool:
     """Exclude runtime output, temporary files and diagnostic captures from ticket commits."""
     parts = Path(path).parts
@@ -146,7 +184,7 @@ def _reconcile_index(folder: Path, commit: str, files: dict[str, str]) -> str:
     return '' if reset.returncode == 0 else (reset.stdout + reset.stderr).strip()[-400:]
 
 
-def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[str, str],
+def complete_ticket(folder: str | Path, work_id: str, message: str, files: dict[str, str],
                     baseline: dict[str, str] | None) -> dict[str, Any]:
     """Commit only owned paths through a private index, preserving other staged and unstaged work.
 
@@ -158,7 +196,7 @@ def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[st
     trailer = f'{TRAILER}: {work_id}'
     previous = git(folder, 'log', '--format=%H', '--fixed-strings', '--grep', trailer)
     for commit in previous.stdout.splitlines():
-        if trailer in git(folder, 'log', '-1', '--format=%B', commit).stdout.splitlines():
+        if git(folder, 'log', '-1', '--format=%B', commit).stdout.strip() == message.strip():
             result['committed'] = commit
             with Queued(folder) as held:
                 if not held:
@@ -168,9 +206,10 @@ def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[st
                 if not result['why']:
                     result.update(push_ticket(folder))
             return result
-    if not files or baseline is not None and '' in baseline:
+    if baseline is not None and '' in baseline:
+        result['why'] = 'The project folder is not a git checkout.'
         return result
-    if baseline is None:
+    if files and baseline is None:
         result['why'] = 'Missing startup git state. Ticket files cannot be attributed safely.'
         return result
     paths: list[str] = []
@@ -189,14 +228,12 @@ def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[st
         if file_fingerprint(folder, relative) != fingerprint:
             result['why'] = f'File changed after the session edit: {relative}'
             return result
-        if relative in baseline:
+        if baseline is not None and relative in baseline:
             result['why'] = f'Pre-existing changes prevent safe attribution: {relative}'
             return result
         if relative not in paths:
             paths.append(relative)
             expected[relative] = fingerprint
-    if not paths:
-        return result
     with Queued(folder) as held:
         if not held:
             result['why'] = 'Another git operation is under way.'
@@ -210,7 +247,7 @@ def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[st
                                       encoding='utf-8', timeout=120, check=False,
                                       stdin=subprocess.DEVNULL, env=env)
             head = git(folder, 'rev-parse', 'HEAD').stdout.strip()
-            for words in [('read-tree', head), ('add', '-A', '--', *paths),
+            for words in [('read-tree', head), *([('add', '-A', '--', *paths)] if paths else []),
                           ('diff', '--cached', '--check')]:
                 done = staged(*words)
                 if done.returncode:
@@ -224,8 +261,7 @@ def complete_ticket(folder: str | Path, work_id: str, title: str, files: dict[st
             if tree.returncode:
                 result['why'] = tree.stderr.strip()[-400:]
                 return result
-            made = git(folder, 'commit-tree', tree.stdout.strip(), '-p', head, '-m', title,
-                       '-m', f'{TRAILER}: {work_id}')
+            made = git(folder, 'commit-tree', tree.stdout.strip(), '-p', head, '-m', message)
             if made.returncode:
                 result['why'] = made.stderr.strip()[-400:]
                 return result
@@ -308,7 +344,7 @@ def worktree_for(project: str | Path, work_id: str) -> Path | None:
     return folder
 
 
-def checkpoint(folder: str | Path, work_id: str, said: str) -> str | None:
+def checkpoint(folder: str | Path, work_id: str, said: str, *, completed: bool = False) -> str | None:
     """Everything the agent has changed in its worktree committed, with the ticket's trailer, P009: the runner's own
     commit at each step and at the session's end, so nothing is lost on a crash. The commit, or None when nothing
     changed or the folder is not a worktree of the project's. A worktree's .git is a file; the project's own
@@ -316,11 +352,15 @@ def checkpoint(folder: str | Path, work_id: str, said: str) -> str | None:
     here and every agent's uncommitted work was committed under one ticket."""
     if not (Path(folder) / '.git').is_file():
         return None
-    git(folder, 'add', '-A')
-    if git(folder, 'diff', '--cached', '--quiet').returncode == 0:
+    if completed and git(folder, 'log', '-1', '--format=%B').stdout.strip() == said.strip() \
+            and not git(folder, 'status', '--porcelain').stdout.strip():
+        return git(folder, 'rev-parse', 'HEAD').stdout.strip()
+    if git(folder, 'add', '-A').returncode:
         return None
-    done = git(folder, 'commit', '-q', '-m', said[:200] or f'Checkpoint of ticket {work_id}', '-m',
-               f'{TRAILER}: {work_id}')
+    if not completed and git(folder, 'diff', '--cached', '--quiet').returncode == 0:
+        return None
+    message = said if completed else f'{said[:200] or f"Checkpoint of ticket {work_id}"}\n\n{TRAILER}: {work_id}'
+    done = git(folder, 'commit', '--allow-empty', '--cleanup=verbatim', '-q', '-m', message)
     return git(folder, 'rev-parse', 'HEAD').stdout.strip() if done.returncode == 0 else None
 
 
@@ -386,16 +426,23 @@ def tests_pass(folder: str | Path, command: str) -> tuple[bool, str]:
 def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[str, Any] | None:
     """A done ticket's worktree: its changes committed with the ticket's trailer, then, for a ticket completed, the
     tests and the merge check run, and when both pass the merge waits for review. A ticket cancelled or failed is not
-    offered: its work is committed on its branch and its worktree removed, P192, the branch kept until
+    offered: uncommitted work stays in its worktree without another commit, P192, until
     dispatch_abandoned_branch_days have passed, P017. Returns the merge row, or None when there is nothing to merge."""
     project = Path(store.project().path)
     if not (Path(folder) / '.git').is_file() or Path(folder).resolve() == project.resolve():
         return None  # not a worktree: the shared checkout is neither committed nor removed, as checkpoint
-    checkpoint(folder, record.id, f'{record.condition or "work"}: {(record.task or record.note or "")[:60]}\n\n'
-                                  f'Work {record.id}: {record.resolution or ""}')
     branch = branch_of(record.id)
     if (record.outcome or 'completed') != 'completed':
-        removed(project, folder)
+        if not git(folder, 'status', '--porcelain').stdout.strip():
+            removed(project, folder)
+        return None
+    try:
+        committed = checkpoint(folder, record.id, ticket_message(store, record), completed=True)
+    except (OSError, subprocess.SubprocessError) as error:
+        commit_fault(store, record, str(error))
+        return None
+    if committed is None:
+        commit_fault(store, record, 'Git could not commit the completed worktree ticket.')
         return None
     dev = dev_branch(project)
     since = snapshot_of(project, branch) or dev
@@ -566,6 +613,7 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
     and branch are dropped and it is made again from the agent's branch as it was. Only a genuine conflict is said
     with `conflict:` (UX review round 1, interrupt F7: a merge killed after its soft reset left the agent's work only
     staged, and the next attempt reported a conflict that did not exist)."""
+    from . import work_over
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         row = tx.get('merges', {'work_id': work_id})
@@ -593,6 +641,11 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             _dropped(project, work_id)
             with own.tables() as tx:
                 tx.update('merges', {'work_id': work_id}, {'state': READY, 'reason': ''})
+        record = store.ticket(work_id).work
+        if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
+            with own.tables() as tx:
+                tx.update('merges', {'work_id': work_id}, {'state': FAILED, 'reason': 'ticket is not completed'})
+            return {'work_id': work_id, 'merged': False, 'why': 'ticket is not completed'}
         if git(project, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
             return {'work_id': work_id, 'merged': False,
                     'why': 'the project folder has uncommitted changes; the merge waits until they are committed'}
@@ -620,10 +673,13 @@ def merge_due(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:
             outcome['reason'] = said
         if passed:
             record = store.ticket(work_id).work
+            if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
+                passed = False
+                outcome['reason'] = 'ticket is not completed'
+        if passed:
             git(here, 'reset', '--soft', dev)
-            squashed = git(here, 'commit', '-q', '-m',
-                           ticket_title(store, record),
-                           '-m', f'Work {work_id}: {record.resolution or ""}', '-m', f'{TRAILER}: {work_id}')
+            squashed = git(here, 'commit', '--allow-empty', '--cleanup=verbatim', '-q', '-m',
+                           ticket_message(store, record))
             done = git(project, 'merge', '--ff-only', temp) if squashed.returncode == 0 else squashed
             if done.returncode == 0:
                 return _merged(ctx, store, own, project, work_id, dev, folder, branch)
@@ -665,7 +721,7 @@ def _delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) 
 
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
     """The branches of tickets closed and not merged, older than `days`, removed with their worktrees and snapshots,
-    P017, after their work was committed; and git's own record of worktrees gone, pruned, P192. The branches removed."""
+    P017, without committing cancelled or failed work; git's record of worktrees gone is pruned, P192."""
     project = Path(project)
     if dev_branch(project) is None:
         return []
@@ -681,8 +737,6 @@ def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
         if branch in waiting or branch not in closed or time.time() - float(when or 0) < days * 86400:
             continue
         folder = project / FOLDER / branch.split('/', 1)[1]
-        if folder.exists():
-            checkpoint(folder, closed[branch].id, f'Abandoned work of ticket {closed[branch].id}')
         removed(project, folder, branch)
         gone.append(branch)
     return gone

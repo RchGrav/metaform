@@ -164,7 +164,15 @@ from . import (
     work_over,
     workflow_skill,
 )
-from .merge import capture_state, checkpoint, complete_ticket, file_fingerprint, ticket_title
+from .merge import (
+    capture_state,
+    checkpoint,
+    commit_fault,
+    complete_ticket,
+    file_fingerprint,
+    ticket_message,
+    ticket_title,
+)
 from .signals import THREAD_TABLES, add_line, concerning, mark_peer
 
 START_LIMIT = 300.0  # the one wait for the agent to start and make its session; npx may download it first
@@ -923,7 +931,7 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         over = await asyncio.to_thread(work_over, store, record)  # done, or its fix landed and is watched
         if folder is not None and over:  # its work committed, tested and checked to merge, VIEW-044
             from .merge import finished
-            await asyncio.to_thread(finished, ctx, store, record, folder)
+            await asyncio.to_thread(events.announced, ctx.folder, ctx.surface, finished, ctx, store, record, folder)
             active = await asyncio.to_thread(store.active_base)
             await ctx.publish_async('map.changed', {'project': store.project_id, 'tables': 'dispatch',
                                                     'dispatch_tables': ['dispatch.merges'],
@@ -1489,7 +1497,8 @@ class Session:
         if self.prep or self.ending:
             return
         if record is not None and (record.steps_done != self.progress_steps or record.done):
-            if record.steps_done > self.progress_steps and self.folder != self.root:  # a worktree's step, P009
+            if record.steps_done > self.progress_steps and self.folder != self.root \
+                    and record.outcome not in ('cancelled', 'failed'):  # a worktree's step, P009
                 said = record.said[-1].said if record.said else ''
                 await asyncio.to_thread(checkpoint, self.folder, self.work_id,
                                         f'Step {record.steps_done} of ticket {self.work_id}: {said or ""}'.strip())
@@ -4905,25 +4914,39 @@ class Session:
         if self.role != 'worker' or self.prep or self.folder != self.root or held is None \
                 or (held['result'] is not None and held['result']['committed'] and not held['result']['why']):
             return
+        record = await asyncio.to_thread(ticket, self.store, self.work_id)
+        if record.outcome in ('cancelled', 'failed') or not (record.done or await asyncio.to_thread(
+                work_over, self.store, record)):
+            return
         index = await self.places()
         files = {path: fingerprint for path, fingerprint in held['files'].items()
                  if placed(index, path)[1]}
-        title = await asyncio.to_thread(ticket_title, self.store,
-                                       await asyncio.to_thread(ticket, self.store, self.work_id))
+        title = await asyncio.to_thread(ticket_title, self.store, record)
         overlaps = await asyncio.to_thread(self.commit_overlaps, set(files))
+        previous_commit = held['result']['committed'] if held['result'] is not None else None
         try:
             result = ({'committed': None, 'pushed': False, 'conflict': False,
                        'why': held.get('attribution_error') or
                        'Other sessions changed the same files: ' + ', '.join(sorted(overlaps))}
                       if overlaps or held.get('attribution_error') else await asyncio.to_thread(
-                                                              complete_ticket, self.folder, self.work_id, title,
+                                                              complete_ticket, self.folder, self.work_id,
+                                                              await asyncio.to_thread(ticket_message, self.store,
+                                                                                     record, self.agent, self.name),
                                                               files, held['baseline']))
         except (OSError, subprocess.SubprocessError) as error:
             result = {'committed': None, 'pushed': False, 'conflict': False, 'why': str(error)}
         held['result'] = result
+        if not result['committed']:
+            result['why'] = result['why'] or 'The completed ticket has no commit.'
+            await self.write(commit_fault, self.store, record, str(result['why']))
         async with self.lock:
             await self.note('ticket-commit', 'commit', json.dumps(result, ensure_ascii=False))
             await self.save_state()
+        if result['committed'] and result['committed'] != previous_commit:
+            await self.ctx.publish_async('map.changed', {'project': self.store.project_id, 'base_id': self.base_id,
+                                                        'tables': 'dispatch', 'dispatch_tables': [],
+                                                        'kinds': ['commit'],
+                                                        **concerning(self.work_id, self.session_id)})
         if result['why']:
             from .orchestration import TRANSPORT
             try:
@@ -5391,8 +5414,10 @@ class Session:
             await self.terminals_ended()  # the terminals it asked for end with it, P019
             if self.folder != self.root and not self.prep and self.node is not None:  # nothing lost on a crash, P009
                 with contextlib.suppress(Exception):
-                    await asyncio.to_thread(checkpoint, self.folder, self.work_id,
-                                            f'The session of ticket {self.work_id} ended: {how}')
+                    record = await asyncio.to_thread(ticket, self.store, self.work_id)
+                    if record.outcome not in ('cancelled', 'failed'):
+                        await asyncio.to_thread(checkpoint, self.folder, self.work_id,
+                                                f'The session of ticket {self.work_id} ended: {how}')
             if self.intake_timer is not None:
                 self.intake_timer.cancel()
                 self.intake_timer = None

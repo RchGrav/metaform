@@ -569,6 +569,10 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         notices.append(Notice("id", f"This work record was done at {row['done']}; its resolution was kept."))
         return work_record(tx, row, tuple(notices))
     proof = _proof(tx, work_id)
+    if isinstance(why, str) and why.strip():
+        tables = tx.tables()
+        if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
+            tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
     if proof is not None and ended == "completed" and not proven:
         return _landed(tx, row, _work_text(resolution, "resolution", notices), notices)
     _ticket_changed(tx, work_id)
@@ -576,10 +580,6 @@ def finish_work(tx: Tx, work_id: str, resolution: Any = None, why: Any = None, o
         "UPDATE work SET done=?, resolution=?, outcome=? WHERE work_id=?",
         (now(), _work_text(resolution, "resolution", notices), ended, work_id),
     )
-    if isinstance(why, str) and why.strip():
-        tables = tx.tables()
-        if tables.get("numbered", {"kind": "work", "item_id": work_id}) is not None:
-            tables.update("numbered", {"kind": "work", "item_id": work_id}, {"why": why.strip()})
     _epic_closed(tx, work_id)
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 

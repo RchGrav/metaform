@@ -32,7 +32,7 @@ def repo(tmp_path):
 
 
 def finish(repo, baseline, *names):
-    return merge.complete_ticket(repo, 'ticket-id', 'code.feature#7 Feature',
+    return merge.complete_ticket(repo, 'ticket-id', 'Feature\n\nMetaform-Ticket: ticket-id',
                                  {name: merge.file_fingerprint(repo, name) for name in names}, baseline)
 
 
@@ -48,7 +48,7 @@ def test_only_owned_paths_commit_preserving_peer_index(repo):
     assert git(repo, 'show', '--format=', '--name-only', 'HEAD') == 'own.txt'
     assert git(repo, 'show', ':peer.txt') == 'peer staged'
     assert (repo / 'peer.txt').read_text() == 'peer unstaged\n'
-    assert git(repo, 'log', '-1', '--format=%B') == 'code.feature#7 Feature\n\nMetaform-Ticket: ticket-id'
+    assert git(repo, 'log', '-1', '--format=%B') == 'Feature\n\nMetaform-Ticket: ticket-id'
 
 
 def test_preexisting_same_file_edits_block_commit(repo):
@@ -144,10 +144,11 @@ def test_retry_recovers_committed_ticket_then_pushes_when_remote_returns(repo, t
     files = {'own.txt': merge.file_fingerprint(repo, 'own.txt')}
     unavailable = tmp_path / 'unavailable.git'
     remote.rename(unavailable)
-    first = merge.complete_ticket(repo, 'recover-id', 'Feature title', files, baseline)
+    message = 'Feature title\n\nMetaform-Ticket: recover-id'
+    first = merge.complete_ticket(repo, 'recover-id', message, files, baseline)
     assert first['committed'] and not first['pushed'] and first['why'], first
     unavailable.rename(remote)
-    second = merge.complete_ticket(repo, 'recover-id', 'Feature title', files, None)
+    second = merge.complete_ticket(repo, 'recover-id', message, files, None)
     assert second['committed'] == first['committed'] and second['pushed'], second
     assert git(repo, 'rev-list', '--count', 'HEAD') == '2'
     assert git(remote, 'rev-parse', 'dev') == first['committed']
@@ -199,13 +200,13 @@ def test_crash_before_index_reset_preserves_peer_staging(repo, monkeypatch, late
 
     monkeypatch.setattr(merge, 'git', crash_before_reset)
     with pytest.raises(SystemExit, match='crash before index refresh'):
-        merge.complete_ticket(repo, 'crash-id', 'Feature', files, baseline)
+        merge.complete_ticket(repo, 'crash-id', 'Feature\n\nMetaform-Ticket: crash-id', files, baseline)
     monkeypatch.setattr(merge, 'git', real_git)
     assert git(repo, 'show', ':own.txt') == 'base'
     if later_peer_stage:
         (repo / 'own.txt').write_text('later peer stage\n')
         git(repo, 'add', 'own.txt')
-    recovered = merge.complete_ticket(repo, 'crash-id', 'Feature', files, None)
+    recovered = merge.complete_ticket(repo, 'crash-id', 'Feature\n\nMetaform-Ticket: crash-id', files, None)
     assert recovered['committed'], recovered
     assert git(repo, 'show', ':peer.txt') == 'peer staged'
     assert git(repo, 'show', ':own.txt') == ('later peer stage' if later_peer_stage else 'ticket')

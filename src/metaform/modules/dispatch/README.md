@@ -244,9 +244,16 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 ## Ticket commits
 
 Completed tickets commit their own linked deliverables, then push the current branch to its configured upstream.
-This behavior has no setting. Completion includes proof work whose fix has landed. Commit subjects contain the
-ticket Address, number and title, followed by the existing `Metaform-Ticket` trailer. Worktree review still owns
-landing consent. Its existing squash becomes the ticket commit and is pushed after landing.
+This behavior has no setting. Completion includes proof work whose fix has landed. Commit subjects use the ticket
+title. Commit bodies retain the resolution and its why. Five trailers retain ticket identity: `Metaform-Ticket`
+(work id), `Metaform-Number` (Address and number), `Metaform-Node` (Address), `Metaform-Board` (board name, empty for
+the first board), and `Metaform-Agent` (agent id and name). Empty completions make empty commits with the same
+message. Worktree review still owns landing consent. Its existing squash becomes the ticket commit and is pushed
+after landing.
+
+Cancelled and failed tickets make no completion commit. Uncommitted worktree edits stay until the existing
+abandoned-branch retention expires. A missing completion commit files one broken ticket at `code.dispatcher.agent`,
+named by the completed ticket's number, on its board. Its broken condition lights the board node.
 
 Shared-checkout commits use a private Git index. The runner retains startup dirty paths and every successful file
 write separately from its bounded activity display. Earlier changes, overlapping writers and files changed after

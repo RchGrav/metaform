@@ -44,6 +44,7 @@ def test_completion_commits_linked_writes_once_and_preserves_peer_edits(dispatch
     async def scenario():
         await made.write_text_file('test', str(dispatch.folder / 'owned.py'), 'own edit\n')
         await made.write_text_file('test', str(dispatch.folder / 'capture.txt'), 'diagnostic\n')
+        dispatch.store.finish_work(dispatch.id, 'Owned edit completed.', 'Preserve peer edits.')
         await made.commit_done()
         await made.commit_done()
 
@@ -124,6 +125,7 @@ def test_completed_acp_diff_records_ownership_and_rejects_later_peer_write(dispa
         await made.session_update('test', SimpleNamespace(model_dump=lambda **kwargs: update))
         assert set(made.acp['ticket_git']['files']) == {'owned.py'}
         (dispatch.folder / 'owned.py').write_text('peer replacement\n')
+        dispatch.store.finish_work(dispatch.id, 'Owned edit completed.', 'Preserve peer edits.')
         await made.commit_done()
 
     asyncio.run(scenario())
@@ -148,7 +150,7 @@ def test_legacy_peer_present_at_start_stays_a_conflict_after_ending(dispatch):
     assert made.commit_overlaps({'owned.py'}) == {'owned.py'}
 
 
-def test_shell_edit_commits_without_acp_diff_and_retries_empty_result(dispatch, monkeypatch):
+def test_shell_edit_commits_without_acp_diff_after_an_open_ticket_attempt(dispatch, monkeypatch):
     from types import SimpleNamespace
 
     initialize(dispatch.folder)
@@ -167,10 +169,12 @@ def test_shell_edit_commits_without_acp_diff_and_retries_empty_result(dispatch, 
         await made.session_update('test', SimpleNamespace(model_dump=lambda **kwargs: data))
 
     async def scenario():
-        await made.commit_done()  # An empty first attempt must not suppress the later edit.
+        await made.commit_done()  # An open ticket must not commit before its edit.
+        assert made.acp['ticket_git']['result'] is None
         await update('in_progress')
         (dispatch.folder / 'owned.py').write_text('shell edit\n')
         await update('completed')
+        dispatch.store.finish_work(dispatch.id, 'Shell edit completed.', 'Record tool ownership.')
         await made.commit_done()
 
     asyncio.run(scenario())
@@ -201,6 +205,7 @@ def test_shell_snapshot_excludes_known_concurrent_peer_write(dispatch):
                                        'kind': 'state', 'text': json.dumps(peer), 'seq': 1})
         call['status'] = 'completed'
         await made.track_tool_files('shell', call)
+        dispatch.store.finish_work(dispatch.id, 'Shell edit completed.', 'Preserve peer edits.')
         await made.commit_done()
 
     asyncio.run(scenario())
@@ -327,6 +332,7 @@ def test_native_child_shell_commits_while_parent_delegation_is_open(dispatch, mo
         await child_update('completed')
         parent_call['status'] = 'completed'
         await made.track_tool_files('delegate', parent_call)
+        dispatch.store.finish_work(dispatch.id, 'Child edit completed.', 'Retain child ownership.')
         await made.commit_done()
 
     asyncio.run(scenario())
