@@ -14,7 +14,8 @@ from metaform.modules.web import server
 pytestmark = pytest.mark.kind('fixture')
 
 
-def test_dispatch_settings_survive_unrelated_module_refresh(project_folder, monkeypatch):
+@pytest.mark.parametrize('surface', ['module', 'http'])
+def test_dispatch_settings_survive_unrelated_module_refresh(project_folder, monkeypatch, surface):
     monkeypatch.chdir(project_folder)
     registry.set_module_state('dispatch', True)
     chassis.surface(project_folder)
@@ -33,7 +34,23 @@ def test_dispatch_settings_survive_unrelated_module_refresh(project_folder, monk
     monkeypatch.setattr(settings, 'value', refreshing_value)
     replies = []
     request = SimpleNamespace(send=lambda status, body: replies.append((status, body)))
-    server.Handler.dispatch_autostart(request, {'project': 'proj'})
+    if surface == 'module':
+        server.Handler.dispatch_autostart(request, {'project': 'proj'})
+    else:
+        served = server.Server('127.0.0.1', 0, 'nonce')
+        worker = threading.Thread(target=served.serve_forever, daemon=True)
+        worker.start()
+        connection = http.client.HTTPConnection('127.0.0.1', served.port, timeout=10)
+        try:
+            connection.request('GET', '/api/dispatch-autostart?project=proj')
+            response = connection.getresponse()
+            replies.append((response.status, json.loads(response.read())))
+        finally:
+            connection.close()
+            served.shutdown()
+            worker.join(5)
+            served.server_close()
+            served.vouch.close()
     assert refreshed
     assert replies[0][0] == 200
     assert replies[0][1]['agents'] == 3

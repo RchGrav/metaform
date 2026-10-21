@@ -6,6 +6,12 @@ Session reads select live sessions by default: running, waiting, or ended within
 
 ## Purpose
 
+Reopening an ended chat through `talk session=` honors `dispatch_resume_chats`, including agent names.
+Resume off starts fresh ACP context. Resume on may restore the selected session.
+Fresh thread chats read session metadata first and consult historical details only when needed for the current request.
+They never replay the prior transcript automatically. Running conversations retain their context.
+Explicit `dispatch resume` still restores context deliberately.
+
 dispatch starts Claude Code, Codex or Google Antigravity on one ticket, one ACP session per ticket, in the project's folder with Metaform's MCP server. What the agent does shows as notes at the ticket's node, each permission it asks for is a question there, and a person can message it or stop it. Details: `metaform help dispatch`.
 
 `metaform dispatch interrupt <work id>` cancels the current turn and keeps the session available. Messages already

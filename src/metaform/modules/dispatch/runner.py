@@ -1000,8 +1000,9 @@ def subject(store: Store, work_id: str, talk: str) -> tuple[str, str]:
                 f'`metaform map messages kind=question` for question {ref}, and its ticket with `metaform map work id={work_id}`')
     if kind == 'thread':
         return (f'what an earlier agent did in session {ref} on ticket {work_id}',
-                (f'that session\'s whole thread with `metaform dispatch sessions id={work_id}` (session {ref}), and '
-                 f'the ticket with `metaform map work id={work_id}`'))
+                (f'only that session\'s metadata with `metaform dispatch sessions session={ref} thread=false`. '
+                 'Read historical details only when needed for the current request, limited to relevant context; '
+                 'never replay the prior transcript automatically'))
     return f'the node {ref} of the map', f'`metaform map where {ref}`'
 
 

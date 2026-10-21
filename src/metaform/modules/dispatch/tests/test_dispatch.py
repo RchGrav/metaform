@@ -2173,10 +2173,49 @@ def test_a_permission_request_is_a_choice_among_its_options_that_the_person_answ
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
+@pytest.mark.parametrize('resume', [False, True])
+def test_ended_named_chat_reopening_honors_resume_without_transcript_replay(dispatch, run, dispatch_runners, resume):
+    from metaform import settings
+
+    run('set', '--dispatch-resume-chats' if resume else '--no-dispatch-resume-chats', cwd=dispatch.folder)
+    dispatch.start('hold', 'system=true', f'talk=node:{NODE}', FAKE_ACP_LOAD='1')
+    name = eventually(lambda: name_of(run, dispatch, dispatch.id))
+    eventually(lambda: dispatch.received('session/prompt'))
+    dispatch.stop()
+    assert dispatch.process.wait(30) == 0
+    old = dispatch.session().extra['session_id']
+    assert settings.value('dispatch_resume_chats', dispatch.folder) is resume
+    before = len(dispatch.received('session/prompt'))
+    started = json.loads(run('dispatch', 'talk', f'session={name}', '--json', cwd=dispatch.folder,
+                             env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    if resume:
+        eventually(lambda: dispatch.received('session/load'))
+        assert started['session_id'] == old
+        assert len(dispatch.received('session/new')) == 1
+    else:
+        eventually(lambda: len(dispatch.received('session/new')) == 2 or dispatch.received('session/load'))
+        assert not dispatch.received('session/load')
+        prompts = eventually(lambda: dispatch.received('session/prompt')[before:])
+        fresh = prompts[0]['params']['sessionId']
+        assert fresh != old
+        assert not dispatch.received('session/load')
+        assert len(dispatch.received('session/new')) == 2
+        text = '\n'.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
+        assert 'whole thread' not in text
+        assert 'thread=false' in text
+        assert 'only when needed' in text
+        again = json.loads(run('dispatch', 'talk', f'session={dispatch.id}:{old}', '--json', cwd=dispatch.folder).stdout)
+        assert again['session_id'] == fresh, 'running follow-ups reuse their conversation'
+    dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
 def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispatch, run, dispatch_runners):
     """The agent loads its own session again: the same session id, its thread going on with nothing replayed into
     it twice, and its ticket still its own; a session whose agent offered no way back is refused with a fresh agent
-    that reads its thread as the next step."""
+    that can consult its retained thread when needed as the next step."""
     from metaform.data import Store
     dispatch.start('hold', FAKE_ACP_LOAD='1')
     eventually(lambda: dispatch.logged('grandchild'))

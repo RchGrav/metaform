@@ -4973,7 +4973,7 @@ def talk(ctx: Context) -> dict[str, Any]:
                     and f'talk={about}' in command_line(row['pid'])), None)
     if talking is not None:  # the chat about this is already open: it is reused
         return {key: talking[key] for key in ('work_id', 'agent', 'session_id', 'state')}
-    if kind == 'session':  # the very context the person named, ended: resumed in place, so they can ask it
+    if kind == 'session' and ctx.setting('dispatch_resume_chats'):  # restore named context only when enabled
         named = next(row for row in everyone if row['work_id'] == work_id and row['session_id'] == ref.partition(':')[2])
         if named['state'] != 'running' and (again := resumed_session(ctx, store, named, about)) is not None:
             return again
