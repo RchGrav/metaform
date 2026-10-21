@@ -460,12 +460,14 @@ settings.number('dispatch_silence_seconds', 300, min=1, person_only=True, label=
                         'question waits for you. The signal names the interrupt call.')
 settings.number('dispatch_retries', 2, min=0, person_only=True, label='Retries',
                 category='automation', heading='Recovery',
-                help='How many times autostart resumes a ticket\'s session that stopped without your stop, including '
+                help='How many times autostart retries a ticket\'s session that stopped without your stop, including '
                      'sessions whose runner died, as after a crash, before handing it to you.',
-                details='A retry resumes the same ACP session with session/resume or session/load, so the agent keeps '
-                        'its own memory of the work; it waits 30 seconds, doubled each time, and for a free agent '
+                details='Managed retries follow Resume chats: off starts fresh with the retained assignment. Other '
+                        'retries resume the same ACP session with session/resume or session/load. Each retry '
+                        'waits 30 seconds, doubled each time, and for a free agent '
                         'slot, oldest first, so a crash never brings every agent back at once. A session you '
-                        'stopped, or one whose agent can neither resume nor load, is never retried. 0 retries none.')
+                        'stopped is never retried. Retained-context retries need resume or load support. '
+                        'Fresh sessions retain the retry count. 0 retries none.')
 # Seconds before the first retry of a session that stopped without the person's stop; each later retry waits twice as
 # long. A backoff base has one right answer, so settings cleanup 2026-10-15 made it fixed (dispatch_retry_seconds).
 RETRY_SECONDS = 30
@@ -2956,16 +2958,19 @@ def left_waiting(store: Store, opened: Sequence[WorkRecord], rows: Sequence[dict
 def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None,
           asked: int | None = None) -> dict[str, Any]:
     """The supervisor, P012: a worker's session that ended without the person's stop, its ticket still open and still
-    its own, is resumed in place, so the agent keeps its memory of the work, after RETRY_SECONDS, doubled for
-    each retry before it, up to dispatch_retries times; then, or when its agent can neither resume nor load, it is
-    handed to the person with a handed-over signal. Never a session the person stopped. Returns the sessions resumed
-    and, while one waits, the time the next is due, so the runner that saw its session end can come back for it.
+    its own, continues after RETRY_SECONDS, doubled for each retry before it, up to dispatch_retries times.
+    Managed owners use their continuation policy, starting fresh when Resume chats is off. Other sessions resume
+    in place. Exhausted retries or unavailable retention are handed to the person. Never retries a person's stop.
+    Returns the sessions started and, while one waits, the time the next is due, so the runner that saw its session end can come back for it.
 
     A retry is a start like any other: it resumes no more sessions than the agent slots have room for, the oldest end
     first, and the rest wait, their count and their time unchanged, for the next pass a runner's end or a session
     change brings, `waiting`. UX review round 1, 2026-10-17 (interrupt-failure-recovery F1, settings-govern-behavior
     F1, runaway-and-load F1, orchestrator-system-agent F3): after a crash every dead session was resumed in the same
     pass, whatever dispatch_agents said, so a crash with 46 agents would bring 46 back at once."""
+    from dataclasses import replace
+
+    from .orchestration import TRANSPORT, assignment
     from .signals import publish
     limit, wait = int(ctx.setting('dispatch_retries')), float(RETRY_SECONDS)
     rows = sessions(store, verify=False)
@@ -2994,6 +2999,10 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
             continue
         if foreign(row):  # another home's session, in a store copied here: that home's to resume, never this one's
             continue
+        launch_ctx = replace(ctx, store=at)
+        managed = assignment(launch_ctx, record.id)
+        if managed and (managed.get('stop') or managed.get('owner_session_id') != session_id):
+            continue
         if rework_blocked(ctx, at, record):
             continue
         with own_store(store).tables(write=False) as tx:  # read first: a count already kept is not written again
@@ -3011,7 +3020,8 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
         if held['handed']:
             continue
         caps = cast(dict[str, Any], (session_state(store, session_id) or {}).get('capabilities') or {})
-        reason = (None if caps.get('resume') or caps.get('load') else 'its agent can neither resume nor load it')
+        fresh = bool(managed) and not ctx.setting('dispatch_resume_chats')
+        reason = (None if fresh or caps.get('resume') or caps.get('load') else 'its agent can neither resume nor load it')
         reason = reason or ('its agent needs a login, which only you can give' if logged_out(store, record.id,
                                                                                             session_id, row) else None)
         reason = reason or (f'it was retried {held["retries"]} times' if held['retries'] >= limit else None)
@@ -3036,11 +3046,17 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
         with own_store(store).tables() as tx:
             tx.update('session_attempts', {'work_id': record.id},
                       {'retries': retries, 'next_at': time.time() + wait * 2 ** retries, 'how': row.get('how')})
-        run = run_of(store, session_id)  # the retry spends against the run it goes on, so the run budget holds, M01
         try:
-            started = resume_spawn(at, record.id, agent,
-                                   [f'resume={session_id}', 'retry=true', *([f'run={run}'] if run else [])], 'retry',
-                                   ctx=ctx, asked=asked, auto=True)
+            if managed:
+                started = TRANSPORT.launch(launch_ctx, managed, f'retry:{session_id}:{retries}',
+                                           retry=True, asked=asked)
+            else:
+                run = run_of(store, session_id)  # Keep the resumed session's run budget, M01.
+                started = resume_spawn(at, record.id, agent,
+                                       [f'resume={session_id}', 'retry=true', *([f'run={run}'] if run else [])], 'retry',
+                                       ctx=ctx, asked=asked, auto=True)
+            if managed and (not started.get('pid') or started.get('reused')):
+                raise Stop('Managed recovery has not started.', 'metaform dispatch sessions')
         except Stop:  # the gate found no room after all, another start having taken it: it waits, uncounted
             with own_store(store).tables() as tx:
                 tx.update('session_attempts', {'work_id': record.id},
@@ -3049,7 +3065,8 @@ def retry(ctx: Context, store: Store, opened: Sequence[WorkRecord] | None = None
             waiting.append(record.id)
             continue
         room -= 1
-        resumed.append({'work_id': record.id, 'agent': agent, 'session_id': session_id, 'retry': retries, **started})
+        resumed.append({'work_id': record.id, 'agent': agent, **({} if fresh else {'session_id': session_id}),
+                        'retry': retries, **started})
     return {'retried': resumed, **({'retry_waiting': waiting} if waiting else {}),
             **({'retry_due': due} if due is not None else {})}
 
@@ -3228,12 +3245,15 @@ def stay_connected(ctx: Context, store: Store, asked: int | None = None) -> dict
 
 
 def run_of(store: Store, session_id: str) -> str | None:
-    """The run a session spent against, from its latest row of `spending`; None when it spent nothing yet."""
+    """The session's run, from spending or its registered state before its first spending report."""
     try:
         found = spend_rows(store, {'session_id': session_id})
+        if found:
+            return str(max(found, key=lambda one: int(one['seq']))['run'])
+        run = (session_state(store, session_id) or {}).get('run')
     except StoreError:
         return None
-    return str(max(found, key=lambda one: int(one['seq']))['run']) if found else None
+    return str(run) if run else None
 
 
 def runnable_or_none(ctx: Context, agent: str) -> str | None:

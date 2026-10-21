@@ -1210,7 +1210,9 @@ class Session:
         # What the session is, kept whole in its `state` line: capabilities, settings, commands, plan, usage, touched.
         # `spent` is what the session has used, the tokens of every turn and its cost so far, M01; `auth` the login
         # its agent reports through the authStatus extension, and `auth_methods` the logins it offers, P031.
-        self.acp: dict[str, Any] = {'agent': agent, 'agent_info': None, 'capabilities': {}, 'cwd': self.folder,
+        self.run_id = str(ctx.nouns.get('run') or RUN)  # A fresh retry retains its run before any spending report.
+        self.acp: dict[str, Any] = {'agent': agent, 'run': self.run_id, 'agent_info': None, 'capabilities': {},
+                                  'cwd': self.folder,
                                     'commands': [], 'plan': [], 'usage': None, 'tokens': None, 'title': None,
                                     'touched': [], 'resumed': None, 'before_resume': [],
                                     'spent': None, 'auth': None, 'auth_methods': [],
@@ -1357,7 +1359,6 @@ class Session:
         self.elicitations: dict[str, dict[str, Any]] = {}  # each question's line, by its name, kept at its latest
         # elicitation/complete for a page whose question is not asked yet, by its elicitation id, `complete_elicitation`
         self.completed_early: set[str] = set()
-        self.run_id = str(ctx.nouns.get('run') or RUN)  # the run it spends against, a retry's the run it goes on, M01
         self.cost: float | None = None  # the session's cumulative cost as last reported, to count what each adds
         self.metered = False  # the agent has reported some usage in this session
         self.steering: list[Any] = []  # the ids of _session/steering requests sent, the latest last
@@ -3744,6 +3745,12 @@ class Session:
                             resuming_path(str(self.session_id)).unlink()
                     else:
                         tx.insert('agent_sessions', row)
+                        if self.retrying and self.assignment:
+                            # A fresh ACP context continues the same recovery budget and backoff.
+                            attempt = tx.get('session_attempts', {'work_id': self.work_id})
+                            if attempt and attempt['session_id'] == self.assignment.get('owner_session_id'):
+                                tx.update('session_attempts', {'work_id': self.work_id},
+                                          {'session_id': self.session_id})
                     if ranking is not None:
                         # its name, the best pair no other running session holds, kept on its state line in the write
                         # that records it, so a session starting beside it reads the name and takes the next pair

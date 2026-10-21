@@ -137,7 +137,8 @@ class Transport:
         if caution and not (ctx.consented or person_asks(ctx)):
             raise Stop(caution, f'metaform dispatch start {work_id}')
 
-    def launch(self, ctx: Context, held: dict[str, Any], transition_id: str) -> dict[str, Any]:
+    def launch(self, ctx: Context, held: dict[str, Any], transition_id: str, *, retry: bool = False,
+               asked: int | None = None) -> dict[str, Any]:
         from . import (
             admit,
             agent_named,
@@ -147,6 +148,7 @@ class Transport:
             launches,
             persons_start,
             resume_spawn,
+            run_of,
             session_state,
             sessions,
             start_runner,
@@ -157,7 +159,7 @@ class Transport:
         work = str(held['work_id'])
         # a delivery the person started, or their system agent on their word, is no automatic start: Full Auto off
         # does not hold its launches; a halt still refuses them as it does every start
-        auto = not persons_start(ctx, recorded=bool(held.get('persons_start')))
+        auto = retry or not persons_start(ctx, recorded=bool(held.get('persons_start')))
         if held.get('stop'):
             return {'state': 'stopped'}
         if store.ticket(work).work.done:
@@ -184,29 +186,35 @@ class Transport:
                     reason=f'{reason}. It waits for you.', next=f'metaform dispatch start {work}')
             return {'state': 'failed', 'problem': reason, 'attempts': attempts}
         created = held.get('continuation', {}).get('created')
-        if isinstance(created, str):
-            asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)
-        elif isinstance(created, (int, float)):
-            asked = int(float(created) * 1_000_000_000)
-        else:
-            asked = time.time_ns()
+        if asked is None:
+            if isinstance(created, str):
+                asked = int(datetime.fromisoformat(created).timestamp() * 1_000_000_000)
+            elif isinstance(created, (int, float)):
+                asked = int(float(created) * 1_000_000_000)
+            else:
+                asked = time.time_ns()
         with home.file_lock(_lock(ctx, str(held['assignment_id']))):
             running = next((one for one in launches() if one.get('project') == ctx.project and
                             one.get('work_id') == work), None)
             row = _row(ctx, held)
             if running is not None:
                 if row and row['state'] == 'running':
-                    return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner')}
+                    return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner'),
+                            'reused': True}
                 return {'state': 'queued', 'reservation': running.get('lease'), 'pid': running['pid'],
-                        'attempts': attempts}
+                        'attempts': attempts, 'reused': True}
             runtime = self.runtime_settings(ctx, work)
             agent = agent_named(str(runtime.get('agent') or (row or {}).get('agent') or ctx.setting('dispatch_agent')))
             if row is not None and row.get('agent') != agent:
                 row = None  # a changed ticket agent starts its own adapter instead of resuming another agent's session
             launch_ctx = replace(ctx, nouns={'id': work, 'agent': agent})
             words = [f'assignment={held["assignment_id"]}']
+            if retry:
+                run = run_of(store, str(held.get('owner_session_id') or ''))
+                if run:
+                    words.append(f'run={run}')
             checked_sessions = sessions(store, work if glyph_of(launch_ctx, ticket(store, work)) is None else None)
-            if row is not None:
+            if row is not None and ctx.setting('dispatch_resume_chats'):
                 kept = session_state(store, str(row['session_id'])) or {}
                 capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
                 if capabilities.get('resume') or capabilities.get('load'):
@@ -232,7 +240,7 @@ class Transport:
                                 given_back_reservation(store, work, by)
                             raise
                         return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
-            # Unknown context retention creates a new registered context with the retained work and current brief.
+            # Disabled or unavailable context retention starts fresh with retained work and the current brief.
             # The same gate checks before the take, and again under its machine-wide lock during the process spawn.
             admit(launch_ctx, store, work, 'worker', asked=asked, agent=agent, auto=auto)
             reservation = f'dispatch starting {transition_id}'
@@ -247,6 +255,8 @@ class Transport:
                 startable(launch_ctx, store, record, agent, checked_sessions=checked_sessions)
                 store.take_work(work, by=reservation)
             keep_launch(store, work, {'prompts': None, 'mode': None})
+            if retry:
+                words.append('retry=true')
             try:
                 made = start_runner(launch_ctx, store, work, agent, [*words, f'reservation={reservation}'],
                                     'orchestration', reservation=reservation, asked=asked, auto=auto)

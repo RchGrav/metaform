@@ -12,7 +12,7 @@ import pytest
 from metaform import prompt_files
 from metaform.data import Store
 from metaform.module import Stop, context
-from metaform.modules.dispatch.tests.test_dispatch import UNCONCERNED, Dispatch, eventually
+from metaform.modules.dispatch.tests.test_dispatch import UNCONCERNED, Dispatch, alive, eventually
 
 
 @pytest.fixture
@@ -20,6 +20,202 @@ def dispatch(run, home, project_folder, tmp_path):
     made = Dispatch(run, home, project_folder, tmp_path)
     yield made
     made.close()
+
+
+@pytest.mark.kind('simulation')
+@pytest.mark.parametrize(('resume_chats', 'load'), [(False, False), (False, True), (True, True)])
+@pytest.mark.parametrize('role', ['facilitator', 'gc'])
+@pytest.mark.parametrize('crashed', [False, True])
+def test_managed_continuation_obeys_fresh_session_policy(dispatch, monkeypatch, resume_chats, load, role, crashed):
+    """A suspended owner continues its candidate through the configured ACP session policy."""
+    from metaform import home
+    from metaform.modules import dispatch as package
+    from metaform.modules.dispatch import orchestration
+    from metaform.modules.orchestration.state import SERVICE, requested, transition, update
+
+    dispatch.run('enable', 'orchestration')
+    dispatch.run('set', '--dispatch-autostart',
+                 '--dispatch-resume-chats' if resume_chats else '--no-dispatch-resume-chats',
+                 '--no-dispatch-stay-connected', cwd=dispatch.folder)
+    dispatch.run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=claude', 'model=small', 'effort=low',
+                 cwd=dispatch.folder)
+    # Preassigned worker and parent duties need no runtime or role commission in this transport regression.
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = SERVICE.ensure(ctx, dispatch.id, role=role, session_id='prior-session', runner='prior-runner')
+    candidate = {'commit': 'retained-candidate', 'path': 'candidate.txt'}
+    with Store('proj', module='orchestration').tables() as tx:
+        held = update(tx, held, state='suspended', candidate=candidate,
+                      last_check_in={'summary': 'Candidate awaits continuation.'})
+    assert held['state'] == 'suspended'
+    with package.own_store(dispatch.store).tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'prior-session', 'work_id': dispatch.id, 'agent': 'claude',
+                  'state': 'ended', 'how': 'the agent ended with exit code 1' if crashed else orchestration.SUSPENDED,
+                  'started': home.now(), 'seq': 1,
+                  'origin': package.origin()})
+        tx.insert('session_lines', {'session_id': 'prior-session', 'work_id': dispatch.id, 'name': 'state',
+                  'kind': 'state', 'seq': 1, 'text': json.dumps({
+                      'capabilities': {'load': load}, 'cwd': str(dispatch.folder)})})
+        tx.insert('session_lines', {'session_id': 'prior-session', 'work_id': dispatch.id, 'name': 'old-history',
+                  'kind': 'message', 'seq': 2, 'text': 'OLD_TRANSCRIPT_MARKER ' * 5000})
+        tx.insert('spending', {'session_id': 'prior-session', 'work_id': dispatch.id, 'seq': 1,
+                              'run': 'retained-run', 'day': '2026-10-21', 'tokens': 10})
+    starts = []
+    start_runner = package.start_runner
+
+    def recorded(*args, **kwargs):
+        starts.append(args[4])
+        return start_runner(*args, **kwargs)
+
+    monkeypatch.setattr(package, 'start_runner', recorded)
+    # Model the retained ticket lease left by suspension, then enqueue its normal continuation.
+    dispatch.store.move_work(dispatch.id, 'todo', kept=True)
+    dispatch.store.take_work(dispatch.id, by='claude prior-session')
+    if not crashed:
+        with Store('proj', module='orchestration').tables() as tx:
+            held = update(tx, held, state='queued')
+            event = transition(tx, held, 'launch', {'resume': True}, 'fresh-policy-regression')
+    for name, value in dispatch.env('hold', FAKE_ACP_LOAD='1' if load else '0').items():
+        if name.startswith('FAKE_'):
+            monkeypatch.setenv(name, value)
+
+    def calls(method):
+        ids = {row['session_id'] for row in package.sessions(dispatch.store, dispatch.id, verify=False)}
+        return [one for one in dispatch.received(method) if one['params'].get('sessionId') in ids or any(
+            env.get('name') == 'METAFORM_WORK' and env.get('value') == dispatch.id
+            for server in one['params'].get('mcpServers', []) for env in server.get('env', []))]
+
+    def starting():
+        return [one for one in package.launches() if one['work_id'] == dispatch.id]
+
+    try:
+        if crashed:
+            first = package.retry(ctx, dispatch.store)
+            assert first['retried'] == [] and first['retry_due'] > time.time()
+            with package.own_store(dispatch.store).tables() as tx:
+                tx.update('session_attempts', {'work_id': dispatch.id}, {'next_at': 0.0})
+            if role == 'gc' and not resume_chats and not load:
+                dispatch.run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+                assert package.retry(ctx, dispatch.store)['retried'] == []
+                dispatch.run('set', '--dispatch-autostart', cwd=dispatch.folder)
+                with monkeypatch.context() as blocked:
+                    blocked.setattr(package, 'free_slots', lambda *args: 0)
+                    assert package.retry(ctx, dispatch.store)['retry_waiting'] == [dispatch.id]
+                with monkeypatch.context() as pending:
+                    pending.setattr(package, 'launches', lambda: [
+                        {'project': 'proj', 'work_id': dispatch.id, 'pid': 1, 'lease': 'pending-recovery'}])
+                    assert package.retry(ctx, dispatch.store)['retried'] == []
+                prerequisite = dispatch.store.add_work(dispatch.node, None, task='Finish dependency', held=True,
+                                                       hold_reason='Keep prerequisite pending during admission proof.').id
+                dispatch.run('map', 'work', 'op=edit', f'id={dispatch.id}',
+                             f'after_work={json.dumps([prerequisite])}', cwd=dispatch.folder)
+                assert package.retry(ctx, dispatch.store)['retried'] == []
+                dispatch.run('map', 'work', 'op=edit', f'id={dispatch.id}', 'after_work=[]', cwd=dispatch.folder)
+                with package.own_store(dispatch.store).tables(write=False) as tx:
+                    counted = tx.get('session_attempts', {'work_id': dispatch.id})
+                assert counted['retries'] == 0 and counted['next_at'] == 0.0
+                assert dispatch.ticket().taken_by == 'claude prior-session'
+            delivered = package.retry(ctx, dispatch.store)['retried']
+        else:
+            delivered = SERVICE.drain(ctx, [dispatch.id])
+        assert len(delivered) == 1 and delivered[0]['state'] == 'queued', delivered
+        eventually(lambda: calls('session/prompt'))
+        current = SERVICE.assignment(ctx, work_id=dispatch.id)
+        assert current['state'] == 'running' and current['candidate'] == candidate
+        session_id = current['owner_session_id']
+        if resume_chats:
+            assert session_id == 'prior-session'
+            assert len(calls('session/load')) == 1
+            assert not calls('session/new')
+        else:
+            assert session_id != 'prior-session'
+            assert len(calls('session/new')) == 1
+            assert not calls('session/load') and not calls('session/resume')
+            prompt = json.dumps(calls('session/prompt'))
+            assert 'OLD_TRANSCRIPT_MARKER' not in prompt
+            assert dispatch.id in prompt and f'metaform://role/{role}' in prompt
+            with pytest.raises(Stop, match='No recorded assignment|belongs to another agent'):
+                requested(context('orchestration', dispatch.folder, project='proj', session='prior-session'))
+            with pytest.raises(Stop, match='No recorded assignment|belongs to another agent'):
+                requested(context('orchestration', dispatch.folder, project='proj', session='prior-runner'))
+        assert dispatch.store.ticket(dispatch.id).work.taken_by == f'claude {session_id}'
+        assert requested(context('orchestration', dispatch.folder, project='proj', session=session_id))[
+            'assignment_id'] == held['assignment_id']
+        assert SERVICE.drain(ctx, [dispatch.id]) == [], 'Binding consumes the launch, preventing repeated runners.'
+        if crashed:
+            assert 'run=retained-run' in starts[0]
+            with package.own_store(dispatch.store).tables(write=False) as tx:
+                counted = tx.get('session_attempts', {'work_id': dispatch.id})
+            assert counted['session_id'] == session_id and counted['retries'] == 1
+            assert counted['next_at'] > time.time() + package.RETRY_SECONDS
+            assert package.retry(ctx, dispatch.store) == {'retried': []}, 'A running recovery cannot start twice.'
+            # Crash the actual fake ACP adapter. Its next recovery must retain this retry's count.
+            running = next(row for row in package.sessions(dispatch.store, dispatch.id, verify=False)
+                           if row['session_id'] == session_id)
+            runner_pid = running['pid']
+            dispatch.run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+            package.end_group(running['recovery']['adapter_pid'])
+            eventually(lambda: next((row for row in package.sessions(dispatch.store, verify=False)
+                                     if row['session_id'] == session_id and row['state'] == 'ended'), None))
+            eventually(lambda: not starting())
+            eventually(lambda: not alive(runner_pid))
+            dispatch.run('set', '--dispatch-autostart', cwd=dispatch.folder)
+            with package.own_store(dispatch.store).tables() as tx:
+                tx.update('session_attempts', {'work_id': dispatch.id}, {'next_at': 0.0})
+            before = len(calls('session/prompt'))
+            retried = package.retry(ctx, dispatch.store)
+            assert len(retried['retried']) == 1, json.dumps({
+                'retry': retried, 'sessions': package.sessions(dispatch.store, verify=False),
+                'signals': package.read_signals(ctx)})
+            [second] = retried['retried']
+            assert second['retry'] == 2
+            assert all('run=retained-run' in words for words in starts)
+            eventually(lambda: len(calls('session/prompt')) > before)
+            current = SERVICE.assignment(ctx, work_id=dispatch.id)
+            next_session = current['owner_session_id']
+            assert (next_session == session_id) is resume_chats
+            assert current['candidate'] == candidate and current['assignment_id'] == held['assignment_id']
+            running = next(row for row in package.sessions(dispatch.store, dispatch.id, verify=False)
+                           if row['session_id'] == next_session)
+            runner_pid = running['pid']
+            dispatch.run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+            package.end_group(running['recovery']['adapter_pid'])
+            eventually(lambda: next((row for row in package.sessions(dispatch.store, verify=False)
+                                     if row['session_id'] == next_session and row['state'] == 'ended'), None))
+            eventually(lambda: not starting())
+            eventually(lambda: not alive(runner_pid))
+            dispatch.run('set', '--dispatch-autostart', cwd=dispatch.folder)
+            assert package.retry(ctx, dispatch.store)['retried'] == [], 'Fresh IDs cannot reset the retry budget.'
+            assert any(row['signal'] == 'handed-over' for row in package.read_signals(ctx)['signals'])
+        else:
+            with Store('proj', module='orchestration').tables(write=False) as tx:
+                kept = tx.get('transitions', {'transition_id': event['transition_id']})
+            assert kept['state'] == 'delivered' and kept['delivery']['session_id'] == session_id
+        assert package.stay_connected(ctx, dispatch.store) == {}, 'Connection alone must not retain triage.'
+    finally:
+        dispatch.run('dispatch', 'stop-all', cwd=dispatch.folder, ok=False)
+
+
+@pytest.mark.kind('fixture')
+def test_managed_retry_keeps_run_budget_when_the_ticket_changes_adapter(dispatch, monkeypatch):
+    from metaform.modules import dispatch as package
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with package.own_store(dispatch.store).tables() as tx:
+        tx.insert('spending', {'session_id': 'old-owner', 'work_id': dispatch.id, 'seq': 1,
+                              'run': 'retained-run', 'day': '2026-10-21', 'tokens': 10})
+    words = []
+    monkeypatch.setattr(package, 'launches', list)
+    monkeypatch.setattr(package, 'admit', lambda *args, **kwargs: None)
+    monkeypatch.setattr(package, 'start_runner', lambda *args, **kwargs: words.extend(args[4]) or {'pid': 1})
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: None)
+    monkeypatch.setattr(orchestration, '_row', lambda *args: {
+        'session_id': 'old-owner', 'agent': 'claude', 'state': 'ended'})
+    monkeypatch.setattr(orchestration.Transport, 'runtime_settings', lambda *args: {'agent': 'codex'})
+    result = orchestration.Transport().launch(ctx, {'work_id': dispatch.id, 'assignment_id': 'assignment',
+                                                   'owner_session_id': 'old-owner'}, 'adapter-change', retry=True)
+    assert result['pid'] == 1 and 'run=retained-run' in words
+    assert not any(word.startswith('resume=') for word in words)
 
 
 @pytest.mark.kind('fixture')

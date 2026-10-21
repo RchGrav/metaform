@@ -260,9 +260,12 @@ def requested(ctx: Context, assignment_id: str | None = None) -> dict[str, Any]:
     with store.tables(write=False) as tx:
         held = row_for(tx, assignment_id=assignment_id, session_id=session)
         caller = row_for(tx, session_id=session)
+        bound = tx.get('sessions', {'session_id': held['owner_session_id']}) if held else None
     if held is None:
         raise Stop('No recorded assignment for this call.', 'metaform orchestration claim <work>')
     if session and (caller is None or caller['assignment_id'] != held['assignment_id']):
+        raise Stop('This assignment belongs to another agent.', 'metaform orchestration team')
+    if session and session not in (held['owner_session_id'], (bound or {}).get('runner')):
         raise Stop('This assignment belongs to another agent.', 'metaform orchestration team')
     if held.get('stop'):
         raise Stop('This assignment is stopped.', f'metaform orchestration inspect {held["assignment_id"]}')
