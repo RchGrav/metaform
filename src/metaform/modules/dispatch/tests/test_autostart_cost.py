@@ -111,20 +111,100 @@ def test_session_verification_reuses_the_unfiltered_open_work_snapshot(dispatch,
 
 
 @pytest.mark.req('BASE-052')
-def test_autostart_without_page_starts_the_next_ticket_when_a_runner_finishes(dispatch, run):  # noqa: F811
-    """No page is open: the runner whose ticket is done starts the waiting ticket itself, D-11."""
-    from metaform.modules.dispatch.tests.test_completion_commit import initialize
-    from metaform.modules.dispatch.tests.test_dispatch import LIMIT, eventually, gone
+def test_autostart_without_page_starts_the_next_ticket_when_a_runner_finishes(dispatch, run,  # noqa: F811
+                                                                            dispatch_runners):
+    """One automatic admission starts both real workers through completion-driven refill, D-11."""
+    import sys
+    import threading
 
-    initialize(dispatch.folder)
-    run('set', '--dispatch-autostart', '--dispatch-agents=1', cwd=dispatch.folder)
+    from metaform import events
+    from metaform.data import Store
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.tests.test_ticket_commit import git
+
+    git(dispatch.folder, 'init', '-q', '-b', 'main')
+    git(dispatch.folder, 'config', 'user.name', 'Test')
+    git(dispatch.folder, 'config', 'user.email', 'test@example.com')
+    (dispatch.folder / 'check_feature.py').write_text(
+        "from pathlib import Path\nassert Path('feature.txt').read_text() == 'changed by the fake agent\\n'\n")
+    git(dispatch.folder, 'add', 'check_feature.py')
+    git(dispatch.folder, 'commit', '-qm', 'Verification fixture')
+    baseline = git(dispatch.folder, 'rev-parse', 'HEAD')
+    command = f'"{sys.executable}" check_feature.py'
+    run('set', '--dispatch-autostart', '--dispatch-agents=1', '--dispatch-worktrees',
+        f'--dispatch-test-command={command}', cwd=dispatch.folder)
     second = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Second ticket').id
-    dispatch.start('done')
-    assert dispatch.process.wait(LIMIT) == 0, dispatch.process.stderr.read().decode()
-    row = eventually(lambda: next((item.extra for item in dispatch.items('session')
-                                   if item.extra['work_id'] == second and item.extra['state'] == 'ended'), None))
-    assert dispatch.store.ticket(second).work.done
-    assert gone([row['pid']], LIMIT), 'the second runner ends once its ticket is done'
+    wanted = {dispatch.id, second}
+    finished = threading.Event()
+    observed, errors = {}, []
+    registered = set()
+
+    def remember(row):
+        if row.get('pid') and row['pid'] not in registered:
+            registered.add(row['pid'])
+            dispatch_runners.append((row, dispatch.folder, dispatch.log))
+
+    def observe(payload):
+        if payload.get('project') != dispatch.store.project_id:
+            return
+        if payload.get('work_ids') and wanted.isdisjoint(payload['work_ids']):
+            return
+        try:
+            for item in dispatch.items('session'):
+                row = item.extra
+                if row['work_id'] in wanted:
+                    observed[row['work_id']] = row
+                    remember(row)
+            if wanted <= observed.keys() and all(
+                    observed[work_id]['state'] == 'ended' and dispatch.store.ticket(work_id).work.done
+                    for work_id in wanted):
+                finished.set()
+        except Exception as error:  # noqa: BLE001 - Deliver listener failures to the test thread.
+            errors.append(str(error))
+            finished.set()
+
+    listener = events.listen('web', observe)
+    try:
+        result = json.loads(run('dispatch', 'autostart', '--json', cwd=dispatch.folder,
+                                env=dispatch.env('done', FAKE_ACP_EDIT='feature.txt')).stdout)
+        for started in result['started']:
+            remember(started)
+        assert [one['work_id'] for one in result['started']] == [dispatch.id], result
+        assert finished.wait(30), {
+            'sessions': observed,
+            'completion': [entry for entry in dispatch.entries() if 'done' in entry]}
+        assert errors == []
+        assert wanted <= observed.keys()
+        assert all(dispatch.store.ticket(work_id).work.done for work_id in wanted)
+        assert observed[dispatch.id]['ended'] <= observed[second]['started']
+        with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
+            saved = [tx.get('merges', {'work_id': work_id}) for work_id in wanted]
+        for candidate in saved:
+            assert candidate['state'] == 'merged' and not candidate['reason'], candidate
+            assert candidate['evidence']['verification']['passed'] is True
+            assert candidate['evidence']['verification']['command'] == command
+            if candidate['work_id'] == dispatch.id:
+                assert candidate['evidence']['artifacts'] == ['feature.txt']
+            else:
+                assert set(candidate['evidence']['artifacts']) <= {'feature.txt'}
+            assert f'Metaform-Ticket: {candidate["work_id"]}' in git(
+                dispatch.folder, 'show', '-s', '--format=%B', candidate['head'])
+            assert git(dispatch.folder, 'merge-base', '--is-ancestor', baseline, candidate['head']) == ''
+            integration = git(dispatch.folder, 'log', '--format=%H', '--fixed-strings', '--grep',
+                              f'Metaform-Ticket: {candidate["work_id"]}').splitlines()
+            assert integration, 'The saved ticket has no local integration commit.'
+            assert git(dispatch.folder, 'show', f'{candidate["head"]}:feature.txt') == \
+                'changed by the fake agent'
+        assert git(dispatch.folder, 'rev-parse', 'HEAD') != baseline
+        assert git(dispatch.folder, 'merge-base', '--is-ancestor', baseline, 'HEAD') == ''
+        assert git(dispatch.folder, 'show', 'HEAD:feature.txt') == 'changed by the fake agent'
+        assert git(dispatch.folder, 'remote') == ''
+    finally:
+        listener.close()
+        # A failure can precede the session event. Include every detached runner before fixture teardown.
+        for row in module.launches():
+            if row.get('project') == dispatch.store.project_id and row.get('work_id') in wanted:
+                remember(row)
 
 
 @pytest.mark.req('BASE-052')
