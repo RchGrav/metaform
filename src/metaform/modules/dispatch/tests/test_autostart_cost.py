@@ -179,6 +179,7 @@ def test_autostart_without_page_starts_the_next_ticket_when_a_runner_finishes(di
         assert observed[dispatch.id]['ended'] <= observed[second]['started']
         with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
             saved = [tx.get('merges', {'work_id': work_id}) for work_id in wanted]
+        integrated = []
         for candidate in saved:
             assert candidate['state'] == 'merged' and not candidate['reason'], candidate
             assert candidate['evidence']['verification']['passed'] is True
@@ -190,11 +191,14 @@ def test_autostart_without_page_starts_the_next_ticket_when_a_runner_finishes(di
             assert f'Metaform-Ticket: {candidate["work_id"]}' in git(
                 dispatch.folder, 'show', '-s', '--format=%B', candidate['head'])
             assert git(dispatch.folder, 'merge-base', '--is-ancestor', baseline, candidate['head']) == ''
-            integration = git(dispatch.folder, 'log', '--format=%H', '--fixed-strings', '--grep',
+            integration = git(dispatch.folder, 'log', f'{baseline}..main', '--format=%H', '--fixed-strings', '--grep',
                               f'Metaform-Ticket: {candidate["work_id"]}').splitlines()
-            assert integration, 'The saved ticket has no local integration commit.'
+            assert len(integration) == 1, integration
+            integrated.extend(integration)
             assert git(dispatch.folder, 'show', f'{candidate["head"]}:feature.txt') == \
                 'changed by the fake agent'
+        assert len({candidate['head'] for candidate in saved}) == 2
+        assert len(set(integrated)) == 2
         assert git(dispatch.folder, 'rev-parse', 'HEAD') != baseline
         assert git(dispatch.folder, 'merge-base', '--is-ancestor', baseline, 'HEAD') == ''
         assert git(dispatch.folder, 'show', 'HEAD:feature.txt') == 'changed by the fake agent'
