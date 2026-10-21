@@ -524,17 +524,23 @@ class Orchestration:
                     recipient['assignment_id'] != sender['assignment_id'])
 
     def bind(self, ctx: Context, assignment_id: str, session_id: str,
-             runner: str | None = None) -> dict[str, Any]:
+             runner: str | None = None, persons: bool = False) -> dict[str, Any]:
+        """Bind a session to its assignment. A delivery whose specialist role is still being made waits for the
+        publication, which starts it; the person's own start, `persons`, runs now as a worker with no role, and the
+        role is theirs at the next session once published (2026-10-20: their Start failed to bind and ended)."""
         with own(ctx).tables(write=False) as tx:
             requests = tx.rows('role_requests', {'caller_assignment_id': assignment_id}, limit=0).results
-            if any(one['state'] == 'commissioned' and role_options(one).get('assign_in_place') for one in requests):
+            if not persons and any(one['state'] == 'commissioned' and role_options(one).get('assign_in_place')
+                                   for one in requests):
                 raise Stop('The ticket is waiting for its specialist role to be published.', HELP)
         before = self.assignment(ctx, assignment_id=assignment_id)
         snapshot = (before or {}).get('role_snapshot')
         if before and not snapshot:
             snapshot = resolve(ctx, before['authored_role_uri'])
             if snapshot.get('missing') or snapshot.get('problems'):
-                raise Stop(f'Cannot start {before["authored_role_uri"]}: {snapshot.get("problems")}', HELP)
+                if not persons:
+                    raise Stop(f'Cannot start {before["authored_role_uri"]}: {snapshot.get("problems")}', HELP)
+                snapshot = None  # the person's worker runs with no role until one is published
         with own(ctx).tables() as tx:
             held = row_for(tx, assignment_id=assignment_id)
             if held is None:
@@ -559,7 +565,7 @@ class Orchestration:
             return bound_assignment
 
     def ensure(self, ctx: Context, work_id: str, role: str | None = None, session_id: str | None = None,
-               runner: str | None = None, queue: bool = False) -> dict[str, Any]:
+               runner: str | None = None, queue: bool = False, persons: bool = False) -> dict[str, Any]:
         """Bind a dispatch-admitted root start, including the existing Start-button path.
 
         Dispatch already established the reservation and controls before this
@@ -591,7 +597,7 @@ class Orchestration:
                 if queue:
                     transition(tx, assignment, 'launch', {}, 'initial')
         if session_id:
-            return self.bind(ctx, assignment['assignment_id'], session_id, runner)
+            return self.bind(ctx, assignment['assignment_id'], session_id, runner, persons=persons)
         return assignment
 
     def context(self, ctx: Context, work_id: str | None = None,
@@ -759,8 +765,9 @@ class Orchestration:
             if guard is not None:
                 guard(ctx, work_id)
         # the person's own claim, or their system agent's on their word, launches at once whatever Full Auto says
-        persons = ctx.consented or (ctx.surface != 'mcp' and agent_caller() is None) or persons_word(
-            ctx.folder, f'Starting an agent on ticket {work_id}', ctx.project, [work_id]) is not None
+        persons = not ctx.nouns.get('automatic') and (
+            ctx.consented or (ctx.surface != 'mcp' and agent_caller() is None) or persons_word(
+                ctx.folder, f'Starting an agent on ticket {work_id}', ctx.project, [work_id]) is not None)
         with store.atomic(), store.tables() as tx:
             prior = row_for(tx, work_id=work_id)
             if prior:

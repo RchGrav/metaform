@@ -161,7 +161,9 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
         return waiting or {'work_id': work_id, 'state': 'creating', 'role': None, 'reason': reason}
     if not role:
         # The creator names the expertise. The ticket retains its own assignment and continuation.
-        SERVICE.claim(replace(ctx, nouns={'work': work_id, 'create': True}))
+        # the Facilitator's commission is automatic work, started by Full Auto from the helpers' room, never at
+        # once on the consent of a person who started something else (2026-10-20: it ran beside their own agent)
+        SERVICE.claim(replace(ctx, nouns={'work': work_id, 'create': True, 'automatic': True}))
     row = {'work_id': work_id, 'state': 'selected' if role else 'creating', 'fingerprint': digest,
            'role': role, 'reason': reason, 'updated': home.now()}
     with store.tables() as tx:

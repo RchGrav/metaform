@@ -3655,11 +3655,13 @@ class Session:
         native = owner is not None
         if owner is not None and self.role == 'worker' and self.assignment is None:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id)
-        if owner is not None and self.role == 'worker' and self.assignment is not None:
+        if owner is not None and self.role == 'worker' and self.assignment is not None \
+                and not self.ctx.nouns.get('persons'):  # the person's own start runs now, specialist or not
             status = await asyncio.to_thread(owner.routing_status, self.ctx, self.work_id)
             if status and status['state'] == 'creating':
                 # Publication owns the continuation. A direct or older launch must not open an adapter
-                # for the sessionless owner, then count its expected binding refusal as a failed run.
+                # for the sessionless owner, then count its expected binding refusal as a failed run. A runner the
+                # person started ended here at once, so their Start showed only the Facilitator (2026-10-20).
                 from .orchestration import SUSPENDED
                 self.how = SUSPENDED
                 self.ended.set()
@@ -3768,10 +3770,13 @@ class Session:
         await self.write(take)
         owner = service(self.ctx)
         if owner is not None and not self.prep:
+            persons = bool(self.ctx.nouns.get('persons'))
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id,
                 role=self.authored_role.removeprefix('metaform://role/') if self.authored_role else None,
-                session_id=str(self.session_id), runner=self.runner)
+                session_id=str(self.session_id), runner=self.runner, persons=persons)
             self.authored_role = str(cast(dict[str, Any], self.assignment)['authored_role_uri'])
+            if persons and not cast(dict[str, Any], self.assignment).get('role_snapshot'):
+                self.authored_role = None  # the person's worker runs with no role until one is published
         self.acp.update(authored_role_uri=self.authored_role,
                         assignment_id=(self.assignment or {}).get('assignment_id'),
                         team_id=(self.assignment or {}).get('team_id'), runner=self.runner)

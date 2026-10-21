@@ -3269,12 +3269,21 @@ def start(ctx: Context) -> dict[str, Any]:
     owner = service(ctx)
     if owner is not None:
         selected = owner.route(ctx, str(work_id))
-        if not selected.get('role'):
+        # a specialist is set before a ticket is active: Jev's pick, else the Facilitator's publication, which
+        # starts the delivery itself. The person's own start, or their system agent's at their word, runs now with
+        # the agent they chose, as a worker, and takes the specialist when it is published: a start of theirs that
+        # answered 'needs_specialist' and started nothing was a block on their action (2026-10-20).
+        if not selected.get('role') and automatic:
             return {'state': 'needs_specialist', 'work_id': work_id, 'reason': selected.get('reason')}
     given, notices = launch_permissions(ctx, store, agent)
     reservation = 'dispatch starting ' + secrets.token_hex(16)
     with store.atomic():
         record = ticket(store, work_id)
+        if not automatic and record.taken and record.taken_by == f'Specialist {work_id}':
+            # the sessionless specialist owner holds a ticket while its role is made; the person's own start takes
+            # it over now, and the role follows when it is published (2026-10-20: their Start was refused as taken)
+            store.move_work(str(work_id), 'backlog' if record.held else 'todo', kept=True)
+            record = ticket(store, work_id)
         startable(ctx, store, record, agent)
         # said before the ticket is taken; the gate counts again at the start. An agent's start is not the person's
         # retry of an agent that keeps failing.
@@ -3299,7 +3308,8 @@ def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | 
     keep_launch(store, work_id, given or {'prompts': None, 'mode': None})
     started = start_runner(ctx, store, work_id, agent,
                            ['reservation=' + reservation,
-                            *([f'chosen={ctx.nouns["chosen"]}'] if ctx.nouns.get('chosen') else [])],
+                            *([f'chosen={ctx.nouns["chosen"]}'] if ctx.nouns.get('chosen') else []),
+                            *([] if auto else ['persons=true'])],  # the person's own start: it runs, whatever routing says
                            'work', reservation=reservation, asked=asked, auto=auto)
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, **started}
 
@@ -7135,6 +7145,8 @@ MODULE = Module(
                     Noun('sentinel', 'The address of the node the person raised an issue on; the ticket holds the '
                                      'report, and the sentinel prompt is served.', required=False),
                     Noun('reservation', 'The startup reservation made by start.', required=False),
+                    Noun('persons', "true: the person's own start, or their system agent's at their word, which runs "
+                                    'now whatever the routing says of a specialist.', kind='bool', required=False),
                     Noun('assignment', 'The recorded authored assignment this managed launch continues.', required=False),
                     Noun('resume', 'The ended session to go on with, loaded or resumed through ACP.', required=False),
                     Noun('intake', 'true: an intake agent, whose work id names no ticket and whose first turn is the '

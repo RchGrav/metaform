@@ -7804,12 +7804,21 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     assert Store('proj').ticket(work).work.taken_by == 'codex fake-session-1'
     page.evaluate(f'window.metaform.menu("{alarm}")')                   # a taken ticket waits for no agent
     page.wait_for_selector('#menu:not([hidden])')
-    assert page.text_content('#menu button.agent') == 'Start agent 0' and page.is_disabled('#menu button.agent')
+    # the taken ticket is not offered; the Facilitator's commission at the node, making its specialist, may be
+    offered = page.text_content('#menu button.agent')
+    assert offered in ('Start agent 0', 'Start agent 1'), offered
+    if offered == 'Start agent 0':
+        assert page.is_disabled('#menu button.agent')
+    else:
+        page.click('#menu button.agent')
+        page.wait_for_selector('#dispatch:not([hidden])')
+        assert work not in page.eval_on_selector_all('#dispatch .ticket', 'found => found.map(one => one.dataset.id)')
+        page.click('#dispatch .close')
     page.keyboard.press('Escape')
-    icon = page.get_attribute('#agents .agent img', 'src')
+    icon = page.get_attribute(f'#agents .agent[data-id="{work}"] img', 'src')  # the ticket's own agent: the Facilitator making its specialist runs beside it
     glyph = icon.rsplit('/', 1)[-1].removesuffix('.svg')
     assert icon == f'/page/agent-glyphs/{glyph}.svg' and glyph in AGENT_GLYPHS, icon
-    page.wait_for_function('() => document.querySelector("#agents .agent img").naturalWidth > 0')
+    page.wait_for_function(f'() => document.querySelector(\'#agents .agent[data-id="{work}"] img\').naturalWidth > 0')
     page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}")', timeout=30000)
     assert next(one for one in page.evaluate('window.metaform.figures()') if one['work_id'] == work)['glyph'] == glyph
     # the same character on every load of the page, it comes from the ticket, never from chance
@@ -7835,7 +7844,8 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
     page.wait_for_function(f'() => window.metaform.figures().some(one => one.work_id === "{work}" && one.mood === "waiting")',
                            timeout=30000)
     waiting = api(web, '/api/dispatch-sessions?project=proj&thread=false')[1]['sessions']
-    assert [(one['state'], one['activity']) for one in waiting] == [('running', 'waiting')], waiting
+    # the ticket's own session; the Facilitator making its specialist runs beside it as a helper (2026-10-20)
+    assert [(one['state'], one['activity']) for one in waiting if one['work_id'] == work] == [('running', 'waiting')], waiting
     page.evaluate(f'window.metaform.menu("{alarm}")')
     page.click('#menu button.history')
     page.wait_for_selector('#float:not([hidden]) .dispatch button.log')
@@ -7851,7 +7861,7 @@ def test_an_agent_is_started_on_a_ticket_followed_messaged_and_stopped_from_the_
         == {'outcome': 'selected', 'optionId': 'allow'}
     # answered, its turn executes again, so it is back under Agent deployed with the same icon
     page.wait_for_selector(f'#agents:not([hidden]) .agent[data-id="{work}"]', timeout=30000)
-    assert page.get_attribute('#agents .agent img', 'src') == icon
+    assert page.get_attribute(f'#agents .agent[data-id="{work}"] img', 'src') == icon
     # a message to it, kept while it is written as the map changes, VIEW-018
     page.fill('#helpdesk textarea.say', 'also run the tests')
     page.wait_for_function('() => document.querySelector("#messages").textContent.trim() === "Messages 1"')
