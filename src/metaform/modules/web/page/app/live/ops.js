@@ -452,8 +452,12 @@ export function listen() {
     // the merges too on a reopen, since one may have been put up while the stream was down; the load read them first
     agentsChanged(opens > 0);
     // the browser's own reconnect, as after the server was restarted, VIEW-002: what changed while the stream was
-    // down was announced to no page, so the layers and the map are read again, keeping the view and the selection
-    if (opens++ && S.project) changed({topic: 'map.changed', payload: {project: S.project}});
+    // down was announced to no page. The change is heard as one to the ops and the tickets, naming no metaform, so
+    // `readAgain` checks the project's metaforms, applies the ops since the sequence drawn and reads the tickets and
+    // messages again, and reads the layers and the map whole only when the ops cannot say (a metaform changed, a
+    // layer begun or ended, a sequence never drawn). A reconnect read everything, forty reads and 2.5 MB a page, which
+    // every open page fired at once at each restart of the server (2026-10-20).
+    if (opens++ && S.project) changed({topic: 'map.changed', payload: {project: S.project, tables: ['ops', 'messages']}});
     // and the parts outside the map that read the server once, such as voice.js's engine, read it again
     if (opens > 1) document.dispatchEvent(new CustomEvent('metaform:reconnected'));
   };
