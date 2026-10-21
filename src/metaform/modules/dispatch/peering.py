@@ -34,13 +34,15 @@ from metaform import events, home
 from metaform.data import Store, StoreError, WorkRecord, parse_reference
 from metaform.module import Context, Stop, context, provided, work_reads
 
-from . import base_store, held_ticket, persons_word, session_status, sessions, system_sessions, tell
+from . import base_store, held_ticket, persons_word, prompt, session_status, sessions, system_sessions, tell
 from .signals import add_line, mark_peer, own_store
 
 WAIT_MOST = 120  # seconds a question waits for its replies
 RECENT_FILES = 12  # the files presence shows for each agent, the latest first
 RECENT_LINES = 10  # the file lines presence shows for each of them
 SAID_MOST = 240  # characters of what an agent said last that presence shows
+TITLE = 80  # characters of the sender's ticket title a delivered line gives, cut as the brief cuts a title
+MESSAGE = 200  # characters of a delivered line's message, one sentence; the whole is read with dispatch notes
 TARGETS = ('to', 'at', 'file', 'topic', 'reply')
 SYSTEM = 'system'  # to=system: the person's system agent of the project, target_project= naming another
 
@@ -556,17 +558,15 @@ async def note(ctx: Context) -> dict[str, Any]:
     answered = {str(cast(dict[str, Any], one['from']).get('session_id') or ends(one)[0]) for one in got}
     silent = [one for one in sent['to'] if one['session_id'] not in answered]
     words = sent['said']
-    if got:
-        words += ' Replies: ' + ' '.join(
-            f'{cast(dict[str, Any], one["from"]).get("agent")} on {cast(dict[str, Any], one["from"]).get("item")}: '
-            f'{one.get("text")}' for one in got)
+    if got:  # each reply as its line, the whole kept in the threads
+        words += ' Replies: ' + ' '.join(line(one, str(one['id'])) for one in got)
     if silent:
         words += (f' No reply came from {", ".join(one["item"] for one in silent)} within {wait:g} seconds; a later '
                   'reply reaches you as a turn of its own.')
     return {**sent, 'replies': [{'note': one['id'], 'from': {key: cast(dict[str, Any], one['from']).get(key)
                                                               for key in ('project', 'base', 'work_id', 'session_id',
                                                                           'assignment_id', 'item', 'title', 'agent')},
-                                 'text': one.get('text'), 'at': one.get('at')} for one in got],
+                                 'text': message(one)[0], 'at': one.get('at')} for one in got],
             'unanswered': silent, 'said': words}
 
 
@@ -583,17 +583,36 @@ def first_sentence(text: str, most: int = SAID_MOST) -> str:
     return words if len(words) <= most else words[:most - 1].rstrip() + '…'
 
 
-def inbox_line(one: dict[str, Any]) -> str:
-    """Ticket + status only. The authored message is available through an explicit note read."""
-    from .orchestration import inbox_status
-    return inbox_status(one)
+def message(held: dict[str, Any]) -> tuple[str, bool]:
+    """A note's message as its line gives it: the sender's summary, else the note's first sentence, cut to MESSAGE in
+    code whatever the sender wrote; and whether the note holds more than that, kept whole in the threads."""
+    text = ' '.join(str(held.get('text') or '').split())
+    said = first_sentence(str(held.get('summary') or '') or text, MESSAGE)
+    return said, said != text
+
+
+def line(held: dict[str, Any], note_id: str) -> str:
+    """One delivery from one agent to another as its receiver is given it, `peer_note`: Agent Name: Task Phrase:
+    Message. The name is the sender's agent and ticket number until agents have names of their own; the phrase its
+    ticket's title cut to TITLE, as the brief cuts a title; the message one sentence, `message`. A note that holds more
+    ends with the read that gives the whole, which stays in the sender's thread on its ticket and in each receiver's;
+    a question ends with how to reply. The cap is the code's, so no agent fills another's context by mistake (the
+    person's rule, 2026-10-21)."""
+    sender = cast(dict[str, Any], held.get('from') or {})
+    title = ' '.join(str(sender.get('title') or '').split())
+    said, more = message(held)
+    return prompt('peer_note', agent=' '.join(part for part in (str(sender.get('agent') or ''), str(
+                      sender.get('item') or sender.get('work_id') or '')) if part) or 'An agent',
+                  task=(title if len(title) <= TITLE else title[:TITLE - 1].rstrip() + '…') or 'no ticket',
+                  message=said, more=f' {prompt("peer_note_more", note=note_id)}' if more else '',
+                  reply=f' {prompt("peer_note_reply", note=note_id)}' if held.get('ask') else '')
 
 
 def notes(ctx: Context) -> dict[str, Any]:
     """`dispatch notes`: the caller's notes, sent and received, the latest first, each with its delivery to each
     receiver; with note=<id>, that note and the replies threaded to it. For the person's system agent this is its
-    inbox: agents' notes and results land here rather than in its conversation, so the list gives each as one line,
-    `summary`, and note=<id> gives that one whole."""
+    inbox: agents' notes and results land here rather than in its conversation, so the list gives each as its one
+    line, `summary`, and note=<id> gives that one whole."""
     store = ctx.require_store()
     _, mine = caller(store)
     work_id = str(mine['work_id'])
@@ -606,7 +625,8 @@ def notes(ctx: Context) -> dict[str, Any]:
     limit = ctx.nouns.get('limit')
     count = int(limit) if isinstance(limit, int) and limit > 0 else 20
     if not wanted and system_sessions(store, [mine]):
-        inbox = [{'note': one.get('id'), 'at': one.get('at'), 'kind': one.get('kind'), 'summary': inbox_line(one),
+        inbox = [{'note': one.get('id'), 'at': one.get('at'), 'kind': one.get('kind'),
+                  'summary': line(one, str(one.get('id'))),
                   'read': f'dispatch_notes note={one.get("id")}'} for one in reversed(held)
                  if str(cast(dict[str, Any], one.get('from') or {}).get('session_id') or '') != mine['session_id']]
         return {'notes': inbox[:count], 'more': max(len(inbox) - count, 0)}

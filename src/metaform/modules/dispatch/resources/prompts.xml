@@ -346,8 +346,24 @@ Preserve user intent and use independent, project-grounded engineering judgment.
      timer ends with its session. Must not be deleted: the code requires it. -->
 <timer>Your timer <timer/>, set at <set/>, is due: <note/>. What you knew when you set it may have changed: read what is current, such as web_viewing, before you act on it.</timer>
 
-<!-- Kept for existing prompt references; live notes now carry the author's text directly. -->
-<peer_note><note/></peer_note>
+<!-- The one line every delivery from one agent to another takes: a peer note sent with dispatch note, a reply a
+     question's wait did not return, and each result, check-in or change order orchestration sends to an agent. Its
+     receiver's runner gives it as the receiver's next turn, after any turn in flight; the person's system agent
+     keeps it in its inbox, read with dispatch notes, where each entry is this line. <agent/> is the sender's agent
+     and ticket number, until agents have names of their own; <task/> its ticket's title cut to 80 characters, or
+     "no ticket"; <message/> the sender's summary, else the note's first sentence, cut to 200 characters by the code
+     whatever the sender wrote. <more/> is
+     <peer_note_more> when the note holds more than its message, and <reply/> is <peer_note_reply> when it is a
+     question. The whole stays in the sender's thread on its ticket and in each receiver's. A relayed decision of the
+     person's is their own message and never takes this form. Must not be deleted: the code requires it; emptied, an
+     agent's notes reach others as nothing. -->
+<peer_note><agent/>: <task/>: <message/><more/><reply/></peer_note>
+
+<!-- Ends a note's line when the note holds more than its message: <note/> is the note's id, the read for the whole. -->
+<peer_note_more>(the whole: dispatch_notes note=<note/>)</peer_note_more>
+
+<!-- Ends a question's line: <note/> is the question's id, which a reply is threaded to. -->
+<peer_note_reply>(reply with dispatch_note reply=<note/>)</peer_note_reply>
 
 <!-- Delivered once per context epoch, shared by every dispatch role. No extra summarizer call. -->
 <communication>

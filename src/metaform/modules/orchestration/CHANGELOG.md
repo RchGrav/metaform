@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-10-21 — The Facilitator's commission is one line
+
+- A commission is one line in the form every delivery between agents takes, the `commission` prompt: the requesting assignment's role and ticket number, that ticket's title cut to 80 characters, and `Select or create a specialist for <ticket>, role <name>, request <id>.`; it was a JSON object of the same request id, role and ticket number.
+
 ## 2026-10-21 — The Facilitator's commission names the ticket
 
 - A Facilitator's commission carries the request id, the proposed role name and the ticket's number, nothing of the ticket's content: the Facilitator reads the ticket itself for its text, note and functional context. The commission had copied the task, the note and the functional graph; one note of 1.9 MB copied whole made the commission the heaviest ticket on the board and was read by every surface that listed it (2026-10-20).

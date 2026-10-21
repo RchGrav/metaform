@@ -267,7 +267,11 @@ def specialist():
 def creator(assignment):
     assert 'metaform://specialists' in DUTY and '<metaprompt name="role_creation">' in DUTY
     assert 'orchestration_publish_role' in DUTY and '<system_prompt>' in DUTY
-    brief = json.loads(assignment['task'])['request']
+    # the commission is one line naming the request it publishes against, its role when the request names one, and
+    # whether it asks only for the ticket's agent, model and thinking level
+    commission = re.search(r'specialist for \S+?(?:, role (\w+))?(, runtime only)?, request (\w+)\.$', assignment['task'])
+    assert commission, assignment['task']
+    brief = {'request_id': commission.group(3), 'role': commission.group(1), 'runtime_only': bool(commission.group(2))}
     request = next(one for one in cli('orchestration', 'role_requests')
                    if one['request_id'] == brief['request_id'])
     caller = next(one for one in cli('orchestration', 'team')['members']

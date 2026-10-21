@@ -116,11 +116,12 @@ def test_peer_wire_carries_only_message_and_keeps_details_available(
     line = {'id': 'brief-result', 'text': 'Fixed selection. Three interaction checks pass.',
             'kind': completion_kind, 'state': completion_state, 'candidate': detail, 'evidence': [detail],
             'from': {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude',
-                     'item': 'code.dispatcher.agent#7d'},
+                     'item': 'code.dispatcher.agent#7d', 'title': 'Fix selection'},
             'to': [{'session_id': 'recipient', 'work_id': worker.work_id}],
             'context_components': [{'name': 'irrelevant', 'text': detail}]}
     asyncio.run(worker.peer_note({'line': line, 'deliver': True}))
-    assert list(worker.pending) == ['code.dispatcher.agent#7d complete']
+    returned = 'claude code.dispatcher.agent#7d: Fix selection: code.dispatcher.agent#7d complete'
+    assert list(worker.pending) == [returned]
     assert list(worker.prompt_contexts) == [[]]
     with worker.store.tables(write=False) as tx:
         kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:brief-result'})['text'])
@@ -130,19 +131,23 @@ def test_peer_wire_carries_only_message_and_keeps_details_available(
     def no_context(*args):
         pytest.fail('A message must not rebuild the assignment or append its context.')
 
-    assert sent(monkeypatch, worker, guide=no_context) == ['code.dispatcher.agent#7d complete']
+    assert sent(monkeypatch, worker, guide=no_context) == [returned]
 
 
 @pytest.mark.kind('fixture')
-def test_a_note_reaches_its_receiver_as_a_summary_phrase_and_the_whole_stays_in_the_thread(dispatch, monkeypatch):
-    """Every message works like an inbox (the person's rule, 2026-10-20): a receiver's turn carries the sender's summary
-    phrase, else the note's first words, with the read that gives the whole; a short note is given whole."""
+def test_a_note_reaches_its_receiver_as_one_line_and_the_whole_stays_in_the_thread(dispatch, monkeypatch):
+    """Every delivery from one agent to another is one line, Agent Name: Task Phrase: Message (the person's rule,
+    2026-10-21): the sender's agent and ticket, its title cut to 80 characters, and its summary or first sentence cut
+    to 200 by the code; a note holding more ends with the read for the whole, kept in the thread."""
     import asyncio
 
     worker = busy(dispatch)
     worker.session_id, worker.spoken = 'recipient', True
-    body = 'The selection breaks when the pointer leaves the pane. ' * 20
-    sender = {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude', 'item': 'code.map.select#3'}
+    body = ('The selection breaks when the pointer leaves the pane and ' * 20)[:1000]  # one sentence, never ended
+    title = 'Selection holds while the pointer crosses between the map pane and the board pane of the page'
+    sender = {'session_id': 'sender', 'work_id': 'source', 'agent': 'claude', 'item': 'code.map.select#3',
+              'title': title}
+    head = f'claude code.map.select#3: {title[:79].rstrip()}…: '
     to = [{'session_id': 'recipient', 'work_id': worker.work_id}]
     asyncio.run(worker.peer_note({'line': {'id': 'n-long', 'kind': 'peer', 'text': body, 'from': sender, 'to': to},
                                   'deliver': True}))
@@ -152,12 +157,13 @@ def test_a_note_reaches_its_receiver_as_a_summary_phrase_and_the_whole_stays_in_
     asyncio.run(worker.peer_note({'line': {'id': 'n-short', 'kind': 'peer', 'text': 'Done with dom.js.', 'from': sender,
                                            'to': to}, 'deliver': True}))
     lines = '\n\n'.join(worker.pending).split('\n\n')  # notes that arrive while a turn waits join it, one line each
-    assert len(lines) == 3, lines
-    assert lines[0].startswith('code.map.select#3: The selection breaks when the pointer leaves the pane.') \
-        and lines[0].endswith('… (the whole: dispatch_notes note=n-long)') and len(lines[0]) < 260, lines[0]
-    assert lines[1] == 'code.map.select#3: Selection breaks on pointer leave; needs your pane change. ' \
+    assert len(lines) == 3 and not any('\n' in one for one in lines), lines
+    said = f'{body[:199].rstrip()}…'
+    assert lines[0] == f'{head}{said} (the whole: dispatch_notes note=n-long)', lines[0]
+    assert len(said) == 200, len(said)  # the cap is the code's: 1,000 characters arrive as one line of a sentence
+    assert lines[1] == f'{head}Selection breaks on pointer leave; needs your pane change. ' \
         '(the whole: dispatch_notes note=n-said)', lines[1]
-    assert lines[2] == 'Done with dom.js.', lines[2]
+    assert lines[2] == f'{head}Done with dom.js.', lines[2]
     with worker.store.tables(write=False) as tx:
         kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:n-long'})['text'])
     assert kept['text'] == body, 'the whole stays in the thread, read on demand'
@@ -335,7 +341,8 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     assert sum(one['kind'] == 'board' for one in listed) == 3
     first = next(one for one in listed if one['note'] == 'gc-19')['summary']
     assert len(first) <= 300 and 'Evidence' not in first, first
-    assert first == 'Ticket 19 — progress'
+    assert first == 'claude code.router.assignment#19: Held cap 19: The held cap counts only open tickets 19. ' \
+        '(the whole: dispatch_notes note=gc-19)', first  # each report as its one line, the whole read on demand
     whole = peering.notes(context('dispatch', dispatch.folder, project='proj', nouns={'note': 'gc-6'}))['notes']
     assert whole[0]['text'] == 'code.router.assignment#6 complete'
     assert 'evidence' not in whole[0], 'Completion reports remain on their tickets.'
@@ -351,7 +358,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     worker = busy(dispatch)
     worker.session_id = 'w'
     asyncio.run(worker.peer_note({'line': result(40), 'deliver': True}))
-    assert worker.pending[0] == 'code.router.assignment#40 complete'
+    assert worker.pending[0] == 'claude code.router.assignment#40: Held cap 40: code.router.assignment#40 complete'
     assert not worker.inbox
 
 

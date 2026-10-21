@@ -2718,7 +2718,7 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
         assert states(a, sent['note']) == {other.id: 'queued'}
         (b_gates / '1').touch()  # B's turn ends; the note is its next turn
         [got] = eventually(lambda: [text for text in prompts(b_session)[1:] if 'dom.js' in text])
-        # the note's words alone reach B, no framing and no envelope: its sender and route are read with dispatch notes
+        # the note's one line reaches B, no envelope: its whole, sender and route are read with dispatch notes
         assert 'I am changing dom.js css()' in got and 'Message from another agent' not in got
         assert a_session not in got and '"kind"' not in got  # the reply route too is read with dispatch notes
         eventually(lambda: states(a, sent['note']) == {other.id: 'delivered'})

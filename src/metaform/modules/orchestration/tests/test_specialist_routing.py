@@ -163,8 +163,11 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
     creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
     assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     assert capacity_kind(ctx, creator['work_id'], 'worker') == 'helper'
-    carried = json.loads(creator['task'])  # the ticket by its number, nothing of its content
-    assert carried['ticket'] == store.numbers_of('work', [work.id])[work.id][0] and work.task not in creator['task']
+    ticket, title, _ = store.numbers_of('work', [work.id])[work.id]  # one line naming the ticket, none of its content
+    role = owner['authored_role_uri'].removeprefix('metaform://role/')
+    assert creator['task'] == f'{role} {ticket}: {title}: Select or create a specialist for {ticket}, ' \
+        f'request {request["request_id"]}.', creator['task']
+    assert '\n' not in creator['task'] and work.task not in creator['task']
     with pytest.raises(Stop, match='waiting for its specialist'):
         SERVICE.bind(ctx, owner['assignment_id'], 'premature-worker')
     SERVICE.bind(ctx, creator['assignment_id'], 'facilitator')

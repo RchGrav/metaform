@@ -199,6 +199,15 @@ Return the prepared candidate/materials, validation evidence and remaining actio
 
 
 
+<!-- The Facilitator's commission: the task of the ticket made for it when an assignment needs a specialist the roster
+     lacks, given to the Facilitator in its brief when it starts. One line, the form every delivery between agents
+     takes, Agent Name: Task Phrase: Message. <agent/> is the requesting assignment's role and ticket number, until
+     agents have names of their own; <task/> that ticket's title cut to 80 characters; <ticket/> its number; <role/>
+     ", role <name>" when the request names the specialty, else nothing; <request/> the role request the Facilitator
+     publishes against; <runtime/> ", runtime only" when the commission asks only for the ticket's agent, model and thinking level, else nothing. Nothing of the ticket's content is copied: the Facilitator reads the ticket itself. Must not be
+     deleted: the code requires it. -->
+<commission><agent/>: <task/>: Select or create a specialist for <ticket/><role/><runtime/>, request <request/>.</commission>
+
 <!-- An operative change order envelope carrying the actual sender, scope, revision and rationale. -->
 <change_order>
 GC change order:

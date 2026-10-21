@@ -280,26 +280,6 @@ INBOX_SHOWN = 10  # the inbox entries the one inbox line names before it counts 
 TRIAGE_DIGEST = 15 * 60
 
 
-PHRASE = 160  # the characters a note's phrase is cut to; a note this short is its own phrase and is given whole
-
-
-def inbox_phrase(held: dict[str, Any], note_id: str) -> str:
-    """What a note's receiver is given in its turn: the sender's summary phrase, `dispatch note summary=`, else the
-    note's first words cut to PHRASE, with the read that gives the whole when the receiver needs more. A short note
-    with no summary is its own phrase and is given whole. Every message works like an inbox: the phrase is in the turn,
-    the body stays in the thread, so no agent's context is filled by what it did not ask for (the person's rule,
-    2026-10-20)."""
-    text = ' '.join(str(held.get('text') or '').split())
-    summary = ' '.join(str(held.get('summary') or '').split())
-    reply = f' (reply with dispatch_note reply={note_id})' if held.get('ask') else ''  # a question waits on an answer
-    if not summary and len(text) <= PHRASE:
-        return f'{text}{reply}'
-    phrase = summary or f'{text[:PHRASE].rsplit(" ", 1)[0]}…'
-    sender = cast(dict[str, Any], held.get('from') or {})
-    who = str(sender.get('item') or sender.get('work_id') or sender.get('agent') or 'a peer')
-    return f'{who}: {phrase} (the whole: dispatch_notes note={note_id}){reply}'
-
-
 def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
     """A note to the person's system agent as its inbox keeps it: the sender's ticket and what the note is, never its
     words, and whether it needs the person."""
@@ -4291,15 +4271,17 @@ class Session:
         if note_id in self.queued_peer_ids:
             return {'noted': True, 'queued': False, 'reused': True}
         reply_to = str(held.get('reply_to') or '')
-        # Keep routing, receipts and assignment data in the stored envelope. The model receives the author's
-        # message alone; dispatch_notes can read its sender and return route when a reply is needed.
+        # Keep routing, receipts and assignment data in the stored envelope. The model receives the note's one line,
+        # `peering.line`; dispatch_notes reads the whole, its sender and return route when the work needs them.
+        from .peering import line as delivered_line
         text = str(held.get('text') or '')
         self.queued_peer_ids.add(note_id)
         self.peer_said[said_key] = note_id
         marks = [(note_id, str(sender.get('session_id') or ''))]
         waiting = self.awaiting.get(reply_to)
         if waiting is not None and time.monotonic() < float(waiting['until']):
-            cast(list[Any], waiting['held']).append((note_id, text, marks))  # the waiting call returns it
+            # the waiting call returns it; one it does not take is given as its line, `unawait`
+            cast(list[Any], waiting['held']).append((note_id, delivered_line(held, note_id), marks))
             return {'noted': True, 'queued': False, 'awaited': True}
         if self.role == 'system' and held.get('kind') != 'user_direction':
             # the person's system agent works like an inbox: the note waits in its thread, read with dispatch notes,
@@ -4317,7 +4299,7 @@ class Session:
                 return {'noted': True, 'queued': False, 'steered': True}
             self.turn(text, peers=marks, first=True)
             return {'noted': True, 'queued': True, 'busy': busy}
-        self.turn(inbox_phrase(held, note_id), peers=marks)  # the phrase; the whole waits in the thread
+        self.turn(delivered_line(held, note_id), peers=marks)  # its one line; the whole waits in the thread
         return {'noted': True, 'queued': True, 'busy': busy}
 
     def unawait(self, asked: dict[str, Any]) -> dict[str, Any]:

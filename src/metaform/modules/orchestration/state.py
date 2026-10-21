@@ -39,6 +39,7 @@ HELP = 'metaform help orchestration'
 ENDED = frozenset(('returned', 'delivered', 'failed', 'stopped', 'transferred'))
 ACTIVE = ('queued', 'running', 'waiting', 'blocked', 'suspended', 'interrupted')
 FACILITATORS = ('metaform://role/facilitator', 'metaform://role/role_creator')
+TITLE = 80  # characters of a ticket's title a commission's line gives, cut as the brief cuts a title
 
 
 def now() -> str:
@@ -1035,15 +1036,21 @@ class Orchestration:
     @staticmethod
     def _commission(tx: TableTx, store: Store, owner: Mapping[str, Any],
                     request: Mapping[str, Any]) -> dict[str, Any]:
-        # The commission names the ticket by its number and carries nothing of its content: the Facilitator reads the
-        # ticket itself for its text, note and functional context. A copy grew with the ticket (one note of 1.9 MB,
-        # copied whole, made the commission the heaviest ticket on the board, 2026-10-20) and was read by every surface
-        # that listed the commission, while the ticket is one read away.
+        # The commission is one line, the form every delivery between agents takes (the person's rule, 2026-10-21),
+        # naming the ticket by its number and carrying nothing of its content: the Facilitator reads the ticket itself
+        # for its text, note and functional context. A copy grew with the ticket (one note of 1.9 MB, copied whole,
+        # made the commission the heaviest ticket on the board, 2026-10-20) and was read by every surface that listed
+        # the commission, while the ticket is one read away.
         work_id = str(owner['work_id'])
         numbered = store.numbers_of('work', [work_id]).get(work_id)
-        task = json.dumps({'request': {'request_id': request['request_id'], 'role': request['role'] or None,
-                                      'runtime_only': bool(role_options(request).get('runtime_only'))},
-                           'ticket': numbered[0] if numbered else work_id}, ensure_ascii=False)
+        item, title = (numbered[0], ' '.join(str(numbered[1] or '').split())) if numbered else (work_id, '')
+        task = prompt_files.served(
+            resources.files('metaform.modules.orchestration'), 'commission',
+            agent=f'{str(owner["authored_role_uri"]).removeprefix("metaform://role/")} {item}',
+            task=(title if len(title) <= TITLE else title[:TITLE - 1].rstrip() + '…') or 'no ticket', ticket=item,
+            role=f', role {request["role"]}' if request['role'] else '',
+            runtime=', runtime only' if role_options(request).get('runtime_only') else '',
+            request=str(request['request_id']))
         node, places = location(store, None, owner)
         runtime_only = bool(role_options(request).get('runtime_only'))
         work = store.add_work(node, None, task=task,

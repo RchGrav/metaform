@@ -145,6 +145,9 @@ def test_new_specialist_gc_commission_publication_reuse_and_original_return(proj
         SERVICE.commission(ctx(project, 'worker', request=request['request_id']))
     creator = SERVICE.commission(ctx(project, 'gc-one', request=request['request_id']))
     assert creator['authored_role_uri'] == 'metaform://role/facilitator'
+    ticket = project[0].numbers_of('work', [worker['work_id']])[worker['work_id']][0]
+    assert '\n' not in creator['task'] and creator['task'].startswith(f'implementer {ticket}: ') and \
+        creator['task'].endswith(f'for {ticket}, role alarm_domain, request {request["request_id"]}.'), creator['task']
     SERVICE.bind(ctx(project), creator['assignment_id'], 'creator')
     published = SERVICE.publish_role(ctx(project, 'creator', request=request['request_id'],
         duty='Investigate alarm timing against the requested user outcome. Return evidence to the calling worker.'))
@@ -198,6 +201,8 @@ def test_post_delivery_fqc_missing_role_gets_commission_gc_and_retains_original_
                         and one['kind'] == 'send' and one['payload'].get('kind') == 'result' and
                         one['payload'].get('sender_assignment_id') == specialist['assignment_id'])
     assert return_event['payload']['sender_assignment_id'] == specialist['assignment_id']
+    item = project[0].numbers_of('work', [specialist['work_id']])[specialist['work_id']][0]
+    assert return_event['payload']['body'] == f'{item} complete', 'a return is one line; its report stays on the ticket'
     assert return_event['payload']['body'].endswith(' complete')
     assert 'result' not in return_event['payload']
     assert any(one['kind'] == 'launch' and one['assignment_id'] == review['assignment_id']
