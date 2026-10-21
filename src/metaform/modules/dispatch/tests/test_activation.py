@@ -158,3 +158,20 @@ def test_web_activation_requires_replacement_to_answer_its_actual_health_route(h
         finally:
             thread.join(timeout=3)
     assert requests == ['/api/server']
+
+
+def test_empty_completion_retains_earlier_ticket_code_for_activation(dispatch, repo, monkeypatch):
+    module = activation()
+    monkeypatch.setattr(module, 'runtime_root', lambda project: repo / 'src/metaform')
+    committed(repo, 'src/metaform/modules/web/server.py', dispatch.id)
+    git(repo, 'commit', '--allow-empty', '-m', f'Completed\n\nMetaform-Ticket: {dispatch.id}')
+    assert module.changes(repo, dispatch.id)[1:] == (True, True)
+
+
+def test_completion_record_activates_its_explicit_merged_fix(dispatch, repo, monkeypatch):
+    module = activation()
+    monkeypatch.setattr(module, 'runtime_root', lambda project: repo / 'src/metaform')
+    code = committed(repo, 'src/metaform/modules/web/server.py', 'separate-code-record')
+    git(repo, 'commit', '--allow-empty', '-m',
+        f'Completed\n\nFixed in commit {code}.\n\nMetaform-Ticket: {dispatch.id}')
+    assert module.changes(repo, dispatch.id)[1:] == (True, True)

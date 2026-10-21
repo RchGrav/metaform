@@ -9,6 +9,7 @@ import csv
 import http.client
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -33,14 +34,25 @@ def changes(project: Path, work_id: str) -> tuple[str, bool, bool]:
     root = runtime_root(project)
     if root is None:
         return '', False, False
-    found = git(project, 'log', '-1', '--format=%H', '--fixed-strings', '--grep', f'{TRAILER}: {work_id}')
-    commit = found.stdout.strip()
-    if found.returncode or not commit:
+    found = git(project, 'log', '--format=%H', '--grep', f'^{TRAILER}: {re.escape(work_id)}$')
+    commits = found.stdout.splitlines()
+    if found.returncode or not commits:
         raise ValueError('The merged ticket commit could not be identified for runtime activation.')
-    diff = git(project, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', commit)
-    if diff.returncode:
-        raise ValueError('The merged ticket paths could not be read for runtime activation.')
-    files = [Path(name) for name in diff.stdout.split('\0') if name]
+    commit = commits[0]
+    # Completion records can be empty. Include their ticket's earlier code commits,
+    # plus an explicit fix commit from the current resolution, verified on main.
+    message = git(project, 'log', '-1', '--format=%B', commit).stdout.partition('Ticket state:')[0]
+    for code in re.findall(r'\b[Ff]ixed in commit ([0-9a-f]{7,40})\b', message):
+        resolved = git(project, 'rev-parse', '--verify', f'{code}^{{commit}}')
+        if resolved.returncode or git(project, 'merge-base', '--is-ancestor', code, 'HEAD').returncode:
+            raise ValueError(f'The referenced fix commit {code} is not on the development branch.')
+        commits.append(resolved.stdout.strip())
+    files: set[Path] = set()
+    for code in dict.fromkeys(commits):
+        diff = git(project, 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', code)
+        if diff.returncode:
+            raise ValueError('The merged ticket paths could not be read for runtime activation.')
+        files.update(Path(name) for name in diff.stdout.split('\0') if name)
     prefix = root.relative_to(project.resolve())
     runtime = [name.relative_to(prefix) for name in files if name.is_relative_to(prefix)
                and 'tests' not in name.parts and name.suffix not in ('.md', '.pyc')]
@@ -199,11 +211,12 @@ def delivered(ctx: Any, store: Store, own: Store, project: Path, work_id: str) -
     try:
         held = kept(own, work_id)
         commit, web, python = changes(project, work_id)
-        if held is None or held.get('commit') != commit:
+        if held is None or held.get('commit') != commit or held['web']['required'] != web:
             before = web_record() if web else None
             held = {'commit': commit, 'web': {'required': web, 'before': before,
                                             'after': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()),
-                                            'state': 'pending' if before is not None else 'not running'},
+                                            'state': 'pending' if before is not None else
+                                            'not running' if web else 'not required'},
                     'old_processes': old_processes() if python else [], 'error': ''}
             keep(own, work_id, held)  # durable before restart can stop the process that called us
         status = cast(dict[str, Any], held['web'])
