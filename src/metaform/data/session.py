@@ -266,7 +266,9 @@ class Session:
                 db.close()
             return
         path = home.store_file(self.project_id, metaform.name)
-        with open_store(path, write=False, required=required) as db:
+        # Graph reads already serialize on held.lock. Keep the process lock first, as writes do, so a
+        # queued writer cannot reserve SQLite while waiting for this reader (or invert locks on a nested read).
+        with sqlite.writer_lock(path), open_store(path, write=False, required=required) as db:
             db.execute('BEGIN')
             try:
                 held = log.projection(path, db)

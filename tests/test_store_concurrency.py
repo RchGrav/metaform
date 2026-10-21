@@ -78,3 +78,68 @@ def test_concurrent_writers_leave_the_store_whole(run, home, tmp_path):
     assert found == [], found  # every write succeeds: a failed one, damage above all, is the defect
     assert checked == [('ok',)], checked
     assert lines == WORKERS * OPERATIONS
+
+
+def test_writer_waiting_for_reader_leaves_sqlite_available(store, home, monkeypatch):
+    """A queued local writer must not reserve SQLite while a graph reader still holds its turn."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from storekit import small_map, store_file
+
+    from metaform import sqlite
+    from metaform.data import Node, log
+
+    small_map(store)
+    path = store_file(home, store)
+    original = sqlite.writer_lock
+    lock = sqlite.writer_lock(path)
+    writer_waiting = threading.Event()
+    writer_id = None
+    projection = log.projection
+
+    class OrderedLock:
+        def acquire(self):
+            if threading.get_ident() == writer_id:
+                if lock.acquire(blocking=False):
+                    return
+                writer_waiting.set()
+            lock.acquire()
+
+        def release(self):
+            lock.release()
+
+        def __enter__(self):
+            self.acquire()
+            return self
+
+        def __exit__(self, *_):
+            self.release()
+
+    ordered = OrderedLock()
+    monkeypatch.setattr(sqlite, 'writer_lock', lambda given: ordered if str(given) == str(path) else original(given))
+
+    def entering_projection(given, db):
+        if threading.get_ident() == writer_id and str(given) == str(path):
+            # Before the fix, BEGIN IMMEDIATE has succeeded and the writer now waits for the reader's graph.
+            writer_waiting.set()
+        return projection(given, db)
+
+    monkeypatch.setattr(log, 'projection', entering_projection)
+
+    def writer():
+        nonlocal writer_id
+        writer_id = threading.get_ident()
+        return store.link_ref('path', 'writer.py', Node('element', 'code.timer.kitchen'))
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with store._read():
+            pending = pool.submit(writer)
+            assert writer_waiting.wait(5), 'local writer never reached its lock'
+            # An independent connection models another MCP process. WAL readers cannot block this write.
+            with closing(sqlite3.connect(path, isolation_level=None, timeout=0.1)) as external:
+                external.execute('BEGIN IMMEDIATE')
+                external.execute('ROLLBACK')
+            assert store.element('code.timer.kitchen') is not None  # nested reads keep the same lock order
+        linked = pending.result(timeout=5)
+    assert store.ref(linked.id).value == 'writer.py'
