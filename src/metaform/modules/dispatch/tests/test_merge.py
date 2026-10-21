@@ -126,7 +126,7 @@ def test_a_merge_killed_part_way_leaves_the_agents_branch_as_it_was_and_the_next
     merge = importlib.import_module('metaform.modules.dispatch.merge')
     real = _killed_at(monkeypatch, step)
     with pytest.raises(SystemExit):
-        result = merge.merge_due(ctx, dispatch.store, dispatch.id)
+        result = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
         pytest.fail(f'Merge never reached {step}: {result}')
     monkeypatch.setattr(merge, 'git', real)
     assert git(repo, 'rev-parse', waiting['branch']) == tip, 'the agent\'s branch never moves'
@@ -135,7 +135,7 @@ def test_a_merge_killed_part_way_leaves_the_agents_branch_as_it_was_and_the_next
     dead = subprocess.Popen(['true'])
     dead.wait()
     merge.Queued(repo).path.write_text(str(dead.pid), encoding='utf-8')  # the lock a killed merge leaves
-    merged = merge.merge_due(ctx, dispatch.store, dispatch.id)
+    merged = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
     assert merged['merged'] is True and 'conflict' not in merged['why'], merged
     assert merged['pushed'] and not merged['why'], merged
     assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'ticket feature\n'
@@ -166,7 +166,7 @@ def test_autostart_has_no_successor_to_start_after_ticket_delivery(dispatch, rep
 def test_review_takes_the_merge_over_for_good(dispatch, repo, run):
     waiting_merge(dispatch, repo)
     assert json.loads(run('dispatch', 'review', dispatch.id, '--json', cwd=repo).stdout)['state'] == 'review'
-    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, 'publish=true', '--json', cwd=repo).stdout)
     assert merged['merged'] is False and not (repo / 'feature.txt').exists(), 'a reviewed merge never merges by itself'
     again = run('dispatch', 'review', dispatch.id, cwd=repo, ok=False)
     assert again.returncode != 0, 'the countdown never restarts'
@@ -196,13 +196,13 @@ def test_work_that_clashes_preserves_branches_and_sends_one_inbox_line(dispatch,
     from metaform.modules.dispatch.orchestration import TRANSPORT
     notices = []
     monkeypatch.setattr(TRANSPORT, 'notify_user', lambda *args: notices.append(args))
-    merged = merge.merge_due(ctx, dispatch.store, dispatch.id)
+    merged = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
     assert merged['merged'] is False and 'conflict' in merged['why'].lower(), merged
     assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'changed on dev meanwhile\n'
     assert git(repo, 'status', '--porcelain') == '', 'a refused merge leaves the dev branch untouched'
     assert git(repo, 'rev-parse', 'HEAD') == head
     assert git(repo, 'rev-parse', waiting['branch']) == tip
-    assert not merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
+    assert not merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)['merged']
     assert len(notices) == 1, [args[1]['text'] for args in notices]
     payload = notices[0][1]
     handle = dispatch.store.numbers_of('work', [dispatch.id])[dispatch.id][0]
@@ -255,7 +255,7 @@ def test_a_worktree_excludes_shared_uncommitted_work_and_merges_only_ticket_chan
     assert f'Metaform-Ticket: {dispatch.id}' in git(tree, 'log', '-1', '--format=%B')
     tip = git(tree, 'rev-parse', 'HEAD')
     (tree / 'later-draft.txt').write_text('another agent owns this draft\n')
-    merged = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
+    merged = json.loads(run('dispatch', 'merge', dispatch.id, 'publish=true', '--json', cwd=repo).stdout)
     assert merged['merged'] and merged['pushed'], merged
     assert git(repo, 'rev-parse', 'origin/dev') == git(repo, 'rev-parse', 'HEAD') != head
     assert git(repo, 'log', '-1', '--format=%B').count('Metaform-Ticket') == 1
@@ -281,7 +281,7 @@ def test_legacy_dirty_snapshot_is_excluded_when_its_ticket_branch_merges(dispatc
     record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver only ticket changes.')
     ctx = context('dispatch', repo, project='proj')
     assert merge.finished(ctx, dispatch.store, record, folder)['state'] == 'committed'
-    assert merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
+    assert merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)['merged']
     assert (repo / 'README.md').read_text(encoding='utf-8') == 'base\n'
     assert not (repo / 'draft.txt').exists()
     assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'ticket change\n'
@@ -523,7 +523,7 @@ def test_ready_merge_rechecks_cancellation_before_committing(dispatch, repo, mon
         monkeypatch.setattr(merge, 'tests_pass', tests_pass)
     else:
         cancel()
-    assert not merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
+    assert not merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)['merged']
     assert git(repo, 'rev-parse', 'HEAD') == head
 
 
@@ -568,12 +568,12 @@ def test_already_landed_merge_recovers_after_ticket_cancellation(dispatch, repo,
     merge = importlib.import_module('metaform.modules.dispatch.merge')
     real = _killed_at(monkeypatch, 'update-ref')
     with pytest.raises(SystemExit):
-        result = merge.merge_due(ctx, dispatch.store, dispatch.id)
+        result = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
         pytest.fail(f'Merge never reached the crash point: {result}')
     monkeypatch.setattr(merge, 'git', real)
     head = git(repo, 'rev-parse', 'HEAD')
     dispatch.store.move_work(dispatch.id, 'todo')
     dispatch.store.finish_work(dispatch.id, 'Cancelled.', 'No longer required.', outcome='cancelled')
-    assert merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
+    assert merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)['merged']
     assert git(repo, 'rev-parse', 'HEAD') == head
     assert (repo / waiting['worktree']).exists()

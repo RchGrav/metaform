@@ -202,11 +202,11 @@ def test_worktree_push_journal_recovers_crash_and_allows_explicit_retry(dispatch
     unavailable = tmp_path / 'unavailable.git'
     remote.rename(unavailable)
     ctx = context('dispatch', folder, project='proj')
-    failed = merge.merge_due(ctx, dispatch.store, dispatch.id)
+    failed = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
     assert failed['merged'] and failed['why'] and not failed['pushed'], failed
     assert merge.due(dispatch.store) == [], 'Transport failures require explicit retry, preventing event loops.'
     unavailable.rename(remote)
-    retried = merge.merge_due(ctx, dispatch.store, dispatch.id)
+    retried = merge.merge_due(ctx, dispatch.store, dispatch.id, publish=True)
     assert retried['merged'] and retried['pushed'], retried
     assert git(folder, 'rev-list', '--count', 'HEAD') == '1'
 

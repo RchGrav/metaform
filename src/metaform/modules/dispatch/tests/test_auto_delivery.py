@@ -91,7 +91,7 @@ def test_recovery_excludes_snapshot_and_never_commits_later_worktree_edits(dispa
         tx.insert('merges', {'work_id': dispatch.id, 'branch': merge.branch_of(dispatch.id),
                             'worktree': str(tree), 'state': merge.READY, 'reason': '',
                             'ready': time.time(), 'deadline': time.time(), 'seq': time.time_ns()})
-    result = merge.merge_due(context('dispatch', repo, project='proj'), dispatch.store, dispatch.id)
+    result = merge.merge_due(context('dispatch', repo, project='proj'), dispatch.store, dispatch.id, publish=True)
     assert result['merged'] and result['pushed'], result
     assert not (repo / 'snapshot.txt').exists()
     assert not (repo / 'draft.txt').exists()

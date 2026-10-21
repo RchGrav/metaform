@@ -25,6 +25,8 @@ def test_fresh_board_automatically_saves_verified_fault_and_releases_dependency(
     if repository_present:
         initialize(dispatch.folder)
         assert git(dispatch.folder, 'branch', '-m', development_branch).returncode == 0
+        if development_branch != 'main':
+            assert git(dispatch.folder, 'branch', 'main').returncode == 0
         original = git(dispatch.folder, 'rev-parse', 'HEAD').stdout.strip()
         assert not git(dispatch.folder, 'remote').stdout.strip()
     run('map', 'boards', 'op=add', f'name={board}', cwd=dispatch.folder)
