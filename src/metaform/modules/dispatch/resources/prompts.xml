@@ -144,7 +144,7 @@ Use the project evidence and your judgment to resolve ordinary work choices and 
      ticket's id. Must not be deleted: the code requires it. -->
 <work>
 Work ticket <work_id/> with map_work and the specialist role you were given. Use the supplied current assignment and specification. <record/>
-When your fix is merged and put into the running code, close the ticket to turn off its red light. If the issue persists or verification finds a problem, the system raises a ticket and the red light comes back.
+When your fix is submitted, close the ticket to turn off its red light. If the issue persists or verification finds a problem, the system raises a ticket and the red light comes back.
 </work>
 
 <!-- What to record and where, after the work sentence, with the node filled in and the command left out, since the
