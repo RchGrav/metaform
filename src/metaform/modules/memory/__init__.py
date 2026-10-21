@@ -276,18 +276,26 @@ class Graph:
     checker: Checker | None = None  # set by a read, so each memory it gives says which of its citations are stale
 
     @classmethod
-    def read(cls, tx: TableTx, checker: Checker | None = None) -> Graph:
+    def read(cls, tx: TableTx, checker: Checker | None = None, names: list[str] | None = None) -> Graph:
         graph = cls(checker=checker)
-        for row in tx.rows('citations', limit=0).results:
+        def rows(table: str, column: str) -> Any:
+            return (tx.rows(table, limit=0).results if names is None
+                    else tx.rows_in(table, column, names))
+        for row in rows('citations', 'entity'):
             graph.citations.setdefault(row['entity'], []).append(row)
-        for row in tx.rows('entities', by=('seq',), limit=0).results:
+        for row in sorted(rows('entities', 'name'), key=lambda row: row['seq']):
             graph.entities[row['name']] = row
             graph.observations[row['name']] = []
-        for row in tx.rows('observations', limit=0).results:
+        for row in rows('observations', 'entity'):
             graph.observations.setdefault(row['entity'], []).append(row)
-        for rows in graph.observations.values():
-            rows.sort(key=lambda row: row['seq'])
-        graph.relations = list(tx.rows('relations', by=('seq',), limit=0).results)
+        for observations in graph.observations.values():
+            observations.sort(key=lambda row: row['seq'])
+        incident = rows('relations', 'source')
+        if names is not None:
+            incident = [*incident, *tx.rows_in('relations', 'target', names)]
+        graph.relations = sorted({(row['source'], row['target'], row['relation_type']): row
+                                  for row in incident}.values(),
+                                 key=lambda row: (row['seq'], row['source'], row['target'], row['relation_type']))
         return graph
 
     def entity(self, name: str) -> dict[str, Any]:
@@ -381,6 +389,15 @@ class View:
         return {'entities': [self.graph.entity(name) for name in self.names],
                 'relations': [Graph.relation(row) for row in self.relations()]}
 
+    def index(self, names: set[str] | None = None) -> list[Row]:
+        """Titles and one-line reasons for discovery, never canonical bodies or body receipts."""
+        return [{'name': name, 'entityType': self.graph.entities[name]['entity_type'],
+                 'title': (first_line(self.graph.title(name), 0) or name)[:160],
+                 'why': (first_line(self.graph.entities[name].get('why') or
+                                    next((one['content'] for one in self.graph.observations.get(name, [])), ''), 0)
+                         or '')[:160]}
+                for name in self.names if names is None or name in names]
+
     def around(self, chosen: list[str]) -> dict[str, Any]:
         """The chosen entities, and every relation with at least one end among them, as the reference returns."""
         picked = set(chosen)
@@ -412,12 +429,14 @@ def _bodies(ctx: Context, graph: Graph, names: list[str]) -> list[Row]:
             if name in graph.entities]
 
 
-def _view(tx: TableTx, key: Key | None, checker: Checker | None = None) -> View:
-    graph = Graph.read(tx, checker)
-    if key is None:
-        return View(graph, list(graph.entities))
-    joined = {row['entity'] for row in _joined(tx, key)}
-    return View(graph, [name for name in graph.entities if name in joined])
+def _view(tx: TableTx, key: Key | None, checker: Checker | None = None,
+          names: list[str] | None = None) -> View:
+    if key is not None:
+        joined = [str(row['entity']) for row in _joined(tx, key)]
+        selected = set(names) if names is not None else None
+        names = [name for name in joined if selected is None or name in selected]
+    graph = Graph.read(tx, checker, names)
+    return View(graph, list(graph.entities))
 
 
 def _by(ctx: Context) -> str | None:
@@ -972,7 +991,7 @@ def delete_relations(ctx: Context) -> Any:
     return given.said({'success': True, 'message': message})
 
 
-def _shown(store: Store, tx: TableTx, view: View) -> View:
+def _shown(store: Store, tx: TableTx, names: list[str]) -> list[str]:
     """The whole graph as it shows with the layers in context: an entity joined to nodes shows where memory reaches
     one of their addresses, as at a node; one joined to none shows while memory reaches the root of the namespace."""
     reach: dict[str, bool] = {}
@@ -983,28 +1002,29 @@ def _shown(store: Store, tx: TableTx, view: View) -> View:
         return reach[address]
 
     at: dict[str, list[str]] = {}
-    for row in tx.rows('joins', by=('receiver', 'provider'), limit=0).results:
+    for row in tx.rows_in('joins', 'entity', names):
         at.setdefault(row['entity'], []).append(row['receiver'])
-    return View(view.graph, [name for name in view.names
-                             if any(reaches(address) for address in at.get(name, ['']))])
+    return [name for name in names if any(reaches(address) for address in at.get(name, ['']))]
 
 
-def _read(ctx: Context, notices: list[dict[str, str]]) -> View | None:
+def _read(ctx: Context, notices: list[dict[str, str]], names: list[str] | None = None) -> View | None:
     store, key = _scope(ctx, notices, carry=False)
     if key is not None and not _reaches(store, key.address):
         return None
     checker = Checker(ctx)  # a read says which citations no longer hold
     with store.tables(write=False) as tx:
         if key is not None:
-            return _view(tx, key, checker)
-        return _shown(store, tx, _view(tx, None, checker))
+            return _view(tx, key, checker, names)
+        if names is None:
+            names = [str(row['name']) for row in tx.rows('entities', by=('seq',), limit=0).results]
+        return _view(tx, None, checker, _shown(store, tx, names))
 
 
 EMPTY: dict[str, list[Any]] = {'entities': [], 'relations': []}
 
 
-def _delivered(ctx: Context, whole: Row, key: Key | None = None, *, unread: bool = False) -> Row:
-    """A graph body read records that exact snapshot; an unread read selects only due canonical bodies."""
+def _delivered(ctx: Context, whole: Row, key: Key | None = None) -> Row:
+    """A canonical graph read records the exact bodies returned."""
     if ctx.session is None:
         return whole
     if key is None:
@@ -1016,13 +1036,13 @@ def _delivered(ctx: Context, whole: Row, key: Key | None = None, *, unread: bool
         names = {str(one['name']) for one in whole.get('entities', [])}
         store = ctx.require_store()
         with store.tables(write=False) as tx:
-            keys = {(str(row['receiver']), str(row['provider'])) for row in tx.rows('joins', limit=0).results
-                    if row['entity'] in names}
+            keys = {(str(row['receiver']), str(row['provider']))
+                    for row in tx.rows_in('joins', 'entity', list(names))}
         for entry in sorted(keys):
             if _reaches(store, entry[0]):
                 delivery.encounter(ctx, entry, epoch=int(prepared['epoch']))
-    delivery.queue(ctx, prepared, all_current=not unread)
-    return cast(Row, prepared['whole']) if unread else whole
+    delivery.queue(ctx, prepared, all_current=True)
+    return whole
 
 
 def read_graph(ctx: Context) -> Any:
@@ -1031,11 +1051,30 @@ def read_graph(ctx: Context) -> Any:
     return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole()))
 
 
+def _index(ctx: Context, view: View, key: Key | None = None) -> Row:
+    """Discovery leaves body receipts untouched, including memories changed only through a relation."""
+    if ctx.session is None:
+        return {'entities': view.index(), 'relations': []}
+    if key is None:
+        key = _named(ctx.require_store(), ctx.nouns, [])
+    prepared = delivery.prepare(ctx, view.whole(), (key.receiver, key.provider) if key else None)
+    _, unread, _ = delivery.counts(prepared)
+    removed = [one for one in prepared['components'] if one['kind'] not in ('entities', 'relations')]
+    result: Row = {'entities': view.index(unread), 'relations': []}
+    for one in removed:
+        if one.get('reference'):
+            result.setdefault('restored', []).append(one['reference'])
+        else:
+            result.setdefault(one['kind'], []).append(one['value'])
+    delivery.queue(ctx, {**prepared, 'components': removed})
+    return result
+
+
 def read_unread(ctx: Context) -> Any:
-    """Unread canonical entities/relations and applicable withdrawals through the requested functional entry."""
+    """List unread titles and one-line reasons; open_nodes reads selected bodies."""
     given = _Given(ctx)
     view = _read(ctx, given.notices)
-    found = dict(EMPTY) if view is None else _delivered(ctx, view.whole(), unread=True)
+    found = dict(EMPTY) if view is None else _index(ctx, view)
     refine = ctx.calls(_prompt('refine')) if found.get('entities') else ''
     if refine:  # reading what is new at a node is the moment to tidy what is there, as the arrival line asks
         given.notices.append({'where': 'refine', 'message': refine})
@@ -1057,7 +1096,7 @@ def search_nodes(ctx: Context) -> Any:
 def open_nodes(ctx: Context) -> Any:
     given = _Given(ctx)
     names = given.texts(ctx.nouns.get('names'), 'names')
-    view = _read(ctx, given.notices)
+    view = _read(ctx, given.notices, names)
     if view is None:
         return given.said(dict(EMPTY))
     return given.said(_delivered(ctx, view.around([name for name in view.names if name in names])))
@@ -1396,20 +1435,24 @@ def node_read(ctx: Context, node: Node) -> Any:
             found['note'] = held
         if not shows:
             return found or None
-        view = _view(tx, key, Checker(ctx))
+        names = [str(row['entity']) for row in _joined(tx, key)]
         if node.kind == 'element':
             for row in [*tx.rows('joins', {'receiver': key.receiver}, by=('receiver', 'provider'), limit=0).results,
                         *tx.rows('joins', {'provider': key.receiver}, limit=0).results]:
-                if row['provider'] and row['entity'] in view.graph.entities:
+                if row['provider']:
                     around.setdefault((row['receiver'], row['provider']), []).append(row['entity'])
-    shown = _delivered(ctx, view.whole(), key, unread=ctx.session is not None)
+        graph = Graph.read(tx, Checker(ctx), list(dict.fromkeys(
+            [*names, *(name for members in around.values() for name in members)])))
+        view = View(graph, [name for name in graph.entities if name in names])
+    shown = _index(ctx, view, key) if ctx.session is not None else _delivered(ctx, view.whole(), key)
     if any(shown.values()):
         found.update(shown)
     sent: set[str] = {str(one['name']) for one in shown.get('entities', [])} if ctx.session is not None else set()
     joined: list[Row] = []
     for (receiver, provider), names in around.items():
-        whole = {'entities': [view.graph.entity(name) for name in names if name not in sent], 'relations': []}
-        bodies = _delivered(ctx, whole, Key(receiver, provider), unread=ctx.session is not None)
+        joined_view = View(graph, [name for name in names if name in graph.entities and name not in sent])
+        bodies = (_index(ctx, joined_view, Key(receiver, provider)) if ctx.session is not None
+                  else _delivered(ctx, joined_view.whole(), Key(receiver, provider)))
         if bodies.get('entities'):
             sent.update(one['name'] for one in bodies['entities'])
             joined.append({'receiver': receiver, 'provider': provider, 'entities': bodies['entities']})
@@ -1433,14 +1476,16 @@ def node_count(ctx: Context, addresses: tuple[str, ...]) -> tuple[Count, ...] | 
     snapshots: dict[str, Row] = {}
     checker = Checker(ctx)
     with store.tables(write=False) as tx:
-        graph = Graph.read(tx, checker)
+        joined = {address: [str(row['entity']) for row in tx.rows(
+            'joins', {'receiver': address, 'provider': ''}, limit=0).results]
+                  for address in dict.fromkeys(addresses) if _reaches(store, address)}
+        graph = Graph.read(tx, checker, list(dict.fromkeys(name for names in joined.values() for name in names)))
         for address in dict.fromkeys(addresses):
             if tx.get('notes', {'receiver': address, 'provider': ''}) is not None:
                 notes[address] = (1, 0, 0)
-            joins = list(tx.rows('joins', {'receiver': address, 'provider': ''}, limit=0).results)
-            if not _reaches(store, address):
+            if address not in joined:
                 continue
-            names = {row['entity'] for row in joins if row['entity'] in graph.entities}
+            names = {name for name in joined[address] if name in graph.entities}
             # A memory whose cited evidence no longer holds is counted as stale, never passed on as sound.
             flagged = sum(1 for name in names if any(checker.held(row) for row in tx.rows(
                 'citations', {'entity': name}, limit=0).results))
@@ -1639,8 +1684,8 @@ MODULE = Module(
                             schema={'type': 'array', 'items': RELATION})), effect='remove'),
         Verb('read_graph', read_graph, 'Read the memories at a node of the map, or the whole memory graph without one.',
              nouns=_at(), effect='read'),
-        Verb('read_unread', read_unread, 'Read applicable unread memory entities, relations and withdrawals through '
-                                       'a functional entry point in this agent\'s current context epoch.',
+        Verb('read_unread', read_unread, 'List unread memory titles and one-line reasons without reading bodies; '
+                                       'use open_nodes for selected memories.',
              nouns=_at(), effect='read'),
         Verb('search_nodes', search_nodes, 'Search memory entities by name, type and observation text, at a node or in '
                                            'the whole memory graph.',

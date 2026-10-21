@@ -2197,15 +2197,15 @@ def test_the_counts_at_a_node_are_told_once_per_session_and_then_only_what_chang
     assert 'changed' not in where('agent-a'), 'its own write is read'
     remember('agent-b', 'code.timer.kitchen', 'theirs')
     [line] = where('agent-a')['changed']
-    assert line.startswith('Unread memories here: 1. Read them with metaform memory read_unread '
-                           'node=element:code.timer.kitchen, then merge repeats and remove'), line
+    assert line.startswith('Unread memories here: 1. List titles with metaform memory read_unread '
+                           'node=element:code.timer.kitchen. Search using'), line
     fresh = where('agent-c')['around']
     assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +2 memories · 2 unread', fresh)
     assert re.search(r'└ code\.alarm\.audible +1 memory · 1 unread', fresh)
-    assert 'Unread memories here: 2. Read them with metaform memory read_unread node=element:code.timer.kitchen' in fresh
+    assert 'Unread memories here: 2. List titles with metaform memory read_unread node=element:code.timer.kitchen' in fresh
     assert 'node=element:code.alarm.audible' not in fresh and '<address>' not in fresh
     monkeypatch.setenv('METAFORM_SESSION', 'agent-e')  # an agent that read everything at the node, then arrives
-    run('memory', 'read_unread', 'node=element:code.timer.kitchen', cwd=mapped)
+    run('memory', 'open_nodes', '["mine","theirs"]', 'node=element:code.timer.kitchen', cwd=mapped)
     arrived = where('agent-e')['around']
     assert re.search(r'▶ code\.timer\.kitchen  kitchen timer +2 memories', arrived), arrived
     assert '2 unread' not in arrived and 'Unread memories' not in arrived, arrived

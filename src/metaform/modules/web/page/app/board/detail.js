@@ -7,34 +7,35 @@ import {richText} from '/page/app/session/text.js';
 
 const DETAIL = {box: null, body: null, serial: 0};
 
-const label = value => String(value ?? '').replace(/[&<>"\n\r]/g,
-  char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\n': ' ', '\r': ' '})[char]);
-
-/* Observations are distinct graph nodes; relations keep their recorded direction and type. */
-export function memoryMarkdown(graph) {
-  const names = new Map(), lines = ['```mermaid', 'flowchart LR'];
-  const entity = name => {
-    if (!names.has(name)) {
-      names.set(name, `e${names.size}`);
-      lines.push(`  ${names.get(name)}["${label(name)}"]`);
-    }
-    return names.get(name);
-  };
-  let fact = 0;
-  for (const one of graph.entities || []) {
-    const id = entity(one.name);
-    for (const observation of one.observations || []) {
-      const node = `o${fact++}`;
-      lines.push(`  ${node}["${label(typeof observation === 'string' ? observation : observation.content)}"]`);
-      lines.push(`  ${id} -->|observation| ${node}`);
-    }
-  }
-  for (const relation of graph.relations || []) {
-    const from = entity(relation.from), to = entity(relation.to);
-    lines.push(`  ${from} -->|"${label(relation.relationType)}"| ${to}`);
-  }
-  lines.push('```');
-  return names.size ? lines.join('\n') : '';
+/* Opening one title reads only that memory's body, in the ticket's original project and base. */
+function memoryList(graph, scope, node) {
+  if (!(graph.entities || []).length) return h('p', {class: 'hint'},
+    graph.unavailable || 'No memories are attached here.');
+  return h('div', {class: 'ticket-memories'}, graph.entities.map(one => {
+    const body = h('div', {class: 'memory-body'});
+    let loaded = false, pending = false;
+    const entry = h('details', {'data-name': one.name},
+      h('summary', {title: one.why || ''}, one.title || one.name), body);
+    entry.addEventListener('toggle', async () => {
+      if (!entry.open || loaded || pending) return;
+      pending = true;
+      fill(body, h('p', {}, 'Loading memory…'));
+      try {
+        const found = await read('memory-open_nodes', {...scope, node, name: one.name});
+        const memory = (found.entities || []).find(entity => entity.name === one.name);
+        if (!memory) throw new Error('This memory is no longer attached here.');
+        fill(body, h('p', {}, `${memory.name} (${memory.entityType})`),
+          h('ul', {}, (memory.observations || []).map(observation => h('li', {},
+            typeof observation === 'string' ? observation : observation.content))),
+          (found.relations || []).length ? h('ul', {class: 'memory-relations'}, found.relations.map(relation =>
+            h('li', {}, `${relation.from} → ${relation.relationType} → ${relation.to}`))) : null);
+        loaded = true;
+      } catch (error) {
+        fill(body, h('p', {role: 'alert'}, error.message));
+      } finally { pending = false; }
+    });
+    return entry;
+  }));
 }
 
 export async function ticketDetail(workId, project = S.project, base = S.base || '') {
@@ -79,8 +80,7 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
       } finally { save.disabled = false; }
     }}, h('label', {}, 'Title', title), h('label', {}, 'Task', task), h('label', {}, 'Note', note),
     h('div', {class: 'row'}, h('label', {class: 'kind'}, 'Kind', kind), h('span', {class: 'grow'}), status, save));
-    const memory = memoryMarkdown(data.memories);
-    // the node the ticket is at and who works it, on one line; the diagrams below the form, each a pane opened on
+    // the node the ticket is at and who works it, on one line; context below the form, each pane opened on
     // purpose with room to read, never a strip a few lines tall (the person's report, 2026-10-20)
     const expertise = data.routing ? h('span', {class: 'pill expertise',
       title: data.routing.role ? 'The specialist expertise assigned to this ticket' : 'How a specialist is being chosen'},
@@ -92,9 +92,8 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
       form,
       h('details', {class: 'pane'}, h('summary', {}, 'Functional context'),
         h('div', {class: 'ticket-graph'}, ...richText(data.functionality.markdown))),
-      h('details', {class: 'pane'}, h('summary', {}, 'Memory graph'), memory
-        ? h('div', {class: 'ticket-graph'}, ...richText(memory))
-        : h('p', {class: 'hint'}, data.memories.unavailable || 'No memories are attached here.')));
+      h('details', {class: 'pane'}, h('summary', {}, 'Memories'),
+        memoryList(data.memories, scope, `${ticket.node_kind}:${ticket.node_id}`)));
   } catch (error) {
     if (serial === DETAIL.serial) fill(DETAIL.body, h('p', {role: 'alert'}, error.message));
   }

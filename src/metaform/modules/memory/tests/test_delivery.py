@@ -1,4 +1,4 @@
-"""Memory bodies reach actual MCP responses once per identity/revision/context epoch, with relevant live notices."""
+"""Discovery lists titles while canonical reads acknowledge selected bodies in each context epoch."""
 from __future__ import annotations
 
 import asyncio
@@ -51,14 +51,127 @@ def mcp_read(project, address=A, *, session='worker', name='memory_read_unread',
     return result[2]
 
 
+def mcp_open(project, names=('shared',), address=A, *, session='worker', shape=None):
+    return mcp_read(project, address, session=session, name='memory_open_nodes', shape=shape, names=list(names))
+
+
+def test_dispatcher_sized_agent_context_lists_titles_then_reads_only_matched_bodies(project, record_property):
+    """A busy functional entry must not dump its 55 entities and 232 observations into agent context."""
+    from metaform.data import Node
+    from metaform.modules.memory import create_entities, node_count, node_read, read_graph
+
+    address = 'code.dispatcher.agent'
+    store = Store('memory-delivery')
+    with store.atomic():
+        store.add_element('intake', address, name_length=2, role='DE')
+    entities = []
+    for number in range(55):
+        observations = [f'Dispatch memory {number:02d} observation {fact} retains '
+                        + 'receipt identity ' * 3 + 'across tool response shaping.'
+                        for fact in range(4 + (number < 12))]
+        if number == 17:
+            observations[0] = 'Dispatch preserves session identity across nested module hooks and shaped tool responses.'
+        entities.append({'name': f'dispatch-rule-{number:02d}', 'entityType': 'constraint',
+                         'title': f'Dispatch rule {number:02d}', 'why': 'Keeps dispatcher context relevant.',
+                         'observations': observations})
+    create_entities(reading(project, node=f'element:{address}', entities=entities))
+    whole = read_graph(reading(project, node=f'element:{address}'))
+    assert len(whole['entities']) == 55
+    assert sum(len(one['observations']) for one in whole['entities']) == 232
+    before = len(json.dumps(whole).encode())
+    assert 28_000 <= before <= 36_000
+
+    ctx = reading(project, session='context-worker')
+    context = node_read(ctx, Node('element', address))
+    preview = mcp_read(project, address, session='context-worker')
+    for listed in (context, preview):
+        assert len(listed['entities']) == 55 and listed['relations'] == []
+        assert all(set(one) == {'name', 'entityType', 'title', 'why'} for one in listed['entities'])
+        assert 'preserves session identity' not in json.dumps(listed)
+    after = len(json.dumps(context).encode())
+    record_property('memory_body_bytes_before', before)
+    record_property('memory_context_bytes_after', after)
+    assert after < before / 3
+    assert node_count(ctx, (address,))[0].at[address][1] == 55
+
+    matched = mcp_read(project, address, session='search-worker', name='memory_search_nodes',
+                       query='preserves session identity')
+    assert [one['name'] for one in matched['entities']] == ['dispatch-rule-17']
+    assert matched['entities'][0]['observations'] == entities[17]['observations']
+    assert node_count(reading(project, session='search-worker'), (address,))[0].at[address][1] == 54
+    opened = mcp_open(project, ('dispatch-rule-17',), address, session='context-worker')
+    assert opened == matched
+    assert node_count(ctx, (address,))[0].at[address][1] == 54
+
+
+def test_scoped_reads_materialize_no_unrelated_or_hidden_bodies(project, monkeypatch, run):
+    from collections import Counter
+
+    from metaform.data.tables import TableTx
+    from metaform.modules.memory import create_entities, create_relations, node_count, open_nodes, read_graph
+
+    source = project / 'route.py'
+    source.write_text('def route():\n    return 1\n')
+    create_entities(reading(project, node=f'element:{A}', entities=[
+        {'name': 'shared', 'entityType': 'constraint', 'observations': ['Routes keep their identities.'],
+         'why': 'Keeps receipts stable.', 'cite': ['route.py:2']},
+        {'name': 'linked', 'entityType': 'constraint', 'observations': ['Relations preserve route identity.'],
+         'why': 'Keeps relations stable.'}]))
+    create_relations(reading(project, relations=[{'from': 'shared', 'to': 'linked', 'relationType': 'requires'}]))
+    materialized = Counter()
+    original = TableTx._row
+
+    def row(tx, table, value):
+        if table.name in ('observations', 'citations', 'relations'):
+            materialized[table.name] += 1
+        return original(tx, table, value)
+
+    monkeypatch.setattr(TableTx, '_row', row)
+
+    def measure():
+        results = []
+        for operation in (
+            lambda: read_graph(reading(project, node=f'element:{A}')),
+            lambda: open_nodes(reading(project, names=['shared'])),
+            lambda: node_count(reading(project, session='scoped-reader'), (A,)),
+        ):
+            materialized.clear()
+            operation()
+            results.append(dict(materialized))
+        return results
+
+    before = measure()
+    assert all(all(one.get(table, 0) for table in ('observations', 'citations', 'relations')) for one in before)
+    create_entities(reading(project, node=f'element:{B}', entities=[
+        {'name': f'unrelated-{number}', 'entityType': 'constraint',
+         'observations': [f'Unrelated rule {number} retains fact {fact}.' for fact in range(4)],
+         'why': 'Supports another entry.', 'cite': ['route.py:2']}
+        for number in range(60)]))
+    create_relations(reading(project, relations=[
+        {'from': f'unrelated-{number}', 'to': f'unrelated-{number + 1}', 'relationType': 'requires'}
+        for number in range(59)]))
+    assert measure() == before, 'Unrelated graph growth must not increase body materialization.'
+
+    run('map', 'mask', A, 'memory', cwd=project)
+    for operation in (
+        lambda: read_graph(reading(project, node=f'element:{A}')),
+        lambda: open_nodes(reading(project, names=['shared'])),
+    ):
+        materialized.clear()
+        assert operation() == {'entities': [], 'relations': []}
+        assert not materialized, 'Hidden selections must be filtered before body rows are materialized.'
+
+
 def test_same_identity_at_two_entries_is_delivered_once_but_distinct_memories_remain_distinct(project):
     from metaform.modules.memory import join
     make(project)
     join(reading(project, entity='shared', node=f'element:{B}'))
     make(project, name='separate', address=B)
     assert [one['name'] for one in mcp_read(project)['entities']] == ['shared']
+    mcp_open(project)
     second = mcp_read(project, B)
     assert [one['name'] for one in second['entities']] == ['separate']
+    mcp_open(project, ('separate',), B)
     assert mcp_read(project, A) == {'entities': [], 'relations': []}
     assert {one['name'] for one in mcp_read(project, B, session='replacement')['entities']} == {'shared', 'separate'}
 
@@ -75,6 +188,8 @@ def test_count_and_shaped_away_body_do_not_mark_read(project):
     mcp_read(project, name='memory_read_graph', shape=shape)
     assert node_count(ctx, (A,))[0].at[A] == (1, 1, 0)
     assert mcp_read(project)['entities'][0]['name'] == 'shared'
+    assert node_count(ctx, (A,))[0].at[A] == (1, 1, 0)
+    mcp_open(project)
     assert node_count(ctx, (A,))[0].at[A] == (1, 0, 0)
 
 
@@ -95,7 +210,9 @@ def test_nested_map_and_item_reads_use_transport_identity_and_ack_only_emitted_b
     read('map_where', args, 'map-http-worker', shaping.Shape(view='count'))
     assert node_count(reading(project, session='map-http-worker'), (A,))[0].at[A][1] == 1
     shown = read('map_where', args, 'map-http-worker')
-    assert 'Routes remain usable.' in json.dumps(shown)
+    assert 'observations' not in json.dumps(shown)
+    assert node_count(reading(project, session='map-http-worker'), (A,))[0].at[A][1] == 1
+    mcp_open(project, session='map-http-worker')
     assert node_count(reading(project, session='map-http-worker'), (A,))[0].at[A][1] == 0
     assert node_count(reading(project, session='unrelated-process-session'), (A,))[0].at[A][1] == 1
 
@@ -115,7 +232,7 @@ def test_nested_map_and_item_reads_use_transport_identity_and_ack_only_emitted_b
 def test_same_count_correction_is_unread_to_a_grounded_agent_until_it_reads_the_body(project):
     from metaform.modules.memory import add_observations, delete_observations, delivery, node_count
     make(project)
-    mcp_read(project)
+    mcp_open(project)
     ctx = reading(project, session='worker')
     before = delivery.revision('memory-delivery', A)
     events.announce(project, 'cli')
@@ -133,7 +250,9 @@ def test_same_count_correction_is_unread_to_a_grounded_agent_until_it_reads_the_
     count = node_count(ctx, (A,))[0]
     assert count.at[A] == (1, 1, 0) and count.updated[A] == 1
     assert 'memory read_unread' in count.legend and node_count(ctx, (A,))[0].at[A][1] == 1, 'a count reads no body'
-    assert mcp_read(project)['entities'][0]['observations'] == ['Routes survive interrupted work.']
+    assert mcp_read(project)['entities'][0]['name'] == 'shared'
+    assert node_count(ctx, (A,))[0].at[A][1] == 1
+    assert mcp_open(project)['entities'][0]['observations'] == ['Routes survive interrupted work.']
     assert node_count(ctx, (A,))[0].at[A][1] == 0
 
 
@@ -142,8 +261,8 @@ def test_a_write_is_never_an_unread_notice_to_the_session_that_wrote_it(project)
     memory. The writer receives what it wrote; another agent's change it has not read stays unread to it."""
     from metaform.modules.memory import add_observations, node_count
     make(project)
-    mcp_read(project)
-    mcp_read(project, session='other')
+    mcp_open(project)
+    mcp_open(project, session='other')
     events.announce(project, 'cli')
 
     def observe(session, text):
@@ -165,24 +284,25 @@ def test_revision_written_during_response_remains_unread(project, monkeypatch):
     from metaform.modules.memory import add_observations, node_count
 
     make(project)
-    served = tools(project)['memory_read_unread'][1].run.__globals__
+    served = tools(project)['memory_open_nodes'][1].run.__globals__
     original = served['_delivered']
     changed = False
 
-    def during_read(ctx, whole, key=None, *, unread=False):
+    def during_read(ctx, whole, key=None):
         nonlocal changed
-        result = original(ctx, whole, key, unread=unread)
+        result = original(ctx, whole, key)
         if not changed:
             changed = True
             add_observations(reading(project, observations=[{'entityName': 'shared',
                                                             'contents': ['A later revision arrived.']}]))
         return result
     monkeypatch.setitem(served, '_delivered', during_read)
-    first = mcp_read(project)
+    first = mcp_open(project)
     assert changed
     assert first['entities'][0]['observations'] == ['Routes remain usable.']
     assert node_count(reading(project, session='worker'), (A,))[0].updated[A] == 1
-    second = mcp_read(project)
+    assert mcp_read(project)['entities'][0]['name'] == 'shared'
+    second = mcp_open(project)
     assert second['entities'][0]['observations'] == ['Routes remain usable.', 'A later revision arrived.']
     assert mcp_read(project) == {'entities': [], 'relations': []}
 
@@ -193,21 +313,26 @@ def test_entity_and_relation_deletions_are_retrievable_and_new_sessions_receive_
     make(project, name='echo', address=B)
     edge = {'from': 'echo', 'to': 'route', 'relationType': 'checks'}
     create_relations(reading(project, relations=[edge]))
-    assert mcp_read(project)['relations'] == [edge]
+    assert mcp_read(project)['relations'] == []
+    assert mcp_open(project, ('route',))['relations'] == [edge]
     assert mcp_read(project, B)['relations'] == []
+    mcp_open(project, ('echo',), B)
     delete_relations(reading(project, relations=[edge]))
     removed = mcp_read(project, B)
-    assert removed == {'entities': [], 'relations': [], 'deleted_relations': [edge]}
+    assert removed['relations'] == [] and removed['deleted_relations'] == [edge]
+    assert [one['name'] for one in removed['entities']] == ['echo']
     assert mcp_read(project, A) == {'entities': [], 'relations': []}
     create_relations(reading(project, relations=[edge]))
     restored = mcp_read(project)
-    assert restored['relations'] == [] and len(restored['restored']) == 1
-    assert restored['restored'][0]['name'].startswith('memory:relation:')
+    assert restored['relations'] == []
+    assert mcp_read(project)['entities'] == restored['entities'], 'Discovery does not acknowledge restoration.'
+    assert [one['name'] for one in restored['entities']] == ['route']
+    assert mcp_open(project, ('route',))['relations'] == [edge]
     delete_entities(reading(project, entityNames=['route']))
     result = mcp_read(project)
     assert result['deleted_entities'] == ['route'] and len(result['restored']) == 1
-    assert result['restored'][0]['fingerprint'] != restored['restored'][0]['fingerprint']
-    assert mcp_read(project) == {'entities': [], 'relations': []}, 'The active version reference is delivered once.'
+    assert result['restored'][0]['name'].startswith('memory:relation:')
+    assert mcp_read(project) == {'entities': [], 'relations': []}, 'Withdrawals are delivered once.'
     assert mcp_read(project, session='new') == {'entities': [], 'relations': []}
     with Store('memory-delivery', module='memory').tables(write=False) as tx:
         assert not tx.rows('joins', {'entity': 'route'}, limit=0).results
@@ -216,7 +341,7 @@ def test_entity_and_relation_deletions_are_retrievable_and_new_sessions_receive_
 
 def test_compaction_makes_current_memory_due_again(project):
     make(project)
-    mcp_read(project)
+    mcp_open(project)
     assert mcp_read(project)['entities'] == []
     advance_agent_context(project, 'worker', project='memory-delivery', reason='compaction')
     assert mcp_read(project)['entities'][0]['name'] == 'shared'
@@ -237,6 +362,7 @@ def test_author_knows_its_writes_but_does_not_acknowledge_other_agents_changes(p
          'why': 'Supports delivery.'}]})
     assert mcp_read(project, session='author')['entities'] == []
     assert mcp_read(project, session='peer')['entities'][0]['name'] == 'own'
+    mcp_open(project, ('own',), session='peer')
 
     write('memory_add_observations', {'observations': [
         {'entityName': 'own', 'contents': ['Own correction.']},
@@ -244,7 +370,8 @@ def test_author_knows_its_writes_but_does_not_acknowledge_other_agents_changes(p
     assert mcp_read(project, session='author')['entities'] == []
     add_observations(reading(project, observations=[{'entityName': 'own', 'contents': ['Unseen peer correction.']}]))
     write('memory_add_observations', {'observations': [{'entityName': 'own', 'contents': ['Another own fact.']}]})
-    assert 'Unseen peer correction.' in mcp_read(project, session='author')['entities'][0]['observations']
+    assert mcp_read(project, session='author')['entities'][0]['name'] == 'own'
+    assert 'Unseen peer correction.' in mcp_open(project, ('own',), session='author')['entities'][0]['observations']
 
     write('memory_delete_observations', {'deletions': [{'entityName': 'own', 'observations': ['Own correction.']}]})
     assert mcp_read(project, session='author')['entities'] == []
@@ -277,7 +404,10 @@ def test_memory_changes_are_read_contextually_without_an_extra_turn(project, mon
         assert not runner.pending, 'Memory changes must not schedule an automatic model turn.'
         result = await answer(project, 'memory_read_unread', {'node': f'element:{A}'}, session='worker')
         assert result[0] is False and result[2]['entities']
-        assert 'Peer correction 2.' in result[2]['entities'][0]['observations']
+        assert 'observations' not in result[2]['entities'][0]
+        opened = await answer(project, 'memory_open_nodes', {'node': f'element:{A}', 'names': ['shared']},
+                              session='worker')
+        assert opened[0] is False and 'Peer correction 2.' in opened[2]['entities'][0]['observations']
         again = await answer(project, 'memory_read_unread', {'node': f'element:{A}'}, session='worker')
         assert again[0] is False and again[2] == {'entities': [], 'relations': []}
         await runner.prompted()
@@ -295,15 +425,17 @@ def test_author_knows_relation_and_index_changes_while_peers_receive_withdrawals
     make(project, name='route')
     make(project, name='echo', address=B)
     for session in ('author', 'peer'):
-        mcp_read(project, session=session)
-        mcp_read(project, B, session=session)
+        mcp_open(project, ('route',), session=session)
+        mcp_open(project, ('echo',), B, session=session)
     edge = {'from': 'echo', 'to': 'route', 'relationType': 'checks'}
     def write(name, arguments):
         result = asyncio.run(answer(project, name, arguments, session='author'))
         assert result[0] is False, result[1]
         assert not any(mcp_read(project, session='author').values())
     write('memory_create_relations', {'relations': [edge]})
-    assert mcp_read(project, session='peer')['relations'] == [edge]
+    preview = mcp_read(project, session='peer')
+    assert preview['relations'] == [] and [one['name'] for one in preview['entities']] == ['route']
+    assert mcp_open(project, ('route',), session='peer')['relations'] == [edge]
     write('memory_delete_relations', {'relations': [edge]})
     assert mcp_read(project, session='peer')['deleted_relations'] == [edge]
     with Store('memory-delivery', module='memory').tables(write=False) as tx:
@@ -319,6 +451,9 @@ def test_separate_cli_processes_share_memory_receipts_and_epoch(project, run):
     env = {'METAFORM_SESSION': 'separate-process-worker'}
     first = run('memory', 'read_unread', f'node=element:{A}', '--json', cwd=project, env=env, isolated=True)
     assert json.loads(first.stdout)['entities'][0]['name'] == 'shared'
+    opened = run('memory', 'open_nodes', '["shared"]', f'node=element:{A}', '--json',
+                 cwd=project, env=env, isolated=True)
+    assert json.loads(opened.stdout)['entities'][0]['observations'] == ['Routes remain usable.']
     second = run('memory', 'read_unread', f'node=element:{B}', '--json', cwd=project, env=env, isolated=True)
     assert json.loads(second.stdout) == {'entities': [], 'relations': []}
 
@@ -361,7 +496,7 @@ def test_the_notice_counts_what_read_unread_returns_for_a_memory_whose_citation_
         {'name': 'shared', 'entityType': 'behavior', 'observations': ['Routes return one.'], 'why': 'Supports it.',
          'cite': ['route.py:2']}]))
     (project / 'route.py').write_text('def route():\n    return 2\n')
-    assert mcp_read(project)['entities'][0]['stale']
+    assert mcp_open(project)['entities'][0]['stale']
     ctx = reading(project, session='worker')
     assert node_count(ctx, (A,))[0].at[A][1] == 0
     assert mcp_read(project) == {'entities': [], 'relations': []}
@@ -382,20 +517,20 @@ def test_a_memory_whose_cited_text_moves_again_is_not_read_again_and_one_whose_c
     create_entities(reading(project, node=f'element:{A}', entities=[
         {'name': 'shared', 'entityType': 'behavior', 'observations': ['Routes return one.'], 'why': 'Supports it.',
          'cite': ['route.py:2']}]))
-    assert 'stale' not in mcp_read(project)['entities'][0]
+    assert 'stale' not in mcp_open(project)['entities'][0]
     source.write_text('# above\ndef route():\n    return 1\n')
     count = node_count(ctx, (A,))[0]
     assert (count.at[A][1], count.updated[A]) == (1, 1)
-    assert mcp_read(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed; the cited text is now at line 3']
+    assert mcp_open(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed; the cited text is now at line 3']
     source.write_text('# above\n# and above\ndef route():\n    return 1\n')
     assert node_count(ctx, (A,))[0].at[A][1] == 0
     assert mcp_read(project) == {'entities': [], 'relations': []}
-    assert mcp_read(project, session='another')['entities'][0]['stale'] == [
+    assert mcp_open(project, session='another')['entities'][0]['stale'] == [
         'route.py:2: line 2 changed; the cited text is now at line 4']
     source.write_text('# above\n# and above\ndef route():\n    return 2\n')
     count = node_count(ctx, (A,))[0]
     assert (count.at[A][1], count.updated[A]) == (1, 1)
-    assert mcp_read(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
+    assert mcp_open(project)['entities'][0]['stale'] == ['route.py:2: line 2 changed']
 
 
 def test_a_memory_made_again_after_its_delete_is_read_once_and_not_withdrawn_again_at_another_node(project):
@@ -406,8 +541,8 @@ def test_a_memory_made_again_after_its_delete_is_read_once_and_not_withdrawn_aga
     make(project)
     join(reading(project, entity='shared', node=f'element:{B}'))
     make(project, name='separate', address=B)
-    mcp_read(project)
-    mcp_read(project, B)
+    mcp_open(project)
+    mcp_open(project, ('shared', 'separate'), B)
     delete_entities(reading(project, node=f'element:{B}', entityNames=['separate']))
     assert mcp_read(project, B)['deleted_entities'] == ['separate']
     delete_entities(reading(project, node=f'element:{A}', entityNames=['shared']))
@@ -415,7 +550,8 @@ def test_a_memory_made_again_after_its_delete_is_read_once_and_not_withdrawn_aga
     store = Store('memory-delivery', module='memory')
     with store.tables(write=False) as tx:
         assert tx.get('withdrawals', {'receiver': B, 'provider': '', 'component': 'memory:entity:separate'})
-    assert mcp_read(project)['entities'][0]['observations'] == ['Routes are remade.']
+    assert mcp_read(project)['entities'][0]['name'] == 'shared'
+    assert mcp_open(project)['entities'][0]['observations'] == ['Routes are remade.']
     assert mcp_read(project, B) == {'entities': [], 'relations': [], 'withdrawn': [{'name': 'shared', 'address': B}]}
     for _ in range(3):
         assert mcp_read(project, B) == {'entities': [], 'relations': []}

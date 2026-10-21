@@ -1209,12 +1209,17 @@ class Handler(BaseHTTPRequestHandler):
     def memory_read(self, name: str, given: dict[str, str]) -> None:
         """A read of the memory module for the page, VIEW-031 and VIEW-034: `graph`, the whole graph with each join
         saying whether its memory shows at its node in the page's layers; `orphaned`, the memory joins the map no longer
-        holds, for the orphaned menu; and `note`, a node's one note."""
+        holds, for the orphaned menu; `note`, a node's one note; and `open_nodes`, one named memory's body."""
         if name not in MEMORY_READS:
             return self.send(404, {'error': f'No read memory-{name}.'})
         arguments = {'node': given['node']} if name == 'note' and given.get('node') else {}
         try:
-            found = module_verb(given, 'memory', name, arguments)
+            if name == 'open_nodes':
+                arguments = {'names': [given.get('name', '')], 'node': given.get('node', '')}
+                _, folder = project_folder(given)
+                visible = chosen_layers(given, folder)
+                given = {**given, 'layers': ','.join([*visible, 'memory'])} if visible else given
+            found = module_verb(given, 'memory', name, arguments, chosen=name == 'open_nodes')
         except (Stop, StoreError) as error:
             return self.refuse(error, 404 if isinstance(error, StoreError) else 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
@@ -1752,7 +1757,7 @@ class Handler(BaseHTTPRequestHandler):
                 visible = chosen_layers(given, Path(store.project().path))
                 # Inspecting memories enables their layer for this read; node masks still apply.
                 memory_scope = {**given, 'layers': ','.join([*visible, 'memory'])} if visible else given
-                memories = module_verb(memory_scope, 'memory', 'read_graph',
+                memories = module_verb(memory_scope, 'memory', 'read_unread',
                                        {'node': f'{work.node_kind}:{work.node_id}'}, chosen=True)
             except (Stop, StoreError) as error:
                 memories['unavailable'] = str(error)
@@ -3419,7 +3424,7 @@ def ticket_revision(fields: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
 
 
-MEMORY_READS = ('graph', 'orphaned', 'note')  # the memory module's reads the page makes, VIEW-031 and VIEW-034
+MEMORY_READS = ('graph', 'orphaned', 'note', 'open_nodes')  # the memory module's reads the page makes
 MEMORY_WRITES = ('create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations',
                  'delete_relations', 'unjoin', 'lock', 'unlock')  # the person's memory commands, VIEW-031, CTX-023
 ADDITIONS = 'additions'  # the knowledge layer that holds what people add to the map by hand, VIEW-033

@@ -1133,7 +1133,9 @@ def test_functional_memory_prompt_preserves_selected_edits_placeholders_and_sour
     from metaform.modules.memory import PACKAGE, memory_prompt
     shipped = prompt_files.text(PACKAGE, 'instructions')
     assert 'create_entities skips existing names' in shipped
-    assert 'Read applicable unread memories at the functionality' in shipped
+    assert "Use search_nodes with your task's own words" in shipped
+    assert 'Use open_nodes on the matches that bear on the task' in shipped
+    assert 'Use read_graph only when the whole graph is needed' in shipped
     assert memory_prompt('proj', 'code.manager.route') == shipped == memory_prompt('proj')
     edited = prompts.save_prompt('memory:instructions', 'Work on {project} at {element}.')
     assert memory_prompt('proj', 'code.manager.route') == 'Work on proj at code.manager.route.'

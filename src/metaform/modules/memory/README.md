@@ -34,7 +34,7 @@ When a correction replaces an address, `metaform memory rekey <old-address> <new
 
 `create_entities` skips existing names, including their observations, citations and index associations. `add_observations` extends existing knowledge. `join entity=<name> node=element:<address>` associates an existing entity with another functional entry without copying it. The three canonical delete operations maintain unlocked knowledge directly under the configured controls. Deleting an entity removes its observations, citations, incident relations and functional index associations. Locks continue to protect their entities and associations.
 
-`read_unread` returns only entities, relations and withdrawals not yet received in the actual agent's current context epoch. `read_graph`, `search_nodes`, `open_nodes` and item reads remain available for inspection and record the exact bodies they return. One entity indexed at two functional entries shares a receipt; different names remain distinct even with identical observations. MCP response shaping acknowledges only complete bodies that survived shaping. A later concurrent revision stays unread. Completed compaction advances the shared epoch and makes current grounding eligible again.
+`read_unread` lists unread memories by `name`, `entityType`, `title` and one-line `why`, limited to 160 characters per title and reason. The reason uses the stored why, falling back to the first observation line. It returns applicable withdrawals without memory bodies. Listing never acknowledges an entity or relation body. Search using the task's own words at its functional node, then open relevant matches. Use `read_graph` only when the whole graph is needed. `read_graph`, `search_nodes`, `open_nodes` and item reads remain available for inspection and record the exact bodies they return. One entity indexed at two functional entries shares a receipt; different names remain distinct even with identical observations. MCP response shaping acknowledges only complete bodies that survived shaping. A later concurrent revision stays unread. Completed compaction advances the shared epoch and makes current grounding eligible again.
 
 ## Settings
 
@@ -42,7 +42,7 @@ None.
 
 ## Events
 
-A graph mutation uses the existing `map.changed` relay with `memory.changed`, affected `memory:<address>` kinds and the session IDs that already encountered those functional entries. No notice is pushed to any agent when memory changes (2026-10-19, code.dispatcher.agent#72): an agent is told of unread memory only when it reads the node it works on, as one line naming the unread count there and the `read_unread` call, with the request to merge repeats and remove what is stale; nothing is said there when all is read. Being told does not clear body unread state. Entry revisions also drive MCP resource updates and map summaries when an edit or deletion leaves item numbers and totals unchanged. Unrelated events are filtered before reads.
+A graph mutation uses the existing `map.changed` relay with `memory.changed`, affected `memory:<address>` kinds and the session IDs that already encountered those functional entries. No notice is pushed to any agent when memory changes (2026-10-19, code.dispatcher.agent#72): an agent is told of unread memory only when it reads the node it works on, as one line naming the unread count there and the `read_unread` title-list call, with selective search/open guidance and memory upkeep; nothing is said there when all is read. Being told does not clear body unread state. Entry revisions also drive MCP resource updates and map summaries when an edit or deletion leaves item numbers and totals unchanged. Unrelated events are filtered before reads.
 
 ## Sync and async
 
@@ -58,9 +58,11 @@ Project-level tables are `entities`, `observations`, `relations`, `joins`, `note
 
 Citation evidence and stale checks keep their existing behavior. A citation may name `path:line`, `path:start-end`, `path:symbol` or a path relative to the project. A citation is checked against its file as it read when the citation was last written: giving it again in a write keeps it as the file reads then, and `add_observations` that adds to a memory does the same for each whole file the memory cites, so a memory brought up to date after its file changed is not stale; a cited line span moves only when given again. Observation and association author/session fields remain available for provenance. Associations stay keyed by functional addresses, so an intake at the same address reconnects them and `orphaned` lists absent entry points.
 
+Local graph reads resolve visibility and functional joins before materializing bodies. Named reads materialize only selected entities and their incident relations. Explicit whole-graph reads stay complete.
+
 ## Node read
 
-`node_read` adds the person's note and applicable memory bodies to `map node` and `map where contents=true`; agent contexts receive only unread bodies. Join entry points retain their receiver/provider identity. `node_count` reports totals, actual unread and updated identities, stale evidence and notes, without acknowledging body receipt. The existing memory-layer visibility, selection and masking rules determine what applies.
+`node_read` adds the person's note and applicable memory bodies to `map node` and `map where contents=true`; agent contexts receive unread titles and one-line reasons, with bodies available through `search_nodes` and `open_nodes`. Join entry points retain their receiver/provider identity. `node_count` reports totals, actual unread and updated identities, stale evidence and notes, without acknowledging body receipt. The existing memory-layer visibility, selection and masking rules determine what applies.
 
 ## Lifecycle and cleanup
 

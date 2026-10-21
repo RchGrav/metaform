@@ -4,21 +4,22 @@
      An empty element inside a prompt, such as <name/>, would mark a place the code fills in; this file has none.
      Comments are never sent. -->
 <prompts>
-<!-- memory's step in the order of work: read the memories at the node and record findings there. Printed under the
+<!-- memory's step in the order of work: search relevant memories at the node and maintain findings there. Printed
+     under the
      opening line of the compact command-line guide, after the map module's step, once the project has a finished intake.
      Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out.
      A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing
      what is learned. -->
-<orient>2. Read the memories on that element, which map where lists. Record what happened in the work there as memory, and what is now known to be true of the project in the map's knowledge layers, as the shared memory instructions, metaform://memory, say: metaform instructions memory.</orient>
+<orient>2. Search memories at that element using your task's own words, then open relevant matches. Maintain durable knowledge as metaform://memory explains. Keep progress and results in work records.</orient>
 <!-- The one line an agent is told when it arrives at the node it works on, its own read of that node (map where, the
      ticket read, the handoff), and only while memories there are unread in its current context: how many, the call
-     that reads them, and that reading them is the moment to tidy them, since memory that only grows makes every arrival
+     that lists titles without bodies, and that maintaining memory includes tidying it, since growing memory makes arrival
      cost more to read and buries what matters. Nothing is said when every memory there is read, and nothing is pushed
      when memories change (2026-10-19, code.dispatcher.agent#72). Over MCP the command is named as its tool. <unread/> is
-     the count unread at the node; <read_unread/> the call, its <address> filled with the node. Empty leaves the line out
+     the count unread at the node; <read_unread/> the title-list call, its <address> filled with the node. Empty omits it
      and the counts stand alone. -->
 <counts>
-Unread memories here: <unread/>. Read them with <read_unread/>, then merge repeats and remove the observations and entities that are outdated or no longer help the next agent.
+Unread memories here: <unread/>. List titles with <read_unread/>. Search using your task's own words, then open relevant matches. Merge repeats and remove outdated observations and entities when maintaining memory.
 </counts>
 <!-- Said with what read_unread returns, as one of its notices, whenever it returns memories: reading what is new at a
      node is when the agent tidies the memory there, since memory that only grows makes every arrival cost more to read
@@ -39,9 +40,9 @@ Before you add to this node's memory, merge repeats into one observation and del
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
      memory. Off when the module is disabled or the folder's modules setting leaves it out. A draft, CTX-029, awaiting
      the owner's approval of its wording. -->
-<connect>– memory: read and record what happened in the work at a node, on its RE</connect>
-<!-- The owner's memory prompt, CTX-026, word for word: how every agent reads what happened in the work before it
-     begins, and records what happens as memory and what is true of the project as knowledge. Its address is
+<connect>– memory: search and maintain durable knowledge at a functional node, on its RE</connect>
+<!-- The shared memory prompt, CTX-026: agents search task-relevant knowledge, open selected memories, and maintain
+     durable entities, atomic observations and directed relations. Its address is
      prompt.memory:instructions. Its braced places are filled when it is sent, CTX-027: {project} with the project's
      id, {element} with the address of the element the agent is assigned (a join's receiver). {this} is not
      filled here: it names the subject a prompt or workflow is linked to. An agent with no assigned element gets the whole line-2 bullet swapped for
@@ -57,7 +58,7 @@ Before you add to this node's memory, merge repeats into one observation and del
      memory module is disabled or the folder's modules setting leaves it out. -->
 <instructions>
 Use the Metaform map as the index into this project's memory. Functional nodes and joins are entry points to the knowledge that is relevant there.
-Read applicable unread memories at the functionality you work on. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.
+Use search_nodes with your task's own words at the assigned functional node. Use open_nodes on the matches that bear on the task. Use read_graph only when the whole graph is needed. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.
 Maintain memory as uniquely named entities with types, atomic string observations and explicit directed relations in active voice. Keep each observation to one fact about its entity. Represent relationships as relations rather than leaving them only in prose.
 Refine existing relevant knowledge as your work establishes better understanding. Correct inaccurate observations and relations, add missing relevant relations, consolidate duplicates, and remove outdated entities, observations and relations. Add new entities and observations when the knowledge is new.
 Use canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.
@@ -70,7 +71,7 @@ A memory is durable knowledge of the functionality: what holds across sessions, 
      ticket with no node. Held as its own element so both forms stay word for word and the code swaps whole bullets,
      never words. Empty leaves line 2 with no bullet. -->
 <instructions_unassigned>
-When work is assigned, use its functional locations as entry points to the applicable unread memories.
+When work is assigned, use search_nodes with the task's own words at its functional locations. Use open_nodes on relevant matches. Use read_graph only when the whole graph is needed.
 </instructions_unassigned>
 <!-- What a memory write answers an agent over MCP, one line, MCP-037: the memories are a read away, so what the agent
      just sent is not handed back. <items/> is each memory joined at the node, "<address>#<n>  <title>", separated by
