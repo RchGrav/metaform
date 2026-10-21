@@ -485,6 +485,41 @@ settings.number('dispatch_intake_first_record', 180, min=0, person_only=True, la
                 details='The clock starts with its first turn. Until its first record the session reads as waiting '
                         'for first record, on the page and in dispatch sessions, and how long the first call and the '
                         'first record took is kept in its state. The steer is the intake_first_record prompt.')
+# What each agent does well, one setting for each agent dispatch starts, dispatch_<agent>_strengths, so setting one
+# never wipes another's, settings cleanup 2026-10-15 (it was the one list dispatch_agent_strengths, P199's rule). A
+# registry agent the person pins later has its own once the process starts again.
+# What each agent does well, its models and its thinking levels, as the default of dispatch_<agent>_strengths: Jev reads
+# it when it chooses the agent, model and thinking level for a ticket. From the research the person delivered on
+# 2026-10-20, kept whole in docs/reference/choosing-agents-models-effort.md.
+STRENGTHS = {
+    'claude': 'Front-end, GUI and page work; document-heavy and long-context work, nuanced writing, and complex '
+              'multi-file repository coding, done carefully and structured. Models: Opus for the hardest knowledge work '
+              'and coding; Fable for demanding agentic, multi-step work; Sonnet or Haiku for everyday speed at lower '
+              'cost. Thinking level: low for quick syntax fixes, boilerplate and direct lookups; medium for everyday tasks '
+              'and familiar refactoring; high or max for multi-file design, hard debugging and long-horizon planning.',
+    'codex': 'Back-end, system and data work, exact code changes, rapid prototyping, and broad flexible workflows. '
+             'Models: GPT-6 Astra or GPT-5.2 Thinking for the most demanding multi-step reasoning, architecture and hard '
+             'coding; GPT-6.1 Sol as the balanced daily driver; GPT-6 Luna for high-volume, cost-sensitive automated '
+             'tasks; lighter variants for quick turns. Thinking level: low for pattern matching, formatting and minor '
+             'adjustments; medium for everyday bugs, clear features and routine refactors; high or max for deep '
+             'algorithmic complexity, multi-file codebases and hard-to-reproduce bugs.',
+    'gemini': 'large reads across many files'}
+
+
+def strengths_key(agent: str) -> str:
+    return f'dispatch_{agent}_strengths'
+
+
+for _agent in agent_choices():
+    settings.text(strengths_key(_agent), STRENGTHS.get(_agent, ''), person_only=True,
+                  label=f'What {AGENTS[_agent][0] if _agent in AGENTS else _agent} does well',
+                  help=f'What {_agent} does well, its models and its thinking levels; read when a ticket\'s agent, '
+                       'model and thinking level are chosen at assignment, by Jev or by the Facilitator.',
+                  details='Your own account of the agent, given to the choice beside the advertised models and levels. '
+                          'Your choice on the ticket always wins over the choice made for it. Empty, the choice is '
+                          'told only the agent\'s name and what it advertises.')
+
+
 def _withheld_choices(ctx: Context) -> list[str]:
     """What an intake's server can leave out: each module, its reading tools, and each of its tools by name."""
     from metaform.module import installed

@@ -504,7 +504,10 @@ def test_ticket_runtime_uses_required_agent_and_never_codes_on_low(case, monkeyp
     found = choose_runtime(ctx, ticket, runtime_catalog)
     assert found['agent'] == agent and found['effort'] == 'medium'
     assert found['decider'] == 'jev' and found['confidence'] == pytest.approx(0.93)
-    assert sent[0] == {'title': ticket['title'], 'kind': 'enhancement', 'node': work.address, 'task': task}
+    assert {key: value for key, value in sent[0].items() if key != 'strengths'} == {
+        'title': ticket['title'], 'kind': 'enhancement', 'node': work.address, 'task': task}
+    # the person's own account of each agent, dispatch_<agent>_strengths, goes with the state (2026-10-21)
+    assert set(sent[0]['strengths']) <= set(runtime_catalog) and sent[0]['strengths'][agent]
     assert found['model'] in runtime_catalog[agent]['models']
     assert jev.items_at(ctx.folder, work.address, None, 10, project=ctx.project)
 

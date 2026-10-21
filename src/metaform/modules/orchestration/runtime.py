@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from importlib import resources
 from typing import Any
 
-from metaform import jev, prompt_files
+from metaform import jev, prompt_files, settings
 from metaform.data import WorkRecord
 from metaform.module import Context
 
@@ -47,7 +47,7 @@ def choose(ctx: Context, record: WorkRecord | Mapping[str, Any], catalog: Mappin
         title = numbered[1] if numbered else None
     state = {'title': title, 'kind': fields.get('kind'),
              'node': fields.get('address') or fields.get('receiver_address') or fields.get('node_id'),
-             'task': fields.get('task')}
+             'task': fields.get('task'), 'strengths': strengths_of(ctx, catalog)}
     with jev.within(jev.DEADLINE):
         if cfg.endpoint.name == 'openrouter' and jev.openrouter_credits()['status'] != 'available':
             return None
@@ -68,6 +68,19 @@ def choose(ctx: Context, record: WorkRecord | Mapping[str, Any], catalog: Mappin
         return _validated({**candidates[str(selected.answer)], 'task_type': task_type,
                            'confidence': min(classified.confidence, selected.confidence),
                            'reason': f'{classified.reason}\n{selected.reason}'}, catalog, 'jev', overrides)
+
+
+def strengths_of(ctx: Context, catalog: Mapping[str, Any]) -> dict[str, str]:
+    """The person's own account of what each installed agent does well, its models and its thinking levels, the
+    settings dispatch_<agent>_strengths: given to the choice, Jev's or the Facilitator's, beside the advertised
+    catalog, so the research the person delivered is in every decision (2026-10-21). Empty entries are left out."""
+    found: dict[str, str] = {}
+    for agent in catalog:
+        key = f'dispatch_{agent}_strengths'
+        words = str(settings.value(key, ctx.folder) or '').strip() if key in settings.SCHEMA else ''
+        if words:
+            found[str(agent)] = words
+    return found
 
 
 def _pick(ctx: Context, prompt: str, options: Mapping[str, str], state: Mapping[str, Any],

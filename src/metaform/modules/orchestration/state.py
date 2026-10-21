@@ -408,7 +408,9 @@ class Orchestration:
         # Explicit person choices restrict inference. Automatic choices can change after a Planner refines the task.
         chosen = choose(ctx, record, catalog, fallback=fallback, overrides=overrides)
         if chosen is None:
-            return {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog}
+            from .runtime import strengths_of
+            return {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog,
+                    'strengths': strengths_of(ctx, catalog)}
         chosen['task_fingerprint'] = current
         saved = transport.keep_runtime(ctx, work_id, chosen)
         return {'state': 'selected', 'choice': saved}
