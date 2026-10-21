@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -629,8 +630,7 @@ def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id
     its working copy and, when staged, into its index entry; a path whose local edits clash with the landed hunks is
     left exactly as it was and named: in the report, and, given `ctx`, as one board-needs line for the system agent,
     so the person merges it by hand while the ticket stays closed. The compare-and-swap on the ref refuses a
-    concurrent advance; then the taken paths go back to `before`, and a working copy already given the landed hunks
-    keeps them, which the retry's merge finds on both sides and takes once.
+    concurrent advance. Recoverable failures restore each changed path and index entry to its pre-call state.
     """
     if git(project, 'rev-parse', 'HEAD').stdout.strip() != before:
         return False, 'the project branch changed during delivery; retry the merge'
@@ -639,33 +639,41 @@ def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id
         return False, (listed.stdout + listed.stderr).strip()[-1200:]
     parts = listed.stdout.split('\0')
     changes = [(parts[at], parts[at + 1]) for at in range(0, len(parts) - 1, 2)]
-    taken: list[tuple[str, str]] = []  # clean paths taken as landed, with their status, for the rollback
-    merged: list[tuple[str, list[str]]] = []  # dirty paths given the landed hunks, with their index entry before
+    changed: list[tuple[str, list[str], bytes | None, int]] = []
     kept: list[str] = []  # paths left as they were: their local edits clash with the landed hunks
-    for status, path in changes:
-        local = git(project, 'status', '--porcelain', '-z', '--untracked-files=all', '--', path).stdout
-        if not local:
-            took = git(project, 'rm', '-q', '--', path) if status == 'D' else git(project, 'checkout', commit, '--', path)
-            if took.returncode:
-                return False, (took.stdout + took.stderr).strip()[-1200:]
-            taken.append((status, path))
-            continue
-        entry = git(project, 'ls-files', '-s', '--', path).stdout.split()
-        if _landed(project, status, path, before, commit):
-            merged.append((path, entry))
-        else:
-            kept.append(path)
+    try:
+        for status, path in changes:
+            file = project / path
+            mode = file.lstat().st_mode if file.exists() or file.is_symlink() else 0
+            entries = [item for item in git(project, 'ls-files', '-s', '-z', '--', path).stdout.split('\0') if item]
+            entry = entries[0].partition('\t')[0].split() if len(entries) == 1 else ['unmerged'] if entries else []
+            shown = git(project, 'ls-tree', commit, '--', path).stdout.split()
+            if any((project / parent).is_symlink() for parent in Path(path).parents if parent != Path('.')) \
+                    or mode and not stat.S_ISREG(mode) \
+                    or entry and (len(entry) != 3 or entry[2] != '0') \
+                    or shown and shown[0] not in ('100644', '100755'):
+                kept.append(path)
+                continue
+            content = file.read_bytes() if mode else None
+            local = git(project, 'status', '--porcelain', '-z', '--untracked-files=all', '--', path).stdout
+            if content is not None and not entry:
+                local = local or 'untracked local file'
+            changed.append((path, entry, content, mode))
+            if not local:
+                took = git(project, 'rm', '-q', '--', path) if status == 'D' else git(project, 'checkout', commit, '--', path)
+                if took.returncode:
+                    _restore_landing(project, changed)
+                    return False, (took.stdout + took.stderr).strip()[-1200:]
+            elif not _landed(project, status, path, before, commit):
+                changed.pop()
+                kept.append(path)
+    except (OSError, subprocess.SubprocessError) as error:
+        _restore_landing(project, changed)
+        return False, str(error)
     branch = dev_branch(project)
     moved = git(project, 'update-ref', f'refs/heads/{branch}', commit, before)
     if moved.returncode:
-        for status, path in taken:
-            if status == 'A':
-                git(project, 'rm', '-q', '-f', '--', path)
-            else:
-                git(project, 'checkout', before, '--', path)
-        for path, entry in merged:
-            if len(entry) >= 2:
-                git(project, 'update-index', '--add', '--cacheinfo', f'{entry[0]},{entry[1]},{path}')
+        _restore_landing(project, changed)
         return False, (moved.stdout + moved.stderr).strip()[-1200:]
     if not kept:
         return True, ''
@@ -677,38 +685,65 @@ def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id
     return True, report
 
 
+def _restore_landing(project: Path, changed: list[tuple[str, list[str], bytes | None, int]]) -> None:
+    """Restore only paths and index entries changed by this attempted integration."""
+    for path, entry, content, mode in reversed(changed):
+        file = project / path
+        if content is None:
+            file.unlink(missing_ok=True)
+        else:
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(content)
+            file.chmod(stat.S_IMODE(mode))
+        if entry:
+            git(project, 'update-index', '--add', '--cacheinfo', f'{entry[0]},{entry[1]},{path}')
+        else:
+            git(project, 'update-index', '--force-remove', '--', path)
+
+
 def _landed(project: Path, status: str, path: str, before: str, commit: str) -> bool:
     """A locally modified path takes the landed change, its index entry and its working copy alike: True when it
     did. False, with the path untouched, when the two sides clash: a landed deletion, a landed addition unlike the
     local file, a local deletion, or hunks that overlap."""
     file = project / path
-    if status == 'D' or not file.is_file():
+    if status == 'D' or file.is_symlink() or not file.is_file():
         return False
     shown = git(project, 'ls-tree', commit, '--', path).stdout.split()
     if len(shown) < 3:
         return False
     mode, landed_blob = shown[0], shown[2]
+    if mode not in ('100644', '100755'):
+        return False
     theirs = _blob(project, landed_blob)
     if theirs is None:
         return False
     work = file.read_bytes()
-    if status == 'A':
-        return work == theirs and git(project, 'update-index', '--add', '--cacheinfo',
-                                      f'{mode},{landed_blob},{path}').returncode == 0
-    base = _blob(project, f'{before}:{path}')
-    if base is None:
+    entries = [item for item in git(project, 'ls-files', '-s', '-z', '--', path).stdout.split('\0') if item]
+    entry = entries[0].partition('\t')[0].split() if len(entries) == 1 else ['unmerged'] if entries else []
+    if entry and (len(entry) != 3 or entry[2] != '0'
+                  or entry[0] not in ('100644', '100755')):
         return False
-    entry = git(project, 'ls-files', '-s', '--', path).stdout.split()
-    index = (_blob(project, entry[1]) if len(entry) >= 2 else None) or base
+    index = _blob(project, entry[1]) if entry else None
+    if status == 'A':
+        return work == theirs and index in (None, theirs) and git(project, 'update-index', '--add', '--cacheinfo',
+                                      f'{mode},{landed_blob},{path}').returncode == 0
+    original = git(project, 'ls-tree', before, '--', path).stdout.split()
+    base = _blob(project, f'{before}:{path}')
+    if base is None or index is None or not original or original[0] not in ('100644', '100755'):
+        return False
     staged = index != base
     in_index = _three_way(base, index, theirs) if staged else theirs
     in_work = in_index if work == index else _three_way(base, work, theirs)
     if in_index is None or in_work is None:
         return False
     blob = _stored(project, in_index) if staged else landed_blob
-    if blob is None or git(project, 'update-index', '--add', '--cacheinfo', f'{mode},{blob},{path}').returncode:
+    index_mode = entry[0] if entry[0] != original[0] else mode
+    if blob is None or git(project, 'update-index', '--add', '--cacheinfo', f'{index_mode},{blob},{path}').returncode:
         return False
+    permissions = file.stat().st_mode
     file.write_bytes(in_work)
+    if bool(permissions & stat.S_IXUSR) == (original[0] == '100755') and mode != original[0]:
+        file.chmod(permissions | 0o111 if mode == '100755' else permissions & ~0o111)
     return True
 
 
@@ -751,6 +786,7 @@ def _reported(ctx: Any, work_id: str, commit: str, kept: list[str]) -> None:
                'by hand (git diff HEAD -- <file> shows both sides).', work_id=work_id)
     except Exception as error:  # noqa: BLE001  the landing stands whatever its report meets
         print(f'Landing report failed: {error}', file=sys.stderr)
+
 
 def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict[str, Any]:
     """One inbox line identifies the ticket and conflicting files. No branch is forced."""
