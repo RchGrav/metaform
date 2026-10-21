@@ -255,6 +255,10 @@ the first board), and `Metaform-Agent` (agent id and name). Empty completions ma
 message. Worktree review still owns landing consent. Its existing squash becomes the ticket commit and is pushed
 after landing.
 
+New ticket worktrees start from committed HEAD. Shared staged changes, unstaged edits, deletions and untracked
+files stay in the shared checkout. The recorded starting commit still excludes dirty startup snapshots from
+merges of older ticket branches.
+
 Cancelled and failed tickets make no completion commit. Uncommitted worktree edits stay until the existing
 abandoned-branch retention expires. A missing completion commit files one broken ticket at `code.dispatcher.agent`,
 named by the completed ticket's number, on its board. Its broken condition lights the board node.

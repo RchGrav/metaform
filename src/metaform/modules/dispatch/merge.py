@@ -30,7 +30,7 @@ PUSH_PENDING = 'push pending'
 MERGING = 'merging'  # journaled: a merge under way, or left part way by one that died, `merge_due`
 FOLDER = '.worktrees'  # inside the project folder, so an agent there reaches the project; kept out of git status
 TRAILER = 'Metaform-Ticket'  # the git trailer every commit made for a ticket carries, P009
-SNAPSHOTS = 'refs/metaform/snapshot'  # where the snapshot a ticket's worktree began from is kept, by its branch name
+SNAPSHOTS = 'refs/metaform/snapshot'  # ticket starting commits, including snapshots made by older versions
 QUEUE = 'metaform-merge.lock'  # in the project's git folder: one merge at a time, P018
 QUEUE_LIMIT = 600.0  # seconds a lock left by a merge that died is honoured before it is taken over
 
@@ -295,37 +295,9 @@ def dev_branch(project: str | Path) -> str | None:
     return found.stdout.strip() or None if found.returncode == 0 else None
 
 
-def snapshot(project: str | Path, work_id: str) -> str | None:
-    """The project folder as it is now, committed on top of HEAD without touching the folder, its index or any
-    branch, P009: tracked changes and untracked files that are not ignored, through a temporary index, write-tree and
-    commit-tree. HEAD itself when nothing is uncommitted; None outside git."""
-    head = git(project, 'rev-parse', '--verify', '--quiet', 'HEAD').stdout.strip()
-    if not head:
-        return None
-    handle, index = tempfile.mkstemp(prefix='metaform-index-')
-    os.close(handle)
-    env = {**os.environ, 'GIT_INDEX_FILE': index}
-    try:
-        def staged(*words: str) -> subprocess.CompletedProcess[str]:
-            return subprocess.run(['git', *words], cwd=project, capture_output=True, text=True, encoding='utf-8',
-                                  timeout=120, check=False, stdin=subprocess.DEVNULL, env=env)
-        if staged('read-tree', head).returncode != 0 or staged('add', '-A').returncode != 0:
-            return head
-        tree = staged('write-tree').stdout.strip()
-    finally:
-        with_index = Path(index)
-        if with_index.exists():
-            with_index.unlink()
-    if not tree or tree == git(project, 'rev-parse', f'{head}^{{tree}}').stdout.strip():
-        return head
-    made = git(project, 'commit-tree', tree, '-p', head, '-m', f'Snapshot of uncommitted work for ticket {work_id}',
-               '-m', f'{TRAILER}: {work_id}').stdout.strip()
-    return made or head
-
-
 def worktree_for(project: str | Path, work_id: str) -> Path | None:
-    """The ticket's own worktree, made on first use on a branch from a snapshot of the project folder as it is, its
-    uncommitted work with it, P009; the snapshot is kept under SNAPSHOTS, so a merge carries the agent's work alone.
+    """The ticket's own worktree, branched from committed HEAD without copying shared uncommitted files.
+    The starting commit is kept under SNAPSHOTS so merges also support older branches based on dirty snapshots.
     None when the project folder is not a git repository on a branch."""
     project = Path(project)
     dev = dev_branch(project)
@@ -340,7 +312,7 @@ def worktree_for(project: str | Path, work_id: str) -> Path | None:
             written.write(f'\n/{FOLDER}/\n')
     branch = branch_of(work_id)
     known = git(project, 'rev-parse', '--verify', '--quiet', branch).returncode == 0
-    start = None if known else snapshot(project, work_id) or dev
+    start = None if known else git(project, 'rev-parse', '--verify', '--quiet', 'HEAD').stdout.strip() or dev
     made = git(project, 'worktree', 'add', *([str(folder), branch] if known else ['-b', branch, str(folder), start or dev]))
     if made.returncode != 0:
         return None
@@ -370,7 +342,7 @@ def checkpoint(folder: str | Path, work_id: str, said: str, *, completed: bool =
 
 
 def snapshot_of(project: str | Path, branch: str) -> str | None:
-    """The snapshot a branch's worktree began from, as worktree_for kept it; None for a branch made before."""
+    """The recorded starting commit, or legacy dirty snapshot; None for branches without a recorded start."""
     found = git(project, 'rev-parse', '--verify', '--quiet', f'{SNAPSHOTS}/{branch}').stdout.strip()
     return found or None
 

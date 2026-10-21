@@ -159,15 +159,27 @@ def test_the_agent_asked_to_help_works_in_the_merges_worktree_with_the_prep_prom
 
 
 @pytest.mark.req('BASE-052')
-def test_a_worktree_begins_from_uncommitted_work_and_merges_only_the_agents_work_squashed(dispatch, repo, run):
-    """P009, P018: the worktree branches from a snapshot of the folder with its uncommitted change; the agent's work
-    is committed with the ticket's trailer; a folder with uncommitted changes holds the merge; once committed, the
-    agent's work alone lands as one commit fast-forwarded onto dev, and its worktree, branch and snapshot are gone."""
+def test_a_worktree_excludes_shared_uncommitted_work_and_merges_only_ticket_changes(dispatch, repo, run):
+    """Ticket branches start from committed HEAD. Shared staging, edits, deletions and drafts stay in place."""
+    (repo / 'removed.txt').write_text('tracked peer file\n', encoding='utf-8')
+    git(repo, 'add', 'removed.txt')
+    git(repo, 'commit', '-q', '-m', 'peer file')
+    head = git(repo, 'rev-parse', 'HEAD')
+    (repo / 'README.md').write_text('staged peer change\n', encoding='utf-8')
+    git(repo, 'add', 'README.md')
     (repo / 'README.md').write_text('base\nuncommitted line\n', encoding='utf-8')
+    (repo / 'removed.txt').unlink()
     (repo / 'draft.txt').write_text('an untracked draft\n', encoding='utf-8')
+    before = [git(repo, *args) for args in [('diff',), ('diff', '--cached'), ('status', '--porcelain')]]
     [waiting] = worked(dispatch, repo)
     tree = repo / waiting['worktree']
-    assert (tree / 'draft.txt').read_text(encoding='utf-8') == 'an untracked draft\n', 'uncommitted work came along'
+    assert (tree / 'README.md').read_text(encoding='utf-8') == 'base\n'
+    assert (tree / 'removed.txt').read_text(encoding='utf-8') == 'tracked peer file\n'
+    assert not (tree / 'draft.txt').exists()
+    assert git(repo, 'rev-parse', 'HEAD') == head
+    assert [git(repo, *args) for args in [('diff',), ('diff', '--cached'), ('status', '--porcelain')]] == before
+    assert git(repo, 'rev-parse', f"refs/metaform/snapshot/{waiting['branch']}") == head
+    assert 'Snapshot of uncommitted work' not in git(tree, 'log', '--format=%s', f'{head}..HEAD')
     assert f'Metaform-Ticket: {dispatch.id}' in git(tree, 'log', '-1', '--format=%B')
     held = json.loads(run('dispatch', 'merge', dispatch.id, '--json', cwd=repo).stdout)
     assert held['merged'] is False and 'uncommitted' in held['why']
@@ -180,6 +192,28 @@ def test_a_worktree_begins_from_uncommitted_work_and_merges_only_the_agents_work
         'the merged commit holds the agent\'s work alone'
     assert not tree.exists() and not git(repo, 'branch', '--list', waiting['branch'])
     assert not git(repo, 'for-each-ref', 'refs/metaform/')
+
+
+def test_legacy_dirty_snapshot_is_excluded_when_its_ticket_branch_merges(dispatch, repo):
+    from metaform.module import context
+    merge = importlib.import_module('metaform.modules.dispatch.merge')
+
+    folder = merge.worktree_for(repo, dispatch.id)
+    (folder / 'README.md').write_text('unrelated shared edit\n', encoding='utf-8')
+    (folder / 'draft.txt').write_text('unrelated shared draft\n', encoding='utf-8')
+    git(folder, 'add', '-A')
+    git(folder, 'commit', '-qm', f'Snapshot of uncommitted work for ticket {dispatch.id}')
+    git(repo, 'update-ref', f'{merge.SNAPSHOTS}/{merge.branch_of(dispatch.id)}', git(folder, 'rev-parse', 'HEAD'))
+    (folder / 'feature.txt').write_text('ticket change\n', encoding='utf-8')
+    record = dispatch.store.finish_work(dispatch.id, 'Feature completed.', 'Deliver only ticket changes.')
+    ctx = context('dispatch', repo, project='proj')
+    assert merge.finished(ctx, dispatch.store, record, folder)['state'] == 'ready'
+    assert merge.merge_due(ctx, dispatch.store, dispatch.id)['merged']
+    assert (repo / 'README.md').read_text(encoding='utf-8') == 'base\n'
+    assert not (repo / 'draft.txt').exists()
+    assert (repo / 'feature.txt').read_text(encoding='utf-8') == 'ticket change\n'
+    assert git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == 'feature.txt'
+    assert 'Snapshot of uncommitted work' not in git(repo, 'log', '--format=%s')
 
 
 @pytest.mark.parametrize('outcome', ['cancelled', 'failed'])

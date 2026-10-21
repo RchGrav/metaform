@@ -1,5 +1,9 @@
 # Changelog
 
+## Ticket branches start from committed HEAD (2026-10-21)
+
+- New worktrees exclude shared uncommitted files. Startup records committed HEAD as the merge base without creating a snapshot commit. Shared staging, edits, deletions and drafts stay intact. Older snapshot references remain valid for merges.
+
 ## Every message between agents is one line (2026-10-21)
 
 - Every delivery from one agent to another reaches its receiver as one line, `Agent Name: Task Phrase: Message`, the `peer_note` prompt: the sender's agent and ticket number, its ticket's title cut to 80 characters, and its summary or the note's first sentence cut to 200 characters by the code, whatever the agent wrote. A note holding more ends with `(the whole: dispatch_notes note=<id>)`; the whole stays in the sender's thread on its ticket and in each receiver's. It applies to peer notes, the replies a question's wait returns or later gives as turns, the results, check-ins and change orders orchestration sends, and each entry of the system agent's inbox as `dispatch notes` lists it. `peering.line` replaces the runner's `inbox_phrase` and its 160-character `PHRASE`, and the inbox list's `inbox_line`; the person's relayed decision is still their own message, given whole.
