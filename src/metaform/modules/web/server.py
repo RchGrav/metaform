@@ -37,7 +37,6 @@ import threading
 import time
 import traceback
 from collections.abc import Callable, Generator
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -3722,9 +3721,6 @@ def vouched(env: dict[str, str] | None) -> dict[str, str] | None:
 
 
 MODULE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')  # a module's id as `enable` and `disable` take it
-MODULE_ROW = re.compile(r'^(\S+)\s+(on|off|error)\s+(\S+)(?:\s+(.*))?$')  # one line of `metaform list modules`
-
-
 def metaform_cli(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """One chassis command run as the command line runs it, in `folder`, so what it reads is that folder's: its
     settings, and the modules enabled now, a module enabled since this server started and the project's own among
@@ -3800,35 +3796,27 @@ def refused(done: subprocess.CompletedProcess[str]) -> Stop:
 def configured(folder: Path) -> dict[str, Any]:
     """Every setting of a folder as `metaform config --show --json` describes it, each with what its declaration adds
     for the settings screen, and every module as `metaform list modules` lists it, with whether it is on and its
-    summary or the reason it did not load. Both are read as the command line in the folder; when the folder's modules
-    setting leaves the chassis's own commands out, the modules cannot be listed there, and `modules_refused` says why
-    and how to restore them."""
-    with ThreadPoolExecutor(2) as pool:
-        described, listed = (pool.submit(metaform_cli, folder, 'config', '--show', '--json'),
-                             pool.submit(metaform_cli, folder, 'list', 'modules'))
-        shown, found = described.result(), listed.result()
-    if shown.returncode != 0:
-        raise refused(shown)
-    try:
-        rows = cast(list[dict[str, Any]], json.loads(shown.stdout))
-    except ValueError:
-        raise Stop('metaform config --show --json did not answer with JSON.', 'metaform config --show') from None
-    chassis.surface(folder)  # this server's own declarations, for what describe leaves out
+    summary or the reason it did not load. Both were read as the command line in the folder, two processes and about
+    a second on every page load (2026-10-20); they are read in this process now, which follows a module enabled or
+    disabled since this server started as `module_verb` does, `refresh_modules`."""
+    from metaform import loader
+    chassis.refresh_modules()
+    chassis.surface(folder)  # loads a module enabled since, whose settings describe then knows
+    rows = cast(list[dict[str, Any]], json.loads(json.dumps(settings.describe(folder), default=str,
+                                                            ensure_ascii=False)))  # as the command line prints them
     for row in rows:
         row.update(declared(row))
     modules: list[dict[str, Any]] = []
-    for line in found.stdout.splitlines() if found.returncode == 0 else []:
-        matched = MODULE_ROW.match(line.strip())
-        if matched is None:
-            continue
-        module_id, state, place, text = matched.groups()
-        stored = home.module_state(module_id)
-        modules.append({'id': module_id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
-                        'place': place, 'summary': '' if state == 'error' else (text or ''),
+    for item in loader.discover():
+        state = 'error' if item.problem else ('on' if item.enabled else 'off')
+        summary = item.module.summary if item.module else (item.declared.summary if item.declared else None)
+        text = item.problem or summary or ''
+        stored = home.module_state(item.id)
+        modules.append({'id': item.id, 'enabled': state == 'on' or (state == 'error' and stored is not False),
+                        'place': item.place, 'summary': '' if state == 'error' else (text or ''),
                         'problem': (text or '') if state == 'error' else ''})
     return {'folder': str(folder), 'settings': rows, 'modules': modules, 'all_when_empty': list(settings.EMPTY_IS_ALL),
-            'categories': [{'name': name, 'title': title, 'about': about} for name, title, about in settings.CATEGORIES],
-            **({'modules_refused': refusal(found)} if found.returncode != 0 else {})}
+            'categories': [{'name': name, 'title': title, 'about': about} for name, title, about in settings.CATEGORIES]}
 
 
 def declared(row: dict[str, Any]) -> dict[str, Any]:
