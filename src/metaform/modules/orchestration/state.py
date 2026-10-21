@@ -1247,6 +1247,7 @@ class Orchestration:
         with store.atomic(), store.tables() as tx:
             existing = row_for(tx, assignment_id=ident)
             if existing:
+                self.assessment_board(ctx, tx, existing)
                 return existing
             current_gc = row_for(tx, assignment_id=gc['assignment_id']) or gc
             record = store.ticket(str(current_gc['work_id'])).work
@@ -1273,6 +1274,7 @@ class Orchestration:
             task = (f'Assess ticket {gc["work_id"]}. Read its report on the ticket and candidate evidence '
                     f'through orchestration_inspect assignment={gc["assignment_id"]}.')
             work = store.add_work(node, None, task=task, title=f'Functional assessment of {gc["work_id"]}')
+            store.inherit_work_board(work.id, str(current_gc['work_id']))
             made = new_assignment(tx, work, 'functionality', ident=ident, review=gc,
                 task=task, result='Assess actual functionality, constraints and interactions against C(T).',
                 locations=places, mode=current_mode(tx, gc), specification=gc['specification'],
@@ -1287,6 +1289,16 @@ class Orchestration:
                         'state': 'delivered', 'delivery': {'state': 'completed', 'assessment_id': ident},
                         'updated': now()})
             return made
+
+    @staticmethod
+    def assessment_board(ctx: Context, tx: TableTx, assignment: Mapping[str, Any]) -> None:
+        """Recover only generated assessments with an established owner, without releasing person stops."""
+        reviewed = assignment.get('reviewed_assignment_id')
+        if not reviewed or assignment.get('stop') or assignment['state'] in ENDED:
+            return
+        owner = row_for(tx, assignment_id=str(reviewed))
+        if owner is not None and not owner.get('stop'):
+            own(ctx).inherit_work_board(str(assignment['work_id']), str(owner['work_id']))
 
     def check_in(self, ctx: Context) -> dict[str, Any]:
         assignment = requested(ctx, ctx.nouns.get('assignment'))
@@ -1528,6 +1540,11 @@ class Orchestration:
             kind, payload = event['kind'], event['payload']
             try:
                 if kind == 'launch':
+                    if assignment.get('reviewed_assignment_id'):
+                        with own(ctx).atomic(), own(ctx).tables() as tx:
+                            current = row_for(tx, assignment_id=assignment['assignment_id'])
+                            if current is not None:
+                                self.assessment_board(ctx, tx, current)
                     delivered = transport.launch(ctx, {**assignment, 'continuation': event}, event['transition_id'])
                     if delivered.get('session_id') and delivered.get('state') == 'running':
                         self.bind(ctx, assignment['assignment_id'], delivered['session_id'], delivered.get('runner'))

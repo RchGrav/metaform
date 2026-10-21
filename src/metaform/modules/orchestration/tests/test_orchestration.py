@@ -513,6 +513,77 @@ def test_gc_delivery_closes_root_and_restart_activates_fqc_once(project, monkeyp
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'delivered'
 
 
+def assessment_board(project, work_id):
+    from metaform.data import Store
+    with Store('proj', module='map').tables(write=False) as tx:
+        return (tx.get('ticket_settings', {'work_id': work_id}) or {}).get('board')
+
+
+def assessment_parent(project):
+    from metaform.modules.map import boards, work
+    boards(context('map', project[1], project='proj', nouns={'op': 'add', 'name': 'delivery'}))
+    boards(context('map', project[1], project='proj', nouns={'op': 'add', 'name': 'aside'}))
+    gc = root(project)
+    work(context('map', project[1], project='proj', nouns={
+        'op': 'edit', 'id': gc['work_id'], 'board': 'delivery'}))
+    return gc
+
+
+def test_assessment_inherits_owner_board_instead_of_active_board(project):
+    gc = assessment_parent(project)
+    review = SERVICE.assessment(ctx(project), gc, {}, 'board')
+    assert assessment_board(project, review['work_id']) == 'delivery'
+    assert SERVICE.assessment(ctx(project), gc, {}, 'board')['work_id'] == review['work_id']
+
+
+@pytest.mark.parametrize('recovery', ['assessment', 'launch'])
+@pytest.mark.parametrize('placement', [None, '', 'aside', 'legacy_first'])
+def test_generated_assessment_recovery_preserves_explicit_placement(project, monkeypatch, recovery, placement):
+    from metaform.data import Store
+    from metaform.modules.map import work
+    gc = assessment_parent(project)
+    review = SERVICE.assessment(ctx(project), gc, {}, 'board')
+    # A generated child with no settings row has provably never received canonical board placement.
+    with Store('proj', module='map').tables() as tx:
+        tx.delete('ticket_settings', {'work_id': review['work_id']})
+        if placement == 'legacy_first':
+            # Old canonical board='' edits stored NULL, indistinguishable from runtime-only settings rows.
+            tx.insert('ticket_settings', {'work_id': review['work_id'], 'board': None, 'agent': 'codex'})
+    if placement is not None and placement != 'legacy_first':
+        work(context('map', project[1], project='proj', nouns={
+            'op': 'edit', 'id': review['work_id'], 'board': placement}))
+    unrelated = project[0].add_work(Node('element', NODE), None, task='Keep set-aside work.')
+    actual = transport(monkeypatch, project)
+    if recovery == 'assessment':
+        assert Orchestration().assessment(ctx(project), gc, {}, 'board')['work_id'] == review['work_id']
+    else:
+        Orchestration().drain(ctx(project))
+        assert len(actual.launches) == 1
+    expected = 'delivery' if placement is None else None if placement == 'legacy_first' else placement
+    assert assessment_board(project, review['work_id']) == expected
+    before = project[0].ticket(review['work_id']).work
+    Orchestration().assessment(ctx(project), gc, {}, 'board')
+    assert project[0].ticket(review['work_id']).work == before
+    assert assessment_board(project, unrelated.id) is None
+
+
+@pytest.mark.parametrize('stop_owner', [False, True])
+def test_generated_assessment_recovery_preserves_person_stop(project, monkeypatch, stop_owner):
+    from metaform.data import Store
+    gc = assessment_parent(project)
+    review = SERVICE.assessment(ctx(project), gc, {}, 'stopped')
+    with Store('proj', module='map').tables() as tx:
+        tx.delete('ticket_settings', {'work_id': review['work_id']})
+    SERVICE.stopped(ctx(project), work_id=gc['work_id'] if stop_owner else review['work_id'], by='user')
+    stopped = SERVICE.assignment(ctx(project), work_id=review['work_id'])
+    actual = transport(monkeypatch, project)
+    Orchestration().assessment(ctx(project), gc, {}, 'stopped')
+    Orchestration().drain(ctx(project))
+    assert actual.launches == []
+    assert SERVICE.assignment(ctx(project), work_id=review['work_id'])['stop'] == stopped['stop']
+    assert assessment_board(project, review['work_id']) is None
+
+
 def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(project, monkeypatch):
     root(project)
     SERVICE.check_in(ctx(project, 'gc-one', state='waiting', summary='Waiting for the worker.'))

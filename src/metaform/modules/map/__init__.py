@@ -1987,7 +1987,8 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
     if 'epic' in nouns:
         changes['epic'] = _epic(store, work_id, nouns['epic'])
     if 'board' in nouns:
-        changes['board'] = _board(store, nouns['board'])
+        # Empty is an explicit first-board choice. NULL remains distinguishable for legacy generated tickets.
+        changes['board'] = _board(store, nouns['board']) or ''
     if 'agents' in nouns:  # how many agents work on it at once; one, the default, is kept as none
         agents = nouns['agents']
         if isinstance(agents, bool) or not isinstance(agents, int) or agents < 1:

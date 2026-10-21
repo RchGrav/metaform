@@ -98,6 +98,24 @@ def set_work_hold(tx: Tx, work_id: str, *, hold: bool, hold_reason: Any = None) 
     return work_record(tx, row)
 
 
+def inherit_work_board(tx: Tx, work_id: str, owner_id: str) -> bool:
+    """Place an implicitly filed generated ticket with its owner, preserving every explicit board choice."""
+    row = _work_row(tx, work_id)
+    _work_row(tx, owner_id)
+    if row['done'] is not None:
+        return False
+    tables = tx.tables()
+    current = tables.get('ticket_settings', {'work_id': work_id})
+    # Historical explicit first-board edits also stored NULL. An existing row cannot prove implicit placement.
+    if current is not None:
+        return False
+    owner: dict[str, Any] = tables.get('ticket_settings', {'work_id': owner_id}) or {}
+    board = str(owner.get('board') or '')
+    tables.insert('ticket_settings', {'work_id': work_id, 'board': board})
+    _ticket_changed(tx, work_id)
+    return True
+
+
 def work_hold_history(tx: Tx, work_id: str) -> tuple[dict[str, Any], ...]:
     """Read every reason explicitly recorded for this ticket, including released holds."""
     _work_row(tx, work_id)
@@ -1767,6 +1785,7 @@ DATA = Data(
             for fn in (
                 add_work,
                 set_work_hold,
+                inherit_work_board,
                 unhold_all_work,
                 unhold_reviewed_work,
                 edit_work,
