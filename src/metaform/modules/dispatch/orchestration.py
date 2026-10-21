@@ -113,7 +113,7 @@ class Transport:
         # A launch counts the runners it started in its delivery, `attempts`. Past dispatch_retries starts with no
         # session made, the delivery is handed to the person with a signal and started no more: the system stops its
         # own loop and says why, rather than start a runner on every pass (2026-10-20).
-        previous = cast(dict[str, Any], (held.get('continuation') or {}).get('delivery') or {})
+        previous = cast(dict[str, Any], cast(dict[str, Any], held.get('continuation') or {}).get('delivery') or {})
         attempts = int(previous.get('attempts') or 0)
         if attempts > int(ctx.setting('dispatch_retries')) and not previous.get('session_id'):
             from .signals import publish
