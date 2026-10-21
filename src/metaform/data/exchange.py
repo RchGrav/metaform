@@ -621,6 +621,11 @@ def _import_ops(db: sqlite3.Connection, path: Path, base: dict[str, Any], report
             held.apply(made)
             pending.append(made)
         log.append(db, pending, at)
+        from . import layering, upgrade
+        from .session import Tx
+        moved = Tx(db, None, '', True, base=held)  # a document written before layout 23 may hold notes in its base
+        layering.notes_beside(moved, upgrade.NOTES_REASON, 'import')
+        log.append(db, moved.pending, at)
         report['layers_added'] += len(added_layers)
         report['layers_skipped'] += len(skipped_layers)
         report['things_added'] += len(added_things)

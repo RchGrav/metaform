@@ -146,6 +146,26 @@ def test_moved_joins_and_the_elements_joins_hold_come_through_export_and_import_
     assert [each.address for each in cook.elements] == ['code.timer.kitchen', 'code.loop.tick']
 
 
+@pytest.mark.req('STORE-027')
+@pytest.mark.req('MAP-020')
+def test_a_layout_22_document_with_a_note_in_its_base_imports_with_the_note_beside_the_base(home, store, monkeypatch,
+                                                                                             tmp_path):
+    from metaform.data import NOTES_LAYER
+    small_map(store)
+    kitchen = store.element('code.timer.kitchen', raw=True).id
+    document = export_document(['proj'])
+    document['schema_version'] = '22'
+    ops = document['projects'][0]['bases'][0]['ops']
+    added = next(op for op in ops if op['kind'] == 'element' and op['id'] == kitchen)
+    added['data']['note'] = 'private path /home/x/secret'  # as code before the base-layer rule wrote it
+    move_home(monkeypatch, tmp_path, 'other-home')
+    import_document(json.loads(json.dumps(document)))
+    moved = Store('proj')
+    assert moved.element('code.timer.kitchen', raw=True).note is None
+    assert [item.value for item in moved.layer_items(NOTES_LAYER, Node('element', kitchen)).results] == [
+        'private path /home/x/secret']
+
+
 @pytest.mark.req('STORE-029')
 def test_a_document_from_a_later_layout_imports_only_when_it_names_this_one_compatible(home, store, monkeypatch,
                                                                                       tmp_path):

@@ -90,6 +90,7 @@ from .tables import (
     project_work_rows,
     restore_project_work_rows,
 )
+from .versions import NOTES_LAYER, NOTES_MODULE, NOTES_VARIABLE
 
 DataRow = _sqlite3.Row
 DataConnection = _sqlite3.Connection
@@ -156,6 +157,9 @@ __all__ = [
     'KINDS',
     'LIMIT',
     'MESSAGES',
+    'NOTES_LAYER',
+    'NOTES_MODULE',
+    'NOTES_VARIABLE',
     'PLACE_KINDS',
     'RESERVED_REF_NAMES',
     'ROLES',

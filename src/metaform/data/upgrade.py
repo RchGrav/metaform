@@ -63,6 +63,12 @@ lasts. Every current item of the sources layer, a list of refs at an element or 
 stays at the place its item was, so one key and value named at several places is one ref at each, code.graph.knowledge#17.
 The item is then removed as a version, so its history keeps it. Ops are appended to the log; nothing is
 rewritten. The counts, the names and the moves are written beside the backup, for review.
+
+Layout 22 to 23, MAP-020 and the base-layer rule of 2026-10-12: the base holds RE, PE, OP and EF only. Every note a
+current element or join of the base still holds, written before notes went beside the map, moves to its item of the
+notes layer, `layering.notes_beside`, and the base's note is cleared as a new version. The op log keeps the old text
+in its history until `map collapse` rewrites it, LAYER-026. The counts and the ids moved are written beside the
+backup, for review; the text is not.
 """
 from __future__ import annotations
 
@@ -97,15 +103,19 @@ LEGACY = ('7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '
 UPGRADE_SESSION = 'upgrade-21'
 REFS_SESSION = 'upgrade-22'  # the session the ops of layout 22's ref records are written under
 REFS_REPORT = 'refs-layout-22.json'  # the migration's counts and names, beside the backup it was made after
+NOTES_SESSION = 'upgrade-23'  # the session the ops of layout 23's note moves are written under
+NOTES_REPORT = 'notes-layout-23.json'  # the counts and the ids moved, beside the backup it was made after
+NOTES_REASON = 'layout 23: the base holds RE, PE, OP and EF only; its note moved to the notes layer'
 
 
 def upgrade(db: sqlite3.Connection, path: Path, found: str) -> bool:
-    """Bring a store at layout 7 to 20 to the log, STORE-046, writing a new file from the old one. Returns True: the
+    """Bring a store at layout 7 to 20 to the log, STORE-046, writing a new file from the old one, and a log at
+    layout 21 or 22 up in place. Returns True: the
     file at `path` was replaced, and the caller's connection reads the old one, so it reconnects. Processes that open
     the file at once take turns under a lock beside it, STORE-006: one upgrades it, and each that waited finds it at
     the current layout and reconnects."""
-    if found not in (*LEGACY, '20', '21'):
-        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 21.',
+    if found not in (*LEGACY, '20', '21', '22'):
+        raise StoreError(f'{path} has schema version {found}; this Metaform updates only versions 7 to 22.',
                          'install the Metaform release that wrote it')
     with file_lock(path.with_name(path.name + '.upgrade.lock')):
         if _layout(path) == SCHEMA_VERSION:  # another process upgraded it while this one waited for the lock
@@ -141,6 +151,7 @@ def _upgraded(db: sqlite3.Connection, path: Path, found: str) -> bool:
             tables.legacy_upgrade(db, found)
             if int(found) < 22:
                 refs_to_records(db, kept / REFS_REPORT)
+            notes_to_layer(db, kept / NOTES_REPORT)
             db.execute("INSERT OR IGNORE INTO meta(key,value) VALUES ('prior_schema_version',?)", (found,))
             stamp(db, SCHEMA_VERSION, COMPATIBLE_FROM)
             db.execute('COMMIT')
@@ -206,7 +217,7 @@ NATIVE_20 = set(re.findall(r'CREATE(?: VIRTUAL)? TABLE IF NOT EXISTS ([a-z_]+)',
 
 def _to_log(old: sqlite3.Connection, fresh: Path, found: str, report: Path) -> None:
     """Read a layout 20 store into the ops of a new file, in the order its rows were written, with the modules'
-    own tables copied as they are, and its refs made records, layout 22."""
+    own tables copied as they are, its refs made records, layout 22, and its base notes moved beside it, layout 23."""
     old.row_factory = sqlite3.Row
     private(fresh)
     new = sqlite3.connect(fresh, isolation_level=None)
@@ -229,6 +240,7 @@ def _to_log(old: sqlite3.Connection, fresh: Path, found: str, report: Path) -> N
                          json.dumps(data, ensure_ascii=False, sort_keys=True)))
         _copy_module_tables(old, new)
         refs_to_records(new, report)
+        notes_to_layer(new, report.with_name(NOTES_REPORT))
         new.execute('COMMIT')
     except BaseException:
         new.execute('ROLLBACK')
@@ -257,6 +269,29 @@ def refs_to_records(db: sqlite3.Connection, report: Path | None = None) -> dict[
         home.mkdir_private(report.parent)
         private(report)
         report.write_text(json.dumps(counts, ensure_ascii=False, indent=1, sort_keys=True), encoding='utf-8')
+    return counts
+
+
+def notes_to_layer(db: sqlite3.Connection, report: Path | None = None) -> dict[str, Any]:
+    """Layout 23, inside the caller's transaction: every note the base still holds moved to the notes layer, each
+    cleared from the base as a version its history keeps. The counts and the ids moved are written beside the backup
+    for review."""
+    from . import layering, log
+    from .session import Tx
+    factory = db.row_factory
+    db.row_factory = sqlite3.Row
+    try:
+        tx = Tx(db, None, '', True, base=log.load(db))
+        counts = layering.notes_beside(tx, NOTES_REASON, 'layout 23')
+        log.append(db, [dataclasses.replace(op, session_id=NOTES_SESSION) for op in tx.pending], home.now())
+    finally:
+        db.row_factory = factory
+    if report is not None:
+        home.mkdir_private(report.parent)
+        private(report)
+        report.write_text(json.dumps({**counts, 'history': 'The op log keeps the old text until metaform map '
+                                                           'collapse, LAYER-026.'},
+                                     ensure_ascii=False, indent=1, sort_keys=True), encoding='utf-8')
     return counts
 
 
