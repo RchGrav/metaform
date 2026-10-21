@@ -1565,12 +1565,19 @@ def _written(ctx: Context, store: Store, record: WorkRecord, op: str, notices: l
     """What a ticket write answers. To an agent over MCP, one line, MCP-037: the ticket's `<address>#<n>` and title
     and what the write did, from the map module's `work_<op>` prompt, then each notice on a line of its own; the
     record is a read away, `map_work id=<id>`, so the agent is not handed back what it just sent. Elsewhere the record
-    with what the map keeps on it, as every read gives it."""
+    with what the map keeps on it, as every read gives it. Filing also returns its board and column."""
+    board = str(_settings(store, [record.id]).get(record.id, {}).get('board') or '') if op == 'add' else ''
     if ctx.surface != 'mcp':
+        if op == 'add':
+            receipt = plain(_glyphed(store, record))
+            receipt['column'] = record.column
+            receipt['map'] = {**receipt.get('map', {}), 'board': board}
+            return _with_notices(receipt, notices)
         return _with_notices(_glyphed(store, record), notices)
     numbered = _work_numbers(store, [record.id]).get(record.id, {})
     fills = {'item': str(numbered.get('item') or record.id), 'title': str(numbered.get('title') or ''),
              'id': record.id, 'by': str(record.taken_by or ''), 'column': record.column,
+             'board': board or 'the first board',
              'done': str(record.steps_done), 'steps': str(record.steps or record.steps_done)}
     line = ' '.join(_prompt(f'work_{op}', **fills).split())
     # Who else is at work at the part, from the module that runs agents, when the agent starts or plans its work.

@@ -479,6 +479,50 @@ def test_a_review_finding_resumes_the_worker_with_its_reopened_ticket_its_own(di
 
 
 @pytest.mark.kind('fixture')
+@pytest.mark.parametrize('outcome', ['started', 'blocked', 'failed'])
+def test_assigned_ticket_is_taken_only_for_a_runner_start(dispatch, monkeypatch, outcome):
+    dispatch.run('enable', 'orchestration')
+    import metaform.modules.dispatch as package
+    from metaform.data import Node
+    from metaform.modules.dispatch import orchestration
+    from metaform.modules.orchestration.state import SERVICE
+
+    monkeypatch.setattr(SERVICE, 'prepare_runtime', lambda *args, **kwargs: True)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = SERVICE.ensure(ctx, dispatch.id, role='verifier', queue=True)
+    assert not dispatch.store.ticket(dispatch.id).work.taken
+    if outcome == 'blocked':
+        prerequisite = dispatch.store.add_work(Node('element', 'code.engine'), None, task='Check timing.')
+        with Store('proj', module='map').tables() as tx:
+            tx.insert('after', {'work_id': dispatch.id, 'works': [prerequisite.id]})
+    started = []
+
+    def start(*args, **kwargs):
+        started.append(Store('proj').ticket(dispatch.id).work.taken_by)
+        if outcome == 'failed':
+            package.given_back_reservation(dispatch.store, dispatch.id, kwargs['reservation'])
+            raise OSError('runner unavailable')
+        return {'pid': 1}
+
+    monkeypatch.setattr(package, 'launches', list)
+    monkeypatch.setattr(package, 'admit', lambda *args, **kwargs: None)
+    monkeypatch.setattr(package, 'start_runner', start)
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: None)
+    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: None)
+    if outcome == 'started':
+        assert orchestration.Transport().launch(ctx, held, 'transition')['state'] == 'queued'
+        assert started == ['dispatch starting transition']
+        assert dispatch.store.ticket(dispatch.id).work.taken
+    else:
+        with pytest.raises(Stop if outcome == 'blocked' else OSError,
+                           match='waits on' if outcome == 'blocked' else 'runner unavailable'):
+            orchestration.Transport().launch(ctx, held, 'transition')
+        assert not dispatch.store.ticket(dispatch.id).work.taken
+        assert len(started) == (outcome == 'failed')
+    assert SERVICE.assignment(ctx, work_id=dispatch.id)['assignment_id'] == held['assignment_id']
+
+
+@pytest.mark.kind('fixture')
 def test_a_delivery_the_person_started_launches_with_full_auto_off(dispatch, monkeypatch):
     """2026-10-20: the system agent claimed a ticket on the person's word, and the Role Creator it commissioned never
     launched: every orchestration launch was automatic, so Full Auto off refused it."""

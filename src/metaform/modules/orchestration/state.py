@@ -694,8 +694,9 @@ class Orchestration:
                 assert role is not None
                 role = role.removeprefix('metaform://role/')
                 record = store.ticket(work_id).work
-                if not record.taken and not record.done:
-                    store.take_work(work_id, by=session_id or runner or f'Specialist {work_id}')
+                # Assignment alone leaves work in To do. A bound runner may take it when dispatch has not.
+                if (session_id or runner) and not record.taken and not record.done:
+                    store.take_work(work_id, by=session_id or runner)
                 at = record.address or record.receiver_address
                 _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
                 assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
@@ -871,7 +872,7 @@ class Orchestration:
             raise Stop(f'Ticket {work_id} is not available for specialist assignment.',
                        f'metaform orchestration route work={work_id}')
         role = str(chosen).removeprefix('metaform://role/')
-        # A sessionless delivery owner holds the ticket until the creator names real expertise.
+        # A sessionless delivery owner records responsibility until the creator names real expertise.
         # It is never launched as a generic worker; publication replaces its role before launch.
         resolution = {'missing': True} if create else resolve(ctx, role)
         if create and session:
@@ -900,8 +901,9 @@ class Orchestration:
             record = store.ticket(work_id).work
             if record.taken and record.taken_by != session:
                 raise Stop(f'Ticket {work_id} is already taken by {record.taken_by}.', HELP)
-            if not record.taken:
-                store.take_work(work_id, by=session or f'Specialist {work_id}')
+            # Only a specialist already executing in its own session takes work here.
+            if session and not record.taken:
+                store.take_work(work_id, by=session)
             at = record.address or record.receiver_address
             _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
             assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),

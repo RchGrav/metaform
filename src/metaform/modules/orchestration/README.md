@@ -43,6 +43,8 @@ draining. Dispatch supplies `orchestration.transport`: `guard_claim`, `launch`,
 `suspend`, `send` and `notify_user`. Dispatch retains actual process control,
 adapter capabilities, the configured capacity admission gate and user controls.
 An accepted queued launch is distinct from an actual session binding.
+Routing records expertise and assignment while the ticket stays in To do.
+Dispatch takes the ticket when it starts a runner, after checking prerequisites.
 
 Assignments, session bindings, role requests, specification changes and pending
 transitions live in declared module tables. Work creation/completion and the

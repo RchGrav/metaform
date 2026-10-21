@@ -338,7 +338,7 @@ The metaform:
      away (map_work id=), so the whole record is not handed back. <item/> is the ticket's <address>#<n>, <title/> its
      title, <id/> its id, <by/> who took it, <column/> the board column it moved to, <done/> and <steps/> the steps
      done and planned. The command line and the page still get the record. -->
-<work_add><item/> <title/>: added, id <id/>.</work_add>
+<work_add><item/> <title/>: added. Board: <board/>. Column: <column/>, id <id/>.</work_add>
 <!-- What taking a ticket answers an agent over MCP, one line: the item, its title and who took it. -->
 <work_take><item/> <title/>: taken by <by/>.</work_take>
 <!-- What planning a ticket answers an agent over MCP, one line: the item, its title and the steps planned. -->

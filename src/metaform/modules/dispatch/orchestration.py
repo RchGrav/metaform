@@ -145,6 +145,7 @@ class Transport:
             resume_spawn,
             session_state,
             start_runner,
+            startable,
             ticket,
         )
         store = ctx.require_store()
@@ -213,6 +214,7 @@ class Transport:
                             return {'state': 'completed', 'work_id': work}
                         took = not record.taken
                         if took:
+                            startable(launch_ctx, store, record, agent)
                             store.take_work(work, by=by)
                     if took or record.taken_by == by:
                         try:
@@ -235,6 +237,8 @@ class Transport:
                 previous = record.taken_by
                 if record.taken:
                     store.move_work(work, 'todo', kept=True)
+                    record = ticket(store, work)
+                startable(launch_ctx, store, record, agent)
                 store.take_work(work, by=reservation)
             keep_launch(store, work, {'prompts': None, 'mode': None})
             try:
@@ -244,8 +248,8 @@ class Transport:
                 # Capacity can change between the optimistic check and the locked gate. Ownership survives it.
                 with store.atomic():
                     current = ticket(store, work)
-                    if not current.taken and not current.done:
-                        store.take_work(work, by=previous or f'GC {held["gc_assignment_id"]}')
+                    if previous and not current.taken and not current.done:
+                        store.take_work(work, by=previous)
                 raise
             return {'state': 'queued', 'reservation': transition_id, 'attempts': attempts + 1, **made}
 

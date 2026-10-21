@@ -3628,20 +3628,25 @@ def test_a_failed_verb_whose_fault_is_filed_names_its_ticket_and_asks_no_feedbac
 
 
 @pytest.mark.req('MCP-037')
-def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, home, mapped):
+@pytest.mark.parametrize('board', ['', 'release'])
+def test_a_write_over_mcp_answers_one_line_with_its_number_not_the_record(run, home, mapped, board):
     """A ticket's add, plan, step and done, a memory recorded and a term added each answer an agent one line naming
     the new <address>#<n>; the command line still gets the record."""
     import asyncio
 
+    if board:
+        run('map', 'boards', 'op=add', f'name={board}', cwd=mapped)
     from metaform.modules.mcp import server
 
     def call(name, **given):
         error, blocks = asyncio.run(server.run_tool(mapped, name, given))
         assert not error, blocks
         return blocks[-1]
-    added = call('map_work', op='add', node='code.timer.kitchen', task='Make the alarm louder.', title='Louder alarm')
+    added = call('map_work', op='add', node='code.timer.kitchen', task='Make the alarm louder.', title='Louder alarm',
+                 board=board)
     work_id = added.rsplit('id ', 1)[1].rstrip('.')
-    assert added == f'code.timer.kitchen#1 Louder alarm: added, id {work_id}.'
+    assert added == (f'code.timer.kitchen#1 Louder alarm: added. Board: {board or "the first board"}. '
+                     f'Column: todo, id {work_id}.')
     assert call('map_work', op='take', id=work_id, by='claude') == 'code.timer.kitchen#1 Louder alarm: taken by claude.'
     assert call('map_work', op='plan', id=work_id, steps=2) == 'code.timer.kitchen#1 Louder alarm: 2 steps planned.'
     assert call('map_work', op='step', id=work_id, said='Found the gain.') == (

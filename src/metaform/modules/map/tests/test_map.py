@@ -41,6 +41,20 @@ def j(run, *args, cwd):
     return json.loads(run('map', *titled(args), '--json', cwd=cwd).stdout)
 
 
+@pytest.mark.parametrize('board', ['', 'release'])
+def test_filing_returns_active_board_column_and_reference(run, mapped, board):
+    from metaform import settings
+
+    if board:
+        j(run, 'boards', 'op=add', f'name={board}', cwd=mapped)
+    settings.put('board', board, mapped)
+    added = j(run, 'work', 'op=add', 'node=code.timer.kitchen', 'task=Check alarm timing.', cwd=mapped)
+    assert added['column'] == 'todo'
+    assert added['map']['board'] == board
+    assert added['map']['item'].startswith('code.timer.kitchen#')
+    assert added['taken'] is None
+
+
 def titled(args):
     """A ticket written or resolved here carries what such a write carries, MCP-037: op=add a title, op=done a why."""
     given = {arg.partition('=')[0] for arg in args if isinstance(arg, str)}

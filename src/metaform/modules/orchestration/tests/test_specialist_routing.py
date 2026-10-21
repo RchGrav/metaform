@@ -53,7 +53,7 @@ def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(cas
     routing.queue(ctx, [work.id])
     found = SERVICE.route_pending(ctx)
     assert found[0]['role'] == 'metaform://role/alarm_engineering'
-    assert store.ticket(work.id).work.taken
+    assert not store.ticket(work.id).work.taken
     assert 'metaform://role/implementer' not in sent[0][0]
     assert sent[0][1]['function']['requirements'][0]['purpose'] == 'Get attention when a countdown ends.'
     assert 'Diagnose timing' not in json.dumps(sent)
@@ -62,6 +62,7 @@ def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(cas
     assert len(sent) == 1
     assigned = SERVICE.ensure(ctx, work.id)
     assert assigned['authored_role_uri'] == found[0]['role']
+    assert not store.ticket(work.id).work.taken
 
 
 @pytest.mark.parametrize('balance', ['unknown', 'exhausted'])
@@ -73,7 +74,7 @@ def test_credit_unavailable_commissions_facilitator_without_paid_selection(case,
     monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('No paid selection without credit'))
     found = SERVICE.route(ctx, work.id)
     assert found['state'] == 'creating' and found['role'] is None
-    assert store.ticket(work.id).work.taken
+    assert not store.ticket(work.id).work.taken
     owner = SERVICE.ensure(ctx, work.id)
     assert owner['state'] == 'waiting' and owner['owner_session_id'] is None
     with pytest.raises(Stop, match='waiting for its specialist'):
@@ -88,6 +89,7 @@ def test_filed_event_only_queues_and_no_specialist_requests_reusable_role(case, 
     assert SERVICE.assignment(ctx, work_id=work.id) is None
     assert SERVICE.route_pending(ctx)[0]['state'] == 'creating'
     assert SERVICE.assignment(ctx, work_id=work.id)['state'] == 'waiting'
+    assert not store.ticket(work.id).work.taken
 
 
 def test_local_graph_lists_real_requirements_and_dependents(case):
