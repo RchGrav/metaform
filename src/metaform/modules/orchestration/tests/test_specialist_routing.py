@@ -640,6 +640,13 @@ def test_assignment_credit_failure_commissions_full_model_and_records_its_choice
     choice = {'agent': 'codex', 'model': 'option-z', 'effort': 'medium', 'confidence': 0.88,
               'task_type': 'coding', 'reason': 'The ticket specifies concrete alarm behavior.'}
     creator_ctx = replace(ctx, nouns={'assignment': creator['assignment_id']})
+    asked = SERVICE.runtime(creator_ctx, work.id)
+    assert asked['state'] == 'needs_choice' and 'analysis' in asked['task_types']
+    # a choice that is not recorded says why, rather than asking again in silence (2026-10-21)
+    with pytest.raises(Stop, match='task_type is one of: planning, needs_plan'):
+        SERVICE.runtime(creator_ctx, work.id, {**choice, 'task_type': 'implementation'})
+    with pytest.raises(Stop, match='codex with model option-z, option-a and effort medium, high, xhigh, ultra'):
+        SERVICE.runtime(creator_ctx, work.id, {**choice, 'agent': 'claude'})
     selected = SERVICE.runtime(creator_ctx, work.id, choice)
     assert selected['state'] == 'selected'
     assert runtime_transport[work.id]['decision']['decider'] == 'facilitator'
