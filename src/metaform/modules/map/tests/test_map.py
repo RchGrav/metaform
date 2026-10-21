@@ -1250,6 +1250,25 @@ def test_an_agent_says_how_many_steps_it_plans_and_reports_each_as_it_finishes_i
 
 
 @pytest.mark.req('MAP-048')
+def test_a_ticket_filed_with_no_board_lands_on_the_active_board(run, mapped):
+    """The active board, the map setting `board`, 2026-10-21: a ticket filed with no board lands on it, board= empty
+    names the first board on purpose, the boards list marks it, and removing it makes the first board active again."""
+    run('map', 'boards', 'op=add', 'name=next', cwd=mapped)
+    run('set', '--board', 'next', cwd=mapped)
+    landed = json.loads(run('map', 'work', 'op=add', 'title=On the active board', 'node=code.alarm.audible',
+                            'task=t', '--json', cwd=mapped).stdout)
+    json.loads(run('map', 'work', 'op=add', 'title=On the first board', 'node=code.alarm.audible', 'task=t',
+                   'board=', '--json', cwd=mapped).stdout)
+    listed = json.loads(run('map', 'work', 'board=next', 'limit=0', '--json', cwd=mapped).stdout)['results']
+    assert [one['id'] for one in listed] == [landed['id']]
+    boards = json.loads(run('map', 'boards', '--json', cwd=mapped).stdout)['boards']
+    assert [one['name'] for one in boards if one['active']] == ['next']
+    run('map', 'work', 'op=edit', f'id={landed["id"]}', 'board=', cwd=mapped)
+    run('map', 'boards', 'op=remove', 'name=next', cwd=mapped)
+    boards = json.loads(run('map', 'boards', '--json', cwd=mapped).stdout)['boards']
+    assert [one['name'] for one in boards if one['active']] == ['']
+
+
 def test_a_ticket_is_moved_across_the_board_and_links_other_nodes_for_reference(run, mapped):
     """Assign and track work via Metaform like a kanban; the ticket is on the functionality it is
     assigned to, and links other nodes for reference. It keeps its kind in every column."""

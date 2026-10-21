@@ -1128,6 +1128,24 @@ def test_a_start_that_keeps_failing_waits_out_its_backoff_then_waits_for_the_per
     assert module.failing_agent(ctx, 'proj', 'claude') is None, 'a changed start command is tried again'
 
 
+def test_only_the_active_board_starts_by_itself(dispatch, run):
+    """2026-10-21: boards set work aside. With Full Auto on, a start the system makes by itself for a ticket on a
+    board that is not the active one is refused; the person's own start of it runs; activating its board lets it
+    start."""
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    run('map', 'boards', 'op=add', 'name=aside', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'board=aside', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    with pytest.raises(module.Refused, match='set aside'):
+        module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude', auto=True)
+    module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude')  # the person's own start
+    run('set', '--board', 'aside', cwd=dispatch.folder)
+    module.admit(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id, 'worker',
+                 agent='claude', auto=True)
+
+
 def test_with_full_auto_off_no_ticket_agent_starts_by_itself(dispatch, run):
     """2026-10-18: with Full Auto off, every agent the person stopped was replaced at once by a GC launch or a retry."""
     from metaform.module import context

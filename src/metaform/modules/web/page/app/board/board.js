@@ -2,7 +2,7 @@
 import '/page/app/board/refs.js';  // the part before runs first, so the parts run in the page's order
 import {$, h, fill, keyedFill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
-import {toast, undoable} from '/page/app/core/controls.js';
+import {toast, undoable, confirmAct} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
 import {ROAM} from '/page/app/figures/agents.js';
 import {plural} from '/page/app/memory/manage.js';
@@ -373,24 +373,63 @@ export function boardTickets(records) {
 }
 /* The named boards, the person's need of 2026-10-20: a board gets a name, a new one can be made, a past one opened
  * again, and a ticket moved from one board to another, so work for a new effort goes to that effort's board. The first
- * board has no name. The choice is kept per project in this browser alone; the boards and what is on them are the
- * project's, read from the server. */
+ * board has no name. The board shown is kept per project in this browser; the boards and what is on them are the
+ * project's, read from the server. One board is the project's active board, the map setting `board`, 2026-10-21:
+ * tickets filed with no board land on it and only its tickets start by themselves. Activate and Remove beside the
+ * select work as the base's Activate and Remove on the main page: a browser that never chose a board shows the active
+ * one. */
 const BOARD_KEY = project => `metaform.board.${project}`;
 export async function drawBoards() {
   const box = $('#board .boards');
   if (B.boardsOf !== S.project) {
     B.boardsOf = S.project;
-    let kept = '';
-    try { kept = localStorage.getItem(BOARD_KEY(S.project)) || ''; } catch (error) { kept = ''; }
+    let kept = null;
+    try { kept = localStorage.getItem(BOARD_KEY(S.project)); } catch (error) { kept = null; }
     B.board = kept;
   }
-  try { B.boards = ((await read('boards')).boards || []).filter(one => !one.first); } catch (error) { B.boards = []; }
-  if (B.board && !B.boards.some(one => one.name === B.board)) B.board = '';  // a board removed meanwhile
-  fill(box, [h('option', {value: ''}, `Board${B.boards.length ? ' (first)' : ''}`),
-    ...B.boards.map(one => h('option', {value: one.name}, `${one.name} · ${one.open}`)),
+  let all = [];
+  try { all = (await read('boards')).boards || []; } catch (error) { all = []; }
+  B.boards = all.filter(one => !one.first);
+  B.active = (all.find(one => one.active) || {name: ''}).name;
+  // never chosen in this browser, or the board chosen was removed meanwhile: the active board is shown
+  if (B.board === null || (B.board && !B.boards.some(one => one.name === B.board))) B.board = B.active;
+  const activeMark = name => (name === B.active ? ' · active' : '');
+  fill(box, [h('option', {value: ''}, `Board${B.boards.length ? ' (first)' : ''}${activeMark('')}`),
+    ...B.boards.map(one => h('option', {value: one.name}, `${one.name} · ${one.open}${activeMark(one.name)}`)),
     h('option', {value: '', 'data-new': '1'}, 'New board…')]);
   box.value = B.board;
+  boardButtons();
 }
+/* Activate is offered for a board that is not the active one; Remove for a named board that is not active. */
+function boardButtons() {
+  $('#board .board-activate').disabled = B.board === B.active;
+  $('#board .board-remove').disabled = !B.board || B.board === B.active;
+}
+async function activateBoard() {
+  const name = B.board, shown = name || 'the first board';
+  if (name === B.active) return;
+  if (!await confirmAct({title: `Make ${shown} the active board?`,
+    text: 'Tickets filed with no board land on it, and only its tickets start by themselves. Every other board is '
+      + 'set aside until it is activated.', verb: 'Activate', cancel: 'Keep it'})) return;
+  $('#board .board-activate').disabled = true;
+  const made = await wrote('/api/settings', {key: 'board', value: name});
+  if (made) toast(`${shown} is the active board.`);
+  await drawBoards();
+}
+async function removeBoard() {
+  const name = B.board;
+  if (!name || name === B.active) return;
+  if (!await confirmAct({title: `Remove board ${name}?`,
+    text: 'A board with tickets on it is refused: move them to another board first.', verb: 'Remove board',
+    cancel: 'Keep it'})) return;
+  const made = await wrote('/api/board-remove', {name});
+  if (!made) return;
+  B.board = '';
+  try { localStorage.setItem(BOARD_KEY(S.project), ''); } catch (error) { /* a browser that keeps nothing */ }
+  await renderBoard();
+}
+$('#board .board-activate').onclick = activateBoard;
+$('#board .board-remove').onclick = removeBoard;
 const NEW_BOARD = Symbol('new board');
 async function chooseBoard(value) {
   if (value === NEW_BOARD) {

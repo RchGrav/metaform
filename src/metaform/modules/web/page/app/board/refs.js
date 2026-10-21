@@ -17,7 +17,7 @@ import {named} from '/page/app/task/task.js';
  * gives it, board_done_days ago or the archive cutoff; a ticket done before it is in the Archive. */
 // board: the named board shown, '' the project's first; boards: the named boards, as /api/boards lists them;
 // boardsOf: the project the choice and the list were made for (the person's need, 2026-10-20)
-export const B = {tickets: [], off: new Set(), cutoff: '', board: '', boards: [], boardsOf: ''};
+export const B = {tickets: [], off: new Set(), cutoff: '', board: null, boards: [], boardsOf: '', active: ''};
 /* A ticket's fields as the page compares them, with the age the server counts in seconds left out: it differs on
  * every read, and the page shows its own, `ago`. A JSON.stringify replacer. */
 export const unshown = (key, value) => (key === 'age_seconds' ? undefined : value);

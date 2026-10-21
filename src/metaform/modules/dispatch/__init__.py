@@ -2210,12 +2210,34 @@ def ticket_settings(ctx: Context) -> dict[str, dict[str, Any]]:
             str(row['work_id']): {'glyph': row['glyph']} for row in tx.rows('glyphs', limit=0).results}
         for row in tx.rows('ticket_settings', limit=0).results:
             kept.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
-                                                            epic=row['epic'], agents=row['agents'])
+                                                            epic=row['epic'], agents=row['agents'],
+                                                            board=row.get('board') or '')
         for row in tx.rows('eligible', limit=0).results:
             kept.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
         for row in tx.rows('after', limit=0).results:
             kept.setdefault(str(row['work_id']), {})['after_work'] = row['works']
     return kept
+
+
+def active_board(ctx: Context) -> str | None:
+    """The map setting `board`, the one board the project works on, '' for the first; None where the map module and
+    its boards are not on the surface, so nothing is set aside."""
+    if 'board' not in settings.SCHEMA:
+        return None
+    return str(settings.value('board', ctx.folder) or '')
+
+
+def set_aside(ctx: Context, work_id: str, kept: dict[str, dict[str, Any]] | None = None) -> str | None:
+    """Where a ticket is when it is not on the active board, 2026-10-21: 'the board <name>' or 'the first board';
+    None when it is on the active board. Boards set work aside, so only the active board's tickets start by
+    themselves."""
+    active = active_board(ctx)
+    if active is None:
+        return None
+    on = str(((kept if kept is not None else ticket_settings(ctx)).get(str(work_id)) or {}).get('board') or '')
+    if on == active:
+        return None
+    return f'the board {on!r}' if on else 'the first board'
 
 
 def after_of(store: Store, work_id: str) -> dict[str, Any]:
@@ -2538,6 +2560,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
                       if not record.taken and ((record.task or '').strip() or record.condition in MARKERS)
                       and (eligible_roles is None or record.id in eligible_roles)
                       and not waits(record, kept.get(record.id), open_ids)
+                      and set_aside(ctx, record.id, kept) is None  # only the active board's tickets, 2026-10-21
                       and not backing_off(backoff.get(record.id), now)]
         # stored rows and live pids alone: a status read inside this transaction would ask every runner from a pool
         # of threads, which crashed on the transaction's connection under concurrent starts (dispatch-concurrency F2)
@@ -3766,6 +3789,13 @@ def _admit(ctx: Context, store: Store, work_id: str, kind: str, *, besides: int 
     if auto and kind in ('worker', 'helper') and not ctx.setting('dispatch_autostart'):
         raise Refused(f'Full Auto is off, so {called(store, [work_id])[work_id]} does not start by itself. '
                       'Start it yourself, or check Full Auto.', 'metaform dispatch autostart')
+    # Only the active board is worked, 2026-10-21: a start the system makes by itself for a ticket on a board set
+    # aside is refused, Full Auto on or off, so old boards stay aside; the person's own start of it still runs.
+    if auto and kind in ('worker', 'helper'):
+        aside = set_aside(ctx, str(work_id))
+        if aside is not None:
+            raise Refused(f'{called(store, [work_id])[work_id]} is on {aside}, which is set aside: only the active '
+                          'board runs by itself. Start it yourself, or activate its board.', 'metaform map boards')
     if auto and agent is not None:
         failing = failing_agent(ctx, store.project_id, agent)
         if failing is not None:

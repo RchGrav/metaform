@@ -295,3 +295,18 @@ def test_a_glyphs_next_ticket_is_never_one_waiting_on_an_open_ticket(dispatch, r
     ctx = context('dispatch', dispatch.folder, project='proj')
     found = module.next_ticket(ctx, dispatch.store, 'kite', agent='claude', exclude=(dispatch.id,))
     assert found is not None and found.id == ready
+
+
+def test_under_full_auto_only_the_active_board_starts(dispatch, run, monkeypatch):  # noqa: F811
+    """2026-10-21: boards set work aside. Full Auto on, two boards, one active: a pass of the agent starter starts the
+    active board's ticket and leaves the other board's waiting, untaken; activating the other board turns it round."""
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    run('map', 'boards', 'op=add', 'name=next', cwd=dispatch.folder)
+    on_next = dispatch.store.add_work(dispatch.node, 'unbuilt', task='On the active board').id
+    run('map', 'work', 'op=edit', f'id={on_next}', 'board=next', cwd=dispatch.folder)
+    run('set', '--board', 'next', cwd=dispatch.folder)
+    started = _passes(dispatch, monkeypatch)
+    assert started() == [on_next], 'only the active board starts under Full Auto'
+    assert dispatch.store.ticket(dispatch.id).work.taken is None, 'the first board is set aside'
+    run('set', '--board=', cwd=dispatch.folder)  # the first board active again
+    assert started() == [dispatch.id], 'the board activated starts; the one set aside waits'

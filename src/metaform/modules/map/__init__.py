@@ -103,6 +103,33 @@ settings.number('node_summary_bytes', 2048, min=512,
                 help='The bytes an agent is given about the node it works on, in map where, a ticket read and the '
                      'hand-off. What does not fit, code paths first, is counted with the call that reads it.')
 
+
+def _check_board(name: Any, folder: Path) -> list[str] | None:
+    """The active board must be a board the project has; empty is the first board, always there."""
+    wanted = str(name or '').strip()
+    if not wanted:
+        return None
+    from metaform.context import project_for
+    project_id = project_for(folder)
+    if project_id is None:
+        raise settings.SettingError('--board names a board of a project, and this folder is not in one.',
+                                    'metaform add project <id> <path>')
+    with Store(project_id, module='map').tables(write=False) as tx:
+        if tx.get('boards', {'name': wanted}) is None:
+            raise settings.SettingError(f'There is no board named {wanted!r}.',
+                                        f'metaform map boards op=add name="{wanted}"')
+    return None
+
+
+# The active board, the person's need of 2026-10-21: the one board the project works on. A ticket filed with no board
+# lands on it, and only its tickets start by themselves, dispatch's gate; a board set aside stays aside until it is
+# activated again, so Full Auto never reaches old work. Activate on the page's board sets it.
+settings.text('board', '', person_only=True, label='Active board', check=_check_board, heading='Board',
+              help='The board the project works on: a ticket filed with no board lands on it, and only its tickets '
+                   'start by themselves. Empty is the first board.',
+              details='Set it with Activate on the board. Full Auto, retries and every start the system makes by '
+                      'itself leave the other boards aside; your own Start on a card still runs.')
+
 REFS_SCHEMA = {'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 2, 'maxItems': 2}}
 # What edit and refine change; ifd and verb among them, which were dropped before, an intake found.
 FIELDS = ('address', 'extra', 'receiver', 'elements', 'type', 'purpose', 'ef', 'ifd',
@@ -1461,7 +1488,8 @@ def work(ctx: Context) -> Any:
             added = store.add_work(node, nouns.get('condition'),
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
                                    **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title'))
-            _keep(store, added.id, nouns, notices)
+            # a ticket filed with no board lands on the active board, 2026-10-21; board='' names the first on purpose
+            _keep(store, added.id, nouns if 'board' in nouns else {**nouns, 'board': ctx.setting('board')}, notices)
         return _on_word(ctx, _added_on_word(ctx, store, added.id, nouns.get('after_work')),
                         _written(ctx, store, added, 'add', notices))
     if op == 'distribute':
@@ -1828,9 +1856,12 @@ def boards(ctx: Context) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for work_id in opened:
             counts[on.get(work_id, '')] = counts.get(on.get(work_id, ''), 0) + 1
-        return {'boards': [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None},
+        active = str(ctx.setting('board') or '')  # the active board, marked so the page and the person see it
+        return {'boards': [{'name': '', 'first': True, 'open': counts.get('', 0), 'line': None,
+                            'active': active == ''},
                            *({'name': str(row['name']), 'first': False, 'open': counts.get(str(row['name']), 0),
-                              'line': row.get('line'), 'created': row['created']} for row in named)]}
+                              'line': row.get('line'), 'created': row['created'], 'active': active == str(row['name'])}
+                             for row in named)]}
     if op not in ('add', 'line', 'remove'):
         raise Stop(f'No op {op!r}: list, add, line or remove.', 'metaform help map boards')
     if not name:
@@ -1853,7 +1884,9 @@ def boards(ctx: Context) -> dict[str, Any]:
             raise Stop(f'Tickets are still on the board {name!r}: move them first with map work op=edit id= board=.',
                        f'metaform map work board="{name}"')
         tx.delete('boards', {'name': name})
-        return {'board': name, 'state': 'removed'}
+    if str(ctx.setting('board') or '') == name:  # the active board removed: the first board is active again
+        settings.put('board', '', ctx.folder)
+    return {'board': name, 'state': 'removed'}
 
 
 def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notice]) -> None:

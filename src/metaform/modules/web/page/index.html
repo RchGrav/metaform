@@ -243,6 +243,8 @@
   <div class="bar">
     <span class="title">Board</span>
     <select class="boards" aria-label="Board shown" title="The board shown: the project's first, a named one, or a new one"></select>
+    <button class="board-activate btn sm" type="button" title="Make the board shown the active one: tickets land on it, and only its tickets start by themselves" disabled><i class="i i-check" aria-hidden="true"></i><span class="lbl">Activate</span></button>
+    <button class="board-remove btn sm danger" type="button" title="Take the board shown off the project; a board with tickets on it is refused" disabled><i class="i i-trash" aria-hidden="true"></i><span class="lbl">Remove</span></button>
     <input class="search" type="search" placeholder="Find a card" aria-label="Find a card">
     <div class="kinds" role="group" aria-label="Kinds shown"></div>
     <span class="distribute" title="Give the tickets in To do the glyphs of this many agents, in turn: tickets with one glyph are one agent's. A held ticket in Backlog gets none until you release it"><label>Workers <input type="number" min="1" max="17" value="2" aria-label="Workers to distribute the work over"></label><button class="btn sm" type="button">Distribute</button></span>

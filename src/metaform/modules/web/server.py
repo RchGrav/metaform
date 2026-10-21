@@ -237,7 +237,7 @@ ADMIN_ROUTES = frozenset({
     '/api/activate-base',
     '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
-    '/api/mcp-call', '/api/board-line', '/api/board-add',
+    '/api/mcp-call', '/api/board-line', '/api/board-add', '/api/board-remove',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
     '/api/workspace/save', '/api/workspace/select', '/api/workspace/delete'})
 ADMIN_PREFIXES = ('/api/build/', '/api/debug/', '/api/phone-check', '/api/speech-voices')
@@ -1440,7 +1440,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
                   '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
-                  '/api/board-add': self.add_board,
+                  '/api/board-add': self.add_board, '/api/board-remove': self.remove_board,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
                   '/api/intake-finish': self.intake_finish, '/api/intake-discard': self.intake_discard,
                   '/api/dispatch-resume': self.dispatch_resume, '/api/dispatch-permit': self.dispatch_permit,
@@ -1852,6 +1852,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {'error': 'A board has a name.'})
         try:
             made = module_verb(given, 'map', 'boards', {'op': 'add', 'name': name.strip()}, chosen=bool(chosen_base(given)))
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        self.send(200, plain(made))
+
+    def remove_board(self, given: dict[str, Any]) -> None:
+        """Take a named board off the project, `map boards op=remove`, from the board's Remove beside its Activate,
+        as the base's on the main page: refused while tickets are on it, as the verb says."""
+        name = given.get('name')
+        if not isinstance(name, str) or not name.strip():
+            return self.send(400, {'error': 'Name the board to remove.'})
+        try:
+            made = module_verb(given, 'map', 'boards', {'op': 'remove', 'name': name.strip()},
+                               chosen=bool(chosen_base(given)))
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, plain(made))
