@@ -123,6 +123,173 @@ def test_a_reload_runs_changed_submodules_and_keeps_each_setting_once(home, user
 
 
 @pytest.mark.req('BASE-018')
+def test_enabling_another_module_keeps_live_registrations_and_tasks(home, user_module):
+    from metaform import loader, settings
+    user_module('steady', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.text('steady_word', 'kept')
+        EVENTS = []
+        def start(ctx):
+            EVENTS.append('start')
+        def stop(ctx):
+            EVENTS.append('stop')
+        MODULE = Module(id='steady', summary='Steady.', purpose='Keeps its state.', start=start, stop=stop)
+    ''')
+    user_module('neighbor', f'''
+        from metaform.module import Module
+        {OS}
+        SHIPS_DISABLED = True
+        MODULE = Module(id='neighbor', summary='Neighbor.', purpose='Loads separately.')
+    ''')
+    steady = loader.get('steady')
+    namespace = sys.modules[steady.import_name]
+    setting = settings.SCHEMA['steady_word']
+    tasks = steady.tasks
+    loop = asyncio.new_event_loop()
+
+    async def spawn():
+        task = loader.spawn('steady', asyncio.sleep(3600))
+        await asyncio.sleep(0)
+        return task
+
+    task = loop.run_until_complete(spawn())
+    try:
+        loader.set_enabled('neighbor', True)
+        assert loader.get('neighbor').module is not None
+        assert loader.get('steady') is steady
+        assert sys.modules[steady.import_name] is namespace
+        assert settings.SCHEMA['steady_word'] is setting
+        assert steady.tasks is tasks and task in tasks and not task.done()
+        assert namespace.EVENTS == ['start']
+    finally:
+        loader.reset()
+        loop.close()
+    assert namespace.EVENTS == ['start', 'stop']
+    assert task.done() and task.cancelled()
+
+
+@pytest.mark.req('BASE-018')
+def test_stop_can_refresh_on_another_thread_without_losing_retained_modules(home, user_module):
+    from metaform import loader, settings
+    user_module('steady', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.text('steady_word', 'kept')
+        MODULE = Module(id='steady', summary='Steady.', purpose='Keeps its state.')
+    ''')
+    user_module('closing', f'''
+        import threading
+        from metaform import loader, settings
+        from metaform.module import Module
+        {OS}
+        settings.text('closing_word', 'gone')
+        EVENTS = []
+        def stop(ctx):
+            def refresh():
+                loader.follow_enabled()
+                EVENTS.append(settings.value('steady_word', ctx.folder))
+            worker = threading.Thread(target=refresh, daemon=True)
+            worker.start()
+            worker.join(2)
+            if worker.is_alive():
+                raise RuntimeError('refresh blocked cleanup')
+        MODULE = Module(id='closing', summary='Closing.', purpose='Cleans up.', stop=stop)
+    ''')
+    steady, closing = loader.get('steady'), loader.get('closing')
+    namespace = sys.modules[closing.import_name]
+    loader.set_enabled('closing', False)
+    assert namespace.EVENTS == ['kept']
+    assert closing.problem == ''
+    assert loader.get('steady') is steady
+    assert loader.get('closing').module is None
+    assert closing.import_name not in sys.modules
+    assert 'closing_word' not in settings.SCHEMA
+
+
+@pytest.mark.req('BASE-018')
+def test_explicit_enablement_change_during_stop_is_applied_before_refresh_returns(home, user_module):
+    from metaform import home as registry
+    from metaform import loader, settings
+    user_module('steady', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.text('steady_word', 'kept')
+        EVENTS = []
+        def stop(ctx):
+            EVENTS.append('stop')
+        MODULE = Module(id='steady', summary='Steady.', purpose='Keeps its state.', stop=stop)
+    ''')
+    user_module('closing', f'''
+        from metaform import loader
+        from metaform.module import Module
+        {OS}
+        def stop(ctx):
+            loader.set_enabled('steady', False)
+        MODULE = Module(id='closing', summary='Closing.', purpose='Cleans up.', stop=stop)
+    ''')
+    steady = loader.get('steady')
+    namespace = sys.modules[steady.import_name]
+    loader.set_enabled('closing', False)
+    assert registry.module_state('steady') is False
+    assert loader.get('steady').module is None
+    assert namespace.EVENTS == ['stop']
+    assert 'steady_word' not in settings.SCHEMA
+
+
+@pytest.mark.req('BASE-018')
+@pytest.mark.req('PROJ-003')
+def test_project_switch_replaces_project_modules_and_keeps_system_and_user_modules(home, user_module,
+                                                                                 tmp_path, monkeypatch):
+    from metaform import home as registry
+    from metaform import loader, settings
+    user_module('steady', f'''
+        from metaform import settings
+        from metaform.module import Module
+        {OS}
+        settings.text('steady_word', 'kept')
+        MODULE = Module(id='steady', summary='Steady.', purpose='Keeps its state.')
+    ''')
+    projects = {}
+    for name in ('first', 'second'):
+        folder = tmp_path / name
+        folder.mkdir()
+        registry.add_project(name, folder)
+        place = folder / '.metaform' / 'modules' / 'local'
+        place.mkdir(parents=True)
+        (place / '__init__.py').write_text(textwrap.dedent(f'''
+            from metaform import settings
+            from metaform.module import Module
+            {OS}
+            settings.text('local_word', {name!r})
+            EVENTS = []
+            def start(ctx):
+                EVENTS.append('start')
+            def stop(ctx):
+                EVENTS.append('stop')
+            MODULE = Module(id='local', summary='Local.', purpose='Belongs to its project.', start=start, stop=stop)
+        '''), encoding='utf-8')
+        projects[name] = folder
+    monkeypatch.chdir(projects['first'])
+    system, steady, local = loader.get('map'), loader.get('steady'), loader.get('local')
+    namespace = sys.modules[local.import_name]
+    setting = settings.SCHEMA['steady_word']
+    settings.assign('project', 'second', projects['first'])
+    loader.follow_enabled()
+    assert loader.get('map') is system
+    assert loader.get('steady') is steady
+    assert settings.SCHEMA['steady_word'] is setting
+    assert loader.get('local') is not local
+    assert loader.get('local').path == projects['second'] / '.metaform' / 'modules' / 'local'
+    assert settings.value('local_word', projects['second']) == 'second'
+    assert namespace.EVENTS == ['start', 'stop']
+    assert sys.modules[local.import_name].EVENTS == ['start']
+
+
+@pytest.mark.req('BASE-018')
 @pytest.mark.req('CLI-024')
 def test_an_entry_point_modules_settings_return_with_every_load(home, tmp_path, monkeypatch):
     from metaform import loader, settings

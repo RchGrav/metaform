@@ -54,16 +54,29 @@ def test_disabled_data_source_has_its_own_lifecycle(home, tmp_path, monkeypatch,
         folder.mkdir(parents=True)
         for name, body in files.items():
             (folder / name).write_text(body)
+    neighbor = tmp_path / "neighbor"
+    neighbor.mkdir()
+    (neighbor / "__init__.py").write_text(
+        "SUPPORTED_OS = ('linux', 'macos', 'windows')\nSHIPS_DISABLED = True\n"
+        "from metaform.module import Module\n"
+        "MODULE = Module(id='neighbor', summary='Neighbor.', purpose='Loads separately.')\n")
     monkeypatch.setattr(loader, "_candidates", lambda project: [
-        loader.Found("retained", "system", folder, "metaform_module_system_retained")])
+        loader.Found("retained", "system", folder, "metaform_module_system_retained"),
+        loader.Found("neighbor", "user", neighbor, "metaform_module_user_neighbor")])
     try:
         assert module_metadata.read(folder).data_source == "storage.py"
         loaded = loader.data_source("retained")
         assert loaded is not None
         assert loaded.VALUE == 42
         assert loader.data_source("retained") is loaded
-        extracted = Path(sys.modules[loaded.__package__].__path__[0])
+        package = sys.modules[loaded.__package__]
+        extracted = Path(package.__path__[0])
+        found = loader.get("retained")
+        loader.set_enabled("neighbor", True)
         assert loaded.later() == 43
+        assert loader.data_source("retained") is loaded
+        assert loader.get("retained") is found
+        assert sys.modules[loaded.__package__] is package
         assert loader.get("retained").module is None
         assert not (extracted / "runtime-imported").exists()
         assert not (extracted / "runtime-started").exists()

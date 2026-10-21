@@ -66,6 +66,8 @@ _withdrawn: frozenset[str] = frozenset()  # the enabled modules a run straight f
 # Discovery imports modules and runs their start hooks, and the web and MCP servers reach it from several threads:
 # one thread discovers, the others wait and read its result. Re-entrant, since a module may ask for another as it loads.
 _discovering = threading.RLock()
+_refreshing = False
+_refresh_pending = False
 _exit_registered = False
 _read_only: set[Path] = set()
 _data_resources: dict[str, ExitStack] = {}
@@ -264,65 +266,79 @@ def missing_dependencies(requirements: tuple[str, ...]) -> list[str]:
 
 def discover() -> list[Found]:
     """Every module Metaform can see, loaded when enabled and compatible, with the reason when it is not."""
-    global _cache, _cache_project, _withdrawn
     if _cache is not None:
         return _cache
     with _discovering:
         if _cache is not None:  # another thread discovered while this one waited
             return _cache
-        _cache_project = _selected_project()
-        found = _candidates(_cache_project)
-        seen: dict[str, Found] = {}
-        for item in found:
-            if item.problem:
-                continue
-            if item.id in RESERVED:
-                item.problem = f'The name {item.id!r} belongs to a chassis command.'
-                continue
-            if item.id in seen:
-                item.problem = f'The {seen[item.id].place} place already holds a module with the id {item.id!r}.'
-                continue
-            seen[item.id] = item
+        project = _selected_project()
+        return _load(_prepare(project), project)
+
+
+def _prepare(project: str | None) -> list[Found]:
+    """Read candidate declarations and enablement before changing any runtime registrations."""
+    found = _candidates(project)
+    seen: dict[str, Found] = {}
+    for item in found:
+        if item.problem:
+            continue
+        if item.id in RESERVED:
+            item.problem = f'The name {item.id!r} belongs to a chassis command.'
+            continue
+        if item.id in seen:
+            item.problem = f'The {seen[item.id].place} place already holds a module with the id {item.id!r}.'
+            continue
+        seen[item.id] = item
+        try:
+            item.declared = module_metadata.read(item.path)
+        except (ValueError, OSError, SyntaxError) as error:
+            item.problem = str(error)
+            continue
+        state = home.module_state(item.id)
+        item.enabled = state if state is not None else not item.declared.ships_disabled
+        if not item.declared.compatible:
+            item.problem = item.declared.reason or 'incompatible'
+            continue
+        if not item.enabled:
+            continue
+        needed = missing_dependencies(item.declared.dependencies)
+        if needed and os.environ.get('METAFORM_WHEEL'):
+            # A wheel cannot carry some compiled dependencies; installing it brings them, BASE-042.
+            item.problem = 'withdrawn'
+            continue
+        if needed:
+            item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
+    return found
+
+
+def _load(found: list[Found], project: str | None) -> list[Found]:
+    """Load pending candidates while keeping retained modules and their lifecycle state intact."""
+    global _cache, _cache_project, _withdrawn
+    started: list[Found] = []
+    for item in found:
+        if item.problem or not item.enabled or item.module is not None:
+            continue
+        try:
+            with settings.owned_by(item.id):
+                item.module = _import(item)
+        except Exception as error:  # noqa: BLE001  a broken module is reported and withdrawn; the chassis goes on
+            _withdraw_settings(item.id)
+            _forget(item.import_name)
+            item.problem = f'{type(error).__name__}: {error}'
+        else:
+            started.append(item)
+    _withdrawn = frozenset(item.id for item in found if item.problem == 'withdrawn')
+    found = [item for item in found if item.problem != 'withdrawn']
+    _cache, _cache_project = found, project
+    _register_exit()
+    for item in started:
+        if item.module is not None and item.module.start is not None:
             try:
-                item.declared = module_metadata.read(item.path)
-            except (ValueError, OSError, SyntaxError) as error:
-                item.problem = str(error)
-                continue
-            state = home.module_state(item.id)
-            item.enabled = state if state is not None else not item.declared.ships_disabled
-            if not item.declared.compatible:
-                item.problem = item.declared.reason or 'incompatible'
-                continue
-            if not item.enabled:
-                continue
-            needed = missing_dependencies(item.declared.dependencies)
-            if needed and os.environ.get('METAFORM_WHEEL'):
-                # Run straight from a wheel, a module whose dependencies the wheel cannot carry, such as mcp's compiled
-                # ones, is not offered at all: it cannot run there, and installing the wheel brings it, BASE-042.
-                item.problem = 'withdrawn'
-                continue
-            if needed:
-                item.problem = f'Needs {", ".join(needed)}, which {"is" if len(needed) == 1 else "are"} not installed.'
-                continue
-            try:
-                with settings.owned_by(item.id):
-                    item.module = _import(item)
-            except Exception as error:  # noqa: BLE001  a broken module is reported and withdrawn; the chassis goes on
-                _withdraw_settings(item.id)
-                _forget(item.import_name)
+                call(item.module.start, Context(module=item.id, folder=Path.cwd()))
+            except Exception as error:  # noqa: BLE001  any failed start unloads its module and records the problem, BASE-018
+                _unload(item)
                 item.problem = f'{type(error).__name__}: {error}'
-        _withdrawn = frozenset(item.id for item in found if item.problem == 'withdrawn')
-        found = [item for item in found if item.problem != 'withdrawn']
-        _cache = found
-        _register_exit()
-        for item in found:
-            if item.module is not None and item.module.start is not None:
-                try:
-                    call(item.module.start, Context(module=item.id, folder=Path.cwd()))
-                except Exception as error:  # noqa: BLE001  any failed start unloads its module and records the problem, BASE-018
-                    _unload(item)
-                    item.problem = f'{type(error).__name__}: {error}'
-        return found
+    return found
 
 
 def enabled() -> list[Module]:
@@ -484,14 +500,14 @@ def unload(identifier: str) -> None:
 
 
 def follow_enabled() -> None:
-    """Reset the cache when a module found has been enabled or disabled since, by any process, or the folder's
+    """Refresh when a module found has been enabled or disabled since, by any process, or the folder's
     selected project has changed, so a long-lived process, the web GUI's server or the MCP server, loads what is
     enabled now, with the project place of the project selected now, before it publishes, VIEW-018 and D93."""
     request = _request.get()
     if request is not None and request.active:
         if request_followed():
             return
-        request.followed = True  # lifecycle hooks reached by reset share this refresh
+        request.followed = True  # lifecycle hooks reached by refresh share this refresh
         request.revision = home.registry_revision()
     try:
         _follow_enabled()
@@ -502,11 +518,13 @@ def follow_enabled() -> None:
 
 
 def _follow_enabled() -> None:
+    if _refreshing:  # stop hooks may refresh through another thread while their caller waits for them
+        return
     cached = _cache  # one reading: a reset on another thread, such as a test's teardown, must not empty it mid-loop
     if cached is None:
         return
     if _selected_project() != _cache_project:
-        reset()
+        _refresh()
         return
     path = home.chassis_path()
     if not path.is_file() or not path.stat().st_size:
@@ -516,13 +534,59 @@ def _follow_enabled() -> None:
             continue
         state = home.module_state(item.id)
         if (state if state is not None else not item.declared.ships_disabled) != item.enabled:
-            reset()
+            _refresh()
             return
+
+
+def _refresh() -> None:
+    """Retain unchanged modules and publish them before stopping those being replaced or disabled."""
+    global _cache, _cache_project, _withdrawn, _refreshing, _refresh_pending
+    with _discovering:
+        if _refreshing:
+            _refresh_pending = True
+            return
+        if _cache is None:
+            return
+        previous, previous_project, previous_withdrawn = _cache, _cache_project, _withdrawn
+        project = _selected_project()
+        found = _prepare(project)
+        existing = {(item.id, item.place, str(item.path)): item for item in previous
+                    if not item.problem and (item.module is not None or not item.enabled)}
+        retained: set[int] = set()
+        for index, item in enumerate(found):
+            kept = existing.get((item.id, item.place, str(item.path)))
+            if kept is not None and item.enabled == kept.enabled and not item.problem:
+                found[index] = kept
+                retained.add(id(kept))
+        retiring = [item for item in previous if id(item) not in retained]
+        _refreshing = True
+        _cache = [item for item in found if item.problem != 'withdrawn']
+        _cache_project = project
+        _withdrawn = frozenset(item.id for item in found if item.problem == 'withdrawn')
+    try:
+        # Cleanup can wait for work on another thread, which must see the retained cache without this lock.
+        for item in retiring:
+            if item.module is not None:
+                _unload(item)
+            else:
+                _forget(item.import_name)
+        with _discovering:
+            _load(found, project)
+    except BaseException:
+        with _discovering:
+            _cache, _cache_project, _withdrawn = previous, previous_project, previous_withdrawn
+        raise
+    finally:
+        with _discovering:
+            _refreshing = False
+            pending, _refresh_pending = _refresh_pending, False
+        if pending:
+            _refresh()
 
 
 def set_enabled(identifier: str, on: bool) -> None:
     home.set_module_state(identifier, on)
-    reset()
+    _refresh()
 
 
 def withdrawn() -> frozenset[str]:
