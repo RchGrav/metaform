@@ -272,7 +272,10 @@ function roam2d() {
   followed2d(ROAM2D.figures);  // the followed agent's figure kept in the middle of the map, A
   // With reduced motion a figure stands still, so the frames stop once each is drawn; a redraw or a change asks again.
   // The mascot alone keeps them going only while it is awake, so a page left alone rests.
-  if ((ROAM2D.figures.size && (moving || !reduced())) || awake) ROAM2D.frame = requestAnimationFrame(roam2d);
+  // Following can already request the next frame through setCam -> again2d. Keep that one successor.
+  if (!ROAM2D.frame && ((ROAM2D.figures.size && (moving || !reduced())) || awake)) {
+    ROAM2D.frame = requestAnimationFrame(roam2d);
+  }
 }
 /* Gone from the 2D map, and no longer seen, so its agent walks on again when its session works again. */
 function gone2d(id, figure) {

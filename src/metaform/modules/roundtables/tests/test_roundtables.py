@@ -1,16 +1,15 @@
 """roundtables: a table opened at an Address through the Roundtable 2 engine, followed live and chaired from Metaform,
 ticket code.gateway.messaging#3.
 
-The engine is the person's own checkout (ROUNDTABLE_ENGINE_HOME, ~/roundtable by default), run with its own fakes as
-its offline proof runs it (scripts/offline_table.py): its stub OpenRouter and Jev on the loopback, from
-scripts/check.py, and its fake ACP agent, dev/fake_agent.py, as Claude Code. Nothing is paid for and nothing leaves the
-machine. Without the checkout the tests are skipped.
+The engine is the one shipped inside the module, run as a fresh install runs it, with no engine on PATH, and with
+its own fakes as its offline proof runs it: its stub OpenRouter and Jev on the loopback (fakes.py) and its fake ACP
+agent (fake_agent.py) as Claude Code. Nothing is paid for and nothing leaves the machine.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -24,11 +23,11 @@ from metaform import events
 from metaform.data import Store
 from metaform.module import Context
 from metaform.modules.roundtables import engine, follow
+from metaform.modules.roundtables.tests import fakes
 
 pytestmark = pytest.mark.kind('simulation')
 
-ENGINE = Path(os.environ.get('ROUNDTABLE_ENGINE_HOME', str(Path.home() / 'roundtable')))
-COMMAND = ENGINE / '.venv' / 'bin' / 'roundtable'
+FAKE_AGENT = Path(__file__).with_name('fake_agent.py')
 ADDRESS = 'code.gateway.messaging'
 PURPOSE = 'Accept external agent work as project-addressed tickets.'
 MEMORY = 'Peers are named by the person'
@@ -37,24 +36,11 @@ REPORT_MARK = 'The roundtable has ended'
 STAGE_MARKS = ('# Topic synthesis', '# Rank collected ideas', '# Explain your top three', '# Explain your bottom three',
                '# Host summary', REPORT_MARK, 'could not be read as every idea')  # the offline proof's
 
-needs_engine = pytest.mark.skipif(not COMMAND.is_file(), reason=f'the Roundtable 2 engine is not at {ENGINE}')
-
-
-def checks() -> Any:
-    """The engine's own stub of OpenRouter and Jev, scripts/check.py."""
-    spec = importlib.util.spec_from_file_location('roundtable_check', ENGINE / 'scripts' / 'check.py')
-    assert spec is not None and spec.loader is not None
-    found = importlib.util.module_from_spec(spec)
-    sys.modules['roundtable_check'] = found
-    spec.loader.exec_module(found)
-    return found
-
-
 def stubbed(*, pace: float = 0.0) -> Any:
     """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and a Jev
     that finds the topic covered with nothing added each round, so the topic goes to synthesis on its sufficiency.
     `pace` slows every seat's turn so the chair acts while the table runs."""
-    base = checks().Stub
+    base = fakes.Stub
 
     class Offline(base):  # type: ignore[misc, valid-type]
         def chat(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -98,11 +84,10 @@ def table(run, tmp_path, monkeypatch):
         f'node=element:{ADDRESS}', cwd=folder)
     run('enable', 'dispatch', cwd=folder)
     run('set', '--jev', cwd=folder)
-    run('set', f'--roundtables-engine={COMMAND}', cwd=folder)
     engine_home = tmp_path / 'engine'
     log = tmp_path / 'fake-acp.log'
     for key, value in {'ROUNDTABLE_HOME': str(engine_home), 'OPENROUTER_API_KEY': 'stub-key',
-                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {ENGINE / "dev" / "fake_agent.py"}',
+                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {FAKE_AGENT}',
                        'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
                        'ROUNDTABLE_REPORT_MODEL': 'stub/reporter', 'FAKE_ACP_LOG': str(log)}.items():
         monkeypatch.setenv(key, value)
@@ -110,7 +95,7 @@ def table(run, tmp_path, monkeypatch):
 
 
 def serve(monkeypatch, stub: Any) -> Any:
-    held = checks().serve_stub(stub)
+    held = fakes.serve_stub(stub)
     monkeypatch.setenv('ROUNDTABLE_OPENROUTER_URL', f'http://127.0.0.1:{held.server_address[1]}/api')
     return held
 
@@ -204,7 +189,30 @@ def test_a_seats_short_name_means_the_newest_release_of_its_family_as_the_table_
     assert 'nearest is astra, now gpt-6-astra' in refused.stdout + refused.stderr
 
 
-@needs_engine
+@pytest.mark.timeout(LIMIT + 60)
+def test_a_fresh_install_with_no_engine_on_path_runs_a_table_whose_seats_speak_in_turn(run, home, table, monkeypatch):
+    """The engine ships inside the module: with no `roundtable` anywhere on PATH, a table on the question alone opens,
+    its fixture seats speak in their speaking order, and it runs to its answer."""
+    folder, _ = table
+    monkeypatch.setenv('PATH', os.pathsep.join((str(Path(sys.executable).parent), '/usr/bin', '/bin')))
+    assert shutil.which('roundtable') is None, 'no engine on PATH'
+    held = serve(monkeypatch, stubbed())
+    heard = Heard()
+    try:
+        answer = json.loads(run('roundtables', 'open', 'How should a table be heard?', 'host=stub/host', 'rounds=2',
+                                'seats=' + json.dumps(['stub/vega', 'claude/haiku', 'stub/orion']), '--json',
+                                cwd=folder).stdout)
+        assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
+    finally:
+        heard.close()
+        held.shutdown()
+    status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+    assert status['seated'] == ['Vega', 'Haiku', 'Orion'], status
+    spoke = [one['payload']['seat'] for one in heard.events if one['kind'] in ('turn', 'veto')]
+    assert spoke[:3] == status['seated'], spoke
+    assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer'], status
+
+
 @pytest.mark.timeout(LIMIT + 60)
 def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_heard_as_it_runs_to_its_answer(
         run, home, table, monkeypatch):
@@ -294,13 +302,17 @@ def test_a_table_ended_with_no_report_records_its_outcome_citing_its_export_and_
     assert any('No current element' in one['message'] for one in adopted.get('notices', [])), adopted
 
 
-def openings(run, folder: Path, tmp_path: Path) -> dict[str, str]:
-    """Each table's opening as `open` kept it, by its question, the engine a stand-in that fails at once, so the
-    table is refused after its opening is written and no seat starts."""
-    failing = tmp_path / 'no-engine'
-    failing.write_text('#!/bin/sh\nexit 1\n')
-    failing.chmod(0o755)
-    run('set', f'--roundtables-engine={failing}', cwd=folder)
+def broken(monkeypatch, tmp_path: Path) -> None:
+    """The shipped engine made to fail at once: its home is a file, so it cannot open its store."""
+    held = tmp_path / 'engine-home-is-a-file'
+    held.write_text('')
+    monkeypatch.setenv('ROUNDTABLE_HOME', str(held))
+
+
+def openings(run, folder: Path, tmp_path: Path, monkeypatch) -> dict[str, str]:
+    """Each table's opening as `open` kept it, by its question, the engine failing at once, so the table is refused
+    after its opening is written and no seat starts."""
+    broken(monkeypatch, tmp_path)
     run('roundtables', 'open', 'What could a peer directory be?', 'seats=["stub/vega"]', cwd=folder, ok=False)
     run('roundtables', 'open', 'Who reaches whom?', f'address={ADDRESS}', 'seats=["stub/vega"]', cwd=folder, ok=False)
     with Store('proj', module='roundtables').tables(write=False) as tx:
@@ -309,9 +321,9 @@ def openings(run, folder: Path, tmp_path: Path) -> dict[str, str]:
 
 
 def test_a_table_with_no_address_opens_on_the_question_alone_and_one_with_an_address_on_the_part(
-        run, table, tmp_path):
+        run, table, tmp_path, monkeypatch):
     folder, _ = table
-    found = openings(run, folder, tmp_path)
+    found = openings(run, folder, tmp_path, monkeypatch)
     alone = found['What could a peer directory be?']
     assert 'What could a peer directory be?' in alone, alone
     assert ADDRESS not in alone and PURPOSE not in alone and MEMORY not in alone, alone
@@ -353,7 +365,6 @@ def test_a_table_with_no_part_records_its_result_and_files_ideas_where_the_map_h
     assert Store('proj').element('code.peers.directory') is None, 'a ticket never changes the map'
 
 
-@needs_engine
 @pytest.mark.timeout(LIMIT + 60)
 def test_hold_and_end_work_from_metaform_and_the_result_is_saved(run, home, table,
                                                                                                  monkeypatch):
@@ -383,7 +394,6 @@ def test_hold_and_end_work_from_metaform_and_the_result_is_saved(run, home, tabl
     assert gone(lambda: seat_entries(home))
 
 
-@needs_engine
 def test_a_table_with_more_seats_than_free_agent_slots_is_refused_before_any_seat_starts(run, home, table):
     folder, log = table
     run('set', '--dispatch-agents=1', cwd=folder)
@@ -417,7 +427,6 @@ def page_servers() -> list[int]:
     return found
 
 
-@needs_engine
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc for the page servers left')
 @pytest.mark.timeout(2 * LIMIT + 60)
 def test_a_stopped_follower_ends_its_table_before_its_slots_go_back(run, home, table, monkeypatch):
@@ -459,14 +468,10 @@ def test_a_stopped_follower_ends_its_table_before_its_slots_go_back(run, home, t
         held.shutdown()
 
 
-@needs_engine
-def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slot(run, home, table, tmp_path):
+def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slot(run, home, table, tmp_path,
+                                                                                    monkeypatch):
     folder, _ = table
-    failing = tmp_path / 'failing-roundtable'
-    failing.write_text('#!/bin/sh\nif [ "$1" = serve ]; then echo "the engine broke" >&2; exit 1; fi\n'
-                       f'exec {COMMAND} "$@"\n')
-    failing.chmod(0o755)
-    run('set', f'--roundtables-engine={failing}', cwd=folder)
+    broken(monkeypatch, tmp_path)
     began = time.monotonic()
     refused = run('roundtables', 'open', 'Does it open?', f'address={ADDRESS}', 'seats=' + json.dumps(['stub/vega']),
                   cwd=folder, ok=False)
@@ -524,3 +529,298 @@ def test_finished_result_keeps_each_topics_rankings_without_requesting_a_system_
     result = json.loads(run('roundtables', 'events', 'finished', '--json', cwd=folder).stdout)['events'][-1]
     assert result['kind'] == 'end' and result['topics'] == topics
     assert result['answer'] == status['answer'] and result['saved'] == status['saved']
+
+
+@pytest.fixture
+def finished_proposal(table, monkeypatch):
+    """A saved discussion with a deterministic Planner admission service and the real compact inbox transport."""
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+    from metaform.modules.roundtables import proposal
+
+    folder, _ = table
+    store = Store('proj', module='roundtables')
+    saved = 'docs/roundtables/7-proposal'
+    record = folder / saved
+    record.mkdir(parents=True)
+    (record / 'export.json').write_text('{"private_record_body": "Do not inject this."}\n', encoding='utf-8')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'finished', 'address': ADDRESS, 'topic': 'How should delivery work?',
+                             'opening': '.', 'seats': ['stub/vega'], 'discussion': 7, 'spend': 0.0,
+                             'state': 'ended', 'answer': 'Show saved results.', 'answered': True,
+                             'created': follow.now(), 'followed': {'saved': saved, 'opener': 'person',
+                             'result_topics': [{'number': 1, 'title': 'Delivery'}]}})
+
+    class Planner:
+        def __init__(self):
+            self.assignments = {}
+            self.claims = []
+
+        def assignment(self, _ctx, *, work_id):
+            return self.assignments.get(work_id)
+
+        def claim(self, ctx):
+            self.claims.append(dict(ctx.nouns))
+            result = {'assignment_id': 'planner-1', 'role': ctx.nouns['role'], 'work_id': ctx.nouns['work']}
+            self.assignments[ctx.nouns['work']] = result
+            return result
+
+    planner = Planner()
+
+    def providers(_folder, purpose):
+        if purpose == 'orchestration':
+            return [('orchestration', planner)]
+        if purpose == 'orchestration.transport':
+            return [('dispatch', TRANSPORT)]
+        raise AssertionError(f'Unexpected provider: {purpose}')
+
+    monkeypatch.setattr(proposal, 'provided', providers)
+    return Context('roundtables', folder, project='proj', store=store, nouns={'table': 'finished'}), planner, record
+
+
+def test_roundtable_planner_replay_keeps_one_assignment_and_a_compact_nonwaking_inbox(finished_proposal):
+    from metaform.modules.dispatch.orchestration import update_entries, user_updates
+    from metaform.modules.roundtables import proposal
+
+    ctx, planner, record = finished_proposal
+    first = proposal.prepare(ctx, 'finished')
+    second = proposal.prepare(ctx, 'finished')
+    assert first['proposal']['ticket'] == second['proposal']['ticket']
+    works = ctx.require_store().work(limit=0).results
+    assert len(works) == 1 and works[0].id == first['proposal']['ticket']
+    assert len(planner.claims) == 1 and len(planner.assignments) == 1
+    assert planner.claims[0]['role'] == 'planner' and planner.claims[0]['automatic'] is True
+    assert str(record / 'export.json') in works[0].task
+    assert 'docs/roundtables/7-proposal/proposal.md' in works[0].task
+    assert str(record / 'proposal.md') not in works[0].task, 'Planner writes inside its own worktree'
+    assert 'Create no execution tickets' in works[0].task
+    dispatch = Context('dispatch', ctx.folder, project='proj', store=Store('proj'))
+    ident = 'roundtable-result-finished'
+    assert user_updates(dispatch) == [ident]
+    assert update_entries(dispatch, [ident]) == [
+        (ident, 'Roundtable finished: docs/roundtables/7-proposal/export.json', False)]
+    assert proposal.read(ctx) == {'table': 'finished', 'proposal': proposal.state(ctx, 'finished')}
+
+
+def test_concurrent_roundtable_plans_keep_one_ticket_and_planner_assignment(finished_proposal, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+
+    from metaform.module import Stop
+    from metaform.modules.roundtables import proposal
+
+    ctx, planner, _record = finished_proposal
+    barrier, lock = threading.Barrier(2), threading.Lock()
+    inspected = []
+    assignment, claim = planner.assignment, planner.claim
+
+    def raced_assignment(called, *, work_id):
+        with lock:
+            initial = len(inspected) < 2
+            if initial:
+                inspected.append(work_id)
+        if initial:
+            barrier.wait(timeout=10)
+            return None
+        return assignment(called, work_id=work_id)
+
+    def exclusive_claim(called):
+        with lock:
+            if assignment(called, work_id=called.nouns['work']) is not None:
+                raise Stop('Planner already assigned.', 'Read the existing assignment.')
+            return claim(called)
+
+    monkeypatch.setattr(planner, 'assignment', raced_assignment)
+    monkeypatch.setattr(planner, 'claim', exclusive_claim)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        pending = [workers.submit(proposal.prepare, replace(ctx, store=Store('proj', module='roundtables')),
+                                  'finished') for _ in range(2)]
+        results = [one.result(timeout=20) for one in pending]
+    assert all('error' not in one for one in results), results
+    assert len(set(inspected)) == 1 and len(ctx.require_store().work(limit=0).results) == 1
+    assert len(planner.claims) == 1 and len(planner.assignments) == 1
+
+
+@pytest.mark.parametrize('action, expected', [('approve', 'approved'), ('reject', 'rejected')])
+def test_roundtable_proposal_decisions_bind_reviewed_bytes_and_start_no_execution(finished_proposal, action, expected):
+    import hashlib
+    from dataclasses import replace
+
+    from metaform.module import Stop
+    from metaform.modules.roundtables import proposal
+
+    ctx, planner, record = finished_proposal
+    proposal.prepare(ctx, 'finished')
+    path = record / 'proposal.md'
+    text = '# Plan\n\nProposed ticket: code.delivery. Keep execution pending.\n'
+    path.write_text(text, encoding='utf-8')
+    ready = proposal.submit(ctx)['proposal']
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert ready['state'] == 'ready' and ready['digest'] == digest
+    assert 'proposal_text' not in ready
+    assert proposal.read(ctx)['proposal_text'] == text
+    stale = replace(ctx, nouns={'table': 'finished', 'action': action, 'digest': 'stale'})
+    with pytest.raises(Stop, match='Review the current proposal'):
+        proposal.decide(stale)
+    deciding = replace(ctx, nouns={'table': 'finished', 'action': action, 'digest': digest})
+    assert proposal.decide(deciding)['proposal']['state'] == expected
+    assert proposal.submit(ctx)['proposal']['state'] == expected, 'unchanged bytes retain their decision'
+    assert len(ctx.require_store().work(limit=0).results) == 1 and len(planner.claims) == 1
+    path.write_text(text + '\nRevision two.\n', encoding='utf-8')
+    with pytest.raises(Stop, match='The proposal changed'):
+        proposal.read(ctx)
+    with pytest.raises(Stop, match='The proposal changed'):
+        proposal.decide(deciding)
+    revised = proposal.submit(ctx)['proposal']
+    assert revised['state'] == 'ready' and revised['digest'] != digest
+    with pytest.raises(Stop, match='Review the current proposal'):
+        proposal.decide(deciding)
+    assert len(ctx.require_store().work(limit=0).results) == 1
+
+
+def test_roundtable_missing_proposal_preserves_finished_result_and_can_be_submitted_later(finished_proposal):
+    from metaform.module import Stop
+    from metaform.modules.roundtables import proposal, shown
+
+    ctx, planner, record = finished_proposal
+    proposal.prepare(ctx, 'finished')
+    with pytest.raises(Stop, match='The saved proposal is missing'):
+        proposal.submit(ctx)
+    (record / 'proposal.md').write_text('   \n', encoding='utf-8')
+    with pytest.raises(Stop, match='The proposal is empty'):
+        proposal.submit(ctx)
+    result = shown(ctx, follow.Follower(ctx, 'finished').row())
+    assert result['state'] == 'ended' and result['answer'] == 'Show saved results.'
+    assert result['topics'] == [{'number': 1, 'title': 'Delivery'}]
+    (record / 'proposal.md').write_text('Recovered plan.\n', encoding='utf-8')
+    assert proposal.submit(ctx)['proposal']['state'] == 'ready'
+    assert len(planner.claims) == 1
+
+
+@pytest.mark.parametrize('failure', ['missing_provider', 'claim_error'])
+def test_roundtable_planning_failure_preserves_result_and_recovers_without_duplicate_work(
+        finished_proposal, monkeypatch, failure):
+    from metaform.module import Stop
+    from metaform.modules.dispatch.orchestration import update_entries, user_updates
+    from metaform.modules.roundtables import proposal, shown
+
+    ctx, planner, _record = finished_proposal
+    providers, claim = proposal.provided, planner.claim
+    if failure == 'missing_provider':
+        monkeypatch.setattr(proposal, 'provided', lambda folder, purpose: [] if purpose == 'orchestration'
+                            else providers(folder, purpose))
+    else:
+        def refused(_ctx):
+            raise Stop('Planner admission failed.', 'Retry this plan.')
+        monkeypatch.setattr(planner, 'claim', refused)
+    failed = proposal.prepare(ctx, 'finished')
+    assert failed['error']
+    state = proposal.state(ctx, 'finished')
+    assert state['state'] == 'planning' and state['error'] == failed['error']
+    result = shown(ctx, follow.Follower(ctx, 'finished').row())
+    assert result['state'] == 'ended' and result['answer'] == 'Show saved results.'
+    assert result['saved'] == 'docs/roundtables/7-proposal'
+    dispatch = Context('dispatch', ctx.folder, project='proj', store=Store('proj'))
+    ident = 'roundtable-result-finished'
+    assert user_updates(dispatch) == [ident]
+    assert update_entries(dispatch, [ident]) == [
+        (ident, 'Roundtable finished: docs/roundtables/7-proposal/export.json', False)]
+    monkeypatch.setattr(proposal, 'provided', providers)
+    monkeypatch.setattr(planner, 'claim', claim)
+    recovered = proposal.prepare(ctx, 'finished')['proposal']
+    assert recovered['error'] is None and len(planner.claims) == 1
+    assert len(ctx.require_store().work(limit=0).results) == 1
+
+
+def test_agent_opened_roundtable_returns_result_without_planner_or_system_notification(finished_proposal, monkeypatch):
+    from metaform.modules.dispatch.orchestration import user_updates
+    from metaform.modules.roundtables import proposal, shown
+
+    ctx, planner, _record = finished_proposal
+    with ctx.require_store().tables() as tx:
+        row = tx.get('tables', {'table_id': 'finished'})
+        tx.update('tables', {'table_id': 'finished'}, {'followed': {**row['followed'], 'opener': 'agent'}})
+
+    def unused(*_args):
+        raise AssertionError('An agent result must not use orchestration providers.')
+
+    monkeypatch.setattr(proposal, 'provided', unused)
+    assert proposal.prepare(ctx, 'finished') == {'table': 'finished', 'said': 'The result belongs to the calling agent.'}
+    assert proposal.state(ctx, 'finished') is None
+    assert not planner.claims and not ctx.require_store().work(limit=0).results
+    dispatch = Context('dispatch', ctx.folder, project='proj', store=Store('proj'))
+    assert user_updates(dispatch) == []
+    result = shown(ctx, follow.Follower(ctx, 'finished').row())
+    assert result['answer'] == 'Show saved results.' and result['state'] == 'ended'
+
+
+def test_roundtable_planner_submits_from_its_worktree_to_the_canonical_result(finished_proposal, tmp_path):
+    import hashlib
+    from dataclasses import replace
+
+    from metaform.module import Stop
+    from metaform.modules.roundtables import proposal
+
+    ctx, _planner, record = finished_proposal
+    proposal.prepare(ctx, 'finished')
+    worktree = tmp_path / 'planner-worktree'
+    source = worktree / 'docs/roundtables/7-proposal/proposal.md'
+    source.parent.mkdir(parents=True)
+    body = '# Worktree proposal\n\nProposed execution stays pending.\n'
+    source.write_text(body, encoding='utf-8')
+    ready = proposal.submit(replace(ctx, folder=worktree))['proposal']
+    assert (record / 'proposal.md').read_text(encoding='utf-8') == body
+    assert ready['digest'] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert proposal.read(ctx)['proposal_text'] == body
+    source.unlink()
+    with pytest.raises(Stop, match="Save the proposal in this assignment's project folder"):
+        proposal.submit(replace(ctx, folder=worktree))
+    assert proposal.read(ctx)['proposal_text'] == body
+
+
+def test_roundtable_releases_discussion_seats_before_planner_admission(finished_proposal, monkeypatch):
+    from metaform.modules.roundtables import proposal
+
+    ctx, planner, _record = finished_proposal
+    released = []
+    token = object()
+    claim = planner.claim
+
+    def admitted(called):
+        assert released == [token], 'Planner must fit after the discussion releases its capacity'
+        return claim(called)
+
+    monkeypatch.setattr(planner, 'claim', admitted)
+    monkeypatch.setattr(follow.signal, 'signal', lambda *_args: None)
+    monkeypatch.setattr(follow, 'hold_seats', lambda *_args: [token])
+    monkeypatch.setattr(follow, 'release', lambda held: released.extend(held))
+    monkeypatch.setattr(follow, 'say', lambda _answer: None)
+    monkeypatch.setattr(follow.Follower, 'followed_to_end', lambda *_args: None)
+    assert follow.run(ctx, 'finished') == {'followed': 'finished'}
+    assert released == [token] and len(planner.claims) == 1
+    assert proposal.state(ctx, 'finished')['state'] == 'planning'
+
+
+def test_roundtable_proposals_upgrade_v2_without_losing_finished_results(table):
+    from metaform.data import Tables
+    from metaform.data.tables import TableTx, ensure, project_store, project_transaction
+    from metaform.modules.roundtables import TABLES
+
+    declared = Tables(version=2, tables=tuple(one for one in TABLES.tables if one.name != 'proposals'))
+    path = project_store('proj', 'roundtables')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    followed = {'saved': 'docs/roundtables/7-result', 'topics': {'1': {'summary': True}}}
+    with project_transaction(path, write=True) as db:
+        ensure(db, path, 'roundtables', declared, 'project')
+        tx = TableTx('roundtables', declared, write=True, opener=lambda _: (db, path, True), bound='project')
+        tx.insert('tables', {'table_id': 'legacy', 'topic': 'Existing result?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'ended', 'answer': 'Keep this answer.', 'answered': True,
+                             'created': follow.now(), 'followed': followed})
+        tx.insert('events', {'table_id': 'legacy', 'seq': 1, 'kind': 'end', 'audience': 'person',
+                             'payload': {'answer': 'Keep this answer.'}, 'at': follow.now()})
+    with Store('proj', module='roundtables').tables() as tx:
+        old = tx.get('tables', {'table_id': 'legacy'})
+        assert old['answer'] == 'Keep this answer.' and old['followed'] == followed
+        assert tx.get('events', {'table_id': 'legacy', 'seq': 1})['payload']['answer'] == old['answer']
+        assert list(tx.rows('proposals', limit=0).results) == []
+        tx.insert('proposals', {'table_id': 'legacy', 'state': 'planning', 'file': 'proposal.md',
+                                'created': follow.now()})

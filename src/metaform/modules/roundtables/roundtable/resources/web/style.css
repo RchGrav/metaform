@@ -1,0 +1,53 @@
+/* The roundtable's page: plain, one column, readable at phone width. Seats are names in text, never colours. */
+:root { --ink: #1d1d1f; --soft: #5f6368; --line: #d9d9de; --back: #fafafa; --panel: #fff; --mark: #1a56c8; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--back); }
+header { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: baseline; padding: 0.75rem 1rem;
+         border-bottom: 1px solid var(--line); background: var(--panel); }
+header .home { font-weight: 700; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
+nav a { margin-right: 1rem; }
+a { color: var(--mark); }
+main { max-width: 64rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.35rem; margin: 0.25rem 0 0.5rem; overflow-wrap: anywhere; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
+.soft { color: var(--soft); }
+.small { font-size: 0.875rem; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+button { font: inherit; padding: 0.35rem 0.8rem; border: 1px solid var(--soft); border-radius: 4px; background: var(--panel); color: var(--ink); cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.main { background: var(--ink); color: #fff; border-color: var(--ink); }
+input, textarea, select { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--soft); border-radius: 4px; background: var(--panel); color: var(--ink); max-width: 100%; }
+textarea { width: 100%; min-height: 5rem; }
+label { display: block; margin: 0.6rem 0 0.2rem; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.row > label { margin: 0; font-weight: 400; }
+.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-top: 1rem; }
+.tabs button { border: 1px solid var(--line); border-bottom: none; border-radius: 4px 4px 0 0; background: var(--back); }
+.tabs button[aria-selected="true"] { background: var(--panel); font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 1rem; margin: 0.5rem 0; }
+.facts dt { color: var(--soft); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.turn { border-bottom: 1px solid var(--line); padding: 0.6rem 0; overflow-wrap: anywhere; }
+.turn .head { font-size: 0.9rem; }
+.turn .head b { font-weight: 600; }
+.turn .text, pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.3rem 0 0; }
+pre { font: 0.85rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--back); border: 1px solid var(--line); border-radius: 4px; padding: 0.5rem; }
+.report { font: inherit; background: var(--panel); border: none; padding: 0; }
+details > summary { cursor: pointer; color: var(--mark); font-size: 0.9rem; }
+.notice { padding: 0.5rem 0.75rem; border: 1px solid var(--soft); border-radius: 4px; background: var(--panel); margin: 0.5rem 0; }
+.error { border-color: #a40000; }
+.picked li { margin: 0.25rem 0; }
+.picked li span { display: inline-block; min-width: 12rem; overflow-wrap: anywhere; }
+.list { max-height: 22rem; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+@media (max-width: 40rem) {
+  main { padding: 0.5rem; }
+  .facts { grid-template-columns: 1fr; }
+  .facts dt { margin-top: 0.3rem; }
+  .picked li span { min-width: 0; display: block; }
+}

@@ -10,7 +10,9 @@
  * its turn in a word bubble whose tail points at it; a turn Jev vetoes fades from its bubble; the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
- * are the question, the chair's controls and the whole transcript. Leaving puts the map back as it was; the table runs
+ * are the question, the table's state and the whole transcript. The person only watches: the seats talk among
+ * themselves and nothing on the stage asks for the person's input once the question is asked. Leaving puts the map
+ * back as it was; the table runs
  * on, and the stage shows it again when the person comes back to it. With reduced motion the figures stand still and
  * nothing moves into place: everything is shown, only the movements are skipped.
  *
@@ -64,6 +66,7 @@ const CLOCK = {last: 0};
 /* The stage's own picture over the 3D map: its scene, camera and renderer, made the first time it opens, and where its
  * canvas is on the page, kept by its resize observer. */
 const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
+const PROPOSAL = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -75,30 +78,31 @@ UI.rankingsBox = h('section', {class: 'rt-rankings', hidden: true}, h('h3', {}, 
 UI.answerBox = h('section', {class: 'rt-answer', hidden: true}, h('h3', {}, 'Answer'), UI.answer);
 UI.results = h('section', {class: 'rt-results', hidden: true});
 UI.records = h('section', {class: 'rt-records', hidden: true}, h('h3', {}, 'Saved record'));
+UI.proposalState = h('p', {class: 'rt-proposal-state', role: 'status'});
+UI.proposalError = h('p', {class: 'rt-proposal-error', hidden: true});
+UI.proposalLink = h('a', {class: 'rt-proposal-link', target: '_blank', rel: 'noopener'}, 'Open proposal.md');
+UI.review = h('button', {class: 'btn sm rt-review', type: 'button', onclick: reviewProposal}, 'Review proposal');
+UI.approve = h('button', {class: 'btn sm rt-approve', type: 'button', onclick: () => decideProposal('approve')},
+  'Approve proposal');
+UI.reject = h('button', {class: 'btn sm rt-reject', type: 'button', onclick: () => decideProposal('reject')},
+  'Reject proposal');
+UI.proposalText = h('div', {class: 'rt-proposal-text', hidden: true, style: {'white-space': 'pre-wrap'}});
+UI.proposal = h('section', {class: 'rt-proposal', hidden: true}, h('h3', {}, 'Proposal'), UI.proposalState,
+  UI.proposalError, UI.proposalLink, UI.review, UI.proposalText, UI.approve, UI.reject);
 UI.board = h('div', {class: 'rt-board', 'aria-live': 'polite'}, UI.ideasBox, UI.rankingsBox, UI.results,
-  UI.answerBox, UI.records);
+  UI.answerBox, UI.records, UI.proposal);
 UI.canvas = h('canvas', {class: 'rt-canvas', 'aria-hidden': 'true'});
 UI.seats = h('div', {class: 'rt-seats'});
 UI.band = h('div', {class: 'rt-band'}, UI.canvas, UI.seats);
 UI.topic = h('b', {class: 'rt-question'});
 UI.state = h('span', {class: 'rt-state', role: 'status'});
-UI.comment = h('input', {type: 'text', class: 'rt-say', placeholder: 'Say something to the table as its chair',
-  'aria-label': 'Your comment to the table', onkeydown: event => { if (event.key === 'Enter') chair('comment'); }});
-const act = (name, words, title) => h('button', {class: `btn sm rt-${name}`, type: 'button', title,
-  onclick: () => chair(name)}, words);
-UI.acts = {comment: act('comment', 'Comment', 'Say it to the table at its next gap between turns'),
-  hold: act('hold', 'Hold', 'Hold the table after the turn in flight'),
-  continue: act('continue', 'Continue', 'Run the held table again'),
-  advance: act('advance', 'Advance', "End the discussion for the ideas, the rankings and the host's summary"),
-  end: act('end', 'End', 'End the table and save its record')};
 UI.leave = h('button', {class: 'btn sm quiet rt-leave', type: 'button', onclick: () => leaveStage(),
   title: 'Back to the map; the table runs on (Escape)'}, 'Leave');
 UI.newTable = h('button', {class: 'btn sm quiet rt-new', type: 'button', hidden: true,
   onclick: () => openRoundtable(true)}, 'New table');
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-UI.foot = h('div', {class: 'rt-foot'},
-  h('div', {class: 'rt-head'}, UI.topic, UI.state),
-  h('div', {class: 'rt-chair'}, UI.comment, ...Object.values(UI.acts), UI.newTable, UI.leave), UI.transcript);
+UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.newTable, UI.leave),
+  UI.transcript);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -177,10 +181,12 @@ function resetTable() {
   fill(UI.ideas); fill(UI.rankings); fill(UI.results); fill(UI.transcript);
   fill(UI.records, h('h3', {}, 'Saved record'));
   UI.results.hidden = UI.records.hidden = UI.newTable.hidden = true;
+  Object.assign(PROPOSAL, {value: null, reviewed: '', text: '', version: PROPOSAL.version + 1, reading: false,
+    writing: false});
+  renderProposal();
   UI.answer.textContent = '';
   UI.ideasBox.hidden = UI.rankingsBox.hidden = UI.answerBox.hidden = true;
   UI.topic.textContent = ''; UI.state.textContent = '';
-  chairFor('');
 }
 /* The seats' characters given back, so the agents at work may take them again. */
 function unseat() {
@@ -311,6 +317,7 @@ async function readTable(whole = false) {
       for (const event of found.events || []) {
         if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
+        else if (event.kind === 'proposal') proposalIs(event.proposal);
         else TOLD.list.push(event);
       }
       if (found.status) seated(found.status);
@@ -443,6 +450,7 @@ function ended(event) {
       h('li', {}, link('mechanical-report.md', 'Mechanical report'))));
     UI.records.hidden = false;
   }
+  if (event.proposal) proposalIs(event.proposal);
   stateIs('ended', event.reason);
 }
 /* Each topic keeps its synthesis and the engine's Borda order; ranks follow that order, never a second tally. */
@@ -461,41 +469,75 @@ function topicResult(topic) {
         h('td', {}, byId.get(id)?.name || id), h('td', {}, String(borda.points?.[id] ?? 0)))))) : null,
     topic.host_summary?.text ? h('p', {}, topic.host_summary.text) : null);
 }
+/* Proposal events update this one view. A changed digest invalidates the person's earlier review. */
+function proposalIs(proposal) {
+  PROPOSAL.version++;
+  if (proposal?.digest !== PROPOSAL.value?.digest) { PROPOSAL.reviewed = ''; PROPOSAL.text = ''; }
+  PROPOSAL.value = proposal || null;
+  renderProposal();
+}
+function renderProposal() {
+  const proposal = PROPOSAL.value;
+  UI.proposal.hidden = !proposal;
+  if (!proposal) { UI.proposalText.textContent = ''; UI.proposalText.hidden = true; return; }
+  const ready = proposal.state === 'ready', busy = PROPOSAL.reading || PROPOSAL.writing;
+  UI.proposalState.textContent = {planning: 'The planner is preparing a proposal.',
+    ready: 'Review the proposal before deciding.',
+    approved: 'Approved. Execution requires a separate work request.', rejected: 'Rejected.'}[proposal.state]
+    || proposal.state;
+  UI.proposalError.textContent = proposal.error || '';
+  UI.proposalError.hidden = !proposal.error;
+  UI.proposalLink.href = `/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+    encodeURIComponent(TABLE.id)}&file=proposal.md`;
+  UI.proposalLink.hidden = !proposal.file || proposal.state === 'planning';
+  UI.review.hidden = UI.approve.hidden = UI.reject.hidden = !ready;
+  UI.review.disabled = busy;
+  UI.approve.disabled = UI.reject.disabled = busy || !proposal.digest || PROPOSAL.reviewed !== proposal.digest;
+  UI.proposalText.textContent = PROPOSAL.text;
+  UI.proposalText.hidden = !PROPOSAL.reviewed;
+}
+async function reviewProposal() {
+  if (PROPOSAL.value?.state !== 'ready' || PROPOSAL.reading || PROPOSAL.writing) return;
+  const table = TABLE.id, version = PROPOSAL.version;
+  PROPOSAL.reading = true;
+  renderProposal();
+  try {
+    const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+      encodeURIComponent(table)}&proposal=1`);
+    if (TABLE.id !== table || PROPOSAL.version !== version) return;
+    proposalIs(found.proposal);
+    if (found.proposal?.state !== 'ready' || !found.proposal.digest || typeof found.proposal_text !== 'string') return;
+    PROPOSAL.reviewed = found.proposal.digest;
+    PROPOSAL.text = found.proposal_text;
+  } catch (error) { toast(error.message); }
+  finally { if (TABLE.id === table) { PROPOSAL.reading = false; renderProposal(); } }
+}
+async function decideProposal(action) {
+  const proposal = PROPOSAL.value;
+  if (proposal?.state !== 'ready' || !proposal.digest || PROPOSAL.reviewed !== proposal.digest
+    || PROPOSAL.reading || PROPOSAL.writing) return;
+  const table = TABLE.id;
+  PROPOSAL.writing = true;
+  renderProposal();
+  try {
+    const found = await wrote('/api/roundtable-proposal', {table, action, digest: PROPOSAL.reviewed});
+    if (TABLE.id !== table) return;
+    if (found?.proposal && PROPOSAL.value?.digest === proposal.digest) proposalIs(found.proposal);
+    else if (!found) { PROPOSAL.reviewed = ''; PROPOSAL.text = ''; }
+  } finally { if (TABLE.id === table) { PROPOSAL.writing = false; renderProposal(); } }
+}
 function stateIs(state, reason) {
   TABLE.state = state || TABLE.state;
   const words = {running: 'The table is talking', held: 'Held', ended: 'Ended', ending: 'Ending', opening: 'Opening',
     refused: 'Refused'}[TABLE.state] || TABLE.state;
   UI.state.textContent = reason && TABLE.state !== 'running' ? `${words}: ${reason}` : words;
   UI.root.dataset.state = TABLE.state;
-  chairFor(TABLE.state);
-}
-/* The chair's controls the table's state allows: a running table can be held, advanced or ended, a held one run again
- * or ended, and an ended one nothing; Leave always. */
-function chairFor(state) {
-  const running = state === 'running', held = state === 'held';
-  UI.acts.comment.disabled = UI.comment.disabled = !(running || held);
-  UI.acts.hold.disabled = !running;
-  UI.acts.continue.disabled = !held;
-  UI.acts.advance.disabled = !running;
-  UI.acts.end.disabled = !(running || held);
 }
 /* One line of the transcript, whole, the newest kept in view unless the person has scrolled up to read. */
 function said(kind, who, text, after = '') {
   const box = UI.transcript, bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
   box.append(h('li', {class: kind}, h('b', {}, who), ' ', text, after ? h('span', {class: 'rt-why'}, after) : null));
   if (bottom) box.scrollTop = box.scrollHeight;
-}
-async function chair(name) {
-  if (!TABLE.id) return;
-  const text = UI.comment.value.trim();
-  if (name === 'comment' && !text) { UI.comment.focus(); return; }
-  UI.acts[name].disabled = true;
-  const answer = await wrote('/api/roundtable-chair', {table: TABLE.id, act: name,
-    ...(name === 'comment' ? {text} : {})});
-  if (answer && name === 'comment') { UI.comment.value = ''; said('rt-chair', 'You', text); }
-  if (answer?.state) stateIs(answer.state, answer.reason);
-  else chairFor(TABLE.state);
-  nextUp();
 }
 
 /* ---------- the figures ---------- */

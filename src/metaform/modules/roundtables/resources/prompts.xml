@@ -4,6 +4,12 @@
      An empty element inside a prompt, such as <question/>, marks a place the code fills in.
      Comments are never sent. -->
 <prompts>
+<!-- A fresh Planner receives paths to the saved record. It publishes a proposal without starting execution. -->
+<proposal_task>Prepare a proposal from finished roundtable <table/>. Read its complete saved record at <record/>. Preserve the question, synthesis, ranked ideas, disagreements and open decisions as evidence. Inspect relevant project requirements and implementation before choosing the approach.
+
+Write <proposal/> beside the saved record. Include the goal, plan, proposed tickets with functional Addresses and acceptance evidence, implementation order, dependencies and decisions that need the person. Proposed tickets remain prose in this file. Create no execution tickets, assign no implementers and start no execution. The person must review this proposal before any implementation request.
+
+Publish the saved file with metaform roundtables submit <table/>. The page presents its exact revision for approval or rejection. Return the proposal path, its revision and verification on this planning ticket. This assignment delivers a proposal only.</proposal_task>
 <!-- roundtables' line in the connect message, after the module's name: what an agent uses it for. Sent to every agent
      when it connects over MCP, one line per enabled module. Empty sends nothing. -->
 <connect>bring a question to a table of agents, follow it live, and read its result when it ends</connect>

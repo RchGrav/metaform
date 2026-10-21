@@ -5944,11 +5944,16 @@ def paused_by_stop_all(run, home, project_folder, tmp_path):
     """Three assignments, one agent slot and Stop all pressed: the work, the assignments' reader and the dispatch
     context."""
     from metaform.module import context
+    from metaform.modules.dispatch.orchestration import TRANSPORT
     from metaform.modules.orchestration.state import SERVICE
     made = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     works = [made.id, *(made.store.add_work(made.node, 'unbuilt', task=f'Write part {n}.').id for n in (2, 3))]
     owner_ctx = context('orchestration', project_folder, project='proj')
+    runtime_offers(made, 'claude')
     for work in works:
+        TRANSPORT.keep_runtime(owner_ctx, work, {
+            'agent': 'claude', 'model': 'balanced', 'effort': 'medium', 'decider': 'facilitator',
+            'confidence': 1.0, 'reason': 'Use the fake runtime for stop lifecycle checks.'})
         SERVICE.ensure(owner_ctx, work, role='implementer')  # Explicit fixture duty; no automatic role default.
     run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=project_folder)
     run('dispatch', 'stop-all', '--json', cwd=project_folder)
@@ -6006,6 +6011,7 @@ def test_a_stop_the_person_gave_one_ticket_survives_full_auto_turned_on_after_st
     made, works, assignment, ctx = paused_by_stop_all(run, home, project_folder, tmp_path)
     try:
         run('dispatch', 'stop', works[0], '--json', cwd=project_folder)
+        assert not assignment(works[0])['stop'].get('every')
         run('set', '--dispatch-agents', '3', '--dispatch-autostart', cwd=project_folder)
         module, _ = launches_recorded(monkeypatch)
         assert sorted(module.autostart(ctx).get('resumed') or []) == sorted(works[1:])

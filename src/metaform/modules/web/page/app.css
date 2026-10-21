@@ -1756,11 +1756,10 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   background:color-mix(in srgb,var(--panel) 88%,transparent);border-top:1px solid var(--line-2)}
 .rt-head{display:flex;gap:var(--s3);align-items:baseline;flex-wrap:wrap}
 .rt-state{color:var(--muted)}
-.rt-chair{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
-.rt-say{flex:1 1 220px;min-width:0}
+.rt-leave{margin-left:auto}
 .rt-transcript{margin:0;padding-left:1.6em;max-height:22vh;overflow:auto;display:grid;gap:3px;line-height:1.4}
 .rt-transcript .vetoed{opacity:.5;text-decoration:line-through}
-.rt-transcript .rt-note,.rt-transcript .rt-chair{font-style:italic;color:var(--muted)}
+.rt-transcript .rt-note{font-style:italic;color:var(--muted)}
 .rt-setup{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;gap:var(--s2);
   width:min(520px,calc(100% - 2 * var(--s4)));padding:var(--s4);border-radius:var(--r-lg);background:var(--panel);
   border:1px solid var(--line-2);box-shadow:var(--lift-2)}

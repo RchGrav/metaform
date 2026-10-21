@@ -3836,25 +3836,30 @@ class Session:
         inbox names each by its ticket and kind; the whole report stays on the ticket and its assignment."""
         from .orchestration import update_entries, user_updates
 
-        def due() -> list[tuple[str, str, bool]]:
-            return update_entries(self.ctx, [one for one in user_updates(self.ctx) if one not in self.queued_peer_ids])
-        for ident, said, wakes in await asyncio.to_thread(due):
+        def due() -> list[tuple[str, str, bool, bool]]:
+            passive: set[str] = set()
+            entries = update_entries(self.ctx, [one for one in user_updates(self.ctx)
+                                                if one not in self.queued_peer_ids], passive=passive)
+            return [(ident, said, wakes, ident in passive) for ident, said, wakes in entries]
+        for ident, said, wakes, passive in await asyncio.to_thread(due):
             self.queued_peer_ids.add(ident)
-            self.inbox_add(ident, '', said, wakes, update=True)
+            self.inbox_add(ident, '', said, wakes, update=True, passive=passive)
 
-    def inbox_add(self, note_id: str, sender: str, said: str, wakes: bool, *, update: bool = False) -> None:
+    def inbox_add(self, note_id: str, sender: str, said: str, wakes: bool, *, update: bool = False,
+                  passive: bool = False) -> None:
         """Put one note or project update in the person's system agent's inbox, never into its conversation: the next
         turn carries the one inbox line naming all that waits. Only an entry that needs the person, `inbox_wakes`,
         starts that turn itself, an empty one the line alone fills, and while one waits no second is queued; a new
         conversation not yet given its opening turn needs none, since that turn carries the line. A routine entry (a
         ticket complete, a board item, a peer note, a commit) is never named: it stays in its thread for dispatch notes,
         and only what needs the person or the system agent reaches its conversation (2026-10-20: routine lines flooded it)."""
-        if not wakes:
+        # Roundtable references wait for the next person turn without starting one themselves.
+        if not wakes and not passive:
             return
         if any(one[0] == note_id for one in self.inbox):
             return
         self.inbox.append((note_id, sender, said, update))
-        if '' not in self.pending and (self.resume or self.spoken or self.turns):
+        if wakes and '' not in self.pending and (self.resume or self.spoken or self.turns):
             self.turn('')
 
     def inbox_said(self) -> str:
@@ -4306,7 +4311,7 @@ class Session:
             # the person's system agent works like an inbox: the note waits in its thread, read with dispatch notes,
             # and the next turn names it in one line, by ticket and kind (2026-10-19: one turn held 30 full reports)
             said, wakes = inbox_entry(held)
-            self.inbox_add(note_id, marks[0][1], said, wakes)
+            self.inbox_add(note_id, marks[0][1], said, wakes, passive=held.get('update') == 'roundtable_result')
             return {'noted': True, 'queued': True, 'busy': busy, 'inbox': True}
         if held.get('kind') == 'user_direction':  # the person's decision their system agent relays goes as theirs
             current = self.active_turn

@@ -1,6 +1,6 @@
 # roundtables
 
-Brings the person's question to a table of agents, through the person's Roundtable 2 engine, `roundtable` (https://github.com/RchGrav/roundtable): the seats debate it, build on each other's ideas, and go on until the question is answered, the page shows its finished synthesis, rankings, answer and saved transcript. The engine runs the table; this module connects Metaform to it and ports nothing of it.
+Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. A fresh Planner prepares a proposal from the saved record for the person's decision.
 
 ## Purpose
 
@@ -12,19 +12,19 @@ The template changelog version this module started from: 0.3.0.
 
 ## Declaration
 
-`SUPPORTED_OS` is Linux and macOS: a table's follower and the engine's servers are detached into a session of their own. `DEPENDENCIES` is empty. `SHIPS_DISABLED` is false. `MODULE` declares the verbs below and the tables.
+`SUPPORTED_OS` is Linux and macOS: a table's follower and the engine's servers are detached into a session of their own. `DEPENDENCIES` is the shipped engine's own requirements: `mcp`, `agent-client-protocol`, `a2a-sdk[http-server]`, `httpx` and `uvicorn`. `SHIPS_DISABLED` is false. `MODULE` declares the verbs below and the tables.
 
 ### Toolbar items and panes
 
-None of its own. The web page's roundtable stage (web, `page/app/roundtable/stage.js`) opens and chairs a table through the web server's `/api/roundtable-open`, `/api/roundtable-chair` and `/api/roundtable`, which run `open`, the chair's verbs, `events` and `status`.
+None of its own. The web page's roundtable stage (web, `page/app/roundtable/stage.js`) opens a table and shows it through the web server's `/api/roundtable-open` and `/api/roundtable`, which run `open`, `events` and `status`. The person asks the question once and then only watches; the chair's verbs are for the command line and agents.
 
 ## Common base used
 
-`metaform.settings` declares the two settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats` and `orchestration.transport`. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
+`metaform.settings` declares the two settings and reads `jev` and dispatch's agent commands. `metaform.data` gives the module's own tables. `metaform.outline.markdown` writes the part as the opening holds it, and `metaform.module.node_items` lists the memories at it. `metaform.module.provided` finds dispatch's `dispatch.seats`, `orchestration.transport` and the `orchestration` provider. `metaform.events.announced` announces each write of a follower, and `Context.publish` publishes `roundtables.event`. `metaform.prompt_files` serves `resources/prompts.xml`. `metaform.home` places the logs. Nothing else of Metaform is imported.
 
 ### Provides
 
-Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, and memory's `memory.record`.
+Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, orchestration's `orchestration` provider, and memory's `memory.record`.
 
 ## Prompts
 
@@ -43,7 +43,6 @@ Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, and 
 
 ## Settings
 
-- `roundtables_engine`, `roundtable`, global, the person's: the command that runs the engine.
 - `roundtables_spend`, 2, the person's: the most US dollars one table spends through OpenRouter; `open` may only lower it.
 - `roundtables_seats`, `claude/opus`, `codex/astra`, `codex/sol`, `claude/fable`, the person's: the seats, in speaking order, of a table opened without any named, as the page's stage opens one. A model is a short name, such as `opus` or `sol`, which means the newest release of its family when the table opens, or an exact value, such as `gpt-6-sol`, which pins one; one the agent does not offer is refused, naming the nearest.
 
@@ -60,7 +59,7 @@ The follower hears the table through the engine's own page server, started for i
 - Seats read and change nothing. The engine gives Claude Code only Read, Grep and Glob, runs Codex read-only, offers no file writes or terminals, and refuses every permission a seat asks to write; this module never names an MCP server for a seat. The tables carry no Metaform tool.
 - Operational events reach the person, never a seat or Jev.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
-- The page shows the engine's result directly. No system agent writes another report. The engine's reporter output is not saved or shown by this module.
+- The page shows the engine's result directly. A separate Planner prepares the proposal; the system agent receives only the saved reference. The engine's reporter output is not saved or shown by this module.
 
 ## What a table leaves in the project
 
@@ -70,13 +69,25 @@ When a table ends, its follower saves the record and keeps its outcome as a memo
 - One memory is recorded at the table's Address, or at the project's top element for a table about no part, through memory's `memory.record`, under memory's own rules, its writer `roundtables`: the question, the host's answer, the top three ideas by the Borda count with what the synthesis said of each, each seat's explanation of its top three, where the record is saved, which it cites, so the memory is marked stale if the file changes. Each engine text is quoted whole as one observation. Memory is what happened at the table; what it established about the project is the person's to judge, through `adopt` or knowledge an agent writes later, and the follower writes no knowledge layer item itself.
 - `status` shows `saved`, `recorded` and `topics`; `report` names the saved mechanical transcript, with its text included by `report=true`. The page links the transcript and complete export through `/api/roundtable?project=<project>&table=<table>&file=mechanical-report.md` or `file=export.json`. Only these saved record filenames are accepted. With memory off, or no element on the map, the files are still saved and the `end` event says why nothing was recorded.
 
+## Proposal review
+
+After a person-opened table ends, its seats are released before one fresh Planner assignment is admitted through ordinary dispatch capacity and stop controls. Its saved task names the complete record and a relative `proposal.md` output path. The Planner proposes the goal, plan, tickets, order, dependencies and open decisions without creating implementation tickets. It submits its artifact with `roundtables submit <table>`; submission from an isolated assignment folder publishes a copy beside the canonical saved record.
+
+The system receives one compact reference of kind `roundtable_result`: the table id and saved export path. It waits for the next person turn, starts no turn itself and includes no synthesis or report body. Stable message identity prevents duplicate delivery after recovery.
+
+`status` includes proposal state (`planning`, `ready`, `approved` or `rejected`), file, planning ticket, published digest and any planning error. A `proposal` event uses the table's existing change stream. `roundtables proposal <table>` reads the text only when requested. The page's Review proposal control reads the text and digest, then enables Approve and Reject for that revision. `roundtables decide <table> <approve|reject> <digest>` records the person's decision. Agent calls require explicit consent. A stale digest or changed file is refused. Resubmitting a changed proposal returns it to `ready` for review. Approval starts no execution: a separate work request is required.
+
+`roundtables plan <table>` retries failed planning using the existing ticket. Agent-opened tables keep the existing caller status/events route and create no Planner assignment or system reference.
+
+The `proposals` table is keyed by `table_id` and keeps `state`, `file`, `work_id`, `digest`, `error` and `created`. It records planning and decisions separately from follower cursors. The existing system-agent report request and its wake are removed.
+
 ## Sync and async
 
 Every verb is synchronous. An engine call runs its MCP client on an event loop of its own for the call, with a deadline of 180 s. The follower is a process of its own, blocked on the events stream between changes.
 
 ## Layers
 
-It writes no layer: its tables are at the project's place, version 2.
+It writes no layer: its tables are at the project's place, version 3. The proposal table is additive; version 2 discussions and events remain intact.
 
 - `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer, rounds and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its result topics retained; `answer` and `answered`; `created` and `ended`. Index on `created`.
 - `events`, keyed by `(table_id, seq)`: `kind`, `audience`, `payload` and `at`.
@@ -99,7 +110,11 @@ For each running table, its follower process and the engine page server it start
 
 ## Installed and direct wheel
 
-The same in both. The engine is installed apart: `uv tool install <path to roundtable>`, or `roundtables_engine` set to its command. `OPENROUTER_API_KEY` must be set where Metaform runs.
+The same in both: the engine is in the wheel, so nothing is installed apart and nothing is looked up on PATH. `OPENROUTER_API_KEY` must be set where Metaform runs.
+
+## The shipped engine
+
+`roundtable/` is the Roundtable 2 engine, copied from https://github.com/RchGrav/roundtable at revision 65359b27d72e4ee07325bde90a61bbfb0786f06f, its `src/roundtable` package with its `resources`. That repository is private and is not on PyPI, so a dependency on it would fail for every other person; the copy ships it with Metaform. It carries no licence file; it is the work of Metaform's own author. One line differs from the origin: its runner starts a table's detached process as `python -m` of its own package, `__package__`, where the origin named the top-level `roundtable`. Every process of the engine is `<Metaform's interpreter> -m metaform.modules.roundtables.roundtable <serve|web|run>`, `engine.command`. Its home and settings are its own, `ROUNDTABLE_HOME` (`~/.roundtable` by default) and its `config.toml`. To update it, copy the origin's `src/roundtable` over `roundtable/` without `__pycache__`, keep the runner's line, and record the new revision here. The module's tests run it with the engine's own fakes, carried in `tests/`: `fakes.py`, its stub of OpenRouter and Jev from `scripts/check.py`, and `fake_agent.py`, its fake ACP agent from `dev/`.
 
 ## Demonstration
 

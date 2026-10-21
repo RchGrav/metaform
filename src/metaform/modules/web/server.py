@@ -63,6 +63,7 @@ from metaform.data import (
     WorkRecord,
     functional_context,
     on_base,
+    parse_reference,
     plain,
     prompts,
     query_read,
@@ -231,7 +232,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
-    '/api/roundtable-open', '/api/roundtable-chair'})
+    '/api/roundtable-open', '/api/roundtable-proposal'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -273,7 +274,6 @@ def verb_class(module_id: str, verb: chassis.Verb, arguments: dict[str, Any]) ->
     return 'read' if verb.effect == 'read' else 'write'
 
 
-ROUNDTABLE_CHAIR = ('comment', 'hold', 'continue', 'advance', 'end')  # the stage's chair controls, roundtables' verbs
 COALESCE = 0.3  # seconds a page's stream holds dispatch-only events to merge them, VIEW-018
 GONE: dict[str, Any] = {'topic': 'gone'}  # put on a page's stream by its socket closing, `events`
 # The acts of the person's mascot a page takes, VIEW-005; those that ask the page something, and the body's acts, which
@@ -1459,7 +1459,8 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-configure': self.dispatch_configure,
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
-                  '/api/roundtable-open': self.roundtable_open, '/api/roundtable-chair': self.roundtable_chair,
+                  '/api/roundtable-open': self.roundtable_open,
+                  '/api/roundtable-proposal': self.roundtable_proposal,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -1757,7 +1758,8 @@ class Handler(BaseHTTPRequestHandler):
             routing = next((owner.routing_status(ctx, work.id) for _, owner in
                             chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
-            self.send(200, {'ticket': {**plain(work), **fields}, 'revision': ticket_revision(fields),
+            self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column}, 'revision': ticket_revision(fields),
+                            'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
                             'functionality': graph, 'routing': routing})
         except (Stop, StoreError) as error:
@@ -2583,16 +2585,18 @@ class Handler(BaseHTTPRequestHandler):
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
             table = {'table': given['table']}
+            if given.get('proposal'):
+                return self.send(200, module_verb(given, 'roundtables', 'proposal', table))
             if given.get('file'):
                 name = given['file']
-                if name not in ('export.json', 'mechanical-report.md'):
+                if name not in ('export.json', 'mechanical-report.md', 'proposal.md'):
                     return self.send(400, {'error': 'Choose the saved transcript or export.'})
                 status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
                 saved = str(status.get('saved') or '')
                 if not saved:
                     return self.send(404, {'error': 'The table has no saved record yet.'})
                 _, folder = project_folder(given)
-                return self.file(folder, f'{saved}/{name}')
+                return self.file(folder.resolve(), f'{saved}/{name}')
             found = cast(dict[str, Any], module_verb(given, 'roundtables', 'events',
                                                      {**table, 'after': int(given.get('after') or 0)}))
             if given.get('whole'):
@@ -2602,6 +2606,16 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, ValueError) as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_proposal(self, given: dict[str, Any]) -> None:
+        try:
+            found = module_verb(given, 'roundtables', 'decide',
+                                {key: given.get(key) for key in ('table', 'action', 'digest')})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except (Stop, ValueError, OSError) as error:
+            return self.refuse(error, 400)
+        self.send(200, found)
 
     def roundtable_open(self, given: dict[str, Any]) -> None:
         """A table opened on the person's question, `roundtables open`, focused on the part at `address` when the
@@ -2619,24 +2633,6 @@ class Handler(BaseHTTPRequestHandler):
                                                             else {}), **({'seats': seats} if seats else {})}
         try:
             found = module_verb(given, 'roundtables', 'open', nouns)
-        except StoreError as error:
-            return self.refuse(error, 404)
-        except Stop as error:
-            return self.refuse(error, 400)
-        self.send(200, plain(found))
-
-    def roundtable_chair(self, given: dict[str, Any]) -> None:
-        """One of the chair's controls on the stage's table: comment, hold, continue, advance or end."""
-        table, act, text = given.get('table'), given.get('act'), given.get('text')
-        if not isinstance(table, str) or not table:
-            return self.send(400, {'error': 'The chair acts on a table, by its id.'})
-        if act not in ROUNDTABLE_CHAIR:
-            return self.send(400, {'error': f'The chair can {", ".join(ROUNDTABLE_CHAIR)}.'})
-        if act == 'comment' and (not isinstance(text, str) or not text.strip()):
-            return self.send(400, {'error': 'A comment says something.'})
-        nouns = {'table': table, **({'text': cast(str, text).strip()} if act == 'comment' else {})}
-        try:
-            found = module_verb(given, 'roundtables', str(act), nouns)
         except StoreError as error:
             return self.refuse(error, 404)
         except Stop as error:
@@ -3581,6 +3577,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
 
 SPEC_CODE = re.compile(r'^(?:[A-Z]{2,6}-\d{3}|D\d{2,4})$')  # a record's code in specifications/*.md: VIEW-042, D120
 HEX_REF = re.compile(r'^[0-9a-f]{8,32}$')  # a ticket's or a message's id, whole or its first characters
+ITEM_REF = re.compile(r'^[\w.-]+#[0-9a-fA-F]{1,15}$')  # an item's reference, `<address>#<n>`, as the system agent names tickets
 FILE_LINES = 80  # how much of a file a reference shows
 
 
@@ -3623,6 +3620,9 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
         specs = [(path, path.read_text(encoding='utf-8', errors='replace').splitlines())
                  for path in sorted((folder / 'specifications').glob('*.md'))]
         found.update((code, spec_record(folder, code, specs)) for code in codes)
+    items = [ref for ref in refs if ITEM_REF.match(ref)]
+    if items:
+        found.update((ref, item_reference(project.project_id, ref)) for ref in items)
     ids = [ref for ref in refs if HEX_REF.match(ref)]
     if ids:
         store = Store(project.project_id)
@@ -3653,6 +3653,36 @@ def referenced(project: Any, refs: list[str]) -> dict[str, dict[str, Any] | None
         if ref not in found:
             found[ref] = file_reference(folder, ref)
     return found
+
+
+def board_of(project_id: str, work_id: str, base: str | None = None) -> str:
+    """The named board a ticket is on, '' for the first board."""
+    try:
+        with Store(project_id, base=base or None, module='map').tables(write=False) as tx:
+            row = tx.get('ticket_settings', {'work_id': work_id})
+    except StoreError:
+        return ''
+    return str(row.get('board') or '') if row else ''
+
+
+def item_reference(project_id: str, ref: str) -> dict[str, Any] | None:
+    """The ticket numbered at `<address>#<n>`, as a lookup answers a ticket, with its board; None when that number
+    holds no ticket, so the page leaves it plain text."""
+    parsed = parse_reference(ref)
+    if parsed is None:
+        return None
+    store = Store(project_id)
+    try:
+        held = store.item_at(*parsed)
+        record = store.ticket(str(held['id'])).work if held and held.get('kind') == 'work' else None
+    except (Stop, StoreError):
+        return None
+    if record is None:
+        return None
+    return {'kind': 'ticket', 'id': record.id, 'item': ref, 'title': short(record.task or record.note or record.id),
+            'task': short(record.task), 'note': short(record.note), 'condition': record.condition,
+            'column': record.column, 'done': record.done, 'resolution': short(record.resolution),
+            'address': record.address, 'board': board_of(project_id, record.id)}
 
 
 def file_reference(folder: Path, ref: str) -> dict[str, Any] | None:

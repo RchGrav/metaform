@@ -14,6 +14,109 @@ from metaform.modules.web.tests.test_web import (  # noqa: F401 -- shared fixtur
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-035')]
 
 
+def test_figure_frames_coalesce_wakes_from_inside_the_frame():
+    """Camera writes wake the figure loop while it runs. Keep one successor per browser frame."""
+    import json
+    import subprocess
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1]
+              / 'src/metaform/modules/web/page/app/figures/roam2d.js').read_text()
+    scheduler = source[source.index('export function again2d()'):source.index('function layer2d(')]
+    loop = source[source.index('function roam2d()'):source.index('function gone2d(')]
+    result = subprocess.run(['node', '-'], input="""
+        const {runInNewContext} = require('node:vm');
+        const source = SOURCE;
+        const results = [];
+        for (const count of [1, 17]) {
+            const pending = new Map();
+            let next = 0, visits = 0, now = 0;
+            const ROAM2D = {frame: 0, last: 0,
+                figures: new Map(Array.from({length: count}, (_, id) => [id, {}]))};
+            const api = runInNewContext(source + '\\n({again2d})', {
+                ROAM2D, M: {base: null}, VIEWPORT: {watched: true},
+                performance: {now: () => now}, mascotGlyph: () => null,
+                MASCOT2D: {g: null}, reduced: () => false,
+                requestAnimationFrame: callback => { pending.set(++next, callback); return next; },
+                layer2d: () => null, mascot2d: () => false,
+                stepFigure2d: () => { visits++; return true; },
+                followed2d: () => { api.again2d(); api.again2d(); },
+            });
+            api.again2d(); api.again2d();
+            const queued = [];
+            for (let frame = 0; frame < 12; frame++) {
+                const callbacks = [...pending.values()]; pending.clear(); now += 16;
+                for (const callback of callbacks) callback();
+                queued.push(pending.size);
+            }
+            results.push({count, visits, queued});
+        }
+        process.stdout.write(JSON.stringify(results));
+    """.replace('SOURCE', json.dumps(scheduler.replace('export ', '') + loop)),
+                            text=True, capture_output=True, check=True)
+    for sample in json.loads(result.stdout):
+        assert sample['queued'] == [1] * 12, sample
+        assert sample['visits'] == sample['count'] * 12, sample
+
+
+def test_following_an_agent_keeps_one_2d_frame_pending(run, web, mapped, browser):  # noqa: F811
+    """Run actual follow-camera writes through the real frame callback without letting duplicates hang Chromium."""
+    from metaform.data import Node, Store
+
+    run('enable', 'dispatch')
+    store = Store('proj')
+    ticket = store.add_work(Node('element', 'code.alarm.audible'), 'broken', task='Inspect the work')
+    store.take_work(ticket.id, by='codex')
+    live_session(ticket.id, 'codex')
+    started(run)
+    page, problems, _ = opened(browser, web, plain=True)
+    page.evaluate("""async () => {
+        const {ROAM2D} = await import('/page/app/figures/roam2d.js');
+        window.followCheck = {ROAM2D};
+    }""")
+    page.wait_for_function('() => window.followCheck.ROAM2D.figures.size === 1')
+    found = page.evaluate("""async () => {
+        const {ROAM2D, again2d} = await import('/page/app/figures/roam2d.js');
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const {followNext, leaveFollow} = await import('/page/app/figures/eyes.js');
+        const {FOLLOW} = await import('/page/app/map2d/camera.js');
+        const {M} = await import('/page/app/map2d/build.js');
+        window.metaform.pause3d(true);
+        const realFrame = window.requestAnimationFrame, realNow = performance.now.bind(performance);
+        const pending = new Map(), queued = [];
+        let next = 0, now = realNow();
+        cancelAnimationFrame(ROAM2D.frame); ROAM2D.frame = 0;
+        window.requestAnimationFrame = callback => {
+            if (callback.name !== 'roam2d') return realFrame(callback);
+            pending.set(--next, callback); return next;
+        };
+        performance.now = () => now;
+        try {
+            // The real A action enables camera tracking. The first moving frames must not start parallel loops.
+            followNext();
+            const followed = FOLLOW.work, first = [...ROAM.figures.values()][0].id;
+            again2d();
+            const before = M.cam.x;
+            for (let frame = 0; frame < 12; frame++) {
+                const callbacks = [...pending.values()]; pending.clear(); now += 50;
+                for (const callback of callbacks) callback();
+                queued.push(pending.size);
+            }
+            const moved = M.cam.x !== before;
+            followNext();
+            return {queued, followed, first, moved, stopped: FOLLOW.work === null};
+        } finally {
+            leaveFollow(); window.requestAnimationFrame = realFrame; performance.now = realNow;
+            ROAM2D.frame = 0; ROAM2D.last = realNow() / 1000; again2d();
+            window.metaform.pause3d(false);
+        }
+    }""")
+    assert found['followed'] == found['first'] == ticket.id, found
+    assert found['moved'] and found['stopped'], found
+    assert found['queued'] == [1] * 12, found
+    assert problems == []
+
+
 def test_working_2d_figures_hold_separate_places_and_resume_after_temporary_motion(
         run, web, mapped, browser):  # noqa: F811 -- shared fixtures
     from metaform.data import Node, Store

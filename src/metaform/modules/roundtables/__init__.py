@@ -42,27 +42,24 @@ from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Stop, Verb, context, node_items, provided
+from metaform.module import Context, Module, Noun, Stop, Verb, agent_caller, context, node_items, provided
 
-from . import engine, follow
+from . import engine, follow, proposal
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
-DEPENDENCIES = ()
-SHIPS_DISABLED = False  # a person can open a table in any project once the engine is installed
+# The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
+DEPENDENCIES = ('mcp>=2.2,<3', 'agent-client-protocol>=0.12.1,<0.13', 'a2a-sdk[http-server]>=1.2.2,<2', 'httpx>=0.28,<1',
+                'uvicorn>=0.31')
+SHIPS_DISABLED = False  # a person can open a table in any project: the engine ships inside this module
 
 PACKAGE = resources.files(__name__)
 OPEN_LIMIT = engine.CALL_LIMIT + 30  # seconds `open` waits for its follower's first line: a deadline on one request
 CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spent', 'runner')
 
-settings.text('roundtables_engine', 'roundtable', scope='global', person_only=True, label='Roundtable engine',
-              category='integrations', heading='Roundtables',
-              help='The command that runs the Roundtable 2 engine, such as <its folder>/.venv/bin/roundtable.',
-              details='Metaform runs it as `<command> serve` to open and chair a table and `<command> web` to follow '
-                      'one. OPENROUTER_API_KEY must be set where Metaform runs: Jev judges every turn through '
-                      'OpenRouter.')
 settings.number('roundtables_spend', 2, min=0, max=100, person_only=True, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
-                help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.')
+                help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.',
+                details='OPENROUTER_API_KEY must be set where Metaform runs: Jev judges every turn through OpenRouter.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -92,7 +89,7 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone. The engine's synthesis and saved mechanical report supply the result.
-TABLES = Tables(version=2, tables=(
+TABLES = Tables(version=3, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
         Column('opening', required=True), Column('seats', 'json', required=True), Column('host'),
@@ -106,6 +103,9 @@ TABLES = Tables(version=2, tables=(
     Table('events', place='project', key=('table_id', 'seq'), columns=(
         Column('table_id', required=True), Column('seq', 'int', required=True), Column('kind', required=True),
         Column('audience', required=True), Column('payload', 'json', required=True), Column('at', required=True))),
+    Table('proposals', place='project', key=('table_id',), columns=(
+        Column('table_id', required=True), Column('state', required=True), Column('file', required=True),
+        Column('work_id'), Column('digest'), Column('error'), Column('created', required=True))),
 ))
 
 
@@ -186,6 +186,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             **({'report': report} if report else {}), 'created': row['created'],
             **({'ended': row['ended']} if row.get('ended') else {}),
             **({'topics': followed['result_topics']} if 'result_topics' in followed else {}),
+            **({'proposal': plan} if (plan := proposal.state(ctx, str(row['table_id']))) is not None else {}),
             **{key: followed[key] for key in ('saved', 'recorded') if followed.get(key)}}
 
 
@@ -234,7 +235,6 @@ def open_table(ctx: Context) -> dict[str, Any]:
         raise Stop('A table sends your question, and the part\'s context when it is about a part, to OpenRouter, where '
                    'Jev judges every turn, and only you allow project text to leave this machine.',
                    'metaform set --jev')
-    engine.command(ctx.folder)
     address, topic = str(ctx.nouns.get('address') or '').strip(), str(ctx.nouns['topic']).strip()
     if not topic:
         raise Stop('A table opens on a question.', 'metaform roundtables open')
@@ -257,7 +257,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
         tx.concern(kind=follow.CHANGE_KIND)
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
                              'seats': seats, **roles, 'rounds': ctx.nouns.get('rounds'), 'spend': spend,
-                             'state': 'opening', 'created': follow.now()})
+                             'state': 'opening', 'created': follow.now(),
+                             'followed': {'opener': 'person' if ctx.surface == 'web' or (
+                                 ctx.surface == 'cli' and agent_caller() is None) else 'agent'}})
     answer = started(ctx, table_id)
     if 'refused' in answer:
         raise Stop(str(answer['refused']), str(answer.get('next') or 'metaform dispatch sessions'))
@@ -410,6 +412,10 @@ def run(ctx: Context) -> dict[str, Any]:
     return follow.run(ctx, str(ctx.nouns['table']))
 
 
+def plan(ctx: Context) -> dict[str, Any]:
+    return proposal.plan(ctx, str(ctx.nouns['table']))
+
+
 ADOPT_CAUTION = ('Adopting an idea files a ticket that Full Auto starts like any other, so it spends agent time: the '
                  'person decides which ideas become work.')
 
@@ -456,6 +462,13 @@ MODULE = Module(
                                 required=False)),
              effect='read'),
         Verb('tables', listed_tables, 'Every table of the project, newest first.', effect='read'),
+        Verb('plan', plan, 'Prepare or resume the finished table\'s Planner proposal.', nouns=(TABLE,)),
+        Verb('proposal', proposal.read, 'Read the saved proposal and its exact revision.', nouns=(TABLE,), effect='read'),
+        Verb('submit', proposal.submit, 'Publish the Planner\'s saved proposal for the person\'s review.', nouns=(TABLE,)),
+        Verb('decide', proposal.decide, 'Record the person\'s decision on the reviewed proposal.',
+             nouns=(TABLE, Noun('action', 'approve or reject.', schema={'enum': ['approve', 'reject']}),
+                    Noun('digest', 'SHA-256 of the proposal revision the person reviewed.')),
+             person_decides=lambda ctx: 'Only the person approves or rejects a Planner proposal.'),
         Verb('events', table_events, 'A table\'s events after a cursor, as its follower told them.',
              nouns=(TABLE, Noun('after', 'The seq of the last event read; 0 for all.', kind='int', required=False)),
              effect='read'),

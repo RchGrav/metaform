@@ -703,16 +703,15 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
     """code.interface.graphical#131: a table opened from the selected part, run by the Roundtable 2 engine with its own
     fakes (its stub OpenRouter and Jev, its fake ACP agent), as the roundtables module's tests run it. The map sinks
     back and the seats stand in an arc facing the person; the floor's bubble points at its head; a veto fades; the
-    ideas, rankings and summary grow above the arc as they come; hold and end work; leaving puts the map back."""
+    ideas, rankings and summary grow above the arc as they come; the stage asks the person nothing once the question
+    is asked; leaving puts the map back."""
     import itertools
     import math
     import time
 
     from metaform.modules.roundtables.tests import test_roundtables as rt
-    if not rt.COMMAND.is_file():
-        pytest.skip(f'the Roundtable 2 engine is not at {rt.ENGINE}')
     for key, value in {'ROUNDTABLE_HOME': str(mapped.parent / 'engine'), 'OPENROUTER_API_KEY': 'stub-key',
-                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {rt.ENGINE / "dev" / "fake_agent.py"}',
+                       'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {rt.FAKE_AGENT}',
                        'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
                        'ROUNDTABLE_REPORT_MODEL': 'stub/reporter',
                        'FAKE_ACP_LOG': str(mapped.parent / 'fake-acp.log')}.items():
@@ -721,7 +720,6 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
     try:
         run('enable', 'dispatch', cwd=mapped)
         run('set', '--jev', cwd=mapped)
-        run('set', f'--roundtables-engine={rt.COMMAND}', cwd=mapped)
         run('set', '--roundtables-seats=stub/vega,claude/haiku,stub/orion', cwd=mapped)
         started(run)
         page, problems, _ = opened(browser, web, plain=True)
@@ -802,16 +800,13 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
         assert speaking['tip'] and math.dist(speaking['tip'], speaking['head']) < 6, speaking
         assert speaking['words'], speaking
 
-        # hold, and the table holds after the turn in flight; continue runs it again
-        page.click('.rt-chair .rt-hold')
-        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "held"', timeout=60000)
-        assert page.is_enabled('.rt-chair .rt-continue') and not page.is_enabled('.rt-chair .rt-hold')
-        page.click('.rt-chair .rt-continue')
-        page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "running"',
-                               timeout=60000)
+        # the person only watches: nothing on the stage takes their input once the question is asked
+        assert page.evaluate("""() => [...document.querySelectorAll('#roundtable input, #roundtable button')]
+            .filter(one => !one.closest('.rt-setup') && !one.classList.contains('rt-leave')).length""") == 0
 
         # Vega's second turn is vetoed: struck in the transcript, and it fades from its bubble while Vega has the floor,
         # recorded frame by frame since the table opened
+        page.wait_for_function('() => window.__veto.length > 2 && window.__veto.at(-1)[0] < 0.5', timeout=120000)
         faded = page.evaluate("() => window.__veto")
         assert len(faded) > 2 and all(b[0] <= a[0] for a, b in itertools.pairwise(faded)), faded
         assert faded[-1][0] < 0.5 < faded[0][0] and faded[-1][1] < faded[0][1], faded
@@ -823,14 +818,13 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
             ideas: [...document.querySelectorAll('.rt-ideas li')].map(li => li.dataset.id),
             rankings: [...document.querySelectorAll('.rt-rankings li')].map(li => li.dataset.seat),
             answer: document.querySelector('.rt-answertext').textContent,
-            transcript: document.querySelectorAll('.rt-transcript li').length,
-            chair: [...document.querySelectorAll('.rt-chair button:not(.rt-leave)')].some(one => !one.disabled)})""")
+            transcript: document.querySelectorAll('.rt-transcript li').length})""")
         assert board['arrived'] == ['ideas', 'rankings', 'answer'], board
         assert board['ideas'][:2] == ['I1', 'I2'] and sorted(board['rankings']) == ['Haiku', 'Orion', 'Vega'], board
-        assert 'summarises' in board['answer'] and board['transcript'] > 4 and not board['chair'], board
+        assert 'summarises' in board['answer'] and board['transcript'] > 4, board
 
         # leaving puts the map back as it was
-        page.click('.rt-chair .rt-leave')
+        page.click('.rt-leave')
         page.wait_for_function(f"() => getComputedStyle(document.querySelector('#stage')).filter === '{before['filter']}'")
         after = page.evaluate("""async () => {
             const {G} = await import('/page/app/map3d/graph3d.js');
@@ -846,7 +840,7 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
                          'shown': False, 'seats': 0}, after
         assert all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(after['camera'], before['camera'])), after
 
-        # a second table, its seats chosen, from the T key: the chair ends it while it runs
+        # a second table, its seats chosen, from the T key: it runs to its end with the person only watching
         page.focus('#stage')
         page.keyboard.press('t')
         page.wait_for_selector('.rt-setup:not([hidden])')
@@ -860,7 +854,7 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
         assert page.evaluate('async () => (await import("/page/app/roundtable/stage.js")).TABLE.names') == [
             'Vega', 'Orion']
         # leaving a table that runs and coming back to it shows its seats again: each figure in the stage's scene
-        page.click('.rt-chair .rt-leave')
+        page.click('.rt-leave')
         page.wait_for_function("() => document.querySelector('#roundtable').hidden")
         page.focus('#stage')
         page.keyboard.press('t')
@@ -885,8 +879,8 @@ def test_the_roundtable_stage_sinks_the_map_and_shows_the_table_debate_the_quest
                 tables: ['roundtables.events', 'roundtables.tables'], kinds: ['roundtables', 'roundtables:another']}});
         }""")
         page.wait_for_timeout(500)
-        assert not [url for url in reads if '/api/roundtable' in url or '/api/layer' in url], reads
-        page.click('.rt-chair .rt-end')
+        own = 'table=' + page.evaluate('async () => (await import("/page/app/roundtable/stage.js")).TABLE.id')
+        assert not [url for url in reads if ('/api/roundtable' in url and own not in url) or '/api/layer' in url], reads
         page.wait_for_function('() => document.querySelector("#roundtable").dataset.state === "ended"', timeout=180000)
         page.keyboard.press('Escape')
         assert page.evaluate("() => document.querySelector('#roundtable').hidden"), 'Escape leaves the stage'
