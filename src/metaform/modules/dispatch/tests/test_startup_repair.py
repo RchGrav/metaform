@@ -43,19 +43,21 @@ def test_startup_failure_wakes_once_and_recurrence_wakes_again(dispatch, run, tm
         [sys.executable, '-m', 'metaform', 'dispatch', 'run', failed, 'claude'], cwd=dispatch.folder,
         env=dispatch.env('replace', FAKE_ACP_START_FAIL='1'), capture_output=True, text=True, timeout=40, check=False)
     assert 'fixture startup failure' in result.stdout + result.stderr
-    wake = eventually(lambda: prompts()[1] if len(prompts()) > 1 else None, limit=10)
     group = next(row for row in groups() if row['source'] == 'start')
     work = group['work_id']
     item = dispatch.store.numbers_of('work', [work])[work][0]
     phrase = f'{item}: blocks agent starts -> fix it now in your own session'
-    assert phrase in wake
+    def wakes():
+        return [text for text in prompts() if phrase in text]
+
+    eventually(lambda: len(wakes()) == 1, limit=10)
     eventually(idle)
     ctx = context('autoticket', dispatch.folder, project='proj')
     repeated = {'source': 'start', 'message': group['example'].splitlines()[0],
                 'file': 'src/metaform/modules/dispatch/runner.py', 'detail': group['example'],
                 'work_id': failed}
     ctx.publish('fault.raised', {'faults': [repeated] * 10})
-    assert len(prompts()) == 2
+    assert len(wakes()) == 1
     assert len(groups()) == 1
 
     # Ordinary faults stay in the inbox without starting a turn.
@@ -65,14 +67,14 @@ def test_startup_failure_wakes_once_and_recurrence_wakes_again(dispatch, run, tm
         ordinary = next(row for row in groups() if row['source'] == 'web')
         ref = dispatch.store.numbers_of('work', [ordinary['work_id']])[ordinary['work_id']][0]
         eventually(lambda: any(f'{ref}: fault filed' in one.value for one in dispatch.items('note')))
-    assert len(prompts()) == 2
+        assert not any(f'{ref}: fault filed' in text for text in prompts())
+    assert len(wakes()) == 1
 
     # Proven completion rearms the canonical fault group.
     dispatch.store.finish_work(work, 'Fixture fix', proven=True)
     assert dispatch.store.ticket(work).work.done
     ctx.publish('fault.raised', repeated)
-    again = eventually(lambda: prompts()[2] if len(prompts()) > 2 else None, limit=10)
-    assert phrase in again
+    eventually(lambda: len(wakes()) == 2, limit=10)
     assert not dispatch.store.ticket(work).work.done
     assert len([row for row in groups() if row['source'] == 'start']) == 1
 
@@ -162,3 +164,11 @@ def test_missing_adapter_reports_startup_fault(dispatch, run, monkeypatch):  # n
     with pytest.raises(Stop, match='start command of claude is not found'):
         module.runnable(context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id}), 'claude')
     assert len(faults) == 1
+
+
+def test_ordinary_fault_inbox_entry_does_not_wake():
+    from metaform.modules.dispatch.runner import inbox_entry
+
+    held = {'kind': 'board', 'board': 'fault:1:new', 'text': 'code.engine#1: fault filed',
+            'from': {'agent': 'metaform'}}
+    assert inbox_entry(held)[1] is False
