@@ -2583,6 +2583,16 @@ class Handler(BaseHTTPRequestHandler):
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
             table = {'table': given['table']}
+            if given.get('file'):
+                name = given['file']
+                if name not in ('export.json', 'mechanical-report.md'):
+                    return self.send(400, {'error': 'Choose the saved transcript or export.'})
+                status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
+                saved = str(status.get('saved') or '')
+                if not saved:
+                    return self.send(404, {'error': 'The table has no saved record yet.'})
+                _, folder = project_folder(given)
+                return self.file(folder, f'{saved}/{name}')
             found = cast(dict[str, Any], module_verb(given, 'roundtables', 'events',
                                                      {**table, 'after': int(given.get('after') or 0)}))
             if given.get('whole'):

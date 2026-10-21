@@ -225,7 +225,7 @@ def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_hea
         assert end['audience'] == 'person' and end['payload']['answered'] is True
         status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
         assert status['state'] == 'ended' and status['answered'] and 'summarises' in status['answer']
-        assert status['handed'] == f'roundtable-{answer["table"]}', 'the record went to the system agent to report on'
+        assert status['topics'] and any(one.get('borda') for one in status['topics'])
     finally:
         heard.close()
         held.shutdown()
@@ -241,7 +241,7 @@ def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_hea
     assert sessions and all(not one.get('mcpServers') for one in sessions)
     assert gone(lambda: seat_entries(home)), 'the slots go back when the table ends'
     # the table's record is saved in the project: the engine's mechanical report and its export with the Borda count;
-    # the report is the system agent's to write beside them
+    # the engine's record supplies the result without another report-writing agent
     saved = folder / status['saved']
     assert status['saved'].startswith('docs/roundtables/') and not (saved / 'report.md').exists(), status
     assert (saved / 'mechanical-report.md').is_file()
@@ -253,7 +253,7 @@ def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_hea
     assert len(kept) == 1 and kept[0]['name'] == status['recorded'], graph
     said = ' '.join(kept[0]['observations'])
     assert 'two projects reach each other' in said and 'summarises' in said, said
-    assert f'{status["saved"]}/export.json' in said and f'{status["saved"]}/report.md' in said, said
+    assert f'{status["saved"]}/export.json' in said, said
     # an idea the person adopts becomes one ticket at its part, with the table as its source, once
     idea = next(one for one in heard.events if one['kind'] == 'ideas')['payload']['ideas'][0]
     adopted = json.loads(run('roundtables', 'adopt', answer['table'], idea['id'], '--json', cwd=folder).stdout)
@@ -319,12 +319,10 @@ def test_a_table_with_no_address_opens_on_the_question_alone_and_one_with_an_add
     assert ADDRESS in focused and PURPOSE in focused and MEMORY in focused, focused
 
 
-def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ideas_where_the_map_holds_them(
+def test_a_table_with_no_part_records_its_result_and_files_ideas_where_the_map_holds_them(
         run, table):
-    """A table about no part keeps its outcome at the project's top element, asks the person's system agent for its
-    report through the inbox, and an idea adopted from it is filed where the map holds the Address named for it, else
-    at the top element with the Address in its note and nothing added to the map."""
-    from metaform.modules.dispatch.orchestration import update_entries, user_updates
+    """A table about no part keeps its outcome at the project's top element. Adopted ideas go to existing map
+    Addresses, or the top element with the proposed Address in the note."""
     folder, _ = table
     store = Store('proj', module='roundtables')
     saved = 'docs/roundtables/2-peer-directory'
@@ -344,11 +342,6 @@ def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ide
     assert recorded and unrecorded is None, unrecorded
     graph = json.loads(run('memory', 'read_graph', 'node=element:code.server.tool', '--json', cwd=folder).stdout)
     assert [one['name'] for one in graph['entities'] if one['entityType'] == 'roundtable'] == [recorded], graph
-    handed, unhanded = follower.handed(saved)
-    assert handed == 'roundtable-rt2' and unhanded is None, unhanded
-    told = Context('dispatch', folder, project='proj', store=Store('proj'))
-    assert handed in user_updates(told)
-    assert update_entries(told, [handed]) == [(handed, 'project roundtable report', True)]
     top = json.loads(run('roundtables', 'adopt', 'rt2', 'I1', '--json', cwd=folder).stdout)
     held = json.loads(run('roundtables', 'adopt', 'rt2', 'I2', f'address={ADDRESS}', '--json', cwd=folder).stdout)
     new = json.loads(run('roundtables', 'adopt', 'rt2', 'I3', 'address=code.peers.directory', '--json',
@@ -362,7 +355,7 @@ def test_a_table_with_no_part_hands_its_record_to_the_system_agent_and_files_ide
 
 @needs_engine
 @pytest.mark.timeout(LIMIT + 60)
-def test_hold_and_end_work_from_metaform_and_the_record_is_saved_and_handed_to_the_system_agent(run, home, table,
+def test_hold_and_end_work_from_metaform_and_the_result_is_saved(run, home, table,
                                                                                                  monkeypatch):
     folder, _ = table
     held = serve(monkeypatch, stubbed(pace=0.4))
@@ -379,7 +372,7 @@ def test_hold_and_end_work_from_metaform_and_the_record_is_saved_and_handed_to_t
         assert 'held' in states and all(one['audience'] == 'person' for one in heard.events
                                         if one['kind'] in ('state', 'operational', 'seat_lost', 'end'))
         status = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
-        assert status['state'] == 'ended' and status['handed'] and (folder / status['saved'] / 'export.json').is_file()
+        assert status['state'] == 'ended' and (folder / status['saved'] / 'export.json').is_file()
         # a submission the table ended before Jev judged it is told, as unjudged, when the engine lists one
         exported = json.loads((folder / status['saved'] / 'export.json').read_text())
         if any(one.get('outcome') == 'unjudged' for one in exported['submissions']):
@@ -482,3 +475,52 @@ def test_an_engine_that_fails_on_open_refuses_the_table_at_once_and_holds_no_slo
     listed = json.loads(run('roundtables', 'tables', '--json', cwd=folder).stdout)['tables']
     assert [one['state'] for one in listed] == ['refused'] and 'The table did not open' in listed[0]['reason']
     assert gone(lambda: seat_entries(home)), 'no slot is held'
+
+
+def test_finished_result_keeps_each_topics_rankings_without_requesting_a_system_report(run, table, tmp_path):
+    from metaform.modules.dispatch.orchestration import user_updates
+
+    folder, _ = table
+    store = Store('proj', module='roundtables')
+    topics = [
+        {'number': 1, 'title': 'Storage', 'synthesis': {'ideas': [
+            {'id': 'I1', 'name': 'Append events', 'summary': 'Persist each change.'}]},
+         'borda': {'order': ['I1'], 'points': {'I1': 3}},
+         'host_summary': {'name': 'host', 'text': 'Keep events.'}},
+        {'number': 2, 'title': 'Delivery', 'synthesis': {'ideas': [
+            {'id': 'I2', 'name': 'Direct result', 'summary': 'Show the result on the page.'}]},
+         'borda': {'order': ['I2'], 'points': {'I2': 4}},
+         'host_summary': {'name': 'host', 'text': 'Show results directly.'}},
+    ]
+    mechanical = tmp_path / 'mechanical.md'
+    mechanical.write_text('Full transcript.\n', encoding='utf-8')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'finished', 'topic': 'How should results arrive?', 'opening': '.',
+                             'seats': ['stub/vega'], 'spend': 0.0, 'state': 'running', 'created': follow.now(),
+                             'followed': {'topics': {'1': {'ideas': True, 'rankings': 1, 'summary': True}}}})
+
+    class Page:
+        def get(self, path, **_kwargs):
+            if path.endswith('/turns'):
+                return {'turns': [], 'latest': 0}
+            if path.endswith('/topics'):
+                return {'topics': topics}
+            if path.endswith('/download/export.json'):
+                return {'topics': topics, 'mechanical_report': str(mechanical)}
+            assert path == '/tables/7'
+            return {'reason': 'covered'}
+
+    dispatch = Context('dispatch', folder, project='proj', store=Store('proj'))
+    before = user_updates(dispatch)
+    follower = follow.Follower(Context('roundtables', folder, project='proj', store=store), 'finished')
+    follower.ended(Page(), 7)
+    status = json.loads(run('roundtables', 'status', 'finished', 'report=true', '--json', cwd=folder).stdout)
+    assert status['topics'] == topics and status['answer'] == 'Show results directly.'
+    assert status['report_text'] == 'Full transcript.\n'
+    assert status['report'].endswith('/mechanical-report.md')
+    assert (folder / status['saved'] / 'export.json').is_file()
+    assert user_updates(dispatch) == before
+    assert follower.followed['topics']['1']['summary'] is True, 'result data must preserve follower cursors'
+    result = json.loads(run('roundtables', 'events', 'finished', '--json', cwd=folder).stdout)['events'][-1]
+    assert result['kind'] == 'end' and result['topics'] == topics
+    assert result['answer'] == status['answer'] and result['saved'] == status['saved']

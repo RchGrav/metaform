@@ -13257,3 +13257,32 @@ def test_an_agent_started_and_recalled_from_the_page_moves_no_part_drawn_on_a_la
     assert any('recalled' in toast for toast in page.evaluate('window.toasts')), page.evaluate('window.toasts')
     assert page.evaluate('document.querySelectorAll("#board button.recall").length') == 0
     assert not problems
+
+
+def test_roundtable_saved_files_are_read_from_its_own_record(run, web, mapped):
+    from metaform.data import Store
+
+    run('enable', 'roundtables', cwd=mapped)
+    saved = 'docs/roundtables/7-results'
+    record = mapped / saved
+    record.mkdir(parents=True)
+    (record / 'export.json').write_text('{"topics": []}\n', encoding='utf-8')
+    (record / 'mechanical-report.md').write_text('Full transcript.\n', encoding='utf-8')
+    (record / 'private.txt').write_text('Private.\n', encoding='utf-8')
+    store = Store('proj', module='roundtables')
+    with store.tables() as tx:
+        tx.insert('tables', {'table_id': 'finished', 'topic': 'Results?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'ended', 'created': '2026-10-21T00:00:00Z',
+                             'followed': {'saved': saved, 'result_topics': []}})
+        tx.insert('tables', {'table_id': 'not-saved', 'topic': 'Pending?', 'opening': '.', 'seats': [],
+                             'spend': 0.0, 'state': 'running', 'created': '2026-10-21T00:00:00Z'})
+    started(run)
+    url = '/api/roundtable?project=proj&table=finished&file='
+    status, body, _ = request(web, url + 'export.json')
+    assert status == 200 and json.loads(body) == {'topics': []}
+    status, body, _ = request(web, url + 'mechanical-report.md')
+    assert status == 200 and body == 'Full transcript.\n'
+    assert api(web, url + 'private.txt')[0] == 400
+    assert api(web, url + '..%2Fprivate.txt')[0] == 400
+    assert api(web, '/api/roundtable?project=proj&table=not-saved&file=export.json')[0] == 404
+    assert api(web, '/api/roundtable?project=proj&table=missing&file=export.json')[0] == 400

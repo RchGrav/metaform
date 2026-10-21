@@ -408,9 +408,8 @@ def inbox_status(held: dict[str, Any]) -> str:
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
     """Whether an inbox entry needs the person, so it may start the system agent's turn: an agent's question waiting
-    on an answer, a recommendation the person decides, a failed result the person must act on, or an ended
-    roundtable whose report the person waits for."""
-    return ask or update in ('specification_recommendation', 'roundtable_report') or state == 'failed'
+    on an answer, a recommendation the person decides, or a failed result the person must act on."""
+    return ask or update == 'specification_recommendation' or state == 'failed'
 
 
 def user_updates(ctx: Context) -> list[str]:

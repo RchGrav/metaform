@@ -228,3 +228,93 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         assert problems == []
     finally:
         run('dispatch', 'stop-all', cwd=mapped, ok=False)
+
+
+@pytest.mark.parametrize('answer_text', ['Use both topic results.', ''])
+def test_roundtable_result_shows_all_topics_before_paced_turns_and_survives_reopening(
+        run, web, mapped, browser, answer_text):  # noqa: F811 -- shared browser fixtures
+    """An ended table keeps its complete result even while earlier turns wait for their speaking time."""
+    started(run)
+    page, problems, _ = opened(browser, web)
+    result = {
+        'state': 'ended', 'topic': 'Keep every topic', 'seats': ['codex/sol'], 'seated': ['Sol'],
+        'answer': answer_text, 'saved': 'docs/roundtables/7-keep-every-topic',
+        'topics': [
+            {'number': 1, 'title': 'Storage', 'synthesis': {'ideas': [
+                {'id': 'I1', 'name': 'Keep files', 'summary': 'Save every turn.'},
+                {'id': 'I2', 'name': 'Keep rows', 'summary': 'Store searchable records.'}]},
+             'borda': {'order': ['I2', 'I1'], 'points': {'I1': 2, 'I2': 4}},
+             'host_summary': {'name': 'Host', 'text': 'Use searchable rows.'}},
+            {'number': 2, 'title': 'Delivery', 'synthesis': {'ideas': [
+                {'id': 'I1', 'name': 'Show results', 'summary': 'Keep results visible.'}]},
+             'borda': {'order': ['I1'], 'points': {'I1': 0}},
+             'host_summary': {'name': 'Host', 'text': 'Show results immediately.'}},
+        ],
+    }
+    final_answer = answer_text or 'The table ended without a final answer.'
+    requests = []
+    ended = False
+
+    def answer(route):
+        requests.append(route.request.url)
+        if 'table=' not in route.request.url:
+            route.fulfill(json={'seats': []})
+            return
+        after = int(route.request.url.split('after=')[1].split('&')[0])
+        events = []
+        if ended and not after:
+            events = [{'kind': 'turn', 'seat': 'Sol', 'text': f'Earlier turn {number}'} for number in range(3)]
+            events += [{'kind': 'summary', 'name': 'Host', 'text': 'Earlier topic answer.'},
+                       {'kind': 'end', **result}]
+        status = result if ended else {**result, 'state': 'running'}
+        route.fulfill(json={'events': events, 'latest': 5 if ended else 0, 'status': status})
+
+    page.route('**/api/roundtable?*', answer)
+    page.evaluate("""async () => {
+        const stage = await import('/page/app/roundtable/stage.js');
+        Object.assign(stage.TABLE, {id: 'result-table', kind: 'roundtables:result-table'});
+        await stage.openRoundtable();
+    }""")
+    page.wait_for_selector('#roundtable[data-state="running"]')
+    before = len(requests)
+    page.evaluate("""async () => {
+        const {tableChange} = await import('/page/app/roundtable/stage.js');
+        for (let n = 0; n < 20; n++) tableChange({kinds: ['roundtables', 'roundtables:another-table']});
+    }""")
+    assert len(requests) == before
+    ended = True
+    page.evaluate("""async () => {
+        const {tableChange} = await import('/page/app/roundtable/stage.js');
+        tableChange({kinds: ['roundtables', 'roundtables:result-table']});
+    }""")
+    page.wait_for_selector('#roundtable[data-state="ended"] .rt-results:not([hidden])')
+    assert page.locator('.rt-topic-result').count() == 2
+    assert page.locator('.rt-topic-result[data-topic="1"] .rt-borda tbody').inner_text() == (
+        '1\tKeep rows\t4\n2\tKeep files\t2')
+    assert page.locator('.rt-topic-result[data-topic="2"] .rt-borda tbody').inner_text() == '1\tShow results\t0'
+    assert 'Save every turn.' in page.locator('.rt-topic-result[data-topic="1"]').inner_text()
+    assert 'Use searchable rows.' in page.locator('.rt-topic-result[data-topic="1"]').inner_text()
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    # The end result arrives before the earlier turns finish their deliberate pacing.
+    assert page.locator('.rt-transcript .rt-turn').count() < 3
+    links = page.locator('.rt-records a').evaluate_all('(links) => links.map(link => link.getAttribute("href"))')
+    assert len(links) == 2
+    assert all('project=proj&table=result-table&file=' in link for link in links)
+    assert any('file=export.json' in link for link in links)
+    assert any('file=mechanical-report.md' in link for link in links)
+    page.click('.rt-leave')  # flushes the paced summaries, which must preserve the final answer
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    page.evaluate("""async () => {
+        const {openRoundtable} = await import('/page/app/roundtable/stage.js');
+        await openRoundtable();
+    }""")
+    page.wait_for_selector('#roundtable:not([hidden])')
+    page.wait_for_function('() => document.querySelector(".rt-state").textContent === "Ended"')
+    assert page.locator('.rt-topic-result').count() == 2
+    assert page.locator('.rt-records a').count() == 2
+    assert page.locator('.rt-answertext').inner_text() == final_answer
+    assert 'system agent is writing' not in page.locator('.rt-transcript').inner_text()
+    page.click('.rt-new')
+    page.wait_for_selector('.rt-setup:not([hidden])')
+    assert page.locator('.rt-topic-result').count() == 0
+    assert not problems

@@ -1,10 +1,10 @@
 # roundtables
 
-Brings the person's question to a table of agents, through the person's Roundtable 2 engine, `roundtable` (https://github.com/RchGrav/roundtable): the seats debate it, build on each other's ideas, and go on until the question is answered, and when the table ends the person's system agent writes its report. The engine runs the table; this module connects Metaform to it and ports nothing of it.
+Brings the person's question to a table of agents, through the person's Roundtable 2 engine, `roundtable` (https://github.com/RchGrav/roundtable): the seats debate it, build on each other's ideas, and go on until the question is answered, the page shows its finished synthesis, rankings, answer and saved transcript. The engine runs the table; this module connects Metaform to it and ports nothing of it.
 
 ## Purpose
 
-A question gets better answers from several agents than from one: each adds what it does best, Jev (through OpenRouter) keeps only what is new and on the topic, a synthesizer names the ideas collected, every seat ranks them and explains its choices, and a host summarises. Its main use is brainstorming, an idea that is not in the project yet, so the question is the table's whole frame: it is limited to no part and to no project. An Address given focuses it on that part, whose context from the map opens the table. Its seats read the project's folder when the question touches it, and its record stays with the project. The table exists for its report: the person's system agent writes it from the saved record when the table ends.
+A question gets better answers from several agents than from one: each adds what it does best, Jev (through OpenRouter) keeps only what is new and on the topic, a synthesizer names the ideas collected, every seat ranks them and explains its choices, and a host summarises. Its main use is brainstorming, an idea that is not in the project yet, so the question is the table's whole frame: it is limited to no part and to no project. An Address given focuses it on that part, whose context from the map opens the table. Its seats read the project's folder when the question touches it, and its record stays with the project. The page shows the finished synthesis and answer beside links to the saved record.
 
 ## Template version
 
@@ -28,13 +28,13 @@ Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, and 
 
 ## Prompts
 
-`resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `report_request` is the project update that asks the system agent for the report; `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
+`resources/prompts.xml` holds `connect`, `instructions` and `rules`; `opening_question`, which every seat of a table with no Address reads first, the question alone; and `opening`, which every seat of a table about a part reads first, filled with `address`, `part` (the element and the joins it receives and provides, with their purposes and encounter functions), `memories` (the titles of the memories at the part, `no_memories` when none) and `question`. The engine adds its own discussion instructions and the topic after either. `outcome_*` the memory a table leaves; `adopted*` an adopted idea's ticket.
 
 ## Verbs
 
 - `open <topic> [address=] [seats] [host=] [synthesizer=] [rounds=] [spend=]`, write, open world: open a table on the question, focused on the part at `address` when one is given. `seats` is a JSON list in speaking order, `roundtables_seats` when left out: `claude/<model>`, `codex/<model>` and `antigravity/<model>` are Metaform's own agents, seated on the engine's ACP client with dispatch's commands (`dispatch_claude`, `dispatch_codex`, `dispatch_antigravity`); any other id is an OpenRouter model. The host is the first seat when none is named, never the engine's own default, which would seat an agent nobody chose. The question is the table's one topic. Refused while `jev` is off, since the question, and the part's context when there is one, go to OpenRouter; when fewer agent slots are free than seats; and when `spend` passes `roundtables_spend`. Returns the table's id.
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
-- `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, `saved`, `recorded`, `handed`, and `report`, the report's path once the system agent has written it, with its text as `report_text` with `report=true`.
+- `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
 - `follow <table>`, write, open world: start a table's follower again when it stopped before the table ended.
@@ -60,16 +60,15 @@ The follower hears the table through the engine's own page server, started for i
 - Seats read and change nothing. The engine gives Claude Code only Read, Grep and Glob, runs Codex read-only, offers no file writes or terminals, and refuses every permission a seat asks to write; this module never names an MCP server for a seat. The tables carry no Metaform tool.
 - Operational events reach the person, never a seat or Jev.
 - The tables and their events are in the project's store, so a base switch, a clear or a restore never takes them.
-- The report is the person's system agent's to write. The engine still has a seat write its own report when a table ends, since the engine always does; this module does not ask for it, save it or show it.
+- The page shows the engine's result directly. No system agent writes another report. The engine's reporter output is not saved or shown by this module.
 
 ## What a table leaves in the project
 
-When a table ends, however it ends, its follower saves its record, keeps its outcome as a memory, and hands the record to the person's system agent, which writes the report: the table's outcome, and what the person reads.
+When a table ends, its follower saves the record and keeps its outcome as a memory. Its end event and status supply every topic's synthesis, Borda order and points, the final answer and saved record location. The page shows this result immediately and keeps it available when the person leaves and returns. New table starts another discussion.
 
 - The record is saved under `docs/roundtables/<n>-<topic>/` in the project's folder, `<n>` the engine's number for the table and `<topic>` the question in lower-case words: `export.json` (the engine's export, with every turn, every topic's rankings and the Borda count derived from them) and `mechanical-report.md` (the engine's text of the record). Written once; a follower started again keeps the folder.
-- The record is handed to the person's system agent as one project update of kind `roundtable_report`, through dispatch's `orchestration.transport`, once. Its inbox names it, `project roundtable report`, and never puts it whole into the agent's turn; it starts the agent's turn, since the person waits for the report. The update, `report_request`, asks the agent to read the record on demand (`status`, `events`, `export.json`), write the report (the question; each seat's position and why; where they agreed and disagreed; what was decided and what was left open; the ideas worth acting on, each with where it would live) as `report.md` beside the record, and show the person a link to it and a few lines in chat. The person sees the update too, in the chat's project updates. With dispatch off, the `end` event says no report is being written, as `unhanded`.
-- One memory is recorded at the table's Address, or at the project's top element for a table about no part, through memory's `memory.record`, under memory's own rules, its writer `roundtables`: the question, the host's answer, the top three ideas by the Borda count with what the synthesis said of each, each seat's explanation of its top three, where the record is saved, which it cites, so the memory is marked stale if the file changes, and where the system agent was asked to write the report. Each engine text is quoted whole as one observation. Memory is what happened at the table; what it established about the project is the person's to judge, through `adopt` or knowledge an agent writes later, and the follower writes no knowledge layer item itself.
-- `status` shows `saved`, `recorded` and `handed`. With memory off, or no element on the map, the files are still saved and the `end` event says why nothing was recorded.
+- One memory is recorded at the table's Address, or at the project's top element for a table about no part, through memory's `memory.record`, under memory's own rules, its writer `roundtables`: the question, the host's answer, the top three ideas by the Borda count with what the synthesis said of each, each seat's explanation of its top three, where the record is saved, which it cites, so the memory is marked stale if the file changes. Each engine text is quoted whole as one observation. Memory is what happened at the table; what it established about the project is the person's to judge, through `adopt` or knowledge an agent writes later, and the follower writes no knowledge layer item itself.
+- `status` shows `saved`, `recorded` and `topics`; `report` names the saved mechanical transcript, with its text included by `report=true`. The page links the transcript and complete export through `/api/roundtable?project=<project>&table=<table>&file=mechanical-report.md` or `file=export.json`. Only these saved record filenames are accepted. With memory off, or no element on the map, the files are still saved and the `end` event says why nothing was recorded.
 
 ## Sync and async
 
@@ -79,7 +78,7 @@ Every verb is synchronous. An engine call runs its MCP client on an event loop o
 
 It writes no layer: its tables are at the project's place, version 2.
 
-- `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer, rounds and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its record handed; `answer` and `answered`; `created` and `ended`. Index on `created`.
+- `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer, rounds and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its result topics retained; `answer` and `answered`; `created` and `ended`. Index on `created`.
 - `events`, keyed by `(table_id, seq)`: `kind`, `audience`, `payload` and `at`.
 
 ## Lifecycle and cleanup
@@ -88,7 +87,7 @@ No `start` or `stop`. A follower ends with its table: it gives its slots back, e
 
 ## Modules relied on
 
-dispatch, for the agent slots, the agent commands and the project update that hands the record to the system agent. memory's items are read through the chassis's `node_items`, and a table's outcome is recorded through `memory.record`; without memory the opening says none are kept and nothing is recorded. map, for the tickets `adopt` files.
+dispatch, for the agent slots and agent commands. memory's items are read through the chassis's `node_items`, and a table's outcome is recorded through `memory.record`; without memory the opening says none are kept and nothing is recorded. map, for the tickets `adopt` files.
 
 ## Systems supported
 

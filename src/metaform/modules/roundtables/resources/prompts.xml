@@ -6,13 +6,13 @@
 <prompts>
 <!-- roundtables' line in the connect message, after the module's name: what an agent uses it for. Sent to every agent
      when it connects over MCP, one line per enabled module. Empty sends nothing. -->
-<connect>bring a question to a table of agents, follow it live, and write its report when it ends</connect>
+<connect>bring a question to a table of agents, follow it live, and read its result when it ends</connect>
 <!-- roundtables' instructions, returned by metaform_instructions with module roundtables and printed by
      metaform help agents roundtables. -->
-<instructions>roundtables opens a table of agents on a question, through the person's Roundtable 2 engine. The question is the table's whole frame: it is about no part and no project unless you give an Address, which focuses the table on that part. Open one with roundtables_open, giving the question as topic and the seats in speaking order (claude/&lt;model&gt;, codex/&lt;model&gt;, antigravity/&lt;model&gt; or an OpenRouter model id); each seat takes one agent slot. Follow it with roundtables_events after the last seq you read, and chair it with roundtables_comment, hold, continue, advance, reseat and end. Its answer is the host's summary, in roundtables_status. A table exists for its report: when it ends, its record is saved in the project and the person's system agent is asked to write the report from it.</instructions>
+<instructions>roundtables opens a table of agents on a question, through the person's Roundtable 2 engine. The question is the table's whole frame: it is about no part and no project unless you give an Address, which focuses the table on that part. Open one with roundtables_open, giving the question as topic and the seats in speaking order (claude/&lt;model&gt;, codex/&lt;model&gt;, antigravity/&lt;model&gt; or an OpenRouter model id); each seat takes one agent slot. Follow it with roundtables_events after the last seq you read, and chair it with roundtables_comment, hold, continue, advance, reseat and end. Its answer is the host's summary, in roundtables_status. When it ends, the page shows every topic's synthesis and rankings, the final answer and links to the saved transcript. roundtables_status returns the same result without a system-agent report step.</instructions>
 <!-- The opening every seat of a table about a part reads first, before the engine's own discussion instructions and
      the topic: a table opened with an Address. Sent once per table, to each seat in its first turn, and to the host,
-     the synthesizer and the engine's reporter with the record. Filled: <address/> the Address the person asked about, <part/> that part as the map holds it (its element
+     the synthesizer with the record. Filled: <address/> the Address the person asked about, <part/> that part as the map holds it (its element
      and the joins it receives and provides, each with its purpose and encounter function, as metaform map markdown
      writes them), <memories/> the titles of the memories kept at it, and <question/> the person's question, which is
      also the table's one topic. Edit it here, or save an edit with metaform agents override roundtables:opening. -->
@@ -44,8 +44,7 @@ You are in the folder of the person's project, and you can read its files when t
      each of the top three ideas by the Borda count over the seats' rankings: its <idea/> id, <called/> its name,
      <rank/> of <of/>, <points/> and <substance/> as the synthesis wrote it. outcome_why is written for each seat's
      explanation of its top three: <seat/> and <why/>. outcome_record says where the table's <record/>, its JSON
-     export, and the folder of its files, <files/>, are saved in the project; outcome_report where the person's system
-     agent was asked to write the <report/>. -->
+     export, and the folder of its files, <files/>, are saved in the project. -->
 <outcome_title>Roundtable: <question/></outcome_title>
 <outcome_kept>What a table of agents concluded on a question, so the next agent here knows what was decided and why.</outcome_kept>
 <outcome_question>The table was asked <question/>.</outcome_question>
@@ -54,19 +53,6 @@ You are in the folder of the person's project, and you can read its files when t
 <outcome_idea>Idea <idea/>, <called/>, ranked <rank/> of <of/> with <points/> Borda points, was <substance/>.</outcome_idea>
 <outcome_why><seat/> explained its top three ideas as <why/>.</outcome_why>
 <outcome_record>The table's whole record, with every turn and the Borda count, is saved at <record/> among its files in <files/>.</outcome_record>
-<outcome_report>The person's system agent was asked to write the table's report at <report/>.</outcome_report>
-<!-- The project update that asks the person's system agent to write a table's report, sent once when the table ends,
-     however it ended. Its inbox names it by its kind, roundtable report, and never puts it whole into the agent's
-     turn; the agent reads it when it takes it up. The person sees it too, in the chat's project updates. Filled:
-     <table/> the table's id, <question/> its question, <record/> its saved JSON export, <files/> the folder of its
-     saved files, and <report/> where the report is to be saved. Empty sends nothing to the agent. -->
-<report_request>Roundtable <table/> has ended. It was asked <question/>.
-
-Write its report. The table exists for this report: it is how the person takes in what the table did. Read the table's record yourself, not all at once into the conversation: metaform roundtables status <table/> gives its answer and state, metaform roundtables events <table/> its turns, ideas and rankings, and <record/> its whole record with the Borda count; the other files in <files/> are the engine's.
-
-The report gives the question; the position each seat took and why; where the seats agreed and where they disagreed; what was decided and what was left open; and the ideas worth acting on, each with where in the project it would live, an Address the map holds or the one it would have. Save it as <report/>.
-
-Then tell the person in chat: a link to <report/> and a few lines on what the table concluded, not the report itself. An idea the person wants built becomes a ticket with metaform roundtables adopt <table/> &lt;idea&gt;, naming the Address where it would live.</report_request>
 <!-- The ticket an idea the person adopts becomes, `roundtables adopt`: its task, read by the agent that works it, and
      its note, which names the table as its source. Filled: <idea/> the idea's name, <substance/> what the synthesis
      said of it, <question/> the table's question, <answer/> the host's summary, <table/> the table's id, <address/>

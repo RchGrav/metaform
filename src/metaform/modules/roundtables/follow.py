@@ -18,8 +18,8 @@ write, which names the kind `roundtables`. A follower started again goes on from
 
 Operational events, credits, holds, a seat lost, degraded or back, are the person's: their audience is `person`, and
 nothing of them goes to the table, its seats or Jev. At the end the table's record is saved in the project, its
-answer is the host's summary of its last topic, and the record is handed to the person's system agent, which writes
-the table's report from it and saves it beside the record: the report is the table's outcome.
+answer is the host's summary of its last topic. The page receives every topic's synthesis and rankings with the
+saved transcript, without waiting for another agent to write a report.
 """
 from __future__ import annotations
 
@@ -47,8 +47,7 @@ SEAT_LOST = frozenset({'seat_lost'})
 DONE = ('ended',)
 GONE = 'The engine no longer holds this table.'
 RECORD = 'export.json'  # the table's whole record as the engine exports it, with the Borda count
-REPORT = 'report.md'  # the report the person's system agent writes beside the record
-REPORT_UPDATE = 'roundtable_report'  # the kind of project update that asks the system agent for a table's report
+REPORT = 'mechanical-report.md'  # the engine's text of the complete record
 
 
 class Stopped(BaseException):
@@ -295,8 +294,7 @@ class Follower:
                       text=one.get('text'), **({'seat': one['seat']} if one.get('seat') else {}))
 
     def ended(self, page: engine.Page, number: int) -> None:
-        """The table's end: its answer, the host's summary of its last topic; its record saved in the project, its
-        outcome kept as one memory, and the record handed to the person's system agent, which writes the report."""
+        """Save the complete result before publishing its end, so the page can show it immediately or on return."""
         self.unjudged(page, number)
         found = cast(dict[str, Any], page.get(f'/tables/{number}'))
         listed = cast(list[dict[str, Any]], cast(dict[str, Any], page.get(f'/tables/{number}/topics'))['topics'])
@@ -304,18 +302,16 @@ class Follower:
         answer = str(summaries[-1].get('text') or '') if summaries else ''
         saved = self.saved(page, number)
         recorded, unrecorded = self.recorded(listed, answer, saved)
-        handed, unhanded = self.handed(saved)
+        self.followed['result_topics'] = listed
         self.emit('end', 'person', changes={'state': 'ended', 'reason': found.get('reason'), 'answer': answer or None,
                                             'answered': bool(answer), 'ended': now(), 'follower': None},
                   reason=found.get('reason'), answered=bool(answer), answer=answer or None, saved=saved,
-                  recorded=recorded, handed=handed, **({'unrecorded': unrecorded} if unrecorded else {}),
-                  **({'unhanded': unhanded} if unhanded else {}))
+                  topics=listed, recorded=recorded, **({'unrecorded': unrecorded} if unrecorded else {}))
 
     def saved(self, page: engine.Page, number: int) -> str:
         """The table's record saved in the project under docs/roundtables/<n>-<topic>/ as the engine wrote it: its JSON
         export, which holds every turn and the Borda count, and its mechanical report, the record as text; written
-        once, so a follower started again keeps the folder it wrote. The report goes beside them, written by the
-        person's system agent. Returns the folder, from the project's folder."""
+        once, so a follower started again keeps the folder it wrote. Returns the folder, from the project's folder."""
         if self.followed.get('saved'):
             return str(self.followed['saved'])
         exported = cast(dict[str, Any], page.get(f'/tables/{number}/download/export.json'))
@@ -352,29 +348,6 @@ class Follower:
         self.followed['recorded'] = entity['name']
         return entity['name'], None
 
-    def handed(self, saved: str) -> tuple[str | None, str | None]:
-        """The table's record handed to the person's system agent to write the report from: one project update,
-        which its inbox names by its kind and never puts whole into its turn, read when it takes it up, and which
-        the person sees in the chat's project updates. Handed once; the update's id, or None and why when dispatch,
-        which carries it, is off or refused it."""
-        if self.followed.get('handed'):
-            return str(self.followed['handed']), None
-        found = [value for _, value in provided(self.ctx.folder, 'orchestration.transport')]
-        if not found:
-            return None, 'dispatch is off, so no system agent was asked to write the report'
-        row = self.row() or {}
-        ident = f'roundtable-{self.table_id}'
-        text = prompt_files.required(PACKAGE, 'report_request', table=self.table_id,
-                                     question=quoted(str(row.get('topic') or '')), record=f'{saved}/{RECORD}',
-                                     files=saved, report=f'{saved}/{REPORT}')
-        try:
-            found[0].notify_user(self.ctx, {'message_id': ident, 'kind': REPORT_UPDATE, 'text': text}, ident)
-        except (Stop, OSError, ValueError) as error:
-            return None, named(error)
-        self.followed['handed'] = ident
-        return ident, None
-
-
 def top_element(store: Store) -> str | None:
     """The project's top element, where a table about no part keeps what it leaves on the map: its DE, else its first
     root element; None while the map holds none."""
@@ -401,7 +374,7 @@ def quoted(text: str) -> str:
 def outcome(table_id: str, question: str, listed: list[dict[str, Any]], answer: str, saved: str) -> dict[str, Any]:
     """The memory of a table's outcome, one fact to each observation: what it was asked, what its host answered, its
     top three ideas by the Borda count over the seats' rankings, each seat's explanation of its top three, where its
-    record is saved, which it cites, and where the person's system agent was asked to write its report."""
+    record is saved, which it cites."""
     said: list[str] = [prompt_files.required(PACKAGE, 'outcome_question', question=quoted(question))]
     host = next((cast(dict[str, Any], one['host_summary']) for one in reversed(listed) if one.get('host_summary')),
                 None)
@@ -425,7 +398,6 @@ def outcome(table_id: str, question: str, listed: list[dict[str, Any]], answer: 
                                                   why=quoted(str(one['text']))))
     record = f'{saved}/{RECORD}'
     said.append(prompt_files.required(PACKAGE, 'outcome_record', record=f'`{record}`', files=f'`{saved}`'))
-    said.append(prompt_files.required(PACKAGE, 'outcome_report', report=f'`{saved}/{REPORT}`'))
     return {'name': f'Roundtable {table_id}: {question.strip()[:100]}', 'entityType': 'roundtable',
             'title': prompt_files.required(PACKAGE, 'outcome_title', question=question.strip())[:200],
             'why': prompt_files.required(PACKAGE, 'outcome_kept'), 'observations': said, 'cite': [record]}

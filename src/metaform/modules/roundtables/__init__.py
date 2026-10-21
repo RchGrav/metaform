@@ -1,6 +1,5 @@
 """roundtables: the person brings a question to a table of agents, and the agents debate it, build on each other's
-ideas and go on until it is answered, through the Roundtable 2 engine. The table exists for its report, which the
-person's system agent writes when the table ends.
+ideas and go on until it is answered, through the Roundtable 2 engine. The finished result goes directly to the page.
 
 The engine is the person's standalone program, `roundtable`, an MCP and A2A server
 (https://github.com/RchGrav/roundtable); this module connects Metaform to it and ports nothing of it. Its seats speak
@@ -18,8 +17,8 @@ synthesizer names the ideas, every seat ranks them and explains its choices, and
   and in the project's `events` table, whose writes reach every other process of the home, the web page's among them,
   as `map.changed` naming the kind `roundtables`.
 - The table ends when Jev judges its topic covered and the host has summarised, or when the person ends it. Its
-  answer is the host's summary. Its record is saved in the project and handed to the person's system agent, which
-  writes the report from it and saves it beside the record. Adopting an idea as a ticket, `adopt`, comes after.
+  answer is the host's summary. Its record is saved in the project; the page shows every topic's synthesis and
+  rankings, the final answer and links to the transcript. Adopting an idea as a ticket, `adopt`, comes after.
 
 Guardrails. Each seat takes one of dispatch's agent slots, through dispatch's own gate, so a table is refused when
 fewer are free than its seats. A table spends at most `roundtables_spend` US dollars through OpenRouter, a cap only
@@ -92,7 +91,7 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
                     'opens, or an exact value, such as gpt-6-sol, which pins one.')
 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
-# are gone, since the person's system agent writes the report from the saved record.
+# are gone. The engine's synthesis and saved mechanical report supply the result.
 TABLES = Tables(version=2, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
@@ -168,8 +167,7 @@ def table_row(ctx: Context) -> dict[str, Any]:
 
 
 def report_of(ctx: Context, row: dict[str, Any]) -> str | None:
-    """Where the table's report is, from the project's folder, once the system agent has written it beside the
-    table's record; None before."""
+    """The engine's saved transcript, relative to the project's folder; None before it is saved."""
     saved = str(cast(dict[str, Any], row.get('followed') or {}).get('saved') or '')
     found = f'{saved}/{follow.REPORT}' if saved else ''
     return found if found and (Path(ctx.require_store().project().path) / found).is_file() else None
@@ -187,7 +185,8 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],
             **({'ended': row['ended']} if row.get('ended') else {}),
-            **{key: followed[key] for key in ('saved', 'recorded', 'handed', 'unhanded') if followed.get(key)}}
+            **({'topics': followed['result_topics']} if 'result_topics' in followed else {}),
+            **{key: followed[key] for key in ('saved', 'recorded') if followed.get(key)}}
 
 
 def started(ctx: Context, table_id: str) -> dict[str, Any]:
@@ -422,7 +421,7 @@ MODULE = Module(
     summary='Bring a question to a table of agents, through the Roundtable 2 engine; its report is the outcome.',
     purpose='Opens a table of agents on the person\'s question, through the person\'s Roundtable 2 engine: the seats '
             'debate it, focused on a part only when an Address is given, Jev keeps what is new, the host summarises '
-            'the answer, and the person\'s system agent writes the report. Details: metaform help roundtables.',
+            'the answer, and the page shows its synthesis, rankings and saved transcript. Details: metaform help roundtables.',
     details='Seats are claude/<model>, codex/<model>, antigravity/<model> or OpenRouter model ids. Each seat takes one '
             'of dispatch\'s agent slots. A table spends at most roundtables_spend dollars. Its events reach the bus as '
             'roundtables.event and other processes as map.changed of kind roundtables.',
@@ -450,12 +449,10 @@ MODULE = Module(
                                  'synthesis, rankings and summary.', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),
-        Verb('end', end, 'As the chair, end the table: its record is saved here and the person\'s system agent '
-                         'writes its report.', nouns=(TABLE,),
+        Verb('end', end, 'As the chair, end the table and save its result and transcript.', nouns=(TABLE,),
              open_world=True),
-        Verb('status', status, 'A table: its state, seats, spend, answer, its saved record and its report once '
-                               'written.',
-             nouns=(TABLE, Noun('report', 'true: the report\'s text too, once written.', kind='bool',
+        Verb('status', status, 'A table: its state, seats, spend, topics, answer and saved transcript.',
+             nouns=(TABLE, Noun('report', 'true: the saved transcript\'s text too.', kind='bool',
                                 required=False)),
              effect='read'),
         Verb('tables', listed_tables, 'Every table of the project, newest first.', effect='read'),
