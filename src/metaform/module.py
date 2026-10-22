@@ -1092,13 +1092,15 @@ def on_persons_word(ctx: Context, what: str, tickets: Sequence[str] = ()) -> dic
     from . import caller, settings
     if caller.dispatched() is None:
         return None  # the person's own AI tool, run outside dispatch
-    if not settings.value('agents_ask_first', ctx.folder):
-        return None  # the person lets their agents act without asking, agents_ask_first off
     if ctx.consented:
         return None  # the person's yes on this call's card is their word for it
     word, stopped = _word(ctx.folder, what, ctx.project, tickets)
     if word is not None:
         return word
+    # Permission to act without asking does not erase actual user-request provenance:
+    # dispatch persists it so required descendants can run with Full Auto off.
+    if not settings.value('agents_ask_first', ctx.folder):
+        return None
     said, step = settings.asking(ctx.folder)
     many = len(tickets) > 1
     if tickets and stopped:
