@@ -1122,7 +1122,7 @@ def _run_async(function: Callable[..., Any], ctx: Any, label: str) -> Any:
         if handling:
             signal.signal(signal.SIGINT, previous)
         try:
-            spawned = {item for item in loader.tasks_of(ctx.module) if item.get_loop() is loop}
+            spawned = set(asyncio.all_tasks(loop))  # includes interrupted verb and ACP tasks outside module tracking
             loader.finish_tasks(spawned)
             loop.run_until_complete(loop.shutdown_asyncgens())
         finally:

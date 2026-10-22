@@ -5682,6 +5682,9 @@ async def login(ctx: Context, agent: str, method: str | None) -> dict[str, Any]:
     store = ctx.store
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
     probe = asked(ctx, store, agent, 'login')
+    if method is not None:
+        sys.stderr.write(f'Connecting to {probe.name} for sign-in…\n')
+        sys.stderr.flush()
     try:
         await probe.open_agent({}, terminal_login=True)
         methods = cast(list[dict[str, Any]], probe.acp['auth_methods'])
@@ -5717,8 +5720,15 @@ async def login(ctx: Context, agent: str, method: str | None) -> dict[str, Any]:
                      'the login ended; whether it took could not be told') if done.returncode == 0 else \
                 f'the login ended with exit code {done.returncode}'
             return {'agent': agent, 'method': chosen.get('id'), 'state': state, 'logged_in': now}
+        probe.echo = True  # the harness prints its sign-in URL on stderr, outside ACP's JSON stream
+        sys.stderr.write('Complete sign-in in your browser. If it does not open, use the link printed below.\n')
+        sys.stderr.flush()
         await asyncio.wait_for(probe.conn.authenticate(method_id=str(chosen['id'])), LOGIN_LIMIT)
         return {'agent': agent, 'method': chosen.get('id'), 'state': 'logged in', 'logged_in': True}
+    except asyncio.CancelledError:
+        if probe.process is not None:
+            end_group(probe.process.pid)  # a login waiting on a browser cannot finish by closing stdin
+        raise
     except acp.RequestError as error:
         raise Stop(f'{probe.name} did not log in: {error}.', f'metaform dispatch login {agent}') from None
     except TimeoutError:

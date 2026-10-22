@@ -483,6 +483,10 @@ def main():
                 send({'jsonrpc': '2.0', 'method': '_auth/status_update',
                       'params': {'authStatus': {'kind': 'none', 'label': 'Not logged in'}}})
         elif method == 'authenticate':
+            if login_url := os.environ.get('FAKE_ACP_LOGIN_URL'):
+                print(login_url, file=sys.stderr, flush=True)
+            if os.environ.get('FAKE_ACP_LOGIN_WAIT') == '1':
+                threading.Event().wait()
             send({'jsonrpc': '2.0', 'id': ident, 'result': {}})
         elif method == '_session/steering':
             outcome = 'injected' if ACTIVE_TURN[0] else 'promptRequired'
