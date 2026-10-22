@@ -440,8 +440,8 @@ def run(ctx: Context, table_id: str) -> dict[str, Any]:
             if (follower.row() or {}).get('follower') == os.getpid():
                 follower.change(follower=None)
         if (follower.row() or {}).get('state') == 'ended':
-            from . import proposal
-            proposal.prepare(ctx, table_id)
+            from . import pipeline
+            events.announced(ctx.folder, ctx.surface, pipeline.prepare, ctx, table_id)
 
 
 def say(answer: dict[str, Any]) -> None:

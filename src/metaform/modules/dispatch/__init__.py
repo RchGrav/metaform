@@ -6919,6 +6919,16 @@ def resume(ctx: Context) -> dict[str, Any]:
                if word else {})}
 
 
+def design_intake(ctx: Context) -> dict[str, Any]:
+    """Start a design intake, or retry its already registered project without making another."""
+    return intake(ctx)
+
+
+def design_intake_active(ctx: Context) -> bool:
+    """Reuse the intake launch and runner checks, including the startup window."""
+    return intake_under_way(ctx.require_store()) is not None or ctx.require_store().intake_agent() is not None
+
+
 def intake(ctx: Context) -> dict[str, Any]:
     """Start an agent on this project's intake, VIEW-045 and BASE-039: its first turn is the intake as `intake prompt`
     serves it, with what the person asked for filled in, and it works in the project's folder with Metaform's MCP
@@ -7892,6 +7902,8 @@ MODULE = Module(
               Provides('person.consent', ask_consent), Provides('work.overlap', overlap), Provides('work.stop', stop_work),
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
               Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt),
+              Provides('dispatch.design_intake', design_intake),
+              Provides('dispatch.design_intake_active', design_intake_active),
               Provides('dispatch.seats', seat_slots), Provides('dispatch.models', model_for),
               Provides('work.in_force', fix_in_force), Provides('dispatch.integration', integration_read),
               Provides('dispatch.integration.pending', integration_pending)),

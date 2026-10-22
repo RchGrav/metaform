@@ -1,6 +1,6 @@
 # roundtables
 
-Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. A fresh Planner prepares a proposal from the saved record for the person's decision.
+Brings the person's question to agents through the Roundtable 2 engine, which ships inside this module. The page shows the finished synthesis, rankings, answer and saved transcript. Roundtable Follow-through prepares research, architecture, intake, a plan, detailed tickets and an execution outline through fresh role assignments.
 
 ## Purpose
 
@@ -69,17 +69,52 @@ When a table ends, its follower saves the record and keeps its outcome as a memo
 - One memory is recorded at the table's Address, or at the project's top element for a table about no part, through memory's `memory.record`, under memory's own rules, its writer `roundtables`: the question, the host's answer, the top three ideas by the Borda count with what the synthesis said of each, each seat's explanation of its top three, where the record is saved, which it cites, so the memory is marked stale if the file changes. Each engine text is quoted whole as one observation. Memory is what happened at the table; what it established about the project is the person's to judge, through `adopt` or knowledge an agent writes later, and the follower writes no knowledge layer item itself.
 - `status` shows `saved`, `recorded` and `topics`; `report` names the saved mechanical transcript, with its text included by `report=true`. The page links the transcript and complete export through `/api/roundtable?project=<project>&table=<table>&file=mechanical-report.md` or `file=export.json`. Only these saved record filenames are accepted. With memory off, or no element on the map, the files are still saved and the `end` event says why nothing was recorded.
 
-## Proposal review
+## Follow-through
 
-After a person-opened table ends, its seats are released before one fresh Planner assignment is admitted through ordinary dispatch capacity and stop controls. Its saved task names the complete record and a relative `proposal.md` output path. The Planner proposes the goal, plan, tickets, order, dependencies and open decisions without creating implementation tickets. It submits its artifact with `roundtables submit <table>`; submission from an isolated assignment folder publishes a copy beside the canonical saved record.
+After a table ends, its saved result stays on the page. Its seats are released before one fresh
+`roundtable_follow_through` assignment receives the complete table record. The system agent receives one
+`roundtable_result` inbox line containing the table id and saved export path. That reference never starts a turn.
+Both direct and guided tables enter this same preparation flow. Preparation tickets attach to the source map
+at the table's functional Address or its top element.
 
-The system receives one compact reference of kind `roundtable_result`: the table id and saved export path. It waits for the next person turn, starts no turn itself and includes no synthesis or report body. Stable message identity prevents duplicate delivery after recovery.
+Each output stays available with its question. Only the person's current decision starts the next stage:
 
-`status` includes proposal state (`planning`, `ready`, `approved` or `rejected`), file, planning ticket, published digest and any planning error. A `proposal` event uses the table's existing change stream. `roundtables proposal <table>` reads the text only when requested. The page's Review proposal control reads the text and digest, then enables Approve and Reject for that revision. `roundtables decide <table> <approve|reject> <digest>` records the person's decision. Agent calls require explicit consent. A stale digest or changed file is refused. Resubmitting a changed proposal returns it to `ready` for review. Approval starts no execution: a separate work request is required.
+1. Roundtable result -> Researcher.
+2. Research -> Architect.
+3. Architecture -> existing intake, creating the design's separate project and functional map.
+4. Completed intake -> Planner in that project.
+5. Full plan -> separate plan review. Comments stay in review. Return to Planner starts a fresh revision.
+   Only approval starts Decomposer.
+6. Decomposer -> a system-written execution outline containing the board and every ticket's id, title,
+   stored completion dependencies and full expected outcome.
+7. Execution outline -> person approval -> Facilitator. Facilitator assigns specialists, receives their work,
+   submits completed work to Harsh Critic and assigns any concrete corrective tickets for another review.
 
-`roundtables plan <table>` retries failed planning using the existing ticket. Agent-opened tables keep the existing caller status/events route and create no Planner assignment or system reference.
+A no stops the pipeline. Preparation tickets do not authorize implementation. Decomposer creates its fresh
+board inactive and its tickets held until the outline is approved. Existing dispatch admission, budgets,
+stops and capacity govern every fresh role. Outline approval carries execution consent into specialist claims on
+that board, including when Full Auto is off. Other boards retain their own start controls. Intake uses its authored role rather than a replacement prompt.
 
-The `proposals` table is keyed by `table_id` and keeps `state`, `file`, `work_id`, `digest`, `error` and `created`. It records planning and decisions separately from follower cursors. The existing system-agent report request and its wake are removed.
+`roundtables follow-through <table>` prepares or recovers a handoff. `roundtables review <table>` reads the full
+current output. `roundtables submit` publishes an assigned stage file from its worktree into the source project's
+saved record. Architecture supplies `project_name`; decomposition supplies its actual `board`. Cross-project
+stage calls supply `origin`, the source project id. The page's decisions carry both the SHA-256 of the reviewed
+bytes and the stage revision. Changed bytes or a stale revision require another review. Comments and revision
+requests remain in the pipeline record. Status and events carry metadata rather than deliverable bodies.
+
+`pipelines` and `intake_links` use tables version 5, compatible from 5. Version 5 persists the preparation choice and prevents older writers from applying incompatible review transitions. Upgrade preserves finished discussions,
+events and follower cursors. Version 3 proposal decisions remain historical evidence; their direct Planner
+route is removed. Recovered tables begin at the roundtable decision rather than inheriting execution approval.
+
+## Automate Ticket Creation
+
+Creation offers `Automate Ticket Creation`, off by default. `open automate_ticket_creation=true` saves the choice
+with the table. Enabled preparation advances Researcher, Architect, Intake, Planner and Decomposer after each saved
+output, without transition decisions. Decomposer creates a fresh named board in the target project and populates
+complete tickets with prerequisites. It leaves the active board setting unchanged. Inactive-board admission keeps
+these tickets from starting, so automated preparation needs no ticket holds. The system writes the execution
+outline beside the plan. It remains available for later review. Facilitator never starts automatically.
+Default-off tables retain the existing person decisions and held decomposition tickets.
 
 ## Sync and async
 
@@ -87,7 +122,7 @@ Every verb is synchronous. An engine call runs its MCP client on an event loop o
 
 ## Layers
 
-It writes no layer: its tables are at the project's place, version 3. The proposal table is additive; version 2 discussions and events remain intact.
+It writes no layer: its tables are at the project's place, version 5. Earlier discussions and events remain intact. The obsolete proposal table is removed.
 
 - `tables`, keyed by `table_id`: the Address (empty for a table about no part), topic, opening, seats, host, synthesizer, rounds and spend it was opened with; its state and reason; the engine's `discussion`, chair token and A2A ids; `seated`, the seats' names; `follower`, its pid while it runs; `followed`, the cursors of what was told and where its record was saved, its memory kept and its result topics retained; `answer` and `answered`; `created` and `ended`. Index on `created`.
 - `events`, keyed by `(table_id, seq)`: `kind`, `audience`, `payload` and `at`.

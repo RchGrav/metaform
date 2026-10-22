@@ -1358,6 +1358,12 @@ def finish(ctx: Context) -> Any:
                 'project': store.project_id, 'base': base.id, 'layer': found.layer.id, 'code': True,
                 **({'elements': new_code} if verified else {}),
             })
+    # Preparation handoffs need completion for document, media and data maps too.
+    # Keep intake.finished's code-enrichment contract unchanged.
+    if not verified:
+        replace(ctx, project=store.project_id).publish('intake.completed', {
+            'project': store.project_id, 'base': found.metaform, 'layer': found.layer.id,
+        })
     return {'layer': found.layer.name, 'project': store.project_id, 'base': found.metaform,
             'elements': len(elements), 'purposes': len(joins), 'work': work, 'notices': notices,
             **({'follow_on': follow_on} if follow_on else {})}

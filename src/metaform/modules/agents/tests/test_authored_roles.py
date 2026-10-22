@@ -38,7 +38,8 @@ def read_resource(folder, uri, session):
 
 def test_native_responsibility_inventory_and_selected_identity(project_folder, monkeypatch):
     roles = [one for _, values in provided(project_folder, 'agent.roles') if isinstance(values, tuple) for one in values]
-    assert len(roles) == 22
+    assert len(roles) == 23
+    assert any(role.name == 'roundtable_follow_through' for role in roles)
     assert {one.name for one in roles} >= {'triage', 'gc', 'functionality', 'facilitator', 'role_creator'}
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     for definition in roles:

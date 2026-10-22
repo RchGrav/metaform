@@ -10,10 +10,11 @@
  * its turn in a word bubble whose tail points at it; a turn Jev vetoes fades from its bubble; the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
- * are the question, the table's state and the whole transcript. The person only watches: the seats talk among
- * themselves and nothing on the stage asks for the person's input once the question is asked. Leaving puts the map
- * back as it was; the table runs
- * on, and the stage shows it again when the person comes back to it. With reduced motion the figures stand still and
+ * are the question, the table's state and the whole transcript. After discussion ends, follow-through shows each
+ * stage's full output and question. The person decides before the next stage starts unless automated ticket creation
+ * was selected. Plan review offers comments,
+ * revision and approval. Leaving restores the map while the table continues. Returning restores its stage.
+ * With reduced motion the figures stand still and
  * nothing moves into place: everything is shown, only the movements are skipped.
  *
  * The table's events reach the page as map.changed of the kinds `roundtables` and `roundtables:<table>`, `tableChange`:
@@ -66,7 +67,7 @@ const CLOCK = {last: 0};
 /* The stage's own picture over the 3D map: its scene, camera and renderer, made the first time it opens, and where its
  * canvas is on the page, kept by its resize observer. */
 const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
-const PROPOSAL = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
+const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -78,19 +79,26 @@ UI.rankingsBox = h('section', {class: 'rt-rankings', hidden: true}, h('h3', {}, 
 UI.answerBox = h('section', {class: 'rt-answer', hidden: true}, h('h3', {}, 'Answer'), UI.answer);
 UI.results = h('section', {class: 'rt-results', hidden: true});
 UI.records = h('section', {class: 'rt-records', hidden: true}, h('h3', {}, 'Saved record'));
-UI.proposalState = h('p', {class: 'rt-proposal-state', role: 'status'});
-UI.proposalError = h('p', {class: 'rt-proposal-error', hidden: true});
-UI.proposalLink = h('a', {class: 'rt-proposal-link', target: '_blank', rel: 'noopener'}, 'Open proposal.md');
-UI.review = h('button', {class: 'btn sm rt-review', type: 'button', onclick: reviewProposal}, 'Review proposal');
-UI.approve = h('button', {class: 'btn sm rt-approve', type: 'button', onclick: () => decideProposal('approve')},
-  'Approve proposal');
-UI.reject = h('button', {class: 'btn sm rt-reject', type: 'button', onclick: () => decideProposal('reject')},
-  'Reject proposal');
-UI.proposalText = h('div', {class: 'rt-proposal-text', hidden: true, style: {'white-space': 'pre-wrap'}});
-UI.proposal = h('section', {class: 'rt-proposal', hidden: true}, h('h3', {}, 'Proposal'), UI.proposalState,
-  UI.proposalError, UI.proposalLink, UI.review, UI.proposalText, UI.approve, UI.reject);
+UI.pipelineState = h('p', {class: 'rt-pipeline-state', role: 'status'});
+UI.pipelineError = h('p', {class: 'rt-pipeline-error', hidden: true});
+UI.pipelineLink = h('a', {class: 'rt-pipeline-link', target: '_blank', rel: 'noopener'}, 'Open saved output');
+UI.review = h('button', {class: 'btn sm rt-review', type: 'button', onclick: reviewPipeline}, 'Load full output');
+UI.yes = h('button', {class: 'btn sm rt-yes', type: 'button', onclick: () => decidePipeline('yes')}, 'Yes');
+UI.no = h('button', {class: 'btn sm rt-no', type: 'button', onclick: () => decidePipeline('no')}, 'No, stop');
+UI.approve = h('button', {class: 'btn sm rt-approve', type: 'button', onclick: () => decidePipeline('approve')},
+  'Approve');
+UI.comment = h('textarea', {class: 'rt-comment', 'aria-label': 'Plan comments', placeholder: 'Plan comments'});
+UI.sendComment = h('button', {class: 'btn sm rt-send-comment', type: 'button',
+  onclick: () => decidePipeline('comment')}, 'Save comment');
+UI.revise = h('button', {class: 'btn sm rt-revise', type: 'button', onclick: () => decidePipeline('revise')},
+  'Send back to Planner');
+UI.pipelineText = h('div', {class: 'rt-pipeline-text', hidden: true, style: {'white-space': 'pre-wrap'}});
+UI.pipelineQuestion = h('p', {class: 'rt-pipeline-question'});
+UI.pipeline = h('section', {class: 'rt-pipeline', hidden: true}, h('h3', {}, 'Follow-through'), UI.pipelineState,
+  UI.pipelineError, UI.pipelineLink, UI.review, UI.pipelineText, UI.pipelineQuestion, UI.comment, UI.sendComment,
+  UI.revise, UI.yes, UI.approve, UI.no);
 UI.board = h('div', {class: 'rt-board', 'aria-live': 'polite'}, UI.ideasBox, UI.rankingsBox, UI.results,
-  UI.answerBox, UI.records, UI.proposal);
+  UI.answerBox, UI.records, UI.pipeline);
 UI.canvas = h('canvas', {class: 'rt-canvas', 'aria-hidden': 'true'});
 UI.seats = h('div', {class: 'rt-seats'});
 UI.band = h('div', {class: 'rt-band'}, UI.canvas, UI.seats);
@@ -108,9 +116,15 @@ UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table'
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
 UI.addSeat = h('button', {type: 'button', class: 'btn sm quiet', onclick: () => addSeat('claude/opus')}, 'Add a seat');
 UI.where = h('span', {class: 'rt-where'});
+UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
+  'aria-describedby': 'rt-automate-description'});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
   h('h2', {}, 'Roundtable', UI.where), UI.question, h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat),
+  h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
+    'Automate Ticket Creation'),
+  h('small', {id: 'rt-automate-description'},
+    'Run preparation without decisions. Populate a new inactive board for later review.'),
   h('div', {class: 'rt-setupacts'}, UI.start, h('button', {class: 'btn quiet', type: 'button',
     onclick: () => leaveStage()}, 'Cancel')));
 UI.root = h('div', {id: 'roundtable', class: 'roundtable', hidden: true, role: 'region', 'aria-label': 'Roundtable'},
@@ -138,6 +152,7 @@ export async function openRoundtable(fresh = false) {
   resetTable();
   showStage();
   UI.setup.hidden = false;
+  UI.automate.checked = false;
   UI.start.disabled = false;
   UI.question.focus();
   try {
@@ -181,9 +196,9 @@ function resetTable() {
   fill(UI.ideas); fill(UI.rankings); fill(UI.results); fill(UI.transcript);
   fill(UI.records, h('h3', {}, 'Saved record'));
   UI.results.hidden = UI.records.hidden = UI.newTable.hidden = true;
-  Object.assign(PROPOSAL, {value: null, reviewed: '', text: '', version: PROPOSAL.version + 1, reading: false,
+  Object.assign(PIPELINE, {value: null, reviewed: '', text: '', version: PIPELINE.version + 1, reading: false,
     writing: false});
-  renderProposal();
+  renderPipeline();
   UI.answer.textContent = '';
   UI.ideasBox.hidden = UI.rankingsBox.hidden = UI.answerBox.hidden = true;
   UI.topic.textContent = ''; UI.state.textContent = '';
@@ -210,7 +225,8 @@ async function startTable() {
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
-  const answer = await wrote('/api/roundtable-open', {topic, ...(TABLE.address ? {address: TABLE.address} : {}),
+  const answer = await wrote('/api/roundtable-open', {topic, automate_ticket_creation: UI.automate.checked,
+    ...(TABLE.address ? {address: TABLE.address} : {}),
     ...(listed.length ? {seats: listed} : {})});
   UI.start.disabled = false;
   if (!answer) { UI.state.textContent = ''; return; }
@@ -317,7 +333,7 @@ async function readTable(whole = false) {
       for (const event of found.events || []) {
         if (event.kind === 'state') stateIs(event.state, event.reason);
         else if (event.kind === 'end') ended(event);
-        else if (event.kind === 'proposal') proposalIs(event.proposal);
+        else if (event.kind === 'pipeline') pipelineIs(event.pipeline);
         else TOLD.list.push(event);
       }
       if (found.status) seated(found.status);
@@ -450,7 +466,7 @@ function ended(event) {
       h('li', {}, link('mechanical-report.md', 'Mechanical report'))));
     UI.records.hidden = false;
   }
-  if (event.proposal) proposalIs(event.proposal);
+  if (event.pipeline) pipelineIs(event.pipeline);
   stateIs('ended', event.reason);
 }
 /* Each topic keeps its synthesis and the engine's Borda order; ranks follow that order, never a second tally. */
@@ -469,62 +485,88 @@ function topicResult(topic) {
         h('td', {}, byId.get(id)?.name || id), h('td', {}, String(borda.points?.[id] ?? 0)))))) : null,
     topic.host_summary?.text ? h('p', {}, topic.host_summary.text) : null);
 }
-/* Proposal events update this one view. A changed digest invalidates the person's earlier review. */
-function proposalIs(proposal) {
-  PROPOSAL.version++;
-  if (proposal?.digest !== PROPOSAL.value?.digest) { PROPOSAL.reviewed = ''; PROPOSAL.text = ''; }
-  PROPOSAL.value = proposal || null;
-  renderProposal();
+/* Each decision binds the full output's stage, revision and digest. Events never carry its body. */
+const pipelineKey = pipeline => pipeline ? `${pipeline.stage}:${pipeline.revision}:${pipeline.digest}` : '';
+function pipelineIs(pipeline, load = true) {
+  const changed = pipelineKey(pipeline) !== pipelineKey(PIPELINE.value);
+  if (changed) {
+    PIPELINE.version++;
+    PIPELINE.reviewed = ''; PIPELINE.text = ''; PIPELINE.reading = false;
+    UI.comment.value = '';
+  }
+  PIPELINE.value = pipeline || null;
+  renderPipeline();
+  if (load && pipeline?.state === 'awaiting' && !PIPELINE.reviewed && !PIPELINE.reading && !PIPELINE.writing) {
+    reviewPipeline();
+  }
 }
-function renderProposal() {
-  const proposal = PROPOSAL.value;
-  UI.proposal.hidden = !proposal;
-  if (!proposal) { UI.proposalText.textContent = ''; UI.proposalText.hidden = true; return; }
-  const ready = proposal.state === 'ready', busy = PROPOSAL.reading || PROPOSAL.writing;
-  UI.proposalState.textContent = {planning: 'The planner is preparing a proposal.',
-    ready: 'Review the proposal before deciding.',
-    approved: 'Approved. Execution requires a separate work request.', rejected: 'Rejected.'}[proposal.state]
-    || proposal.state;
-  UI.proposalError.textContent = proposal.error || '';
-  UI.proposalError.hidden = !proposal.error;
-  UI.proposalLink.href = `/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
-    encodeURIComponent(TABLE.id)}&file=proposal.md`;
-  UI.proposalLink.hidden = !proposal.file || proposal.state === 'planning';
-  UI.review.hidden = UI.approve.hidden = UI.reject.hidden = !ready;
+function renderPipeline() {
+  const pipeline = PIPELINE.value;
+  UI.pipeline.hidden = !pipeline;
+  if (!pipeline) { UI.pipelineText.textContent = ''; UI.pipelineText.hidden = true; return; }
+  const awaiting = pipeline.state === 'awaiting', busy = PIPELINE.reading || PIPELINE.writing;
+  const plan = pipeline.stage === 'plan_review', approval = plan || pipeline.stage === 'execution_outline';
+  const stage = {roundtable: 'Roundtable', research: 'Research', architecture: 'Architecture', intake: 'Intake',
+    plan_review: 'Plan review', decomposition: 'Decomposition', execution_outline: 'Execution outline',
+    facilitation: 'Facilitation'}[pipeline.stage] || pipeline.stage;
+  UI.pipelineState.textContent = `${stage}: ${{pending: 'Preparing follow-through', awaiting: 'Awaiting your decision', running: 'Running',
+    stopped: 'Stopped', completed: 'Completed'}[pipeline.state] || pipeline.state}`;
+  UI.pipelineError.textContent = pipeline.error || '';
+  UI.pipelineError.hidden = !pipeline.error;
+  UI.pipelineQuestion.textContent = awaiting ? pipeline.question || '' : '';
+  UI.pipelineLink.href = `/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
+    encodeURIComponent(TABLE.id)}&file=${encodeURIComponent((pipeline.file || '').split('/').at(-1))}`;
+  UI.pipelineLink.hidden = !pipeline.file;
+  UI.review.hidden = !awaiting || !!PIPELINE.reviewed;
   UI.review.disabled = busy;
-  UI.approve.disabled = UI.reject.disabled = busy || !proposal.digest || PROPOSAL.reviewed !== proposal.digest;
-  UI.proposalText.textContent = PROPOSAL.text;
-  UI.proposalText.hidden = !PROPOSAL.reviewed;
+  UI.yes.hidden = !awaiting || approval;
+  UI.approve.hidden = !awaiting || !approval;
+  UI.approve.textContent = plan ? 'Approve plan' : 'Approve execution outline';
+  UI.no.hidden = !awaiting;
+  UI.comment.hidden = UI.sendComment.hidden = UI.revise.hidden = !awaiting || !plan;
+  const disabled = busy || !pipeline.digest || PIPELINE.reviewed !== pipelineKey(pipeline);
+  UI.yes.disabled = UI.approve.disabled = UI.no.disabled = UI.comment.disabled = UI.sendComment.disabled
+    = UI.revise.disabled = disabled;
+  UI.pipelineText.textContent = PIPELINE.text;
+  UI.pipelineText.hidden = !PIPELINE.reviewed;
 }
-async function reviewProposal() {
-  if (PROPOSAL.value?.state !== 'ready' || PROPOSAL.reading || PROPOSAL.writing) return;
-  const table = TABLE.id, version = PROPOSAL.version;
-  PROPOSAL.reading = true;
-  renderProposal();
+async function reviewPipeline() {
+  if (PIPELINE.value?.state !== 'awaiting' || PIPELINE.reading || PIPELINE.writing) return;
+  const table = TABLE.id, version = PIPELINE.version;
+  let applied = false;
+  PIPELINE.reading = true;
+  renderPipeline();
   try {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}&table=${
-      encodeURIComponent(table)}&proposal=1`);
-    if (TABLE.id !== table || PROPOSAL.version !== version) return;
-    proposalIs(found.proposal);
-    if (found.proposal?.state !== 'ready' || !found.proposal.digest || typeof found.proposal_text !== 'string') return;
-    PROPOSAL.reviewed = found.proposal.digest;
-    PROPOSAL.text = found.proposal_text;
+      encodeURIComponent(table)}&pipeline=1`);
+    if (TABLE.id !== table || PIPELINE.version !== version) return;
+    pipelineIs(found.pipeline, false);
+    applied = true;
+    if (found.pipeline?.state !== 'awaiting' || !found.pipeline.digest || typeof found.output_text !== 'string') return;
+    PIPELINE.reviewed = pipelineKey(found.pipeline);
+    PIPELINE.text = found.output_text;
   } catch (error) { toast(error.message); }
-  finally { if (TABLE.id === table) { PROPOSAL.reading = false; renderProposal(); } }
+  finally { if (TABLE.id === table && (PIPELINE.version === version || applied)) {
+    PIPELINE.reading = false; renderPipeline();
+  } }
 }
-async function decideProposal(action) {
-  const proposal = PROPOSAL.value;
-  if (proposal?.state !== 'ready' || !proposal.digest || PROPOSAL.reviewed !== proposal.digest
-    || PROPOSAL.reading || PROPOSAL.writing) return;
-  const table = TABLE.id;
-  PROPOSAL.writing = true;
-  renderProposal();
+async function decidePipeline(action) {
+  const pipeline = PIPELINE.value;
+  if (pipeline?.state !== 'awaiting' || !pipeline.digest || PIPELINE.reviewed !== pipelineKey(pipeline)
+    || PIPELINE.reading || PIPELINE.writing) return;
+  const table = TABLE.id, version = PIPELINE.version;
+  PIPELINE.writing = true;
+  renderPipeline();
   try {
-    const found = await wrote('/api/roundtable-proposal', {table, action, digest: PROPOSAL.reviewed});
-    if (TABLE.id !== table) return;
-    if (found?.proposal && PROPOSAL.value?.digest === proposal.digest) proposalIs(found.proposal);
-    else if (!found) { PROPOSAL.reviewed = ''; PROPOSAL.text = ''; }
-  } finally { if (TABLE.id === table) { PROPOSAL.writing = false; renderProposal(); } }
+    const found = await wrote('/api/roundtable-decision', {table, action, digest: pipeline.digest,
+      revision: pipeline.revision, comment: UI.comment.value});
+    if (TABLE.id !== table || PIPELINE.version !== version) return;
+    if (found?.pipeline) pipelineIs(found.pipeline, false);
+    else if (!found) { PIPELINE.reviewed = ''; PIPELINE.text = ''; }
+  } finally { if (TABLE.id === table) {
+    PIPELINE.writing = false; renderPipeline();
+    if (PIPELINE.value?.state === 'awaiting' && !PIPELINE.reviewed) reviewPipeline();
+  } }
 }
 function stateIs(state, reason) {
   TABLE.state = state || TABLE.state;

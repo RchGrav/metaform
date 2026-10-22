@@ -29,6 +29,8 @@ settings.number('orchestration_reviews', 0, min=0, max=10,
                 help='Bound independent reviews of one delivery. Findings reopen that ticket; zero disables automatic reviews.')
 
 ROLE_DUTIES = (
+    ('roundtable_follow_through', 'Present finished roundtables and coordinate person-approved preparation stages.',
+     'prompt.roundtables:follow_through'),
     ('triage', 'The Liaison: interview the person, prepare functional tickets and hand the Planner their intent.',
      'prompt.dispatch:system'),
     ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'prompt.orchestration:gc'),

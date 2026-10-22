@@ -1711,11 +1711,16 @@ def test_follow_on_is_not_published_without_a_finished_code_intake(run, project,
         recorded(run, project, 'start')
         recorded(run, project, 'element', address, 'role=DE')
 
-    def unexpected(*args):
-        pytest.fail('No code intake was finished.')
+    completed = []
 
-    monkeypatch.setattr(Context, 'publish', unexpected)
+    def no_code_enrichment(_ctx, topic, payload):
+        assert topic == 'intake.completed', 'A non-code intake must not start code enrichment.'
+        completed.append(payload)
+        return []
+
+    monkeypatch.setattr(Context, 'publish', no_code_enrichment)
     assert 'follow_on' not in finish(Context('intake', project, store=Store('timer')))
+    assert len(completed) == int(address is not None)
 
 
 def test_finished_code_intake_without_subscribers_keeps_regular_result(run, project):

@@ -44,7 +44,10 @@ Nothing is refused for its content. What does not fit is stored as given and nam
 
 ## Events
 
-None.
+`intake.completed` announces every successfully finished intake with its project, base and layer. Roundtable
+follow-through uses it to present the new project's map before planning. Verification passes do not emit it.
+`intake.finished` retains its existing code-enrichment meaning and only announces finished code maps or newly
+added code elements.
 
 ## Sync and async
 

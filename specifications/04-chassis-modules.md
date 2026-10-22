@@ -1137,15 +1137,62 @@ High / Max / Pro
 - Relates to: BASE-052, BASE-054, VIEW-037.
 - Status: Confirmed behavior, 2026-10-21, code.dispatcher.agent#df. Uses existing runtime catalogs and Facilitator continuations.
 
-### BASE-067 Finished roundtables and Planner proposals
+### BASE-067 Finished roundtables and approved follow-through
 
-- Requirement: A finished person-opened roundtable shows its result directly and prepares a separate Planner proposal for the person's decision before execution.
-- What this means: The page shows every topic's named synthesis, Borda order and points, the final answer and links to the saved record. A compact reference containing the table id and saved export path waits in the system inbox for the next person turn. The system agent writes no report. A fresh Planner reads the saved record and relevant project evidence, then writes `proposal.md` beside `mechanical-report.md`. The proposal states the goal, plan, proposed tickets, implementation order, dependencies and open decisions. Proposed tickets remain prose until the person decides the proposal.
-- Why: People need the discussion result immediately. A separate planning assignment preserves deliberate execution without injecting the record into the system agent's context or starting implementation without the person's decision.
-- Build: Reuse roundtable events, saved engine records, existing orchestration assignments, dispatch capacity and the project inbox. Keep one durable Planner ticket per person-opened table. Release discussion seats before Planner admission. Publish the proposal through `roundtables submit`, including its SHA-256 revision. The page reads the proposal only on explicit review. `roundtables decide` accepts the reviewed revision and records approval or rejection. A changed file requires publication and review of its new revision. Approval records the decision and starts no execution work. Execution requires a separate work request. Agent-opened tables retain their existing caller status/events route and create no Planner assignment or system reference. Failures leave the finished result intact and expose a recoverable planning error. The additive version 3 proposal table preserves version 2 discussions, events and follower cursors.
-- Acceptance: Verify direct results and saved links, one Planner assignment under replay and concurrent admission, compact non-waking system references, explicit proposal review, stale-revision rejection, person-controlled decisions, no execution tickets before approval, unchanged agent caller behavior, isolated-worktree publication and preservation of version 2 records. Use the existing roundtable, dispatch transport and web tests.
-- Relates to: BASE-030, BASE-052, BASE-066.
-- Status: Confirmed by the operative ticket direction on 2026-10-21, code.system.management.knowledge#92. Actual execution remains a separate work request.
+- Requirement: A finished roundtable presents its complete result and enters fresh-context preparation roles, with the person deciding every next stage.
+- What this means: Both direct and guided entry produce the existing saved table record. The page shows every topic's synthesis, Borda order and points, final answer and saved transcript links. A fresh `roundtable_follow_through` role receives the complete record. Researcher formalizes requirements and SDK choices. Architect supplies the complete design. Existing authored intake creates the design's separate project, registers its folder and builds its functional map before Planner writes the full implementation plan there. Each role receives the original request and preceding artifacts. No preparation role grants itself permission to start a later stage.
+- Why: A completed discussion becomes grounded research, design, plan and executable tickets while the person controls the cost and direction of each transition.
+- Build: Reuse saved roundtable events, native role assignments, dispatch admission and project intake. Release table seats before admitting Follow-through. Persist the stage, current ticket, artifact path, SHA-256, stage revision, comments, decisions and target project. The page displays each full output with its next-stage question. Decisions bind the exact reviewed bytes and revision. A no stops. Research approval admits Architect. Design approval admits Intake. Completed intake approval admits Planner. Plan review is a separate step: comments remain in review, revision requests start a fresh Planner ticket, and only approval admits Decomposer. Decomposer creates a fresh inactive board with held tickets and explicit `after_work` completion dependencies. Its submission invokes the system's deterministic execution outline writer. The outline lists the target project, board, every ticket id, exact title, dependencies as `depends_on` and full task as `expected_outcome`. Only the person's outline approval admits Facilitator, which releases and assigns specialists, receives their work and submits completed work to Harsh Critic. Rejections create concrete corrective tickets returned through Facilitator and another review. Facilitator distinguishes approved-board delivery from bounded role-publication commissions. Person-started Facilitator claims retain launch consent only for tickets on that approved board, preserving Full Auto off and explicit stops. The system agent receives one compact non-waking inbox reference containing table id and saved export path. The system agent writes no report. Status and events carry output metadata, with full content read through the review command. Recovery reuses current stage tickets and preserves stops. Intake completion follows its existing event, never polling. Version 4 replaces the obsolete proposal table and route, preserves version 2 discussion records and retains version 3 proposal decisions as history. Compatibility starts at version 4 because older writers would revive direct Planner admission.
+- Acceptance: Fixture table completion admits Follow-through and asks before Researcher. Yes decisions run the required fresh-role chain. No stops. Plan comments and revision requests never admit Decomposer. Only current plan approval does. Outline approval admits Facilitator. Verify replay and concurrent decisions, complete prior artifacts, new-project intake completion, isolated-worktree publication, stale bytes/revision rejection, source result visibility, compact non-waking inbox references, unrelated-event zero reads and preservation of earlier discussion records. Exercise full-output review and decisions through HTTP and browser controls.
+- Relates to: BASE-030, BASE-039, BASE-052, BASE-066, BASE-068.
+- Status: Confirmed by ticket code.system.management.knowledge#a7, 2026-10-21. Direct Planner proposal route from #92 is folded into this flow.
+
+- Amendment, 2026-10-22, ticket code.system.management.knowledge#a9: Roundtable creation offers exactly
+  `Automate Ticket Creation`, off by default. The stored `automate_ticket_creation` choice advances fresh
+  Researcher, Architect, existing new-project Intake, Planner and Decomposer assignments after each saved output,
+  without intermediate decisions. Decomposer creates and fully populates a fresh named board in the target project,
+  preserving prerequisites and the active board setting. Automated preparation uses the existing inactive-board
+  admission guard instead of holding tickets for review. Submission writes the execution outline beside the plan
+  for later review. It never admits Facilitator automatically. Default-off tables retain reviewed transitions.
+  Launch failures retain their stage and ticket for recovery. Replayed outputs never admit duplicate stages.
+  Tables version 5, compatible from 5, persists the choice and prevents older writers from applying incompatible
+  review transitions. Acceptance: default-off/on/reset creation, saved option, unattended stage order, populated
+  inactive board, preserved prerequisites, no implementation session, existing Full Auto admission refusal,
+  replay and recovery, unchanged manual decisions.
+
+### BASE-068 Distinct reusable preparation, implementation and acceptance duties
+
+- Requirement: Each reusable role owns its authored function and returns its deliverable to its caller.
+- What this means: Interviewer returns the guided interview brief. Researcher returns evidence-grounded findings,
+  requirements and technology recommendations. Architect returns the complete build design and interface contracts.
+  Planner returns the written implementation plan for review. Decomposer turns the complete plan into a fresh board,
+  detailed tickets. The system writes their execution outline from the stored board. Every generated domain
+  specialist combines the shared Specialist duty
+  with its expertise. Harsh Critic independently approves or rejects delivered work. Existing roles, including
+  functionality, reviewer and verifier, remain available with their existing behavior.
+- Why: Separate duties preserve authored expertise, caller responsibility and independently reviewable deliverables.
+- Build: Serve roles through `metaform://role/<name>`, using `harsh_critic` for Harsh Critic. Preserve the complete
+  assigned authored duties, adapting operations to actual tools. Liaison calls Interviewer for guided interviews.
+  Decomposer creates its fresh board with `map_boards op=add` and tickets one at a time, prerequisites first.
+  Store logical `depends_on` relationships through `map_work after_work=[ids]`, including an empty list for
+  independent work. Preserve all plan detail and check complete coverage before returning the plan and board
+  identifiers for the system-written execution outline.
+  Compose generated roles from common grounding, shared Specialist duty and authored expertise. Keep existing
+  assignment snapshots pinned and record delivered component versions through ordinary prompt receipts.
+  Harsh Critic delegation accepts `context.reviewed_work` to identify delivered work separately from its caller.
+  Facilitator reviews require that target to distinguish specialist work from the commission. Other callers may
+  review their own assigned work. Ended role commissions cannot initiate review; their active workflow caller
+  requests that contribution. A returned REJECT requires concrete
+  findings. Create a new corrective ticket per finding with the reviewed work, affected contract, defect, evidence,
+  impact, adjustments, expected behavior and verification. Corrections inherit the reviewed board, depend on the
+  reviewed ticket and automatically commission the Facilitator. Return verdict and correction references to the
+  caller. Corrected work returns to that review caller for its workflow to request fresh review.
+  Repeated returns create no duplicate corrective work. Keep the existing FQC correction path unchanged.
+- Acceptance: Resolve all seven role resources. Verify generated expertise includes the separately versioned
+  Specialist duty. Exercise Harsh Critic approval, rejection, caller return, new corrective ticket identity,
+  retained evidence, real prerequisites, board inheritance, Facilitator routing and replay safety.
+- Relates to: BASE-052, BASE-054, BASE-066, BASE-067.
+- Status: Confirmed by current enhancement ticket 78a1d054c6474be38c3a76547ddebf94, 2026-10-21.
 
 ### BASE-068 Distinct reusable preparation, implementation and acceptance duties
 

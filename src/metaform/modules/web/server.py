@@ -223,7 +223,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
-    '/api/roundtable-open', '/api/roundtable-proposal'})
+    '/api/roundtable-open', '/api/roundtable-decision'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -1420,7 +1420,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-session-prompts': self.dispatch_session_prompts,
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/roundtable-open': self.roundtable_open,
-                  '/api/roundtable-proposal': self.roundtable_proposal,
+                  '/api/roundtable-decision': self.roundtable_decision,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -2594,12 +2594,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
                 return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
             table = {'table': given['table']}
-            if given.get('proposal'):
-                return self.send(200, module_verb(given, 'roundtables', 'proposal', table))
+            if given.get('pipeline'):
+                return self.send(200, module_verb(given, 'roundtables', 'review', table))
             if given.get('file'):
                 name = given['file']
-                if name not in ('export.json', 'mechanical-report.md', 'proposal.md'):
-                    return self.send(400, {'error': 'Choose the saved transcript or export.'})
+                if name not in ('export.json', 'mechanical-report.md', 'research.md', 'architecture.md',
+                                'intake.md', 'plan.md', 'decomposition.md', 'execution-outline.md', 'facilitation.md'):
+                    return self.send(400, {'error': 'Choose a saved roundtable record or stage output.'})
                 status = cast(dict[str, Any], module_verb(given, 'roundtables', 'status', table))
                 saved = str(status.get('saved') or '')
                 if not saved:
@@ -2616,10 +2617,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
-    def roundtable_proposal(self, given: dict[str, Any]) -> None:
+    def roundtable_decision(self, given: dict[str, Any]) -> None:
         try:
             found = module_verb(given, 'roundtables', 'decide',
-                                {key: given.get(key) for key in ('table', 'action', 'digest')})
+                                {key: given.get(key) for key in ('table', 'action', 'digest', 'revision', 'comment')})
         except StoreError as error:
             return self.refuse(error, 404)
         except (Stop, ValueError, OSError) as error:
@@ -2631,14 +2632,18 @@ class Handler(BaseHTTPRequestHandler):
         person had one selected: with the seats the person chose, or none for roundtables_seats. It answers once the
         table's follower has opened it."""
         address, topic, seats = given.get('address'), given.get('topic'), given.get('seats')
+        automate_ticket_creation = given.get('automate_ticket_creation', False)
         if address is not None and not isinstance(address, str):
             return self.send(400, {'error': 'The Address a table is about is text, or left out.'})
         if not isinstance(topic, str) or not topic.strip():
             return self.send(400, {'error': 'A table opens on a question.'})
+        if not isinstance(automate_ticket_creation, bool):
+            return self.send(400, {'error': 'Automate Ticket Creation is true or false.'})
         if seats is not None and (not isinstance(seats, list) or not all(isinstance(one, str) for one in
                                                                           cast(list[Any], seats))):
             return self.send(400, {'error': 'The seats are a list of seat names, such as claude/opus.'})
-        nouns: dict[str, Any] = {'topic': topic.strip(), **({'address': address.strip()} if address and address.strip()
+        nouns: dict[str, Any] = {'topic': topic.strip(), 'automate_ticket_creation': automate_ticket_creation,
+                               **({'address': address.strip()} if address and address.strip()
                                                             else {}), **({'seats': seats} if seats else {})}
         try:
             found = module_verb(given, 'roundtables', 'open', nouns)

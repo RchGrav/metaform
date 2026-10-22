@@ -42,9 +42,9 @@ from typing import Any, cast
 
 from metaform import outline, prompt_files, settings
 from metaform.data import Column, Index, Node, Table, Tables
-from metaform.module import Context, Module, Noun, Stop, Verb, agent_caller, context, node_items, provided
+from metaform.module import Context, Module, Noun, Stop, Subscription, Verb, agent_caller, context, node_items, provided
 
-from . import engine, follow, proposal
+from . import engine, follow, pipeline
 
 SUPPORTED_OS = ('linux', 'macos')  # a follower and the engine's servers are detached into a session of their own
 # The shipped engine's own requirements, roundtable/ (its pyproject.toml), so it runs on every install
@@ -89,7 +89,7 @@ settings.items('roundtables_seats', ('claude/opus', 'codex/astra', 'codex/sol', 
 
 # Version 2: a table's Address may be empty, a table on the question alone; the engine's reporter seat and its report
 # are gone. The engine's synthesis and saved mechanical report supply the result.
-TABLES = Tables(version=3, tables=(
+TABLES = Tables(version=5, compatible_from=5, upgrade=pipeline.upgrade, tables=(
     Table('tables', place='project', key=('table_id',), columns=(
         Column('table_id', required=True), Column('address'), Column('topic', required=True),
         Column('opening', required=True), Column('seats', 'json', required=True), Column('host'),
@@ -103,9 +103,15 @@ TABLES = Tables(version=3, tables=(
     Table('events', place='project', key=('table_id', 'seq'), columns=(
         Column('table_id', required=True), Column('seq', 'int', required=True), Column('kind', required=True),
         Column('audience', required=True), Column('payload', 'json', required=True), Column('at', required=True))),
-    Table('proposals', place='project', key=('table_id',), columns=(
-        Column('table_id', required=True), Column('state', required=True), Column('file', required=True),
-        Column('work_id'), Column('digest'), Column('error'), Column('created', required=True))),
+    Table('pipelines', place='project', key=('table_id',), columns=(
+        Column('table_id', required=True), Column('stage', required=True), Column('state', required=True),
+        Column('file'), Column('work_id'), Column('coordinator'), Column('digest'), Column('error'),
+        Column('revision', 'int', required=True, default=0), Column('artifacts', 'json'), Column('history', 'json'),
+        Column('automate_ticket_creation', 'bool', required=True, default=False),
+        Column('feedback'), Column('project_name'), Column('project'), Column('folder'), Column('board'),
+        Column('created', required=True))),
+    Table('intake_links', place='project', key=('origin', 'table_id'), columns=(
+        Column('origin', required=True), Column('table_id', required=True))),
 ))
 
 
@@ -186,7 +192,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             **({'report': report} if report else {}), 'created': row['created'],
             **({'ended': row['ended']} if row.get('ended') else {}),
             **({'topics': followed['result_topics']} if 'result_topics' in followed else {}),
-            **({'proposal': plan} if (plan := proposal.state(ctx, str(row['table_id']))) is not None else {}),
+            **({'pipeline': held} if (held := pipeline.state(ctx, str(row['table_id']))) is not None else {}),
             **{key: followed[key] for key in ('saved', 'recorded') if followed.get(key)}}
 
 
@@ -258,7 +264,8 @@ def open_table(ctx: Context) -> dict[str, Any]:
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
                              'seats': seats, **roles, 'rounds': ctx.nouns.get('rounds'), 'spend': spend,
                              'state': 'opening', 'created': follow.now(),
-                             'followed': {'opener': 'person' if ctx.surface == 'web' or (
+                             'followed': {'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
+                                          'opener': 'person' if ctx.surface == 'web' or (
                                  ctx.surface == 'cli' and agent_caller() is None) else 'agent'}})
     answer = started(ctx, table_id)
     if 'refused' in answer:
@@ -412,8 +419,8 @@ def run(ctx: Context) -> dict[str, Any]:
     return follow.run(ctx, str(ctx.nouns['table']))
 
 
-def plan(ctx: Context) -> dict[str, Any]:
-    return proposal.plan(ctx, str(ctx.nouns['table']))
+def follow_through(ctx: Context) -> dict[str, Any]:
+    return pipeline.prepare(ctx, str(ctx.nouns['table']))
 
 
 ADOPT_CAUTION = ('Adopting an idea files a ticket that Full Auto starts like any other, so it spends agent time: the '
@@ -444,7 +451,9 @@ MODULE = Module(
                     Noun('synthesizer', 'Who names the ideas; the host when left out.', required=False),
                     Noun('rounds', 'The most rounds of discussion, up to the engine\'s own most.', kind='int',
                          required=False),
-                    Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False)),
+                    Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
+                    Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
+                         'board and execution outline without decisions. Default off.', kind='bool', required=False)),
              switches=('roundtables_spend', 'roundtables_seats'), open_world=True),
         Verb('comment', comment, 'As the chair, say something to the table at its next gap between turns.',
              nouns=(TABLE, Noun('text', 'What the chair says.')), open_world=True),
@@ -462,13 +471,24 @@ MODULE = Module(
                                 required=False)),
              effect='read'),
         Verb('tables', listed_tables, 'Every table of the project, newest first.', effect='read'),
-        Verb('plan', plan, 'Prepare or resume the finished table\'s Planner proposal.', nouns=(TABLE,)),
-        Verb('proposal', proposal.read, 'Read the saved proposal and its exact revision.', nouns=(TABLE,), effect='read'),
-        Verb('submit', proposal.submit, 'Publish the Planner\'s saved proposal for the person\'s review.', nouns=(TABLE,)),
-        Verb('decide', proposal.decide, 'Record the person\'s decision on the reviewed proposal.',
-             nouns=(TABLE, Noun('action', 'approve or reject.', schema={'enum': ['approve', 'reject']}),
-                    Noun('digest', 'SHA-256 of the proposal revision the person reviewed.')),
-             person_decides=lambda ctx: 'Only the person approves or rejects a Planner proposal.'),
+        Verb('follow-through', follow_through, 'Prepare or resume the finished table\'s approved stages.',
+             nouns=(TABLE,)),
+        Verb('review', pipeline.review, 'Read the full current output and its exact revision.',
+             nouns=(TABLE, Noun('origin', 'Source project id for a stage in another project.', required=False)),
+             effect='read'),
+        Verb('submit', pipeline.submit, 'Publish the current role\'s output for the person\'s decision.',
+             nouns=(TABLE, Noun('stage', 'The stage this assignment delivers.'),
+                    Noun('work', 'The current stage ticket id.'), Noun('file', 'Output inside the assignment folder.'),
+                    Noun('origin', 'Source project id when working in a new project.', required=False),
+                    Noun('project_name', 'Architect\'s name for the new project.', required=False),
+                    Noun('board', 'Decomposer\'s fresh board name.', required=False))),
+        Verb('decide', pipeline.decide, 'Record the person\'s decision on the current stage output.',
+             nouns=(TABLE, Noun('action', 'yes, no, comment, revise or approve.',
+                               schema={'enum': ['yes', 'no', 'comment', 'revise', 'approve']}),
+                    Noun('digest', 'SHA-256 of the output the person reviewed.'),
+                    Noun('revision', 'The reviewed stage revision.', kind='int'),
+                    Noun('comment', 'The person\'s comments for Planner.', required=False)),
+             person_decides=lambda ctx: 'Only the person decides whether the next stage starts.'),
         Verb('events', table_events, 'A table\'s events after a cursor, as its follower told them.',
              nouns=(TABLE, Noun('after', 'The seq of the last event read; 0 for all.', kind='int', required=False)),
              effect='read'),
@@ -487,4 +507,5 @@ MODULE = Module(
              nouns=(TABLE,), surfaces=('cli',), open_world=True),
     ),
     tables=TABLES,
+    subscriptions=(Subscription('intake.completed', pipeline.intake_finished),),
 )

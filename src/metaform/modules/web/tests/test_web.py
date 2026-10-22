@@ -13357,6 +13357,35 @@ def test_an_agent_started_and_recalled_from_the_page_moves_no_part_drawn_on_a_la
     assert not problems
 
 
+@pytest.mark.parametrize('selected', [None, False, True])
+def test_roundtable_creation_forwards_explicit_automation_with_default_off(monkeypatch, selected):
+    from metaform.modules.web import server
+
+    calls = []
+    monkeypatch.setattr(server, 'module_verb', lambda given, owner, verb, arguments: calls.append(
+        (owner, verb, arguments)) or {'table': 'created'})
+    given = {'topic': ' Prepare tickets ', 'address': ' code.timer.kitchen ', 'seats': ['codex/sol']}
+    if selected is not None:
+        given['automate_ticket_creation'] = selected
+    handler = _Handler()
+    server.Handler.roundtable_open(handler, given)
+    assert handler.answers == [(200, {'table': 'created'})]
+    assert calls == [('roundtables', 'open', {'topic': 'Prepare tickets', 'address': 'code.timer.kitchen',
+        'seats': ['codex/sol'], 'automate_ticket_creation': selected is True})]
+
+
+@pytest.mark.parametrize('invalid', ['false', 'true', 0, 1, None, []])
+def test_roundtable_creation_rejects_non_boolean_automation(monkeypatch, invalid):
+    from metaform.modules.web import server
+
+    calls = []
+    monkeypatch.setattr(server, 'module_verb', lambda *args: calls.append(args))
+    handler = _Handler()
+    server.Handler.roundtable_open(handler, {'topic': 'Prepare tickets', 'automate_ticket_creation': invalid})
+    assert handler.answers == [(400, {'error': 'Automate Ticket Creation is true or false.'})]
+    assert calls == []
+
+
 def test_roundtable_saved_files_are_read_from_its_own_record(run, web, mapped):
     from metaform.data import Store
 
@@ -13386,43 +13415,54 @@ def test_roundtable_saved_files_are_read_from_its_own_record(run, web, mapped):
     assert api(web, '/api/roundtable?project=proj&table=missing&file=export.json')[0] == 400
 
 
-def test_roundtable_proposal_review_and_person_decision_use_the_exact_revision(run, web, mapped):
+def test_roundtable_pipeline_review_and_person_decision_use_the_exact_revision(run, web, mapped):
     import hashlib
 
     from metaform.data import Store
-    from metaform.module import context
-    from metaform.modules.roundtables import proposal
 
     run('enable', 'roundtables', cwd=mapped)
-    saved = 'docs/roundtables/8-proposal'
+    saved = 'docs/roundtables/8-pipeline'
     folder = mapped / saved
     folder.mkdir(parents=True)
-    text = '# Goal\nKeep proposed tickets as prose.\n'
-    (folder / 'proposal.md').write_text(text, encoding='utf-8')
+    text = '# Full plan\nRetain every proposed task.\n'
+    (folder / 'plan.md').write_text(text, encoding='utf-8')
+    digest = hashlib.sha256(text.encode()).hexdigest()
     store = Store('proj', module='roundtables')
     with store.tables() as tx:
-        tx.insert('tables', {'table_id': 'proposal', 'topic': 'What next?', 'opening': '.', 'seats': [],
+        tx.insert('tables', {'table_id': 'pipeline', 'topic': 'What next?', 'opening': '.', 'seats': [],
                              'spend': 0.0, 'state': 'ended', 'created': '2026-10-21T00:00:00Z',
                              'followed': {'saved': saved}})
-        tx.insert('proposals', {'table_id': 'proposal', 'state': 'planning', 'file': f'{saved}/proposal.md',
-                                'created': '2026-10-21T00:00:00Z'})
-    proposal.submit(context('roundtables', mapped, project='proj', nouns={'table': 'proposal'}))
+        tx.insert('pipelines', {'table_id': 'pipeline', 'stage': 'plan_review', 'state': 'awaiting',
+                               'file': f'{saved}/plan.md', 'digest': digest, 'revision': 1,
+                               'created': '2026-10-21T00:00:00Z'})
     started(run)
-    url = '/api/roundtable?project=proj&table=proposal'
-    status, reviewed = api(web, url + '&proposal=1')
-    assert status == 200 and reviewed['proposal_text'] == text
-    digest = reviewed['proposal']['digest']
-    assert digest == hashlib.sha256(text.encode()).hexdigest()
-    assert request(web, url + '&file=proposal.md')[1] == text
-    # An authenticated page write requires its Origin/cookie. No transcript body is returned on ordinary status.
-    assert 'proposal_text' not in api(web, url + '&whole=1')[1]['status']
-    response = request(web, '/api/roundtable-proposal', method='POST', body=json.dumps({
-        'project': 'proj', 'table': 'proposal', 'action': 'approve', 'digest': digest}),
-        headers={'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
-    assert response[0] == 200 and json.loads(response[1])['proposal']['state'] == 'approved', response
-    changed = '# Goal\nA different proposal.\n'
-    (folder / 'proposal.md').write_text(changed, encoding='utf-8')
-    stale = request(web, '/api/roundtable-proposal', method='POST', body=json.dumps({
-        'project': 'proj', 'table': 'proposal', 'action': 'approve', 'digest': digest}),
-        headers={'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
+    url = '/api/roundtable?project=proj&table=pipeline'
+    status, reviewed = api(web, url + '&pipeline=1')
+    assert status == 200 and reviewed['output_text'] == text
+    assert reviewed['pipeline']['digest'] == digest
+    assert request(web, url + '&file=plan.md')[1] == text
+    (folder / 'facilitation.md').write_text('Delivered board outcomes.', encoding='utf-8')
+    assert request(web, url + '&file=facilitation.md')[1] == 'Delivered board outcomes.'
+    assert 'output_text' not in api(web, url + '&whole=1')[1]['status']
+
+    def decide(action, revision=1, comment=''):
+        return request(web, '/api/roundtable-decision', method='POST', body=json.dumps({
+            'project': 'proj', 'table': 'pipeline', 'action': action, 'digest': digest,
+            'revision': revision, 'comment': comment}), headers={
+                'Origin': f'http://127.0.0.1:{web}', 'Content-Type': 'application/json'})
+
+    # Plan review requires approval, so a generic yes cannot start Decomposer.
+    assert decide('yes')[0] == 400
+    response = decide('comment', comment='Keep the full task list.')
+    assert response[0] == 200, response
+    kept = json.loads(response[1])['pipeline']
+    assert kept['stage'] == 'plan_review' and kept['state'] == 'awaiting' and kept['revision'] == 2
+    assert 'Keep the full task list.' in kept['feedback']
+    assert decide('no')[0] == 400  # Same bytes cannot authorize a stale revision.
+    changed = '# Full plan\nA different task list.\n'
+    (folder / 'plan.md').write_text(changed, encoding='utf-8')
+    stale = decide('no', revision=2)
     assert stale[0] == 400 and 'changed' in json.loads(stale[1])['error'].lower()
+    (folder / 'plan.md').write_text(text, encoding='utf-8')
+    response = decide('no', revision=2)
+    assert response[0] == 200 and json.loads(response[1])['pipeline']['state'] == 'stopped', response
