@@ -1257,7 +1257,9 @@ class Orchestration:
         return not store.ticket(str(source['work_id'])).work.done
 
     def assessment(self, ctx: Context, gc: Mapping[str, Any], report: Mapping[str, Any],
-                   key: str, *, blocked_by: str | None = None) -> dict[str, Any]:
+                   key: str, *, blocked_by: str | None = None, automatic: bool = False) -> dict[str, Any]:
+        if automatic and not int(ctx.setting('orchestration_reviews')):
+            return {'state': 'completed', 'queued': False, 'reason': 'Automatic assessments are disabled.'}
         resolved_role(ctx, 'functionality')
         store = own(ctx)
         ident = identity(gc['assignment_id'], 'assessment', key)
@@ -1267,6 +1269,10 @@ class Orchestration:
                 self.assessment_board(ctx, tx, existing)
                 return existing
             current_gc = row_for(tx, assignment_id=gc['assignment_id']) or gc
+            if automatic and len(tx.rows('assignments', {
+                    'reviewed_assignment_id': gc['assignment_id']}, limit=0).results) >= int(
+                        ctx.setting('orchestration_reviews')):
+                return {'state': 'completed', 'queued': False, 'reason': 'Automatic assessment limit reached.'}
             record = store.ticket(str(current_gc['work_id'])).work
             source = row_for(tx, assignment_id=blocked_by) if blocked_by else None
             is_blocker = blocked_by is not None or 'work_so_far' in report
@@ -1299,13 +1305,32 @@ class Orchestration:
                 return_to={'assignment_id': gc['assignment_id'], 'kind': 'assessment'})
             made = update(tx, made, evidence=report.get('evidence') or gc['evidence'],
                           last_check_in=dict(report))
-            transition(tx, made, 'launch', {'reviewed_assignment_id': gc['assignment_id']}, 'initial')
+            transition(tx, made, 'launch', {'reviewed_assignment_id': gc['assignment_id'],
+                                           'automatic_assessment': automatic}, 'initial')
             for event in tx.rows('transitions', {'assignment_id': gc['assignment_id']}, limit=0).results:
                 if event['kind'] == 'assessment' and event['payload'].get('key') == key:
                     tx.update('transitions', {'transition_id': event['transition_id']}, {
                         'state': 'delivered', 'delivery': {'state': 'completed', 'assessment_id': ident},
                         'updated': now()})
             return made
+
+    def assessment_launch_allowed(self, ctx: Context, assignment: Mapping[str, Any]) -> bool:
+        """Recheck current policy for queued automatic reviews, including pre-marker launches."""
+        reviewed = assignment.get('reviewed_assignment_id')
+        if not reviewed or int(ctx.setting('orchestration_reviews')):
+            return True
+        with own(ctx).tables(write=False) as tx:
+            launches = tx.rows('transitions', {'assignment_id': assignment['assignment_id']}, limit=0).results
+            for event in launches:
+                if event['kind'] != 'launch':
+                    continue
+                automatic = event['payload'].get('automatic_assessment')
+                if automatic is not None:
+                    return not automatic
+            # Older assignments retain their automatic origin on the delivery's assessment transition.
+            return not any(identity(str(reviewed), 'assessment', str(event['payload'].get('key'))) ==
+                           assignment['assignment_id'] for event in tx.rows('transitions', {
+                               'assignment_id': reviewed}, limit=0).results if event['kind'] == 'assessment')
 
     @staticmethod
     def assessment_board(ctx: Context, tx: TableTx, assignment: Mapping[str, Any]) -> None:
@@ -1334,7 +1359,8 @@ class Orchestration:
             held = update(tx, assignment, state=state, evidence=ctx.nouns.get('evidence') or assignment['evidence'],
                           candidate=ctx.nouns.get('candidate') or assignment['candidate'], last_check_in=report)
             gc = row_for(tx, assignment_id=assignment.get('gc_assignment_id'))
-            assess_blocker = state == 'blocked' and gc is not None and \
+            assess_blocker = state == 'blocked' and bool(int(ctx.setting('orchestration_reviews'))) and \
+                gc is not None and \
                 self.blocked_assessment_allowed(tx, store, gc, held)
             if state in ('waiting', 'blocked'):
                 transition(tx, held, 'suspend', {'reason': report['summary'] or state}, key)
@@ -1346,7 +1372,7 @@ class Orchestration:
                 transition(tx, gc, 'assessment', {'report': report, 'key': key,
                            'blocked_by': held['assignment_id']}, key)
         if assess_blocker and gc:
-            assessment = self.assessment(ctx, gc, report, key, blocked_by=held['assignment_id'])
+            assessment = self.assessment(ctx, gc, report, key, blocked_by=held['assignment_id'], automatic=True)
             return {'assignment': held, 'assessment': assessment}
         return held
 
@@ -1595,6 +1621,11 @@ class Orchestration:
             kind, payload = event['kind'], event['payload']
             try:
                 if kind == 'launch':
+                    if not self.assessment_launch_allowed(ctx, assignment):
+                        delivered = {'state': 'queued', 'reason': 'Automatic assessments are disabled.'}
+                        self.delivered(ctx, event['transition_id'], delivered)
+                        results.append({'transition_id': event['transition_id'], **delivered})
+                        continue
                     if assignment.get('reviewed_assignment_id'):
                         with own(ctx).atomic(), own(ctx).tables() as tx:
                             current = row_for(tx, assignment_id=assignment['assignment_id'])
@@ -1616,7 +1647,7 @@ class Orchestration:
                     delivered = finish_publication(ctx, self, str(payload['change_id']))
                 elif kind == 'assessment':
                     assessment = self.assessment(ctx, assignment, payload['report'], str(payload['key']),
-                                                 blocked_by=payload.get('blocked_by'))
+                                                 blocked_by=payload.get('blocked_by'), automatic=True)
                     delivered = {'state': 'completed', 'assessment_id': assessment.get('assignment_id')}
                     for addition in self.pending(ctx, [assessment['work_id']]) if assessment.get('assignment_id') else ():
                         if addition['transition_id'] not in seen:

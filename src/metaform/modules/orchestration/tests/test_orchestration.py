@@ -585,6 +585,8 @@ def test_generated_assessment_recovery_preserves_person_stop(project, monkeypatc
 
 
 def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     root(project)
     SERVICE.check_in(ctx(project, 'gc-one', state='waiting', summary='Waiting for the worker.'))
     worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
@@ -612,6 +614,8 @@ def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(pr
 @pytest.mark.parametrize('outcome', ['cancelled', 'completed'])
 @pytest.mark.parametrize('source', ['commission', 'delivery'])
 def test_blocked_commission_under_closed_gc_creates_no_assessment(project, outcome, source):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     store, _ = project
     gc = root(project)
     session = 'gc-one'
@@ -631,6 +635,8 @@ def test_blocked_commission_under_closed_gc_creates_no_assessment(project, outco
 
 @pytest.mark.parametrize('source', ['commission', 'assessment', 'assessment_specialist', 'assessment_commission'])
 def test_blocked_helper_chain_never_reassesses_live_gc(project, source):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     store, _ = project
     gc = root(project)
     if source == 'commission':
@@ -691,6 +697,8 @@ def test_closed_ticket_consumes_stale_launch_before_runtime_selection(project, m
 
 
 def test_pending_blocked_assessment_skips_gc_closed_before_recovery(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     store, _ = project
     gc = root(project)
     worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
@@ -725,6 +733,8 @@ def test_runtime_selection_cannot_commission_after_concurrent_cancellation(proje
 
 @pytest.mark.parametrize('source', ['delivery', 'commission', 'assessment', 'cancelled', 'completed'])
 def test_legacy_blocked_transition_recovers_source_before_assessment(project, monkeypatch, source):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     store, _ = project
     gc = root(project)
     if source == 'commission':
@@ -1258,3 +1268,75 @@ def test_default_delivery_keeps_report_on_ticket_and_not_in_notifications(projec
     SERVICE.drain(ctx(project))
     assert actual.launches == []
     assert actual.chat[0][1]['body'] == f'{item} complete'
+
+
+@pytest.mark.parametrize('reviews', [None, 0, 1])
+@pytest.mark.parametrize('state', ['blocked', 'delivered'])
+def test_automatic_assessments_follow_review_setting(project, monkeypatch, reviews, state):
+    from metaform import settings
+    if reviews is not None:
+        settings.put('orchestration_reviews', reviews, project[1])
+    gc = root(project)
+    before = {one.id for one in project[0].work(limit=0).results}
+    SERVICE.check_in(ctx(project, 'gc-one', state=state, summary='Focused check retained.',
+                         evidence=['Alarm check passed.'], key='policy'))
+    actual = transport(monkeypatch, project)
+    SERVICE.drain(ctx(project))
+    added = {one.id for one in project[0].work(limit=0).results} - before
+    reviews_found = SERVICE.related(ctx(project), gc['assignment_id'])['independent_assessments']
+    assert len(added) == len(reviews_found) == (1 if reviews else 0)
+    assert len(actual.launches) == (1 if reviews else 0)
+    retained = SERVICE.context(ctx(project), work_id=gc['work_id'])
+    assert retained['evidence'] == ['Alarm check passed.']
+
+
+@pytest.mark.parametrize('state', ['blocked', 'delivered'])
+def test_pending_automatic_assessment_respects_disabled_setting(project, monkeypatch, state):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
+    gc = root(project)
+    with monkeypatch.context() as patch:
+        patch.setattr(SERVICE, 'assessment', lambda *args, **kwargs: None)
+        SERVICE.check_in(ctx(project, 'gc-one', state=state, summary='Retained outcome.', key='recover'))
+    assert any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
+    settings.put('orchestration_reviews', 0, project[1])
+    before = {one.id for one in project[0].work(limit=0).results}
+    actual = transport(monkeypatch, project)
+    Orchestration().drain(ctx(project))
+    assert {one.id for one in project[0].work(limit=0).results} == before
+    assert not SERVICE.related(ctx(project), gc['assignment_id'])['independent_assessments']
+    assert not any(one['kind'] == 'assessment' for one in SERVICE.pending(ctx(project)))
+    assert not actual.launches
+
+
+def test_explicit_assessment_remains_available_with_reviews_off(project, monkeypatch):
+    gc = root(project)
+    SERVICE.check_in(ctx(project, 'gc-one', state='delivered', summary='Focused checks passed.'))
+    review = assess(ctx(project, 'gc-one', summary='Requested full assessment.', key='explicit'))
+    actual = transport(monkeypatch, project)
+    drained = Orchestration().drain(ctx(project))
+    assert [one['assignment_id'] for one, _ in actual.launches] == [review['assignment_id']], drained
+    assert review['reviewed_assignment_id'] == gc['assignment_id']
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_queued_automatic_assessment_waits_while_reviews_off(project, monkeypatch, legacy):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
+    gc = root(project)
+    checked = SERVICE.check_in(ctx(project, 'gc-one', state='blocked', summary='Alarm blocked.', key='queued'))
+    review = checked['assessment']
+    if legacy:
+        with implementation.own(ctx(project)).tables() as tx:
+            for event in tx.rows('transitions', {'assignment_id': review['assignment_id']}, limit=0).results:
+                if event['kind'] == 'launch':
+                    tx.update('transitions', {'transition_id': event['transition_id']}, {
+                        'payload': {'reviewed_assignment_id': gc['assignment_id']}})
+    settings.put('orchestration_reviews', 0, project[1])
+    actual = transport(monkeypatch, project)
+    Orchestration().drain(ctx(project))
+    assert not actual.launches
+    settings.put('orchestration_reviews', 1, project[1])
+    drained = Orchestration().drain(ctx(project))
+    assert [one['assignment_id'] for one, _ in actual.launches] == [review['assignment_id']], drained
+    assert review['reviewed_assignment_id'] == gc['assignment_id']

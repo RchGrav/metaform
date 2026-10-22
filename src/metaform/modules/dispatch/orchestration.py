@@ -175,6 +175,8 @@ class Transport:
         # runner started here only read that state and ended at once, SUSPENDED, and the launch left pending started
         # another on every pass of the agent starter (783 runner starts on one ticket, 2026-10-20).
         owner = service(ctx)
+        if owner is not None and not owner.assessment_launch_allowed(ctx, held):
+            return {'state': 'queued', 'problem': 'Automatic assessments are disabled.'}
         status = owner.routing_status(ctx, work) if owner is not None else None
         if status and status.get('state') == 'creating':
             return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}

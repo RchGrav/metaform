@@ -1066,3 +1066,24 @@ def test_roundtable_reference_waits_for_person_turn_without_waking_system(dispat
     assert turns == [] and len(system.inbox) == 1
     system.inbox_add('ordinary-completion', '', 'Ticket 9 complete', False)
     assert len(system.inbox) == 1, 'routine completions keep their previous behavior'
+
+
+@pytest.mark.kind('simulation')
+def test_automatic_assessment_transport_rechecks_current_review_policy(dispatch, monkeypatch):
+    from metaform import settings
+    from metaform.modules.dispatch import orchestration
+    from metaform.modules.orchestration.state import SERVICE
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    dispatch.run('enable', 'orchestration')
+    owner = SERVICE.ensure(ctx, dispatch.id, role='gc', session_id='delivery')
+    settings.put('orchestration_reviews', 1, dispatch.folder)
+    review = SERVICE.assessment(ctx, owner, {}, 'automatic', automatic=True)
+    settings.put('orchestration_reviews', 0, dispatch.folder)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('Disabled assessment reached runtime preparation.')
+
+    monkeypatch.setattr(SERVICE, 'prepare_runtime', unexpected)
+    result = orchestration.Transport().launch(ctx, review, 'pending-review')
+    assert result == {'state': 'queued', 'problem': 'Automatic assessments are disabled.'}

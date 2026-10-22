@@ -62,9 +62,11 @@ descendants and independent assessments; it preserves already delivered results.
 An explicitly admitted user resume clears only the selected stop.
 
 Closed tickets cannot commission runtime choices, and their pending launches complete without starting a session.
-Blocked check-ins assess only live delivery work. Role commissions, assessments and their descendants return
+Blocked check-ins assess only live delivery work when `orchestration_reviews` enables automatic assessment. Role commissions, assessments and their descendants return
 blockers without starting another assessment of that delivery. Recovery applies the same checks to retained
-blocker transitions. Completed deliveries can still receive their configured independent review.
+blocker transitions and the current review setting. Pending automatic launches wait while reviews are off.
+Explicit `assess` requests remain available with automatic reviews off. Completed deliveries can still receive
+their configured independent review. Context delivery and focused verification do not require full assessment.
 
 State changes emit scoped `map.changed` concerns. Completion through the existing
 public work board follows the same result/assessment path as `check-in`.
