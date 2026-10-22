@@ -48,9 +48,16 @@ export function ticketTitle(ticket) {
     .filter(Boolean).join(' ');
   return title.length <= TITLE ? title : `${title.slice(0, TITLE - 1).trimEnd()}…`;
 }
-export const ticketHead = ticket => h('span', {class: 'ticket-head'},
-  h('span', {class: 'ticket-number'}, ticket.map?.item || ticket.id.slice(0, 8)), ' ',
-  h('span', {class: 'ticket-title'}, ticketTitle(ticket)));
+export function ticketHead(ticket) {
+  const reference = ticket.map?.item || ticket.id.slice(0, 8);
+  const separator = reference.lastIndexOf('#');
+  // Source order retains address#number everywhere. The board lays its three parts out separately.
+  return h('span', {class: 'ticket-head'},
+    h('span', {class: 'ticket-number', title: reference},
+      separator < 0 ? null : h('span', {class: 'ticket-address'}, reference.slice(0, separator)),
+      h('span', {class: 'ticket-local-number'}, separator < 0 ? reference : reference.slice(separator))), ' ',
+    h('span', {class: 'ticket-title'}, ticketTitle(ticket)));
+}
 export function dated(text) {
   const date = new Date(text || '');
   return isNaN(date) ? '' : date.toLocaleString();

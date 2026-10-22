@@ -352,7 +352,7 @@ function switchSetting(setting, work) {
   return h('label', {class: 'switch setting', title: setting.description || setting.name}, input, setting.name);
 }
 /* A setting chosen among the agent's options; a mode that skips its permission prompts is confirmed first and marked
- * No prompts while it holds. */
+ * Approve all while it holds. */
 function selectSetting(setting, work, agent) {
   const current = (setting.options || []).find(option => option.value === setting.current);
   const pick = h('select', {'aria-label': setting.name, title: setting.description || setting.name,
@@ -362,7 +362,7 @@ function selectSetting(setting, work, agent) {
   const isMode = setting.source === 'mode' || setting.category === 'mode';
   return h('label', {class: 'setting'}, h('span', {}, setting.name), pick,
     isMode ? (skipsPrompts(current)
-      ? h('span', {class: 'badge danger', title: `${agent} does not ask before it acts`}, 'No prompts') : null) : null);
+      ? h('span', {class: 'badge danger', title: `${agent} can run commands and edit files without permission dialogs. Instructions still apply.`}, 'Approve all') : null) : null);
 }
 async function chooseSetting(setting, work, agent, pick) {
   const option = (setting.options || []).find(one => one.value === pick.value);

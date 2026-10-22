@@ -875,13 +875,21 @@ main{grid-area:stage;position:relative;min-height:0;overflow:hidden}
 #board .card[data-kind="flawed"],#board .kindtoggle[data-kind="flawed"]{--c:var(--k5)}
 #board .card[data-kind="enhancement"],#board .kindtoggle[data-kind="enhancement"]{--c:var(--k2)}
 #board .card .glyph{width:16px;height:16px;flex:none}
-#board .card .top{display:flex;gap:var(--s2);align-items:center;font:var(--t-xs) var(--sans);color:var(--muted)}
-#board .card .kind{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+#board .card .top{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;font:var(--t-xs) var(--sans);color:var(--muted);min-width:0}
+#board .card .top > *{max-width:100%;min-width:0;overflow-wrap:anywhere}
+#board .card .kind{color:var(--c);font-weight:700;flex:none}
+#board .card .top .statechip{padding:0;border:0;border-radius:0;background:none;letter-spacing:normal}
+#board .card .waiting-on{flex-basis:100%;white-space:normal}
 #board .card .by{color:var(--text)}
-#board .card .age{margin-left:auto;font:var(--t-xs) var(--mono)}
-/* The card's first line: its number and one-line title, found at a glance; the task is read on Inspect. */
+#board .card .age{margin-left:auto;flex:none;font:var(--t-xs) var(--mono)}
+/* Number, title and functional address occupy separate rows. The canonical reference stays intact in the source. */
 #board .card .lead{margin-bottom:var(--s2);font:600 var(--t-md)/1.4 var(--sans);color:var(--text);overflow-wrap:anywhere}
 #board .card .ticket-number{font:500 var(--t-sm) var(--mono);color:var(--c)}
+#board .card .ticket-head{display:grid;gap:var(--s1)}
+#board .card .ticket-number{display:contents}
+#board .card .ticket-local-number{grid-row:1}
+#board .card .ticket-title{grid-row:2;font:600 var(--t-md)/1.4 var(--sans)}
+#board .card .ticket-address{grid-row:3;font:var(--t-xs)/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
 #board .card .nodes{display:flex;flex-wrap:wrap;gap:var(--s1)}
 #board .card .node{height:22px;font:var(--t-xs) var(--sans);border-radius:var(--r-sm);padding:0 var(--s2);border:1px solid var(--line-2);background:var(--panel-2);color:var(--text);cursor:pointer}
 #board .card .node:hover{border-color:var(--signal);color:var(--signal)}
