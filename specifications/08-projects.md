@@ -462,6 +462,16 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Relates to: PROJ-012, PROJ-015, PROJ-020, PROJ-026, PROJ-027.
 - Status: confirmed, 2026-09-28: the threshold, whole copies under it, and the source alone counted and copied.
 
+### PROJ-030 Architect designs receive a separate project before planning
+
+- Requirement: A roundtable's Architect design receives a new registered project and its own functional map before planning.
+- What this means: The caller supplies the complete design and its project name through `dispatch intake project_name=<name> text=<design>`. This creates `~/<name>`, registers it through the same operation as `metaform add project`, then starts the existing authored intake on the design in that project.
+- Why: Planning must address the new workpiece, with its own map and folder, rather than the project that hosted the discussion.
+- Build: Convert the supplied name to lowercase ASCII letters, digits and hyphens, capped at 48 characters. Reject empty names or designs before creating anything. An existing path, including a file or symlink, or a registered project id reserves that name. Try suffixes `-2`, `-3` and onward. Serialize project allocation with a home file lock and create folders exclusively. Return `project`, `folder` and the existing intake launch state. Intake remains asynchronous. Callers wait for its normal completion before planning. If launch admission fails, return the registered identity and failure so intake can be retried in that folder. Do not parse semantic elements in code or replace the authored intake.
+- Acceptance: A supplied design reaches the existing intake prompt in the newly registered folder. Intake records belong to that project's map. Existing folders, files, symlinks and project registrations remain unchanged. Invalid input creates no folder. Failed admission preserves the identity for retry.
+- Relates to: PROJ-001, PROJ-005, BASE-039, BASE-052.
+- Status: Confirmed by ticket code.processor.intake#1a, 2026-10-21.
+
 ## Open questions
 
 1. A `project` value stored at a folder above a registered project's source location is inherited into it by CLI-014, and that overrides the project's own containment default. A selection made in the user's home would then change the project inside every registered project below it. Should a registered project's source location stop that inheritance, so a folder inside a project defaults to its own project unless a value is set at or below the project's path? Recommended: yes. (PROJ-003, PROJ-005, CLI-014)

@@ -6894,6 +6894,9 @@ def intake(ctx: Context) -> dict[str, Any]:
     serves it, with what the person asked for filled in, and it works in the project's folder with Metaform's MCP
     server, recording the map as it reasons it, so an open page follows it. It takes no ticket and counts against the
     agent slots as a summoned agent does, staying to talk until the person stops it. One intake runs at a time."""
+    if ctx.nouns.get('project_name') is not None:
+        from . import project_intake
+        return project_intake.start(ctx)
     store = ctx.require_store()
     agent = agent_named(str(ctx.nouns.get('agent') or ctx.setting('dispatch_agent')))  # the intake picker's, else the default
     runnable(ctx, agent)
@@ -6989,7 +6992,8 @@ MAP_NAME = re.compile(r'[A-Za-z0-9._-]{1,64}')  # a base's name, as `intake star
 def new_map_asked(ctx: Context) -> str | None:
     """`dispatch intake map=new` on a project with a map is the person's decision: a new map beside the one in use is
     never how an update is recorded; the map in use is refined."""
-    if ctx.nouns.get('map') != 'new' or not ctx.require_store().intake_bases():
+    if ctx.nouns.get('project_name') is not None or ctx.nouns.get('map') != 'new' \
+            or not ctx.require_store().intake_bases():
         return None
     return ('This starts an intake agent on a separate map beside the one in use; the map in use is not changed, its '
             'knowledge layers stay with it, and memories at addresses the new map lacks are orphaned until rekeyed. '
@@ -7466,7 +7470,11 @@ MODULE = Module(
         Verb('intake', intake, "Start an agent on this project's intake, recording the map as it follows the intake "
                                'prompt. An open page follows it. It counts as a summoned agent; one intake runs at a '
                                'time.',
-             nouns=(Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',
+             nouns=(Noun('project_name', "The Architect design's project name. Creates a free lowercase hyphenated "
+                                       'folder under your home, registers it, then maps text there. Returns project '
+                                       'and folder with intake launch state. Requires the complete design in text.',
+                         required=False),
+                    Noun('agent', 'claude, codex or antigravity; the default agent, dispatch_agent, when none is given.',
                          required=False),
                     Noun('resume', 'true: start it although an intake is being recorded that no agent of Metaform\'s '
                                    'started, to resume that intake once no agent is still recording it.',
@@ -7486,7 +7494,7 @@ MODULE = Module(
              examples=(('metaform dispatch intake agent=claude', 'Starts Claude Code on the intake of this project.'),
                        ('metaform dispatch intake -- "src/engine only"',
                         'Starts the default agent on an intake of what is asked.')), open_world=True,
-             person_decides=new_map_asked),
+             person_decides=new_map_asked, needs_project=False),
         Verb('helper', helper, "Start a helper agent with a brief and no ticket, for the person's system agent: a "
                                'figure on the map, steered and stopped like any agent, outside the worker slots. It '
                                "reports one line to the system agent's inbox when done and ends.",

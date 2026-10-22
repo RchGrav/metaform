@@ -1,5 +1,7 @@
 # dispatch
 
+`dispatch intake project_name=<Architect-project-name> text=<complete-design>` creates a separate project for a roundtable build before planning. It chooses a free lowercase hyphenated folder under the user's home, registers it through the standard project registry, then launches the existing intake agent on the design there. Existing paths and registered ids reserve names. Collisions use `-2`, `-3` and onward. The result includes `project`, `folder` and the intake launch state. Wait for the normal intake completion before planning. A failed launch returns the registered identity and error for retry through `dispatch intake` in that folder with the same design. Without `project_name`, intake continues to use the current project.
+
 Metaform starts an agent on a ticket through the Agent Client Protocol, BASE-052.
 
 Session reads select live sessions by default: running, waiting, or ended within one hour. `history=true` and `after=<next>` page older ended sessions, 50 per page by default. `id=<ticket or session id>`, `session=<session id>`, `ids=<ticket id list>` and `session_ids=<session id list>` select explicit records. `latest=true` selects one session before its thread is read. Detail reads preserve complete state and transcripts. Legacy sessions without recorded end times appear in history.

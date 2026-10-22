@@ -7,6 +7,11 @@
      the merge's branch, <dev/> with the dev branch, and <node/> with where a finished worker records what it learned.
      Comments are never sent. -->
 <prompts>
+  <design_intake>Target: the intended project described by this Architect design. Follow the authored intake on this design so planning receives this project's functional map. The new folder contains no implementation yet. Record intended elements and receiver purposes from the design.
+
+&lt;&lt;DATA: Architect design&gt;&gt;
+<design/>
+&lt;&lt;END DATA&gt;&gt;</design_intake>
 <!-- dispatch's line in the connect message: what an agent uses dispatch for, one short phrase after its name, in the
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
