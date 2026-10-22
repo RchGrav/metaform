@@ -100,7 +100,8 @@ export function authenticationNeeded(body) {
     ? 'Google Antigravity needs its own sign-in for this connection. Your agy terminal login is separate.'
     : body.error || 'Your agent needs a sign-in.';
   banner(`authentication:${agent}`, {tone: 'warn', title: 'Agent sign-in required',
-    text: `${text} Run this command in a terminal to choose a sign-in method. Complete sign-in, then retry.`,
+    text: `${text} Open a terminal in this project's folder, then run this command to choose a sign-in method. `
+      + 'Complete sign-in, then retry.',
     next: h('code', {}, body.next)});
 }
 export const authenticationRestored = agent => unbanner(`authentication:${agent}`);
