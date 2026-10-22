@@ -1183,14 +1183,14 @@ class ActiveTurn:
 class Session:
     """One ticket's ACP session. The SDK calls `session_update` and `request_permission` on it."""
 
-    def __init__(self, ctx: Context, store: Store, record: WorkRecord | None, agent: str, command: list[str],
+    def __init__(self, ctx: Context, store: Store | None, record: WorkRecord | None, agent: str, command: list[str],
                  folder: Any = None, prep: bool = False, system: bool = False, *, work_id: str | None = None,
                  resume: str | None = None) -> None:
         self.system = system  # the person's system agent: no ticket work, a conversation that lasts until stopped
         self.prep = prep  # helping the person prepare a merge, VIEW-044: it takes no ticket and lives between turns
         # The agent a start launched on its ticket, which takes that launch's own permissions, `launch_options`
         self.launched = record is not None and not (system or prep)
-        self.ctx, self.store, self.agent, self.command = ctx, store, agent, command
+        self.ctx, self._store, self.agent, self.command = ctx, store, agent, command
         # An intake agent has no ticket and no node: its work id names its session alone, and a permission it asks
         # for is put to the person on the page only, as a choice among its options.
         self.work_id = record.id if record is not None else str(work_id)
@@ -1203,7 +1203,7 @@ class Session:
         self.runner: str | None = None
         self.assignment: dict[str, Any] | None = None
         self.authored_role: str | None = None
-        self.root = store.project().path
+        self.root = store.project().path if store is not None else str(ctx.folder)
         self.folder = str(folder) if folder is not None else self.root  # its worktree, VIEW-044
         self.name = agent_label(agent)
         self.base_id: str | None = None
@@ -1408,6 +1408,15 @@ class Session:
         self.spinning = False  # spinning-time is raised, until the ticket next advances
         self.auth_heard = asyncio.Event()  # the agent pushed its login state, `_auth/status_update`
         self.state_noted = False  # a state or subagent line written since the lines were last announced
+
+    @property
+    def store(self) -> Store:
+        """Login probes need no project; ticket and catalog operations still require one."""
+        return self._store if self._store is not None else self.ctx.require_store()
+
+    @store.setter
+    def store(self, value: Store) -> None:
+        self._store = value
 
     def option(self, key: str, default: Any) -> Any:
         """A setting of the session's context, or `default` when it cannot be read, so a setting that is not there
@@ -5587,7 +5596,7 @@ async def closed(probe: Session) -> None:
         await asyncio.gather(*pending, return_exceptions=True)
 
 
-def asked(ctx: Context, store: Store, agent: str, purpose: str) -> Session:
+def asked(ctx: Context, store: Store | None, agent: str, purpose: str) -> Session:
     """A session object for an agent started only to be asked something, P199 and P031: no ticket, no MCP server
     and no prompt, so no tokens are spent and nothing is written to any thread."""
     probe = Session(ctx, store, None, agent, argv(start_command(ctx, agent)), prep=True, system=True,
@@ -5628,7 +5637,7 @@ async def prime(ctx: Context, store: Store, agent: str) -> dict[str, Any]:
         await closed(probe)
 
 
-async def logged_in(ctx: Context, store: Store, agent: str) -> bool | None:
+async def logged_in(ctx: Context, store: Store | None, agent: str) -> bool | None:
     """Whether the agent is logged in now, asked of a freshly started agent as ACP's terminal authentication says to
     after a terminal login: its authStatus push when it advertises one, or else whether session/new answers rather than
     refusing with auth_required, the session then closed and deleted. None when it cannot be told."""
@@ -5670,7 +5679,7 @@ async def login(ctx: Context, agent: str, method: str | None) -> dict[str, Any]:
     the reason when there is none; once it ends, the agent is started afresh and asked whether it is logged in, as
     ACP's terminal authentication says. An `env_var` method names the variables to set, which Metaform never reads.
     With no method and more than one offered, the methods are listed."""
-    store = ctx.require_store()
+    store = ctx.store
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
     probe = asked(ctx, store, agent, 'login')
     try:

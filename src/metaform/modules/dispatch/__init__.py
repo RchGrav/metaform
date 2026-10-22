@@ -7844,11 +7844,11 @@ MODULE = Module(
              examples=(('metaform dispatch cancel 198452e1... -- "No longer needed"', 'Cancels the ticket.'),),
              effect='remove', open_world=True),
         Verb('login', login, 'Log an agent in through ACP authenticate, with the login method it offers; the person '
-                             'only. With no method, it lists the methods.',
+                             'only. Works from any folder. With no method, it lists the methods.',
              nouns=(Noun('agent', 'claude, codex or antigravity.'),
                     Noun('method', 'The id of one of the agent\'s auth methods.', required=False)),
              examples=(('metaform dispatch login codex', 'Lists the ways Codex can log in, or uses its only one.'),),
-             surfaces=('cli',), open_world=True),
+             surfaces=('cli',), open_world=True, needs_project=False),
         Verb('spend', spend_read, 'Read what agents have spent today, on a ticket and by run, in billable tokens and '
                                   'reported cost, against the budgets; sessions that report no usage are named.',
              nouns=(Noun('id', 'A work id, for that ticket\'s spend too.', required=False),),
