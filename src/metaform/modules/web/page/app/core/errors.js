@@ -91,6 +91,19 @@ export function readBack(name) {
   if (bannered(`error:read:${name}`)) unbanner(`error:read:${name}`);
   SEEN.delete(`error:read:${name}`);
 }
+/* Authentication is an action for the person, not a page fault. Use the server's recovery command to identify it. */
+export function authenticationNeeded(body) {
+  const match = /^metaform dispatch login ([a-z][a-z0-9_-]*)$/.exec(body?.next || '');
+  if (!match) return;
+  const agent = match[1];
+  const text = agent === 'antigravity'
+    ? 'Google Antigravity needs its own sign-in for this connection. Your agy terminal login is separate.'
+    : body.error || 'Your agent needs a sign-in.';
+  banner(`authentication:${agent}`, {tone: 'warn', title: 'Agent sign-in required',
+    text: `${text} Run this command in a terminal to choose a sign-in method. Complete sign-in, then retry.`,
+    next: h('code', {}, body.next)});
+}
+export const authenticationRestored = agent => unbanner(`authentication:${agent}`);
 /* What a module says needs the person, its status hook's notice, read from /api/notices each time the page's stream
  * opens: one warning a module, its words split at " Next: " into what is wrong and the step that fixes it, and titled by
  * what comes before the first ": ", such as Phone. A notice the person closed does not come back on the same words; one

@@ -5,7 +5,7 @@ import {$, h, fill} from '/page/app/core/dom.js';
 import {overlay} from '/page/app/core/overlays.js';
 import {toast, confirmAct} from '/page/app/core/controls.js';
 import {S, MEM, reach} from '/page/app/core/reads.js';
-import {mapUnread} from '/page/app/core/errors.js';
+import {mapUnread, authenticationNeeded, authenticationRestored} from '/page/app/core/errors.js';
 import {showAdmin, noMetaform, emptyActs} from '/page/app/header/admin.js';
 import {plural} from '/page/app/memory/manage.js';
 import {DOCK, STANDBY, dockState} from '/page/app/dock/embody.js';
@@ -385,6 +385,11 @@ export async function posted(path, given) {
     const response = await reach(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({project: S.project, base: S.base, ...given})}, 0);
     const body = await response.json().catch(() => ({error: 'The server did not answer with JSON.'}));
+    if (!response.ok) authenticationNeeded(body);
+    else if (path === '/api/settings/choices') {
+      const agent = /^dispatch_(.+)_(?:model|mode|effort|fast)$/.exec(given?.key || '')?.[1];
+      if (agent) authenticationRestored(agent);
+    }
     return {ok: response.ok, status: response.status, body};
   } catch (error) { return {ok: false, status: 0, body: {error: error.message}}; }
 }
