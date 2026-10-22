@@ -21,6 +21,7 @@ against the registry's own schema and its CI rules, and never submitted; publish
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -29,6 +30,7 @@ import platform as host
 import re
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import tarfile
@@ -274,6 +276,14 @@ def adapter(pin_name: str) -> None:
                            f'metaform dispatch registry add={agent}')
             held = pin(entry)
     words = argv_of(held)
+    if host.system() == 'Linux':
+        try:
+            with socket.socket(socket.AF_INET6, socket.SOCK_STREAM):
+                pass
+        except OSError as error:
+            if error.errno == errno.EAFNOSUPPORT:
+                # Google's native launcher otherwise aborts before ACP initializes on IPv4-only kernels.
+                words.append('--enforce_kernel_ipv6_support=false')
     os.execvpe(words[0], words, {**os.environ, **environment(agent, version)})
 
 
