@@ -260,8 +260,11 @@ The steps on the ticket stay the agent's own, MAP-053. The session id is also on
 
 ## Ticket commits
 
-A resolved ticket closes directly through done or a move to Done. Agents verify the actual fix and record
-its resolution and checks. Commit, merge, push, activation, review and delivery receipts never gate closure.
+A resolved ticket closes directly through done or a move to Done. Small reversible fixes proceed directly. Additional validation names its acceptance
+condition and a concrete reason from the requested outcome, material risk or an explicit project requirement.
+Use the smallest adequate check, then stop. Do not add routine test suites, critics or repeated check cycles.
+Preserve requested reviews, configured checks and application data validation. Record the resolution and
+available evidence. User confirmation after delivery never gates closure. Commit, merge, push, activation, review and delivery receipts never gate closure.
 Saving the ticket's feature commit is a separate delivery step. With Full Auto (`dispatch_autostart`) on,
 dispatch integrates that feature locally automatically without pushing. With Full Auto off, it retains the
 feature commit. Delivery failures are reported separately and never keep a resolved error open.

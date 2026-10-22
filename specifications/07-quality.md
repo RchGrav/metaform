@@ -226,6 +226,17 @@ It covers the engineering standard, cross-platform proof, typing, linting, what 
 - Relates to: MAP-046, MAP-049, VIEW-005.
 - Status: confirmed, 2026-09-27.
 
+### QUAL-018 Validation follows acceptance conditions and person control
+
+- Requirement: Small reversible fixes proceed directly without mandatory tests, temporary validation suites, independent critics or repeated check cycles.
+- What this means: Additional validation needs a concrete reason from the requested outcome, material risk or an explicit applicable project requirement. Each check names its specific acceptance condition and reason. Choose the smallest adequate check, then stop unless a change, failure or unresolved concern warrants more evidence. User confirmation remains available after delivery and never gates ticket closure.
+- Why: Undirected validation spends tokens and can establish behavior unrelated to the requested result.
+- How it shows: A routine visual fix can be delivered and closed without a test or critic workflow. The person can confirm its visible result afterward.
+- Build: Reconcile module-owned worker and coordinator prompts. Preserve explicitly requested reviews, nonzero `orchestration_reviews`, configured `dispatch_test_command` and application data validation. Do not add another review stage or setting. For routine reversible work, this record supersedes universal test and critic triggers in QUAL-001, QUAL-006, QUAL-007 and QUAL-008. Their substantive quality standards still apply; their older blanket triggers do not independently justify validation under this record.
+- Acceptance: Delivered worker and coordinator instructions permit direct routine completion and require concrete acceptance conditions for additional checks. Zero reviews creates no automatic assessment; nonzero settings retain bounded assessments. Explicit review remains available with automatic reviews off.
+- Relates to: QUAL-001, QUAL-006, QUAL-007, QUAL-008.
+- Status: confirmed, 2026-10-22, owner instruction on routine validation.
+
 ## Open questions
 
 1. QUAL-005: Which Ruff rule set applies, and what form must a reasoned suppression take?

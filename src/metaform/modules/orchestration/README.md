@@ -74,7 +74,11 @@ Unrelated table changes do no orchestration reads. A work-table event with absen
 ticket concerns reads only indexed active assignments, covering a command that
 aggregated another module's unannotated write. No polling scheduler is added.
 
-Agents verify the actual fix and record its resolution and checks. A resolved ticket closes directly through
+Small reversible fixes proceed directly. Additional validation names its acceptance condition and a concrete
+reason from the requested outcome, material risk or an explicit project requirement. Use the smallest adequate
+check, then stop. Do not add routine test suites, critic stages or repeated check cycles. Preserve requested
+reviews, configured checks and application data validation. Record the resolution and available evidence.
+User confirmation remains available after delivery and never gates closure. A resolved ticket closes directly through
 done or a move to Done. No commit, merge, push, activation, review or receipt is a prerequisite.
 Feature commits remain a separate delivery step. With Full Auto (`dispatch_autostart`) on, integrate locally
 automatically without pushing; otherwise retain the feature commit. Report delivery failures separately without

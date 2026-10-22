@@ -47,6 +47,36 @@ def snapshot(project):
     return recorded, project[0].work(limit=0).results
 
 
+@pytest.mark.req('QUAL-018')
+@pytest.mark.parametrize('module,duty', [
+    ('orchestration', 'gc'), ('orchestration', 'implementer'),
+    ('orchestration', 'specialist'), ('orchestration', 'role_creator'),
+    ('dispatch', 'work'), ('dispatch', 'handoff'),
+])
+def test_routine_fix_guidance_permits_direct_delivery(store, module, duty):
+    """Delivered instructions permit a visible fix without inventing a check or review gate."""
+    from pathlib import Path
+
+    from metaform import prompt_files
+
+    # The loader can select installed modules. Check this candidate's authored prompts.
+    folder = Path(__file__).resolve().parents[2] / module
+    text = prompt_files.served(folder, duty)
+    if module == 'orchestration':
+        text = prompt_files.served(folder, 'common') + '\n' + text
+    assert 'Small reversible fixes proceed directly.' in text
+    assert 'specific acceptance condition' in text
+    assert 'smallest adequate check' in text
+    assert 'User confirmation is available after delivery' in text
+    assert 'Preserve explicitly requested reviews and configured checks' in text
+    for blanket in (
+        'Verify the actual fix', 'Verify changed behavior with relevant checks.',
+        'add a test that fails before the fix and passes after',
+        'Send completed specialist work to a fresh Harsh Critic',
+    ):
+        assert blanket not in text
+
+
 def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
     """Draining a self-request must leave a GC able to act on the recorded request."""
     gc = claim(project)
