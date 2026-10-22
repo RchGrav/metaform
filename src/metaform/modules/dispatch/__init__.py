@@ -1919,13 +1919,17 @@ def module_read(folder: Path, project: str | None, module_id: str, verb: str, **
 
 
 def intake_prompt(ctx: Context, asked: str) -> str:
-    """The intake exactly as the intake module serves it, with what the person asked for in its prompt slot, for an
-    intake agent's first turn: the intake is the instruction, and nothing is added to it, BASE-039."""
+    """Serve the shared procedure with launch mode and requested focus in its Prompt parameter, BASE-039."""
     found = next((module for module in surface(ctx.folder) if module.id == 'intake'), None)
     if found is None:
         raise Stop('The intake module is not active; it serves the intake the agent follows.', 'metaform enable intake')
     verb = next(verb for verb in found.verbs if verb.name == 'prompt')
-    return str(verb.run(context('intake', ctx.folder, project=ctx.project, nouns={'text': asked} if asked else {})))
+    launch = ctx.require_store().intake_agent()
+    work = ctx.identity.get('METAFORM_WORK') if ctx.identity else None
+    nouns = {'text': asked} if asked else {}
+    if launch and launch.get('work') == work and launch.get('mode'):
+        nouns['mode'] = str(launch['mode'])
+    return str(verb.run(context('intake', ctx.folder, project=ctx.project, nouns=nouns)))
 
 
 def release(store: Store, work_id: str, by: str, took: bool, session_id: str | None, how: str,
@@ -6950,6 +6954,8 @@ def intake(ctx: Context) -> dict[str, Any]:
             raise Stop(f'An intake was left unfinished in layer {held.layer.name} of metaform {held.base}, with '
                        f'{held.parts} parts; no agent is recording it. Start the intake agent with resume=true and it '
                        'resumes that intake.', 'metaform dispatch intake resume=true')
+        mode = ('resume' if building else
+                'refine' if chosen.get('map') == 'extend' and store.has_intake() else 'fresh')
         # the slots are counted by the gate, which names the limit that binds (spawn-gate F4)
         with Store(store.project_id, module='dispatch').tables() as tx:
             tx.insert('raised', {'work_id': work_id, 'node': '', 'agent': agent, 'started': time.time(),
@@ -6962,7 +6968,7 @@ def intake(ctx: Context) -> dict[str, Any]:
                 tx.delete('raised', {'work_id': work_id})
             raise
         store.note_intake_launch({'work': work_id, 'agent': agent, 'pid': started['pid'], 'since': home.now(),
-                                  **chosen})
+                                  **chosen, 'mode': mode})
     said = {'state': 'starting', 'work_id': work_id, 'agent': agent, **started, 'session_id': None,
             'conversation': True, 'intake': True, **chosen}
     if not ctx.nouns.get('wait'):

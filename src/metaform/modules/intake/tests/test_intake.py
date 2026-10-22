@@ -1549,6 +1549,50 @@ def test_an_intake_agent_at_work_holds_the_intake_against_every_other_caller_and
 
 @pytest.mark.req('VIEW-045')
 @pytest.mark.req('BASE-039')
+@pytest.mark.parametrize(('choice', 'mode'), [('new', 'fresh'), ('extend', 'refine')])
+def test_selected_intake_mode_reaches_first_turn_and_recording(run, home, project, choice, mode):
+    """An existing map cannot redirect explicit Fresh into refinement. Refine reads that map instead."""
+    from metaform.module import Context
+    from metaform.modules.dispatch import intake_prompt
+
+    recorded(run, project, 'start')
+    recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE')
+    recorded(run, project, 'finish')
+    ticket = Store('timer').add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='Preserve this work.')
+    original = metaform_home.active_base('timer')
+    original_graph = Store('timer').graph(raw=True, limit=0)
+    held = _intake_runner(home, project, map=choice, name='fresh-map' if choice == 'new' else '', mode=mode)
+    mine = {'METAFORM_WORK': 'intake-x'}
+    try:
+        ctx = Context('dispatch', project, project='timer', store=Store('timer'), identity=mine)
+        assert ctx.require_store().intake_agent()['mode'] == mode
+        first = intake_prompt(ctx, 'Examine current artifacts.')
+        assert f'Selected intake mode: {mode}' in first
+        assert 'Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof' in first
+        assert 'Existing-map status cannot override fresh mode.' in first
+        assert 'Examine current artifacts.' in first
+        assert first.startswith(SPEC.read_text(encoding='utf-8').rstrip('\n'))
+        reread = run('intake', 'prompt', 'text=Examine current artifacts.', cwd=project, env=mine).stdout
+        assert reread == first
+        assert 'This project has an intake' in run('intake', 'status', cwd=project, env=mine).stdout
+        said = json.loads(run('intake', 'start', '--json', cwd=project, env=mine).stdout)
+        assert said['base'] == ('fresh-map' if choice == 'new' else 'main')
+        shown = json.loads(run('intake', 'show', '--json', cwd=project, env=mine).stdout)
+        assert bool(shown['elements']) == (choice == 'extend')
+        if choice == 'new':
+            assert Store('timer', base='fresh-map').work(limit=0).results == ()
+        run('intake', 'element', 'code.timer.kitchen', 'role=DE', cwd=project, env=mine)
+        run('intake', 'finish', cwd=project, env=mine)
+        assert metaform_home.active_base('timer') == original
+        assert Store('timer').ticket(ticket.id).work == ticket
+        if choice == 'new':
+            assert Store('timer').graph(raw=True, limit=0) == original_graph
+    finally:
+        _let_go(held)
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.req('BASE-039')
 def test_the_map_the_person_chose_for_an_intake_agent_decides_its_start(run, home, project):
     """UX review round 1, 2026-10-17 (fresh-start F5, web-gui F12): on a mapped project, an intake agent launched with
     map=new opens the new map beside the one in use, named as chosen, though its start gives no name; with map=extend
@@ -1556,11 +1600,18 @@ def test_the_map_the_person_chose_for_an_intake_agent_decides_its_start(run, hom
     recorded(run, project, 'start')
     recorded(run, project, 'element', 'code.timer.kitchen', 'role=DE')
     recorded(run, project, 'finish')
+    original = Store('timer')
+    base_id = metaform_home.active_base('timer').id
+    ticket = original.add_work(Node('element', 'code.timer.kitchen'), '', task='Retain attached work').id
     mine = {'METAFORM_WORK': 'intake-x'}
     held = _intake_runner(home, project, map='new', name='v2')
     try:
         said = json.loads(run('intake', 'start', '--json', cwd=project, env=mine).stdout)
-        assert said['base'] == 'v2' and metaform_home.active_base('timer').name == 'main', said
+        assert said['base'] == 'v2' and metaform_home.active_base('timer').id == base_id, said
+        separate = Store('timer', base='v2')
+        assert separate.element('code.timer.kitchen') is None
+        assert separate.work(open=True, limit=0).results == ()
+        assert original.ticket(ticket).work.task == 'Retain attached work'
     finally:
         _let_go(held)
     run('map', 'remove-base', 'v2', '--confirm', cwd=project)
@@ -1569,6 +1620,10 @@ def test_the_map_the_person_chose_for_an_intake_agent_decides_its_start(run, hom
         said = json.loads(run('intake', 'start', 'name=elsewhere', '--json', cwd=project, env=mine).stdout)
         assert said['base'] == 'main' and 'opens no new map' in json.dumps(said['notices']), said
         assert [base.name for base in metaform_home.bases('timer')] == ['main']
+        assert metaform_home.active_base('timer').id == base_id
+        shown = recorded(run, project, 'show')
+        assert any(one['namespace_address'] == 'code.timer.kitchen' for one in shown['elements'])
+        assert original.ticket(ticket).work.task == 'Retain attached work'
     finally:
         _let_go(held)
 

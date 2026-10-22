@@ -110,9 +110,14 @@ def _fill(tag: str, name: str, value: str) -> str:
 
 
 def served(ctx: Context, asked: str = '') -> str:
-    """The intake text exactly as stored, with its prompt slot filled, and its target where an intake file has one, and
-    nothing beside it, BASE-039: the intake is the instruction, and what is added to it competes with it."""
+    """The stored procedure, binding the selected analysis mode and request through its Prompt parameter, BASE-039."""
     store = ctx.require_store()
+    launch = _own_launch(store)
+    mode = str(launch.get('mode') or '') if launch else str(ctx.nouns.get('mode') or '')
+    if mode:
+        if mode not in ('fresh', 'refine', 'resume'):
+            raise Stop('Intake mode is fresh, refine or resume.', 'metaform help intake prompt')
+        asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked)
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
     try:
@@ -1516,7 +1521,11 @@ MODULE = Module(
     verbs=(
         Verb('prompt', prompt, "Read the intake instructions an agent follows to record this project's map.",
              nouns=(Noun('text', 'path to the target for the intake process; leaving this blank means this project',
-                         required=False),), effect='read'),
+                         required=False),
+                    Noun('mode', 'Selected analysis: fresh surveys artifacts into a separate map, refine updates the '
+                                 'current map, resume continues an unfinished intake. Dispatched intakes retain '
+                                 'their launch choice.', required=False,
+                         schema={'type': 'string', 'enum': ['fresh', 'refine', 'resume']})), effect='read'),
         Verb('schema', schema, 'Read the shape the intake records: namespace roots, Upstream and Downstream links, '
                                'element and purpose forms.', effect='read', needs_project=False),
         Verb('start', start, "Start or resume this project's intake; on a mapped project, a verification pass that "

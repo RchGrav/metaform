@@ -7954,6 +7954,22 @@ def test_a_message_naming_a_fork_goes_to_the_fork_through_dispatch_fork_and_neve
     assert ran[-1] == ('dispatch', 'fork', ['w1', 'session=s1'], None), ran
 
 
+@pytest.mark.req('VIEW-045')
+@pytest.mark.parametrize('mode', ['extend', 'new'])
+def test_intake_handler_forwards_both_modes(mode, monkeypatch):
+    """The server forwards the explicit map choice and user focus without launching inference."""
+    from metaform.modules.web import server
+    ran = []
+    monkeypatch.setattr(server, 'cli_result', lambda given, module_id, verb, nouns, text=None: ran.append(
+        (module_id, verb, nouns, text)) or (200, {}))
+    handler = _Handler()
+    handler.dispatched = lambda given, verb, nouns, text=None: server.Handler.dispatched(handler, given, verb, nouns, text)
+    given = {'project': 'proj', 'agent': 'claude', 'map': mode, 'text': ' Inspect current capabilities. '}
+    server.Handler.dispatch_intake(handler, given)
+    assert ran == [('dispatch', 'intake', ['agent=claude', f'map={mode}'], 'Inspect current capabilities.')]
+    assert handler.answers[-1][0] == 200
+
+
 @pytest.mark.req('VIEW-039')
 def test_dispatch_from_the_page_runs_on_the_base_it_shows_and_an_intake_on_the_active_one(mapped, monkeypatch):
     """The board's Start, Stop, Cancel and chat run dispatch with METAFORM_BASE set to the base the page shows when it
@@ -11398,9 +11414,9 @@ def test_an_intake_launched_from_the_command_line_shows_starting_on_the_page_wit
 
 
 @pytest.mark.req('VIEW-045')
-def test_running_the_intake_again_refines_the_map_in_use_and_offers_no_new_map(run, web, mapped, browser):
-    """Refinement first (2026-10-17): on a mapped project the intake window never offers a new map beside the one in
-    use; it checks and refines the map in use and sends map=extend. The server refuses a name without a new map."""
+def test_running_the_intake_again_offers_refine_and_fresh_intake(run, web, mapped, browser):
+    """Mapped projects offer both modes. Refine stays default, Fresh sends new, and reopening restores Refine.
+    Intercept launch requests so checking mode selection never starts an actual intake."""
     run('enable', 'dispatch')
     started(run)
     page, problems, _ = opened(browser, web)
@@ -11408,22 +11424,45 @@ def test_running_the_intake_again_refines_the_map_in_use_and_offers_no_new_map(r
     page.click('#adminBtn')
     page.click('#intakeBtn')
     page.wait_for_selector('#intake:not([hidden])')
-    assert page.inner_text('#intake .start') == 'Check and refine the map'
-    assert page.locator('#intake input[value="new"], #intake .mapname').count() == 0
-    assert 'beside' not in page.inner_text('#intake .lead')
+    assert page.get_by_label('Refine', exact=True).is_checked()
+    assert page.get_by_label('Fresh intake', exact=True).is_visible()
+    assert page.inner_text('#intake .start') == 'Refine'
+    assert 'tickets' in page.inner_text('#intake .lead')
     choose_agent(page, '#intake', 'claude')
     sent = []
     page.route('**/api/dispatch-intake', lambda route: (sent.append(route.request.post_data_json), route.fulfill(
-        status=400, content_type='application/json', body=json.dumps({'error': 'stand-in'}))))
+        status=400, content_type='application/json', body=json.dumps(
+            {'error': 'stand-in', 'next': 'metaform dispatch intake resume=true'}))))
     page.click('#intake .start')
     page.wait_for_selector('#intake .failed:not([hidden])')
     assert sent and sent[0]['map'] == 'extend' and 'name' not in sent[0], sent
+    page.get_by_label('Fresh intake', exact=True).check()
+    assert page.inner_text('#intake .start') == 'Fresh intake'
+    assert 'separate map' in page.inner_text('#intake .lead')
+    assert page.is_hidden('#intake .suggest')
+    page.click('#intake .start')
+    page.wait_for_function('() => !document.querySelector("#intake .start").disabled')
+    assert len(sent) == 2 and sent[1]['map'] == 'new' and 'name' not in sent[1], sent
+    page.click('#intake .cancel')
+    page.click('#adminBtn')
+    page.click('#intakeBtn')
+    assert page.get_by_label('Refine', exact=True).is_checked()
+    assert page.is_visible('#intake .suggest')
+    page.click('#intake .start')
+    page.wait_for_selector('#intake .failed:not([hidden])')
+    page.click('#intake .failed button:has-text("Take it over")')
+    assert page.is_hidden('#intake .mapchoice')
+    assert page.inner_text('#intake .start') == 'Take over the intake'
+    assert 'existing map' in page.inner_text('#intake .lead')
+    page.click('#intake .start')
+    page.wait_for_function('() => !document.querySelector("#intake .start").disabled')
+    assert len(sent) == 4 and sent[-1]['resume'] is True and 'map' not in sent[-1], sent
     page.unroute('**/api/dispatch-intake')
     status, body = page.evaluate('''() => fetch('/api/dispatch-intake', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({project: 'proj', map: 'extend', name: 'v2'})}).then(r => r.json().then(b => [r.status, b]))''')
     assert status == 400 and 'new map' in body['error'], body
-    assert [one for one in problems if 'status of 400' not in one] == []  # the two refusals asked for, nothing else
+    assert [one for one in problems if 'status of 400' not in one] == []  # expected launch refusals, nothing else
 
 
 @pytest.mark.req('VIEW-023')

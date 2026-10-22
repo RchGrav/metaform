@@ -24,7 +24,7 @@ import {LIVE, following, recordingNow} from '/page/app/live/stream.js';
  * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
  * Its work id, `intake-…`, is never a ticket. */
 export const INTAKE = {work: null, session: null, agent: null, waiting: 0, closed: new Set(), resume: false,
-  refines: false};
+  map: null};
 // closed: the runs whose bar the person closed with its ×
 /* An intake agent under way: starting, launched and its session not made yet, or running. The server's one record of
  * it is read with the sessions, `dispatch sessions` listing a launch as starting, so every tab and every surface agrees
@@ -158,21 +158,17 @@ export async function openIntake({resume = false} = {}) {
       : `An intake is running: ${agentName(INTAKE.agent)}. Its chat is open.`);
   }
   $('#intake .title').textContent = mapped ? `Run the intake again · ${S.project}` : `Map ${S.project}`;
-  fill($('#intake .lead'), mapped
-    ? `An agent runs the intake on ${S.project} as it is now: it checks the map in use against the project and `
-      + 'refines it, adding what the map lacks and correcting what has changed. Its memories, tickets and knowledge '
-      + 'stay where they are.'
-    : `An agent reads ${S.project} and records its map as it goes. You watch the map grow here, part by part.`);
-  // a mapped project is refined, never mapped again beside the map in use (refinement first, 2026-10-17): the
-  // window sends map=extend, so the agent's intake start opens a verification pass on the map in use
-  INTAKE.refines = mapped && !resume;
+  fill($('#intake .lead'), `An agent reads ${S.project} and records its map as it goes.`);
+  // Refine stays default. A separate map requires the person's explicit Fresh intake choice.
+  INTAKE.map = mapped && !resume ? 'extend' : null;
+  $('#intake .mapchoice').hidden = !mapped || resume;
+  $('#intake .mapchoice input[value="extend"]').checked = true;
   const host = $('#intake .pickhost');
   if (!host.firstChild) {
     host.append(summonPicker('intake', {label: 'Agent for the intake', onchange: () => drawIntakeSettings()}));
   }
   drawIntakeSettings();
   const note = $('#intake textarea.note');
-  $('#intake .suggest').hidden = !mapped;
   fill($('#intake .failed'));
   $('#intake .failed').hidden = true;
   $('#intake .resume').hidden = !resume;
@@ -189,14 +185,15 @@ async function startIntake() {
   }
   button.disabled = true;
   const sent = await posted('/api/dispatch-intake', {agent, text: note.value.trim() || undefined,
-    resume: INTAKE.resume || undefined, map: INTAKE.refines ? 'extend' : undefined});
+    resume: INTAKE.resume || undefined, map: INTAKE.map || undefined});
   button.disabled = false;
   if (!sent.ok) return showIntakeRefusal(sent.body);
   const started = sent.body;
   $('#intake').hidden = true;
   note.value = '';
   toast(`${agentName(started.agent)} is starting on the intake`
-    + (started.map === 'extend' ? ', checking and refining the map in use.' : '.')
+    + (started.map === 'new' ? ', creating a separate map beside the current map.'
+      : started.map === 'extend' ? ', checking and refining the map in use.' : '.')
     + ' The map grows here as it records.');
   await renderAgents();  // the server's record says it is starting: the bar is drawn from that read
 }
@@ -219,7 +216,8 @@ function showIntakeRefusal(body) {
 function takeOver(box) {
   INTAKE.resume = true;
   $('#intake .resume').hidden = false;
-  INTAKE.refines = false;
+  INTAKE.map = null;
+  $('#intake .mapchoice').hidden = true;
   drawStart();
   fill(box); box.hidden = true;
   $('#intake .start').focus();
@@ -232,11 +230,23 @@ function openRunning(work) {
 }
 /* Start says what it starts. */
 function drawStart() {
+  const fresh = INTAKE.map === 'new';
   $('#intake .start').textContent = INTAKE.resume ? 'Take over the intake'
-    : INTAKE.refines ? 'Check and refine the map' : 'Start the intake';
+    : fresh ? 'Fresh intake' : INTAKE.map === 'extend' ? 'Refine' : 'Start the intake';
+  $('#intake .suggest').hidden = INTAKE.map !== 'extend';
+  if (INTAKE.resume) fill($('#intake .lead'), 'Continue the unfinished intake in its existing map.');
+  else if (INTAKE.map) fill($('#intake .lead'), fresh
+    ? 'Assess current project artifacts independently. Create a separate map with its own tickets and findings. '
+      + 'The current map stays intact and active until you activate the new map.'
+    : 'Check current project artifacts against the map in use. Refine it in place, retaining its tickets, memories '
+      + 'and other records.');
 }
 $('#intake .close').onclick = $('#intake .cancel').onclick = () => { $('#intake').hidden = true; };
 $('#intake .start').onclick = startIntake;
+for (const input of document.querySelectorAll('#intake .mapchoice input')) input.onchange = () => {
+  INTAKE.map = input.value;
+  drawStart();
+};
 /* A suggestion pressed is written as the note for the agent. */
 function suggest(button) {
   const note = $('#intake textarea.note');

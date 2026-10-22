@@ -2295,14 +2295,16 @@ def test_the_agents_are_listed_with_whether_each_is_found_here_and_the_default_a
 
 @pytest.mark.req('VIEW-045')
 @pytest.mark.req('BASE-039')
+@pytest.mark.parametrize('map_choice', [None, 'extend'])
 def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time(dispatch, run,
-                                                                                         dispatch_runners):
+                                                                                         dispatch_runners, map_choice):
     """Its first turn is the intake exactly as `intake prompt` serves it, with what the person asked for; it takes
     no ticket, counts as a summoned agent, and a permission it asks for, with no node to ask at, is a choice on the
     page that the person answers. A second intake while it runs is refused."""
-    served = run('intake', 'prompt', 'text=the engine only', cwd=dispatch.folder).stdout
+    served = run('intake', 'prompt', 'mode=fresh', 'text=the engine only', cwd=dispatch.folder).stdout
     room = json.loads(run('dispatch', 'agents', '--json', cwd=dispatch.folder).stdout)['room']
-    started = json.loads(run('dispatch', 'intake', 'agent=claude', '--json', '--', 'the engine only',
+    started = json.loads(run('dispatch', 'intake', 'agent=claude',
+                             *(['map=' + map_choice] if map_choice else []), '--json', '--', 'the engine only',
                              cwd=dispatch.folder, env=dispatch.env('ask', FAKE_ACP_ASK_HOLD='1')).stdout)
     dispatch_runners.append((started, dispatch.folder, dispatch.log))
     work_id = started['work_id']
@@ -2327,6 +2329,42 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [outcome] = eventually(lambda: dispatch.logged('permission'))
     assert outcome == {'outcome': {'outcome': 'selected', 'optionId': 'reject'}}
     run('dispatch', 'stop', work_id, cwd=dispatch.folder)
+
+
+@pytest.mark.req('BASE-039')
+@pytest.mark.req('VIEW-045')
+@pytest.mark.parametrize(('choice', 'mode'), [('new', 'fresh'), ('extend', 'refine'), ('new', 'resume')])
+def test_intake_launch_delivers_selected_mode_with_existing_map(dispatch, run, dispatch_runners, choice, mode):
+    """Inspect the actual ACP first turn without inference, including takeover of an unfinished destination."""
+    run('intake', 'start', cwd=dispatch.folder)
+    run('intake', 'element', 'code.engine', 'role=DE', cwd=dispatch.folder)
+    run('intake', 'finish', cwd=dispatch.folder)
+    original = dispatch.store.active_base()
+    if mode == 'resume':
+        run('intake', 'start', 'name=unfinished', cwd=dispatch.folder)
+        run('intake', 'element', 'code.partial', 'role=DE', cwd=dispatch.folder)
+    args = ['map=' + choice, *(['resume=true'] if mode == 'resume' else [])]
+    started = json.loads(run('dispatch', 'intake', 'agent=claude', *args, '--json', '--', 'Examine artifacts.',
+                             cwd=dispatch.folder, env=dispatch.env('hold')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    [turn] = eventually(lambda: dispatch.received('session/prompt'))
+    text = turn['params']['prompt'][0]['text']
+    assert f'Selected intake mode: {mode}' in text
+    assert 'Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof' in text
+    assert 'Examine artifacts.' in text
+    mine = {'METAFORM_WORK': started['work_id']}
+    served = run('intake', 'prompt', 'text=Examine artifacts.', cwd=dispatch.folder, env=mine).stdout
+    assert text.rstrip().endswith(served.rstrip())
+    opened = json.loads(run('intake', 'start', '--json', cwd=dispatch.folder, env=mine).stdout)
+    if mode == 'refine':
+        assert opened['base'] == original.name
+    elif mode == 'resume':
+        assert opened['base'] == 'unfinished'
+    else:
+        assert opened['base'] != original.name
+    assert dispatch.store.active_base() == original
+    assert dispatch.ticket().done is None
+    run('dispatch', 'stop', started['work_id'], cwd=dispatch.folder)
 
 
 def test_a_helper_runs_its_brief_on_no_ticket_outside_the_worker_slots_seen_live_and_ended_by_stop_all(

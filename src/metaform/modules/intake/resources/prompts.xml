@@ -48,6 +48,28 @@ request right after.
      dispatch intake) unless the procedure already names metaform://intake/schema.
      Must not be deleted: the code requires it. Empty adds nothing. -->
 <schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake_schema tool.</schema_pointer>
+<!-- The selected analysis mode, bound inside the procedure's existing Prompt parameter. Dispatch persists this
+     input with its recording destination. The fixed Canonical Intake remains unchanged. One shared section
+     selects the route, so an existing map cannot silently turn a requested fresh survey into refinement. -->
+<selected_mode>Selected intake mode: <mode/>
+Use this mode to select the analysis and recording destination. The request below supplies focus within this mode.
+Apply only the selected mode's section. It overrides the procedure's status-based routing.
+
+fresh: Examine project artifacts from the beginning. Call intake_start to open the separate map selected at launch.
+Do not load the previous map into Recorded. Run Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof.
+Existing-map status cannot override fresh mode. A finished intake elsewhere does not skip Survey or Trace.
+
+refine: Call intake_start, then intake_show to load the existing map into Recorded. Examine current artifacts,
+run Task_Refine and Proof, then finish the verification pass on that map.
+
+resume: Call intake_start, then intake_show to load the unfinished intake. Continue its survey and trace,
+complete Closure, Anneal and Proof, then finish that destination. Do not open another map.
+
+Preserve previous maps, work records, knowledge and memories. Map activation remains an explicit operation.
+Memories remain project scoped and reconnect at matching addresses. Memory access isolation is not required.
+
+Request:
+<request/></selected_mode>
 <!-- Says that an intake is waiting to be finished.
      Follows intake's line in the command-line guide and intake's instructions while an intake layer is being recorded.
      Must not be deleted: the code requires it. Empty sends nothing. -->
