@@ -13,6 +13,7 @@ import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, ta
   from '/page/app/board/refs.js';
 import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {requestHoldReason, holdReason} from '/page/app/board/holds.js';
+import {ticketIntegration} from '/page/app/board/integration.js';
 import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork, named} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect, pickerOptions} from '/page/app/agents/pickers.js';
@@ -224,6 +225,7 @@ function card(ticket, place, total, find) {
     cardProgress(ticket),
     cardEnded(ticket),
     ticket.resolution ? h('div', {class: 'resolution'}, ...linked(ticket.resolution)) : null,
+    ticketIntegration(ticket),
     cardActs(ticket, place, total, move),
     settings);
   if (ticket.held || ticket.map?.hold) box.classList.add('on-hold');
@@ -445,7 +447,8 @@ async function dropCard(event, cards, column) {
 export function boardTickets(records) {
   // done before the board's cutoff, it is in the Archive: the tickets the map holds are not all the board's; and only
   // the tickets on the board shown, the first board's being those on no named board
-  records = records.filter(ticket => ticket.is_work && (!ticket.done || ticket.done >= B.cutoff)
+  records = records.filter(ticket => ticket.is_work
+    && (!ticket.done || ticket.done >= B.cutoff || ticket.integration?.action)
     && String(ticket.map?.board || '') === B.board);
   const finding = ticket => !ticket.task && ticket.condition
     ? [ticket.condition, ticket.note || '', Boolean(ticket.done)].join('\n') : null;

@@ -807,8 +807,15 @@ The GUI is built after the intake and debug system is stable and the fix pass is
   - Legacy receipts cause no automatic push. Page changes create no merge countdown or automatic remote publication.
   - A burst of unrelated events triggers no agent-starter reads. Relevant changes coalesce and release queue capacity through existing events.
   - Explicit dispatch merge, review and preparation remain callable. Existing merge tests protect snapshot exclusion, conflict handling and interrupted local integration.
+  - Focused backend and browser tests prove explicit Merge eligibility, Full Auto off, local integration and cleanup before Done, already-Done candidates, preserved resolution and verification, conflict recovery, repeat requests and preserved dirty shared and ticket worktrees.
 - Relates to: BASE-052, BASE-053, MAP-046, PROJ-017, QUAL-015, VIEW-039, VIEW-042.
 - Status: Confirmed 2026-10-21, code.scheduler.task#55. Replaces commit-based closure and manual-only integration with direct closure plus Full Auto local integration. Remote publishing remains explicit.
+
+- Amendment, explicit ticket integration, code.scheduler.task#62:
+  - Explicit ticket integration, code.scheduler.task#62: implemented tickets with a saved, verified, unmerged candidate show `Merge` on their card and inspector. Open submissions and existing Done tickets qualify. A branch or idle worker alone supplies no implementation evidence. Older Done candidates remain accessible beyond the board cutoff.
+  - Clicking `Merge` authorizes local integration with Full Auto off. It never enables Full Auto or pushes. The server rechecks the saved commit, submitted result, explicit stops and worker ownership under the existing merge lock. Repeat clicks stay disabled while the request runs. Repeated requests recover the journal instead of integrating twice.
+  - This explicit action finishes an open ticket only after successful integration and safe worktree cleanup. Existing Done tickets keep their completion and resolution. Ordinary direct closure and Full Auto behavior remain unchanged. Shared dirty files and staged entries retain nonconflicting local work. A conflicting path makes this action fail without advancing the shared branch or closing an open ticket.
+  - Cleanup removes only the registered ticket worktree at its canonical path, without force, after checking candidate identity and worker admission. Uncommitted, untracked and ignored files, new commits, active sessions and ambiguous ownership preserve the directory. The saved branch remains available. An integrated ticket with outstanding cleanup shows its precise reason and `Clean worktree`; that action retries cleanup without another merge. Conflicts and failed checks retain candidate recovery material and appear on the ticket. Existing scoped change events refresh the board without polling.
 
 ## Open questions
 

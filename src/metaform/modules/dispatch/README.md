@@ -277,10 +277,22 @@ join work separate from its receiver element. Configured checks contribute verif
 A landing never refuses for local edits in the project checkout: a clean path is taken as landed, a locally modified path takes the landed hunks by a three-way merge (working copy, and index entry when staged), and a path whose local edits clash with them is kept as it was and named in one board-needs line (`merge.advance`, 2026-10-21). Ticket branches and dirty worktrees stay intact. Repeated delivery recovers its journal without another feature
 commit. Direct closure clears a resolved fault ticket's light through the existing completion events.
 
-Local integration accepts a dirty project checkout (`merge.advance`, 2026-10-21). Clean paths take the integrated
+Ordinary local integration accepts a dirty project checkout (`merge.advance`, 2026-10-21). Clean paths take the integrated
 content. Modified paths receive its hunks through a three-way merge in the working copy and, when staged, their
 index entries. Conflicting local paths remain unchanged and appear in one board-needs notice. The ticket stays
 closed in every case.
+
+The ticket's explicit `Merge` action passes its expected saved `head` to `dispatch merge`. A verified saved
+implementation and a recorded result are required, including for already-Done tickets. The action integrates
+locally with Full Auto off, never pushes, preserves peer staging and nonconflicting dirty files, then removes
+only the clean registered ticket worktree. Its branch remains available. Conflicting local paths roll back this
+attempt without advancing the shared branch. Active workers and explicit stops prevent the action. Dispatch
+admission covers final landing and cleanup, while the project Git lock serializes merges and repeated requests.
+An open submission reaches Done after safe cleanup. Existing Done timestamps and resolution stay unchanged.
+Uncommitted, untracked or ignored work, new commits or uncertain ownership retain the directory with a precise
+cleanup reason. `Clean worktree` retries cleanup after an integrated candidate without another merge.
+Integration and cleanup evidence use the existing candidate journal and scoped ticket events. Board refreshes
+read saved metadata without Git commands. Older Done candidates remain visible beyond the archive cutoff.
 
 Ordinary completion and Full Auto integration never push. Explicit publishing and manual reviews remain
 available when requested. Runtime activation remains separate from ticket closure.

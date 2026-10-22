@@ -43,6 +43,13 @@ Autostart agents at the top of the menu bar controls automatic ticket dispatch, 
 
 In the large area, the 2D map opens fitted to the whole diagram and eases to each new fit as nodes arrive or go. Clicking a node switches to a readable fit: the whole diagram while it fits above the minimum text size, otherwise centered on the selected node at that minimum. Keys 1 to 9 set the minimum from 8 to 24 px, 2 px apart; 5, 16 px, is the default. Fit, F and Home return to the whole diagram. Wheel zoom leaves both modes and holds the person's zoom until another click or Fit. In the small area, selection keeps the person's zoom and Fit cycles the views described by VIEW-008. Camera moves and wheel zoom ease in and out; dragging interrupts a move and follows the hand.
 
+Implemented tickets with a verified saved candidate expose `Merge` on their board card and inspector, including
+Done tickets. The action pins project, base and candidate to `POST /api/ticket-merge`. Dispatch integrates locally,
+cleans a safe ticket worktree, then finishes an open ticket. Full Auto can remain off. Requests never push. Dirty
+or ambiguous worktrees retain their files and show `Clean worktree` with the outstanding reason. Request state
+disables repeat clicks across card redraws and the inspector. Unsaved inspector text remains intact. Scoped
+ticket events refresh the board. Ordinary direct closure and Full Auto behavior remain unchanged.
+
 ## Template version
 
 Started from template 0.3.0.

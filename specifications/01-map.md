@@ -361,6 +361,8 @@ These terms are used exactly as defined in the Canonical Intake.
 
 ### MAP-046 A call to attention is a status in the status layer, and its phase sets the node's light
 
+- Amendment, code.scheduler.task#62: explicit ticket `Merge` is a delivery action. A verified saved implementation can be integrated from an open submission or a Done ticket. An open ticket reaches Done only after this action integrates locally and safely cleans its worktree. Resolution and verification remain attached. Failed integration and outstanding cleanup retain the current open state. Done tickets stay Done. Ordinary authorized done and move-to-Done retain direct closure, independently of delivery, VIEW-044 and BASE-052.
+
 - Requirement: A call to attention on an element is a status, a record in the knowledge layer `status`, attached to that element. A status has an `id`, a `status` (its phase), a `date`, a `description` and a `complete` flag. One status moves through phases as it is handled, and its phase sets the color of its element on the map. A complete status is no longer shown and is kept as a log.
 - What this means:
   - The phases, and how each shows:

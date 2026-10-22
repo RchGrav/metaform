@@ -36,7 +36,7 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -217,7 +217,7 @@ WRITE_ROUTES = frozenset({
     '/api/attach', '/api/mascot', '/api/mascot-result', '/api/voice/transcribe', '/api/voice/clip', '/api/voice/speak',
     '/api/voice/note', '/api/page-faults'})
 DISPATCH_ROUTES = frozenset({
-    '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/dispatch-start',
+    '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/ticket-merge', '/api/dispatch-start',
     '/api/orchestration-call',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
@@ -1144,6 +1144,14 @@ class Handler(BaseHTTPRequestHandler):
         if name == 'node':
             found = with_modules(given, found)
         if name == 'work':
+            if board == 'shown' and cutoff and not given.get('ids') and isinstance(found, Page):
+                ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
+                ctx.store = store
+                page = cast(Page[WorkRecord], found)
+                known = {record.id for record in page.results}
+                older = [record for _, read in chassis.provided(ctx.folder, 'dispatch.integration.pending')
+                         for record in read(ctx) if record.id not in known]
+                found = page._replace(results=(*page.results, *older))
             found = with_glyphs(given, found)
             if board is not None and isinstance(found, Page):
                 found = {**cast(Page[WorkRecord], found).to_dict(), 'cutoff': cutoff}
@@ -1387,6 +1395,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/page-faults': self.page_faults, SHOWN: self.shown,
                   '/api/note': self.add_note, '/api/unhold-all': self.unhold_all, '/api/move': self.move_ticket, '/api/distribute': self.distribute_tickets,
                   '/api/ticket': self.set_ticket, '/api/remove-ticket': self.remove_ticket, '/api/eligible': self.set_eligible, '/api/merge-review': self.review_merge,
+                  '/api/ticket-merge': self.merge_ticket,
                   '/api/merge-assist': self.assist_merge, '/api/dispatch-reset': self.reset_agents,
                   '/api/system-chat': self.system_chat, '/api/attach': self.attach, '/api/talk': self.talk, '/api/raise': self.raise_issue,
                   '/api/activate-base': self.activate_base,
@@ -1714,6 +1723,7 @@ class Handler(BaseHTTPRequestHandler):
                             chassis.provided(ctx.folder, 'orchestration')), None)
             numbered = store.numbers_of('work', [work.id]).get(work.id)
             self.send(200, {'ticket': {**plain(work), **fields, 'column': work.column,
+                                       **integration_for(store, [work]).get(work.id, {}),
                                        **ticket_hold(store, work.id)}, 'revision': ticket_revision(fields),
                             'board': board_of(store.project_id, work.id, given.get('base')),
                             'item': numbered[0] if numbered else None,  # <address>#<n>, the dialog's title bar
@@ -1864,6 +1874,18 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, StoreError) as error:
             return self.refuse(error, 400)
         self.send(200, plain(made))
+
+    def merge_ticket(self, given: dict[str, Any]) -> None:
+        """The ticket's Merge click authorizes local integration, safe cleanup and completion only."""
+        work_id, head = given.get('work_id'), given.get('head')
+        if not isinstance(work_id, str) or not work_id or not isinstance(head, str) or not re.fullmatch(r'[0-9a-f]{40,64}', head):
+            return self.send(400, {'error': 'Merge names the ticket and its saved commit.'})
+        try:
+            data = module_verb(given, 'dispatch', 'merge', {'id': work_id, 'head': head}, chosen=True)
+        except (Stop, StoreError) as error:
+            return self.refuse(error, 400)
+        # A recoverable merge conflict is ordinary ticket state, retained by dispatch and shown on the card.
+        self.send(200, data)
 
     def review_merge(self, given: dict[str, Any]) -> None:
         """The person clicked Review: retain their ownership of the explicit merge, VIEW-044."""
@@ -3508,6 +3530,15 @@ def brief_work(found: Any) -> Any:
     return {**cast(dict[str, Any], data), 'results': cut}
 
 
+def integration_for(store: Store, records: Sequence[WorkRecord]) -> dict[str, dict[str, Any]]:
+    ctx = chassis.context('web', Path(store.project().path), project=store.project_id, surface='web')
+    ctx.store = store
+    result: dict[str, dict[str, Any]] = {}
+    for _, read in chassis.provided(ctx.folder, 'dispatch.integration'):
+        result.update({key: {'integration': value} for key, value in read(ctx, records).items()})
+    return result
+
+
 def with_glyphs(given: dict[str, str], found: Any) -> Any:
     """A work read's records, each with what the map module keeps on it under `map`, its glyph, runtime choice,
     eligible agents, the tickets it waits on and whether the person holds it, as `map work` shows it, VIEW-040, VIEW-042,
@@ -3563,11 +3594,13 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
         own_paths = paths.get((record.node_kind, record.node_id))
         if own_paths:
             held.setdefault(record.id, {})['paths'] = own_paths
-    if not held:
+    integration = integration_for(store, page.results)
+    if not held and not integration:
         return page
     shown: list[dict[str, Any]] = []
     for record in page.results:
         data = record.to_dict()
+        data.update(integration.get(record.id, {}))
         if record.id in held:
             data.setdefault('map', held[record.id])
         shown.append(data)

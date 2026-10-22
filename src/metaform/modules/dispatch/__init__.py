@@ -103,6 +103,8 @@ from .signals import collect, own_store, requeued, rework_limit
 from .signals import read as read_signals
 from .signals import read_rows as signal_rows
 from .signals import rows as read_signal_rows
+from .ticket_merge import pending as integration_pending
+from .ticket_merge import read as integration_read
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ('agent-client-protocol>=0.12.1,<0.13',)
@@ -1660,6 +1662,7 @@ def work_read(ctx: Context, record: WorkRecord) -> dict[str, Any] | None:
                           **session_work_status(session, signals)} for session in found],
             'signals': signals, **({'options': chosen} if chosen else {}),
             **({'completion': dict(completion)} if completion is not None else {}),
+            **({'integration': integration_read(ctx, [record]).get(record.id)} if completion is not None else {}),
             **ticket_work_status(record, found, signals)}
 
 
@@ -3392,7 +3395,10 @@ def review(ctx: Context) -> dict[str, Any]:
 def merge(ctx: Context) -> dict[str, Any]:
     """Integrate locally, publishing only when explicitly requested, VIEW-044."""
     from .merge import merge_due
-    return merge_due(ctx, ctx.require_store(), str(ctx.nouns['id']), publish=bool(ctx.nouns.get('publish')))
+    head = ctx.nouns.get('head')
+    return merge_due(ctx, ctx.require_store(), str(ctx.nouns['id']),
+                     publish=False if head is not None else bool(ctx.nouns.get('publish')),
+                     expected_head=str(head) if head is not None else None)
 
 
 def _running_or_stop(store: Store, work_id: str, session_id: str | None = None, *,
@@ -7411,6 +7417,8 @@ MODULE = Module(
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), listed=merge_waits),
         Verb('merge', merge, 'Integrate a ticket candidate locally. Push only with publish=true.',
              nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),
+                    Noun('head', 'Expected saved candidate. Integrate locally, clean its safe worktree and finish '
+                         'the ticket. Never pushes.', required=False),
                     Noun('publish', 'true explicitly requests publishing after local integration.',
                          kind='bool', required=False)), surfaces=('cli',)),
         Verb('system', system, "Start the person's system agent, who talks with them about anything in the project, or "
@@ -7839,7 +7847,8 @@ MODULE = Module(
               Provides('person.word', persons_word), Provides('person.word.acted', persons_word_acted),
               Provides('orchestration.transport', TRANSPORT), Provides('prompt.render', render_prompt),
               Provides('dispatch.seats', seat_slots), Provides('dispatch.models', model_for),
-              Provides('work.in_force', fix_in_force)),
+              Provides('work.in_force', fix_in_force), Provides('dispatch.integration', integration_read),
+              Provides('dispatch.integration.pending', integration_pending)),
     start=started,
     stop=None,
     status=None,

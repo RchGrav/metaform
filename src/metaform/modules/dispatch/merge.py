@@ -636,7 +636,8 @@ def _conflicting(folder: str | Path, said: str) -> bool:
 RELEASE = 'Newly committed feature, needs testing before the next release: '  # the release log ticket's task, VIEW-044
 
 
-def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id: str = '') -> tuple[bool, str]:
+def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id: str = '',
+            require_applied: bool = False) -> tuple[bool, str]:
     """Advance the checked-out branch from `before` to `commit` while keeping every local edit in the project
     checkout, staged or not: helpers and the person work there, and on another project it is the person's own working
     copy, so a landing never refuses for it (the person's rule, 2026-10-21). A path the landing changes is taken as
@@ -684,6 +685,9 @@ def advance(project: Path, commit: str, before: str, *, ctx: Any = None, work_id
     except (OSError, subprocess.SubprocessError) as error:
         _restore_landing(project, changed)
         return False, str(error)
+    if kept and require_applied:
+        _restore_landing(project, changed)
+        return False, 'Local edits conflict with ticket changes: ' + ', '.join(kept)
     branch = dev_branch(project)
     moved = git(project, 'update-ref', f'refs/heads/{branch}', commit, before)
     if moved.returncode:
@@ -809,6 +813,7 @@ def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict
         previous = tx.get('merges', {'work_id': work_id})
         changed = previous is not None and previous['reason'] != why
         tx.update('merges', {'work_id': work_id}, {'state': FAILED, 'reason': why})
+        tx.concern(work_id=work_id, kind='ticket')
     if changed:
         try:
             title = ticket_title(store, store.ticket(work_id).work)
@@ -820,12 +825,30 @@ def _blocked(ctx: Any, store: Store, own: Store, work_id: str, why: str) -> dict
     return {'work_id': work_id, 'merged': False, 'why': why}
 
 
-def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) -> dict[str, Any]:
+def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False,
+              expected_head: str | None = None) -> dict[str, Any]:
     """Merge only ticket changes into one new commit. Never replay or rewrite ticket history."""
+    project = Path(store.project().path)
+    with Queued(project) as first:
+        if not first:
+            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; retry delivery'}
+        return _merge_due(ctx, store, work_id, publish=publish, expected_head=expected_head)
+
+
+def _merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool,
+               expected_head: str | None) -> dict[str, Any]:
+    """Read candidate state after acquiring the project lock, including repeated requests."""
     from . import work_over
+    from .ticket_merge import validate
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         found = tx.get('merges', {'work_id': work_id})
+    if expected_head is not None:
+        if found is None:
+            return {'work_id': work_id, 'merged': False, 'why': 'No saved candidate exists for this ticket.'}
+        why = validate(ctx, store, dict(found), expected_head)
+        if why:
+            return {'work_id': work_id, 'merged': found['state'] == MERGED, 'why': why}
     if found is None:
         project = Path(store.project().path)
         committed = git(project, 'log', '-1', '--format=%H', '--fixed-strings', '--grep',
@@ -833,67 +856,114 @@ def merge_due(ctx: Any, store: Store, work_id: str, *, publish: bool = False) ->
         if committed:
             return deliver_shared(ctx, store, work_id)
     if found is not None and found['state'] == MERGED:
+        if expected_head is not None:
+            return _ticket_landed(ctx, store, own, dict(found), expected_head)
         return _delivered(ctx, store, own, Path(store.project().path), work_id, publish=publish)
-    if found is None or found['state'] not in (COMMITTED, READY, MERGING, FAILED):
+    if found is None or found['state'] not in (COMMITTED, READY, MERGING, FAILED, *([REVIEW] if expected_head else [])):
         return {'work_id': work_id, 'merged': False, 'why': 'not waiting'}
     row = dict(found)
     project = Path(store.project().path)
     folder, branch = str(row['worktree']), str(row['branch'])
-    with Queued(project) as first:
-        if not first:
-            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; retry delivery'}
-        dev = dev_branch(project)
-        if dev is None:
-            return _blocked(ctx, store, own, work_id, 'the project folder is not on a branch')
-        temp, here = merging_branch(work_id), merging_folder(project, work_id)
-        before = git(project, 'rev-parse', dev).stdout.strip()
-        if row['state'] == MERGING:
-            made = git(project, 'rev-parse', '--verify', '--quiet', temp).stdout.strip()
-            ours = bool(made) and f'{TRAILER}: {work_id}' in git(project, 'log', '-1', '--format=%B', made).stdout
-            if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
-                return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
-            if ours and git(project, 'rev-parse', f'{made}^').stdout.strip() == before:
-                passed, why = advance(project, made, before, ctx=ctx, work_id=work_id)
-                if passed:
-                    return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
-                return _blocked(ctx, store, own, work_id, why)
-            _dropped(project, work_id)
-        record = store.ticket(work_id).work
-        if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
-            return _blocked(ctx, store, own, work_id, 'ticket is not completed')
-        began = landing_base(project, dev, branch)
-        if not began:
-            return _blocked(ctx, store, own, work_id, 'ticket branch has no recorded starting commit')
-        with own.tables() as tx:
-            tx.update('merges', {'work_id': work_id}, {'state': MERGING})
-        _dropped(project, work_id)
-        made = git(project, 'worktree', 'add', '-b', temp, str(here), before)
-        if made.returncode:
-            return _blocked(ctx, store, own, work_id, (made.stdout + made.stderr).strip()[-1200:])
-        # Explicit base excludes legacy startup snapshots. merge-recursive is also
-        # available on Git versions before merge-tree gained --write-tree.
-        merged = git(here, 'merge-recursive', began, '--', before, branch)
-        if merged.returncode:
-            why = 'conflict: ' + (merged.stdout + merged.stderr).strip()[-3000:]
-            _dropped(project, work_id)
-            return _blocked(ctx, store, own, work_id, why)
-        command = str(ctx.setting('dispatch_test_command') or '')
-        passed, why = tests_pass(here, command) if command.strip() else (True, '')
-        record = store.ticket(work_id).work
-        if passed and (record.outcome in ('cancelled', 'failed') or not work_over(store, record)):
-            passed, why = False, 'ticket is not completed'
-        if passed:
-            squashed = git(here, 'commit', '--allow-empty', '--cleanup=verbatim', '-q', '-m',
-                           ticket_message(store, record))
-            if squashed.returncode:
-                passed, why = False, (squashed.stdout + squashed.stderr).strip()[-1200:]
-            else:
-                passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before,
-                                      ctx=ctx, work_id=work_id)
-        if passed:
+    if expected_head is not None and Path(folder).resolve() == project.resolve():
+        if git(project, 'merge-base', '--is-ancestor', expected_head, 'HEAD').returncode:
+            return _blocked(ctx, store, own, work_id, 'The saved commit is absent from the shared checkout branch.')
+        return _ticket_landed(ctx, store, own, row, expected_head, made=expected_head)
+    dev = dev_branch(project)
+    if dev is None:
+        return _blocked(ctx, store, own, work_id, 'the project folder is not on a branch')
+    temp, here = merging_branch(work_id), merging_folder(project, work_id)
+    before = git(project, 'rev-parse', dev).stdout.strip()
+    if row['state'] == MERGING:
+        made = git(project, 'rev-parse', '--verify', '--quiet', temp).stdout.strip()
+        ours = bool(made) and f'{TRAILER}: {work_id}' in git(project, 'log', '-1', '--format=%B', made).stdout
+        if ours and git(project, 'merge-base', '--is-ancestor', made, dev).returncode == 0:
+            if expected_head is not None:
+                return _ticket_landed(ctx, store, own, row, expected_head, made=made)
             return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
+        if ours and git(project, 'rev-parse', f'{made}^').stdout.strip() == before:
+            if expected_head is not None:
+                return _ticket_landed(ctx, store, own, row, expected_head, made=made, before=before)
+            passed, why = advance(project, made, before, ctx=ctx, work_id=work_id)
+            if passed:
+                return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
+            return _blocked(ctx, store, own, work_id, why)
+        _dropped(project, work_id)
+    record = store.ticket(work_id).work
+    if record.outcome in ('cancelled', 'failed') or not work_over(store, record):
+        return _blocked(ctx, store, own, work_id, 'ticket is not completed')
+    began = landing_base(project, dev, branch)
+    if not began:
+        return _blocked(ctx, store, own, work_id, 'ticket branch has no recorded starting commit')
+    with own.tables() as tx:
+        tx.update('merges', {'work_id': work_id}, {'state': MERGING})
+    _dropped(project, work_id)
+    made = git(project, 'worktree', 'add', '-b', temp, str(here), before)
+    if made.returncode:
+        return _blocked(ctx, store, own, work_id, (made.stdout + made.stderr).strip()[-1200:])
+    # Explicit base excludes legacy startup snapshots. merge-recursive is also
+    # available on Git versions before merge-tree gained --write-tree.
+    merged = git(here, 'merge-recursive', began, '--', before, branch)
+    if merged.returncode:
+        why = 'conflict: ' + (merged.stdout + merged.stderr).strip()[-3000:]
         _dropped(project, work_id)
         return _blocked(ctx, store, own, work_id, why)
+    command = str(ctx.setting('dispatch_test_command') or '')
+    passed, why = tests_pass(here, command) if command.strip() else (True, '')
+    record = store.ticket(work_id).work
+    if passed and (record.outcome in ('cancelled', 'failed') or not work_over(store, record)):
+        passed, why = False, 'ticket is not completed'
+    if passed:
+        if expected_head is not None:
+            why = validate(ctx, store, row, expected_head)
+            if why:
+                _dropped(project, work_id)
+                return {'work_id': work_id, 'merged': False, 'why': why}
+        squashed = git(here, 'commit', '--allow-empty', '--cleanup=verbatim', '-q', '-m',
+                       ticket_message(store, record))
+        if squashed.returncode:
+            passed, why = False, (squashed.stdout + squashed.stderr).strip()[-1200:]
+        else:
+            if expected_head is not None:
+                return _ticket_landed(ctx, store, own, row, expected_head,
+                                      made=git(here, 'rev-parse', 'HEAD').stdout.strip(), before=before)
+            passed, why = advance(project, git(here, 'rev-parse', 'HEAD').stdout.strip(), before,
+                                  ctx=ctx, work_id=work_id)
+    if passed:
+        return _merged(ctx, store, own, project, work_id, dev, folder, branch, publish=publish)
+    _dropped(project, work_id)
+    return _blocked(ctx, store, own, work_id, why)
+
+
+def _ticket_landed(ctx: Any, store: Store, own: Store, row: dict[str, Any], expected_head: str, *,
+                   made: str = '', before: str = '') -> dict[str, Any]:
+    """Exclude new worker admission while integrating and removing its directory, never during long checks."""
+    from metaform import home
+
+    from . import admit_lock
+    from .ticket_merge import complete, validate
+    work_id = str(row['work_id'])
+    project = Path(store.project().path)
+    gate = admit_lock()
+    home.mkdir_private(gate.parent)
+    with home.file_lock(gate):
+        why = validate(ctx, store, row, expected_head)
+        if why:
+            return {'work_id': work_id, 'merged': row['state'] == MERGED, 'why': why}
+        if before:
+            passed, why = advance(project, made, before, ctx=ctx, work_id=work_id, require_applied=True)
+            if not passed:
+                _dropped(project, work_id)
+                return _blocked(ctx, store, own, work_id, why)
+        if row['state'] != MERGED:
+            # Save integration before cleanup. A crash or unsafe directory leaves a cleanup-only retry.
+            row = {**row, 'state': MERGED, 'reason': '',
+                   'evidence': {**(row.get('evidence') or {}), 'integration': {'commit': made},
+                                'cleanup': {'state': 'pending', 'reason': 'Worktree cleanup is pending.'}}}
+            with own.tables() as tx:
+                tx.update('merges', {'work_id': work_id}, row)
+                tx.concern(work_id=work_id, kind='ticket')
+        _dropped(project, work_id)
+        return complete(ctx, store, row)
 
 
 def _merged(ctx: Any, store: Store, own: Store, project: Path, work_id: str, dev: str, folder: str,
@@ -962,6 +1032,7 @@ def deliver_nonrepository(ctx: Any, store: Store, work_id: str) -> dict[str, Any
 def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
     """The branches of tickets closed and not merged, older than `days`, removed with their worktrees and snapshots,
     P017, without committing cancelled or failed work; git's record of worktrees gone is pruned, P192."""
+    from .ticket_merge import cleanup_pending
     project = Path(project)
     if dev_branch(project) is None:
         return []
@@ -970,7 +1041,8 @@ def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
     own = Store(store.project_id, module='dispatch')
     with own.tables(write=False) as tx:
         waiting = {str(row['branch']) for row in tx.rows('merges', limit=0).results
-                   if row['state'] in (COMMITTED, READY, REVIEW, MERGING)}
+                   if row['state'] in (COMMITTED, READY, REVIEW, MERGING, FAILED)
+                   or cleanup_pending(dict(row))}
     closed = {branch_of(record.id): record for record in store.work(open=False, limit=0).results}
     gone: list[str] = []
     for line in listed.stdout.splitlines():

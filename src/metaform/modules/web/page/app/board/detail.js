@@ -6,6 +6,7 @@ import {overlay} from '/page/app/core/overlays.js';
 import {S, read} from '/page/app/core/reads.js';
 import {wrote, movable, COLUMN_NAMES} from '/page/app/board/history.js';
 import {holdReason} from '/page/app/board/holds.js';
+import {ticketIntegration} from '/page/app/board/integration.js';
 import {diagramOf, svgOf, enlargeDiagram} from '/page/app/session/text.js';
 import {authoredRole} from '/page/app/session/orchestration.js';
 
@@ -115,6 +116,7 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
     const kind = h('select', {name: 'kind'}, ['', 'broken', 'flawed', 'enhancement'].map(value =>
       h('option', {value, selected: value === (ticket.kind || '')}, value || 'Task')));
     const status = h('p', {role: 'status'});
+    const boardColumn = h('span', {class: 'board-column'}, ` · ${COLUMN_NAMES[ticket.column] || ''}`);
     const save = h('button', {class: 'btn primary', type: 'submit'}, 'Save changes');
     const form = h('form', {class: 'ticket-main', onsubmit: async event => {
       event.preventDefault(); save.disabled = true; status.textContent = '';
@@ -129,7 +131,11 @@ export async function ticketDetail(workId, project = S.project, base = S.base ||
       h('section', {}, h('h4', {}, 'Node'), h('strong', {}, functionality.name),
         h('code', {class: 'address'}, functionality.address || '')),
       h('section', {}, h('h4', {}, 'Board'), h('strong', {class: 'board-name'}, data.board || 'First board'),
-        h('span', {class: 'board-column'}, ` · ${COLUMN_NAMES[ticket.column] || ''}`)),
+        boardColumn),
+      ticketIntegration(ticket, scope, found => {
+        revision = found.revision;
+        boardColumn.textContent = ` · ${COLUMN_NAMES[found.ticket.column] || ''}`;
+      }),
       holdReason(ticket),
       h('section', {}, h('h4', {}, 'Specialist'), specialist(data.routing, scope)),
       h('section', {}, h('h4', {}, 'Graph'), graphThumb(functionality, serial), ...joinList(functionality))));
