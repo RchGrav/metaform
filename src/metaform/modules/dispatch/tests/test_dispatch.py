@@ -6232,3 +6232,88 @@ def test_retired_agent_settings_roll_back_one_database_and_retry(dispatch, monke
     assert migrate_settings(AGENTS['antigravity'][1])
     assert home.stored('global', 'dispatch', 'dispatch_antigravity') == ['custom-acp']
     assert home.stored('global', 'dispatch', 'dispatch_agent') == ['antigravity']
+
+
+@pytest.mark.parametrize('choice, expected', [('none', 'true'), ('true', 'true'), ('false', 'false')])
+def test_fast_ticket_inherits_or_overrides_project_and_survives_reopen(dispatch, run, choice, expected):
+    from metaform import settings
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    runtime_offers(dispatch, 'codex')
+    with module.own_store(dispatch.store).tables() as tx:
+        row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
+        tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
+            {'id': 'speed_switch', 'category': 'model_config', 'name': 'Fast mode', 'type': 'boolean', 'current': False}]})
+    assert settings.SCHEMA['dispatch_codex_fast'].options(dispatch.folder) == ['default', 'true', 'false']
+    assert settings.value('dispatch_codex_fast', dispatch.folder) == 'default'
+    run('set', '--dispatch-codex-fast', 'false' if choice == 'true' else 'true', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', f'fast={choice}', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert module.wanted_options(ctx, dispatch.store, 'codex', dispatch.id)['model_config'] == expected
+    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)['map']
+    assert shown.get('fast') == (None if choice == 'none' else choice)
+    assert 'model_config' not in module.wanted_options(ctx, dispatch.store, 'claude', dispatch.id)
+    listed = json.loads(run('dispatch', 'options', 'agent=codex', '--json', cwd=dispatch.folder).stdout)['agents'][0]
+    fast = next(one for one in listed['settings'] if one['key'] == 'model_config')
+    assert fast['id'] == 'speed_switch' and fast['type'] == 'boolean'
+    assert [one['value'] for one in fast['picks']] == ['default', 'true', 'false']
+    assert [one['value'] for one in fast['choices']] == ['true', 'false']
+    # Assignment refinement changes model/effort, never the person's Fast choice.
+    module.keep_runtime(ctx, dispatch.id, {'agent': 'codex', 'model': 'balanced', 'effort': 'medium',
+        'decider': 'jev', 'confidence': 0.9, 'task_type': 'coding', 'reason': 'Backend task.'},
+        {'codex': {'models': ['balanced'], 'efforts': ['medium']}})
+    assert module.runtime_settings(ctx, dispatch.id).get('fast') == (None if choice == 'none' else choice)
+
+
+@pytest.mark.parametrize('kind', [None, 'select'])
+def test_fast_rejects_missing_or_nonboolean_capability(dispatch, run, kind):
+    from metaform.modules import dispatch as module
+    runtime_offers(dispatch, 'codex')
+    if kind:
+        with module.own_store(dispatch.store).tables() as tx:
+            row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
+            tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
+                {'id': 'other_config', 'category': 'model_config', 'type': kind, 'options': [{'value': 'true'}]}]})
+    result = run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', 'fast=false',
+                 cwd=dispatch.folder, ok=False)
+    assert 'Fast' in result.stderr and 'boolean' in result.stderr
+
+
+@pytest.mark.parametrize('choice', ['none', 'true', 'false'])
+def test_fast_saved_options_reach_session_advertised_id_as_boolean(dispatch, run, monkeypatch, choice):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import runner
+    runtime_offers(dispatch, 'codex')
+    with module.own_store(dispatch.store).tables() as tx:
+        row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
+        tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
+            {'id': 'vendor_speed', 'category': 'model_config', 'type': 'boolean', 'current': False}]})
+    run('set', '--dispatch-codex-fast', 'true', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', f'fast={choice}', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    held = runner.Session(ctx, module.own_store(dispatch.store), dispatch.ticket(), 'codex', ['unused'])
+    held.session_id = 'worker-session'
+    expected = choice != 'false'
+    held.config = [{'id': 'vendor_speed', 'name': 'Fast mode', 'category': 'model_config', 'type': 'boolean',
+                    'currentValue': not expected}]
+    conn = SimpleNamespace(set_config_option=AsyncMock(return_value=SimpleNamespace(config_options=None)))
+    held.conn = conn
+    for name in ('flush', 'note', 'save_state'):
+        monkeypatch.setattr(held, name, AsyncMock())
+    applied = asyncio.run(held.apply_options())
+    assert applied == [{'key': 'model_config', 'value': 'true' if expected else 'false'}]
+    conn.set_config_option.assert_awaited_once_with(config_id='vendor_speed', session_id='worker-session', value=expected)
+    # Reapplication uses the adapter's latest state, avoiding duplicate writes on resume/load.
+    assert asyncio.run(held.apply_options()) == []
+    # A resumed older adapter no longer offering the capability receives no unsupported command.
+    for unavailable in ([], [{'id': 'vendor_speed', 'name': 'Other config', 'category': 'model_config',
+                              'type': 'select', 'currentValue': 'other',
+                              'options': [{'value': 'true'}, {'value': 'false'}]}]):
+        held.config = unavailable
+        conn.set_config_option.reset_mock()
+        asyncio.run(held.apply_options())
+        conn.set_config_option.assert_not_awaited()

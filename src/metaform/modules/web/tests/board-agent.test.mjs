@@ -16,6 +16,9 @@ function fixture(defaultAgent = 'other', options = {agents: []}) {
     S: {project: 'project', base: 'base'},
     h: (tag, attributes, ...children) => ({tag, attributes, children}),
     fill: (box, ...children) => { box.children = children; },
+    pickerOptions: (picks, chosen) => picks.map(one => ({tag: 'option',
+      attributes: {value: one.value, selected: one.value === chosen}, children: [one.label]})),
+    agentName: agent => agent,
     read: async (name, params) => { reads.push({name, ...params}); return options; },
     wrote: async (path, body) => { writes.push({path, body}); return true; },
     renderBoard: async () => {},
@@ -70,8 +73,10 @@ test('card shows saved launch choices and decision confidence', () => {
 
 test('card loads offered runtime choices on expansion and saves ticket overrides', async () => {
   const f = fixture('codex', {agents: [{agent: 'codex', settings: [
-    {key: 'model', current: 'gpt-6', choices: [{value: 'gpt-6', name: 'GPT 6'}, {value: 'small', name: 'Small'}]},
-    {key: 'thought_level', chosen: 'high', choices: [{value: 'medium', name: 'Medium'}, {value: 'high', name: 'High'}]},
+    {key: 'model', current: 'gpt-6', choices: [{value: 'gpt-6', name: 'GPT 6'}, {value: 'small', name: 'Small'}],
+      picks: [{value: 'gpt-6', label: 'GPT 6'}, {value: 'small', label: 'Small'}]},
+    {key: 'thought_level', chosen: 'high', choices: [{value: 'medium', name: 'Medium'}, {value: 'high', name: 'High'}],
+      picks: [{value: 'medium', label: 'Medium'}, {value: 'high', label: 'High'}]},
   ]}]});
   let toggle;
   const settings = {open: false, addEventListener: (name, callback) => { assert.equal(name, 'toggle'); toggle = callback; }};
@@ -119,4 +124,27 @@ test('starts keep each assigned agent until person changes current picker', () =
   state.agentChanged = true;
   assert.equal(api.startAgentFor(backend, 'claude'), 'claude');
   assert.equal(api.startable([backend, frontend], 'claude').length, 1);
+});
+
+test('Fast keeps explicit Off distinct from project inheritance', async () => {
+  const f = fixture('codex', {agents: [{agent: 'codex', settings: [
+    {key: 'model_config', id: 'adapter-speed', type: 'boolean', chosen: 'true'},
+  ]}]});
+  let toggle;
+  const settings = {open: true, addEventListener: (_, callback) => { toggle = callback; }};
+  const changes = [];
+  const box = f.api.runtimeControls({map: {fast: 'false'}}, 'codex',
+    async fields => { changes.push(fields); return true; }, settings);
+  toggle();
+  await new Promise(setImmediate);
+  const fast = box.children[0][2].children[1];
+  assert.equal(fast.disabled, false);
+  assert.equal(fast.children[0].children[0], 'Project setting: On');
+  assert.equal(fast.children[1][1].attributes.selected, true);
+  fast.value = 'false';
+  await fast.attributes.onchange({currentTarget: fast});
+  assert.equal(changes[0].fast, 'false');
+  fast.value = '';
+  await fast.attributes.onchange({currentTarget: fast});
+  assert.equal(changes[1].fast, 'none');
 });

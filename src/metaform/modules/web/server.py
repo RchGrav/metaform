@@ -1733,7 +1733,7 @@ class Handler(BaseHTTPRequestHandler):
             self.refuse(error, 404)
 
     def set_ticket(self, given: dict[str, Any]) -> None:
-        """Change a ticket's agent, model, thinking level, hold, glyph or board. When the agent changes while another
+        """Change a ticket's agent, model, thinking level, Fast, hold, glyph or board. When the agent changes while another
         agent works the ticket, that agent is stopped and the chosen one started on it."""
         work_id = given.get('work_id')
         if not isinstance(work_id, str) or not work_id:
@@ -1767,9 +1767,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})
         changes = {key: given[key] for key in
-                   ('agent', 'model', 'effort', 'hold', 'held', 'hold_reason', 'glyph', 'board') if key in given}
+                   ('agent', 'model', 'effort', 'fast', 'hold', 'held', 'hold_reason', 'glyph', 'board') if key in given}
         if not changes:
-            return self.send(400, {'error': 'A ticket change gives an agent, model, thinking level, hold, glyph or board.'})
+            return self.send(400, {'error': 'A ticket change gives an agent, model, thinking level, Fast, hold, glyph or board.'})
         try:
             edited = plain(module_verb(given, 'map', 'work', {'op': 'edit', 'id': work_id, **changes}, chosen=True))
         except (Stop, StoreError) as error:
@@ -3570,7 +3570,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
             for row in rows('ticket_settings', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {}).update(agent=row['agent'], hold=bool(row['hold']),
                     board=row.get('board') or '',
-                    **{field: row[field] for field in ('model', 'effort', 'decision', 'hold_reason') if row.get(field) is not None})
+                    **{field: row[field] for field in ('model', 'effort', 'fast', 'decision', 'hold_reason') if row.get(field) is not None})
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
             # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every

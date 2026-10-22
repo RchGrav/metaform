@@ -723,6 +723,11 @@ def picker_entries(setting: dict[str, Any]) -> list[dict[str, Any]]:
     """One of an agent's selects as every picker lists it: Default first with what it resolves to, then each short
     name with what it means now, then every exact value under Specific version, each by its own name. `value` is what
     is stored: a short name, so a stored choice follows the family's newest release."""
+    if setting.get('type') == 'boolean':
+        current = 'On' if setting.get('current') is True else 'Off'
+        return [{'value': AGENT_DEFAULT, 'label': f'Default: {current}', 'group': None, 'description': None},
+                {'value': 'true', 'label': 'On', 'group': None, 'description': None},
+                {'value': 'false', 'label': 'Off', 'group': None, 'description': None}]
     choices = cast(list[dict[str, Any]], setting.get('options') or [])
     named = {str(choice.get('value')): str(choice.get('name') or choice.get('value')) for choice in choices}
     own = next((choice for choice in choices if str(choice.get('value')) == AGENT_DEFAULT), None)
@@ -779,7 +784,8 @@ def option_choices(agent: str, key: str) -> Callable[[Context], list[str]]:
     prime=true` has asked it."""
     def choices(ctx: Context) -> list[str]:
         offered = offered_option(ctx.store, agent, key)
-        return [one['value'] for one in picker_entries(offered)] if offered else [AGENT_DEFAULT]
+        return [one['value'] for one in picker_entries(offered)] if offered and (
+            key != 'model_config' or offered.get('type') == 'boolean') else [AGENT_DEFAULT]
     return choices
 
 
@@ -839,6 +845,10 @@ def chosen_options(ctx: Context, agent: str) -> dict[str, str]:
     for key, _, option in option_settings(agent):
         value = ctx.setting(key) if key in settings.SCHEMA else None
         if value and value != AGENT_DEFAULT:
+            if option == 'model_config':
+                offered = offered_option(ctx.store, agent, option)
+                if offered is None or offered.get('type') != 'boolean':
+                    continue
             found[option] = str(value)
     return found
 
@@ -1967,7 +1977,7 @@ def ticket_row(store: Store, work_id: str) -> dict[str, Any] | None:
 
 
 def ticket_options(store: Store, work_id: str) -> dict[str, str]:
-    """A ticket's own model and effort, by the ACP category each sets: `model` and `thought_level`."""
+    """A ticket's own model, effort and Fast, by the ACP category each sets."""
     row = ticket_row(store, work_id)
     try:
         bound = store.bound_base()
@@ -1980,8 +1990,9 @@ def ticket_options(store: Store, work_id: str) -> dict[str, str]:
     chosen = runtime if runtime is not None and runtime.get('decision') else {
         **(dict(row) if row is not None else {}),
         **({field: runtime[field] for field in ('model', 'effort') if runtime.get(field)} if runtime else {})}
-    return {key: str(chosen[field]) for key, field in (('model', 'model'), ('thought_level', 'effort'))
-            if chosen.get(field)}
+    return {**{key: str(chosen[field]) for key, field in (('model', 'model'), ('thought_level', 'effort'))
+               if chosen.get(field)},
+            **({'model_config': str(runtime['fast'])} if runtime and runtime.get('fast') is not None else {})}
 
 
 def runtime_provider(ctx: Context) -> Any:
@@ -2044,9 +2055,9 @@ def keep_runtime(ctx: Context, work_id: str, choice: dict[str, Any], catalog: di
 
 def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: str | None = None) -> dict[str, Any]:
     """The person's card or tune edit, validated against the same catalog and recorded with personal provenance."""
-    fields = ('agent', 'model', 'effort')
-    if any(field in given for field in ('model', 'effort')):
-        persons_own(ctx, 'A ticket\'s model and effort')
+    fields = ('agent', 'model', 'effort', 'fast')
+    if any(field in given for field in ('model', 'effort', 'fast')):
+        persons_own(ctx, 'A ticket\'s model, effort and Fast mode')
     store = ctx.require_store()
     record = ticket(store, work_id)
     owner = runtime_provider(ctx)
@@ -2059,6 +2070,13 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
     values.update({field: None if str(given[field] or '').strip() in ('', 'none') else str(given[field]).strip()
                    for field in fields if field in given})
     agent = agent or str(values.get('agent') or agent_for(ctx, record))
+    if 'fast' in given and values['fast'] is not None:
+        offered_fast = offered_option(store, agent, 'model_config')
+        if offered_fast is None or offered_fast.get('type') != 'boolean':
+            raise Stop(f'{agent_label(agent)} offers no boolean Fast mode.',
+                       f'metaform dispatch options agent={agent}')
+        if values['fast'] not in ('true', 'false'):
+            raise Stop('Fast mode is true, false or none.', 'metaform help dispatch tune')
     if 'agent' in given and values.get('agent') != kept.get('agent'):
         for field in ('model', 'effort'):
             if field not in given:
@@ -2066,6 +2084,11 @@ def edit_runtime(ctx: Context, work_id: str, given: dict[str, Any], *, agent: st
                 if offered is None or values[field] not in offered:
                     values[field] = None
                     overrides = {key: value for key, value in overrides.items() if key != field}
+    if 'agent' in given and values.get('agent') != kept.get('agent') and 'fast' not in given:
+        offered_fast = offered_option(store, agent, 'model_config')
+        if offered_fast is None or offered_fast.get('type') != 'boolean':
+            values['fast'] = None
+            overrides = {key: value for key, value in overrides.items() if key != 'fast'}
     notices: list[dict[str, str]] = []
     for field in ('model', 'effort'):
         if field not in given or values[field] is None:
@@ -2144,6 +2167,9 @@ def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) 
         runtime = runtime_settings(ctx, work_id)
         if not runtime.get('agent') or runtime['agent'] == agent:
             chosen = ticket_options(store, work_id)
+            offered_fast = offered_option(store, agent, 'model_config')
+            if offered_fast is None or offered_fast.get('type') != 'boolean':
+                chosen = {key: value for key, value in chosen.items() if key != 'model_config'}
     return {**chosen_options(ctx, agent), **chosen}
 
 
@@ -7160,9 +7186,12 @@ async def options(ctx: Context) -> dict[str, Any]:
             'seen': row['seen'] if row else None,
             'settings': [{'key': option_key(one), 'id': one.get('id'), 'name': one.get('name'),
                           'category': one.get('category'), 'type': one.get('type'), 'current': one.get('current'),
-                          'choices': [{key: choice.get(key) for key in ('value', 'name', 'description')}
-                                      for choice in cast(list[dict[str, Any]], one.get('options') or [])],
-                          'picks': picker_entries(one) if one.get('type') != 'boolean' else [],
+                          'choices': ([{'value': 'true', 'name': 'On', 'description': None},
+                                       {'value': 'false', 'name': 'Off', 'description': None}]
+                                      if one.get('type') == 'boolean' else
+                                      [{key: choice.get(key) for key in ('value', 'name', 'description')}
+                                       for choice in cast(list[dict[str, Any]], one.get('options') or [])]),
+                          'picks': picker_entries(one),
                           'chosen': chosen.get(agent, {}).get(option_key(one)),
                           'setting': next((key for key, _, option in option_settings(agent)
                                            if option == option_key(one)), None)} for one in offered],
@@ -7208,17 +7237,17 @@ def offered_values(store: Store, agent: str, key: str) -> list[str] | None:
 
 
 def tune(ctx: Context) -> dict[str, Any]:
-    """A ticket's own model and effort, P015, kept with its map settings and applied over dispatch_<agent>_<option>
+    """A ticket's own model, effort and Fast, P015, kept with its map settings and applied over dispatch_<agent>_<option>
     to its sessions; a running one takes them at once through session/set_config_option. Without the map provider,
     dispatch's original ticket_options still serves a manual tune. The person's
     own, since it changes what the ticket costs. A value the ticket's agent did not offer at its last session is
     refused with the values it offers; one for an agent that has not run here is kept with a notice."""
-    persons_own(ctx, 'A ticket\'s model and effort')
+    persons_own(ctx, 'A ticket\'s model, effort and Fast mode')
     store = ctx.require_store()
     record = ticket(store, str(ctx.nouns['id']))
-    given = {field: ctx.nouns.get(field) for field in ('model', 'effort') if field in ctx.nouns}
+    given = {field: ctx.nouns.get(field) for field in ('model', 'effort', 'fast') if field in ctx.nouns}
     if not given:
-        raise Stop('Give model=, effort= or both; none clears one.', 'metaform dispatch options')
+        raise Stop('Give model=, effort= or fast=; none clears one.', 'metaform dispatch options')
     live = running(store, record.id)
     agent = str(live['agent']) if live is not None else agent_for(  # the agent autostart would start on it
         ctx, record, preferred(record, ticket_settings(ctx).get(record.id), str(ctx.setting('dispatch_agent')), store=store))
@@ -7228,6 +7257,8 @@ def tune(ctx: Context) -> dict[str, Any]:
         if live is not None:
             edited['applied'] = tell(live, 'tune')
         return edited
+    if 'fast' in given:
+        raise Stop('The map must be enabled to save ticket Fast mode.', 'metaform enable map')
     notices: list[dict[str, str]] = []  # a write that does not fit is kept, with its notice, BASE-044
     for field, value in given.items():
         said = str(value).strip()
@@ -7780,13 +7811,14 @@ MODULE = Module(
                        ('metaform dispatch options agent=claude prime=true', 'Starts Claude Code once to read its options.'),
                        ('metaform set --dispatch-claude-model opus --dispatch-codex-effort high',
                         'Gives each agent its default model or effort.')), open_world=True),
-        Verb('tune', tune, 'Set the model and effort the agent working a ticket uses, over dispatch_<agent>_<option>; the '
+        Verb('tune', tune, 'Set the model, effort and Fast mode the agent working a ticket uses, over dispatch_<agent>_<option>; the '
                            'person\'s own. A running session takes them at once.',
              nouns=(Noun('id', 'The work id of the ticket.'),
                     Noun('model', 'A model value its agent offers, as dispatch options lists it; none clears it.',
                          required=False),
                     Noun('effort', 'A thought level its agent offers, as dispatch options lists it; none clears it.',
-                         required=False)),
+                         required=False),
+                    Noun('fast', 'Fast mode: true, false or none to inherit the project setting.', required=False)),
              examples=(('metaform dispatch tune 198452e1... model=opus effort=high', 'Sets both for this ticket.'),),
              open_world=True, listed=session_live),
         Verb('cancel', cancel, 'Cancel a ticket, the person\'s own: its agent\'s turn is cancelled with session/cancel, '

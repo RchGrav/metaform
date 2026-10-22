@@ -1711,8 +1711,9 @@ TABLES = Tables(
     # 21: their indexes, by board and by created; 22: nullable assignment model, effort and decision provenance,
     # which older versions never name; 23: the retired agent identity becomes antigravity in ticket runtime and
     # eligibility values, without changing any table layout; 24: latest explicit hold reason and retained reason
-    # history, in nullable settings and a new table that earlier versions never name
-    version=24,
+    # history, in nullable settings and a new table that earlier versions never name; 25: nullable Fast choice,
+    # a text column earlier versions never name, with NULL inheriting and true/false explicit
+    version=25,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
@@ -1730,7 +1731,7 @@ TABLES = Tables(
         # and assignment runtime, `model`, `effort`, `decision`, which the person can change before the start
         columns=(Column('work_id', required=True), Column('agent'), Column('hold', 'int', default=0),
                  Column('proof', 'int', default=0), Column('landed'), Column('epic'), Column('agents', 'int'),
-                 Column('board'), Column('model'), Column('effort'), Column('decision', 'json'), Column('hold_reason')),
+                 Column('board'), Column('model'), Column('effort'), Column('decision', 'json'), Column('hold_reason'), Column('fast')),
         indexes=(Index(('board',)),),
     ), Table(
         'hold_history', place='metaform', key=('id',),

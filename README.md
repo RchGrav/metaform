@@ -201,3 +201,11 @@ flowchart LR
 The prompt directs an operation; the Metaform supplies the semantic orientation through which it is interpreted. Selected knowledge can provide information or, when that is the layer's purpose, additional imperatives. Memory is attached to elements and joins, rather than detached from the functionality it concerns.
 
 It also lets a critic find gaps in the design: functions and Encounters the system should have and does not. Code alone shows how a system behaves, not what it is for, so the recorded purposes are what make a missing piece visible. The critic examines the Metaform on its own, or the Metaform together with the code. Each gap becomes a blindspot challenge, which asks the project for substantive reasoning: why a concern was already considered and adds no benefit, why an unexplored concern matters, or where another part of the system already fulfills the apparent omission.
+
+### Worker Fast mode
+
+Ticket settings offer Project setting, On and Off when the selected agent
+advertises Fast mode. Off stays explicit after reopening. Agent options in project
+settings offer Default, On and Off for the same capability. Saved worker choices
+apply after project defaults on startup and resume. Fast is never enabled by this
+feature without a selection. Unsupported agents show an unavailable control.

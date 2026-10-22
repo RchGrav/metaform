@@ -93,21 +93,40 @@ function ticketControls(ticket, settings = null) {
 /* Runtime choices belong to this ticket. Read the agent's offered values only when its settings are opened. */
 function runtimeControls(ticket, agent, change, settings) {
   const kept = ticket.map || {}, project = S.project, base = S.base;
-  const fields = ['model', 'effort'];
-  const picks = fields.map(key => h('select', {class: key, 'aria-label': key === 'model' ? 'Model' : 'Thinking level',
+  const fields = ['model', 'effort', 'fast'];
+  const picks = fields.map(key => h('select', {class: key,
+    'aria-label': key === 'model' ? 'Model' : key === 'fast' ? 'Fast mode' : 'Thinking level',
     disabled: true, onchange: async event => {
       const pick = event.currentTarget;
       if (!await change({[key]: pick.value || 'none'}, pick)) pick.value = kept[key] || '';
     }}, h('option', {value: kept[key] || ''}, kept[key] || 'Project setting')));
-  const hint = h('small', {class: 'runtime-hint'}, 'Open settings to load model and thinking choices.');
+  const hint = h('small', {class: 'runtime-hint'}, 'Open settings to load runtime choices.');
   const box = h('div', {class: 'runtime-settings'},
-    fields.map((key, index) => h('label', {}, key === 'model' ? 'Model ' : 'Thinking ', picks[index])), hint);
+    fields.map((key, index) => h('label', {}, key === 'model' ? 'Model ' : key === 'fast' ? 'Fast ' : 'Thinking ',
+      picks[index])), hint);
   let reading = null;
   const load = async () => {
     try {
       const found = (await read('dispatch-options', {agent})).agents?.find(one => one.agent === agent);
       if (S.project !== project || S.base !== base) return;
       fields.forEach((key, index) => {
+        if (key === 'fast') {
+          const option = found?.settings?.find(one => one.type === 'boolean'
+            && (one.key === 'model_config' || one.category === 'model_config'));
+          const chosen = kept.fast ?? '';
+          const current = option?.chosen ?? option?.current;
+          const name = current === true || current === 'true' ? 'On'
+            : current === false || current === 'false' ? 'Off' : null;
+          const unavailable = found?.next ? 'Fast availability is unknown until its list is read.'
+            : 'This agent does not advertise Fast mode.';
+          fill(picks[index], h('option', {value: '', selected: !chosen}, option
+            ? name ? `Project setting: ${name}` : 'Project setting' : 'Unavailable'),
+          chosen || option ? ['true', 'false'].map(value => h('option', {value, selected: value === chosen},
+            value === 'true' ? 'On' : 'Off')) : null);
+          picks[index].disabled = !option;
+          picks[index].title = option ? 'Changes apply to this ticket’s next start.' : unavailable;
+          return;
+        }
         const option = found?.settings?.find(one => key === 'effort'
           ? ['effort', 'thought_level'].includes(one.key) || one.category === 'thought_level'
           : one.key === 'model' || one.category === 'model');

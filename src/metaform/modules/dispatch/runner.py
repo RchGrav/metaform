@@ -1875,7 +1875,7 @@ class Session:
 
     async def apply_options(self) -> list[dict[str, Any]]:
         """Give the session the settings chosen for it, P199 and P015: its agent's dispatch_<agent>_<option> settings,
-        then its ticket's own model and effort, each matched to the agent's settings by ACP category or by id and set through
+        then its ticket's own model, Fast and effort, each matched to the agent's settings by ACP category or by id and set through
         session/set_config_option, or session/set_mode for a mode, in APPLY_ORDER, so a model switch never undoes the
         effort chosen with it. A choice the agent does not offer is said once in the thread and left; one already
         current, as the agent's latest answer has it, is not sent again."""
@@ -1891,7 +1891,7 @@ class Session:
         done: list[dict[str, Any]] = []
         for key, value in sorted(wanted.items(), key=lambda pair: rank.get(pair[0], len(APPLY_ORDER))):
             found = next((one for one in self.settings() if option_key(one) == key), None)
-            if found is None:
+            if found is None or key == 'model_config' and found.get('type') != 'boolean':
                 async with self.lock:
                     await self.note(f'option:{key}', 'notice', f'{self.name} offers no {key} on this session, so '
                                                              f'{key}={value} was not applied.')

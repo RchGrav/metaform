@@ -382,3 +382,18 @@ established as invalid or superseded with evidence. Explicit person stops retain
 Startup faults publish `fault.raised` with source `start`. Autoticket files the canonical repair, then publishes `fault.filed` with its group, ticket and recurrence identity. Dispatch reuses `board-needs` signals to deliver one urgent inbox line per group and repair cycle. Ten repeats of an open fault do not wake the system agent again. Ordinary filed faults enter its routine inbox without an immediate wake.
 
 A startup fault wakes an existing system session even with Full Auto off. Automatic system starts still respect Full Auto and explicit stops. Its prompt directs the system agent to repair startup in its existing session, commit its own files, push the authorized repair and verify a successful start. Failed-start backoff and admission checks remain in force. Startup repairs bypass the ordinary fault filing limit because a full repair queue must not prevent restoring agent starts.
+
+### Ticket Fast mode
+
+Worker settings offer Fast mode when the selected adapter advertises a boolean
+`model_config` option. Project setting inherits `dispatch_<agent>_fast`. On stores
+`true`. Off stores `false`, independently of inheritance. Unknown or unsupported
+capabilities leave the control unavailable. Project agent defaults offer Default,
+On and Off for advertised boolean options. Default sends no option. Fast remains
+unchanged until the person selects it.
+
+`metaform map work op=edit id=<ticket> fast=true|false|none` saves the ticket choice.
+`metaform dispatch tune <ticket> fast=true|false|none` also applies it to a running
+worker. Normal worker starts, loads and resumes apply saved choices after project
+defaults, through the adapter's advertised option id. Another agent's conversation
+does not receive the worker override. No permissions or stop controls change.

@@ -1262,11 +1262,11 @@ WORK_READS: dict[str, frozenset[str]] = {
     'read': frozenset({'id'}),
     'remove': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
-                      'links', 'agent', 'model', 'effort', 'hold', 'eligible', 'after_work', 'title', 'epic',
+                      'links', 'agent', 'model', 'effort', 'fast', 'hold', 'eligible', 'after_work', 'title', 'epic',
                       'agents', 'board', 'hold_reason'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
                        'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title',
-                       'epic', 'agents', 'board', 'model', 'effort', 'hold_reason'}),
+                       'epic', 'agents', 'board', 'model', 'effort', 'fast', 'hold_reason'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by', 'hold_reason'}),
@@ -1620,7 +1620,7 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
         eligible = {work_id: tx.get('eligible', {'work_id': work_id}) for work_id in work_ids}
         after = {work_id: tx.get('after', {'work_id': work_id}) for work_id in work_ids}
     kept = {work_id: {'agent': row['agent'], 'hold': bool(row['hold']),
-                      **{field: row[field] for field in ('model', 'effort', 'decision', 'hold_reason') if row.get(field) is not None},
+                      **{field: row[field] for field in ('model', 'effort', 'fast', 'decision', 'hold_reason') if row.get(field) is not None},
                       **({'proof': True, 'landed': row['landed']} if row['proof'] else {}),
                       **({'epic': row['epic']} if row['epic'] else {}),
                       **({'board': row['board']} if row.get('board') else {}),
@@ -1962,7 +1962,7 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
     """Write a ticket's settings, when given, in the map module's own tables, STORE-045."""
     nouns = runtime_values(nouns)
     changes: dict[str, Any] = {}
-    runtime_fields = ('agent', 'model', 'effort')
+    runtime_fields = ('agent', 'model', 'effort', 'fast')
     if ctx is not None and any(field in nouns for field in runtime_fields):
         runtime = provided(ctx.folder, 'orchestration.transport')
         transport = runtime[0][1] if runtime else None
@@ -1971,8 +1971,8 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
             edited = cast(dict[str, Any], transport.edit_runtime(ctx, work_id, nouns))
             notices.extend(Notice(str(one['where']), str(one['message']))
                            for one in cast(list[dict[str, str]], edited.get('notices') or []))
-        elif any(field in nouns for field in ('model', 'effort')):
-            raise Stop('Dispatch must be enabled to set model or effort.', 'metaform enable dispatch')
+        elif any(field in nouns for field in ('model', 'effort', 'fast')):
+            raise Stop('Dispatch must be enabled to set model, effort or Fast.', 'metaform enable dispatch')
         else:
             changes['decision'] = {'decider': 'person', 'confidence': 1.0, 'task_type': None,
                                    'reason': 'Agent selected on the ticket.'}
@@ -2042,12 +2042,12 @@ class TicketRuntime:
         with store.tables(write=False) as tx:
             row = tx.get('ticket_settings', {'work_id': work_id})
             eligible = tx.get('eligible', {'work_id': work_id})
-        return {**({field: row.get(field) for field in ('agent', 'model', 'effort', 'decision')} if row else {}),
+        return {**({field: row.get(field) for field in ('agent', 'model', 'effort', 'fast', 'decision')} if row else {}),
                 **({'eligible': eligible['agents']} if eligible else {})}
 
     def save(self, ctx: Context, work_id: str, values: dict[str, Any]) -> dict[str, Any]:
         store = self.store(ctx)
-        changes = runtime_values({field: values[field] for field in ('agent', 'model', 'effort', 'decision')
+        changes = runtime_values({field: values[field] for field in ('agent', 'model', 'effort', 'fast', 'decision')
                                   if field in values})
         if changes:
             with store.tables() as tx:
@@ -2278,6 +2278,7 @@ WORK_NOUNS = (
                    'The person can change it before the start.'),
     _noun('effort', 'add and edit: the thinking level this ticket uses, from dispatch options; none clears it. '
                     'The person can change it before the start.'),
+    _noun('fast', 'add and edit: Fast mode, true or false; none inherits the project setting. Person only.'),
     _noun('hold', 'add and edit: true holds the ticket, hidden from agents and automatic starts until '
                   'explicitly released; list: true lists held tickets too.', 'bool'),
     _noun('glyph', 'edit: the agent glyph the ticket is assigned to; tickets with the same glyph are one agent\'s, '

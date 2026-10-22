@@ -932,3 +932,11 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 12. RESOLVED 2026-10-05: D120 removes question-based blocking and Backlog parking, VIEW-042.
 13. Answered 2026-10-04 by the official consensus mode: a comment halts its ticket before any count; a tie goes to the person; two of three close a ticket; marking is a message by `consensus` with the tally; a question with no offered answers has no choice to pick, so under the build's reading any answer to it is a write-in and goes to the person. (VIEW-043)
 14. NEW Where is a project's test command declared, and is the release log of an unreviewed merge a ticket or a knowledge item? (VIEW-044)
+
+### Worker Fast settings amendment
+
+- Status: Confirmed, 2026-10-21, code.dispatcher.agent#158.
+- Requirement: Worker ticket settings expose Fast mode with Project setting, On and Off when the selected agent advertises a boolean `model_config` capability.
+- Why: The person must control worker Fast costs independently of front-facing sessions.
+- Build: Reuse ticket settings, advertised dispatch options, existing ticket writes and event refresh. Keep saved explicit Off distinct from project inheritance. Disabled controls explain unknown or unsupported capability. Project defaults offer Default, On and Off. No default or existing selection changes automatically.
+- Acceptance: Browser coverage shows worker and project controls, saved selection after reopening and truthful unavailable states. No live model inference runs.
