@@ -130,6 +130,7 @@ def status_of(found: dict[str, Any]) -> dict[str, Any]:
     return {'discussion': found['number'], 'subject': found['subject'], 'state': found['state'],
             'reason': found['reason'], **topic_of(found), 'round': found['round'], 'turn_of': turn_of(found, held),
             'latest': latest[-1]['number'] if latest else 0, 'rounds': found['rounds'], 'spend': found['spend'],
+            'reply_limit': render.reply_limit(found),
             'spent': round(float(found['spent'] or 0), 4), 'reporter': found['reporter'], 'report': found['report'],
             'export': found['export'], **({'report_error': found['report_error']} if found['report_error'] else {}),
             'runner': 'running' if runner.alive(found) else 'stopped', 'folder': found['folder'],
@@ -148,10 +149,12 @@ def status_of(found: dict[str, Any]) -> dict[str, Any]:
 async def opened(opening: str | None, seats: list[str] | str, subject: str | None, rounds: int | None,
                  spend: float | None, reporter: str | None, folder: str | None, chair_key: str | None,
                  topics: list[str] | None = None, host: str | None = None,
-                 synthesizer: str | None = None, seat_mcp: Any = None) -> dict[str, Any]:
+                 synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT) -> dict[str, Any]:
     """A table opened and its runner started, for `open` and the web page alike; ToolError says why it cannot be.
     With topics, the three Roundtable 2 topics unless others are given, it runs the Roundtable 2 protocol, its
     opening the Roundtable 2 opening unless one is given; with `topics=[]` it discusses its opening alone."""
+    if type(reply_limit) is not int or reply_limit < 1:
+        raise ToolError('reply_limit is a positive whole number of characters.')
     listed = stages.topics_of(topics)
     opening = (opening or '').strip() or (said('rt2_opening') if listed else '')
     if not opening:
@@ -194,13 +197,14 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
     number = store.opened({'subject': render.slug(subject or opening), 'opening': opening, 'folder': where,
                            'chair_key': chair_key, 'chair_token': token, 'reporter': writer,
                            'rounds': rounds or most_rounds, 'spend': most_spend if spend is None else spend,
-                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed)
+                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit)
     pid = runner.spawn(number)
     found = store.discussion(number)
     return {'discussion': number, 'chair': token, 'a2a': {'context_id': found['context_id'],
                                                           'task_id': found['task_id']}, 'seats': [{'seat': seat['id'], 'name': seat['name']}
                                                             for seat in store.seats(number)],
-            'reporter': writer, 'rounds': rounds or most_rounds, 'spend': most_spend if spend is None else spend,
+            'reporter': writer, 'reply_limit': reply_limit,
+            'rounds': rounds or most_rounds, 'spend': most_spend if spend is None else spend,
             **({'topics': [one['title'] for one in listed], 'host': roles['host']['id'],
                 'synthesizer': roles['synthesizer']['id']} if listed else {}),
             'runner': pid, 'privacy': said('privacy'), **({'notices': notices} if notices else {}),
@@ -212,7 +216,7 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
                host: str | None = None, synthesizer: str | None = None, subject: str | None = None,
                rounds: int | None = None, spend: float | None = None, reporter: str | None = None,
                folder: str | None = None, seat_mcp: list[dict[str, Any]] | None = None,
-               ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
+               ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT) -> dict[str, Any]:
     """Open a roundtable with its seats, in speaking order; you chair it.
 
     Seats: acp:<claude|codex>/<model> (the agent on the person's own login, read-only), an OpenRouter model id
@@ -223,13 +227,14 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
     topics=[] discusses the opening alone. opening defaults to the Roundtable 2 opening when there are topics.
     host summarizes each topic's rankings (default acp:codex/gpt-6 when Codex offers it); synthesizer names its
     ideas (default the host). rounds (per topic) and spend (US dollars) may lower the configured limits for this
-    table, never raise them. reporter is the seat that writes the report (default: the configured reporter when it is
+    table, never raise them. reply_limit sets the maximum characters in each discussion reply (default 512).
+    reporter is the seat that writes the report (default: the configured reporter when it is
     seated). folder is where ACP seats read; the server's own folder by default. seat_mcp names MCP servers for the
     ACP seats, [{name, url, headers, seat?}]: given in each seat's session, never a config file, its tools allowed;
     seat (a 1-based place in speaking order) gives one to that seat alone, as for a playground body's own endpoint
     and token. Other seats stay text-only. Returns the table's number and the chair token."""
     return await opened(opening, seats, subject, rounds, spend, reporter, folder, connection(ctx), topics, host,
-                        synthesizer, seat_mcp)
+                        synthesizer, seat_mcp, reply_limit)
 
 
 # The chair's actions on a table already found to be the caller's: the MCP tools check the chair first, the web page
@@ -435,14 +440,14 @@ async def turn(discussion: int, seat: str, wait: int = 0, seat_token: str | None
     if not mine(held):
         return {'discussion': discussion, 'seat': held['id'], 'your_turn': False, 'state': found['state']}
     return {'discussion': discussion, 'seat': held['id'], 'your_turn': True, 'turn': held['pending'],
-            'next': f'submit discussion={discussion} seat={held["id"]} text=<at most {LIMIT} characters>'}
+            'next': f'submit discussion={discussion} seat={held["id"]} text=<at most {render.reply_limit(found)} characters>'}
 
 
 @server.tool(annotations=WRITE)
 def submit(discussion: int, seat: str, text: str, seat_token: str | None = None,
            ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
-    """As an outside agent seat, submit your turn. Keep it under 512 characters: anything longer is truncated to 512,
-    and only the truncated part is judged."""
+    """As an outside agent seat, submit your turn within the discussion's reply_limit characters.
+    Anything longer is truncated to that limit, and only the truncated part is judged."""
     who = f'token:{seat_token}' if seat_token else connection(ctx)
     found, held = agent_seat(discussion, seat)
     answers_for(held, who)
@@ -458,7 +463,7 @@ def submit(discussion: int, seat: str, text: str, seat_token: str | None = None,
     given = {'seat_token': minted} if minted else {}
     store.seat_change(discussion, held['position'], reply={'text': text}, owner=held['owner'] or who)
     return {'discussion': discussion, 'seat': held['id'], 'submitted': True, **given,
-            **({'truncated_to': LIMIT} if len(text) > LIMIT else {})}
+            **({'truncated_to': render.reply_limit(found)} if len(text) > render.reply_limit(found) else {})}
 
 
 # ----------------------------------------------------------------------------------------------- resources

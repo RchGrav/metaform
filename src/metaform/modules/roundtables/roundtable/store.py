@@ -305,13 +305,13 @@ def submission(number: int, at: int) -> dict[str, Any]:
 # ----------------------------------------------------------------------------------------------- writes
 
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
-           topics: Sequence[Mapping[str, str]] = ()) -> int:
+           topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512) -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
 
     names = named(chosen)
-    snapshot = render.snapshot(names, staged=bool(topics))
+    snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit)
     with connect() as db:
         number = 1 + int(db.execute('SELECT COALESCE(MAX(number), 0) FROM discussions').fetchone()[0])
         insert(db, 'discussions', {**row, 'snapshot': snapshot, 'number': number, 'state': 'running', 'created': stamp(),

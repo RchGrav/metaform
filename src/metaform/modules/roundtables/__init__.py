@@ -3,7 +3,7 @@ ideas and go on until it is answered, through the Roundtable 2 engine. The finis
 
 The engine is the person's standalone program, `roundtable`, an MCP and A2A server
 (https://github.com/RchGrav/roundtable); this module connects Metaform to it and ports nothing of it. Its seats speak
-in turn, 512 characters each; Jev, through OpenRouter, keeps only what is new and on the topic; after the discussion a
+in turn, within the table's reply limit (512 characters by default); Jev, through OpenRouter, keeps only what is new and on the topic; after the discussion a
 synthesizer names the ideas, every seat ranks them and explains its choices, and the host summarises.
 
 - `open` opens a table on the person's question, which is the table's one topic and its whole frame: it is limited to
@@ -186,7 +186,7 @@ def shown(ctx: Context, row: dict[str, Any]) -> dict[str, Any]:
             'topic': row['topic'], 'state': row['state'],
             **({'reason': row['reason']} if row.get('reason') else {}), 'seats': row['seats'],
             **({'seated': row['seated']} if row.get('seated') else {}),
-            'spend': row['spend'], 'discussion': row.get('discussion'),
+            'spend': row['spend'], 'reply_limit': followed.get('reply_limit', 512), 'discussion': row.get('discussion'),
             'follower': 'running' if follow.alive(row.get('follower')) else 'stopped',
             'answered': bool(row.get('answered')), **({'answer': row['answer']} if row.get('answer') else {}),
             **({'report': report} if report else {}), 'created': row['created'],
@@ -244,6 +244,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
     address, topic = str(ctx.nouns.get('address') or '').strip(), str(ctx.nouns['topic']).strip()
     if not topic:
         raise Stop('A table opens on a question.', 'metaform roundtables open')
+    reply_limit = ctx.nouns.get('reply_limit', 512)
+    if type(reply_limit) is not int or reply_limit < 1:
+        raise Stop('reply_limit is a positive whole number of characters.', 'metaform roundtables open')
     given = ctx.nouns.get('seats') or ctx.setting('roundtables_seats')
     listed = cast(list[Any], json.loads(given) if isinstance(given, str) else given)
     seats = [seat_of(ctx, str(one)) for one in listed]
@@ -264,13 +267,14 @@ def open_table(ctx: Context) -> dict[str, Any]:
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
                              'seats': seats, **roles, 'rounds': ctx.nouns.get('rounds'), 'spend': spend,
                              'state': 'opening', 'created': follow.now(),
-                             'followed': {'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
+                             'followed': {'reply_limit': reply_limit,
+                                          'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
                                           'opener': 'person' if ctx.surface == 'web' or (
                                  ctx.surface == 'cli' and agent_caller() is None) else 'agent'}})
     answer = started(ctx, table_id)
     if 'refused' in answer:
         raise Stop(str(answer['refused']), str(answer.get('next') or 'metaform dispatch sessions'))
-    return {'table': table_id, **({'address': address} if address else {}), 'topic': topic,
+    return {'table': table_id, **({'address': address} if address else {}), 'topic': topic, 'reply_limit': reply_limit,
             **{key: value for key, value in answer.items() if key != 'opened'},
             'next': f'metaform roundtables status {table_id}; its events: metaform roundtables events {table_id}'}
 
@@ -450,6 +454,8 @@ MODULE = Module(
                          required=False),
                     Noun('synthesizer', 'Who names the ideas; the host when left out.', required=False),
                     Noun('rounds', 'The most rounds of discussion, up to the engine\'s own most.', kind='int',
+                         required=False),
+                    Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
                          required=False),
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '

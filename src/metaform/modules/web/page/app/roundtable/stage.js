@@ -116,11 +116,15 @@ UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table'
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
 UI.addSeat = h('button', {type: 'button', class: 'btn sm quiet', onclick: () => addSeat('claude/opus')}, 'Add a seat');
 UI.where = h('span', {class: 'rt-where'});
+UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER, step: 1, value: 512,
+  name: 'reply_limit', required: true});
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
   h('h2', {}, 'Roundtable', UI.where), UI.question, h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat),
+  h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
+  h('small', {}, 'Applies to each discussion reply.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
     'Automate Ticket Creation'),
   h('small', {id: 'rt-automate-description'},
@@ -222,10 +226,13 @@ async function startTable() {
   const topic = UI.question.value.trim();
   if (!topic) { toast('Ask the table a question.'); UI.question.focus(); return; }
   const listed = seatsChosen();
+  const replyLimit = Number(UI.replyLimit.value);
+  if (!Number.isSafeInteger(replyLimit) || replyLimit < 1) { UI.replyLimit.reportValidity(); return; }
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
-  const answer = await wrote('/api/roundtable-open', {topic, automate_ticket_creation: UI.automate.checked,
+  const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit,
+    automate_ticket_creation: UI.automate.checked,
     ...(TABLE.address ? {address: TABLE.address} : {}),
     ...(listed.length ? {seats: listed} : {})});
   UI.start.disabled = false;

@@ -2633,6 +2633,9 @@ class Handler(BaseHTTPRequestHandler):
         table's follower has opened it."""
         address, topic, seats = given.get('address'), given.get('topic'), given.get('seats')
         automate_ticket_creation = given.get('automate_ticket_creation', False)
+        reply_limit = given.get('reply_limit', 512)
+        if type(reply_limit) is not int or reply_limit < 1:
+            return self.send(400, {'error': 'Maximum reply length is a positive whole number of characters.'})
         if address is not None and not isinstance(address, str):
             return self.send(400, {'error': 'The Address a table is about is text, or left out.'})
         if not isinstance(topic, str) or not topic.strip():
@@ -2642,7 +2645,9 @@ class Handler(BaseHTTPRequestHandler):
         if seats is not None and (not isinstance(seats, list) or not all(isinstance(one, str) for one in
                                                                           cast(list[Any], seats))):
             return self.send(400, {'error': 'The seats are a list of seat names, such as claude/opus.'})
-        nouns: dict[str, Any] = {'topic': topic.strip(), 'automate_ticket_creation': automate_ticket_creation,
+        nouns: dict[str, Any] = {'topic': topic.strip(),
+                               **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
+                               'automate_ticket_creation': automate_ticket_creation,
                                **({'address': address.strip()} if address and address.strip()
                                                             else {}), **({'seats': seats} if seats else {})}
         try:

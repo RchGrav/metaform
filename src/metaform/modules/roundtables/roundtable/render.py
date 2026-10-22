@@ -24,7 +24,7 @@ from . import config, store
 from .prompts import said
 from .store import ENOUGH, NOULS, VETO, nouls
 
-LIMIT = 512  # the most characters of a turn that are judged and enter: one point a turn
+LIMIT = 512  # default reply length, including historical discussions without a saved limit
 PASS = re.compile(r'\W*(?:T\d+\W*)?pass\W*', re.IGNORECASE)  # PASS alone, perhaps labeled or marked up
 
 
@@ -67,7 +67,7 @@ def outcome(row: Mapping[str, Any]) -> str:
     return 'kept' if row['accepted'] else 'vetoed'
 
 
-def snapshot(names: Sequence[str], staged: bool = False) -> dict[str, Any]:
+def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMIT) -> dict[str, Any]:
     """The rules and judgment criteria fixed when a discussion opens; for a Roundtable 2 table, `staged`, its rules
     are the discussion instructions every seat receives, its criteria Jev's two nouls for a submission, each with its
     own bar in `floors`, and its two nouls for a round in `sufficiency`, with theirs."""
@@ -75,15 +75,15 @@ def snapshot(names: Sequence[str], staged: bool = False) -> dict[str, Any]:
 
     keep = config.keep()
     if staged:
-        return {'rules': said('discussion_start'), 'keep': keep, 'criteria': questions(VETO),
+        return {'rules': said('discussion_start'), 'reply_limit': reply_limit, 'keep': keep, 'criteria': questions(VETO),
                 'jev_model': config.value('jev_model'),
                 'floors': {'new_context': config.floor('keep_new'), 'on_topic': config.floor('keep_on_topic')},
                 'sufficiency': questions(ENOUGH),
                 'sufficiency_floors': {'round_added': config.floor('keep_round_added'),
                                        'covered': config.floor('keep_covered')},
                 'failed': {name: said(f'failed_{name}') for name in (*VETO, 'repeat')}}
-    rules = said('rules', seats=', '.join(names), limit=LIMIT, keep=f'{keep:.2f}')
-    return {'rules': rules,
+    rules = said('rules', seats=', '.join(names), limit=reply_limit, keep=f'{keep:.2f}')
+    return {'rules': rules, 'reply_limit': reply_limit,
             'keep': keep, 'criteria': questions(), 'jev_model': config.value('jev_model'),
             'failed': {name: said(f'failed_{name}') for name in NOULS}}
 
@@ -97,6 +97,11 @@ def floors(held: Mapping[str, Any]) -> dict[str, float]:
 def captured(discussion: Mapping[str, Any]) -> dict[str, Any]:
     given = discussion.get('snapshot')
     return cast(dict[str, Any], given) if isinstance(given, dict) else {}
+
+
+def reply_limit(discussion: Mapping[str, Any]) -> int:
+    """The maximum reply length frozen with this discussion, or the historical default."""
+    return int(captured(discussion).get('reply_limit', LIMIT))
 
 
 def rules(names: Sequence[str], discussion: Mapping[str, Any] | None = None) -> str:
@@ -173,7 +178,8 @@ def system(discussion: Mapping[str, Any], names: Sequence[str], name: str) -> st
     """A seat's system message, fixed for the table's life and first in every request: the table's rules, which
     seat it is among the seats in speaking order, and the opening; at a table with topics the opening first."""
     return tidy(said('seat_system_topics' if discussion.get('stage') else 'seat_system', opening=discussion['opening'],
-                     rules=rules(names, discussion), seat=name, seats=', '.join(names)))
+                     rules=rules(names, discussion), seat=name, seats=', '.join(names),
+                     reply_length=said('reply_length', limit=reply_limit(discussion))))
 
 
 def own(row: Mapping[str, Any]) -> str:
@@ -184,18 +190,18 @@ def own(row: Mapping[str, Any]) -> str:
     return said('own_vetoed', turn=turn(int(row['number'])), failed=failed_words(row))
 
 
-def seat_view(rows: Sequence[Mapping[str, Any]], first: bool, links: bool = False) -> str:
+def seat_view(rows: Sequence[Mapping[str, Any]], first: bool, links: bool = False, limit: int = LIMIT) -> str:
     """What a seat receives on its turn: on its first, every turn before its own; on each later turn, only the turns
     since its last reply. The limit closes it."""
     turns = '\n\n'.join(entry(row, links) for row in rows)
     if first:
-        return tidy(said('seat_first', turns=turns, limit=LIMIT))
-    return tidy(said('seat_next', turns=turns or said('nothing_since'), limit=LIMIT))
+        return tidy(said('seat_first', turns=turns, limit=limit))
+    return tidy(said('seat_next', turns=turns or said('nothing_since'), limit=limit))
 
 
 # ----------------------------------------------------------------------------------------------- Roundtable 2
 
-def status(row: Mapping[str, Any] | None) -> str:
+def status(row: Mapping[str, Any] | None, limit: int = LIMIT) -> str:
     """The status of a seat's previous contribution, told at its next turn: entered, truncated, vetoed and why, no
     submission, or a pass; nothing new when it was told already."""
     if row is None:
@@ -207,8 +213,8 @@ def status(row: Mapping[str, Any] | None) -> str:
         return said('status_repeat', turn=at, earlier=turn(int(row['repeat_of'])))
     if kind == 'vetoed':
         return said('status_vetoed_truncated' if row['truncated'] else 'status_vetoed', turn=at,
-                    failed=failed_words(row), limit=LIMIT)
-    return said('status_kept_truncated' if row['truncated'] else 'status_kept', turn=at, limit=LIMIT)
+                    failed=failed_words(row), limit=limit)
+    return said('status_kept_truncated' if row['truncated'] else 'status_kept', turn=at, limit=limit)
 
 
 def labeled(rows: Sequence[Mapping[str, Any]]) -> str:
@@ -220,7 +226,7 @@ def labeled(rows: Sequence[Mapping[str, Any]]) -> str:
 
 
 def topic_view(topic: str, own: Mapping[str, Any] | None, others: Sequence[Mapping[str, Any]],
-               first: bool, spoken: bool, digest: str = '') -> str:
+               first: bool, spoken: bool, digest: str = '', limit: int = LIMIT) -> str:
     """What a seat receives on a discussion turn of a Roundtable 2 table: on its first turn at the table the topic,
     the opening and the discussion instructions being in its system message; on its first turn of a later topic, or
     in a context begun again, the status of its previous contribution and the topic; on each later turn of a topic,
@@ -228,10 +234,10 @@ def topic_view(topic: str, own: Mapping[str, Any] | None, others: Sequence[Mappi
     other seats' contributions on the topic since its last turn and the limit close each."""
     turns = labeled(others)
     if first:
-        return tidy(said('topic_first', digest=digest, topic=topic, turns=turns, limit=LIMIT))
+        return tidy(said('topic_first', digest=digest, topic=topic, turns=turns, limit=limit))
     if not spoken:
-        return tidy(said('topic_open', status=status(own), digest=digest, topic=topic, turns=turns, limit=LIMIT))
-    return tidy(said('next_turn', status=status(own), turns=turns, limit=LIMIT))
+        return tidy(said('topic_open', status=status(own, limit), digest=digest, topic=topic, turns=turns, limit=limit))
+    return tidy(said('next_turn', status=status(own, limit), turns=turns, limit=limit))
 
 
 def idea_lines(ideas: Sequence[Mapping[str, Any]]) -> str:

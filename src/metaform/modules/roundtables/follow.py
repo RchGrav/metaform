@@ -150,13 +150,14 @@ class Follower:
         answer = engine.call(self.ctx.folder, 'open', seats=row['seats'], opening=row['opening'],
                              topics=[row['topic']], subject=f'{self.table_id} {row["topic"]}'[:80], rounds=row['rounds'],
                              spend=row['spend'], host=row['host'], synthesizer=row['synthesizer'],
+                             reply_limit=self.followed.get('reply_limit', 512),
                              folder=str(self.ctx.folder))
         a2a = cast(dict[str, Any], answer.get('a2a') or {})
         changes = {'discussion': int(answer['discussion']), 'chair': str(answer['chair']), 'state': 'running',
                    'context_id': a2a.get('context_id'), 'task_id': a2a.get('task_id'),
                    'seated': [one.get('name') for one in cast(list[dict[str, Any]], answer.get('seats') or [])]}
         self.change(**changes)
-        return {key: answer[key] for key in ('seats', 'rounds', 'spend', 'host', 'synthesizer', 'notices')
+        return {key: answer[key] for key in ('seats', 'rounds', 'spend', 'reply_limit', 'host', 'synthesizer', 'notices')
                 if key in answer}
 
     # ------------------------------------------------------------------ following

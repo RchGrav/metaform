@@ -55,7 +55,6 @@ from . import config, export, harness, health, judge, openrouter, outside, peers
 from . import seats as seating
 from .names import base as named_base
 from .prompts import said
-from .render import LIMIT
 from .seat import Gone, Interrupted, NoReply, Reply, Seat
 
 # Every kind of seat, each behind the one seat interface, `seat.Seat`.
@@ -510,7 +509,8 @@ class Table:
                 # ones it sees as their short lines
                 shown = [one for one in since
                          if not (seat.messages and one['position'] == row['position'] and render.entered(one))]
-                view = render.seat_view(shown, not seat.messages, links=seat.kind == 'agent')
+                view = render.seat_view(shown, not seat.messages, links=seat.kind == 'agent',
+                                        limit=render.reply_limit(found))
             mine = [one for one in since if one['position'] == row['position']]
             if not seat.messages and mine and mine[-1].get('repeat_of') is not None:  # started again after repeats
                 view = render.tidy(said('repeat_rebuilt', count=REPEATS) + '\n\n' + view)
@@ -534,14 +534,15 @@ class Table:
             self.answering(row)
             original, use = reply.text, reply.use
             if render.passed(original):  # a pass is recorded as it came and never judged
-                store.record(self.number, self.entry(found, row, original.strip()[:LIMIT], kind='pass',
+                store.record(self.number, self.entry(found, row, original.strip()[:render.reply_limit(found)], kind='pass',
                                                      **{key: value for key, value in use.items() if key in USE}))
                 return True
         # a T### label the seat wrote is taken off, then a turn longer than the limit is cut to it: the cut text is
         # judged and enters; the record keeps the original as the seat gave it
         stripped, label = judge.unlabeled(original)
-        text = stripped[:LIMIT]
-        kept = {'original': original if original != text else None, 'truncated': len(stripped) > LIMIT,
+        limit = render.reply_limit(found)
+        text = stripped[:limit]
+        kept = {'original': original if original != text else None, 'truncated': len(stripped) > limit,
                 'label': label}
         use = {key: value for key, value in use.items() if key in USE}
         # kept before anything that can fail, so a reply taken and paid for is never lost: continue judges it
@@ -616,7 +617,7 @@ class Table:
         spoken = not fresh and any(one['topic'] == found['topic'] for one in mine)
         digest = '' if spoken else render.digest(self.number, int(found['topic']))
         return render.topic_view(str(self.topic(found)['text']), own[-1] if own else None, others,
-                                 fresh and not mine, spoken, digest)
+                                 fresh and not mine, spoken, digest, limit=render.reply_limit(found))
 
     # ------------------------------------------------------------------------------------------- the stages
 

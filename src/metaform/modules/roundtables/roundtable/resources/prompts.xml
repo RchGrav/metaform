@@ -9,13 +9,13 @@
 <prompts>
 <!-- The server's instructions, sent to every MCP client when it connects. Kept short: a client may keep only its
      first 2,048 characters. -->
-<instructions>roundtable holds a discussion among models: seats speak in turn, at most 512 characters each, and Jev keeps only what is new, valuable, relevant and worth keeping. Open a table with open; you chair it: comment, hold, continue, advance and end take the chair token open returns, or work from the same connection. A table discusses its topics one at a time, each then synthesized into named ideas, ranked and explained by every seat and summarized by its host; advance ends the open topic's discussion. Follow it with status and read since=&lt;latest&gt;. An outside agent seated as agent:&lt;name&gt; reads its turn with turn wait=&lt;seconds&gt; and answers with submit. A vetoed submission's text is at roundtable://discussion&lt;N&gt;/submission&lt;M&gt;, every submission's four nouls at roundtable://discussion&lt;N&gt;/review, and the whole record as JSON at roundtable://discussion&lt;N&gt;/export.</instructions>
+<instructions>roundtable holds a discussion among models: seats speak in turn, up to the table's reply_limit characters each (512 by default), and Jev keeps only what is new, valuable, relevant and worth keeping. Open a table with open; you chair it: comment, hold, continue, advance and end take the chair token open returns, or work from the same connection. A table discusses its topics one at a time, each then synthesized into named ideas, ranked and explained by every seat and summarized by its host; advance ends the open topic's discussion. Follow it with status and read since=&lt;latest&gt;. An outside agent seated as agent:&lt;name&gt; reads its turn with turn wait=&lt;seconds&gt; and answers with submit. A vetoed submission's text is at roundtable://discussion&lt;N&gt;/submission&lt;M&gt;, every submission's four nouls at roundtable://discussion&lt;N&gt;/review, and the whole record as JSON at roundtable://discussion&lt;N&gt;/export.</instructions>
 
 <!-- The rules of the table, stated once to every seat before the opening question, in its first message: who sits
      in speaking order, the limit and what happens to a longer turn, Jev's four questions and the bar, and how a veto is shown. Rules are stated; a seat
-     is never told what to say. <seats/> is the seats' short names in speaking order, <limit/> the 512-character
+     is never told what to say. <seats/> is the seats' short names in speaking order, <limit/> the selected character
      limit, <keep/> the bar (0.83 unless the person changed `keep`). Edit freely; keep the places. -->
-<rules>The rules of this table. The seats, in speaking order: <seats/>. Keep each input under <limit/> characters. Anything longer is truncated to <limit/>, and only the truncated part is judged. Jev judges every turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping. A turn enters the discussion only at <keep/> or above on all four. A vetoed turn is shown to every seat as one short line naming the questions it failed and its four scores [new, valuable, relevant, keep], such as: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]. A seat with nothing to add may reply PASS alone: a pass is recorded and not judged.</rules>
+<rules>The rules of this table. The seats, in speaking order: <seats/>. Jev judges every turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping. A turn enters the discussion only at <keep/> or above on all four. A vetoed turn is shown to every seat as one short line naming the questions it failed and its four scores [new, valuable, relevant, keep], such as: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]. A seat with nothing to add may reply PASS alone: a pass is recorded and not judged.</rules>
 <!-- A seat's system message, fixed for the table's life: the table's rules, which seat it is, and the opening. Sent
      first in every request of a model through OpenRouter, as a system message; at the head of the first prompt of an
      ACP seat's session, of an A2A seat's conversation and of an outside agent seat's turns. <rules/> is the rules
@@ -25,17 +25,22 @@
 
 You are <seat/>. The seats, in speaking order: <seats/>.
 
-<opening/></seat_system>
+<opening/>
+
+<reply_length/></seat_system>
 <!-- The system message of a seat at a table with topics: the opening first, then the discussion instructions,
      <rules/>, as the Roundtable 2 protocol sends them, then which seat it is. -->
 <seat_system_topics><opening/>
 
 <rules/>
 
-You are <seat/>. The seats, in speaking order: <seats/>.</seat_system_topics>
+You are <seat/>. The seats, in speaking order: <seats/>.
+
+<reply_length/></seat_system_topics>
+<reply_length>Each discussion reply has a maximum of <limit/> characters. Any excess text is truncated.</reply_length>
 <!-- What a seat receives on its first turn: every turn before its own, and the limit; the rules and the opening are
      in its system message. <turns/> is the turns, one line or entry each, a blank line between; <limit/> the
-     512-character limit. -->
+     selected character limit. -->
 <seat_first><turns/>
 
 Reply in at most <limit/> characters.</seat_first>
@@ -151,8 +156,6 @@ The roundtable discusses three main topics, opened sequentially.
 
 When a topic opens, each participating model may offer ideas, challenge proposals, extend another model's contribution, or introduce alternatives.
 
-**Each discussion contribution has a 512-character limit (approximately 100–130 tokens).** Any text beyond 512 characters is truncated.
-
 Jev evaluates contributions for whether they add context to the discussion. Contributions that are off-topic, simply repeat existing material, or add no new context may be vetoed.
 
 You learn whether your previous contribution was truncated or vetoed only when your next turn arrives. At that turn, you also receive the other models' labeled contributions before replying.
@@ -198,7 +201,9 @@ Findings and disagreements from Roundtable 1 may be revisited. Alternative inter
 Other models' contributions (labeled by model):
 <turns/>
 
-Contribute to the current topic. Maximum <limit/> characters. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. Any excess text is truncated. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.</topic_first>
+Contribute to the current topic. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+
+Maximum <limit/> characters. Any excess text is truncated.</topic_first>
 <!-- A seat's first message in a context begun for the topic when it is a stage's prompt, <stage/>, because the
      topic went to synthesis before the seat's first discussion turn on it: the topic, <topic/>, then the stage. -->
 <stage_first><topic/>
@@ -218,7 +223,9 @@ The next topic is open.
 Other models' contributions (labeled by model):
 <turns/>
 
-Contribute to the current topic. Maximum <limit/> characters. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. Any excess text is truncated. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.</topic_open>
+Contribute to the current topic. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+
+Maximum <limit/> characters. Any excess text is truncated.</topic_open>
 <!-- NEXT_TURN.md: each later turn on the same topic. <status/> is one of the status lines below; <turns/> the other
      seats' contributions since the seat's last turn, each labeled by model. -->
 <next_turn># Subsequent discussion turn
@@ -231,7 +238,9 @@ Other models' contributions (labeled by model):
 
 Continue discussion of the current topic. You may introduce an idea, extend or challenge an existing one, or respond to another participant.
 
-Maximum <limit/> characters. Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. Any excess text is truncated. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.</next_turn>
+Jev evaluates whether the contribution adds new context, is on topic, and does not merely repeat existing material. If you have nothing to add, reply PASS alone: a pass is recorded and not judged.
+
+Maximum <limit/> characters. Any excess text is truncated.</next_turn>
 <!-- The status of a seat's previous contribution, told only at its next turn. <turn/> is its number; <failed/> the
      questions it failed, in the words of <failed_new> and the others above. -->
 <status_kept>Your previous contribution, <turn/>, entered the discussion.</status_kept>

@@ -1,7 +1,7 @@
 """The one seat interface every kind of seat goes through.
 
 The runner treats every seat alike: it gives the seat the turns since its last reply as one text, takes one reply,
-cuts it to 512 characters when it is longer, and keeps the seat's running conversation in its row. A kind
+cuts it to the table's reply limit when it is longer, and keeps the seat's running conversation in its row. A kind
 supplies only how one prompt reaches its seat and how the reply comes back, `exchange`, and, when it holds something
 for the life of the table, `open` and `close`.
 
