@@ -94,7 +94,8 @@ NOTE_LIMIT = 2048
 # upgrade applies delivery.remade to every memory held: a withdrawal of a memory deleted and made again before version
 # 10, which notices and reads at two nodes passed back and forth, is dropped or made an index withdrawal. Version 9
 # reads and writes the tables as before.
-TABLES_VERSION = 10
+# Version 11 adds project-level apply receipts, integration metadata ignored by older writers.
+TABLES_VERSION = 11
 
 
 def _upgrade(tx: TableTx, found: int) -> None:
@@ -153,6 +154,9 @@ TABLES = Tables(version=TABLES_VERSION, compatible_from=9, upgrade=_upgrade, tab
                    Column('size', 'int'), Column('mtime', 'int'), Column('at'), Column('stale'),
                    Column('checked_size', 'int'), Column('checked_mtime', 'int')),
           indexes=(Index(('entity',)),)),
+    Table('apply_receipts', place='project', key=('mutation_id',),
+          columns=(Column('mutation_id', required=True), Column('request_hash', required=True),
+                   Column('receipt', 'json', required=True))),
     *delivery.TABLES,
 ))
 
@@ -732,6 +736,12 @@ def _titles(ctx: Context, given: _Given, one: dict[str, Any], name: str,
     titled(ctx, f'The memory {name!r}', title, why, why_needed=True,
            why_step='add why: one line saying why this is worth keeping, to each new entity')
     return title or None, why or None
+
+
+def apply(ctx: Context) -> Any:
+    """Compare the named target and apply canonical mutations in one memory transaction."""
+    from .batch import apply as apply_batch
+    return apply_batch(ctx)
 
 
 def create_entities(ctx: Context) -> Any:
@@ -1626,6 +1636,22 @@ DELETIONS = {'type': 'array', 'items': {'type': 'object', 'properties': {
 NAMES = {'type': 'array', 'items': {'type': 'string'}}
 
 
+APPLY_MUTATION: dict[str, Any] = {'oneOf': [
+    {'type': 'object', 'properties': {'op': {'type': 'string', 'enum': [op]}, field: schema},
+     'required': ['op', field], 'additionalProperties': False}
+    for op, field, schema in (
+        ('create_entities', 'entities', {'type': 'array', 'items': ENTITY}),
+        ('delete_entities', 'entityNames', NAMES),
+        ('add_observations', 'observations', OBSERVATIONS),
+        ('delete_observations', 'deletions', DELETIONS),
+        ('create_relations', 'relations', {'type': 'array', 'items': RELATION}),
+        ('delete_relations', 'relations', {'type': 'array', 'items': RELATION}),
+        ('join', 'entity', {'type': 'string'}),
+        ('unjoin', 'id', {'type': 'string'}),
+    )
+]}
+
+
 EXAMPLE = ('metaform memory create_entities \'[{"name":"route ejection","entityType":"behavior",'
            '"observations":["Routes are ejected, never packed on delete."],'
            '"why":"Packing on delete lost routes."}]\' node=element:code.manager.route')
@@ -1653,6 +1679,37 @@ MODULE = Module(
             'a node show nothing while the layer named memory is turned off there, with select, mask or --layers. Each '
             'node also holds one note of at most 2048 characters.',
     verbs=(
+        Verb('apply', apply, 'Atomically compare a target digest and apply a bounded canonical memory batch.',
+             nouns=(Noun('node', NODE), Noun('entityNames', 'Exact target name set, including absent names.',
+                                           kind='json', schema=NAMES),
+                    Noun('expectedDigest', 'Expected lowercase SHA-256 target digest.'),
+                    Noun('mutationId', 'Project-wide idempotency key, at most 256 UTF-8 bytes.'),
+                    Noun('mutations', 'Canonical operations in execution order, at the fixed target node.', kind='json',
+                         schema={'type': 'array', 'items': APPLY_MUTATION, 'maxItems': 128})),
+             effect='remove', details=(
+                 'Request: node, entityNames, expectedDigest, mutationId, mutations. '
+                 'Returns mutationId, requestHash, beforeDigest, afterDigest, applied=true, receiptId. '
+                 'Each mutation has op plus the canonical argument: create_entities/entities, '
+                 'delete_entities/entityNames, add_observations/observations, delete_observations/deletions, '
+                 'create_relations/relations, delete_relations/relations, join/entity, unjoin/id. '
+                 'All named entities and relation endpoints must occur in entityNames. New entities join node. '
+                 'Existing creates are skipped. Extend names with add_observations. Unjoin only at node. '
+                 'Locks remain enforced. No project override or extra mutation fields. '
+                 'Limits: 262144 UTF-8 JSON bytes, 128 operations, 256 unique target names, '
+                 '1000 total array members including nested arrays, 256 UTF-8 bytes for mutationId. '
+                 'Errors: MEMORY_CONFLICT, MEMORY_MUTATION_ID_REUSED, MEMORY_SCOPE, MEMORY_LIMIT, MEMORY_INVALID, '
+                 'MEMORY_LOCKED. Conflict writes nothing and includes current digest. '
+                 'Same mutationId and requestHash returns the original receipt even after later memory changes. '
+                 'Digest: lowercase SHA-256 of UTF-8 JSON with sorted object keys, literal Unicode and no whitespace. '
+                 'Payload has node={receiver,provider}, entities, relations, joins. Sort strings by Unicode code point. '
+                 'Entities sort by name, use canonical name/entityType/observations plus cites when present, '
+                 'sort observations/cites, represent absence as {name,absent:true}. Relations include all incident '
+                 'relations, sort by (from,to,relationType). Joins include every index of named entities as '
+                 '{entity,receiver,provider}, sort by those fields. Empty provider is an empty string. '
+                 'Exclude ordering, provenance, title, why, locks and receipt metadata. '
+                 'Request hash uses the same encoding on all five supplied fields, sorting only entityNames. '
+                 'Receipts live in project integration storage, never memory observations. '
+                 'Compare, graph changes, joins, receipt share one write transaction. Events follow commit.')),
         Verb('create_entities', create_entities, 'Create new memory entities, one fact per observation, indexed at '
                                                  'the given functional node. Existing names are skipped; extend them '
                                                  'with add_observations and index them with join. Without node, new '
