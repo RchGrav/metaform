@@ -174,4 +174,28 @@ That operation registers the versioned role, binds it to the original ticket, pl
 
 The helper runs as `metaform://role/facilitator`, outside worker slots and within existing helper limits. `role_creator` remains resolvable for already recorded assignments. The delivery owner is sessionless while expertise is pending and cannot bind a generic worker before publication.
 
+## Reusable preparation and review duties
+
+Each duty resolves at `metaform://role/<name>` and returns its deliverable to its caller.
+Interviewer produces the guided interview brief. Researcher establishes requirements and technology evidence.
+Architect produces the complete design. Planner writes the implementation plan for review.
+Decomposer reads that complete plan, creates a fresh board through `map_boards op=add`, and creates tickets
+one at a time. Logical `depends_on` relationships use the existing `map_work after_work=[ids]` completion gate.
+Decomposer returns the board, tickets, dependencies and written execution outline.
+
+Every generated domain role combines `common`, the shared `specialist` duty and its authored expertise.
+Older generated definitions acquire that shared duty on their next resolution. Existing assignment snapshots
+retain their delivered versions and ordinary prompt receipts record the individual components.
+
+Harsh Critic is separately callable as `harsh_critic`. Its delegation accepts `context.reviewed_work` to select
+the delivered ticket while preserving the immediate caller's return route. Facilitator calls require this field
+to distinguish specialist work from the role commission. Other callers may review their own assigned work.
+Ended role commissions cannot initiate review. The active calling workflow requests that later contribution.
+It returns `APPROVE` or `REJECT` through check-in. Rejection requires structured findings and creates one new
+corrective ticket per finding. Each correction retains the complete finding, review references and evidence,
+inherits the reviewed board, waits on the reviewed ticket through `after_work`, and commissions the Facilitator.
+Repeated returns do not create duplicate corrections. The verdict, correction references and corrected work
+return to the review caller. The calling workflow assigns fresh review when corrected work returns.
+The existing functionality, reviewer, verifier and remaining roles retain their duties and runtime paths.
+
 Completion messages contain only `<address>#<n> complete`. Read the report on the ticket and its assignment evidence explicitly. Claim returns only assignment identity and state. Startup uses MCP tool discovery without duplicating tool schemas in the assignment prompt.

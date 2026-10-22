@@ -1145,6 +1145,38 @@ High / Max / Pro
 - Relates to: BASE-030, BASE-052, BASE-066.
 - Status: Confirmed by the operative ticket direction on 2026-10-21, code.system.management.knowledge#92. Actual execution remains a separate work request.
 
+### BASE-068 Distinct reusable preparation, implementation and acceptance duties
+
+- Requirement: Each reusable role owns its authored function and returns its deliverable to its caller.
+- What this means: Interviewer returns the guided interview brief. Researcher returns evidence-grounded findings,
+  requirements and technology recommendations. Architect returns the complete build design and interface contracts.
+  Planner returns the written implementation plan for review. Decomposer turns the complete plan into a fresh board,
+  detailed tickets and execution outline. Every generated domain specialist combines the shared Specialist duty
+  with its expertise. Harsh Critic independently approves or rejects delivered work. Existing roles, including
+  functionality, reviewer and verifier, remain available with their existing behavior.
+- Why: Separate duties preserve authored expertise, caller responsibility and independently reviewable deliverables.
+- Build: Serve roles through `metaform://role/<name>`, using `harsh_critic` for Harsh Critic. Preserve the complete
+  assigned authored duties, adapting operations to actual tools. Liaison calls Interviewer for guided interviews.
+  Decomposer creates its fresh board with `map_boards op=add` and tickets one at a time, prerequisites first.
+  Store logical `depends_on` relationships through `map_work after_work=[ids]`, including an empty list for
+  independent work. Preserve all plan detail and check complete coverage before returning the execution outline.
+  Compose generated roles from common grounding, shared Specialist duty and authored expertise. Keep existing
+  assignment snapshots pinned and record delivered component versions through ordinary prompt receipts.
+  Harsh Critic delegation accepts `context.reviewed_work` to identify delivered work separately from its caller.
+  Facilitator reviews require that target to distinguish specialist work from the commission. Other callers may
+  review their own assigned work. Ended role commissions cannot initiate review; their active workflow caller
+  requests that contribution. A returned REJECT requires concrete
+  findings. Create a new corrective ticket per finding with the reviewed work, affected contract, defect, evidence,
+  impact, adjustments, expected behavior and verification. Corrections inherit the reviewed board, depend on the
+  reviewed ticket and automatically commission the Facilitator. Return verdict and correction references to the
+  caller. Corrected work returns to that review caller for its workflow to request fresh review.
+  Repeated returns create no duplicate corrective work. Keep the existing FQC correction path unchanged.
+- Acceptance: Resolve all seven role resources. Verify generated expertise includes the separately versioned
+  Specialist duty. Exercise Harsh Critic approval, rejection, caller return, new corrective ticket identity,
+  retained evidence, real prerequisites, board inheritance, Facilitator routing and replay safety.
+- Relates to: BASE-052, BASE-054, BASE-066, BASE-067.
+- Status: Confirmed by current enhancement ticket 78a1d054c6474be38c3a76547ddebf94, 2026-10-21.
+
 
 ### BASE-068 Startup faults wake the existing system session for repair
 

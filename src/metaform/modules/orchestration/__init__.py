@@ -37,14 +37,23 @@ ROLE_DUTIES = (
     ('investigator', 'Establish behavior, causes, dependencies and implementation entry points.',
      'prompt.orchestration:investigator'),
     ('requirements', 'Express requested outcomes and consequential requirements precisely.', 'prompt.orchestration:requirements'),
-    ('planner', 'Build the goal, plan, tickets and implementation order before facilitation.', 'prompt.orchestration:planner'),
+    ('planner', 'Write the implementation plan and verification sequence for review.', 'prompt.orchestration:planner'),
+    ('interviewer', 'Develop an idea through guided conversation and return its brief.', 'prompt.orchestration:interviewer'),
+    ('decomposer', 'Turn the complete plan into a fresh board and dependency-ordered tickets.',
+     'prompt.orchestration:decomposer'),
+    ('specialist', 'Perform assigned work using domain expertise and return verification evidence.',
+     'prompt.orchestration:specialist'),
+    ('harsh_critic', 'Independently approve or reject delivered work and return actionable corrective tickets.',
+     'prompt.orchestration:harsh_critic'),
     ('implementer', 'Produce the assigned change and establish its effect.', 'prompt.orchestration:implementer'),
     ('verifier', 'Assess whether observed behavior establishes the requested outcome.', 'prompt.orchestration:verifier'),
     ('reviewer', 'Examine requested behavior and implementation quality as separate judgments.', 'prompt.orchestration:reviewer'),
     ('integrator', 'Combine assigned candidates and establish their resulting behavior.', 'prompt.orchestration:integrator'),
-    ('architect', 'Design an assigned part and its interfaces within the existing system.', 'prompt.orchestration:architect'),
+    ('architect', 'Produce the complete build design and interface contracts for assigned work.',
+     'prompt.orchestration:architect'),
     ('designer', 'Design clear user journeys, states and recovery behavior.', 'prompt.orchestration:designer'),
-    ('researcher', 'Establish attributed findings for an assigned question.', 'prompt.orchestration:researcher'),
+    ('researcher', 'Investigate assigned subjects and return evidence-grounded requirements or recommendations.',
+     'prompt.orchestration:researcher'),
     ('synthesizer', 'Reconcile findings into a faithful combined result.', 'prompt.orchestration:synthesizer'),
     ('dogfood', 'Expose user-experience failures by using the actual product.', 'prompt.orchestration:dogfood'),
     ('release', 'Prepare the assigned release candidate and materials.', 'prompt.orchestration:release'),
@@ -168,7 +177,8 @@ CALL_NOUNS = (ROLE, Noun('task', 'The specialist contribution and relevant conte
               WAIT, KEY, CANDIDATE,
               Noun('purpose', 'Purpose of a requested new specialty.', required=False),
               Noun('contribution', 'What the new specialist must contribute.', required=False),
-              Noun('context', 'Context for a missing-role request.', 'json', required=False, schema=OBJECT))
+              Noun('context', 'Caller context. Harsh Critic accepts reviewed_work as the delivered ticket id; '
+                   'Facilitator reviews must supply it.', 'json', required=False, schema=OBJECT))
 
 MODULE = Module(
     id='orchestration', summary='Specialist assignments, specialist calls and functional change orders.',
@@ -230,7 +240,9 @@ MODULE = Module(
              nouns=(Noun('state', 'running, waiting, blocked, returned, delivered or failed.'),
                     Noun('summary', 'Observed progress, result or blocker.'), ASSIGNMENT, EVIDENCE, CANDIDATE, KEY,
                     Noun('work_so_far', 'Retained work and recovery context.', required=False),
-                    Noun('findings', 'Functional findings requiring corrective GC work.', 'json', required=False,
+                    Noun('findings', 'Findings requiring correction. Harsh Critic REJECT creates new dependency-linked '
+                         'tickets routed to Facilitator; functionality retains its existing correction path.',
+                         'json', required=False,
                          schema=ARRAY))),
         Verb('assess', assess, 'Deliver GC validation or a functional concern to an independent FQC assessment.',
              nouns=(Noun('summary', 'Observed outcome or functional concern.'),

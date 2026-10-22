@@ -54,7 +54,15 @@ def generated(ctx: Context) -> tuple[AgentRoleDefinition, ...]:
         return ()
     with ctx.store.tables(write=False) as tx:
         rows = tx.rows('definitions', limit=0).results
-    return tuple(AgentRoleDefinition(str(row['name']), str(row['purpose']), tuple(row['prompts'])) for row in rows)
+    # Older generated definitions acquire the shared duty on their next resolution. Existing assignment
+    # snapshots remain pinned, while new assignments record all three independently versioned components.
+    return tuple(AgentRoleDefinition(str(row['name']), str(row['purpose']),
+                                    _specialist_prompts(row['prompts'])) for row in rows)
+
+
+def _specialist_prompts(prompts: Sequence[str]) -> tuple[str, ...]:
+    duty = 'prompt.orchestration:specialist'
+    return tuple(prompts) if duty in prompts else (prompts[0], duty, *prompts[1:])
 
 
 def definitions(ctx: Context) -> list[tuple[str, AgentRoleDefinition]]:
@@ -159,7 +167,7 @@ class RoleService:
         # Source identity survives project reuse while generated prompt names never overwrite a shipped component.
         prompt_name = f'prompt.agents:generated_{ctx.require_store().project_id}_{name}'
         version, _ = prompt_files.save_edit(prompt_name, duty, format='text')
-        references = ['prompt.orchestration:common', prompt_name]
+        references = ['prompt.orchestration:common', 'prompt.orchestration:specialist', prompt_name]
         row = {'name': name, 'purpose': purpose, 'prompts': references, 'source': {**(source or {}), 'duty': duty},
                'version_id': version.version_id, 'at': home.now()}
         with ctx.require_store().tables() as tx:
@@ -372,5 +380,4 @@ def confirm_context(ctx: Context) -> dict[str, Any]:
     if result.get('eligible'):
         forget_shown(ctx.session)
     return result
-
 

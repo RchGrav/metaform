@@ -38,7 +38,7 @@ def read_resource(folder, uri, session):
 
 def test_native_responsibility_inventory_and_selected_identity(project_folder, monkeypatch):
     roles = [one for _, values in provided(project_folder, 'agent.roles') if isinstance(values, tuple) for one in values]
-    assert len(roles) == 18
+    assert len(roles) == 22
     assert {one.name for one in roles} >= {'triage', 'gc', 'functionality', 'facilitator', 'role_creator'}
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
     for definition in roles:
@@ -53,15 +53,31 @@ def test_native_responsibility_inventory_and_selected_identity(project_folder, m
     assert 'User register retained.' in triage['components'][-1]['text']
 
 
+@pytest.mark.parametrize('role', ['interviewer', 'researcher', 'architect', 'planner', 'decomposer',
+                                  'specialist', 'harsh_critic'])
+def test_preparation_and_delivery_duties_resolve_as_role_resources(project_folder, role):
+    resolved = resolve_agent_role(project_folder, role)
+    assert not resolved['missing'] and not resolved['problems']
+    body = read_resource(project_folder, f'metaform://role/{role}', f'read-{role}')[0]
+    assert resolved['components'][-1]['text'] in body
+
+
 def test_generated_role_has_no_xml_and_retains_source_and_version_history(project_folder):
     ctx = context('agents', project_folder)
     first = service(project_folder).publish(ctx, 'protocol_auditor', 'Inspect protocol transitions.',
                                             'Read caller context & report <actual> transitions.',
                                             {'commission': 'gc-1', 'requester': 'worker-2'})
     assert not first['problems']
+    assert [one['name'] for one in first['components'][:2]] == [
+        'prompt.orchestration:common', 'prompt.orchestration:specialist']
     assert first['components'][-1]['text'] == 'Read caller context & report <actual> transitions.'
     name = first['components'][-1]['name']
     assert prompt_files.shipped('agents', name.partition(':')[2]) is None
+    # Existing definitions stored before shared Specialist composition gain it on their next resolution.
+    with ctx.require_store().tables() as tx:
+        tx.update('definitions', {'name': 'protocol_auditor'}, {'prompts': ['prompt.orchestration:common', name]})
+    restored = resolve_agent_role(project_folder, 'protocol_auditor')
+    assert restored['components'][1]['name'] == 'prompt.orchestration:specialist'
     second = service(project_folder).publish(ctx, 'protocol_auditor', 'Inspect protocol transitions.',
                                              'Read caller context and return state-transition evidence.',
                                              {'commission': 'gc-1', 'requester': 'worker-3'})

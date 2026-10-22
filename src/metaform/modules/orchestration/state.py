@@ -957,7 +957,22 @@ class Orchestration:
         if resolution.get('problems'):
             raise Stop(f'Role {name} cannot be resolved: {resolution["problems"]}', f'metaform agents resolve {name}')
         store = own(ctx)
-        node, places = location(store, ctx.nouns.get('at'), parent)
+        reviewed = None
+        if name == 'harsh_critic':
+            if parent['state'] in ENDED:
+                raise Stop('Harsh Critic needs an active review caller.',
+                           'Request review from the active workflow assignment, not an ended role commission.')
+            target = cast(dict[str, Any], ctx.nouns.get('context') or {}).get('reviewed_work')
+            if target:
+                reviewed = self.assignment(ctx, work_id=str(target))
+                if reviewed is None:
+                    raise Stop(f'No assignment for reviewed ticket {target}.', HELP)
+            elif parent['authored_role_uri'] in FACILITATORS:
+                raise Stop('Facilitator reviews need the delivered ticket identity.',
+                           'Delegate harsh_critic with context={"reviewed_work":"DELIVERED_TICKET_ID"}.')
+            else:
+                reviewed = parent
+        node, places = location(store, ctx.nouns.get('at'), reviewed or parent)
         task = str(ctx.nouns['task'])
         if ctx.nouns.get('context'):
             task += '\n\nSupplied caller context:\n' + json.dumps(ctx.nouns['context'], ensure_ascii=False)
@@ -973,8 +988,10 @@ class Orchestration:
                 raise Stop('The parent was stopped before delegation.', HELP)
             work = store.add_work(node, None, task=task, title=ctx.nouns.get('title') or result.split('\n')[0])
             child = new_assignment(tx, work, name, ident=ident, parent=current, task=task,
+                review=reviewed,
                 result=result, locations=places, mode=current_mode(tx, current),
-                specification=current['specification'], candidate=ctx.nouns.get('candidate') or current['candidate'],
+                specification=(reviewed or current)['specification'],
+                candidate=ctx.nouns.get('candidate') or (reviewed or current)['candidate'],
                 return_to={'assignment_id': current['assignment_id'], 'continuation_id': ident})
             transfers = handoff and current['gc_assignment_id'] != current['assignment_id'] and \
                 not current['reviewed_assignment_id']
@@ -1344,6 +1361,17 @@ class Orchestration:
                 return held
             if held.get('stop'):
                 return held
+            critic = held['authored_role_uri'] == 'metaform://role/harsh_critic'
+            verdict_data: Any = result
+            verdict = str(cast(Mapping[str, Any], verdict_data).get('verdict')
+                          if isinstance(verdict_data, Mapping) else verdict_data).strip()
+            rejected = critic and re.match(r'REJECT\b', verdict, re.IGNORECASE) is not None
+            if rejected and not findings:
+                raise Stop('Harsh Critic rejection needs concrete findings.',
+                           'Return REJECT with findings containing defects, evidence, fixes and verification.')
+            if rejected and not held.get('reviewed_assignment_id'):
+                raise Stop('Harsh Critic rejection needs a recorded review target.',
+                           'Delegate harsh_critic from an active caller with context.reviewed_work.')
             record = store.ticket(work_id).work
             if not record.done:
                 store.finish_work(work_id, str(result), 'Assigned outcome returned.',
@@ -1352,8 +1380,14 @@ class Orchestration:
                               candidate=candidate or held['candidate'])
             reviewed_gc = row_for(tx, assignment_id=held.get('reviewed_assignment_id'))
             superseded = reviewed_gc is not None and self._decided(tx, store, reviewed_gc, held)
-            filed = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
-                     for number, finding in enumerate(findings or [])] if reviewed_gc and not superseded else []
+            filed = []
+            if reviewed_gc and not superseded:
+                if rejected:
+                    filed = [self._critic_finding(ctx, tx, store, reviewed_gc, held, finding, returned['evidence'])
+                             for finding in findings]
+                elif not critic:
+                    filed = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
+                             for number, finding in enumerate(findings or [])]
             if filed:
                 returned = update(tx, returned, findings_filed=list(dict.fromkeys(
                     landed for landed, _ in filed if landed)))
@@ -1426,6 +1460,27 @@ class Orchestration:
                 if record and str(record['created']) >= since and names(instruction.get('text'), subjects, called):
                     return True
         return False
+
+    @staticmethod
+    def _critic_finding(ctx: Context, tx: TableTx, store: Store, reviewed: Mapping[str, Any], review: Mapping[str, Any],
+                        finding: Any, evidence: Any) -> tuple[str, dict[str, Any]]:
+        """Keep Harsh Critic corrections separate from the existing FQC canonical-ticket repair path."""
+        fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
+            'summary': str(finding)}
+        title, task = finding_text(fields)
+        # Preserve fields beyond the standard finding renderer, including requirement, impact and expected behavior.
+        task += '\n\nFinding details:\n' + json.dumps(fields, ensure_ascii=False, indent=2)
+        task += f'\n\nReviewed work: {reviewed["work_id"]}\nReview: {review["work_id"]}'
+        node, _ = location(store, None, reviewed)
+        work = store.add_work(node, None, task=task, title=title, kind='flawed',
+                              note=f'Review evidence: {prose(evidence)}')
+        store.inherit_work_board(work.id, str(reviewed['work_id']))
+        # This dependency is generated by the review contract, using the board's existing completion gate.
+        verb(replace(ctx, surface='internal'), 'map', 'work', op='edit', id=work.id,
+             after_work=[str(reviewed['work_id'])])
+        assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'create': True, 'automatic': True}))
+        assigned = update(tx, assigned, return_to=review['return_to'])
+        return work.id, assigned
 
     @staticmethod
     def _finding(tx: TableTx, store: Store, gc: Mapping[str, Any], assessment: Mapping[str, Any],
