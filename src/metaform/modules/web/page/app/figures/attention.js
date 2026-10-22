@@ -3,7 +3,7 @@
 import '/page/app/figures/cut.js';  // the part before runs first, so the parts run in the page's order
 // The graph, glass and figures share the import map's one local Three.js runtime, VIEW-003 and VIEW-025.
 import * as THREE from 'three';
-import {reduced} from '/page/app/core/dom.js';
+import {$, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
 import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
 import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
