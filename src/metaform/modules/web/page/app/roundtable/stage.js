@@ -68,6 +68,7 @@ const CLOCK = {last: 0};
  * canvas is on the page, kept by its resize observer. */
 const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
+const CHAIR = {writing: false};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -108,9 +109,18 @@ UI.leave = h('button', {class: 'btn sm quiet rt-leave', type: 'button', onclick:
   title: 'Back to the map; the table runs on (Escape)'}, 'Leave');
 UI.newTable = h('button', {class: 'btn sm quiet rt-new', type: 'button', hidden: true,
   onclick: () => openRoundtable(true)}, 'New table');
+UI.hold = h('button', {class: 'btn sm rt-hold', type: 'button', hidden: true,
+  onclick: () => chairControl(TABLE.state === 'held' ? 'continue' : 'hold')}, 'Hold');
+UI.discussionComment = h('textarea', {class: 'rt-discussion-comment', rows: 2,
+  'aria-label': 'Discussion comment', placeholder: 'Add to the discussion', oninput: renderChair});
+UI.sendDiscussion = h('button', {class: 'btn sm', type: 'submit'}, 'Send comment');
+UI.discussion = h('form', {class: 'rt-discussion', hidden: true,
+  onsubmit: event => { event.preventDefault(); chairControl('comment'); }},
+  UI.discussionComment, UI.sendDiscussion,
+  h('small', {}, 'Comments enter at the next gap. Hold pauses AI turns. Continue resumes them.'));
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.newTable, UI.leave),
-  UI.transcript);
+UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold, UI.newTable, UI.leave),
+  UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
@@ -206,6 +216,8 @@ function resetTable() {
   UI.answer.textContent = '';
   UI.ideasBox.hidden = UI.rankingsBox.hidden = UI.answerBox.hidden = true;
   UI.topic.textContent = ''; UI.state.textContent = '';
+  UI.discussionComment.value = '';
+  renderChair();
 }
 /* The seats' characters given back, so the agents at work may take them again. */
 function unseat() {
@@ -575,12 +587,38 @@ async function decidePipeline(action) {
     if (PIPELINE.value?.state === 'awaiting' && !PIPELINE.reviewed) reviewPipeline();
   } }
 }
+function renderChair() {
+  const active = !!TABLE.id && (TABLE.state === 'running' || TABLE.state === 'held');
+  UI.hold.hidden = UI.discussion.hidden = !active;
+  UI.hold.textContent = TABLE.state === 'held' ? 'Continue' : 'Hold';
+  UI.hold.disabled = CHAIR.writing;
+  UI.discussionComment.disabled = CHAIR.writing;
+  UI.sendDiscussion.disabled = CHAIR.writing || !UI.discussionComment.value.trim();
+}
+async function chairControl(action) {
+  if (!TABLE.id || CHAIR.writing || !['running', 'held'].includes(TABLE.state)) return;
+  const table = TABLE.id, text = UI.discussionComment.value;
+  if (action === 'comment' && !text.trim()) return;
+  CHAIR.writing = true;
+  renderChair();
+  try {
+    const found = await wrote('/api/roundtable-control', {table, action,
+      ...(action === 'comment' ? {text} : {})});
+    if (!found || TABLE.id !== table) return;
+    if (found.state) stateIs(found.state, found.reason);
+    if (action === 'comment') {
+      UI.discussionComment.value = '';
+      toast('Comment queued for the next gap between turns.');
+    }
+  } finally { CHAIR.writing = false; renderChair(); }
+}
 function stateIs(state, reason) {
   TABLE.state = state || TABLE.state;
   const words = {running: 'The table is talking', held: 'Held', ended: 'Ended', ending: 'Ending', opening: 'Opening',
     refused: 'Refused'}[TABLE.state] || TABLE.state;
   UI.state.textContent = reason && TABLE.state !== 'running' ? `${words}: ${reason}` : words;
   UI.root.dataset.state = TABLE.state;
+  renderChair();
 }
 /* One line of the transcript, whole, the newest kept in view unless the person has scrolled up to read. */
 function said(kind, who, text, after = '') {

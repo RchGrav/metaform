@@ -223,7 +223,7 @@ DISPATCH_ROUTES = frozenset({
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
     '/api/dispatch-configure', '/api/dispatch-session-prompts', '/api/workflow-answer', '/api/workflow-cancel',
-    '/api/roundtable-open', '/api/roundtable-decision'})
+    '/api/roundtable-open', '/api/roundtable-decision', '/api/roundtable-control'})
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
@@ -1421,6 +1421,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/workflow-answer': self.workflow_answer, '/api/workflow-cancel': self.workflow_cancel,
                   '/api/roundtable-open': self.roundtable_open,
                   '/api/roundtable-decision': self.roundtable_decision,
+                  '/api/roundtable-control': self.roundtable_control,
                   '/api/settings': self.set_setting, '/api/settings/reset': self.reset_setting,
                   '/api/settings/choices': self.read_choices, '/api/modules': self.set_module}
         if path not in writes:
@@ -2616,6 +2617,27 @@ class Handler(BaseHTTPRequestHandler):
         except (Stop, ValueError) as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
+    def roundtable_control(self, given: dict[str, Any]) -> None:
+        """The person's discussion controls, using the existing table and its stored chair token."""
+        action, table = given.get('action'), given.get('table')
+        if action not in ('hold', 'continue', 'comment'):
+            return self.send(400, {'error': 'Choose Hold, Continue or Comment.'})
+        if not isinstance(table, str) or not table.strip():
+            return self.send(400, {'error': 'Choose a roundtable.'})
+        nouns = {'table': table}
+        if action == 'comment':
+            text = given.get('text')
+            if not isinstance(text, str) or not text.strip():
+                return self.send(400, {'error': 'A comment says something.'})
+            nouns['text'] = text.strip()
+        try:
+            found = module_verb(given, 'roundtables', action, nouns)
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except (Stop, ValueError, OSError) as error:
+            return self.refuse(error, 400)
+        self.send(200, found)
 
     def roundtable_decision(self, given: dict[str, Any]) -> None:
         try:
