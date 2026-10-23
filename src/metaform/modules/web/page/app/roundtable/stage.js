@@ -4,7 +4,7 @@
  * this part is what the person sees of it.
  *
  * Entering it, from the Roundtable button of the selected part or the T key, the person asks their question, keeps the
- * default seats (roundtables_seats) or picks their own, each an agent and one of its models, and starts. The 3D map
+ * last lineup or project defaults (roundtables_seats), or picks their own seats, and starts. The 3D map
  * sinks back, dimmed, pushed away and softly blurred, and goes on moving behind the stage. On the stage each seat is a figure, its agent's character, in a
  * shallow arc across the screen, facing the person, its name under it. The seat with the floor steps forward and says
  * its turn in a word bubble whose tail points at it; each bubble expires by its words, independently of the floor;
@@ -71,6 +71,7 @@ const CLOCK = {last: 0};
 const VIEW = {renderer: null, scene: null, camera: null, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0};
 const PIPELINE = {value: null, reviewed: '', text: '', version: 0, reading: false, writing: false};
 const CHAIR = {writing: false};
+const LINEUP = {project: null, saving: false};
 
 /* ---------- the stage's elements, made with the page ---------- */
 const UI = {};
@@ -127,6 +128,8 @@ UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table'
   placeholder: 'What should the table answer?'});
 UI.seatList = h('ol', {class: 'rt-seatlist', 'aria-label': 'The seats, in speaking order'});
 UI.addSeat = h('button', {type: 'button', class: 'btn sm quiet', onclick: () => addSeat('claude/opus')}, 'Add a seat');
+UI.saveParticipants = h('button', {type: 'button', class: 'btn sm quiet', onclick: saveParticipants},
+  'Save participants');
 UI.where = h('span', {class: 'rt-where'});
 UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER, step: 1, value: 512,
   name: 'reply_limit', required: true});
@@ -134,7 +137,9 @@ UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
-  h('h2', {}, 'Roundtable', UI.where), UI.question, h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat),
+  h('h2', {}, 'Roundtable', UI.where), UI.question,
+  h('div', {class: 'rt-seatsetup'}, 'Seats', UI.seatList, UI.addSeat, UI.saveParticipants,
+    h('small', {}, 'Start remembers this browser’s lineup. Save participants sets this project’s defaults.')),
   h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
   h('small', {}, 'Applies to each discussion reply.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
@@ -171,10 +176,16 @@ export async function openRoundtable(fresh = false) {
   UI.automate.checked = false;
   UI.start.disabled = false;
   UI.question.focus();
+  const project = S.project;
   try {
-    const found = await getJson(`/api/roundtable?project=${encodeURIComponent(S.project)}`);
+    const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}`);
+    if (project !== S.project) return;
     OFFERED.clear();  // each agent's models read again, as it offers them now
-    if (!UI.seatList.children.length) for (const seat of found.seats || []) addSeat(String(seat));
+    if (LINEUP.project !== project || !UI.seatList.children.length) {
+      fill(UI.seatList);
+      LINEUP.project = project;
+      for (const seat of rememberedParticipants(project, found.seats || [])) addSeat(String(seat));
+    }
   } catch (error) { toast(error.message); }
 }
 function showStage() {
@@ -242,6 +253,7 @@ async function startTable() {
   const listed = seatsChosen();
   const replyLimit = Number(UI.replyLimit.value);
   if (!Number.isSafeInteger(replyLimit) || replyLimit < 1) { UI.replyLimit.reportValidity(); return; }
+  if (listed.length) rememberParticipants(S.project, listed);
   UI.start.disabled = true;
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
@@ -322,6 +334,34 @@ function seatsChosen() {
     if (!model) return [];
     return agent ? [`${agent}/${model}`] : model.split(/[,\s]+/).filter(Boolean);
   });
+}
+/* Last-started lineups belong to this browser and project. Explicit saving reuses the project setting. */
+const lineupKey = project => `metaform.roundtable.participants.${project}`;
+function rememberedParticipants(project, defaults) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(lineupKey(project)));
+    if (Array.isArray(saved) && saved.length && saved.every(seat => typeof seat === 'string' && seat.trim())) {
+      return saved;
+    }
+  } catch { /* unavailable or invalid browser storage falls back to project defaults */ }
+  return defaults;
+}
+function rememberParticipants(project, seats) {
+  try { localStorage.setItem(lineupKey(project), JSON.stringify(seats)); }
+  catch { toast('This browser could not remember the lineup. Use Save participants for project defaults.'); }
+}
+async function saveParticipants() {
+  if (LINEUP.saving) return;
+  const seats = seatsChosen(), project = S.project;
+  if (!seats.length) { toast('Choose at least one participant.'); return; }
+  LINEUP.saving = true;
+  UI.saveParticipants.disabled = true;
+  try {
+    const saved = await wrote('/api/settings', {key: 'roundtables_seats', value: seats});
+    if (!saved) return;
+    rememberParticipants(project, seats);
+    toast('Participants saved as this project’s roundtable defaults.');
+  } finally { LINEUP.saving = false; UI.saveParticipants.disabled = false; }
 }
 
 /* ---------- the table's events ---------- */
