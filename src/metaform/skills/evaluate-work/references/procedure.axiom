@@ -1,0 +1,5 @@
+# Evaluate work
+
+Use `orchestration_apply name=METHOD task="the outcome and candidate"` for a local method. `verifier` establishes outcome evidence, `reviewer` examines requirement coverage and implementation quality, and `dogfood` exercises the actual user journey.
+
+Use existing evidence and add focused observation where it resolves a material question. A local evaluation remains local evaluation. Requested or configured independent assessment uses the existing `functionality` or `harsh_critic` assignment, with its actual reviewed candidate and correction route. Load expertise through the Facilitator when it contributes.

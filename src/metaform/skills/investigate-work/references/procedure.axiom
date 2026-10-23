@@ -1,0 +1,6 @@
+# Investigate work
+
+Load the method needed for the contribution with `orchestration_apply name=METHOD task="the question"`.
+`investigator` traces actual behavior and causes. `researcher` establishes external or technical evidence. `synthesizer` reconciles findings and relevant disagreement.
+
+Retain the original question, functional understanding and source evidence. Use these methods in the current context, with focused parallel or independent traces when they help. Return the contribution to the ongoing assignment; use the Facilitator for additional domain expertise.

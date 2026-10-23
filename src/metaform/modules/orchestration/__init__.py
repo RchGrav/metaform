@@ -10,6 +10,9 @@ from metaform.module import AgentRoleDefinition, Context, Module, Noun, Provides
 
 from .bmad import definitions as bmad_definitions
 from .bmad import inspect as bmad_inspect
+from .facilitation import facilitate, runtime as current_runtime
+from .methods import apply as apply_method
+from .methods import listing as method_listing
 from .routing import roles_changed
 from .specifications import change as publish_change
 from .specifications import inspect_change
@@ -34,8 +37,8 @@ ROLE_DUTIES = (
     ('triage', 'The Liaison: interview the person, prepare functional tickets and hand the Planner their intent.',
      'prompt.dispatch:system'),
     ('gc', 'Own a ticket, coordinate its swarm and validate delivery.', 'prompt.orchestration:gc'),
-    ('functionality', ('The Harsh Critic: independently assess delivered work and functional quality against C(T); '
-                       'approve, or reject with corrective tickets.'), 'prompt.orchestration:functionality'),
+    ('functionality', ('Independently assess delivered functionality against C(T); '
+                       'return findings through the reviewed work’s correction route.'), 'prompt.orchestration:functionality'),
     ('investigator', 'Establish behavior, causes, dependencies and implementation entry points.',
      'prompt.orchestration:investigator'),
     ('requirements', 'Express requested outcomes and consequential requirements precisely.', 'prompt.orchestration:requirements'),
@@ -59,12 +62,15 @@ ROLE_DUTIES = (
     ('synthesizer', 'Reconcile findings into a faithful combined result.', 'prompt.orchestration:synthesizer'),
     ('dogfood', 'Expose user-experience failures by using the actual product.', 'prompt.orchestration:dogfood'),
     ('release', 'Prepare the assigned release candidate and materials.', 'prompt.orchestration:release'),
-    ('facilitator', 'Assign specialists to tickets, create or reuse their expertise, and carry the critic\'s corrections.',
+    ('facilitator', 'Find, reuse and create specialist expertise; apply the method locally or as an assigned contribution.',
      'prompt.orchestration:role_creator'),
     # Retained for already recorded assignments; new commissions use facilitator.
     ('role_creator', 'Publish a reusable specialist duty requested by triage or a worker.', 'prompt.orchestration:role_creator'),
 )
-ROLES = tuple(AgentRoleDefinition(name, purpose, ('prompt.orchestration:common', prompt), specialist=False)
+ROLES = tuple(AgentRoleDefinition(name, purpose,
+              ('prompt.orchestration:common',
+               *(('prompt.orchestration:assessment_method',) if name in ('functionality', 'harsh_critic') else ()),
+               *(('prompt.orchestration:specialist',) if name == 'implementer' else ()), prompt), specialist=False)
               for name, purpose, prompt in ROLE_DUTIES)
 
 OBJECT = {'type': 'object', 'additionalProperties': True}
@@ -167,7 +173,7 @@ def credits(ctx: Context) -> Any:
 
 
 def select_runtime(ctx: Context) -> Any:
-    return SERVICE.runtime(ctx, str(ctx.nouns['work']), ctx.nouns.get('choice'))
+    return current_runtime(ctx)
 
 
 def episode(ctx: Context) -> Any:
@@ -205,6 +211,21 @@ MODULE = Module(
                Resource('metaform://orchestration/bmad', 'Installed BMAD roles',
                         'Actual installed entry points, versions, menus and managed role calls.', 'bmad')),
     verbs=(
+        Verb('methods', method_listing, 'Discover method families, responsibilities and execution choices.',
+             effect='read'),
+        Verb('apply', apply_method, 'Load a selected method or skill into the current context; keep current ownership.',
+             effect='read', nouns=(Noun('name', 'Method, skill name or registered responsibility URI.'),
+                                  Noun('task', 'The contribution to apply it to, preserved exactly.', required=False))),
+        Verb('facilitate', facilitate, 'Find, use or publish specialist expertise in the current context.',
+             nouns=(Noun('op', 'find, use, publish or runtime; find by default.', required=False),
+                    Noun('query', 'Words describing the needed contribution; ranks the registry.', required=False),
+                    Noun('role', 'Reusable expertise name or URI.', required=False),
+                    Noun('purpose', 'Reusable expertise purpose for creation.', required=False),
+                    Noun('duty', 'Reusable expertise instructions for creation.', required=False),
+                    Noun('task', 'Contribution for loaded expertise, kept separate from its definition.', required=False),
+                    Noun('work', 'Ticket whose runtime is being selected.', required=False),
+                    Noun('choice', 'Advertised agent/model and optional effort, task_type, confidence and reason.',
+                         'json', required=False, schema=OBJECT))),
         Verb('functionality', functionality, 'Read a ticket’s local requirements and dependents as a named graph and Markdown.',
              effect='read', nouns=(Noun('work', 'Ticket id.'),)),
         Verb('route', route, 'Select specialist expertise or automatically commission the Facilitator.',
@@ -212,7 +233,7 @@ MODULE = Module(
                     Noun('refresh', 'Retry an unresolved selection after provider or credit recovery.', 'bool', required=False))),
         Verb('credits', credits, 'Read OpenRouter credit and observation time; refresh explicitly on demand.',
              effect='read', nouns=(Noun('refresh', 'Fetch the current account balance.', 'bool', required=False),)),
-        Verb('runtime', select_runtime, 'Choose ticket runtime through Jev or record its Facilitator fallback.',
+        Verb('runtime', select_runtime, 'Reuse or choose ticket runtime; the current agent can supply the Facilitator decision.',
              nouns=(Noun('work', 'Ticket id.'),
                     Noun('choice', 'Facilitator choice: agent, model, effort, task_type, confidence and reason.',
                          'json', required=False, schema=OBJECT))),

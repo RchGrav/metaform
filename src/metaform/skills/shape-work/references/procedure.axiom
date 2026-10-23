@@ -1,0 +1,11 @@
+# Shape work
+
+Choose the contribution needed now and load it with `orchestration_apply name=METHOD task="the actual contribution"`:
+
+- `interviewer`: guided idea development with the user.
+- `requirements`: exact source intent, referents and observable outcomes.
+- `architect` or `designer`: build design or user experience.
+- `planner`: the requested written plan.
+- `decomposer`: a fresh project board and actual ticket dependencies from the plan.
+
+These are selectable methods, not a sequence of agents. Apply a useful method within the current informed context. Preserve any explicitly requested stage, proposal review or independent contribution. Keep the source request distinct from interpretation and design. Use the Facilitator for domain expertise.
