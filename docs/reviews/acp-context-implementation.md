@@ -140,6 +140,180 @@ Current transport fixtures must accumulate inline duty text with resource respon
 
 Exact source history, C(T) and functional identities remain independent of summaries and plans. Adaptive specifications, current user direction, direct peer return routes, human-message ordering, cancellation and dynamic blacklist behavior retain their existing implementation. The focused checks below cover those contracts; native formatter acceptance also checks meaningful false/zero/blank values, generator order and the protected-file exception. No schema transition, mandatory stage, policy gate or additional classifier is introduced.
 
+## Purpose context and tool instructions follow-up, 2026-10-23
+
+This subsequent change starts from `27b77cae`. The native measurements above
+predate it. No new native model run, token comparison, cost measurement or
+inference-saving claim accompanies this follow-up.
+
+### What agents actually received
+
+The existing `functional_context` renderer already supplies direct requirements
+and dependents as a Mermaid diagram, stable node identities and RE-owned OP,
+PE-specific EF and IFD descriptions. The ordinary assignment handoff previously
+sent a compact task, state, notes, a limited purpose summary, counts and resource
+pointers. The fuller region was available through a later read rather than
+included in the actual assignment prompt.
+
+Fresh and related-card worker assignments now include that existing rendered
+region and an address legend on their first actual turn. This uses the accepted
+component ledger: preparation acknowledges nothing, failed delivery retains the
+exact content for retry, unchanged context is suppressed, and a changed region
+is eligible at the next assignment. Human-message order and source instructions
+remain intact. It adds no model turn, classifier or planning stage. The renderer
+still describes direct relationships, not a complete transitive dependency
+closure, neighboring task-state inventory or inferred architectural boundaries.
+
+Shared connection rules now ask agents to record intended functionality and
+purpose while planning or assigning it, including source and unresolved details.
+Existing fresh ACP turns already received shared rules; moving them into the
+common selected-component preparation path corrects consistency and receipt
+handling, rather than demonstrating their prior universal absence.
+
+### Construction, planning and knowledge
+
+`metaform://map/construction`, also available through `map guide`, serves an
+adaptation of the intake for existing-map operations. The actually served
+Canonical Intake is `intake.axiom`. Its construction declarations, constraints,
+validity conditions and root-trace invariant are retained verbatim. The original
+`intake.xml` contributes separately identified definitions, fuller naming rules
+and valid/invalid examples. The guide records both exact source digests and the
+selected wrapper identity. Neither intake source nor protected root instruction
+files was edited.
+
+The same final coverage check found that initial intake tools had declaration
+help but no receipt for the actual intake procedure. Intake now contributes its
+project-bound procedure body before start, element, purpose, remove and finish
+operations. Its existing resource read queues that exact body. A dispatched
+intake's first turn can acknowledge the procedure already present in that turn
+after transport acceptance, without delivering it twice. Appended request and
+mode data do not invalidate an unchanged source-body receipt.
+
+The current project's `intake_file` override is unset. A configured intake file
+is respected by the initial-intake contributor, with its own source digest and
+project bindings. A custom XML procedure whose middle `{prompt}` binding changes
+the body cannot acknowledge an undelivered empty variant; an explicit matching
+read through the combined tool-instruction URI remains necessary. A separate
+procedure-read pointer is omitted for sources with such slots, because active
+launch-mode data can also change that resource's rendered body. Missing or
+invalid UTF-8 configured files return the ordinary error and next step during
+preflight, with no target effect or delivery receipt. The existing-map guide
+derives the shipped intake's
+grammar and identifies that source separately from a custom intake procedure.
+
+Base naming and valid/invalid distinctions stand. Proposals and unresolved design
+belong in an explicitly named CEL constrained to its declared question or
+variable. Established planned base construction must satisfy the same grammar
+and RE/OP/PE/EF relationships as existing functionality. Part state remains
+outside C(T). The public `map_work` path now accepts no-task `unbuilt` and
+`under-construction` states already supported by storage. They remain visible
+non-work records and do not distribute, autostart or continue an agent.
+
+Seven current planning intentions were recorded in `planned_capabilities`,
+finished and selected at `code`: provider integrations, service discovery,
+provider configuration, provider templates, interactive previews, harness setup
+and media generation/editing/integration guidance. Their [export](planned-capabilities.json)
+retains purposes, proposed encounters, source references and unresolved details.
+Their `unbuilt` value is knowledge, not seven independently staged base elements
+or executable assignments. Six bare base additions made prematurely during this
+investigation were removed through versioned refinement after preserving their
+intent in this layer. Existing user-configured authority controls, stops,
+budgets and dynamic blacklists remain in force. No blanket role restriction was
+removed.
+
+### Instructions before tool execution
+
+The owner explicitly chose a common prerequisite for tools with specific usage
+instructions. The old successful-result guidance arrived after the operation.
+MCP now requires current applicable instructions before the target executes.
+Discovery advertises `metaform://tools/<tool>/instructions[/<op>]`, with
+`metaform_instructions tool=... op=...` as the equivalent gateway route.
+An unguided attempt returns `instructions_required`, `executed=false` and a
+concrete read route. It does not perform the requested target operation.
+
+The existing declarations supply tool usage. Shared module rules and optional
+`agent.tool.instructions` contributions compose with it. The map contributes its
+intake adaptation through that same contract. The canonical nested argument
+schema has its own exact receipt, so a schema-only edit cannot silently retain
+permission based on unchanged prose. Shared components deduplicate across tools,
+operation-specific bodies remain distinct, and only complete content surviving
+response shaping is acknowledged. Review found and corrected both the
+schema-only mismatch and a fallback receipt gap for module-owned resource reads
+when the agent-context service is unavailable.
+
+Unnamed stdio and stateless clients can use the existing logical-context handle
+across server replacement. Named dispatch and gateway identities take priority.
+During live development, source reloads changed process identities, initially
+making delivered guides appear unread. A stable handle resolved that identity
+boundary without another onboarding operation. Live gateway reads and retries
+successfully performed the six versioned removals and layer finalization.
+
+Discovery, instruction reads and tools without specific instructions have no
+instruction prerequisite. Existing schema validation and explicit user controls
+still apply after delivery. A receipt proves observable delivery, not model
+comprehension or semantic retention. This change enforces the MCP execution
+surface; arbitrary CLI commands and filesystem writes are not constrained by it.
+The chassis's CLI map/archive imports likewise remain outside this MCP check.
+The fork template documents the provider contract without installing a dummy
+provider. Specifications MCP-044 and CTX-094 record the current requirements.
+
+The resource investigation also corrected three retired prompt identities in
+MCP reads: shared rules, memory instructions and glossary now resolve their
+canonical `prompt.<module>:<name>` addresses. Clean-store resource reads no
+longer depend on historical aliases.
+
+### Verification of this follow-up
+
+Focused checks cover actual MCP stdio and HTTP calls, gateway aliases, no target
+effect before instruction delivery, selected source changes, schema-only changes,
+operation isolation, context and handle isolation, compaction, response shaping,
+shared construction/module components, missing agent-context service and
+unregistered projects. Dispatch checks cover actual outgoing regional content,
+acceptance/retry receipts, related-card changes and exact human-message order.
+Public map checks cover visible non-work stages without automatic execution.
+The check results below describe this follow-up separately from the historical
+native experiments.
+
+- All 29 intake-guide and direct-runtime cases pass in 143.07 seconds.
+- Four public stage/work/default-eligibility cases pass in 11.18 seconds. Two
+  configured-authority and dynamic-withholding cases pass in 5.89 seconds.
+- The focused MCP prerequisite/resource suite passes 25 cases in 46.36 seconds;
+  its additional public resource/fallback regression passes in 5.63 seconds.
+  These runs overlap other focused source checks and are not summed.
+- Nine final intake receipt/source/error cases pass in 26.19 seconds. The wider
+  intake run had 76 passes and one obsolete unguided MCP fixture failure; that
+  fixture was migrated to explicit reads, preserving its report-path privacy
+  assertion, and passes separately. Four additional direct/actual-stdio
+  source-error checks pass in 7.86 seconds, including aliases and resource reads.
+- Whole-project Pyright reports zero errors and warnings. Ruff passes for all
+  changed Python files, including new guide code. XML parsing, the seven-record
+  export checks and `git diff --check` pass. Protected root instructions and both
+  intake sources have no diff from the starting commit.
+- Independent bounded review found no remaining concrete prerequisite bypass,
+  deadlock or receipt mismatch after the corrections above, including the final
+  intake source-error and custom-URI rechecks. This is not a
+  proof of model comprehension or a repository-wide green-suite claim.
+- CI-scope Ruff still reports seven unrelated diagnostics in the archived page
+  smoke script, `test_ticket_fast_ui.py` and `test_zz_diag_tmp.py`. All three
+  files are unchanged from `27b77cae`, establishing that these diagnostics
+  predate this follow-up. They were left outside this repair. Earlier unrelated
+  suite failures remain documented in the historical baseline artifact; this
+  follow-up does not claim a fresh full-suite classification.
+
+Existing MCP-039 fixtures required migration from implicit instructions after
+success to explicit MCP-044 reads before use. Simulated informed clients now
+follow one actual prerequisite response and retry the original operation; raw
+prerequisite tests continue calling the wire directly. Six raw enforcement
+cases pass after that helper change. The existing synchronous-task cancellation
+fixture now waits for actual handler entry before asserting completion after
+cancellation. The unchanged baseline case passes, and current pre-entry
+cancellation correctly performs no work. This was a fixture timing assumption,
+not a production cancellation defect or justification to suppress cancellation.
+Ten existing guide, operation-filter, nested-schema, resource-registry, consent,
+task, compaction and stateless-HTTP scenarios pass across focused runs. The
+[baseline record](acp-baseline-checks.json) retains the exact migration results,
+including the obsolete assertions corrected and the separate final-case rerun.
+
 ## Initial implementation verification (`8df925ee`)
 
 Checks ran on Linux with Python 3.13. Passing counts below describe separate runs with overlapping coverage and must not be added together.

@@ -21,6 +21,15 @@
 <counts></counts>
 <!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules></rules>
+<!-- Ordinary verb-specific instructions are generated from declarations and must be read before tool execution.
+     Keep additional tool usage in named prompts here, resolved by an optional
+     Provides('agent.tool.instructions', callable). Its callable receives (ctx, tool, op) and returns exact
+     named/versioned components for applicable tools and operations, or an empty sequence. A component may
+     include read={'uri': ...}; the canonical combined guide is metaform://tools/<tool>/instructions[/<op>].
+     Readers use ctx.queue_context(components, epoch), and only complete delivered bodies receive receipts.
+     Changed effective content becomes due again. Keep catalog and instruction retrieval reachable, without
+     repeating tool instructions in role prompts or sending all schemas at startup. Receipts establish delivery,
+     not comprehension. This template declares no provider and needs no empty instruction prompt. -->
 <!-- Optional agent.context.changes providers return compact references through pending(ctx, session),
      then acknowledge the exact revisions through delivered(ctx, session, notices) after transport acceptance.
      Any notice wording authored by the module belongs in a named prompt here and is read by that provider.

@@ -14,6 +14,117 @@ from metaform.modules.orchestration.state import SERVICE
 pytestmark = pytest.mark.kind('simulation')
 
 
+@pytest.mark.parametrize('continuation', [False, True])
+@pytest.mark.parametrize('fail_before_accept', [False, True])
+def test_assignment_region_rides_the_actual_turn_and_is_receipted_only_after_acceptance(
+        store, project_folder, monkeypatch, continuation, fail_before_accept):
+    from types import SimpleNamespace
+
+    from metaform.data import Node, functional_context
+    from metaform.module import prepare_agent_context
+    from metaform.modules.dispatch import runner
+    from tests.storekit import small_map
+
+    layer, _, _ = small_map(store)
+    for number in range(4):
+        address = f'code.provider.input_{number}'
+        store.add_element(layer.name, address, name=f'Input {number}')
+        store.add_join(layer.name, 'code.timer.kitchen', address,
+                       purpose=f'Regional purpose {number}', ef=f'Regional encounter {number}', ifd='receives')
+    store.add_element(layer.name, 'code.timer.unrelated', name='Unrelated neighboring namespace')
+    work = store.add_work(Node('element', 'code.timer.kitchen'), 'unbuilt', task='Build the assigned timer change.')
+    graph = functional_context(store, work)
+
+    async def exercise():
+        called = context('dispatch', project_folder, project='proj')
+        held = runner.Session(called, store, work, 'claude', [], prep=True,
+                              resume='retained-thread' if continuation else None)
+        held.runner = 'regional-recipient'
+        held.session_id = 'regional-thread'
+        held.episode_previous_work = 'previous-card' if continuation else ''
+        requests, receipts = [], []
+        accepted = runner.record_agent_context
+
+        async def deliver(**request):
+            text = request['prompt'][0].text
+            requests.append(text)
+            region = next((one for one in (held.inflight_context or {}).get('components', [])
+                           if one['name'].startswith('map:functional_context:')), None)
+            if region is not None:
+                assert prepare_agent_context(project_folder, held.runner, [region], project='proj')['components'], \
+                    'Rendering, queuing and transport entry must not acknowledge this region'
+            if fail_before_accept and len(requests) == 1:
+                raise OSError('Prompt transport rejected before acceptance')
+            held.context_delivered()
+            return SimpleNamespace(stop_reason='end_turn', usage=None)
+
+        async def nothing(*args, **kwargs):
+            return None
+
+        def record(*args, **kwargs):
+            receipts.extend(args[2])
+            return accepted(*args, **kwargs)
+
+        held.conn = SimpleNamespace(prompt=deliver)
+        for name in ('changed', 'note', 'flush', 'save_state', 'spend', 'peer_marked'):
+            monkeypatch.setattr(held, name, nothing)
+        for name in ('hush', 'arm', 'intake_clock', 'trace', 'carried'):
+            monkeypatch.setattr(held, name, lambda *args, **kwargs: None)
+        monkeypatch.setattr(runner, 'provided', lambda *args: [])
+        monkeypatch.setattr(runner, 'record_agent_context', record)
+        # A human turn may already be waiting when assignment rendering finishes.
+        first, second = 'My first exact direction.\nKeep its wording.', 'My second exact direction.'
+        held.turn(first, first=True, typed=True, word={'id': 'first'})
+        startup = held.episode_delta() if continuation else held.handed()
+        if continuation:
+            # Acceptance of an earlier turn cannot consume a region rendered for the upcoming assignment.
+            pending = list(held.pending_episode_components)
+            held.context_delivered()
+            assert pending and held.pending_episode_components == pending
+        held.queue_startup_context(startup)
+        held.turn(second, first=True, typed=True, word={'id': 'second'})
+        assert list(held.pending) == [first, second]
+        assert not receipts
+        held.prompts_ready = True
+        held.start_pending()
+        await asyncio.gather(*tuple(held.tasks))
+        assert len(requests) == 2, 'Regional orientation must ride existing turns'
+        assert first in requests[0] and second in requests[1]
+        assert graph['markdown'] in requests[0]
+        assert (graph['markdown'] in requests[1]) is fail_before_accept
+        for number in range(4):
+            assert f'Regional purpose {number}' in requests[0]
+            assert f'Regional encounter {number}' in requests[0]
+            assert f'code.provider.input_{number}' in requests[0]
+        assert 'Functionality relying on this element' in requests[0]
+        assert 'stakeholder.cook.home' in requests[0] and 'Counts down and rings.' in requests[0]
+        assert 'IFD: receives' in requests[0] and 'IFD is recorded separately' in requests[0]
+        assert 'Unrelated neighboring namespace' not in requests[0]
+        [region] = [one for one in receipts if one['name'].startswith('map:functional_context:')]
+        assert graph['markdown'] in region['text']
+        assert not prepare_agent_context(project_folder, held.runner, [region], project='proj')['components']
+        # Ordinary turns never render another graph. An unchanged related assignment also reuses its region.
+        held.turn('Continue the current contribution.')
+        await asyncio.gather(*tuple(held.tasks))
+        assert len(requests) == 3 and graph['markdown'] not in requests[-1]
+        assert requests[-1] == 'Continue the current contribution.'
+        monkeypatch.setattr(held, 'episode_previous_work', work.id)
+        repeated = held.episode_delta()
+        assert graph['markdown'] not in repeated
+        assert not held.pending_episode_components
+        store.add_join(layer.name, 'code.timer.kitchen', 'code.alarm.audible',
+                       purpose='A newly recorded regional requirement', ef='A new regional encounter', ifd='sends')
+        changed = functional_context(store, work)
+        held.queue_startup_context(held.episode_delta())
+        await asyncio.gather(*tuple(held.tasks))
+        assert len(requests) == 4 and changed['markdown'] in requests[-1]
+        assert requests[-1].count('```mermaid') == 1
+        assert work.task in requests[-1], 'The changed region travels with its actual assignment'
+        assert len([one for one in receipts if one['name'].startswith('map:functional_context:')]) == 2
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize('fail_before_accept', [False, True])
 @pytest.mark.parametrize('assigned_role', [False, True])
 def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_after_acceptance(
@@ -31,6 +142,10 @@ def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_a
     expected = prompt_files.resolve(name)
     assert expected['actual_version_id'] == selected.version_id
     assert expected['source']['kind'] == 'selected_edit'
+    rules_name = 'prompt.mcp:connect_rules'
+    original_rules = prompt_files.resolve(rules_name)
+    selected_rules, _ = prompt_files.save_edit(rules_name, f'{original_rules["text"]}\nSelected shared planning rules.')
+    expected_rules = prompt_files.resolve(rules_name)
     snapshot = None
     wrapper = None
     if assigned_role:
@@ -57,7 +172,8 @@ def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_a
         outgoing, carried = [], []
 
         def due():
-            return prepare_agent_context(project_folder, held.runner, [expected], project='proj')['components']
+            return prepare_agent_context(project_folder, held.runner, [expected, expected_rules],
+                                         project='proj')['components']
 
         async def deliver(**request):
             text = request['prompt'][0].text
@@ -66,6 +182,8 @@ def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_a
             outgoing.append((text, catalog))
             assert due(), 'Rendering and preparing the first prompt must not acknowledge delivery'
             assert text.count(expected['text']) == 1
+            assert text.count(expected_rules['text']) == 1
+            assert next(one for one in components if one['name'] == rules_name) == expected_rules
             for duty in snapshot['components'] if snapshot else []:
                 delivered = next(one for one in components if one['name'] == duty['name'])
                 assert delivered == duty
@@ -92,6 +210,9 @@ def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_a
             monkeypatch.setattr(runner, function, lambda *args, **kwargs: pytest.fail(
                 'Ordinary new work must not request or finish a marker diagnostic'))
         monkeypatch.setattr(held, 'carried', lambda versions: carried.extend(versions))
+        prepared_text = held.guidance('Prepare this contribution.', [])
+        assert expected_rules['text'] in prepared_text, 'Shared rules belong to the guidance preparation itself'
+        assert len(due()) == 2, 'Preparation must not acknowledge either selected component'
         held.turn('Implement the requested contribution.')
         await asyncio.gather(*tuple(held.tasks))
         if fail_before_accept:
@@ -109,8 +230,14 @@ def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_a
         catalog_versions = [one for one in carried if one.name == name]
         assert len(catalog_versions) == 1
         assert catalog_versions[0].version_id == selected.version_id
+        [rules_receipt] = [one for one in carried if one.name == rules_name]
+        assert rules_receipt.version_id == selected_rules.version_id
+        assert rules_receipt.selected_version_id == expected_rules['selected_version_id']
+        assert rules_receipt.rendered_fingerprint == expected_rules['rendered_fingerprint']
+        assert rules_receipt.rendered_text == expected_rules['text'] and rules_receipt.source == expected_rules['source']
         repeated = held.guidance('Another contribution.', [])
         assert expected['text'] not in repeated
+        assert expected_rules['text'] not in repeated
         for duty in snapshot['components'] if snapshot else []:
             assert duty['text'] not in repeated
             assert not prepare_agent_context(project_folder, held.runner, [duty], project='proj')['components']

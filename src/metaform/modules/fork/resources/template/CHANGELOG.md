@@ -4,6 +4,15 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- MCP requires current tool instructions before execution. Ordinary verb guides are generated from declarations;
+  optional `Provides('agent.tool.instructions', callable)` components supplement them. The callable receives
+  `(ctx: Context, tool: str, op: str | None)` and returns exact named/versioned components. Canonical reads use
+  `metaform://tools/<tool>/instructions[/<op>]`, with `metaform_instructions tool=<tool>` as an alias. Readers queue
+  components through `ctx.queue_context`; only complete delivered bodies receive receipts. Changed effective
+  content becomes due again. Catalog and instruction retrieval remain available. Tool usage stays with its
+  declarations and module-owned prompts, without full startup catalogs or repetition in role duties. The template
+  documents the provider contract without registering an inactive provider.
+
 - Optional `agent.context.changes` providers supply compact changed-reference notices through `pending(ctx, session)`
   and acknowledge exact accepted revisions through `delivered(ctx, session, notices)`. Dispatch attaches notices to
   the next scheduled turn. Providers retain consumed identities and tombstones, coalesce relevant external changes,

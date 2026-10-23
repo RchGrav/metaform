@@ -752,9 +752,15 @@ def test_over_mcp_a_report_is_the_text_given_and_no_file_is_read(home, project, 
     monkeypatch.setenv('METAFORM_HOME', str(home))
     secret = tmp_path / 'secret.txt'
     secret.write_text('not for a report', encoding='utf-8')
-    anyio.run(server.run_tool, project, 'intake_start', {})
-    anyio.run(server.run_tool, project, 'intake_element', {'namespace_address': 'code.alarm.audible', 'role': 'SE'})
-    anyio.run(server.run_tool, project, 'intake_finish', {'report': str(secret)})
+    async def record():
+        for tool, arguments in (
+                ('intake_start', {}),
+                ('intake_element', {'namespace_address': 'code.alarm.audible', 'role': 'SE'}),
+                ('intake_finish', {'report': str(secret)})):
+            await server.read_resource_text(project, server.instruction_uri(tool), session='report-writer')
+            error, blocks = await server.run_tool(project, tool, arguments, session='report-writer')
+            assert not error, blocks
+    anyio.run(record)
     layer_id = Store('timer').layers(kind='intake').results[0].id
     kept = (metaform_home.project_folder('timer') / 'reports' / f'{layer_id}-report.md').read_text(encoding='utf-8')
     assert kept == str(secret)

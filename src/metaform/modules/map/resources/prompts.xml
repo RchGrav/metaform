@@ -173,11 +173,49 @@ All agent inference, communication, and authored work must use the project's can
      command-line guide while connect_instructions is full. The tasks prompt follows it while the setting tasks is on.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>
+Before constructing or extending the base or a knowledge layer, read metaform://map/construction. It supplies operation-specific guidance derived from the Canonical Intake, with exact naming rules and valid/invalid examples.
 When assigned work, understand its functionality through the map, relationships, applicable knowledge, references, unread memories and current specification.
 Use C(T) and the active adaptive or strict mode as supplied by the assignment. A specification describes the current detailed approach; in adaptive mode it can evolve when a better approach serves C(T) and fits the full design. Record specification adaptations and surface them as user messages. New user instructions revise the operative requirements in either mode.
 Resolve ordinary work choices with project evidence and judgment, recording material decisions and reasons on the ticket. Work through your assigned role, parent/GC and recorded return destination. Apply current change orders.
 When blocked, record the observed problem, evidence, work so far and operative specification through the check-in route. It informs the GC and activates functional assessment. Preserve the continuation and continue useful work that remains available.
 </instructions>
+
+
+<!-- Operation-specific construction guidance. Exact excerpts are read from the untouched intake sources at runtime;
+     the selected wrapper remains versioned separately. Each source is identified independently. -->
+<construction_guide>
+Map construction on an existing project
+
+Apply this guide before constructing or extending the map or a knowledge layer. It adapts the intake's construction semantics to the current operation. Read the source request and the existing functional region. Use map_refine for valid base construction and map_knowledge for a named CEL; the quoted intake tool names describe the original procedure rather than a request to begin a new intake.
+
+Base construction
+The base records functional types and RE-owned purpose joins under C(T). Every address must meet the served Canonical Intake's grammar below, including type-level identity, trunk-to-leaf narrowing, reversible names, standard terminology, name_length and canonical name. An element's being nameable or useful does not establish a valid functional type. Preserve the original valid/invalid distinctions and examine existing paths as the namespace rules require.
+
+For each established relationship, identify the RE bearing its OP and the PE whose EF serves that OP in this encounter. Store the OP and PE-specific EF together in the RE-owned purpose record, with the actual IFD; preserve the CQU, role and root-trace semantics below. Reuse existing elements and purpose records. Check the changed relationships against their receiving purposes and their connections to the existing roots.
+
+Planning, knowledge and state
+Record established intended functionality while planning or assigning it, before detailed design. A planned base addition must satisfy the same functional construction grammar as an existing one. Keep an uncertain concept, proposed relationship or unresolved realization in an explicitly named CEL until its functional construction is established; do not supply a fabricated mechanism, EF or dependency to complete a record.
+
+Every knowledge write names its layer. Give that layer one declared question or variable and keep its content within that scope. Non-base information such as language, encoding, genre, evidence, alternatives and provisional design belongs only in the appropriate named layer. A knowledge-layer namespace or proposal does not thereby become a base functional type. Use sources-layer references for artifacts and source intent; keep rationale and provisional details in knowledge at the functionality they concern.
+
+Part state stays outside the frozen core. A no-task unbuilt or under-construction record describes state, with is_work=false; it does not assign implementation or start an agent. Actual defect findings and executable tasks retain their own meanings. Keep the user's requested operation distinct from recording a proposal or a part's state. Existing configured controls and ordinary schema checks remain in effect; this guide grants no role authority and does not claim to test semantic understanding.
+
+Normative excerpts from the actually served Canonical Intake
+Source: <canonical_source/>
+These exact construction constraints and conditions are preserved from that source. Their initial-intake recording terms are applied through the existing-map operations described above.
+
+<normative/>
+
+Original XML definitions and fuller namespace reference
+Source: <reference_source/>
+This is a separately identified source, not the same bytes as the served Axiom. The served Axiom declarations above supply the active roots. Preserve the original definitions, naming rules and valid/invalid examples below when reasoning about base construction; the named-layer boundary above explains where additional non-base knowledge belongs.
+
+<definitions/>
+
+<cqu_rules/>
+
+<namespace_rules/>
+</construction_guide>
 
 
 <!-- The opening of a blind-spot review: asks a fresh reviewer for substantial oversights and describes both modes.

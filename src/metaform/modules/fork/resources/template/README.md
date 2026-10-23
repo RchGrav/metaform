@@ -8,7 +8,7 @@ What the module is for, in two to four sentences.
 
 ## Template version
 
-The template changelog version this module started from: 0.2.0.
+The template changelog version this module started from: the Unreleased contract after 0.3.0.
 
 ## Declaration
 
@@ -53,6 +53,39 @@ Dispatch reads these references while preparing a turn that is already scheduled
 polling, standalone model wake or global broadcast. A delivery receipt describes accepted transport; it does not
 prove hidden semantic retention. Memory's provider is an implementation example. The separate `agent.role`
 provider can expose `changes` and `delivered_changes` for changed role instructions already consumed by a context.
+
+## Tool instruction prerequisites
+
+Ordinary verb guides are generated from the module's declarations: descriptions, argument help, details and
+examples, scoped to the operation when the verb has an `op`. MCP requires the current guide before executing
+the tool. A call with unread instructions returns `instructions_required`, `executed=false` and a read URI;
+the caller reads the instructions and repeats its operation. The catalog and instruction retrieval remain
+available so an agent can discover commands and satisfy the prerequisite.
+
+Read a guide at `metaform://tools/<tool>/instructions`, optionally followed by `/<op>`, or call
+`metaform_instructions tool=<tool> op=<op>`. A tool's guide carries that tool's schema. Keep schemas available
+through discovery and these focused reads instead of putting a full catalog in startup or role prompts.
+Roles describe responsibilities. Tool usage belongs in the owning command declarations and named prompts.
+
+A module that needs additional usage instructions can declare
+`Provides('agent.tool.instructions', tool_instructions)` through `metaform.module`. The callable contract is
+`(ctx: Context, tool: str, op: str | None) -> Sequence[dict[str, Any]]`. Return an empty sequence for unrelated
+tools or operations. Return exact named components for applicable instructions; these supplement the ordinary
+guide. This template registers no placeholder provider.
+
+Resolve module-owned wording with `prompt_files.resolve('prompt.<module>:<name>', **bindings)` to retain
+the selected and actual version, source, rendered body and fingerprint. Derived components retain their source
+identities and the fingerprint of their exact effective body. A component may include `read={'uri': <URI>}`
+to identify another explicit source read. The canonical tool instruction URI still serves the combined ordinary
+guide and provider components.
+
+The MCP instruction reader queues components through `ctx.queue_context(components, epoch)`. A module-owned
+resource serving the same instructions uses the public `prepare_agent_context` to obtain the epoch, queues its
+exact components and returns their complete bodies. Constructing or listing components acknowledges nothing.
+Only a complete body surviving response shaping receives a delivery receipt. Changed effective instruction
+content or canonical argument schema becomes due before the next operation; unchanged content is reused with
+its recorded source versions. Shared module rules are applicable usage instructions and deduplicate across tools.
+A receipt records delivery, without claiming that the model understood or retained the instructions.
 
 ## Prompts
 

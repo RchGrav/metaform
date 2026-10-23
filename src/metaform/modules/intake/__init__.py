@@ -20,6 +20,7 @@ BASE-045.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -63,6 +64,7 @@ from metaform.module import (
     Stop,
     ToolbarItem,
     Verb,
+    prepare_agent_context,
     project_for,
     save_report,
 )
@@ -77,6 +79,7 @@ REMOTE_AGENT = False  # a project wheel carries a map already built
 RESOURCE = resources.files(__name__) / 'resources' / 'intake.axiom'  # the digital typology intake, the served intake
 SHAPE = resources.files(__name__) / 'resources' / 'metaform.axiom'  # the metaform's shape
 SCHEMA_URI = 'metaform://intake/schema'
+PROCEDURE_URI = 'metaform://intake/procedure'
 VARIABLE = ('The functional map of the artifact: its elements, and each receiver\'s purpose served by a provider\'s '
             'encounter function.')
 TARGET = re.compile(r'<target\b[^>]*>')
@@ -109,19 +112,14 @@ def _fill(tag: str, name: str, value: str) -> str:
     return tag.replace('<target', f'<target {name}="{_escape(value)}"', 1)
 
 
-def served(ctx: Context, asked: str = '') -> str:
-    """The stored procedure, binding the selected analysis mode and request through its Prompt parameter, BASE-039."""
+def _procedure(ctx: Context) -> tuple[Any, str, str]:
+    """The chosen source with only project target bindings, before request-specific data."""
     store = ctx.require_store()
-    launch = _own_launch(store)
-    mode = str(launch.get('mode') or '') if launch else str(ctx.nouns.get('mode') or '')
-    if mode:
-        if mode not in ('fresh', 'refine', 'resume'):
-            raise Stop('Intake mode is fresh, refine or resume.', 'metaform help intake prompt')
-        asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked)
     chosen = ctx.setting('intake_file')
     source: Any = Path(chosen) if chosen else RESOURCE
     try:
-        text = source.read_text(encoding='utf-8')
+        raw = source.read_bytes()
+        text = raw.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
     except OSError:
         raise Stop(f'No intake file at {source}.', 'metaform unset --intake-file') from None
     except UnicodeDecodeError:
@@ -133,6 +131,48 @@ def served(ctx: Context, asked: str = '') -> str:
         tag = _fill(_fill(match.group(0), 'type', record.target_type), 'value', record.target_value)
         text = text[:match.start()] + tag + text[match.end():]
     text = text.replace('{project_id}', record.project_id)
+    return source, text, hashlib.sha256(raw).hexdigest()
+
+
+def procedure_component(ctx: Context) -> dict[str, Any]:
+    """Exact source-body instructions, independent of appended launch/focus data.
+
+    A custom source's middle Prompt slot can prevent substring reuse. Only a
+    matching delivered body receives this component's receipt, never a stripped
+    approximation of a different rendered procedure.
+    """
+    source, text, digest = _procedure(ctx)
+    project = ctx.require_store().project()
+    component = prompt_files.component('prompt.intake:procedure', text.replace('{prompt}', '', 1).rstrip('\n'),
+        version_id='intake-source:' + digest,
+        bindings={'project': project.project_id, 'target_type': project.target_type,
+                  'target_value': project.target_value, 'prompt': ''})
+    component['source'] = {'kind': 'configured_file' if ctx.setting('intake_file') else 'shipped',
+                           'path': str(source), 'sha256': digest}
+    # A selected mode can fill a custom middle Prompt slot even on an empty
+    # resource read. The combined tool guide remains an exact, satisfiable read.
+    if '{prompt}' not in text:
+        component['read'] = {'uri': PROCEDURE_URI}
+    return component
+
+
+def tool_instructions(ctx: Context, tool: str, op: str | None) -> list[dict[str, Any]]:
+    """Contribute the actual procedure before intake writes through the shared instruction mechanism."""
+    if tool not in ('intake_start', 'intake_element', 'intake_purpose', 'intake_remove', 'intake_finish'):
+        return []
+    component = procedure_component(ctx)
+    return [component] if component['text'].strip() else []
+
+
+def served(ctx: Context, asked: str = '') -> str:
+    """The stored procedure, binding the selected analysis mode and request through its Prompt parameter, BASE-039."""
+    launch = _own_launch(ctx.require_store())
+    mode = str(launch.get('mode') or '') if launch else str(ctx.nouns.get('mode') or '')
+    if mode:
+        if mode not in ('fresh', 'refine', 'resume'):
+            raise Stop('Intake mode is fresh, refine or resume.', 'metaform help intake prompt')
+        asked = prompt_files.required(resources.files(__name__), 'selected_mode', mode=mode, request=asked)
+    source, text, _ = _procedure(ctx)
     # What the person asked for, a target or a task; nothing asked leaves it empty, which the intake reads as this
     # project, BASE-039. An intake with a `{prompt}` slot gets the words there, escaped only in an XML intake file.
     # The Axiom intake declares its prompt as a parameter and has no slot, so what was asked follows it as data,
@@ -144,7 +184,7 @@ def served(ctx: Context, asked: str = '') -> str:
         text = text.replace('{prompt}', _escape(asked) if xml else asked, 1)
     elif asked:
         text = text.rstrip('\n') + '\n\n<<DATA: Prompt>>\n' + asked + '\n<<END DATA>>\n'
-    ignored = home.ignore_patterns(record.path)
+    ignored = home.ignore_patterns(ctx.require_store().project().path)
     if ignored:  # the one thing added after the intake: what it must not read, from .metaform/ignore.txt
         text = (text.rstrip('\n') + '\n\nDo not read these paths; they are not the project ('
                 + home.IGNORE_FILE + '):\n' + '\n'.join(ignored) + '\n')
@@ -152,7 +192,12 @@ def served(ctx: Context, asked: str = '') -> str:
 
 
 def prompt(ctx: Context) -> str:
-    return served(ctx, ctx.nouns.get('text') or '')
+    text = served(ctx, ctx.nouns.get('text') or '')
+    component = procedure_component(ctx)
+    if component['text'].strip() and component['text'] in text:
+        prepared = prepare_agent_context(ctx.folder, ctx.session, [component], project=ctx.project)
+        ctx.queue_context([component], int(prepared['epoch']))
+    return text
 
 
 def schema(ctx: Context) -> str:
@@ -1596,9 +1641,9 @@ MODULE = Module(
              page="the intake's Discard"),
     ),
     status=status,
-    provides=(Provides('intake.first_run', first_run),),
+    provides=(Provides('intake.first_run', first_run), Provides('agent.tool.instructions', tool_instructions)),
     resources=(
-        Resource('metaform://intake/procedure', 'Intake procedure',
+        Resource(PROCEDURE_URI, 'Intake procedure',
                  'The intake instructions for this project, the procedure an intake follows. Read before intake start.',
                  'prompt'),
         Resource('metaform://intake/schema', 'Intake forms',

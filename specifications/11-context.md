@@ -1338,6 +1338,22 @@ Each record below is amended by the records of this section, as each record's Re
 - Relates to: CTX-026, CTX-040, CTX-043, CTX-045, CTX-047, CTX-091, CTX-092.
 - Status: Confirmed by the ACP/context rework assignment, 2026-10-23. Supersedes age-based content expiry, marker-based semantic-loss inference and the earlier blanket no-change-notice policy.
 
+### CTX-094 Prepared functional understanding accompanies work and map construction follows the intake grammar
+
+- Requirement: Agents receive the relevant functional region with an assignment, and receive an operation-appropriate map-construction guide before constructing or extending the map.
+- What this means:
+  - The regional view records actual direct receiving and providing relationships, each receiving OP, the PE's encounter-specific EF and recorded IFD. Addresses remain stable identities. Mermaid arrows describe the documented relationship and are not substituted for IFD.
+  - The canonical intake's naming rules, valid/invalid distinctions, type-level namespace grammar and purpose-record construction continue to govern the base. The adapted guide does not relax them or require an unrelated whole-project intake for a local change.
+  - Knowledge, proposals, realization choices and unresolved detail belong in an explicitly named knowledge layer constrained by its declared question. An unbuilt status does not make an otherwise invalid base element or disconnected purpose record valid. Do not convert every discussed label into a base element.
+  - Capture established functional intent during planning and assignment, with its source and receiving purpose. Use the correct base or knowledge representation under the construction guide. Retain uncertainty rather than inventing a provider, mechanism or relationship.
+  - Unbuilt and under-construction state stays outside the frozen functional core. A stage without an execution task can remain visible without becoming executable work. Actual execution assignments are represented separately.
+- Why: The map is prepared understanding of why functionality exists and how its encounters serve receiving goals. Supplying that understanding avoids making every worker reconstruct its orientation. Planned intent should be addressable when established rather than requiring later rediscovery, while the base retains the intake's semantic discipline.
+- How it shows: A fresh or related-work assignment's first actual turn includes the existing regional rendering with OP, EF, IFD and stable addresses. Unchanged regions are not repeated on ordinary turns. Guide discovery and pre-use receipts follow MCP-044. Planned information is readable in its named layer and unbuilt non-work state does not launch agents.
+- Build: Reuse the current functional-context renderer and accepted-delivery ledger. Region preparation creates no separate model turn and receipt follows actual accepted outgoing content, including failure retries and human-message ordering. Compose the adapted construction guide from identified canonical intake sources and a separately versioned operation wrapper; retain source identities and exact grammar/examples. The served Axiom intake and the XML source are identified separately where both contribute.
+- Acceptance: Actual outgoing-prompt regressions include more than three purposes and direct dependents, exact OP/EF/IFD, stable address legends, unchanged-region suppression, changed-region delivery, retries and human FIFO. Public commands retain no-task unbuilt state without executable work. Guide tests preserve canonical rules/examples and source identities. Shared rules establish intent capture; operation guides supply construction and knowledge-layer rules before use.
+- Relates to: CTX-001, CTX-004, CTX-011, CTX-092, CTX-093, MCP-044, MAP-046, LAYER-025.
+- Status: confirmed by the owner, 2026-10-23. Native inference savings from this particular context representation remain a hypothesis requiring measurement.
+
 ## Open questions
 
 1. Where does a property's link go when the two addresses it was recorded at share no segment (for example `code.x` and `data.y`)? Recommended for what counts as the same property: an item with the same value in the same layer; a property layer that is the same node. (CTX-009)

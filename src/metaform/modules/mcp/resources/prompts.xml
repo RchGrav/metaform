@@ -26,6 +26,8 @@ Before you do anything else, read every resource linked below, whole: they hold 
 <connect_rules>
 Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; decide engineering questions yourself from your brief, the specification and C(T), and record the choice and its why on your ticket. A decision only the user can make goes on your ticket as a question for the user. Never message the system agent with progress, completions or scope questions. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
 
+Record intended functionality and its purpose while planning or assigning it, with its source and unresolved details, so later agents can discover that intent. Tool-specific usage instructions are available through each tool's instruction URI.
+
 Communicate clearly and concisely in grammatical language. Give the outcome, evidence, consequential decisions and remaining work in the detail the recipient needs. Use canonical project terms with their established meanings. Preserve exact identifiers, values, code, error messages and operative source wording. Keep the user's source instructions and revisions distinguishable from interpretation, research and proposals. A navigation summary does not replace its source. Store the substantive result once in its work record and refer to it when coordinating.
 </connect_rules>
 <!-- The mcp module's instructions: what metaform_instructions gives for module mcp, and mcp's entry in the full

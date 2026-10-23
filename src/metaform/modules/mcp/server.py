@@ -1171,16 +1171,11 @@ def tool_named(text: str, folder: Path) -> str:
 
 
 def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) -> str:
-    """What a tool's first successful result carries once per session, MCP-039:
-    the rules of its module the first time any of the module's
-    tools is called, from the module's prompts.xml, and the tool's own guide, from its declaration, for the call's `op`
-    alone when the tool has ops. A line given already in the session, with this tool or another, is not given again,
-    `Given`. Each heading is the mcp module's `module_guide` and `tool_guide` prompt; an empty one leaves that part out.
-    Every agent was told at connect to read the glossary. First, the line the runner left when the
-    agent's context was compacted inside a turn, `compacted`, so the agent hears it at its next call rather than at
-    its next turn; and once, the provisioning notice a stdio connect had no room for, MCP-028, to the person's own
-    sessions only. A call that names no session gets no guide, only how to name one, `guide_unkeyed`: nothing could
-    record that it was given."""
+    """Return provisioning and compaction notices alongside the result.
+
+    Usage instructions and module rules are delivered before execution through
+    the MCP-044 prerequisite. These notices retain their existing timing.
+    """
     parts: list[str] = []
     session = ctx.session if served_session() is not None else None
     if session is not None and catalog.role() is None and (notice := provisioning(session)) is not None:
@@ -1193,19 +1188,6 @@ def guidance(folder: Path, listed: Listed, ctx: Context, op: str | None = None) 
     if isinstance(pending, str) and pending:  # the runner's line, given once, by whichever comes first
         parts.insert(0, pending)
         record_shown(ctx.session, COMPACTED_KEY, '')
-    given = Given(ctx.session)
-    rules = [f'{said} Why: {why}' for said, why in prompt_files.module_rules(listed.module)] \
-        if listed.module != OWN else []
-    heading = prompt_files.module('mcp', 'module_guide', module=listed.module) if rules else None
-    if heading and ctx.seen(f'guide:module:{listed.module}', True) is None and (new := given.new(rules)):
-        parts.append(heading + '\n' + '\n'.join(new))
-    said = listed.guide(op)
-    heading = prompt_files.module('mcp', 'tool_guide', tool=listed.name) if said else None
-    if heading:
-        key = f'guide:tool:{listed.name}'
-        if ctx.seen(key, True) is None and (new := given.new(said.split('\n'))):
-            parts.append(heading + '\n' + '\n'.join(new).strip('\n'))
-    given.keep()
     return '\n\n'.join(parts)
 
 
@@ -1239,22 +1221,136 @@ class Given:
             record_shown(self.session, self.KEY, sorted(self.held))
 
 
+GUIDE_URI = re.compile(r'^metaform://tools/(?P<tool>[\w-]+)/instructions(?:/(?P<op>[\w-]+))?'
+                       r'(?:\?session_handle=(?P<handle>[0-9a-f]{12}))?$')
+GUIDE_EXEMPT = {'metaform_instructions', catalog.CATALOG}
+
+
+def usage_pointer(listed: Listed) -> str:
+    if listed.name in GUIDE_EXEMPT:
+        return ''
+    scopes = ops_of(listed.verb) if listed.verb else ()
+    if prompt_files.module_rules(listed.module) or listed.guide(None) or any(listed.guide(op) for op in scopes):
+        return f' Before use, read {instruction_uri(listed.name)}.'
+    return ''
+
+
+def usage_description(listed: Listed) -> str:
+    return listed.description + usage_pointer(listed)
+
+
+def instruction_uri(name: str, op: str | None = None, handle: str | None = None) -> str:
+    return f'metaform://tools/{name}/instructions' + (f'/{op}' if op else '') + (
+        f'?{HANDLE}={handle}' if handle else '')
+
+
+def instruction_op(listed: Listed, arguments: dict[str, Any]) -> str | None:
+    op = arguments.get('op')
+    if isinstance(op, str):
+        return op
+    if listed.verb is not None and (ops := ops_of(listed.verb)):
+        return 'read' if 'id' in arguments else ops[0]
+    return None
+
+
+def usage_components(folder: Path, listed: Listed, op: str | None, session: str | None) -> list[dict[str, Any]]:
+    """Exact tool-owned usage, independently of who is allowed to execute the operation."""
+    if listed.name in GUIDE_EXEMPT:
+        return []
+    result: list[dict[str, Any]] = []
+    rules = prompt_files.module_rules(listed.module)
+    if rules:
+        text = '\n'.join(f'{said} Why: {why}' for said, why in rules)
+        version = 'module-rules:' + hashlib.sha256(text.encode()).hexdigest()
+        one = prompt_files.component(f'mcp:module_usage:{listed.module}', text, version_id=version)
+        one['source'] = {'kind': 'module_rules', 'name': prompt_files.address(listed.module, 'rules')}
+        result.append(one)
+    body = listed.guide(op).strip()
+    if body:
+        heading = prompt_files.resolve('prompt.mcp:tool_guide', tool=listed.name)
+        text = str(heading['text']) + '\n' + body
+        version = 'tool-guide:' + hashlib.sha256(text.encode()).hexdigest()
+        one = prompt_files.component(f'mcp:tool_usage:{listed.name}:{op or "default"}', text, version_id=version)
+        one['source'] = {'kind': 'tool_declaration', 'tool': listed.name, 'op': op,
+                         'heading': heading}
+        result.append(one)
+    ctx = context('mcp', folder, surface='mcp', session=session)
+    for _, provider in provided(folder, 'agent.tool.instructions'):
+        result.extend(provider(ctx, listed.name, op))
+    if result:
+        schema = json.dumps({'inputSchema': listed.schema()}, ensure_ascii=False, separators=(',', ':'),
+                            sort_keys=True)
+        version = 'tool-schema:' + hashlib.sha256(schema.encode()).hexdigest()
+        one = prompt_files.component(f'mcp:tool_schema:{listed.name}', schema, version_id=version)
+        one['source'] = {'kind': 'tool_schema', 'tool': listed.name}
+        result.append(one)
+    return result
+
+
+def prepare_usage(folder: Path, session: str | None, components: list[dict[str, Any]]) -> dict[str, Any]:
+    # Before registration there is no project ledger. Keep exact session-scoped fingerprints in the existing
+    # home receipt store, whose compaction path already drops non-catalog entries, rather than a process unlock.
+    if project_for(folder) is not None and provided(folder, 'agent.role'):
+        return prepare_agent_context(folder, session, components)
+    due = [{**one, 'usage_home_receipt': True} for one in components if session is None or
+           shown_before(session, f'usage:0:{one["name"]}') != one['rendered_fingerprint']]
+    return {'epoch': 0, 'components': due, 'text': '\n\n'.join(str(one['text']) for one in due)}
+
+
+def instruction_required(folder: Path, name: str, arguments: dict[str, Any], session: str | None) -> dict[str, Any] | None:
+    listed = listing(folder).get(name)
+    if listed is None or name in GUIDE_EXEMPT:
+        return None  # unknown tools retain their ordinary error, and discovery never requires itself
+    op = instruction_op(listed, arguments)
+    components = usage_components(folder, listed, op, session)
+    if not components:
+        return None
+    prepared = prepare_usage(folder, session, components)
+    if not prepared['components']:
+        return None
+    handle = (uuid.uuid4().hex[:12] if session is None or session.startswith('process:') else
+              session.removeprefix('handle:') if session.startswith('handle:') else None)
+    uri = instruction_uri(name, op, handle)
+    read_arguments: dict[str, Any] = {'tool': name}
+    if op is not None:
+        read_arguments['op'] = op
+    if handle:
+        read_arguments[HANDLE] = handle
+    return {'error': 'instructions_required', 'executed': False, 'tool': name, 'op': op,
+            'read': uri, 'read_tool': {'tool': 'metaform_instructions', 'arguments': read_arguments},
+            **({HANDLE: handle} if handle else {}),
+            'instructions': [{'name': one['name'], 'fingerprint': one['rendered_fingerprint'],
+                              'version': one.get('actual_version_id'),
+                              **({'read': one['read']} if one.get('read') else {})}
+                             for one in prepared['components']],
+            'next': 'Read the instruction URI, then repeat the operation' +
+                    (f' with {HANDLE}={handle}.' if handle else '.')}
+
+
 def tool_guide(folder: Path, name: str, op: str | None, session: str | None) -> str:
-    """A tool's whole guide, metaform_instructions tool=<name>: what its first use gives, read again on purpose, such as
-    after a compaction or on a connection that names no session; recorded as given."""
+    """Explicit usage retrieval, shared by its resource URI and metaform_instructions alias."""
     listed = listing(folder).get(name)
     if listed is None:
         raise Stop(f'No tool {name} on this surface.', f'call {catalog.CATALOG} with search')
-    # Explicit help exposes this tool's canonical nested shapes and constraints. The module catalog and
-    # automatic first-use guides stay compact; declarations and runtime validation remain the source of truth.
+    handle = uuid.uuid4().hex[:12] if session is None else None
+    session = f'handle:{handle}' if handle else session
+    scopes: tuple[str | None, ...] = (op,)
+    if op is None and listed.verb is not None and (ops := ops_of(listed.verb)):
+        scopes = (*ops, 'read')
+    components: list[dict[str, Any]] = []
+    for scope in scopes:
+        components.extend(usage_components(folder, listed, scope, session))
+    unique = {str(one['name']): one for one in components}
+    prepared = prepare_usage(folder, session, list(unique.values()))
+    due = cast(list[dict[str, Any]], prepared['components'])
+    if components and not due:
+        return prompt_files.module('mcp', 'already_read', uri=instruction_uri(name, op),
+                                   again='use the current context') or ''
+    ctx = context('mcp', folder, surface='mcp', session=session)
+    ctx.queue_context(due, int(prepared['epoch']))
     schema = json.dumps({'inputSchema': listed.schema()}, ensure_ascii=False, separators=(',', ':'))
-    said = '\n\n'.join(part for part in (listed.guide(op), schema) if part)
-    text = (prompt_files.module('mcp', 'tool_guide', tool=name) or '') + '\n' + said
-    record_shown(session, f'guide:tool:{name}', True)
-    given = Given(session)
-    given.new(said.split('\n'))
-    given.keep()
-    return text.strip()
+    prefix = [f'{HANDLE}: {handle}\nUse this handle on subsequent tool calls.'] if handle else []
+    return '\n\n'.join([*prefix, *(str(one['text']) for one in due), *([] if components else [schema])])
 
 
 def _digest(text: str) -> str:
@@ -1295,7 +1391,7 @@ def action_bindings(ctx: Context, capabilities: dict[str, Any] | None = None) ->
     active = {name: one for name, one in listing(ctx.folder, ctx.client).items()
               if catalog.in_scope(name, declared, ctx.folder, named or None)}
     return {'execution_role': named or None, 'adapter': dict(capabilities or {}),
-            'tools': {name: {'description': one.description, 'arguments': one.schema(),
+            'tools': {name: {'description': usage_description(one), 'arguments': one.schema(),
                              'effect': one.effect, 'person_decides': one.persons}
                       for name, one in active.items()}}
 
@@ -1400,7 +1496,7 @@ def catalog_line(one: Listed) -> str:
     properties = {key: value for key, value in cast(dict[str, Any], schema.get('properties') or {}).items()
                   if key not in (*shaping.ARGUMENTS, *PER_CALL) or (one.verb is not None and key in
                                                                     {noun.name for noun in one.verb.nouns})}
-    said = short_line(one.description)
+    said = short_line(one.description) + usage_pointer(one)
     return f'{one.name}({catalog.signature({**schema, "properties": properties})}): {said}'
 
 
@@ -1566,9 +1662,11 @@ def _asked_caution(folder: Path, module: Module, verb: Verb, arguments: dict[str
     return caution_of(verb, made)
 
 
-async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None) -> Outcome:
+async def run_tool(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
+                   session: str | None = None, instruction_read: bool = False) -> Outcome:
     """A call to one listed tool by its name: whether it failed, and its text blocks."""
-    error, blocks, _ = await answer(folder, name, arguments, client=client)
+    error, blocks, _ = await answer(folder, name, arguments, client=client, session=session,
+                                    instruction_read=instruction_read)
     return error, blocks
 
 
@@ -1597,15 +1695,20 @@ def _commit_response(receipts: list[dict[str, Any]], blocks: list[str], data: An
             continue
         record_agent_context(receipt['folder'], receipt['session'], [one], project=receipt['project'],
                              epoch=int(receipt['epoch']), channel=channel)
+        fallback = not (receipt['project'] and provided(receipt['folder'], 'agent.role'))
+        if (one.get('usage_home_receipt') or fallback) and receipt['session'] is not None:
+            record_shown(receipt['session'], f'usage:{receipt["epoch"]}:{one["name"]}',
+                         one['rendered_fingerprint'])
 
 
 async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
                  consented: bool = False, session: str | None = None,
                  identity: dict[str, str] | None = None,
-                 shape: shaping.Shape | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
+                 shape: shaping.Shape | None = None, instruction_read: bool = False
+                 ) -> tuple[bool, list[str], dict[str, Any] | None]:
     with collecting_agent_context(session) as receipts:
         outcome = await _answer(folder, name, arguments, client=client, consented=consented, session=session,
-                                identity=identity, shape=shape)
+                                identity=identity, shape=shape, instruction_read=instruction_read)
     if not outcome[0] and receipts:
         await anyio.to_thread.run_sync(_commit_response, receipts, outcome[1], outcome[2], 'mcp_tool')
     return outcome
@@ -1614,12 +1717,21 @@ async def answer(folder: Path, name: str, arguments: dict[str, Any], *, client: 
 async def _answer(folder: Path, name: str, arguments: dict[str, Any], *, client: str | None = None,
                  consented: bool = False, session: str | None = None,
                  identity: dict[str, str] | None = None,
-                 shape: shaping.Shape | None = None) -> tuple[bool, list[str], dict[str, Any] | None]:
+                 shape: shaping.Shape | None = None, instruction_read: bool = False
+                 ) -> tuple[bool, list[str], dict[str, Any] | None]:
     """A call to one listed tool, as `run_tool`, with the result's structured form when it is an object, BASE-036:
     the same data as the text block holding it, for a host that reads tool output as data. `consented`: the person
     said yes to the call in their AI tool, so its caution and its person-only settings need no more from the agent.
     `shape`: an agent's call over the protocol, whose module tool's result is given as it asks, `shaping.shaped`;
     without it, as the result is, for what reads it as data, a resource or search."""
+    if not instruction_read:
+        try:
+            required = await anyio.to_thread.run_sync(instruction_required, folder, name, arguments, session)
+        except Stop as stop:
+            error, blocks = _error(stop, folder)
+            return error, blocks, None
+        if required is not None:
+            return True, [result_json(required)], required
     own = name[len(OWN) + 1:] if name.startswith(OWN + '_') else ''
     if own == 'set':
         error, blocks = await anyio.to_thread.run_sync(run_set, folder, dict(arguments), consented)
@@ -1816,6 +1928,10 @@ MODULE_TOOLS = re.compile(r'^metaform://(?P<module>[a-zA-Z0-9_.-]+)/tools$')
 # what it was given is forgotten, so each piece comes again at its next use, CTX-045. Read, it forgets.
 COMPACTION_URI = 'metaform://runtime/compaction-state'
 TEMPLATES: tuple[tuple[str, str, str], ...] = (
+    ('metaform://tools/{tool}/instructions', 'Tool usage instructions',
+     'Read specific tool usage before execution; the exact delivered revision unlocks this context only.'),
+    ('metaform://tools/{tool}/instructions/{op}', 'Operation usage instructions',
+     'Read the applicable operation usage before execution, without running the tool.'),
     ('metaform://{module}/tools', 'Module commands',
      'The commands of one active module, using its declared name. Discover modules at metaform://modules.'),
     ('metaform://instructions/{module}', "A module's instructions",
@@ -2125,13 +2241,13 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
         if resolved.get('missing'):
             raise Missing('\n'.join(resolved.get('problems') or []), 'read metaform agents roles')
     elif uri == MEMORY_URI:
-        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'memory:instructions')
+        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'prompt.memory:instructions')
         one.update(text=text, bindings={'project': str(project_for(folder) or '{project}')})
         components = [one]
     elif uri == RULES_URI:
-        components = [await anyio.to_thread.run_sync(prompt_files.resolve, 'mcp:connect_rules')]
+        components = [await anyio.to_thread.run_sync(prompt_files.resolve, 'prompt.mcp:connect_rules')]
     elif uri == GLOSSARY_URI:
-        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'mcp:glossary')
+        one = await anyio.to_thread.run_sync(prompt_files.resolve, 'prompt.mcp:glossary')
         one['text'] = text
         components = [one]
     elif uri == project_uri(folder):
@@ -2159,6 +2275,17 @@ async def _read_resource_text(folder: Path, uri: str, *, client: str | None = No
     """A resource's text and media type, or None when this folder serves no such resource. The instruction blocks are
     read first, so metaform://metaform is Metaform's own glossary whatever the folder's project or modules are called.
     `session` and `keyed` say what metaform://role/<role> tells this connection, as `role_text` says."""
+    if guide := GUIDE_URI.fullmatch(uri):
+        handle = guide.group('handle')
+        named = (f'handle:{handle}' if handle and (session is None or session.startswith('process:'))
+                 else session)
+        if named is None:
+            handle = uuid.uuid4().hex[:12]
+            named = f'handle:{handle}'
+        text = await anyio.to_thread.run_sync(tool_guide, folder, guide.group('tool'), guide.group('op'), named)
+        if handle:
+            text = f'{HANDLE}: {handle}\nUse this handle on subsequent tool calls.\n\n' + text
+        return text, 'text/plain'
     said = await anyio.to_thread.run_sync(functools.partial(block_text, folder, uri, client, session, keyed))
     if said is not None:
         return said, 'text/plain'
@@ -2176,7 +2303,10 @@ async def _read_resource_text(folder: Path, uri: str, *, client: str | None = No
                 kinds = {noun.name: noun.kind for verb in module.verbs if verb.name == held.verb for noun in verb.nouns}
                 given = {name: int(value) if kinds.get(name) == 'int' and value.isdigit() else value
                          for name, value in (fields or {}).items()}  # a number in the path is a number noun
-                error, blocks = await run_tool(folder, f'{module.id}_{held.verb}', given, client=client)
+                error, blocks = await run_tool(folder, f'{module.id}_{held.verb}', given, client=client,
+                                               session=session, instruction_read=next(
+                                                   verb.effect == 'read' for verb in module.verbs
+                                                   if verb.name == held.verb))
                 if error and fields is not None:  # a template's URI naming what is not there, MCP-037
                     message, _, step = blocks[0].removeprefix('Error: ').partition('\nNext: ')
                     raise Missing(message, step or 'list the resources and their templates')
@@ -2555,7 +2685,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     def tool(one: Listed, shown: bool, unkeyed: bool = False) -> Any:
         hints = one.annotations()
         view = views.SHOWN_BY.get(one.name) if shown else None
-        made = types.Tool(name=one.name, description=one.description, input_schema=handled(one.schema(), unkeyed),
+        made = types.Tool(name=one.name, description=usage_description(one), input_schema=handled(one.schema(), unkeyed),
                           annotations=types.ToolAnnotations(
                               read_only_hint=hints['read_only_hint'], destructive_hint=hints['destructive_hint'],
                               idempotent_hint=hints['idempotent_hint'], open_world_hint=hints['open_world_hint']))
@@ -2591,7 +2721,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         that names no session, each takes the session handle its calls name their session by."""
         everything = listing(folder, client)
         names = listed_names(folder, session)
-        unkeyed = http and session is None
+        unkeyed = (http and session is None) or (not http and not os.environ.get('METAFORM_SESSION'))
         listed = [tool(everything[name], shown, unkeyed) for name in names if name in everything]
         if catalog.CATALOG in names:
             listed = sorted([*listed, catalog_tool(unkeyed)], key=lambda one: one.name)
@@ -2633,14 +2763,16 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         named = gateway_session(headers)
         if named is not None:
             return named
-        if not http:
+        if not http and os.environ.get('METAFORM_SESSION'):
             return served_session(client_of(ctx))
-        given = headers.get(MCP_SESSION_ID_HEADER) if headers is not None else None
+        given = headers.get(MCP_SESSION_ID_HEADER) if http and headers is not None else None
         if given:
             return f'http:{given}'
         meta: Any = cast(dict[str, Any], dict(ctx.params or {})).get('_meta') if ctx.params else None
         held = handle or (cast(dict[str, Any], meta).get(HANDLE_META) if isinstance(meta, dict) else None)
-        return f'handle:{held}' if isinstance(held, str) and HANDLED.fullmatch(held) else None
+        if isinstance(held, str) and HANDLED.fullmatch(held):
+            return f'handle:{held}'
+        return served_session(client_of(ctx)) if not http else None
 
     def follows(ctx: Any) -> bool:
         """Whether the tools listed to the caller follow its session, so a module it opens changes them: a request
@@ -2800,7 +2932,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                            fetch(folder, str(arguments.get('id') or ''), client))
             return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(found))],
                                         structured_content=found, is_error='error' in found)
-        handle = arguments.pop(HANDLE, None) if http else None
+        handle = arguments.pop(HANDLE, None)
         session = session_of(ctx, handle)
         if name == catalog.CATALOG:  # the catalog itself, or a tool it runs for an AI tool that keeps its first list
             run = arguments.get('tool')
@@ -2813,9 +2945,8 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
                 return outcome(True, [(f'Error: tool is the name of another tool, and arguments an object.\n'
                                        f'Next: {schema_step(catalog.CATALOG)}')], None)
             name, arguments = run, dict(cast(dict[str, Any], inner))
-            if http and session is None and arguments.get(HANDLE):
+            if HANDLE in arguments:
                 session = session_of(ctx, arguments.pop(HANDLE))
-            arguments.pop(HANDLE, None)
         refused = await anyio.to_thread.run_sync(role_refusal, folder, name)
         if refused is not None:
             return outcome(True, [refused], None)
@@ -2831,6 +2962,13 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             repeat = await anyio.to_thread.run_sync(glossary_repeat, folder, session, own)
             if repeat:  # the project's glossary, read already in this session, as map_glossary or its resource
                 return outcome(False, [repeat], None)
+        try:
+            required = await anyio.to_thread.run_sync(instruction_required, folder, name, arguments, session)
+        except Stop as stop:
+            error, blocks = _error(stop, folder)
+            return outcome(error, blocks, None)
+        if required is not None:
+            return outcome(True, [result_json(required)], required)
         given, answered = await consented(ctx, params, name, arguments)
         if given is None:
             return answered
@@ -2846,7 +2984,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
         fired: list[dict[str, Any]] = []
         try:
             error, blocks, structured = await answer(folder, name, given, client=client, consented=approved,
-                                                     session=session, identity=identity, shape=shape)
+                                                     session=session, identity=identity, shape=shape, instruction_read=not approved)
         finally:  # what the tool changed, fired on the event bus from a worker thread, VIEW-018; a module enabled or
             # disabled since this server started is loaded or dropped first, BASE-037
             fired = await anyio.to_thread.run_sync(events.announce, folder, 'mcp')

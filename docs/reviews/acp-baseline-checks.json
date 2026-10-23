@@ -2275,5 +2275,56 @@
       "final_production_hashes_match_native_capture": true,
       "whole_project_pyright": "0 errors, 0 warnings"
     }
+  },
+  "mcp044_test_client_migration": {
+    "recorded_at": "2026-10-23T15:28:20.458922+00:00",
+    "scope": "Directly affected MCP039 fixtures migrated to MCP044 explicit pre-use instruction delivery. No production changes in this migration.",
+    "client_helpers": "called/whole and declaring follow one instructions_required read_tool alias, verify successful guide retrieval, retain the existing logical handle, and retry the unchanged requested operation once. Raw prerequisite regressions continue using raw client/server calls.",
+    "expectations": "Instruction bodies and shared module rules are asserted in actual explicit-read transcripts, not target-operation results. Compaction requires another exact body receipt in the new epoch. Stateless calls receive a scoped instruction challenge. Canonical nested schema and operation-specific argument assertions remain complete. Old guide booleans were replaced with the exact receipt prerequisite.",
+    "existing_checks": {
+      "unique_tests_passed": 10,
+      "selected_run": {
+        "passed": 9,
+        "failed": 1,
+        "seconds": 41.41,
+        "junit": "/tmp/metaform-mcp044-migration.xml",
+        "log": "/tmp/metaform-mcp044-migration.log",
+        "remaining_failure": "The old GUIDED regex also matched an unrelated result-trimming notice. Its assertion was narrowed to the specific usage body being tested."
+      },
+      "corrected_remaining_case": {
+        "passed": 1,
+        "failed": 0,
+        "seconds": 31.95,
+        "junit": "/tmp/metaform-mcp044-firstuse-final.xml",
+        "log": "/tmp/metaform-mcp044-firstuse-final.log"
+      },
+      "coverage": [
+        "first-use explicit instructions",
+        "operation-filtered guides",
+        "nested memory schemas",
+        "resource registry including instruction templates",
+        "2025 consent",
+        "July consent",
+        "async/synchronous tasks and cancellation",
+        "compaction epochs",
+        "stateless HTTP handles"
+      ]
+    },
+    "raw_enforcement_recheck": {
+      "passed": 6,
+      "failed": 0,
+      "seconds": 16.87,
+      "junit": "/tmp/metaform-mcp044-raw-proof.xml",
+      "log": "/tmp/metaform-mcp044-raw-proof.log",
+      "coverage": "Unguided first call has no effect, shaped-out whole guide or schema cannot unlock, raw stdio direct/catalog alias path, stdio process replacement and named identity, and public construction fallback resource receipt."
+    },
+    "task_fixture_classification": {
+      "baseline": "Original baseline task test passed in 10.32s. /tmp/metaform-mcp-task-baseline.xml and .log",
+      "current_initial": "Cancellation during pre-execution instruction checks occurred before the synchronous test handler entered, so the task correctly cancelled without executing its body.",
+      "correction": "The fixture writes an entry marker before its synchronous sleep. The test waits for that marker before asserting that cancellation cannot interrupt an already executing synchronous handler. No scheduler or cancellation behavior changed.",
+      "classification": "New prerequisite scheduling exposed an invalid fixture timing assumption, not a confirmed production cancellation defect."
+    },
+    "static_checks": "Ruff test_mcp.py and git diff --check passed.",
+    "limits": "This is ten existing functional checks plus six raw enforcement checks, not a whole MCP or repository green claim. Earlier unrelated failures retain their baseline evidence above and were not repaired or excluded here."
   }
 }

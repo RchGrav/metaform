@@ -132,15 +132,31 @@ async def tool_names(client):
 
 
 async def called(client, name, arguments):
-    """Run a command as an agent does: the tool named for it, with its arguments."""
-    return await client.call_tool(name, arguments)
+    """A simulated informed agent follows one exact instruction challenge, then retries once.
+
+    Prerequisite tests deliberately use raw call_tool instead, so this client behavior never hides enforcement.
+    """
+    handle = getattr(client, '_usage_handle', None)
+    result = await client.call_tool(name, arguments, meta={'io.metaform/session': handle} if handle else None)
+    required = result.structured_content or {}
+    if result.is_error and required.get('error') == 'instructions_required':
+        alias = required['read_tool']
+        guide = await client.call_tool(alias['tool'], alias['arguments'])
+        assert not guide.is_error, blocks(guide)
+        reads = getattr(client, '_instruction_reads', [])
+        reads.append((name, blocks(guide)))
+        client._instruction_reads = reads
+        client._usage_handle = required.get('session_handle', handle)
+        handle = client._usage_handle
+        result = await client.call_tool(name, arguments, meta={'io.metaform/session': handle} if handle else None)
+    return result
 
 
 async def whole(client, name, arguments):
     """A module tool's whole result as data, as an agent asks for it with view=full; a chassis tool's, which is given
     whole, as it comes."""
     given = arguments if name.startswith('metaform_') else {**arguments, 'view': 'full'}
-    return json.loads(text(await client.call_tool(name, given))[-1])
+    return json.loads(text(await called(client, name, given))[-1])
 
 
 @pytest.fixture
@@ -1811,29 +1827,30 @@ def test_a_folder_with_no_project_lists_only_what_runs_and_registering_announces
 @pytest.mark.req('MCP-039')
 def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_module(run, home, mapped):
     """Every tool's long description and argument help were paid by every agent before its first call. The list now
-    gives a sentence and a clause, and the first call of a tool in a session carries the rest, and the first call of
-    any tool of a module that module's rules, each once."""
+    gives a sentence and a clause plus the guide URI. An instruction challenge precedes execution, and explicit
+    reads deliver applicable usage and shared module rules once in the receiving context."""
     from metaform import prompt_files
     async def check(client, init):
         tools = await listed(client)
-        first, second = (await client.call_tool('map_work', {}), await client.call_tool('map_work', {}))
-        memory = [await client.call_tool(name, {'node': 'element:code.timer.kitchen'})
+        first, second = (await called(client, 'map_work', {}), await called(client, 'map_work', {}))
+        memory = [await called(client, name, {'node': 'element:code.timer.kitchen'})
                   for name in ('memory_read_graph', 'memory_note')]
-        settings = await client.call_tool('metaform_set', {})
-        return tools, first, second, memory, settings
-    tools, first, second, memory, settings = session(
+        settings = await called(client, 'metaform_set', {})
+        return tools, first, second, memory, settings, client._instruction_reads
+    tools, first, second, memory, settings, reads = session(
         home, mapped, check, env={'METAFORM_SESSION': 'guide-once'})
     work = tools['map_work']
-    assert 'op=plan' not in work.description and len(work.description) <= 200
+    assert 'op=plan' not in work.description and 'metaform://tools/map_work/instructions' in work.description
     assert all(len(one.get('description', '').encode()) <= 80 for one in work.input_schema['properties'].values())
-    # the provisioning notice comes first with the first result while the AI tool running these tests is unrecorded
-    guide = first.content[0].text.split('\n\n', 1)[-1] if first.content[0].text.startswith('Notice: ') else \
-        first.content[0].text
-    assert guide.startswith('How to use map_work, given once in this session:')
+    guide = '\n'.join(block for name, read in reads if name == 'map_work' for block in read)
+    header = 'How to use map_work, given once in this session:'
+    assert header in guide
+    guide = guide[guide.index(header):]
     assert 'op=plan' in guide and text(first)[-1] == text(second)[-1]
-    assert not any(block.text.startswith('How to use map_work') for block in second.content), blocks(second)
+    assert not any('How to use map_work' in block for answer in (first, second) for block in blocks(answer))
     rule = prompt_files.module_rules('memory')[0][0]
-    assert sum(rule in block.text for one in memory for block in one.content) == 1  # the module's rules, once
+    assert sum(rule in block for _, read in reads for block in read) == 1
+    assert not any(rule in block for answer in memory for block in blocks(answer))
     named = {one['name'] for one in settings.structured_content['settings']}
     assert 'write_layer' in named and 'dispatch_prompts' not in named and len(json.dumps(
         tools['metaform_set'].input_schema)) < 600  # listed when called, not in the schema
@@ -1841,7 +1858,7 @@ def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_modu
 
 @pytest.mark.req('MCP-039')
 def test_tool_errors_carry_only_error_and_fix_and_later_ops_do_not_repeat_guides(run, home, mapped):
-    """A failed first call does not spend guidance. Successful calls share one tool receipt across ops."""
+    """A failed operation retains its error after the client reads its applicable instructions first."""
     async def check(client, init):
         failed = await called(client, 'map_work', {'op': 'unknown'})
         first = await called(client, 'map_work', {})
@@ -1858,8 +1875,8 @@ def test_tool_errors_carry_only_error_and_fix_and_later_ops_do_not_repeat_guides
         assert blocks(answer)[0].startswith('Error: ')
         assert '\nNext: ' in blocks(answer)[0]
     assert not first.is_error and not later.is_error
-    assert any(GUIDED.match(block.text) for block in first.content)
-    assert not any(GUIDED.match(block.text) for block in later.content)
+    assert not any('How to use map_work' in block.text for block in first.content)
+    assert not any('How to use map_work' in block.text for block in later.content)
 
 
 @pytest.mark.req('MCP-004')
@@ -2151,7 +2168,7 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
         return init.capabilities.resources.list_changed, fixed, templates, texts, refused
     changed, fixed, templates, texts, refused = session(home, mapped, check)
     assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://role/person',
-                                      'metaform://specialists',
+                                      'metaform://specialists', 'metaform://map/construction',
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://modules',
                                       'metaform://runtime/compaction-state',
@@ -2159,7 +2176,8 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
                                       'metaform://instructions', 'metaform://intake/procedure',
                                       'metaform://intake/schema'}
     assert all(one.description and one.name for one in fixed.values())
-    assert templates == {'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
+    assert templates == {'metaform://tools/{tool}/instructions', 'metaform://tools/{tool}/instructions/{op}',
+                         'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
                          'metaform://role/{name}', 'metaform://orchestration/assignment/{assignment}',
                          'metaform://{address}', 'metaform://{address}/items/{n}'}
     from metaform import prompt_files
@@ -2586,9 +2604,22 @@ def july_wire(home, folder, **extra_env):
 
 
 def declaring(wire, method, params, capabilities, limit=30):
-    """One request declaring `capabilities` in its `_meta`, as a July client sends them on every request."""
-    return wire.request(method, {**params, '_meta': {'io.modelcontextprotocol/clientCapabilities': capabilities}},
-                        deadline=time.monotonic() + limit)
+    """A July client follows exact instruction challenges without changing the operation or capabilities."""
+    handle = getattr(wire, '_usage_handle', None)
+    meta = {'io.modelcontextprotocol/clientCapabilities': capabilities,
+            **({'io.metaform/session': handle} if handle else {})}
+    result = wire.request(method, {**params, '_meta': meta}, deadline=time.monotonic() + limit)
+    required = result.get('structuredContent') or {}
+    if method == 'tools/call' and result.get('isError') and required.get('error') == 'instructions_required':
+        alias = required['read_tool']
+        guide = wire.request('tools/call', {'name': alias['tool'], 'arguments': alias['arguments'], '_meta': meta},
+                             deadline=time.monotonic() + limit)
+        assert not guide.get('isError'), guide
+        wire._usage_handle = required.get('session_handle', handle)
+        if wire._usage_handle:
+            meta['io.metaform/session'] = wire._usage_handle
+        result = wire.request(method, {**params, '_meta': meta}, deadline=time.monotonic() + limit)
+    return result
 
 
 def opened(wire, category, capabilities):
@@ -2738,6 +2769,7 @@ def test_a_long_verb_and_a_workflow_run_are_tasks_for_a_client_that_declares_the
             return {'run': runs.start(store, 'assign', {'assignment': {'skill': 'scan', 'input': None}})}
 
         def slow(ctx):
+            (ctx.folder / 'slow-entered').touch()
             time.sleep(2)
             return {'slept': True}
 
@@ -2771,6 +2803,10 @@ def test_a_long_verb_and_a_workflow_run_are_tasks_for_a_client_that_declares_the
         assert declaring(wire, 'tasks/cancel', {'taskId': long['taskId']}, tasks)['resultType'] == 'complete'
         assert settled(long['taskId'])['status'] == 'cancelled'  # an async verb stops at its await
         slow = declaring(wire, 'tools/call', {'name': 'driven_slow', 'arguments': {}}, tasks)
+        deadline = time.monotonic() + 10
+        while not (mapped / 'slow-entered').exists():
+            assert time.monotonic() < deadline, 'The synchronous task never entered its body.'
+            time.sleep(0.02)
         declaring(wire, 'tasks/cancel', {'taskId': slow['taskId']}, tasks)
         finished = settled(slow['taskId'])  # a thread runs to its end: its effect landed, so its result is kept
         assert finished['status'] == 'completed' and finished['result']['structuredContent'] == {'slept': True}
@@ -3958,6 +3994,57 @@ def test_every_role_connects_to_the_directive_and_the_links_that_apply_and_each_
     assert read == blocks_for(None, None, False)
 
 
+@pytest.mark.req('MCP-007')
+@pytest.mark.parametrize(('uri', 'name'), [
+    ('metaform://rules', 'prompt.mcp:connect_rules'),
+    ('metaform://metaform', 'prompt.mcp:glossary'),
+    ('metaform://memory', 'prompt.memory:instructions'),
+])
+def test_shared_resource_versions_keep_canonical_receipts_fallback_and_epoch(run, mapped, uri, name):
+    from metaform import prompt_files
+    from metaform.data import prompts
+    from metaform.module import advance_agent_context
+    from metaform.modules.mcp.server import read_resource_text
+
+    run('enable', 'memory', cwd=mapped)
+    named = 'shared-resource-reader'
+    agents = Store('proj', module='agents')
+
+    def read(recipient=named):
+        return asyncio.run(read_resource_text(mapped, uri, session=recipient))[0]
+
+    def receipt(recipient=named, epoch=0):
+        with agents.tables(write=False) as tx:
+            return tx.get('receipts', {'session_id': recipient, 'epoch': epoch, 'name': name})
+
+    original = read()
+    first = receipt()
+    assert first and first['component']['text'] in original
+    assert first['channel'] == 'mcp_resource'
+    assert first['component']['source']['kind'] == 'shipped'
+    assert first['component']['text'] not in read(), 'An unchanged body is delivered once per context epoch.'
+
+    revised = 'Selected shared instructions preserve this exact revision.'
+    edited, _ = prompt_files.save_edit(name, revised)
+    assert revised in read()
+    selected = receipt()
+    assert selected['actual_version_id'] == selected['selected_version_id'] == edited.version_id
+    assert selected['component']['source']['kind'] == 'selected_edit'
+    assert revised not in read()
+
+    malformed = prompts.save_prompt(name, '<unclosed>')
+    fallback = read('fallback-resource-reader')
+    kept = receipt('fallback-resource-reader')
+    assert kept['component']['text'] == first['component']['text']
+    assert kept['component']['text'] in fallback and '<unclosed>' not in fallback
+    assert kept['actual_version_id'] == first['actual_version_id']
+    assert kept['selected_version_id'] == malformed.version_id
+    assert kept['component']['source']['kind'] == 'fallback'
+    assert advance_agent_context(mapped, named, reason='compaction') == 1
+    assert first['component']['text'] in read()
+    assert receipt(epoch=1)['actual_version_id'] == first['actual_version_id']
+
+
 def test_nothing_points_to_a_part_of_the_glossary():
     """metaform://metaform/terms is gone: no resource, prompt, code or reference document names it, so no agent is
     routed to a part of the glossary."""
@@ -4075,7 +4162,7 @@ def test_each_guide_comes_once_per_session_even_when_context_was_compacted(run, 
     """The person's own session: the connect message says why to use Metaform with a line per category, the catalog's
     line, the order to read the glossaries before beginning work, the compaction line and the project; a guide comes
     once, with no glossary pointer, since it was told at connect; a second glossary read is one line, and
-    compaction leaves automatic guide receipts intact, while explicit reads remain available."""
+    compaction makes exact usage bodies due again in the new receiving epoch."""
     from metaform import prompt_files
     from metaform.module import agent_opening
 
@@ -4087,22 +4174,26 @@ def test_each_guide_comes_once_per_session_even_when_context_was_compacted(run, 
         forgot = blocks(await called(client, 'metaform_catalog', {'compacted': True}))
         again = blocks(await called(client, 'map_where', {'address': 'code.timer.kitchen'}))
         state = (await client.read_resource('metaform://runtime/compaction-state')).contents[0].text
-        return init.instructions, role_said, answers, glossary, forgot, again, state
-    said, role_said, answers, glossary, forgot, again, state = session(home, mapped, check)
+        return init.instructions, role_said, answers, glossary, forgot, again, state, client._instruction_reads
+    said, role_said, answers, glossary, forgot, again, state, reads = session(
+        home, mapped, check, env={'METAFORM_SESSION': 'guide-compaction'})
     opening = agent_opening(mapped, None)
     assert opening.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
     assert said == opening and len(said) <= 512
     assert role_said.startswith((prompt_files.module('mcp', 'connect_use') or '') + '\n')
-    assert 'metaform_catalog' in role_said and 'compacted=true' in role_said
+    assert 'metaform_catalog' in role_said
+    assert 'compacted=true' not in role_said, 'Named contexts omit the process-only compaction reminder.'
     assert 'This folder is the project proj.' in role_said
     first, second = ('\n'.join(one) for one in answers)
-    assert 'How to use map_where' in first and 'The words this map is written in' not in first
+    assert 'How to use map_where' not in first and 'The words this map is written in' not in first
+    usage_reads = ['\n'.join(body) for name, body in reads if name == 'map_where']
+    assert len(usage_reads) == 2 and all('How to use map_where' in body for body in usage_reads)
     assert 'How to use map_where' not in second
     assert glossary[0].lstrip().startswith('@STATE_INIT') and glossary[1].startswith('metaform://metaform is unchanged')
     assert forgot[0].startswith(opening + '\n\nMetaform forgot what it gave you once in this session')
     assert 'How to use map_where' not in '\n'.join(again)
     assert state.startswith(opening + '\n\nMetaform forgot what it gave you once in this session, ')
-    assert ' 0 pieces' not in state
+    assert all('inputSchema' in body for body in usage_reads)
 
 
 @pytest.mark.req('MCP-002')
@@ -4115,6 +4206,8 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
 
     from metaform import prompt_files
     served = Served(mapped)
+
+    guides = []
 
     async def go():
         async with httpx.AsyncClient(timeout=30) as client:
@@ -4133,8 +4226,15 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
                 return response.json()['result']
 
             async def call(name, arguments):
-                return [block['text'] for block in (await request('tools/call', {'name': name, 'arguments': arguments}))
-                        ['content']]
+                result = await request('tools/call', {'name': name, 'arguments': arguments})
+                required = result.get('structuredContent') or {}
+                if arguments.get('session_handle') and required.get('error') == 'instructions_required':
+                    alias = required['read_tool']
+                    guide = await request('tools/call', {'name': alias['tool'], 'arguments': alias['arguments']})
+                    assert not guide['isError']
+                    guides.extend(block['text'] for block in guide['content'])
+                    result = await request('tools/call', {'name': name, 'arguments': arguments})
+                return [block['text'] for block in result['content']]
             connect = (await request('server/discover', {}))['instructions']
             connect += '\n' + (await request('resources/read', {'uri': 'metaform://role/person'}))['contents'][0]['text']
             before = [tool['name'] for tool in (await request('tools/list', {}))['tools']]
@@ -4157,9 +4257,11 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
     assert 'pass session_handle=' in first[0] and 'compacted=true' in first[0]
     assert opened[0].startswith('map:') and 'map_where(' in opened[0]
     assert not any('listed to you now' in one for one in opened)
-    assert 'How to use map_where' in where[0][0] and not any('How to use' in one or 'names no session' in one
-                                                             for one in where[1])
-    assert "This call names no session, so map_where's guide is not given with it" in bare[0]
+    assert sum('How to use map_where' in body for body in guides) == 1
+    assert not any('How to use' in body for result in where for body in result)
+    required = json.loads(bare[0])
+    assert required['error'] == 'instructions_required' and required['executed'] is False
+    assert required['session_handle'] and required['read_tool']['tool'] == 'metaform_instructions'
 
 
 def test_a_trimmed_result_keeps_false_and_empty_evidence_and_lists_records_as_a_table():
@@ -4199,14 +4301,13 @@ def test_find_names_the_addresses_that_hold_the_words(run, home, mapped):
 
 
 def test_explicit_memory_tool_guides_expose_nested_shapes_without_preloading_schemas(project_folder):
-    from metaform import shown
-    from metaform.modules.mcp.server import answer, listing, module_tools_text
+    from metaform.modules.mcp.server import answer, instruction_required, listing, module_tools_text
 
     named = 'nested-guide-reader'
     catalog_text = module_tools_text(project_folder, 'memory')
     assert 'metaform_catalog tool=metaform_instructions arguments={"tool":"<exact command name>"}' in catalog_text
     assert '"entityName"' not in catalog_text and '"entityType"' not in catalog_text
-    assert shown.peek(named, 'guide:tool:memory_add_observations') is None
+    assert instruction_required(project_folder, 'memory_add_observations', {}, named) is not None
 
     error, blocks, _ = asyncio.run(answer(project_folder, 'metaform_instructions', {
         'tool': 'memory_add_observations'}, session=named))
@@ -4222,8 +4323,8 @@ def test_explicit_memory_tool_guides_expose_nested_shapes_without_preloading_sch
     assert 'one fact' in member['properties']['contents']['description']
     assert schema['required'] == ['observations'] and schema['additionalProperties'] is False
     assert '"entityType"' not in guide and '"mutations"' not in guide
-    assert shown.peek(named, 'guide:tool:memory_add_observations') is True
-    assert shown.peek(named, 'guide:tool:memory_create_entities') is None
+    assert instruction_required(project_folder, 'memory_add_observations', {}, named) is None
+    assert instruction_required(project_folder, 'memory_create_entities', {}, named) is not None
 
     error, blocks, _ = asyncio.run(answer(project_folder, 'metaform_instructions', {
         'tool': 'memory_create_entities'}, session=named))
@@ -4237,3 +4338,367 @@ def test_explicit_memory_tool_guides_expose_nested_shapes_without_preloading_sch
     assert 'why' not in entity['required'], 'New-entity semantic checks must retain their existing conditional scope.'
     assert 'one fact' in entity['properties']['observations']['description']
     assert '"entityName"' not in '\n'.join(blocks) and '"mutations"' not in '\n'.join(blocks)
+
+
+@pytest.fixture
+def usage_tool(run, mapped, user_module):
+    user_module('usage', r'''
+        SUPPORTED_OS = ('linux', 'macos', 'windows')
+        from metaform.module import Module, Noun, Verb
+        def write(ctx):
+            path = ctx.folder / 'usage-effects.txt'
+            path.write_text((path.read_text() if path.exists() else '') + 'effect\n')
+            return {'written': True}
+        def plain(ctx):
+            return {'plain': True}
+        MODULE = Module(id='usage', summary='Instruction prerequisite fixture.', purpose='Prove pre-use delivery.',
+                        verbs=(Verb('write', write, 'Write one effect.', effect='write', needs_project=False,
+                                    nouns=(Noun('value', 'One input.', kind='int', required=False),),
+                                    details='Keep the exact selected usage instruction before writing an effect.'),
+                               Verb('plain', plain, 'Read a plain value.', effect='read', needs_project=False),
+                               Verb('switch', write, 'Apply one operation.', effect='write', nouns=(
+                                   Noun('op', 'The operation.', schema={'type': 'string', 'enum': ['one', 'two']}),
+                                   Noun('first', 'one: Keep the first operation exact. Read these instructions before '
+                                        'using the first operation and preserve the selected first value.', required=False),
+                                   Noun('second', 'two: Keep the second operation exact. Read these instructions before '
+                                        'using the second operation and preserve the selected second value.', required=False)))))
+    ''')
+    run('enable', 'usage', cwd=mapped)
+    return mapped / 'usage-effects.txt'
+
+
+def test_usage_uri_must_be_received_before_effect_and_is_scoped_to_exact_context(mapped, usage_tool):
+    from metaform.modules.mcp import server
+
+    async def exercise():
+        error, _, required = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert error and required['executed'] is False and not usage_tool.exists()
+        assert required['instructions'][0]['fingerprint']
+        assert 'metaform://tools/usage_write/instructions' in server.usage_description(server.listing(mapped)['usage_write'])
+        body, _ = await server.read_resource_text(mapped, required['read'], session='reader')
+        assert 'Keep the exact selected usage instruction' in body
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+        assert usage_tool.read_text().splitlines() == ['effect', 'effect']
+        repeated, _ = await server.read_resource_text(mapped, required['read'], session='reader')
+        assert 'Keep the exact selected usage instruction' not in repeated
+        assert (await server.answer(mapped, 'usage_write', {}, session='other'))[0]
+        assert not (await server.answer(mapped, 'usage_plain', {}, session='other'))[0]
+        assert (await server.answer(mapped, 'usage_unknown', {}, session='reader'))[0]
+    asyncio.run(exercise())
+
+
+def test_changed_usage_and_compaction_require_the_current_body(mapped, usage_tool):
+    from metaform import prompt_files
+    from metaform.module import advance_agent_context
+    from metaform.modules.mcp import server
+
+    async def exercise():
+        uri = server.instruction_uri('usage_write')
+        await server.read_resource_text(mapped, uri, session='reader')
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+        changed, _ = prompt_files.save_edit('prompt.mcp:tool_guide', 'Selected usage wrapper revision.')
+        error, _, required = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert error and required['instructions']
+        assert usage_tool.read_text().splitlines() == ['effect']
+        body, _ = await server.read_resource_text(mapped, uri, session='reader')
+        assert 'Selected usage wrapper revision.' in body
+        with Store('proj', module='agents').tables(write=False) as tx:
+            one = tx.get('receipts', {'session_id': 'reader', 'epoch': 0,
+                                    'name': 'mcp:tool_usage:usage_write:default'})
+        assert one['component']['source']['heading']['actual_version_id'] == changed.version_id
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+        advance_agent_context(mapped, 'reader', reason='compaction')
+        assert (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+        await server.read_resource_text(mapped, uri, session='reader')
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize('keep_usage_without_schema', [False, True])
+def test_shaped_out_usage_alias_cannot_unlock_execution(mapped, usage_tool, monkeypatch, keep_usage_without_schema):
+    from metaform.modules.mcp import server
+    original = server._answer
+
+    async def shaped(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        if args[1] == 'metaform_instructions':
+            body = '\n'.join(result[1]).split('{"inputSchema"', 1)[0] if keep_usage_without_schema else 'Trimmed.'
+            return False, [body], None
+        return result
+
+    monkeypatch.setattr(server, '_answer', shaped)
+
+    async def exercise():
+        await server.answer(mapped, 'metaform_instructions', {'tool': 'usage_write'}, session='reader')
+        error, _, required = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert error
+        if keep_usage_without_schema:
+            assert [one['name'] for one in required['instructions']] == ['mcp:tool_schema:usage_write']
+        assert not usage_tool.exists()
+    asyncio.run(exercise())
+
+
+def test_stateless_usage_uri_reuses_existing_handle_without_global_unlock(mapped, usage_tool):
+    from metaform.modules.mcp import server
+
+    async def exercise():
+        error, _, required = await server.answer(mapped, 'usage_write', {})
+        assert error and not usage_tool.exists()
+        handle = required[server.HANDLE]
+        assert required['read'].endswith(f'?{server.HANDLE}={handle}')
+        await server.read_resource_text(mapped, required['read'])
+        assert not (await server.answer(mapped, 'usage_write', {}, session=f'handle:{handle}'))[0]
+        assert (await server.answer(mapped, 'usage_write', {}, session='handle:000000000000'))[0]
+        assert (await server.answer(mapped, 'usage_write', {}))[0]
+        assert usage_tool.read_text().splitlines() == ['effect']
+    asyncio.run(exercise())
+
+
+def test_real_mcp_direct_and_catalog_calls_both_require_usage(run, home, mapped, usage_tool):
+    async def exercise(client, init):
+        await client.call_tool('metaform_catalog', {'module': 'usage'})
+        found = {one.name: one for one in (await client.list_tools()).tools}
+        assert 'metaform://tools/usage_write/instructions' in found['usage_write'].description
+        first = await client.call_tool('usage_write', {})
+        gateway = await client.call_tool('metaform_catalog', {'tool': 'usage_write', 'arguments': {}})
+        assert first.is_error and gateway.is_error and not usage_tool.exists()
+        guide = await client.call_tool('metaform_instructions', {'tool': 'usage_write'})
+        assert not guide.is_error and 'Keep the exact selected usage instruction' in '\n'.join(blocks(guide))
+        assert not (await client.call_tool('usage_write', {})).is_error
+        assert not (await client.call_tool('metaform_catalog', {'tool': 'usage_write', 'arguments': {}})).is_error
+    session(home, mapped, exercise, env={'METAFORM_SESSION': 'wire-reader'})
+    assert usage_tool.read_text().splitlines() == ['effect', 'effect']
+
+
+@pytest.mark.parametrize('unregistered', [False, True])
+def test_usage_receipts_work_without_a_project_ledger(run, mapped, usage_tool, tmp_path, unregistered):
+    from metaform.modules.mcp import server
+    folder = mapped
+    if unregistered:
+        folder = tmp_path / 'unregistered'
+        folder.mkdir()
+    else:
+        run('disable', 'agents', cwd=mapped)
+
+    async def exercise():
+        assert (await server.answer(folder, 'usage_write', {}, session='reader'))[0]
+        await server.read_resource_text(folder, server.instruction_uri('usage_write'), session='reader')
+        assert not (await server.answer(folder, 'usage_write', {}, session='reader'))[0]
+        assert (folder / 'usage-effects.txt').read_text().splitlines() == ['effect']
+        assert (await server.answer(folder, 'usage_write', {}, session='unrelated'))[0]
+        await asyncio.to_thread(server.compaction_state, folder, 'reader')
+        assert (await server.answer(folder, 'usage_write', {}, session='reader'))[0]
+    asyncio.run(exercise())
+
+
+def test_usage_does_not_allow_malformed_arguments_to_execute(mapped, usage_tool):
+    from metaform.modules.mcp import server
+
+    async def exercise():
+        await server.read_resource_text(mapped, server.instruction_uri('usage_write'), session='reader')
+        error, blocks, _ = await server.answer(mapped, 'usage_write', {'value': 'bad'}, session='reader')
+        assert error and 'value' in '\n'.join(blocks) and not usage_tool.exists()
+    asyncio.run(exercise())
+
+
+def test_stateless_http_guide_uri_then_existing_handle_unlocks_only_that_context(mapped, usage_tool):
+    import httpx
+
+    from metaform.modules.mcp import server
+
+    served = Served(mapped)
+    try:
+        with httpx.Client(timeout=30) as client:
+            def request(method, params):
+                params = {**params, '_meta': {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+                                              'io.modelcontextprotocol/clientCapabilities': {}}}
+                response = client.post(served.url, headers={
+                    'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28',
+                    'MCP-Method': method, **({'MCP-Name': params['uri']} if 'uri' in params else
+                                             {'MCP-Name': params['name']} if 'name' in params else {})},
+                    json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
+                assert response.is_success, response.text
+                if response.headers['content-type'].startswith('text/event-stream'):
+                    return json.loads(next(line[6:] for line in response.text.splitlines()
+                                           if line.startswith('data: ')))['result']
+                return response.json()['result']
+
+            first = request('tools/call', {'name': 'usage_write', 'arguments': {}})
+            assert first['isError'] and not usage_tool.exists()
+            required = first['structuredContent']
+            assert 'Keep the exact selected usage instruction' in request(
+                'resources/read', {'uri': required['read']})['contents'][0]['text']
+            right = request('tools/call', {'name': 'usage_write',
+                                           'arguments': {server.HANDLE: required[server.HANDLE]}})
+            assert right['isError'] is False
+            wrong = request('tools/call', {'name': 'usage_write',
+                                           'arguments': {server.HANDLE: '000000000000'}})
+            assert wrong['isError'] and usage_tool.read_text().splitlines() == ['effect']
+    finally:
+        served.stop()
+
+
+def test_applicable_operation_guide_does_not_unlock_a_different_body(mapped, usage_tool):
+    from metaform.modules.mcp import server
+
+    async def exercise():
+        await server.read_resource_text(mapped, server.instruction_uri('usage_switch', 'one'), session='reader')
+        assert not (await server.answer(mapped, 'usage_switch', {'op': 'one'}, session='reader'))[0]
+        assert (await server.answer(mapped, 'usage_switch', {'op': 'two'}, session='reader'))[0]
+        assert usage_tool.read_text().splitlines() == ['effect']
+        body, _ = await server.read_resource_text(mapped, server.instruction_uri('usage_switch', 'two'), session='reader')
+        guide_body = body.split('{"inputSchema"', 1)[0]
+        assert 'second operation' in guide_body and 'first operation' not in guide_body
+        assert not (await server.answer(mapped, 'usage_switch', {'op': 'two'}, session='reader'))[0]
+    asyncio.run(exercise())
+
+
+def test_shared_map_construction_body_is_consumed_once_across_tools(mapped):
+    from metaform.module import context
+    from metaform.modules.map.guidance import construction_component
+    from metaform.modules.mcp import server
+
+    component = construction_component(context('map', mapped, session='mapper'))
+
+    async def exercise():
+        body, _ = await server.read_resource_text(mapped, 'metaform://map/construction', session='mapper')
+        assert component['text'] in body
+        for tool, op in [('map_refine', 'edit-element'), ('map_knowledge', 'add-join'), ('map_promote', None)]:
+            required = server.instruction_required(mapped, tool, {'op': op} if op else {}, 'mapper')
+            assert required and component['name'] not in {one['name'] for one in required['instructions']}
+            guide, _ = await server.read_resource_text(mapped, server.instruction_uri(tool, op), session='mapper')
+            assert component['text'] not in guide, 'A retained common body must not repeat with another tool guide.'
+            assert server.instruction_required(mapped, tool, {'op': op} if op else {}, 'mapper') is None
+    asyncio.run(exercise())
+
+
+def test_named_module_rules_precede_use_and_are_shared_across_its_tools(home, mapped, usage_tool):
+    from metaform.modules.mcp import server
+    resources = home / 'modules' / 'usage' / 'resources'
+    resources.mkdir()
+    (resources / 'prompts.xml').write_text(
+        '<prompts><rules><rule why="Each observation needs independent evidence.">'
+        'Keep one independently verifiable fact per observation.</rule></rules></prompts>')
+    rule = 'Keep one independently verifiable fact per observation.'
+
+    async def exercise():
+        assert (await server.answer(mapped, 'usage_plain', {}, session='reader'))[0]
+        body, _ = await server.read_resource_text(mapped, server.instruction_uri('usage_plain'), session='reader')
+        assert rule in body
+        assert not (await server.answer(mapped, 'usage_plain', {}, session='reader'))[0]
+        error, _, required = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert error and 'mcp:module_usage:usage' not in {one['name'] for one in required['instructions']}
+        body, _ = await server.read_resource_text(mapped, server.instruction_uri('usage_write'), session='reader')
+        assert rule not in body
+        error, result, _ = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert not error and rule not in '\n'.join(result)
+    asyncio.run(exercise())
+
+
+def test_explicit_stdio_handle_survives_server_replacement_without_overriding_named_identity(home, mapped, usage_tool):
+    from metaform.modules.mcp import server
+
+    async def initial(client, init):
+        await client.call_tool('metaform_catalog', {'module': 'usage'})
+        tools = {one.name: one for one in (await client.list_tools()).tools}
+        assert server.HANDLE in tools['usage_write'].input_schema['properties']
+        first = await client.call_tool('usage_write', {})
+        required = first.structured_content
+        alias = required['read_tool']
+        guide = await client.call_tool(alias['tool'], alias['arguments'])
+        assert not guide.is_error and 'Keep the exact selected usage instruction' in '\n'.join(blocks(guide))
+        return required[server.HANDLE]
+
+    handle = session(home, mapped, initial, env={'METAFORM_SESSION': ''})
+
+    async def replaced(client, init):
+        assert not (await client.call_tool('usage_write', {server.HANDLE: handle})).is_error
+        assert (await client.call_tool('usage_write', {server.HANDLE: '000000000000'})).is_error
+        assert not (await client.call_tool('usage_write', {}, meta={server.HANDLE_META: handle})).is_error
+
+    session(home, mapped, replaced, env={'METAFORM_SESSION': ''})
+    assert usage_tool.read_text().splitlines() == ['effect', 'effect']
+
+    async def named(client, init):
+        assert (await client.call_tool('usage_write', {server.HANDLE: handle})).is_error
+        await client.read_resource(server.instruction_uri('usage_write'))
+        assert not (await client.call_tool('usage_write', {server.HANDLE: '000000000000'})).is_error
+
+    session(home, mapped, named, env={'METAFORM_SESSION': 'actual-named-agent'})
+    assert usage_tool.read_text().splitlines() == ['effect', 'effect', 'effect']
+
+
+def test_schema_only_change_requires_its_exact_body_without_repeating_retained_usage(mapped, usage_tool, monkeypatch):
+    from metaform.modules.mcp import server
+    original = server.listing
+
+    async def exercise():
+        await server.read_resource_text(mapped, server.instruction_uri('usage_write'), session='reader')
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+
+        def changed(folder, client=None):
+            found = original(folder, client)
+            one = found['usage_write']
+            schema = one.schema()
+            schema['properties']['value']['type'] = 'number'
+            found['usage_write'] = dataclasses.replace(one, schema=lambda: schema)
+            return found
+
+        monkeypatch.setattr(server, 'listing', changed)
+        error, _, required = await server.answer(mapped, 'usage_write', {}, session='reader')
+        assert error and [one['name'] for one in required['instructions']] == ['mcp:tool_schema:usage_write']
+        assert usage_tool.read_text().splitlines() == ['effect']
+        body, _ = await server.read_resource_text(mapped, server.instruction_uri('usage_write'), session='reader')
+        assert json.loads(body)['inputSchema']['properties']['value']['type'] == 'number'
+        assert 'Keep the exact selected usage instruction' not in body
+        assert not (await server.answer(mapped, 'usage_write', {}, session='reader'))[0]
+    asyncio.run(exercise())
+
+
+def test_explicit_common_guide_resource_records_fallback_receipt_without_agents(run, home, mapped):
+    from metaform.module import context
+    from metaform.modules.map.guidance import construction_component
+
+    run('disable', 'agents', cwd=mapped)
+    component = construction_component(context('map', mapped, session='fallback-guide-reader'))
+
+    async def exercise(client, init):
+        delivered = await client.read_resource('metaform://map/construction')
+        assert component['text'] in delivered.contents[0].text
+        rejected = await client.call_tool('map_knowledge', {'op': 'add-item'})
+        assert rejected.is_error
+        required = rejected.structured_content
+        assert component['name'] not in {one['name'] for one in required['instructions']}
+        guide = await client.call_tool(required['read_tool']['tool'], required['read_tool']['arguments'])
+        assert component['text'] not in '\n'.join(blocks(guide))
+
+    session(home, mapped, exercise, env={'METAFORM_SESSION': 'fallback-guide-reader'})
+
+
+@pytest.mark.parametrize('invalid_utf8', [False, True])
+def test_unreadable_usage_source_is_an_ordinary_wire_error_without_effect_or_receipt(
+        run, home, mapped, tmp_path, invalid_utf8):
+    from mcp.shared.exceptions import MCPError
+
+    source = tmp_path / 'configured-intake.txt'
+    if invalid_utf8:
+        source.write_bytes(b'\xff')
+    run('set', f'--intake-file={source}', cwd=mapped)
+    message = 'is not UTF-8 text' if invalid_utf8 else 'No intake file'
+    named = 'unreadable-procedure'
+
+    async def exercise(client, init):
+        for tool, arguments in [('intake_start', {}), ('metaform_instructions', {'tool': 'intake_start'})]:
+            result = await client.call_tool(tool, arguments)
+            assert result.is_error and result.structured_content is None
+            body = '\n'.join(blocks(result))
+            assert body.startswith('Error: ') and message in body and '\nNext: ' in body
+        with pytest.raises(MCPError) as failure:
+            await client.read_resource('metaform://tools/intake_start/instructions')
+        assert message in str(failure.value) and 'Next:' in str(failure.value)
+
+    session(home, mapped, exercise, env={'METAFORM_SESSION': named})
+    assert not Store('proj').intake_building().results
+    with Store('proj', module='agents').tables(write=False) as tx:
+        assert not tx.rows('receipts', {'session_id': named}, limit=0).results

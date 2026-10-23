@@ -1083,6 +1083,26 @@ def test_the_work_list_holds_open_rows_without_their_logs_and_the_ticket_read_ho
         ['The tone is fixed.'], 'tone set in alarm.c', 'fix the tone')
 
 
+@pytest.mark.req('MAP-046')
+@pytest.mark.parametrize('stage', ['unbuilt', 'under-construction'])
+def test_public_planned_stage_is_visible_without_becoming_executable_work(run, mapped, stage):
+    from metaform import settings
+
+    added = j(run, 'work', 'op=add', 'node=code.alarm.audible', f'condition={stage}',
+              'title=Planned audible notification', 'note=Its purpose is established; the mechanism is undecided.',
+              cwd=mapped)
+    assert added['condition'] == stage and added['is_work'] is False
+    assert not added['task'] and added['held'] is False
+    assert j(run, 'element', 'code.alarm.audible', cwd=mapped)['open_work'] == [stage]
+    assert j(run, 'work', 'op=distribute', 'agents=1', cwd=mapped)['results'] == []
+    run('enable', 'dispatch', cwd=mapped)
+    settings.put('dispatch_autostart', True, mapped)
+    started = json.loads(run('dispatch', 'autostart', '--json', cwd=mapped).stdout)
+    assert started['started'] == [] and not started.get('continuations')
+    record = Store('proj').ticket(added['id']).work
+    assert record.task is None and record.taken is None and record.held is False
+
+
 @pytest.mark.req('BASE-038')
 @pytest.mark.req('MAP-046')
 @pytest.mark.req('STORE-042')
@@ -1116,9 +1136,8 @@ def test_work_records_are_added_edited_listed_and_done_through_one_verb_and_neve
     assert open_work_in(before) == [] and open_work_in(after) == [['broken']]
     refused = run('map', 'work', 'op=add', 'title=A ticket', 'condition=unbuilt', '--json', cwd=mapped, ok=False)
     assert refused.returncode == 2 and 'node' in refused.stderr
-    # A ticket needs a task, what its agent works from (code.dispatcher.agent#58): op=add refuses one with none, a
-    # stage alone among them, since such a ticket never starts; a marker starts from its note, so it needs none.
-    for given in ('condition=ok', 'condition=built', 'note=just a note', 'condition=unbuilt'):
+    # Empty normal states and notes are neither executable work nor a visible non-work stage.
+    for given in ('condition=ok', 'condition=built', 'note=just a note'):
         empty = run('map', 'work', 'op=add', 'title=Works', 'node=element:code.alarm.audible', given, '--json',
                     cwd=mapped, ok=False)
         assert empty.returncode != 0 and 'the task is what an agent works from' in empty.stderr, given

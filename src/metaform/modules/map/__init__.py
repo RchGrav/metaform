@@ -34,8 +34,8 @@ from metaform.data import (
     StoreError,
     WorkRecord,
     author,
-    is_work,
     plain,
+    shown_open,
 )
 from metaform.finish_xml import xml as map_xml
 from metaform.module import (
@@ -45,6 +45,7 @@ from metaform.module import (
     NounKind,
     Pane,
     Provides,
+    Resource,
     Status,
     Stop,
     ToolbarItem,
@@ -72,6 +73,8 @@ from .glossary import PANES as GLOSSARY_PANES
 from .glossary import VERBS as GLOSSARY_VERBS
 from .glossary import item_read as term_read
 from .glossary import items_at as terms_at
+from .guidance import guide
+from .guidance import instructions as tool_instructions
 from .scoped import is_scoped
 from .scoped import resolve as resolve_scoped
 from .storage import DATA, TABLES, runtime_values
@@ -1409,10 +1412,9 @@ def messages(ctx: Context) -> Any:
 def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
-    write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A ticket is written by
-    the person, by the agents that serve them and by a session the person runs outside dispatch; the roles the
-    person's `roles_without_authority` names, a worker and a merge preparation by default, write none, MAP-050:
-    work is planned before a ticket exists."""
+    write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A no-task stage
+    records part state, separately from executable work. Explicit roles_without_authority settings govern ticket
+    writes and condition/kind edits; the default list is empty."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
     if op == 'add':
@@ -1479,11 +1481,10 @@ def work(ctx: Context) -> Any:
         if node is None:
             raise Stop('work op=add needs node, or receiver and provider.', 'metaform help map work')
         titled(ctx, 'The ticket', nouns.get('title'))  # it takes the next number at its node, MCP-037
-        # A ticket with no task never starts: no agent starter takes it, so it sits on the board for good (2026-10-18:
-        # two such sat still). A marker, trouble, broken or missing, starts from its note, `marker_task` in dispatch;
-        # a condition outside the closed list is the store's to refuse, with its own words.
+        # Non-work stages show the part's state without assigning implementation. A marker starts from its note;
+        # unknown conditions remain the store's to validate. Use the same visibility contract as the DAO.
         condition = nouns.get('condition')
-        if not is_work(condition, nouns.get('task')) and (condition in CONDITIONS or condition in (None, '', 'none')):
+        if not shown_open(condition, nouns.get('task')) and (condition in CONDITIONS or condition in (None, '', 'none')):
             raise Stop('A ticket needs a task: the task is what an agent works from, so a ticket without one never '
                        'starts.', 'add task="what it needs, and the check that shows it done"')
         _numbering(store)
@@ -2261,9 +2262,8 @@ WORK_NOUNS = (
     _noun('condition', 'add, edit, and list as a filter: the state of the part the record is at, never the kind of '
                        'ticket. missing is intended functionality that is absent, a finding. A stage, unbuilt, under-construction or built, says where the part is on its way to '
                        'existing; built is the normal state and marks nothing. broken is a built part that does not '
-                       'do its job. A task on a part that exists and works carries none. The intake and the person '
-                       'set it, since they judge the state of the part; an agent at work says what it found in its '
-                       'note instead. condition=none on edit clears it.',
+                       'do its job. A task on a part that exists and works carries none. Record the state supported '
+                       'by the work and its evidence. condition=none on edit clears it.',
           schema={'type': 'string', 'enum': [*CONDITIONS, 'none']}),
     _noun('kind', 'add, edit, and list as a filter: what sort of work the ticket is, never the state of the part: '
                   'broken, a fix for a part that does not do its job; flawed, a part that works but is not right; '
@@ -2374,7 +2374,11 @@ MODULE = Module(
     item_read=map_item_read,
     items_at=map_items_at,
     item_kinds=('work', 'question', 'message', 'term'),
-    provides=(Provides('base.holds', base_holds), Provides('ticket.runtime', TICKET_RUNTIME)),
+    provides=(Provides('base.holds', base_holds), Provides('ticket.runtime', TICKET_RUNTIME),
+              Provides('agent.tool.instructions', tool_instructions)),
+    resources=(Resource('metaform://map/construction', 'Map construction guidance',
+                        'Read before map construction: operation-specific Canonical Intake grammar and layer boundaries.',
+                        'guide'),),
     summary="Read and write this project's functional map and its layers.",
     purpose="Reads and writes this project's functional map. Handed an address, start with where: one read of "
             'the address returns the element, what relies on it, every join it provides with its receiver and '
@@ -2389,6 +2393,8 @@ MODULE = Module(
             'objects one at a time, and finish it when the task is done. Details: metaform help map.',
     details='Every read that returns a join shows the layer it comes from. --raw reads every stored layer.',
     verbs=(
+        Verb('guide', guide, 'Read the current map-construction guide before changing base structure or a knowledge layer.',
+             effect='read', needs_project=False),
         Verb('roots', roots, "Read the map's entry: the CQU and the DE with their joins, and every root element.",
              nouns=PAGING, switches=RAW, effect='read', reads_layers=True),
         Verb('where', where, 'Read one address on the map: its element, what relies on it, and what it relies on, each '
@@ -2527,10 +2533,10 @@ MODULE = Module(
              details='A work record is attached to one element or join and never changes the map. Its '
                      'condition is the state of that part, never the kind of ticket: most tasks carry none. A '
                      'stage, unbuilt, under-construction or built, says where the part is on its way to existing; '
-                     'built marks nothing. broken is a built part that does not do its job. The intake and the '
-                     'person set it, since they judge the state of the part; an agent at work says what it found '
-                     'in its own ticket\'s note instead. Its note says what and where, its task what it needs. It '
-                     'is open until op=done records its resolution, which is kept beside it.',
+                     'built marks nothing. broken is a built part that does not do its job. A no-task unbuilt or '
+                     'under-construction record is non-work state, visible at its node and never started. '
+                     'Its note says what and where, its task what it needs. Executable work stays open until '
+                     'op=done records its resolution, which is kept beside it.',
              person_details='exclude records material outside the intake scope or code conflicting with a '
                             'superseding specification. The note links the affected material and the specification or '
                             'scope reason for review. Unrelated folders are excluded from functional capture; a '
@@ -2542,9 +2548,8 @@ MODULE = Module(
                             'what its agent works from; a trouble, broken or missing marker starts from its note. '
                             'Ticket creation never adds a hold because of source, role or review status. Use an '
                             'explicit hold with its reason when work must wait. Reason-based unholding requires no '
-                            'person approval. A role in '
-                            'roles_without_authority, a worker or a merge preparation by default, writes none and says '
-                            'what it found in its own ticket\'s note.',
+                            'person approval. Explicit roles_without_authority settings govern ticket writes and '
+                            'condition/kind edits; the default list is empty.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
                          'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),
@@ -2608,16 +2613,18 @@ MODULE = Module(
              effect='read', reads_layers=True),
         Verb('knowledge', knowledge, 'Build a knowledge layer, a CEL on top of the map that agents use to index and '
                                      'understand the AUE. Create it, add, edit and remove its objects one at a time, '
-                                     'and finish it.',
+                                     'and finish it. Read metaform://map/construction before constructing or extending its content.',
              nouns=KNOWLEDGE_NOUNS,
              details='Every call names its layer with layer=. op=create makes the layer; the add, edit and remove '
                      'operations change one object each; op=finish marks it ready. link-context attaches content to an element and its descendants. Mark inherited items with extra.instruction=true; extra.applies_to narrows them to named descendants. Ordinary evidence stays local. Knowledge is genre, medium, '
-                     'practice and the like; what the project does, a feature built included, goes on the map in use '
-                     'by map refine, which records its reason, evidence and author.',
+                     'practice and the like. Valid, established functional construction follows the intake grammar '
+                     'through map refine, which records its reason, evidence and author. Proposals and unresolved '
+                     'design remain in an explicitly named CEL constrained to its declared question or variable.',
              examples=((('metaform map knowledge op=create layer=practices-cpp variable="C++ practice here." '
                          'mutable=true hideable=true'), 'Start a knowledge layer.'),), effect='remove'),
         Verb('refine', refine, 'Refine the map in use: add, change, rename or remove one of its elements or joins as a '
-                               'new version, keeping every earlier one. How built features go on the map.',
+                               'new version, keeping every earlier one. Read metaform://map/construction before construction; '
+                               'record only functionality satisfying its base grammar.',
              nouns=REFINE_NOUNS,
              details='The change is written in the base\'s own layer, never in a new one, LAYER-025; history '
                      'shows every version with its reason, evidence and author. An address the base lacks, given '

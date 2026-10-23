@@ -80,7 +80,7 @@ from acp.schema import (
 )
 
 from metaform import home, prompt_files
-from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord
+from metaform.data import BASE_VARIABLE, NewerStore, Node, Store, StoreError, WorkRecord, functional_context
 from metaform.data.refs import placed, relative, sources_index
 from metaform.module import (
     COMPACTED_KEY,
@@ -1313,6 +1313,7 @@ class Session:
         self.prompts_ready = not bool(resume)
         self.pending_episode_delta = ''  # startup context rides the first actual turn
         self.pending_episode_versions: list[prompt_files.Sent] = []
+        self.pending_episode_components: list[dict[str, Any]] = []
         # The person's system agent's inbox, `inbox_add`: what came for it since a turn last carried the inbox line,
         # each as (note or update id, sender's session, the entry as the line names it, whether it is a project update
         # with no note of its own); and the project updates the turn in flight carries, marked carried as it goes
@@ -4121,7 +4122,22 @@ class Session:
             text, self.attached = handoff_parts(self.ctx, self.work_id, session=self.runner)
         except Stop:
             text = work_line(self.work_id, Path(self.folder), self.at)
-        return text
+        return self.regional_context(text)
+
+    def regional_context(self, text: str) -> str:
+        """Orient a new assignment using its actual joins, on the existing first turn and receipt path."""
+        if self.node is None or self.role != 'worker' or self.probe:
+            return text
+        graph = functional_context(self.store, ticket(self.store, self.work_id))
+        address = str(graph['address'] or self.at)
+        legend = '\n'.join(f'- {one["id"]}: {one["name"]} ({one["address"]})' for one in graph['nodes'])
+        body = '\n\n'.join(part for part in (f'Functional region: metaform://{address}', legend,
+                                            str(graph['markdown'])) if part)
+        component = prompt_files.component(f'map:functional_context:{address}', body,
+                                           bindings={'project': self.store.project_id, 'element': address})
+        prepared = prepare_agent_context(Path(self.root), self.runner, [component], project=self.store.project_id)
+        self.pending_episode_components.extend(prepared['components'])
+        return '\n\n'.join(part for part in (prepared['text'], text) if part)
 
     def episode_delta(self) -> str:
         """A new card carries its operation and source references, without replaying the former handoff."""
@@ -4140,7 +4156,7 @@ class Session:
                 'workspace_base': self.ctx.nouns.get('episode_workspace_base'),
                    'return_to': (self.assignment or {}).get('return_to'),
                    'sources': (detail or {}).get('sources'), 'plan': (detail or {}).get('plan')}
-        return prompt('episode_delta', contribution=json.dumps(payload, ensure_ascii=False))
+        return self.regional_context(prompt('episode_delta', contribution=json.dumps(payload, ensure_ascii=False)))
 
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
@@ -4526,7 +4542,18 @@ class Session:
     def current_guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
         from .orchestration import resume_context, snapshots
         components: list[dict[str, Any]] = []
+        if self.role == 'intake' and not self.probe:
+            # The first turn already carries the actual procedure. Capture only
+            # exact source bodies present in it, through the shared provider.
+            # Request/mode data is not a second copy of the procedure, and a
+            # custom middle Prompt binding must never acknowledge unseen text.
+            for _, provider in provided(Path(self.root), 'agent.tool.instructions'):
+                components.extend(one for one in provider(self.ctx, 'intake_start', None)
+                                  if one.get('text') and str(one['text']) in text)
         if not self.probe:
+            rules = prompt_files.resolve('prompt.mcp:connect_rules')
+            if rules.get('text'):
+                components.append(rules)
             catalog = prompt_files.resolve('prompt.mcp:connect_catalog')
             if catalog.get('text'):
                 components.append(catalog)
@@ -4629,6 +4656,8 @@ class Session:
         prepared, self.inflight_context = self.inflight_context, None
         self.pending_episode_delta = ''
         self.pending_episode_versions = []
+        self.pending_episode_components = [one for one in self.pending_episode_components
+                                           if one not in (prepared or {}).get('components', [])]
         self.spoken = True
         if prepared is not None and not self.probe:
             record_agent_context(Path(self.root), self.runner, prepared['components'],
@@ -4786,6 +4815,8 @@ class Session:
         from .orchestration import snapshots
         captured = [one for one in snapshots(self.pending_episode_versions)
                     if one.get('text') and str(one['text']) in text]
+        captured.extend(one for one in self.pending_episode_components
+                        if one.get('text') and str(one['text']) in text)
         if not captured:
             return
         held = self.inflight_context
@@ -4888,7 +4919,6 @@ class Session:
                         # schema or memory dump; resources and tool guides become eligible at their next use.
                         if fresh and not compacted:
                             text = await asyncio.to_thread(self.guidance, text, supplied)
-                            text = await asyncio.to_thread(self.rules, text)
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
                         if fresh and self.acp.get('name'):  # its own name, told once, since it signs its messages so

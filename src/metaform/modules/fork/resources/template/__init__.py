@@ -84,6 +84,29 @@ Its MCP verbs appear automatically at metaform://<id>/tools, named
 There is no category registry or Verb.category. A new module needs no
 MCP-server edit. Descriptions also feed fuzzy command search.
 
+MCP requires each tool's current instructions before execution. Ordinary
+verb guides are generated from declarations and served at
+metaform://tools/<tool>/instructions[/<op>], also available through
+metaform_instructions tool=<tool> op=<op>. An unread guide returns
+instructions_required with executed=false and its read URI. Catalog and
+instruction retrieval remain available. Keep tool usage in declarations and
+named prompts instead of repeating it in role duties or startup catalogs.
+
+Additional tool-owned instructions use
+Provides('agent.tool.instructions', tool_instructions), whose callable is
+(ctx: Context, tool: str, op: str | None) -> Sequence[dict[str, Any]]. Return
+exact named/versioned components for applicable tools and operations, or an
+empty sequence. prompt_files.resolve preserves selected/actual versions,
+bindings, source and rendered fingerprints. A component can name an explicit
+source with read={'uri': ...}. The canonical guide combines these components
+with ordinary verb guidance. The template registers no placeholder provider.
+
+Instruction readers queue exact components with ctx.queue_context(components,
+epoch), using the epoch from prepare_agent_context. Complete bodies surviving
+response shaping receive receipts; preparing or listing establishes none.
+Changed effective content must be delivered before the next operation.
+Unchanged content is reused. Receipts establish delivery, not comprehension.
+
 A verb that can take long declares `task=True`: an AI tool that declares the
 MCP tasks extension is answered with a task it polls, BASE-030. hello's `wait`
 shows it. A cancel stops an `async` verb at its next `await`; a verb run in a

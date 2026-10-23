@@ -379,10 +379,11 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     blocks = prompt['params']['prompt']
     assert [block['type'] for block in blocks] == ['text', 'resource_link', 'resource_link'], 'one prompt, its links typed'
     given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with map_work')
-    # the startup checkpoint every agent opens with, then the node's effective context, then the memory prompt, then
-    # the work sentence, CTX-028
-    assert given.startswith('Context diagnostic key:') and f'{{"address": "{NODE}", ' in given and handed, \
-        "the checkpoint, the node's effective context, the memory prompt, then the work sentence, CTX-028"
+    # The node's effective context, memory instructions and regional grounding precede the work sentence.
+    assert f'{{"address": "{NODE}", ' in given and handed, \
+        "the node's effective context precedes the work sentence, CTX-028"
+    assert 'Context diagnostic key:' not in given and 'agents_confirm' not in given
+    assert f'Functional region: metaform://{NODE}' in given and '```mermaid\nflowchart LR' in given
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of the work, CTX-028'
     assert prompt['params']['sessionId'] == 'fake-session-1'
     ticket = dispatch.ticket()

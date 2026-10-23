@@ -24,6 +24,18 @@ Started from template 0.2.0.
 
 ## Verbs
 
+Tools with specific usage instructions require their delivery before execution,
+MCP-044. Discovery points to `metaform://tools/<tool>/instructions[/<op>]`;
+`metaform_instructions tool=<tool> op=<op>` is the equivalent gateway route.
+An unguided call returns `instructions_required`, the read route and, when needed,
+the existing logical-context `session_handle`, without running the target.
+The guide supplies applicable tool instructions, shared module rules, contributed
+instructions and the canonical argument schema. Exact delivered content is recorded
+for that context. Unchanged shared content is reused across tools; changed content,
+schemas and context epochs require current delivery. A receipt proves delivery,
+not comprehension. Discovery, guide reads and tools without specific instructions
+remain reachable. These prerequisites apply to MCP, not arbitrary CLI or file writes.
+
 `metaform_skills` is always available, including when workflow is disabled or
 omitted from the build. `op=list` lists discoverable skills, `op=load name=`
 accepts a name or `logic.skill.<name>` Address and returns its procedure with
