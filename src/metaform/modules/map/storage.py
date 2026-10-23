@@ -7,6 +7,7 @@ Legacy physical names preserve existing stores and exchange documents.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 from collections.abc import Sequence
 from typing import Any, cast
@@ -84,6 +85,37 @@ def _remember_hold(tx: Tx, work_id: str, reason: str) -> None:
     if tables.update("ticket_settings", {"work_id": work_id}, {"hold_reason": reason}) is None:
         tables.insert("ticket_settings", {"work_id": work_id, "hold_reason": reason})
     tables.insert("hold_history", {"id": new_id(), "work_id": work_id, "reason": reason, "at": now()})
+
+
+def remember_work_source(tx: Tx, work_id: str, text: str | None, *, interpretation: str | None = None,
+                         provenance: Any = None, operation: str = 'revision') -> dict[str, Any]:
+    """Retain exact source words separately from the operative task, without inferring authorship."""
+    details = dict(provenance or {})
+    source = details.pop('text', text)
+    if source is not None and not isinstance(source, str):
+        raise StoreError('Source text must be a string.', 'supply exact source text')
+    tables = tx.tables()
+    earlier = tables.rows('work_sources', {'work_id': work_id}, limit=0).results
+    revision = hashlib.sha256((interpretation or '').encode()).hexdigest()
+    made = tables.insert('work_sources', {'source_id': new_id(), 'work_id': work_id,
+        'sequence': len(earlier) + 1, 'operation': operation, 'text': source,
+        'interpretation': interpretation, 'task_revision': revision,
+        'provenance': details or {'author': 'unknown'}, 'created': now()})
+    return made
+
+
+def work_sources(tx: Tx, work_id: str, source_id: str | None = None, *, contents: bool = True) -> tuple[dict[str, Any], ...]:
+    """Addressable request/revision records, in publication order. Summaries contain no repeated source prose."""
+    tables = tx.tables()
+    if source_id:
+        one = tables.get('work_sources', {'source_id': source_id})
+        records = [one] if one is not None and one['work_id'] == work_id else []
+    else:
+        records = sorted(tables.rows('work_sources', {'work_id': work_id}, limit=0).results,
+                         key=lambda one: one['sequence'])
+    return tuple({**(one if contents else {key: one[key] for key in (
+        'source_id', 'work_id', 'sequence', 'operation', 'task_revision', 'provenance', 'created')}),
+        'read': f'metaform map work op=sources id={work_id} source_id={one["source_id"]}'} for one in records)
 
 
 def set_work_hold(tx: Tx, work_id: str, *, hold: bool, hold_reason: Any = None) -> WorkRecord:
@@ -273,6 +305,7 @@ def add_work(
     kind: Any = None,
     title: Any = None,
     hold_reason: Any = None,
+    provenance: Any = None,
 ) -> WorkRecord:
     """Write the condition of an element or join as its own record, apart from the map, STORE-042; a ticket carries
     its kind beside it. It takes the next number at its node's address with its title, MCP-037: the title given, else
@@ -311,6 +344,7 @@ def add_work(
             last,
         ),
     )
+    remember_work_source(tx, work_id, stated, interpretation=stated, provenance=provenance, operation="original")
     _link(tx, work_id, links, notices)
     if reason is not None:
         _remember_hold(tx, work_id, reason)
@@ -334,7 +368,7 @@ def _link(tx: Tx, work_id: str, links: Any, notices: list[Notice]) -> None:
 WORDS_ONLY = frozenset({"note", "title", "links", "reviewed"})  # an edit of these changes no start, `_ticket_changed`
 
 
-def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
+def edit_work(tx: Tx, work_id: str, changes: Any, *, provenance: Any = None) -> WorkRecord:
     """Change a work record's fields, attachment or reference links in place, preserving its identity and progress."""
     notices: list[Notice] = []
     before = _work_row(tx, work_id)
@@ -374,6 +408,11 @@ def edit_work(tx: Tx, work_id: str, changes: Any) -> WorkRecord:
             value = _work_text(value, key, notices)
         tx.execute(f"UPDATE work SET {key}=? WHERE work_id=?", (value, work_id))
     after = _work_row(tx, work_id)
+    if provenance is not None or 'task' in given and after['task'] != before['task']:
+        # Legacy records gain a truthful pre-edit snapshot. No author or original user wording is invented.
+        if not work_sources(tx, work_id, contents=False):
+            remember_work_source(tx, work_id, before['task'], interpretation=before['task'], operation='snapshot')
+        remember_work_source(tx, work_id, after['task'], interpretation=after['task'], provenance=provenance)
     if after["done"] is None:  # an edit never leaves an open record shown nowhere; the transaction rolls back
         _shown(str(after["condition"]), after["task"])
     return work_record(tx, after, tuple(notices))
@@ -1712,13 +1751,21 @@ TABLES = Tables(
     # which older versions never name; 23: the retired agent identity becomes antigravity in ticket runtime and
     # eligibility values, without changing any table layout; 24: latest explicit hold reason and retained reason
     # history, in nullable settings and a new table that earlier versions never name; 25: nullable Fast choice,
-    # a text column earlier versions never name, with NULL inheriting and true/false explicit
-    version=25,
+    # a text column earlier versions never name, with NULL inheriting and true/false explicit; 26: exact source
+    # revisions apart from their task interpretations, in a new table older writers never name
+    version=26,
     compatible_from=9,
     upgrade=upgrade,
     legacy_upgrade=legacy_upgrade,
     legacy_fold=legacy_fold,
     tables=(*FEATURE_TABLES, Table(
+        'work_sources', place='metaform', key=('source_id',),
+        columns=(Column('source_id', required=True), Column('work_id', required=True),
+                 Column('sequence', 'int', required=True), Column('operation', required=True), Column('text'),
+                 Column('interpretation'), Column('task_revision', required=True), Column('provenance', 'json'),
+                 Column('created', required=True)),
+        indexes=(Index(('work_id',)),),
+    ), Table(
         'glyphs', place='metaform', key=('work_id',),
         columns=(Column('work_id', required=True), Column('glyph', required=True)),
     ), Table(
@@ -1790,6 +1837,7 @@ DATA = Data(
                 unhold_all_work,
                 unhold_reviewed_work,
                 edit_work,
+                remember_work_source,
                 retarget_work,
                 move_message,
                 move_work,
@@ -1814,7 +1862,7 @@ DATA = Data(
         "board_snapshot": Operation(board_snapshot),
         "reply": Operation(close_message, write=True),
         "reopen": Operation(reopen_message, write=True),
-        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, work_snapshot, work_hold_history, held_work,
+        **{fn.__name__: Operation(fn, retained=True) for fn in (work, messages, ticket, work_snapshot, work_sources, work_hold_history, held_work,
                                                                 reports, report,
                                                                 items_numbered, numbers_of, item_at, listed_items)},
     },

@@ -34,6 +34,26 @@ Shipped modules and a user's modules share these public services, BASE-004 and Q
 
 `metaform.home` offers the home and its projects: `home()`, `project(id)` and `projects()`; `to_clear(project)` and `clear_project(project)`; `backups(project)` and `restore_project(project, name=None)`; and `not_empty(project)`, `removal_caution(project)` and `remove_project(project)`. The caller obtains the operation's confirmation through its declared `Verb.caution`. `remove_project` enforces that the project is empty and keeps its source files, history and backups. `metaform.data` offers `query_reads()` to list named reads and `query_read(store, name, arguments)` to run one with its existing text argument conversions. `Record` supports module-defined records, `plain(value)` converts nested records to JSON-ready data, and `NewerStore` identifies a store requiring newer code. `metaform.outline.markdown(store, address=None, selection=None, raw=False)` and `metaform.finish_xml.xml(store, address=None, selection=None, raw=False)` are the shared map document writers. The map command and web export use them directly so each format has one implementation, BASE-004, MAP-052, MAP-059 and VIEW-024. Hello's `basedemo` shows the shared reads and removal preview, `base-restore` and `base-remove` show the project actions, and its existing `follow` shows `Context.listen`.
 
+## Optional context change references
+
+A module that holds consumed knowledge can expose `Provides('agent.context.changes', provider)` through the public
+`metaform.module` provider mechanism. This is optional. The template registers no empty provider.
+
+- `pending(ctx, session)` returns compact JSON-ready notice dictionaries for relevant changed revisions previously
+  consumed by that runner context. It does not acknowledge them or return a full knowledge body.
+- `delivered(ctx, session, notices)` acknowledges exactly those notice revisions after dispatch accepts their
+  outgoing turn. A concurrent newer revision remains pending.
+
+Retain stable component, correction and deletion identities. Coalesce changes from existing mutating operations
+and change events. Filter unrelated entries and the consumer's own writes before expensive reads. Include a
+read command or resource reference so the agent can retrieve the current evidence when it matters. Keep
+module-owned notice wording in `resources/prompts.xml`.
+
+Dispatch reads these references while preparing a turn that is already scheduled. This capability creates no
+polling, standalone model wake or global broadcast. A delivery receipt describes accepted transport; it does not
+prove hidden semantic retention. Memory's provider is an implementation example. The separate `agent.role`
+provider can expose `changes` and `delivered_changes` for changed role instructions already consumed by a context.
+
 ## Prompts
 
 The prompts in `resources/prompts.xml`, each an element named for the prompt, and where each is served, MCP-031. `instructions` is listed in the instructions agents read under "modules available."; a copy writes its own module name in place of `template`. `prompt_files.module_commands(id)` reads a loaded module's declared slash commands through the public base, returning an empty list when the module is not found.

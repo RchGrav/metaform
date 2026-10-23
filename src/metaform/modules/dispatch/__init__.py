@@ -2032,27 +2032,32 @@ def keep_runtime(ctx: Context, work_id: str, choice: dict[str, Any], catalog: di
     overrides = cast(dict[str, Any], previous.get('overrides') or {})
     refined = bool(choice.get('task_fingerprint')
                    and choice.get('task_fingerprint') != previous.get('task_fingerprint'))
-    preserve = not refined and all(held.get(field) for field in ('agent', 'model', 'effort')) and bool(previous)
+    preserve = not refined and all(held.get(field) for field in ('agent', 'model')) and bool(previous)
     values = {field: held[field] if preserve else overrides.get(field) or choice.get(field)
               for field in ('agent', 'model', 'effort')}
     agent = str(values.get('agent') or '')
     offered = catalog.get(agent)
-    if offered is None or values['model'] not in offered['models'] or values['effort'] not in offered['efforts']:
+    if (offered is None or values['model'] not in offered['models']
+            or (values['effort'] not in offered['efforts']
+                and (offered['efforts'] or values['effort'] is not None))):
         raise Stop('The ticket runtime must use installed, eligible agents and their offered model and effort.',
                    f'metaform dispatch options agent={agent or "codex"}')
     if preserve:
         values['decision'] = held['decision']
-    elif all(overrides.get(field) for field in ('agent', 'model', 'effort')):
+    elif (all(overrides.get(field) for field in ('agent', 'model'))
+          and (overrides.get('effort') or not offered['efforts'])):
         values['decision'] = {**previous, 'task_type': choice.get('task_type'),
                               'task_fingerprint': choice.get('task_fingerprint')}
     else:
         confidence = choice.get('confidence')
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not 0 <= confidence <= 1:
             raise Stop('Runtime confidence must be between 0 and 1.', 'metaform orchestration route')
-        if choice.get('decider') not in ('jev', 'facilitator'):
-            raise Stop('Runtime decider must be jev or facilitator.', 'metaform orchestration route')
+        if choice.get('decider') not in ('jev', 'facilitator', 'continuation'):
+            raise Stop('Runtime decider must be jev, facilitator or continuation.', 'metaform orchestration route')
         values['decision'] = {field: choice.get(field) for field in
                               ('decider', 'confidence', 'task_type', 'reason', 'task_fingerprint')}
+        if choice.get('decider') == 'continuation':
+            values['decision'].update({field: choice.get(field) for field in ('source_work_id', 'source_decider')})
         values['decision']['overrides'] = overrides
     return owner.save(ctx, work_id, values)
 
@@ -2174,7 +2179,10 @@ def wanted_options(ctx: Context, store: Store, agent: str, work_id: str | None) 
             offered_fast = offered_option(store, agent, 'model_config')
             if offered_fast is None or offered_fast.get('type') != 'boolean':
                 chosen = {key: value for key, value in chosen.items() if key != 'model_config'}
-    return {**chosen_options(ctx, agent), **chosen}
+    result = {**chosen_options(ctx, agent), **chosen}
+    if offered_values(store, agent, 'thought_level') == []:
+        result.pop('thought_level', None)
+    return result
 
 
 def today() -> str:
@@ -2670,7 +2678,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
     routed: list[dict[str, Any]] = owner.route_pending(ctx) if owner is not None else []
     continued = drain(ctx)  # restart/reconnect reconciliation of explicitly recorded continuations
     start_raised(ctx, store, asked)  # the person raised these, so they start whether Full Auto is checked or not
-    hold_review_due = review_holds(ctx)
+    review_holds(ctx)
     connected = stay_connected(ctx, store, asked)  # the person's own, whether Full Auto is checked or not
     from .board import stalled
     try:
@@ -2684,7 +2692,7 @@ def autostart(ctx: Context) -> dict[str, Any]:
         # Preparation may have commissioned a helper after the first drain. Continue it in this pass because
         # listeners ignore their own writes, and helpers have capacity independent of the worker slots.
         continued.extend(drain(ctx))
-    due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None), hold_review_due) if one is not None]
+    due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None)) if one is not None]
     return {**started, **connected,
             'more': bool(started.get('more') or owner is not None and owner.routing_waiting(ctx)),
             **({'specialist_routing': {
@@ -2803,10 +2811,10 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
                                 and not held.get('role_snapshot') and not held.get('parent_assignment_id')
                                 and not held.get('reviewed_assignment_id'))
                 if (held.get('authored_role_uri') != 'metaform://role/gc'
-                        or status and status.get('state') == 'creating' or missing_role):
-                    if not owner.prepare_runtime(ctx, held):
-                        runtime_pending = True
-                        continue
+                        or status and status.get('state') == 'creating' or missing_role) \
+                        and not owner.prepare_runtime(ctx, held):
+                    runtime_pending = True
+                    continue
             if owner.selected_specialist(ctx, record.id):
                 eligible_roles.add(record.id)
             else:
@@ -5082,7 +5090,13 @@ def talk(ctx: Context) -> dict[str, Any]:
     elif kind == 'session':
         work_id, _, session_id = ref.partition(':')
         if not any(row['work_id'] == work_id and row['session_id'] == session_id for row in everyone):
-            raise Stop(f'No agent session {ref}.', 'metaform dispatch sessions thread=false')
+            from .orchestration import service
+            owner = service(ctx)
+            current = next((row for row in everyone if row['session_id'] == session_id), None)
+            if current is None or owner is None or not hasattr(owner, 'session_bound') \
+                    or not owner.session_bound(ctx, session_id, work_id):
+                raise Stop(f'No agent session {ref}.', 'metaform dispatch sessions thread=false')
+            work_id = str(current['work_id'])
         about = f'thread:{session_id}'
     else:
         work_id, about = anchor(ctx, store, ref), f'node:{ref}'
@@ -7699,6 +7713,12 @@ MODULE = Module(
                     Noun('persons', "true: the person's own start, or their system agent's at their word, which runs "
                                     'now whatever the routing says of a specialist.', kind='bool', required=False),
                     Noun('assignment', 'The recorded authored assignment this managed launch continues.', required=False),
+                    Noun('episode_previous_work', 'Previous work in a retained execution episode; the current work owns this turn.',
+                         required=False),
+                    Noun('episode_source_candidate', 'Exact preceding candidate retained when an episode changes its card branch.',
+                         required=False),
+                    Noun('episode_source_branch', 'The frozen preceding card branch in the retained workspace.', required=False),
+                    Noun('episode_workspace_base', 'Starting commit for this card in the retained workspace.', required=False),
                     Noun('resume', 'The ended session to go on with, loaded or resumed through ACP.', required=False),
                     Noun('intake', 'true: an intake agent, whose work id names no ticket and whose first turn is the '
                                    'intake, with what the person asked for kept in its launch\'s row.', kind='bool',

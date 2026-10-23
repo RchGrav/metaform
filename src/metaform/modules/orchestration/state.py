@@ -33,7 +33,7 @@ from metaform.module import (
     surface,
 )
 
-from . import routing
+from . import episodes, routing
 
 HELP = 'metaform help orchestration'
 ENDED = frozenset(('returned', 'delivered', 'failed', 'stopped', 'transferred'))
@@ -91,25 +91,6 @@ def finding_text(fields: Mapping[str, Any]) -> tuple[str, str]:
     return title, '\n\n'.join(parts) or title
 
 
-def signature(title: str) -> str:
-    """A finding's normalised signature: its summary's words, lower case, without punctuation or spacing."""
-    return fingerprint(' '.join(''.join(one if one.isalnum() else ' ' for one in title.lower()).split()))[:16]
-
-
-def names(said: Any, subjects: Sequence[str], called: Sequence[str] = ()) -> bool:
-    """Whether the person's words name one of these parts: its address, a part within it, a dotted address of a
-    whole that holds it, or the short name a part is called by, as whole words. A plain word never stands for a
-    whole, so 'code' alone names no code part."""
-    text = ' '.join(str(said or '').lower().split())
-    if any(re.search(rf'(?<!\w){re.escape(one)}(?!\w)', text) for one in called if one):
-        return True
-    for named in re.findall(r'\w+(?:\.\w+)*', text):
-        if any(named == one or named.startswith(f'{one}.') or ('.' in named and one.startswith(f'{named}.'))
-               for one in subjects if one):
-            return True
-    return False
-
-
 def own(ctx: Context) -> Store:
     store = ctx.require_store()
     if store.module == 'orchestration':
@@ -120,9 +101,11 @@ def own(ctx: Context) -> Store:
 
 
 # Version 2 adds an assignment's `role_snapshot` and `attempt`; version 3 its `findings_filed`, the tickets its
-# assessment's findings landed on; version 5 its `persons_start`, a delivery the person started. Each column may be
-# empty or has a default, so version 1's code still reads and writes the tables, STORE-029.
-TABLES = Tables(version=5, compatible_from=1, tables=(
+# assessment's findings landed on; version 5 its `persons_start`, a delivery the person started; version 6 adds
+# execution episodes, separate plans and retained reviewed sources/findings. Additions are nullable or separate
+# tables, so version 1's code still reads and writes its tables, STORE-029.
+TABLES = Tables(version=6, compatible_from=1, tables=(
+    *episodes.TABLES,
     routing.TABLE,
     Table('assignments', key=('assignment_id',), columns=(
         Column('assignment_id', required=True), Column('work_id', required=True),
@@ -133,7 +116,8 @@ TABLES = Tables(version=5, compatible_from=1, tables=(
         Column('attempt', 'int', default=1),
         Column('execution_role', required=True, default='worker'), Column('functional_locations', 'json'),
         Column('task', required=True), Column('requested_result', required=True), Column('candidate', 'json'),
-        Column('specification', 'json'), Column('mode', required=True), Column('state', required=True),
+        Column('specification', 'json'), Column('plan', 'json'), Column('reviewed_snapshot', 'json'),
+        Column('findings', 'json'), Column('mode', required=True), Column('state', required=True),
         Column('return_to', 'json'), Column('pending_direction', 'json'), Column('result', 'json'),
         Column('evidence', 'json'), Column('last_check_in', 'json'), Column('stop', 'json'), Column('stop_history', 'json'),
         Column('findings_filed', 'json'), Column('persons_start', 'bool', default=False),
@@ -339,7 +323,12 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
         'successor_assignment_id': None,
         'owner_session_id': session, 'authored_role_uri': f'metaform://role/{role}', 'execution_role': 'worker',
         'functional_locations': [dict(one) for one in locations], 'task': task, 'requested_result': result,
-        'candidate': candidate, 'specification': specification, 'mode': mode,
+        'candidate': candidate, 'specification': specification, 'plan': None,
+        'reviewed_snapshot': None if review is None else {
+            'assignment_id': review['assignment_id'], 'work_id': review['work_id'],
+            'task_revision': fingerprint(str(review['task'])), 'task': review['task'],
+            'specification': review.get('specification'), 'candidate': candidate or review.get('candidate')},
+        'findings': [], 'mode': mode,
         'state': 'running' if session else 'queued', 'return_to': return_to,
         'pending_direction': list((parent or review or {}).get('pending_direction') or []),
         'result': None, 'evidence': [], 'last_check_in': None, 'stop': None, 'stop_history': [],
@@ -349,6 +338,36 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
     if session:
         tx.insert('sessions', {'session_id': session, 'assignment_id': ident, 'runner': None, 'created': now()})
     return made
+
+
+def review_snapshot(ctx: Context, reviewed: Mapping[str, Any], candidate: Any = None) -> dict[str, Any]:
+    """Retain the actual requirements read for an assessment, including externally edited specifications."""
+    from .specifications import read, specification
+    snapshot: dict[str, Any] = {'assignment_id': reviewed['assignment_id'], 'work_id': reviewed['work_id'],
+        'task': reviewed['task'], 'task_revision': fingerprint(str(reviewed['task'])),
+        'candidate': candidate if candidate is not None else reviewed.get('candidate'),
+        'sources': list(own(ctx).work_sources(str(reviewed['root_work_id']), contents=False)),
+        'direction_references': [str(one.get('id') or one.get('revision') or one.get('change_id'))
+                                 for one in cast(list[dict[str, Any]], reviewed.get('pending_direction') or [])
+                                 if one.get('id') or one.get('revision') or one.get('change_id')]}
+    try:
+        spec = specification(ctx, reviewed.get('specification'), str(reviewed['work_id']))
+        content, revision = read(ctx, spec)
+        snapshot.update(specification={**spec, 'revision': revision}, requirements_revision=revision,
+                        requirements=content)
+    except (Stop, OSError, UnicodeError) as error:
+        # An unavailable reference remains visible evidence. It cannot silently block an assessment.
+        snapshot.update(specification=reviewed.get('specification'), requirements_error=str(error))
+    return snapshot
+
+
+def reviewed_revision(assessment: Mapping[str, Any]) -> dict[str, Any]:
+    """Reference the retained reviewed source without copying it into every finding and direction."""
+    snapshot = cast(Mapping[str, Any], assessment.get('reviewed_snapshot') or {})
+    return {'assessment_assignment_id': assessment['assignment_id'],
+            'task_revision': snapshot.get('task_revision'),
+            'requirements_revision': snapshot.get('requirements_revision'),
+            'read': f'metaform orchestration inspect assignment={assessment["assignment_id"]}'}
 
 
 def role_options(request: Mapping[str, Any]) -> dict[str, Any]:
@@ -405,12 +424,25 @@ class Orchestration:
             if caller['authored_role_uri'] not in FACILITATORS or not allowed:
                 raise Stop('Only the commissioned Facilitator records a full-model runtime choice.', HELP)
         recorded_task = decision.get('task_fingerprint')
-        if all(kept.get(key) for key in ('agent', 'model', 'effort')) and (
+        if all(kept.get(key) for key in ('agent', 'model')) and (
                 recorded_task == current or (recorded_task is None and not decision.get('task_type'))):
-            return {'state': 'selected', 'choice': kept}
+            catalog = transport.runtime_catalog(ctx, work_id)
+            offered = cast(dict[str, Any], catalog.get(kept['agent']) or {})
+            if offered and not offered.get('models') and decision.get('decider') == 'person':
+                # Manual settings made before this harness advertised its controls remain unchecked.
+                # Startup reads the actual controls and reports configuration errors in their own terms.
+                return {'state': 'selected', 'choice': kept}
+            if (kept['model'] in offered.get('models', {})
+                    and (kept.get('effort') in offered.get('efforts', [])
+                         or (not offered.get('efforts') and kept.get('effort') is None))):
+                return {'state': 'selected', 'choice': kept}
         catalog = transport.runtime_catalog(ctx, work_id)
-        # Explicit person choices restrict inference. Automatic choices can change after a Planner refines the task.
-        chosen = choose(ctx, record, catalog, fallback=fallback, overrides=overrides)
+        # Explicit choices remain authoritative. A plan is separate evidence, not a replacement request.
+        with own(ctx).tables(write=False) as tx:
+            assigned = row_for(tx, work_id=work_id)
+        plan = (assigned or {}).get('plan')
+        fields = {**record.to_dict(), 'plan': plan} if plan else record
+        chosen = choose(ctx, fields, catalog, fallback=fallback, overrides=overrides)
         if chosen is None:
             from .runtime import TASKS, rejection_reason, strengths_of
             needed = {'state': 'needs_choice', 'work_id': work_id, 'catalog': catalog,
@@ -516,9 +548,13 @@ class Orchestration:
             return False
         choice = selected['choice']
         decision = choice.get('decision') or choice
-        if decision.get('task_type') != 'needs_plan' or assignment['authored_role_uri'] == 'metaform://role/planner':
+        plan = cast(dict[str, Any], assignment.get('plan') or {})
+        revision = fingerprint(record.task or '')
+        if (decision.get('task_type') != 'needs_plan'
+                or assignment['authored_role_uri'] == 'metaform://role/planner'
+                or plan.get('revision') == revision or plan.get('continued_for') == revision):
             return True
-        # A planning contribution refines the original ticket. It never completes an implementation ticket.
+        # A distinct planning contribution returns evidence once for this request revision.
         task = prompt_files.served(resources.files('metaform.modules.orchestration'), 'runtime_plan',
                                    work=work_id)
         inherited = ({**{key: choice.get(key) for key in ('agent', 'model', 'effort')},
@@ -526,9 +562,10 @@ class Orchestration:
                      if decision.get('decider') in ('jev', 'facilitator') and not decision.get('overrides') else None)
         self._delegate(replace(ctx, nouns={
             'assignment': assignment['assignment_id'], 'role': 'planner', 'task': task,
-            'result': 'Refine the implementation ticket with concrete behavior and acceptance evidence.',
-            'key': 'runtime-plan:' + fingerprint(record.task or ''), 'wait': True,
-            '_runtime_choice': inherited}), assignment, waiting=True, internal=True)
+            'result': 'Return the implementation approach, dependencies and evidence needed to establish the result.',
+            'key': 'runtime-plan:' + revision, 'wait': True,
+            '_runtime_plan': {'revision': revision}, '_runtime_choice': inherited}), assignment,
+            waiting=True, internal=True)
         return False
 
     def route(self, ctx: Context, work_id: str, *, refresh: bool = False) -> dict[str, Any]:
@@ -628,20 +665,28 @@ class Orchestration:
             row = tx.get('routing', {'work_id': work_id})
             return {key: row.get(key) for key in ('state', 'role', 'reason')} if row else None
 
-    def ticket_edited(self, ctx: Context, work_id: str, revision: str) -> None:
+    def ticket_edited(self, ctx: Context, work_id: str, revision: str, *, source: str = 'unknown',
+                      source_reference: str | None = None) -> None:
         """Keep the operative task current and deliver a reference to its changed requirements once."""
         store = own(ctx)
         record = store.ticket(work_id).work
+        sources = store.work_sources(work_id, contents=False)
+        source_reference = source_reference or (sources[-1]['source_id'] if sources else None)
         with store.tables() as tx:
             assignment = row_for(tx, work_id=work_id)
             if assignment and assignment['state'] not in ENDED:
-                body = f'Ticket {work_id}: the user edited its requirements. Read the current ticket before continuing.'
-                direction = {'kind': 'user_direction', 'body': body, 'at': now(), 'revision': revision}
+                author = {'user': 'the user', 'agent': 'an agent', 'change_order': 'an adaptive change order'}.get(
+                    source, 'a recorded edit')
+                body = f'Ticket {work_id}: {author} revised its execution description. Read the current ticket and source references before continuing.'
+                kind = 'user_direction' if source == 'user' else 'ticket_revision'
+                direction = {'kind': kind, 'body': body, 'at': now(), 'revision': revision,
+                             'source': source, 'source_reference': source_reference}
                 assignment = update(tx, assignment, task=record.task or '',
                     requested_result=record.task if assignment['requested_result'] == assignment['task']
                     else assignment['requested_result'],
                     pending_direction=[*(assignment.get('pending_direction') or []), direction])
-                transition(tx, assignment, 'send', {'text': body, 'kind': 'user_direction', 'revision': revision},
+                transition(tx, assignment, 'send', {'text': body, 'kind': kind, 'revision': revision,
+                                                       'source': source, 'source_reference': source_reference},
                            f'ticket-edit:{revision}')
 
     def assignment(self, ctx: Context, work_id: str | None = None, session_id: str | None = None,
@@ -714,7 +759,16 @@ class Orchestration:
                 raise Stop('The assignment was stopped before this launch.', HELP)
             bound = tx.get('sessions', {'session_id': session_id})
             if bound and bound['assignment_id'] != assignment_id:
-                raise Stop('The session is already bound to another assignment.', HELP)
+                previous = row_for(tx, assignment_id=bound['assignment_id'])
+                target_episode = episodes.attach(tx, held, now())
+                previous_episode = episodes.attach(tx, previous, now()) if previous else None
+                if not previous or previous.get('stop') or previous['state'] == 'running' or not previous_episode \
+                        or previous_episode['episode_id'] != target_episode['episode_id']:
+                    raise Stop('The session is already bound to another active workstream.', HELP)
+                if previous['authored_role_uri'] != held['authored_role_uri']:
+                    raise Stop('Different responsibilities use separate ACP contexts.', HELP)
+                episodes.bound(tx, previous, session_id, bound.get('runner'), now())
+                tx.update('sessions', {'session_id': session_id}, {'assignment_id': assignment_id})
             if bound:
                 tx.update('sessions', {'session_id': session_id}, {'runner': runner or bound['runner']})
             else:
@@ -722,12 +776,78 @@ class Orchestration:
                                       'runner': runner, 'created': now()})
             bound_assignment = update(tx, held, owner_session_id=session_id, state='running',
                                       role_snapshot=held.get('role_snapshot') or snapshot)
+            episodes.bound(tx, bound_assignment, session_id, runner, now())
             for event in tx.rows('transitions', {'assignment_id': assignment_id}, limit=0).results:
                 if event['kind'] == 'launch' and event['state'] == 'pending':
                     tx.update('transitions', {'transition_id': event['transition_id']}, {
                         'state': 'delivered', 'delivery': {'state': 'running', 'session_id': session_id,
                                                          'runner': runner}, 'updated': now()})
             return bound_assignment
+
+    def episode(self, ctx: Context, work_id: str, *, continue_from: str | None = None,
+                fresh: bool = False) -> dict[str, Any]:
+        """Select related continuity explicitly, retaining every assignment and return route."""
+        with own(ctx).tables() as tx:
+            held = row_for(tx, work_id=work_id)
+            if held is None:
+                raise Stop(f'No assignment for {work_id}.', HELP)
+            episodes.attach(tx, held, now(), continue_from=continue_from, fresh=fresh)
+            result = episodes.context(tx, held)
+        assert result is not None
+        return result
+
+    def episode_context(self, ctx: Context, assignment: Mapping[str, Any]) -> dict[str, Any] | None:
+        with own(ctx).tables(write=False) as tx:
+            return episodes.context(tx, assignment)
+
+    def session_bound(self, ctx: Context, session_id: str, work_id: str) -> bool:
+        """Whether this exact ACP conversation previously worked on the named card."""
+        with own(ctx).tables(write=False) as tx:
+            assignment = row_for(tx, work_id=work_id)
+            return bool(assignment and tx.get('binding_history', {
+                'session_id': session_id, 'assignment_id': assignment['assignment_id']}))
+
+    def inherit_runtime(self, ctx: Context, assignment: Mapping[str, Any]) -> None:
+        """An explicit coherent continuation can reuse an advertised, unchanged runtime choice."""
+        stream = self.episode_context(ctx, assignment)
+        previous = (stream or {}).get('previous_assignment')
+        if not previous or previous['assignment_id'] == assignment['assignment_id'] or previous.get('stop') \
+                or previous['authored_role_uri'] != assignment['authored_role_uri']:
+            return
+        plan = cast(dict[str, Any], previous.get('plan') or {})
+        previous_revision = fingerprint(str(previous['task']))
+        for _, transport in provided(ctx.folder, 'orchestration.transport'):
+            if not all(hasattr(transport, name) for name in ('runtime_settings', 'keep_runtime')):
+                continue
+            current = transport.runtime_settings(ctx, str(assignment['work_id']))
+            if current.get('decision') or current.get('agent') or current.get('model'):
+                return
+            choice = transport.runtime_settings(ctx, str(previous['work_id']))
+            if not choice.get('agent') or not choice.get('model'):
+                return
+            decision = dict(choice.get('decision') or {})
+            saved = {**choice, **decision, 'decider': 'continuation',
+                     'source_decider': decision.get('decider'), 'source_work_id': previous['work_id'],
+                     'confidence': decision.get('confidence', 1.0),
+                     'reason': 'Retained runtime for the explicitly related execution episode.',
+                     'task_fingerprint': fingerprint(str(assignment['task']))}
+            try:
+                inherited = transport.keep_runtime(ctx, str(assignment['work_id']), saved)
+            except (Stop, ValueError):
+                return  # Changed advertised options are resolved through the normal selection path.
+            if (plan and not assignment.get('plan')
+                    and cast(dict[str, Any], inherited.get('decision') or {}).get('decider') == 'continuation'
+                    and (plan.get('revision') == previous_revision or plan.get('continued_for') == previous_revision)):
+                # Retain a consumed plan only when the runtime decision itself continues.
+                # An explicit new planning choice keeps its own dependency and source revision.
+                with own(ctx).tables() as tx:
+                    current_assignment = row_for(tx, assignment_id=assignment['assignment_id'])
+                    if current_assignment and not current_assignment.get('plan'):
+                        update(tx, current_assignment, plan={**plan,
+                            'source_work_id': plan.get('source_work_id') or previous['work_id'],
+                            'continued_from': previous['work_id'],
+                            'continued_for': fingerprint(str(assignment['task']))})
+            return
 
     def ensure(self, ctx: Context, work_id: str, role: str | None = None, session_id: str | None = None,
                runner: str | None = None, queue: bool = False, persons: bool = False) -> dict[str, Any]:
@@ -784,6 +904,7 @@ class Orchestration:
             if held is None:
                 return None
             result = dict(held)
+            result['sources'] = list(own(ctx).work_sources(str(held['root_work_id']), contents=False))
             result['mode'] = current_mode(tx, held)
             result.update(related(tx, held))
             returns = tx.rows('transitions', {'assignment_id': held['assignment_id']}, limit=0).results
@@ -984,7 +1105,10 @@ class Orchestration:
                 task=record.task or '', result=str(ctx.nouns.get('result') or record.task or ''),
                 locations=places, mode=mode, specification=ctx.nouns.get('specification'),
                 candidate=ctx.nouns.get('candidate'), session=session,
-                persons=bool(persons))
+                return_to={'session_id': str(ctx.nouns['pm_session']), 'kind': 'pm'}
+                if ctx.nouns.get('pm_session') else None, persons=bool(persons))
+            episodes.attach(tx, assignment, now(), continue_from=ctx.nouns.get('continue_from'),
+                            fresh=bool(ctx.nouns.get('fresh_context')))
             if not resolution.get('missing'):
                 assignment = update(tx, assignment, role_snapshot=resolution)
                 if not session:
@@ -994,6 +1118,9 @@ class Orchestration:
                                                  'context': {'assign_in_place': True, 'choose_name': create}})
                 request = self.request_role(request_ctx, assignment, '' if create else role)
                 return {**(self.assignment(ctx, work_id=work_id) or assignment), 'role_request': request}
+        self.episode(ctx, work_id, continue_from=ctx.nouns.get('continue_from'),
+                     fresh=bool(ctx.nouns.get('fresh_context')))
+        self.inherit_runtime(ctx, assignment)
         self.prepare_runtime(ctx, assignment)
         return self.assignment(ctx, assignment_id=assignment['assignment_id']) or assignment
 
@@ -1061,7 +1188,10 @@ class Orchestration:
                 result=result, locations=places, mode=current_mode(tx, current),
                 specification=(reviewed or current)['specification'],
                 candidate=ctx.nouns.get('candidate') or (reviewed or current)['candidate'],
-                return_to={'assignment_id': current['assignment_id'], 'continuation_id': ident})
+                return_to={'assignment_id': current['assignment_id'], 'continuation_id': ident,
+                           **({'runtime_plan': ctx.nouns['_runtime_plan']} if ctx.nouns.get('_runtime_plan') else {})})
+            if reviewed is not None:
+                child = update(tx, child, reviewed_snapshot=review_snapshot(ctx, reviewed, child.get('candidate')))
             transfers = handoff and current['gc_assignment_id'] != current['assignment_id'] and \
                 not current['reviewed_assignment_id']
             if transfers:
@@ -1071,6 +1201,9 @@ class Orchestration:
                 transition(tx, current, 'suspend', {'reason': 'Waiting for delegated result.',
                                                    'child_assignment_id': ident}, ident)
             transition(tx, child, 'launch', {'parent_assignment_id': current['assignment_id']}, 'initial')
+        self.episode(ctx, str(child['work_id']), continue_from=ctx.nouns.get('continue_from'),
+                     fresh=bool(ctx.nouns.get('fresh_context')))
+        self.inherit_runtime(ctx, child)
         supplied_runtime = ctx.nouns.get('_runtime_choice')
         if supplied_runtime:
             for _, transport in provided(ctx.folder, 'orchestration.transport'):
@@ -1122,6 +1255,8 @@ class Orchestration:
                 'purpose': str(ctx.nouns.get('purpose') or ctx.nouns.get('result') or ctx.nouns['task']),
                 'task': task, 'requested_result': str(ctx.nouns.get('result') or ctx.nouns['task']),
                 'context': {'contribution': ctx.nouns.get('contribution'), 'context': ctx.nouns.get('context'),
+                            'continuity': {key: ctx.nouns[key] for key in ('continue_from', 'fresh_context')
+                                           if key in ctx.nouns},
                             'candidate': parent.get('candidate'), 'specification': parent.get('specification'),
                             'responsible_gc_assignment_id': responsible_gc,
                             'handoff': handoff},
@@ -1282,6 +1417,9 @@ class Orchestration:
                     if request['context'].get('handoff') and caller['gc_assignment_id'] != caller['assignment_id'] and \
                             not caller['reviewed_assignment_id']:
                         child = self._handoff(tx, caller, child)
+                continuity = cast(dict[str, Any], supplied.get('continuity') or {})
+                episodes.attach(tx, child, now(), continue_from=continuity.get('continue_from'),
+                                fresh=bool(continuity.get('fresh_context')))
                 tx.update('role_requests', {'request_id': request['request_id']},
                           {'state': 'published', 'role': published['name'],
                            'child_assignment_id': child['assignment_id'], 'source': published,
@@ -1295,7 +1433,9 @@ class Orchestration:
                 else:
                     current_work = store.ticket(str(child['work_id'])).work
                     if not (in_place and (current_work.held or current_work.done)):
-                        store.move_work(child['work_id'], column, kept=True)
+                        store.move_work(child['work_id'], column, kept=True,
+                            hold_reason=('Specialist publication explicitly deferred this contribution to Backlog.'
+                                         if column == 'backlog' else None))
                         if column != 'backlog':
                             transition(tx, child, 'launch', {'role_request_id': request['request_id']},
                                        request['request_id'])
@@ -1303,6 +1443,7 @@ class Orchestration:
         for assigned in published_assignments:
             current_work = store.ticket(str(assigned['work_id'])).work
             if not assigned.get('stop') and not current_work.held and not current_work.done:
+                self.inherit_runtime(ctx, assigned)
                 self.prepare_runtime(ctx, assigned)
         reference = {key: published.get(key) for key in ('name', 'uri', 'version_id')}
         self.returned(ctx, creator['work_id'], {'published_role': reference, 'request_id': request_id},
@@ -1380,16 +1521,19 @@ class Orchestration:
             if current_gc.get('stop'):
                 raise Stop('The delivery ticket was stopped before its assessment.', HELP)
             node, places = location(store, None, gc)
-            task = (f'Assess ticket {gc["work_id"]}. Read its report on the ticket and candidate evidence '
-                    f'through orchestration_inspect assignment={gc["assignment_id"]}.')
+            task = (f'Assess ticket {gc["work_id"]} against the retained reviewed_snapshot of this assessment, '
+                    f'available through orchestration_inspect assignment={ident}. Read the current delivery report '
+                    f'through orchestration_inspect assignment={gc["assignment_id"]} and reconcile subsequent '
+                    'changes per finding against the retained reviewed revision.')
             work = store.add_work(node, None, task=task, title=f'Functional assessment of {gc["work_id"]}')
             store.inherit_work_board(work.id, str(current_gc['work_id']))
-            made = new_assignment(tx, work, 'functionality', ident=ident, review=gc,
+            made = new_assignment(tx, work, 'functionality', ident=ident, review=current_gc,
                 task=task, result='Assess actual functionality, constraints and interactions against C(T).',
-                locations=places, mode=current_mode(tx, gc), specification=gc['specification'],
-                candidate=report.get('candidate') or gc['candidate'],
+                locations=places, mode=current_mode(tx, gc), specification=current_gc['specification'],
+                candidate=report.get('candidate') or current_gc['candidate'],
                 return_to={'assignment_id': gc['assignment_id'], 'kind': 'assessment'})
-            made = update(tx, made, evidence=report.get('evidence') or gc['evidence'],
+            made = update(tx, made, evidence=report.get('evidence') or current_gc['evidence'],
+                          reviewed_snapshot=review_snapshot(ctx, current_gc, made.get('candidate')),
                           last_check_in=dict(report))
             transition(tx, made, 'launch', {'reviewed_assignment_id': gc['assignment_id'],
                                            'automatic_assessment': automatic}, 'initial')
@@ -1491,17 +1635,29 @@ class Orchestration:
             returned = update(tx, held, state=state, result=result, evidence=evidence or held['evidence'],
                               candidate=candidate or held['candidate'])
             reviewed_gc = row_for(tx, assignment_id=held.get('reviewed_assignment_id'))
-            superseded = reviewed_gc is not None and self._decided(tx, store, reviewed_gc, held)
-            filed = []
-            if reviewed_gc and not superseded:
-                if rejected:
-                    filed = [self._critic_finding(ctx, tx, store, reviewed_gc, held, finding, returned['evidence'])
-                             for finding in findings]
-                elif not critic:
-                    filed = [self._finding(tx, store, reviewed_gc, held, finding, str(number), returned['evidence'])
-                             for number, finding in enumerate(findings or [])]
-            if filed:
-                returned = update(tx, returned, findings_filed=list(dict.fromkeys(
+            filed: list[tuple[str | None, dict[str, Any] | None]] = []
+            retained: list[dict[str, Any]] = []
+            for number, finding in enumerate(findings or []):
+                fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
+                    'summary': str(finding)}
+                finding_id = str(fields.get('id') or fields.get('finding_id') or number)
+                superseded = reviewed_gc is not None and self._decided(tx, store, reviewed_gc, held, fields)
+                landed = None
+                if reviewed_gc and not superseded:
+                    if rejected:
+                        landed, assigned = self._critic_finding(ctx, tx, store, reviewed_gc, held, fields,
+                                                               returned['evidence'])
+                        filed.append((landed, assigned))
+                    elif not critic:
+                        landed, assigned = self._finding(tx, store, reviewed_gc, held, fields, finding_id,
+                                                        returned['evidence'])
+                        filed.append((landed, assigned))
+                retained.append({'finding_id': finding_id, 'finding': fields,
+                    'reviewed_revision': reviewed_revision(held),
+                    'disposition': 'superseded' if superseded else 'correction' if landed else 'retained',
+                    'work_id': landed, 'evidence': returned['evidence']})
+            if retained:
+                returned = update(tx, returned, findings=retained, findings_filed=list(dict.fromkeys(
                     landed for landed, _ in filed if landed)))
             numbered = store.numbers_of('work', [work_id]).get(work_id)
             item = numbered[0] if numbered else work_id
@@ -1511,7 +1667,12 @@ class Orchestration:
                       'sender_session_id': held['owner_session_id'], 'work_id': work_id,
                       'return_to': held['return_to']}
             route: dict[str, Any] = held['return_to'] or {}
-            parent = row_for(tx, assignment_id=route.get('assignment_id'))
+            parent = row_for(tx, assignment_id=route.get('assignment_id'), session_id=route.get('session_id'))
+            plan_request = route.get('runtime_plan')
+            if parent and plan_request:
+                # Keep the source task immutable. A planning contribution is consumed by this exact revision.
+                parent = update(tx, parent, plan={'revision': plan_request['revision'], 'state': state, 'result': result,
+                    'evidence': returned['evidence'], 'assignment_id': held['assignment_id']})
             followed: set[str] = set()
             while parent and parent.get('successor_assignment_id') and parent['assignment_id'] not in followed:
                 followed.add(parent['assignment_id'])
@@ -1539,29 +1700,26 @@ class Orchestration:
             return returned
 
     @staticmethod
-    def _decided(tx: TableTx, store: Store, gc: Mapping[str, Any], review: Mapping[str, Any]) -> bool:
-        """The person's decision superseded what a review examined: since the review began, a direction of theirs
-        that names the reviewed part, by address or short name, reached the reviewed GC, its root or the review, or
-        a specification change of theirs whose instruction names that part was routed to that work. Their word about
-        another part is no decision about this one, and the findings are filed. Only the change orders the work
-        received are read."""
-        since = str(review['created'])
-        locations = cast(list[Mapping[str, Any]], gc.get('functional_locations') or [])
-        subjects = [str(one.get('address') or one.get('id') or '').lower() for one in locations]
-        elements = [store.element(str(one.get('address') or one.get('id') or ''))
-                    for one in locations if one.get('kind') != 'join']
-        called = [one.short_name.lower() for one in elements if one is not None]
+    def _decided(tx: TableTx, store: Store, gc: Mapping[str, Any], review: Mapping[str, Any],
+                 finding: Mapping[str, Any]) -> bool:
+        """Only a reasoned per-finding disposition tied to an actual later revision supersedes a finding."""
+        if finding.get('disposition') != 'superseded' or not prose(finding.get('supersession_reason')):
+            return False
+        reference = finding.get('superseded_by')
+        snapshot = cast(Mapping[str, Any], review.get('reviewed_snapshot') or {})
+        if not reference or str(reference) in snapshot.get('direction_references', []):
+            return False
         top = row_for(tx, work_id=gc['root_work_id']) if gc['root_work_id'] != gc['work_id'] else None
-        for one in cast(list[Mapping[str, Any]], [*(gc.get('pending_direction') or []),
-                                                  *((top or {}).get('pending_direction') or []),
-                                                  *(review.get('pending_direction') or [])]):
-            if one.get('kind') == 'user_direction':
-                if str(one.get('at') or '') >= since and names(one.get('text') or one.get('body'), subjects, called):
-                    return True
-            elif one.get('kind') == 'change_order' and one.get('source') == 'user':
-                record = tx.get('changes', {'change_id': one.get('change_id')})
-                instruction = cast(Mapping[str, Any], (record or {}).get('user_instruction') or {})
-                if record and str(record['created']) >= since and names(instruction.get('text'), subjects, called):
+        directions = cast(list[dict[str, Any]], [*(gc.get('pending_direction') or []),
+                      *((top or {}).get('pending_direction') or []), *(review.get('pending_direction') or [])])
+        for direction in directions:
+            if (direction.get('kind') == 'user_direction'
+                    and str(direction.get('at') or '') >= str(review['created'])
+                    and reference in (direction.get('id'), direction.get('revision'))):
+                return True
+            if direction.get('kind') == 'change_order' and reference == direction.get('change_id'):
+                change = tx.get('changes', {'change_id': reference})
+                if change and change['state'] in ('operative', 'published') and str(change['created']) >= str(review['created']):
                     return True
         return False
 
@@ -1601,14 +1759,23 @@ class Orchestration:
         fields: dict[str, Any] = dict(cast(Mapping[str, Any], finding)) if isinstance(finding, Mapping) else {
             'task': str(finding)}
         title, task = finding_text(fields)
-        mark = f'Finding {signature(title)}'
+        explicit_id = fields.get('finding_id')
+        substantive = {name: value for name, value in fields.items() if name not in ('title', 'id')}
+        issue = (identity(str(gc['assignment_id']), 'finding', str(explicit_id)) if explicit_id else
+                 fingerprint(json.dumps(substantive, sort_keys=True, ensure_ascii=False)) if substantive else
+                 identity(assessment['assignment_id'], 'finding', key))
+        mark = f'Finding {issue}'
         source = f'review {assessment["work_id"]}'
         observed = prose([evidence, fields.get('evidence')])
         said = f'{mark}, from {source}.' + (f' Evidence: {observed}' if observed else '')
         node, _ = location(store, None, gc)
         for record in store.work(node=node, open=True, limit=0).results:
-            first = (record.task or '').strip().split('\n')[0]
-            if mark not in (record.note or '') and signature(first) != signature(title):
+            # A complete plain-text task can cover a plain-text finding. Rich findings need their stable identity:
+            # a renderer can omit additional requirement or evidence fields and cannot prove equivalence.
+            plain_finding = len(substantive) == 1 and next(iter(substantive), '') in ('summary', 'task', 'finding')
+            same_description = (plain_finding and ' '.join((record.task or '').lower().split()) ==
+                                ' '.join(task.lower().split()))
+            if mark not in (record.note or '') and not same_description:
                 continue
             if source not in (record.note or ''):
                 store.edit_work(record.id, {'note': f'{record.note}\n\n{said}' if record.note else said})
@@ -1632,7 +1799,8 @@ class Orchestration:
             store.edit_work(record.id, {'note': '\n\n'.join(filter(None, [record.note, history]))})
         if record.done:
             store.move_work(record.id, 'todo', kept=True)
-        direction = {'kind': 'review_finding', 'body': task, 'evidence': fields.get('evidence'),
+        direction = {'kind': 'review_finding', 'finding_id': key, 'finding': fields,
+                     'reviewed_revision': reviewed_revision(assessment), 'body': task, 'evidence': fields.get('evidence'),
                      'reviewed_assignment_id': assessment['assignment_id'], 'at': now()}
         directions = list(current.get('pending_direction') or [])
         new_attempt = not any(one.get('reviewed_assignment_id') == assessment['assignment_id'] for one in directions)

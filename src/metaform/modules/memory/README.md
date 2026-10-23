@@ -101,7 +101,7 @@ None.
 
 ## Events
 
-A graph mutation uses the existing `map.changed` relay with `memory.changed`, affected `memory:<address>` kinds and the session IDs that already encountered those functional entries. No notice is pushed to any agent when memory changes (2026-10-19, code.dispatcher.agent#72): an agent is told of unread memory only when it reads the node it works on, as one line naming the unread count there and the `read_unread` title-list call, with selective search/open guidance and memory upkeep; nothing is said there when all is read. Being told does not clear body unread state. Entry revisions also drive MCP resource updates and map summaries when an edit or deletion leaves item numbers and totals unchanged. Unrelated events are filtered before reads.
+A graph mutation uses the existing `map.changed` relay with `memory.changed`, affected `memory:<address>` kinds and the session IDs that already encountered those functional entries. Relevant external revisions coalesce in `pending_changes` for sessions that encountered the functional entry. The `agent.context.changes` provider returns a reference only if that session actually received a memory body there in its current epoch. Dispatch includes references on the next natural turn and acknowledges only accepted revisions. A newer revision remains queued if it races acceptance. Deletion identities remain available with their exact kind, observed revision and reference. A recreation marks the earlier withdrawal as superseded without losing its identity. This never wakes a model or broadcasts bodies. Own writes and unrelated entries produce no notices. Node reads also name unread counts and selective search/open paths. Being told does not clear body unread state. Entry revisions also drive MCP resource updates and map summaries when an edit or deletion leaves item numbers and totals unchanged. Unrelated events are filtered before reads.
 
 ## Sync and async
 
@@ -113,7 +113,7 @@ Every verb is a plain function.
 
 ## Tables
 
-Project-level tables are `entities`, `observations`, `relations`, `joins`, `notes`, `carried`, `citations`, `encounters`, `entry_revisions` and `withdrawals`. Version 9 requires version 9 writers because earlier code does not maintain content-change delivery. Existing graph, note, citation and lock records migrate intact. `encounters` keeps functional entry registrations per actual session and shared epoch; `entry_revisions` identifies content changes; `withdrawals` retains removed identities, not copied memory bodies. Authoritative delivery receipts live in the agents module's shared ledger.
+Project-level tables are `entities`, `observations`, `relations`, `joins`, `notes`, `carried`, `citations`, `encounters`, `entry_revisions`, `withdrawals` and `pending_changes`. Version 12 adds the coalescing reference queue without changing canonical graph storage. Version 9 writers retain their previous graph contract. Version 9 requires version 9 writers because earlier code does not maintain content-change delivery. Existing graph, note, citation and lock records migrate intact. `encounters` keeps functional entry registrations per actual session and shared epoch; `entry_revisions` identifies content changes; `withdrawals` retains removed identities, not copied memory bodies. Authoritative delivery receipts live in the agents module's shared ledger.
 
 Citation evidence and stale checks keep their existing behavior. A citation may name `path:line`, `path:start-end`, `path:symbol` or a path relative to the project. A citation is checked against its file as it read when the citation was last written: giving it again in a write keeps it as the file reads then, and `add_observations` that adds to a memory does the same for each whole file the memory cites, so a memory brought up to date after its file changed is not stale; a cited line span moves only when given again. Observation and association author/session fields remain available for provenance. Associations stay keyed by functional addresses, so an intake at the same address reconnects them and `orphaned` lists absent entry points.
 
@@ -151,3 +151,11 @@ metaform memory open_nodes '["route ejection"]' node=element:code.manager.route
 metaform map where code.manager.route
 metaform memory note element:code.manager.route
 ```
+
+## Context change provider
+
+`agent.context.changes` supplies `pending(ctx, session)` and `delivered(ctx, session, notices)`. Pending returns compact functional-entry references, current revision, prior delivered component fingerprints, withdrawal identities and a canonical read command. It reads pending entries for that session/epoch only. It never delivers authoritative bodies or acknowledges a body reread. Exact correction rereads suppress obsolete queued references through the functional revision captured in the same transaction as the graph snapshot and recorded with the body receipt. A concurrent later correction remains eligible. The transport calls delivered after the outgoing packet is accepted. It deletes only an exact matching revision, preserving concurrent changes.
+
+Knowledge maintenance follows evidence established in the assigned work. Reading an unchanged relevant memory does not start a separate cleanup assignment. Correct disproven observations, consolidate actual duplicates and remove obsolete knowledge as encountered, while preserving useful facts serving other tasks or receiving purposes. Keep incident evidence, progress and repair history in work records.
+
+For a consumer that read a memory body, relevant external changes coalesce into changed references on its next natural turn. The notice identifies current revisions, prior delivered fingerprints, withdrawals and exact read paths. It does not broadcast bodies or wake a model. Unrelated writes, count-only encounters and the consumer's own writes do not notify it. Explicit rereads remain available.

@@ -1,0 +1,129 @@
+{
+  "before": {
+    "tokenizer": "tiktoken:o200k_base",
+    "segments": [
+      {
+        "name": "claim_response",
+        "characters": 73,
+        "tokens": 23
+      },
+      {
+        "name": "worker_first_prompt",
+        "characters": 10157,
+        "tokens": 1933
+      },
+      {
+        "name": "worker_role_read",
+        "characters": 5735,
+        "tokens": 995
+      },
+      {
+        "name": "worker_result",
+        "characters": 86,
+        "tokens": 16
+      }
+    ],
+    "first_prompt": {
+      "name": "worker_first_prompt",
+      "characters": 10157,
+      "tokens": 1933
+    },
+    "ticket_text_tokens": 2967
+  },
+  "after": {
+    "tokenizer": "tiktoken:o200k_base",
+    "segments": [
+      {
+        "name": "claim_response",
+        "characters": 73,
+        "tokens": 23
+      },
+      {
+        "name": "worker_first_prompt",
+        "characters": 9542,
+        "tokens": 1747
+      },
+      {
+        "name": "worker_role_read",
+        "characters": 6621,
+        "tokens": 1144
+      },
+      {
+        "name": "worker_result",
+        "characters": 86,
+        "tokens": 16
+      }
+    ],
+    "first_prompt": {
+      "name": "worker_first_prompt",
+      "characters": 9542,
+      "tokens": 1747
+    },
+    "ticket_text_tokens": 2930
+  },
+  "scope": "Deterministic simulated ticket text, not actual model billed tokens. Includes claim response, worker prompt, role resource read, fixed result, completion body, optional reviewer prompt, reviewer role read and fixed reviewer result. Excludes tool schemas, host system prompts, cached context, reasoning and unspecified tool calls. No paid model calls. No installed agent logs or receipts read.",
+  "normalization": "Random 16-64 digit hex ids zeroed, preserving character lengths. ISO timestamps normalized.",
+  "baseline": {
+    "orchestration_override": null,
+    "git_ref": "977f1bfe99bdea89bd89dc8ef36807047befe6e8"
+  },
+  "source_sha256": {
+    "before": {
+      "src/metaform/modules/orchestration/state.py": "99413a186d3d093da8fa173ac3943e6d59751bb8d7d7487d953e638a5a3524b9",
+      "src/metaform/modules/orchestration/__init__.py": "2b221986f3ce47305d987da652c888d0664dc1e8a46a91224bdde53de97b923e",
+      "src/metaform/modules/orchestration/resources/prompts.xml": "75877d70b21758c65204e83812aafdd7da40e97faa0855e386c26f5dab7329c0",
+      "src/metaform/modules/dispatch/orchestration.py": "6435ec4848af315e1f2cf53e055cc6dff2002fd04162371e3e4e4eef5993075b",
+      "src/metaform/modules/dispatch/resources/prompts.xml": "af16c9cc67f5a6bd015997d1307136f645d3d82966c0e9fb638267b865bb113b",
+      "src/metaform/modules/dispatch/runner.py": "86d44506c10b751eced65e7310f61146c179f04fa8afcf3f984f34267ccef464"
+    },
+    "after": {
+      "src/metaform/modules/orchestration/state.py": "e2109e51923d372b8b75504e07387ef12d06002e44d16a35521e9d219738024b",
+      "src/metaform/modules/orchestration/__init__.py": "9ab0061ac921328d5abc0a112111c8ded9d45f6b97f9bd443f846eb03701c0e2",
+      "src/metaform/modules/orchestration/resources/prompts.xml": "875e938d7d4e10e2e63a11ac024a7290519c18adcc85fa2cc1cee768bf83279d",
+      "src/metaform/modules/dispatch/orchestration.py": "7ad47934f44a1a1f87f55bfa0f44821f432ab7607b559a186c8d2673aef57e46",
+      "src/metaform/modules/dispatch/resources/prompts.xml": "8b1906569e3bbb984d3148359fe13eb5fcfc193a845702aa427c409497e67eb0",
+      "src/metaform/modules/dispatch/runner.py": "f28a4c1196c04b0e65ec083cfef6da523e8f207328921651f1009bdccf80ed6a"
+    }
+  },
+  "first_prompt_scope": "Rendered ACP first text block. Includes channel startup, rules, context checkpoint. Typed resource links excluded. Startup already omitted embedded tools JSON before edits.",
+  "billed_ticket_tokens": {
+    "before": null,
+    "after": null,
+    "reason": "Requires model execution. Fixture measures delivered text only."
+  },
+  "savings": {
+    "first_prompt_tokens": 186,
+    "ticket_text_tokens": 37,
+    "ticket_text_percent": 1.25
+  },
+  "segment_savings": [
+    {
+      "name": "claim_response",
+      "before_tokens": 23,
+      "after_tokens": 23,
+      "saved_tokens": 0,
+      "saved_percent": 0.0
+    },
+    {
+      "name": "worker_first_prompt",
+      "before_tokens": 1933,
+      "after_tokens": 1747,
+      "saved_tokens": 186,
+      "saved_percent": 9.62
+    },
+    {
+      "name": "worker_role_read",
+      "before_tokens": 995,
+      "after_tokens": 1144,
+      "saved_tokens": -149,
+      "saved_percent": -14.97
+    },
+    {
+      "name": "worker_result",
+      "before_tokens": 16,
+      "after_tokens": 16,
+      "saved_tokens": 0,
+      "saved_percent": 0.0
+    }
+  ]
+}

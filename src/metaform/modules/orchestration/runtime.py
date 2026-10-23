@@ -4,7 +4,7 @@ from __future__ import annotations
 import difflib
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from importlib import resources
 from typing import Any, cast
 
@@ -14,18 +14,14 @@ from metaform.module import Context
 
 TASKS = {
     'planning': 'Build a concrete specification, plan, goal, tickets or their order.',
-    'needs_plan': 'Requested coding lacks concrete behavior or acceptance evidence; return it to the Planner.',
+    'needs_plan': 'Develop a separate planning contribution for cross-workstream dependencies or consequential unresolved decisions.',
     'frontend': 'Write code for front-end visual polish or interaction presentation.',
-    'coding': 'Implement a precise ticket with concrete behavior and acceptance evidence.',
+    'coding': 'Implement requested behavior, resolving local design and verification details within the contribution.',
     'lookup': 'Research, collect information, look up documentation or perform a quick check for another agent.',
     'routing': 'Check status, route messages, move raw data or apply simple formatting without writing code.',
     'analysis': 'Investigate a complex problem, design architecture or solve a novel multi-step problem.',
     'writing': 'Write ordinary non-coding content or provide standard technical analysis.',
 }
-LEVELS = {'off': 0, 'disabled': 0, 'none': 0, 'minimal': 1, 'light': 1, 'low': 2,
-          'medium': 3, 'high': 4, 'xhigh': 5, 'max': 6, 'pro': 6, 'ultra': 7}
-
-
 def choose(ctx: Context, record: WorkRecord | Mapping[str, Any], catalog: Mapping[str, Any],
            fallback: Mapping[str, Any] | None = None,
            overrides: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
@@ -49,6 +45,8 @@ def choose(ctx: Context, record: WorkRecord | Mapping[str, Any], catalog: Mappin
     state = {'title': title, 'kind': fields.get('kind'),
              'node': fields.get('address') or fields.get('receiver_address') or fields.get('node_id'),
              'task': fields.get('task'), 'strengths': strengths_of(ctx, catalog)}
+    if fields.get('plan'):
+        state['plan'] = fields['plan']
     with jev.within(jev.DEADLINE):
         if cfg.endpoint.name == 'openrouter' and jev.openrouter_credits()['status'] != 'available':
             return None
@@ -60,7 +58,7 @@ def choose(ctx: Context, record: WorkRecord | Mapping[str, Any], catalog: Mappin
         candidates = _candidates(catalog, task_type, overrides)
         if not candidates:
             return None
-        options = {key: f"{one['agent']} / {one['model']} / {one['effort']}: "
+        options = {key: f"{one['agent']} / {one['model']} / {one['effort'] or 'harness default'}: "
                    f"{catalog[one['agent']]['models'][one['model']]}" for key, one in candidates.items()}
         selected = _pick(ctx, 'runtime_choice', options, {**state, 'task_type': task_type}, fields.get('address'))
         if (selected is None or not selected.sure or not isinstance(selected.answer, str)
@@ -93,39 +91,25 @@ def _pick(ctx: Context, prompt: str, options: Mapping[str, str], state: Mapping[
                         decision='orchestration.runtime')
 
 
-def _efforts(offered: Sequence[str], task_type: str) -> list[str]:
-    ranked = {one: LEVELS[one.lower()] for one in offered if one.lower() in LEVELS}
-    if not ranked:
-        return []
-    if task_type == 'routing':
-        target = min(ranked.values())
-    elif task_type == 'lookup':
-        target = min(ranked.values(), key=lambda value: (abs(value - LEVELS['low']), value))
-    elif task_type in ('planning', 'needs_plan'):
-        target = max(ranked.values())
-        if target < LEVELS['high']:
-            return []
-    else:
-        floor = LEVELS['high'] if task_type == 'analysis' else LEVELS['medium']
-        return [one for one, level in ranked.items() if level >= floor]
-    return [one for one, level in ranked.items() if level == target]
-
-
 def _candidates(catalog: Mapping[str, Any], task_type: str,
-                overrides: Mapping[str, Any] | None = None) -> dict[str, dict[str, str]]:
-    choices: dict[str, dict[str, str]] = {}
+                overrides: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """Advertised choices constrained only by explicit selections.
+
+    Thinking controls are adapter-defined. No control means the harness default,
+    while unfamiliar advertised labels remain usable without a Metaform ranking.
+    Capability preferences belong in the model's decision, not candidate removal.
+    """
+    choices: dict[str, dict[str, Any]] = {}
     fixed = overrides or {}
     for agent, offered in catalog.items():
         if fixed.get('agent') and agent != fixed['agent']:
             continue
-        if not fixed.get('agent') and ((task_type == 'frontend' and agent != 'claude')
-                                       or (task_type == 'coding' and agent != 'codex')):
-            continue
         for model in offered.get('models', {}):
             if fixed.get('model') and model != fixed['model']:
                 continue
-            efforts = ([fixed['effort']] if fixed.get('effort') in offered.get('efforts', [])
-                       else [] if fixed.get('effort') else _efforts(offered.get('efforts', []), task_type))
+            advertised = cast(list[str], offered.get('efforts') or [])
+            efforts: list[str | None] = ([fixed['effort']] if fixed.get('effort') in advertised
+                       else [] if fixed.get('effort') else list(advertised) or [None])
             for effort in efforts:
                 key = json.dumps([agent, model, effort], separators=(',', ':'))
                 choices[key] = {'agent': agent, 'model': model, 'effort': effort}
@@ -159,6 +143,6 @@ def _validated(choice: Mapping[str, Any], catalog: Mapping[str, Any], decider: s
                overrides: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
     if rejection_reason(choice, catalog, overrides) is not None:
         return None
-    return {**{key: choice[key] for key in ('agent', 'model', 'effort')},
+    return {**{key: choice.get(key) for key in ('agent', 'model', 'effort')},
             'decider': decider, 'confidence': float(choice['confidence']),
             'task_type': choice['task_type'], 'reason': choice['reason']}

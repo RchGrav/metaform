@@ -28,9 +28,10 @@ def dispatch(run, home, project_folder, tmp_path):
 def test_managed_continuation_obeys_fresh_session_policy(dispatch, monkeypatch, resume_chats, load, role, crashed):
     """A suspended owner continues its candidate through the configured ACP session policy."""
     from metaform import home
+    from metaform.module import resolve_agent_role
     from metaform.modules import dispatch as package
     from metaform.modules.dispatch import orchestration
-    from metaform.modules.orchestration.state import SERVICE, requested, transition, update
+    from metaform.modules.orchestration.state import SERVICE, new_assignment, requested, transition, update
 
     dispatch.run('enable', 'orchestration')
     dispatch.run('set', '--dispatch-autostart',
@@ -40,10 +41,14 @@ def test_managed_continuation_obeys_fresh_session_policy(dispatch, monkeypatch, 
                  cwd=dispatch.folder)
     # Preassigned worker and parent duties need no runtime or role commission in this transport regression.
     ctx = context('dispatch', dispatch.folder, project='proj')
-    held = SERVICE.ensure(ctx, dispatch.id, role=role, session_id='prior-session', runner='prior-runner')
     candidate = {'commit': 'retained-candidate', 'path': 'candidate.txt'}
     with Store('proj', module='orchestration').tables() as tx:
-        held = update(tx, held, state='suspended', candidate=candidate,
+        work = dispatch.ticket()
+        held = new_assignment(tx, work, role, task=work.task or '', result=work.task or '',
+            locations=[{'kind': 'element', 'id': work.node_id, 'address': work.address}], mode='adaptive',
+            session='prior-session')
+        held = update(tx, held, role_snapshot=resolve_agent_role(dispatch.folder, role, project='proj'),
+                      state='suspended', candidate=candidate,
                       last_check_in={'summary': 'Candidate awaits continuation.'})
     assert held['state'] == 'suspended'
     with package.own_store(dispatch.store).tables() as tx:
@@ -403,8 +408,8 @@ def test_startup_checkpoint_is_small_and_retained_key_is_not_repeated_on_resume(
     assert check['marker'] not in again, 'A resume challenge cannot reveal the answer it tests.'
     assert resumed.context_check['checkpoint'] in again
     resumed.context_delivered()
-    asyncio.run(resumed.context_check_finished())  # No acknowledgement: eligibility changes, nothing is queued.
-    assert agent_context_epoch(dispatch.folder, worker.runner, project='proj') == 1
+    asyncio.run(resumed.context_check_finished())  # A missing nonce does not prove semantic context loss.
+    assert agent_context_epoch(dispatch.folder, worker.runner, project='proj') == 0
     assert not resumed.pending and not resumed.prompt_contexts
 
 
@@ -653,7 +658,8 @@ def test_a_review_finding_resumes_the_worker_with_its_reopened_ticket_its_own(di
     monkeypatch.setattr(package, 'launches', list)
     monkeypatch.setattr(package, 'session_state', lambda store, session: {'capabilities': {'resume': True}})
     monkeypatch.setattr(package, 'resume_spawn', resumed)
-    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: {'session_id': 'worker-session', 'agent': 'claude'})
+    monkeypatch.setattr(orchestration, '_row', lambda ctx, held: {
+        'session_id': 'worker-session', 'agent': 'claude', 'work_id': dispatch.id, 'state': 'ended'})
     held = {'work_id': dispatch.id, 'assignment_id': 'assignment'}
     assert orchestration.Transport().launch(ctx, held, 'transition')['state'] == 'queued'
     assert spawned and spawned[0][0] == 'claude worker-session', 'The runner must find the ticket its own.'
@@ -1013,6 +1019,29 @@ def test_transport_drops_assignment_copies_but_keeps_authenticated_routes(dispat
     assert line['to'][0]['assignment_id'] == 'recipient-assignment'
     assert not {'assignment', 'context_components', 'report'} & line.keys()
     assert len(json.dumps(line)) < 800
+
+
+@pytest.mark.kind('fixture')
+@pytest.mark.parametrize(('reviewed', 'source_stopped', 'target_stopped', 'expected'), [
+    ('recipient', False, False, True), ('unrelated', False, False, False),
+    ('recipient', True, False, False), ('recipient', False, True, False),
+])
+def test_current_strict_recommendation_reaches_only_its_unstopped_responsible_caller(
+        dispatch, monkeypatch, reviewed, source_stopped, target_stopped, expected):
+    from types import SimpleNamespace
+
+    from metaform.modules.dispatch import orchestration
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    source = {'assignment_id': 'assessment', 'reviewed_assignment_id': reviewed,
+              'state': 'returned', 'stop': {'by': 'user'} if source_stopped else None}
+    target = {'assignment_id': 'recipient', 'work_id': dispatch.id, 'state': 'running',
+              'stop': {'by': 'user'} if target_stopped else None, 'pending_direction': []}
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: SimpleNamespace(
+        assignment=lambda ctx, **kwargs: source))
+    message = {'kind': 'recommendation', 'change_id': 'strict-proposal', 'sender_assignment_id': 'assessment'}
+    assert orchestration.actionable(ctx, message, recipient=target) is expected
+    assert target['pending_direction'] == [], 'Advice does not become an operative direction.'
 
 
 @pytest.mark.kind('fixture')

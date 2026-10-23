@@ -96,7 +96,7 @@ What one layer holds at one place has an address of its own, P165: `<scope>@<lay
 
 `--raw`, default off: read every stored layer, building, hidden and masked ones included.
 
-`--node-summary-bytes`, default 2048, at least 512: the most bytes the compact read of the node an agent works on may take, in `where`, the ticket read `work id=` and so dispatch's hand-off. What does not fit goes in this order: the code paths, the joins it receives' first and the node's own last, then the joins it receives, then the joins it provides for after the first, and then the tree draws fewer neighbours a side, down to one. Code paths that fit again in the room a join left come back. Each kind left out is said under `more` as a count with the call that reads it, in the `summary_*` prompts. `contents=true` and `full=true` are never cut.
+`--node-summary-bytes`, default 2048, at least 512: the display target for the compact node read in `where`, the ticket read `work id=` and dispatch's handoff. Fitting removes decorative count detail before source paths, with `more` notices linking to omitted source references. Receiver identities, operative purposes and relationships remain regardless of storage order; the essential packet can exceed the display target when needed to preserve them. `contents=true` and `full=true` retain their complete reads.
 
 `--glossary-bytes`, default 5120, at least 1024: the most bytes the project's glossary is given in, register standard included; the most-used terms go in and the rest are counted with the call that lists them.
 
@@ -158,3 +158,12 @@ General notes and previous reasons never substitute for a new explanation. `work
 and bases, leaves prerequisites intact, excludes reserved conversations and closed work, and returns changed count.
 Board previews recorded explanations before confirmation and rejects a stale preview. Ordinary reason-based
 unholding needs no approval, including with `agents_ask_first` on. Autostart controls automatic starts.
+
+
+Work request provenance lives in `work_sources`, separate from the current task. Add or edit with
+`source={"text":"exact original words","reference":"message or source reference","spans":[]}` when available.
+The task records the execution interpretation. Caller identity records the edit author; a relayed user message
+keeps its separate source identity. Each task revision retains the earlier words. A legacy ticket's first edit
+retains a pre-edit snapshot without inventing its original author or request. Ticket reads return source ids and
+read commands. `map work op=sources id=<work> [source_id=<source>]` retrieves exact text, interpretation and
+provenance in publication order. Source records never add a hold or require approval.

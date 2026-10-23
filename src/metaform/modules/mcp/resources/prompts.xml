@@ -26,16 +26,7 @@ Before you do anything else, read every resource linked below, whole: they hold 
 <connect_rules>
 Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; decide engineering questions yourself from your brief, the specification and C(T), and record the choice and its why on your ticket. A decision only the user can make goes on your ticket as a question for the user. Never message the system agent with progress, completions or scope questions. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
 
-Follow these strict output constraints for all tickets, and text, user facing text must speak plainly in proper english, all tickets and agent communication must take this form.
-Rules 1 to 6 apply to all text, the user's included. To the user, sentences stay grammatical English: no filler, every technical detail kept.
-1. Strip all filler words, pleasantries, preambles, and post-summaries (e.g., no "Sure, I can help with that", "In conclusion").
-2. Drop articles ("a", "an", "the"), conjunctions, and hedging language wherever possible.
-3. Use short, primitive sentences (3-6 words) or direct fragments.
-4. Replace long explanations with short synonyms (e.g., use "fix" instead of "implement a solution for", "big" instead of "extensive").
-5. Maintain 100% technical accuracy. Retain all code blocks, syntax, variable names, and error messages exactly as required.
-6. Use arrows (-&gt;) to show cause and effect or sequence if needed.
-
-Example: Instead of "I have reviewed your code and found that your authentication middleware is failing to validate the token expiry. You should fix it by adding this line...", output: "Auth middleware no validate token expiry. Fix with: [code]"
+Communicate clearly and concisely in grammatical language. Give the outcome, evidence, consequential decisions and remaining work in the detail the recipient needs. Use canonical project terms with their established meanings. Preserve exact identifiers, values, code, error messages and operative source wording. Keep the user's source instructions and revisions distinguishable from interpretation, research and proposals. A navigation summary does not replace its source. Store the substantive result once in its work record and refer to it when coordinating.
 </connect_rules>
 <!-- The mcp module's instructions: what metaform_instructions gives for module mcp, and mcp's entry in the full
      command-line guide, with each module's <connect> line after it. Not sent at connect: the connect message is
@@ -285,7 +276,7 @@ Example: Instead of "I have reviewed your code and found that your authenticatio
 <catalog_refused>The person's configured roles_without_authority setting restricts <tool/> for the <role/> execution role.</catalog_refused>
 <catalog_refused_next>call metaform_catalog with nothing for what your role opens; if your task needs this tool, call metaform_feedback and say why, since what each role is given is the person's to change</catalog_refused_next>
 <!-- Said once in a session, with the first list a lookup tool gives trimmed (view triage): how to get more. -->
-<triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full gives every field, fields=[...] keeps the ones you name, view=count counts the records by the fields you name, and must_contain or status_equals filter a list before it reaches you.</triage_note>
+<triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full supplies full default detail while honoring explicit fields and filters, fields=[...] keeps the paths you name, view=count counts records by the named fields, and must_contain or status_equals filter lists before delivery. Meaningful false, zero and empty values remain evidence; missing and unknown remain distinct.</triage_note>
 <!-- Closes a list given trimmed at its first 25 records, when the call named no filter. <n/> is how many more. -->
 <list_cut><n/> more not shown, so you read only the records your decision needs: narrow the list with must_contain or status_equals.</list_cut>
 <!-- What metaform_catalog compacted=true answers, and metaform://runtime/compaction-state gives: the agent's context

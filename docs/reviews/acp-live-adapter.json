@@ -1,0 +1,83 @@
+{
+  "adapter": {
+    "name": "@agentclientprotocol/codex-acp",
+    "version": "2.2.2",
+    "codex_cli_version": "0.162.1",
+    "auth_presence": "authenticated ChatGPT"
+  },
+  "runtime": {
+    "model": "gpt-6-luna",
+    "effort": "low"
+  },
+  "isolated_root": "/tmp/metaform-acp-live-6x99qqqp",
+  "contributions": [
+    {
+      "work_id": "b201f412685e4098bd458ad77160c326",
+      "done": true,
+      "artifact_matches": true,
+      "exception_preserved": true,
+      "assignment_state": null,
+      "session_ids": [
+        "01a1671f-6f7c-7ff0-be20-6e71cc6ff5b7"
+      ],
+      "reported_tokens": {
+        "total_tokens": 466202,
+        "input_tokens": 26103,
+        "output_tokens": 1187,
+        "thought_tokens": 0,
+        "cached_read_tokens": 438912,
+        "cached_write_tokens": 0
+      },
+      "source_exact": true
+    }
+  ],
+  "provider_billing": null,
+  "mode": "direct_worker",
+  "runtime_provenance": "isolated project defaults",
+  "billing_limit": "Current-only real adapter smoke, no production before/after billing inference.",
+  "status": "passed",
+  "advertised_original_defaults": {
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "mode": "agent"
+  },
+  "observed_final_config": {
+    "mode": "agent",
+    "model": "gpt-6-luna",
+    "reasoning_effort": "low",
+    "fast-mode": false
+  },
+  "checks": {
+    "artifact_exact_bytes": true,
+    "exception_exact_bytes": true,
+    "source_read_call_observed": true,
+    "exact_source_in_tool_result": true,
+    "source_read_preceded_artifact_write": true,
+    "all_own_sessions_ended": true
+  },
+  "acp_methods": {
+    "initialize": 1,
+    "session/new": 1,
+    "session/set_config_option": 2,
+    "session/prompt": 1,
+    "session/close": 1
+  },
+  "acp_prompt_text_utf8_bytes": 9488,
+  "native_observations": {
+    "usage_record_count": 17,
+    "custom_tool_call_count": 16,
+    "native_log_sha256": "c2ced2f543f3213d919b8c5837a88b2790811a574213d7098eefd3b4886e7caf",
+    "wire_metadata_sha256": "8b2d6543f59f6b2213fe37381a87eac9102df8e0c56d9cc89b347090674b1541",
+    "provider_model_invocation_count": null,
+    "recovered_tool_schema_errors": 1,
+    "schema_error_summary": "One malformed metaform_catalog tool/arguments request returned an error; a later correctly formed source read succeeded before the file write."
+  },
+  "limitations": [
+    "Current-only direct-worker smoke, not a matched native before/after cost comparison.",
+    "Orchestration disabled in isolated home to avoid JEV or extra routing.",
+    "Native session reuse was not exercised; paired fake-ACP episode tests cover continuity.",
+    "Per-ticket explicit runtime edit refused by existing person-only control; no human/FACILITATOR provenance was forged. Isolated project defaults selected the advertised runtime.",
+    "Usage values are adapter-reported aggregate fields, not independently verified billing or proof of hidden-context composition.",
+    "Native custom-tool and usage-record counts are not provider model-invocation counts."
+  ]
+}

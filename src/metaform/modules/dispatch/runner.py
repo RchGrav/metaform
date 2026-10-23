@@ -1,4 +1,4 @@
-"""runner: one ACP session for one ticket, BASE-052, run by `metaform dispatch run`.
+"""runner: one current contribution in an ACP conversation, run by `metaform dispatch run`.
 
 Metaform is the ACP client. A runner started on a ticket with an agent glyph, VIEW-040, works the glyph's tickets one
 after another in board order, a session for each, the next taken when the one before is done. The agent's ACP adapter runs as a child process in its own process group, in the
@@ -87,6 +87,7 @@ from metaform.module import (
     WITHHELD,
     Context,
     Stop,
+    agent_context_epoch,
     agent_opening,
     begin_agent_context_check,
     child_environment,
@@ -96,6 +97,7 @@ from metaform.module import (
     forget_shown,
     mcp_server,
     prepare_agent_context,
+    provided,
     record_agent_context,
     record_shown,
     resolve_agent_role,
@@ -1182,7 +1184,7 @@ class ActiveTurn:
 
 
 class Session:
-    """One ticket's ACP session. The SDK calls `session_update` and `request_permission` on it."""
+    """One current contribution in an ACP conversation, with historical work bindings retained."""
 
     def __init__(self, ctx: Context, store: Store | None, record: WorkRecord | None, agent: str, command: list[str],
                  folder: Any = None, prep: bool = False, system: bool = False, *, work_id: str | None = None,
@@ -1209,6 +1211,9 @@ class Session:
         self.name = agent_label(agent)
         self.base_id: str | None = None
         self.resume = resume  # the ended session this one goes on with, resumed or loaded through ACP
+        self.episode_previous_work = str(ctx.nouns.get('episode_previous_work') or '')
+        self.inflight_memory_changes: list[tuple[Any, list[dict[str, Any]]]] = []
+        self.inflight_role_changes: list[tuple[Any, list[dict[str, Any]]]] = []
         self.replaying = False  # session/load replays the history the thread already holds; it is not written again
         self.session_id: str | None = resume
         self.recovery: dict[str, Any] | None = None  # the process births automatic recovery verifies, MAP-049
@@ -1228,6 +1233,7 @@ class Session:
         self.acp: dict[str, Any] = {'agent': agent, 'run': self.run_id, 'agent_info': None, 'capabilities': {},
                                   'cwd': self.folder,
                                     'commands': [], 'plan': [], 'usage': None, 'tokens': None, 'title': None,
+                                    'protocol_version': acp.PROTOCOL_VERSION, 'compactions': {},
                                     'touched': [], 'resumed': None, 'before_resume': [],
                                     'spent': None, 'auth': None, 'auth_methods': [],
                                     # the files it read and wrote through the runner, P019, the latest first, and an
@@ -1302,6 +1308,11 @@ class Session:
         self.peer_said: dict[tuple[str, str, str, str, str], str] = {}  # `said_as` → the note last queued with it
         self.orchestration_reading = False
         self.orchestration_again = False
+        self.orchestration_idle = asyncio.Event()
+        self.orchestration_idle.set()
+        self.prompts_ready = not bool(resume)
+        self.pending_episode_delta = ''  # startup context rides the first actual turn
+        self.pending_episode_versions: list[prompt_files.Sent] = []
         # The person's system agent's inbox, `inbox_add`: what came for it since a turn last carried the inbox line,
         # each as (note or update id, sender's session, the entry as the line names it, whether it is a project update
         # with no note of its own); and the project updates the turn in flight carries, marked carried as it goes
@@ -1748,7 +1759,8 @@ class Session:
                     await self.provision(int(data['used']))
                 if kind == 'usage_update' and isinstance(data.get('cost'), dict):
                     await self.cost_spent(cast(dict[str, Any], data['cost']))
-            elif kind == 'notice':  # written from the wire in observe, which sees it whatever the SDK's schema knows
+            elif kind in ('notice', 'compaction_update', 'compaction_summary_chunk'):
+                # These ID-addressed observations are handled once from the wire, including SDK-unknown variants.
                 return
             else:
                 rest = {key: value for key, value in data.items() if key != 'sessionUpdate'}
@@ -1953,12 +1965,9 @@ class Session:
         if kind == 'notice' and not self.replaying:  # ACP's session notices, which this SDK's schema does not know
             self.spawn(self.notice({key: update.get(key) for key in ('severity', 'title', 'description')}))
             return
-        if kind == 'compaction_update':  # ACP's session compaction, which this SDK's schema does not know either
-            if update.get('status') == 'completed' and not self.replaying and not child:
-                self.recompacted = True  # here, as the wire is read, so a turn sent after it always carries the line
-                self.epoch_moved = asyncio.Event()
-                self.spawn(self.compacted())
-            return  # in_progress, failed, cancelled and any other status change nothing: the context is as it was
+        if kind in ('compaction_update', 'compaction_summary_chunk'):
+            self.observe_compaction(update, child or str(params.get('sessionId') or self.session_id or ''))
+            return
         if kind not in ('subagent_spawned', 'subagent_state_update') or not child:
             return
         held = self.children.setdefault(child, {'session_id': child, 'name': None, 'task': None, 'state': 'running',
@@ -1969,29 +1978,97 @@ class Session:
             held['state'] = str(update.get('state') or 'ended')
         self.spawn(self.child_line(child))
 
-    async def compacted(self) -> None:
-        """The agent's context was compacted, ACP's `compaction_update` completed, CTX-045: what Metaform gave this
-        session once, each tool's guide and each node's summary, is forgotten, so each comes again at its next use;
-        what its AI tool itself holds, the tools it lists, stays. Nothing is pushed now: the `compacted` line is left
-        for the session, so its next Metaform tool call gives it first when that comes before the next turn, as it does
-        when the compaction falls inside a long turn; else the next turn opens with it, and the rest waits for the call
-        that needs it. `session.compacted` says it on the bus, for a module that keeps more per session, and the thread
-        keeps a line of it."""
-        moved = self.epoch_moved
+    def observe_compaction(self, update: dict[str, Any], session_id: str) -> None:
+        """Apply ACP's ID-addressed lifecycle/summary patches in wire order, including history replay.
+
+        A disclosed summary is user-displayable adapter output, never an inventory of hidden model context.
+        Unknown statuses remain opaque. Missing IDs retain compatibility as a labeled legacy observation.
+        """
+        ident = update.get('compactionId')
+        ident = ident if isinstance(ident, str) else None
+        key = json.dumps([session_id, ident], ensure_ascii=False, separators=(',', ':'))
+        compactions = cast(dict[str, dict[str, Any]], self.acp['compactions'])
+        held: dict[str, Any] | None = compactions.get(key)
+        if held is None or (ident is None and update.get('status') == 'in_progress' and held['completed_observed']):
+            initial: dict[str, Any] = {'compaction_id': ident, 'session_id': session_id, 'status': 'in_progress', 'summary': None,
+                    'error': None, '_meta': None, 'summary_chunk_meta': [], 'completed_observed': False,
+                    'epoch_advanced': False, 'legacy': ident is None, 'at': stamp(),
+                    'retained_context': 'unknown'}
+            held = compactions[key] = initial
+        if update.get('sessionUpdate') == 'compaction_summary_chunk':
+            if update.get('content') is not None:
+                held['summary'] = [*(held['summary'] or []), update['content']]
+                held['summary_chunk_meta'] = [*held['summary_chunk_meta'], update.get('_meta')]
+        else:
+            if isinstance(update.get('status'), str):
+                held['status'] = update['status']
+            for field in ('summary', 'error', '_meta'):
+                if field not in update:
+                    continue
+                value = update[field]
+                if field == '_meta' and self.acp['protocol_version'] == 2 and isinstance(value, dict):
+                    merged: dict[str, Any] = {**cast(dict[str, Any], held[field] or {}),
+                                              **cast(dict[str, Any], value)}
+                    held[field] = {name: item for name, item in merged.items() if item is not None} or None
+                else:
+                    held[field] = value
+                if field == 'summary':
+                    held['summary_chunk_meta'] = []
+        moved: asyncio.Event | None = None
+        if held['status'] == 'completed' and not held['completed_observed']:
+            held['completed_observed'] = True
+            if not self.replaying and session_id == self.session_id:
+                self.recompacted = True
+                moved = self.epoch_moved = asyncio.Event()
+        # Freeze the received patch result: later frames may arrive before the writer acquires its lock.
+        snapshot = json.loads(json.dumps(held, ensure_ascii=False))
+        self.spawn(self.keep_compaction(key, snapshot, moved))
+
+    async def keep_compaction(self, key: str, snapshot: dict[str, Any], moved: asyncio.Event | None) -> None:
+        """One stable timeline entity and durable identity across resume, with no unsolicited model turn."""
+        async with self.lock:
+            current = cast(dict[str, dict[str, Any]], self.acp['compactions'])[key]
+            snapshot = {**snapshot, 'epoch_advanced': current['epoch_advanced']}
+            scope = str(snapshot['session_id'])
+            if scope != self.session_id:
+                child = self.children.setdefault(scope, {'session_id': scope, 'name': None, 'task': None,
+                    'state': 'running', 'started': snapshot['at'], 'lines': 0, 'named': set(), 'flow': None})
+                flow = cast(dict[str, Any] | None, child['flow'])
+                if flow is not None:
+                    await self.child_note(scope, str(flow['key']), str(flow['kind']), str(flow['text']))
+                    child['flow'] = None
+                await self.child_note(scope, f'compaction:{key}', 'compaction', json.dumps(snapshot, ensure_ascii=False))
+            else:
+                await self.flush()
+                await self.note(f'compaction:{key}', 'compaction', json.dumps(snapshot, ensure_ascii=False))
+            await self.save_state()
+        if moved is not None:
+            await self.compacted(compaction_id=snapshot['compaction_id'], epoch_event=moved)
+            held = cast(dict[str, dict[str, Any]], self.acp['compactions'])[key]
+            held['epoch_advanced'] = True
+            async with self.lock:
+                await self.note(f'compaction:{key}', 'compaction', json.dumps(held, ensure_ascii=False))
+                await self.save_state()
+
+    async def compacted(self, *, compaction_id: str | None = None,
+                        epoch_event: asyncio.Event | None = None) -> None:
+        """An observed completed boundary makes requested grounding eligible in the next context epoch.
+
+        Host discovery and guide discovery stay separate. Neither the signal nor an optional disclosed summary
+        establishes which semantic facts remain in the model. No reconstruction turn or context-body dump follows.
+        """
+        moved = epoch_event if epoch_event is not None else self.epoch_moved
         try:
             gone = await asyncio.to_thread(forget_shown, self.runner)
             if self.recompacted:  # not said yet by a turn sent since
                 await asyncio.to_thread(record_shown, self.runner, COMPACTED_KEY, self.compaction_line())
             await self.ctx.publish_async('session.compacted', {
                 'project': self.store.project_id, 'work_id': self.work_id, 'session': self.runner,
-                'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp'})
+                'session_id': self.session_id, 'role': self.role, 'forgotten': gone, 'by': 'acp',
+                'compaction_id': compaction_id, 'retained_context': 'unknown'})
         finally:
             if moved is not None:
                 moved.set()
-        async with self.lock:
-            await self.flush()
-            await self.note(None, 'notice', f'{self.name} compacted its context; Metaform gives again what it '
-                                            f'gave once ({gone} pieces) at their next use.')
 
     def compaction_line(self) -> str:
         """What a turn after a compaction opens with: first the directive and the links to the agent's instruction
@@ -3618,6 +3695,9 @@ class Session:
             sys.stderr.write(f'The fault of work {self.work_id} could not be published: {error}\n')
 
     async def begin(self) -> None:
+        # The control endpoint can receive a person's message as soon as the session row is published.
+        # Keep it queued until the first brief is ready, with its original word and ordering.
+        self.prompts_ready = False
         if self.ending:
             return
         if self.node is None and (self.ctx.nouns.get('intake') or self.role == 'helper') and not self.resume:
@@ -3764,7 +3844,7 @@ class Session:
                                        f'metaform dispatch sessions id={self.work_id}')
                         # a conversation goes on where it hangs now, the map it began on cleared or restored since
                         kept = ('state', 'recovery', 'pid', 'port', 'token', 'how', 'runner', 'origin', 'base', 'ended',
-                                *(('work_id',) if self.system else ()))
+                                *(('work_id',) if self.system or self.episode_previous_work else ()))
                         tx.update('agent_sessions', {'session_id': self.session_id}, {key: row[key] for key in kept})
                         with contextlib.suppress(OSError):  # its row holds it now, not the file its start left
                             resuming_path(str(self.session_id)).unlink()
@@ -3818,14 +3898,23 @@ class Session:
             return
         if self.resume:  # a resumed session waits for the person's next message, or goes on when the supervisor retries
             await self.taken_over()
-            if (self.retrying or self.assignment) and self.node is not None and not self.budget:
-                self.turn(prompt('retry', work_id=self.work_id))
+            # Durable child returns can be what woke this caller. Deliver their references before
+            # choosing its first resumed prompt, rather than racing a generic retry against them.
+            await self.orchestration_changes()
+            await self.orchestration_idle.wait()
             await self.replay_peers()
+            if ((self.retrying or self.assignment) and self.node is not None and not self.budget
+                    and (self.episode_previous_work or not self.pending)):
+                if self.episode_previous_work:
+                    self.queue_startup_context(await asyncio.to_thread(self.episode_delta))
+                else:
+                    self.turn(prompt('retry', work_id=self.work_id))
             if self.role == 'system':
                 await self.updates_due()
-            self.spawn(self.orchestration_changes())
             await self.troubles()
             await self.board()
+            self.prompts_ready = True
+            self.start_pending()
             return
         if self.node is None and self.ctx.nouns.get('intake'):  # the intake, served as it is, VIEW-045 and BASE-039
             text = await asyncio.to_thread(intake_prompt, self.ctx, self.request)
@@ -3855,9 +3944,9 @@ class Session:
             if self.role == 'system':  # into its inbox, named by the one line the opening turn carries
                 await self.updates_due()
                 await self.replay_peers()  # the notes left waiting for the person's system agent while none ran
-                self.turn(text)
-            else:
-                self.turn(text)
+            self.queue_startup_context(text)
+            self.prompts_ready = True
+            self.start_pending()
             self.spawn(self.orchestration_changes())
             await self.troubles()
             await self.board()
@@ -4034,6 +4123,25 @@ class Session:
             text = work_line(self.work_id, Path(self.folder), self.at)
         return text
 
+    def episode_delta(self) -> str:
+        """A new card carries its operation and source references, without replaying the former handoff."""
+        record = ticket(self.store, self.work_id)
+        from .orchestration import service
+        owner = service(self.ctx)
+        stream: dict[str, Any] = (owner.episode_context(self.ctx, self.assignment)
+                                  if owner and self.assignment else None) or {}
+        detail: dict[str, Any] = (owner.context(self.ctx, work_id=self.work_id) if owner else None) or {}
+        payload: dict[str, Any] = {'episode_id': stream.get('episode_id'),
+                   'previous_work_id': self.episode_previous_work, 'work_id': self.work_id,
+                   'assignment_id': (self.assignment or {}).get('assignment_id'),
+                'task': record.task, 'functional_location': self.at, 'workspace': self.folder,
+                'source_candidate': self.ctx.nouns.get('episode_source_candidate'),
+                'source_branch': self.ctx.nouns.get('episode_source_branch'),
+                'workspace_base': self.ctx.nouns.get('episode_workspace_base'),
+                   'return_to': (self.assignment or {}).get('return_to'),
+                   'sources': (detail or {}).get('sources'), 'plan': (detail or {}).get('plan')}
+        return prompt('episode_delta', contribution=json.dumps(payload, ensure_ascii=False))
+
     async def open_agent(self, identity: dict[str, str], *, terminal_login: bool = False) -> InitializeResponse:
         """Start the agent's adapter in its own process group, its stderr read into the thread, and initialize it.
         The client offers its own file reads and writes and its own terminals while dispatch_client_files and
@@ -4077,8 +4185,8 @@ class Session:
         params = asked.model_dump(mode='json', by_alias=True, exclude_none=True)
         params['clientCapabilities']['subagents'] = {}  # claude-agent-acp and codex-acp: native subagent sessions
         params['clientCapabilities'].setdefault('session', {})['notices'] = {}  # ACP's session notices, v1
-        # ACP's session compaction, in Preview since 2026-09-23: an agent sends compaction_update only to a client that
-        # declares it, and its completed status is how this runner knows the agent lost what Metaform gave it once.
+        # ACP v1 advertises ID-addressed lifecycle patches, summary chunks and replay. Completion is observable,
+        # while retained semantic context and undisclosed native instructions remain unknown.
         params['clientCapabilities']['session']['compaction'] = {}
         connection = self.raw()
         if connection is None:
@@ -4187,7 +4295,9 @@ class Session:
         if isinstance(before, dict):
             held = cast(dict[str, Any], before)
             self.acp['touched'] = list(held.get('touched') or [])
-            self.acp['ticket_git'] = held.get('ticket_git')
+            self.acp['compactions'] = dict(held.get('compactions') or {})
+            if not self.episode_previous_work:
+                self.acp['ticket_git'] = held.get('ticket_git')
             ticket_git: dict[str, Any] = held.get('ticket_git') or {}
             self.acp['tool_windows'] = held.get('tool_windows', ticket_git.get('tool_windows', {}))
             if held.get('prompts') in PROMPTS:  # the person's choice for this session holds when it goes on
@@ -4515,6 +4625,8 @@ class Session:
     def context_delivered(self) -> None:
         """Record only after ACP accepted the outgoing bytes; the body snapshots cannot race a later prompt edit."""
         prepared, self.inflight_context = self.inflight_context, None
+        self.pending_episode_delta = ''
+        self.pending_episode_versions = []
         self.spoken = True
         if prepared is not None and not self.probe:
             record_agent_context(Path(self.root), self.runner, prepared['components'],
@@ -4522,13 +4634,20 @@ class Session:
             delivered = [prompt_files.Sent(str(one['name']), one.get('number'), str(one.get('origin') or 'generated'),
                 one.get('actual_version_id'), one.get('selected_version_id'),
                 str(one.get('rendered_fingerprint') or ''), dict(one.get('bindings') or {}),
-                tuple(one.get('problems') or []), str(one.get('text') or '')) for one in prepared['components']]
+                tuple(one.get('problems') or []), str(one.get('text') or ''),
+                dict(one.get('source') or {})) for one in prepared['components']]
             self.carried(delivered)
         updates, self.inflight_updates = self.inflight_updates, []
         if updates and not self.probe:  # named by the inbox line this conversation carried, so no other is given them
             from .orchestration import carried_updates
             self.spawn(asyncio.to_thread(carried_updates, self.ctx, updates))
         self.inflight_versions = []
+        changes, self.inflight_memory_changes = self.inflight_memory_changes, []
+        for provider, notices in changes:
+            provider.delivered(self.ctx, self.runner, notices)
+        changes, self.inflight_role_changes = self.inflight_role_changes, []
+        for provider, notices in changes:
+            provider.delivered_changes(self.ctx, self.runner, notices)
         marks, self.inflight_peers = self.inflight_peers, []
         if marks:
             self.spawn(self.peer_marked(marks, 'delivered'))
@@ -4569,6 +4688,7 @@ class Session:
             self.orchestration_again = True
             return
         self.orchestration_reading = True
+        self.orchestration_idle.clear()
         try:
             from .orchestration import drain
             while not self.ending:
@@ -4578,6 +4698,7 @@ class Session:
                     break
         finally:
             self.orchestration_reading = False
+            self.orchestration_idle.set()
 
     def carried(self, taken: list[prompt_files.Sent] | None = None) -> None:
         """The prompt versions served since the last turn went out, told on `prompt.sent` with this session's ids and
@@ -4592,7 +4713,8 @@ class Session:
                    'prompts': [{'name': one.name, 'number': one.number, 'origin': one.origin,
                                 'version_id': one.version_id, 'selected_version_id': one.selected_version_id,
                                 'rendered_fingerprint': one.rendered_fingerprint,
-                                'bindings': one.bindings} for one in taken]}
+                                'bindings': one.bindings, 'source': dict(one.source),
+                                'problems': list(one.problems), 'delivery_path': 'acp_prompt'} for one in taken]}
         # what a subscriber keeps of it, the agents module's record, changes no map and is announced by no event
         from metaform import events
         self.spawn(asyncio.to_thread(events.quietly, events.publish, 'prompt.sent', payload, self.ctx))
@@ -4641,7 +4763,39 @@ class Session:
             self.priority_count += 1
         if self.turns == 0:
             self.progress_at = time.monotonic()
-        if self.turns:
+        self.start_pending()
+
+    def queue_startup_context(self, text: str) -> None:
+        """Keep startup bytes and their source versions together until the first accepted actual turn.
+
+        A human message can capture part of an asynchronously rendered brief's versions before rendering ends.
+        Recover those versions from all queued entries so an empty startup trigger cannot hide their delivery.
+        """
+        self.pending_episode_delta = text
+        for versions in (self.sent, *self.prompt_versions):
+            selected = [one for one in versions if one.rendered_text and one.rendered_text in text]
+            self.pending_episode_versions.extend(one for one in selected if one not in self.pending_episode_versions)
+            versions[:] = [one for one in versions if one not in selected]
+        if not self.pending:
+            self.turn('')
+
+    def startup_context_receipt(self, text: str) -> None:
+        """Capture only startup versions whose exact body is in this outgoing prompt, without acknowledging it."""
+        from .orchestration import snapshots
+        captured = [one for one in snapshots(self.pending_episode_versions)
+                    if one.get('text') and str(one['text']) in text]
+        if not captured:
+            return
+        held = self.inflight_context
+        epoch = held['epoch'] if held else agent_context_epoch(Path(self.root), self.runner,
+                                                              project=self.store.project_id)
+        previous = cast(list[dict[str, Any]], held['components']) if held else []
+        by_name = {str(one['name']): one for one in [*previous, *captured]}
+        self.inflight_context = {'epoch': epoch, 'components': list(by_name.values())}
+
+    def start_pending(self) -> None:
+        """Start queued work once startup has assembled its durable continuations."""
+        if self.turns or not self.prompts_ready or not self.pending or self.ending:
             return
         self.turns = 1
         self.active_turn = ActiveTurn()
@@ -4685,6 +4839,9 @@ class Session:
                                            if not update)]
                         self.inflight_updates = [note_id for note_id, _, _, update in self.inbox if update]
                         self.inbox = []
+                    if self.pending_episode_delta and (text or not self.pending):
+                        text = '\n\n'.join(part for part in (self.pending_episode_delta, text) if part)
+                        self.inflight_versions.extend(self.pending_episode_versions)
                     if not text:  # the turn an inbox entry started, whose line an earlier turn carried
                         self.active_turn = None  # still under the interrupt lock
                         self.inflight_versions = []
@@ -4739,6 +4896,23 @@ class Session:
                             text = f'{line}\n\n{text}'  # them: an agent that lost its context reads its
                         if compacted and self.epoch_moved is not None:  # instruction links and ticket first
                             await self.epoch_moved.wait()
+                        self.inflight_memory_changes = []
+                        self.inflight_role_changes = []
+                        if self.authored_role:
+                            for _, provider in provided(Path(self.root), 'agent.role'):
+                                if not hasattr(provider, 'changes'):
+                                    continue
+                                notices = await asyncio.to_thread(provider.changes, self.ctx, self.runner,
+                                    self.authored_role, bindings={'project': self.store.project_id})
+                                if notices:
+                                    self.inflight_role_changes.append((provider, notices))
+                                    text += '\n\n' + json.dumps({'prompt_changes': notices}, ensure_ascii=False)
+                        for _, provider in provided(Path(self.root), 'agent.context.changes'):
+                            notices = await asyncio.to_thread(provider.pending, self.ctx, self.runner)
+                            if notices:
+                                self.inflight_memory_changes.append((provider, notices))
+                                text += '\n\n' + json.dumps({'context_changes': notices}, ensure_ascii=False)
+                        await asyncio.to_thread(self.startup_context_receipt, text)
                         text = await asyncio.to_thread(self.context_checkpoint, text)
                         self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
                         self.inflight_peers = marks
@@ -5267,7 +5441,8 @@ class Session:
             if op == 'status':
                 alive = self.process is not None and self.process.returncode is None and not self.exited.is_set()
                 live = alive and not self.ending and self.failure is None and not self.handing
-                activity = ('waiting' if self.waiting else 'working' if self.turns else 'idle') if live else 'idle'
+                activity = ('waiting' if self.waiting else 'working' if self.turns or not self.prompts_ready
+                            else 'idle') if live else 'idle'
                 how, source = await self.answering() if live else (None, None)
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
                                           # how its permission requests are answered now, and whose choice that is

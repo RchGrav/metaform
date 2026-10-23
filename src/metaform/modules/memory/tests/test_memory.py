@@ -340,6 +340,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
     """The memory module's tables change through the public table API's version and upgrade, STORE-045, and every
     memory, relation, join and note written at version 1 is kept."""
     from metaform.data.tables import TableTx, ensure, project_store, project_transaction
+    from metaform.modules.memory import TABLES
     declared = memory_v1()
     path = project_store('proj', 'memory')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -369,7 +370,7 @@ def test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_a
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
         held = {table: [row[1] for row in db.execute(f'PRAGMA table_info("memory.{table}")')]
                 for table in ('entities', 'observations', 'relations', 'joins')}
-    assert recorded['version'] == 11
+    assert recorded['version'] == TABLES.version
     assert held == {'entities': ['name', 'entity_type', 'seq', 'title', 'why', 'locked_by', 'locked_at'],
                     'observations': ['entity', 'content', 'seq', 'by', 'session', 'at'],
                     'relations': ['source', 'target', 'relation_type', 'seq'],
@@ -881,7 +882,7 @@ def test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by(run, 
     assert [(one['join_id'], one['by']) for one in whole['joins']] == [('j1', None)]
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (11, 9)
+    assert (recorded['version'], recorded['compatible_from']) == (TABLES.version, 9)
 
 
 def item(run, reference, cwd, ok=True):
@@ -963,7 +964,7 @@ def test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_w
     assert after['items'] == ['code.manager.route#4  Next.']
     with project_transaction(path, write=False) as db:
         recorded = json.loads(db.execute("SELECT value FROM meta WHERE key='module:memory'").fetchone()[0])
-    assert (recorded['version'], recorded['compatible_from']) == (11, 9)
+    assert (recorded['version'], recorded['compatible_from']) == (TABLES.version, 9)
 
 
 @pytest.mark.req('MCP-039')

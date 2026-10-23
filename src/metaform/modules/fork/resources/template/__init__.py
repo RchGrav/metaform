@@ -110,6 +110,19 @@ module id order. A disabled module provides nothing. The voice module finds spee
 `VoiceEngine(name, summary, sends=, transcribe=, speak=, ready=, formats=)` provided as `voice.engine`; the
 elevenlabs module provides one. The voice module provides `voice`, its own speak and transcribe for a server-side
 caller such as a phone bridge.
+
+A module can supply observational context updates with
+`Provides('agent.context.changes', provider)`. The provider implements
+`pending(ctx, session) -> list[dict]` and `delivered(ctx, session, notices)`.
+`session` is the runner's context/receipt identity. Return compact JSON-ready
+references only for relevant revisions already consumed by that context, keeping
+stable component and withdrawal identities. Preparing notices acknowledges
+nothing. Dispatch appends them to an already-scheduled turn and calls `delivered`
+only after transport acceptance. Acknowledge the exact revisions received, so a
+newer concurrent change stays pending. This capability does not wake a model,
+broadcast bodies or replace the existing event bus. A module records changes from
+its mutating operations and filters unrelated and own writes before reads.
+Any module-owned wording belongs in its resources/prompts.xml.
 """
 from __future__ import annotations
 

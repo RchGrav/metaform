@@ -13,7 +13,7 @@ from metaform.data import prompts
 pytestmark = pytest.mark.kind('fixture')
 
 
-def source_of(name):
+def authored_source(name):
     owner, component = prompt_files.split_address(name)
     colon = bool(owner)
     if not colon:
@@ -25,6 +25,21 @@ def source_of(name):
     source = prompt_files.shipped(owner, component)
     assert source is not None
     return prompt_files.plain(source), 'xml'
+
+
+def source_of(name):
+    """An exact migration-target fixture, independent of later authored prompt refinements.
+
+    Old migration records keep supporting the selected versions they were written for. Their replacement spans
+    need not remain verbatim in today's source. Retain the current template and reconstruct only missing target
+    spans in this isolated test fixture, so every historical old/new merge remains exercised.
+    """
+    current, format = authored_source(name)
+    for edit in prompt_files.prompt_updates()[name]['edits']:
+        if edit['new'] not in current:
+            current = (current.replace(edit['old'], edit['new'], 1) if current.count(edit['old']) == 1
+                       else current + '\n\n' + edit['new'])
+    return current, format
 
 
 def before_of(name, current):
@@ -66,7 +81,7 @@ def test_every_requested_source_merge_uses_selected_parent_and_preserves_registe
     assert evidence['state'] == 'applied'
     assert evidence['before_version_id'] == selected.version_id
     assert evidence['after_version_id'] == integrated.version_id
-    assert evidence['source']['baseline'] == '10e2984ea36231b474b197e30661712ff45e3765'
+    assert evidence['source']['baseline'] == prompt_files.prompt_updates()[name]['baseline']
     # A later explicit user edit is the new selection even when it intentionally restores an earlier clause.
     latest = prompts.save_prompt(name, selected.text + '\nNewer user direction.', format=format)
     prompt_files.merge_selected_updates(name)
@@ -178,3 +193,71 @@ def test_selected_skill_procedure_is_the_file_deployed_and_read_by_the_harness(h
         prompt_files.release(sent)
     actual = next(one for one in sent if one.name == name)
     assert actual.version_id == integrated.version_id and actual.rendered_text == expected
+
+
+@pytest.mark.parametrize('own_metadata', [False, True])
+def test_update_metadata_uses_entry_baseline_with_manifest_fallback(tmp_path, monkeypatch, own_metadata):
+    import json
+
+    manifest = {'baseline': 'global-source', 'reviewed_baseline': 'global-review',
+                'updates': [{'name': 'prompt.example:entry', 'id': 'fixture-update', 'edits': []}]}
+    if own_metadata:
+        manifest['updates'][0].update(baseline='entry-source', reviewed_baseline='entry-review')
+    folder = tmp_path / 'resources'
+    folder.mkdir()
+    (folder / 'prompt_updates.json').write_text(json.dumps(manifest))
+    prompt_files.prompt_updates.cache_clear()
+    try:
+        with monkeypatch.context() as patched:
+            patched.setattr(prompt_files.resources, 'files', lambda _: tmp_path)
+            actual = prompt_files.prompt_updates()['prompt.example:entry']
+        assert actual['baseline'] == ('entry-source' if own_metadata else 'global-source')
+        assert actual['reviewed_baseline'] == ('entry-review' if own_metadata else 'global-review')
+    finally:
+        prompt_files.prompt_updates.cache_clear()
+
+
+@pytest.mark.parametrize('anchor_state', ['exact', 'missing', 'ambiguous'])
+def test_memory_audit_merge_preserves_selected_source_and_records_conflicts_once(home, anchor_state):
+    name = 'prompt.memory:instructions'
+    update = prompt_files.prompt_updates()[name]
+    prefix = 'Use the prepared functional knowledge. Preserve this exact newer retrieval instruction.'
+    selected_text = prefix + '\n\n' + '\n\n'.join(edit['old'] for edit in update['edits'])
+    if anchor_state == 'missing':
+        selected_text = selected_text.replace(update['edits'][1]['old'], 'A different authored maintenance rule.')
+    elif anchor_state == 'ambiguous':
+        selected_text += '\n\n' + update['edits'][1]['old']
+    original, selected = seed_selected(name, selected_text, 'xml', suffix='Bespoke register stays exact.')
+    result = prompt_files.merge_selected_updates(name)
+    assert result is not None
+    assert result['source']['baseline'] == update['baseline']
+    assert result['source']['reviewed_baseline'] == update['reviewed_baseline']
+    assert prompts.prompt_version(name, selected.number).text == selected.text
+    current = prompts.prompt_version(name)
+    if anchor_state == 'exact':
+        expected = prompt_files.plain(selected.text)
+        for edit in update['edits']:
+            expected = expected.replace(edit['old'], edit['new'], 1)
+        assert result['state'] == 'applied'
+        assert prompt_files.plain(current.text) == expected
+        assert current.prompt_id == original.prompt_id and current.parent_id == selected.version_id
+    else:
+        assert result['state'] == 'conflict' and result['conflicts']
+        assert current.version_id == selected.version_id and current.text == selected.text
+    assert prompt_files.merge_selected_updates(name) == result
+    assert len(prompts.prompt_merges(name)) == 1
+    assert len(prompts.prompt_versions(name)) == (3 if anchor_state == 'exact' else 2)
+
+
+def test_selected_migration_retains_fill_places_introduced_by_its_own_replacement(home, monkeypatch):
+    name = 'prompt.dispatch:peer_note'
+    _, selected = seed_selected(name, 'Earlier authored envelope.', 'xml')
+    update = {'id': 'fixture-introduced-fill', 'source': 'fixture', 'baseline': 'entry-source',
+              'reviewed_baseline': 'entry-review',
+              'edits': [{'old': 'Earlier authored envelope.', 'new': 'Useful evidence: <new_context/>'}]}
+    monkeypatch.setattr(prompt_files, 'prompt_updates', lambda: {name: update})
+    actual = prompt_files.resolve(name, new_context='Exact candidate evidence.')
+    assert actual['text'] == 'Useful evidence: Exact candidate evidence.\n\nUser-authored register stays exact.'
+    integrated = prompts.prompt_version(name)
+    assert 'new_context' in prompt_files.places(integrated.text)
+    assert integrated.parent_id == selected.version_id

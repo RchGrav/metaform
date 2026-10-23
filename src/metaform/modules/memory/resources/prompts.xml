@@ -10,30 +10,27 @@
      Empty sends nothing. Off when the module is disabled or the folder's setting modules leaves it out.
      A draft, CTX-029, awaiting the owner's approval of its wording; it replaced the 2026-10-11 sentence on storing
      what is learned. -->
-<orient>2. Search memories at that element using your task's own words, then open relevant matches. Maintain durable knowledge as metaform://memory explains. Keep progress and results in work records.</orient>
+<orient>2. Reuse relevant knowledge already supplied at that element. Search memories and open additional matches when the task needs them. Maintain durable findings as metaform://memory explains; keep progress and results in work records.</orient>
 <!-- The one line an agent is told when it arrives at the node it works on, its own read of that node (map where, the
      ticket read, the handoff), and only while memories there are unread in its current context: how many, the call
-     that lists titles without bodies, and that maintaining memory includes tidying it, since growing memory makes arrival
-     cost more to read and buries what matters. Nothing is said when every memory there is read, and nothing is pushed
-     when memories change (2026-10-19, code.dispatcher.agent#72). Over MCP the command is named as its tool. <unread/> is
+     that lists titles without bodies, and the retrieval path for knowledge relevant to the assignment. Nothing is said when every memory there is read, and changed references for consumed knowledge coalesce into the next natural turn.
+     Unrelated changes, count-only encounters and the consumer's own writes do not notify or wake it. Over MCP the command is named as its tool. <unread/> is
      the count unread at the node; <read_unread/> the title-list call, its <address> filled with the node. Empty omits it
      and the counts stand alone. -->
 <counts>
-Unread memories here: <unread/>. List titles with <read_unread/>. Search using your task's own words, then open relevant matches. Merge repeats and remove outdated observations and entities when maintaining memory.
+Unread memories here: <unread/>. <read_unread/> lists their titles. Open the knowledge relevant to the work.
 </counts>
-<!-- Said with what read_unread returns, as one of its notices, whenever it returns memories: reading what is new at a
-     node is when the agent tidies the memory there, since memory that only grows makes every arrival cost more to read
-     and buries what matters (2026-10-19: one entity at code.graph.knowledge held about 40 one-off sightings). Empty
-     leaves it out. -->
+<!-- Said with read_unread results to remind the reader to maintain relevant knowledge when the work establishes
+     corrections, duplication or obsolescence. Reading unchanged knowledge starts no separate cleanup assignment. -->
 <refine>
-Whenever you read this node's memory, remove entities, observations and relations that are not useful, durable functional facts about the project. Merge duplicates and correct stale facts through canonical memory operations. Preserve useful functional observations and retain incident evidence in work records.
+Maintain relevant knowledge as your work establishes corrections, duplication or obsolescence. Preserve useful functional observations, including those serving other tasks or receiving purposes. Keep incident evidence and repair history in work records.
 </refine>
 <!-- The line under the same counts when the person left a note at one of the nodes counted: the call that reads it.
      A note is the person's, at most 2048 characters, written from the page. Empty leaves the line out. -->
 <note_counts>The person's note: metaform memory note node=&lt;address&gt;</note_counts>
 <!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules>
-<rule why="The Join rule attaches all knowledge to the RE, so the next agent finds a memory where the goal it serves is borne, and memory cannot tell an RE from a PE for you.">Record each memory at the RE whose goal it serves, never at a PE that provides for it.</rule>
+<rule why="The Join rule attaches all knowledge to the RE, so the next agent finds a memory where the goal it serves is borne, and memory cannot tell an RE from a PE for you.">Record each memory at the RE whose goal it serves in that relationship; an element providing elsewhere can receive here.</rule>
 </rules>
 <!-- memory's line in the connect message: what an agent uses memory for, one short phrase after its name, in the
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
@@ -58,7 +55,7 @@ Whenever you read this node's memory, remove entities, observations and relation
      memory module is disabled or the folder's modules setting leaves it out. -->
 <instructions>
 Use the Metaform map as the index into this project's memory. Functional nodes and joins are entry points to the knowledge that is relevant there.
-Use search_nodes with your task's own words at the assigned functional node. Use open_nodes on the matches that bear on the task. Use read_graph only when the whole graph is needed. Follow directed relations when connected knowledge is relevant. Read relevant updates announced while you work. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.
+Reuse relevant knowledge already supplied. Use search_nodes with your task's own words at the assigned functional node when additional knowledge is needed. Use open_nodes on the matches that bear on the task. Use read_graph only when the whole graph is needed. Follow directed relations when connected knowledge is relevant. Read relevant changed-reference notices on your next natural turn. They identify changed or withdrawn knowledge you consumed; fetch the current body when the task needs it. Routine changes do not wake an agent or broadcast memory bodies. The same memory associated with several entry points retains one identity; separate memories remain separate even when their wording is similar.
 Maintain memory as uniquely named entities with types, atomic string observations and explicit directed relations in active voice. Keep each observation to one fact about its entity. Represent relationships as relations rather than leaving them only in prose.
 Refine existing relevant knowledge as your work establishes better understanding. Correct inaccurate observations and relations, add missing relevant relations, consolidate duplicates, and remove outdated entities, observations and relations. Add new entities and observations when the knowledge is new.
 Use canonical operations. create_entities skips existing names; use add_observations to extend them. Refine an observation by removing the old observation and adding its replacement, and refine a relation by deleting it and creating the corrected relation.
@@ -66,8 +63,8 @@ Associate memories with the functional entry points where they are relevant, fol
 During discovery, link meaningful implementation entry points as functional references. Keep execution progress and return details in work records; preserve maintained project knowledge in memory.
 Each agent maintains the memories relevant to its work. Keep only durable, evidence-backed project facts that help another agent understand functionality or avoid rediscovering a cause, constraint, dependency or decision and its reason. Before recording a fact, ask whether it would still help another agent after the current ticket, session and author are forgotten.
 Record how the project works, not who worked on it. Agent authorship, role assignments, progress, status and claims that an agent maintains a feature belong in role or work records. Do not create agent-to-memory ownership relations merely because an agent created or updated a memory. For example, record how worker startup selects context; do not record that a specialist maintains the startup-context memory. Relations must express established functional relationships between project entities.
-Whenever an agent reads memory, it must remove any entity, observation or relation that is not useful, durable functional knowledge about the project. Do not wait until adding a memory or finishing a ticket. Use canonical memory operations. Check retained facts against current evidence, correct inaccurate facts and relations, and merge duplicates. Preserve useful functional observations when removing an unsupported relation. All project memories support agent CRUD. Do not protect memories from agent updates or deletion. Keep incident evidence, reproduction details and repair history in the ticket before pruning a bad memory. Removing a memory or error marker does not prove the underlying cause is fixed.
-Do not record work logs in memory. Work logs include task progress, actions taken, implementation inventories, changed-file lists, test results, completion reports and agent assignments. Whenever you encounter work-log observations or relations, remove them immediately through canonical memory operations. Delete an entity when no durable project facts remain. Keep execution history in work records and implementation locations in source references. Perform this maintenance during normal work without approval, review, an extra agent call or a pause in the assigned task.
+Maintain the knowledge relevant to the work as current evidence establishes a correction, actual duplication or obsolescence. Preserve useful facts that serve other tasks or receiving purposes. Use canonical CRUD without an additional approval or maintenance assignment. Check disputed facts against current artifacts and retain their meaningful implementation references. All project memories support agent CRUD.
+Keep incident evidence, reproduction details and repair history in work records before pruning unsupported memory. Removing a memory or error marker does not prove the underlying cause is fixed. Work logs, changed-file lists, test results, completion reports and agent assignments belong in work records and source references. When encountered as memory, move useful execution evidence there and retain durable functional causes, constraints, dependencies and decisions with their reasons. Delete an entity when no durable project facts remain.
 </instructions>
 <!-- Line 2's other bullet, as the owner wrote it, CTX-027: sent in place of the whole "This is {element} ..."
      bullet when the agent has no assigned element: one connected over MCP outside dispatch, the system agent, or a

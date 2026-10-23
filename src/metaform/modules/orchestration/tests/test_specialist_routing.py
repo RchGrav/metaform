@@ -426,7 +426,7 @@ def test_automatic_creation_waits_for_a_held_ticket_to_be_released(case, monkeyp
     routing.queue(ctx, [work.id])
     with own(ctx).tables() as tx:
         tx.update('routing', {'work_id': work.id}, {'state': previous_state})
-    store.move_work(work.id, 'backlog', kept=True)
+    store.move_work(work.id, 'backlog', kept=True, hold_reason='Wait for the requested release.')
     with monkeypatch.context() as waiting:
         waiting.setattr(jev, 'config', lambda *a: pytest.fail('A held ticket must not spend on routing'))
         assert SERVICE.route_pending(ctx)[0]['state'] == 'held'
@@ -500,9 +500,19 @@ def runtime_reply(monkeypatch, task_type, agent, *, effort=None, strongest=False
     ('frontend', 'claude', 'Polish the settings panel layout and interaction states.'),
     ('coding', 'codex', 'Reject expired tokens in auth.validate, preserving valid tokens. Verify expiry boundaries.'),
 ])
-def test_ticket_runtime_uses_required_agent_and_never_codes_on_low(case, monkeypatch, runtime_catalog,
-                                                                task_type, agent, task):
+def test_ticket_runtime_uses_model_selected_advertised_choice(case, monkeypatch, runtime_catalog,
+                                                           task_type, agent, task):
+    from metaform import settings
+
     ctx, _, work = case
+    # The simulated catalog does not enable dispatch itself. Supply its declared person setting
+    # when this worker has loaded only the orchestration module, independent of test ordering.
+    monkeypatch.setattr(settings, 'SCHEMA', dict(settings.SCHEMA))
+    strength_key = f'dispatch_{agent}_strengths'
+    if strength_key not in settings.SCHEMA:
+        settings.text(strength_key, '', owner='dispatch', scope='folder')
+    supplied_strengths = 'The person supplied research matching this runtime to the requested contribution.'
+    settings.put(strength_key, supplied_strengths, ctx.folder)
     sent = runtime_reply(monkeypatch, task_type, agent, effort='medium')
     ticket = {'id': work.id, 'title': 'Assigned runtime', 'kind': 'enhancement',
               'address': work.address, 'task': task}
@@ -512,7 +522,8 @@ def test_ticket_runtime_uses_required_agent_and_never_codes_on_low(case, monkeyp
     assert {key: value for key, value in sent[0].items() if key != 'strengths'} == {
         'title': ticket['title'], 'kind': 'enhancement', 'node': work.address, 'task': task}
     # the person's own account of each agent, dispatch_<agent>_strengths, goes with the state (2026-10-21)
-    assert set(sent[0]['strengths']) <= set(runtime_catalog) and sent[0]['strengths'][agent]
+    assert set(sent[0]['strengths']) <= set(runtime_catalog)
+    assert sent[0]['strengths'][agent] == supplied_strengths
     assert found['model'] in runtime_catalog[agent]['models']
     assert jev.items_at(ctx.folder, work.address, None, 10, project=ctx.project)
 
@@ -546,10 +557,11 @@ def test_helpers_and_routing_use_lowest_appropriate_offered_effort(case, monkeyp
         assert found['effort'] == 'off'
 
 
-def test_vague_coding_returns_to_planner_instead_of_stronger_implementation(case, monkeypatch, runtime_catalog):
+def test_cross_workstream_planning_is_a_separate_contribution(case, monkeypatch, runtime_catalog):
     ctx, _, work = case
     runtime_reply(monkeypatch, 'needs_plan', 'codex', effort='ultra', strongest=True)
-    found = choose_runtime(ctx, {'id': work.id, 'title': 'Improve authentication', 'task': 'Make auth better.'},
+    found = choose_runtime(ctx, {'id': work.id, 'title': 'Coordinate authentication rollout',
+                                'task': 'Plan dependent changes across identity, browser sessions and clients.'},
                            runtime_catalog)
     assert found['task_type'] == 'needs_plan'
 
@@ -584,7 +596,7 @@ def test_runtime_jev_off_immediately_requests_facilitator(case, monkeypatch, run
 
 
 @pytest.mark.parametrize('changes', [
-    {'agent': 'claude'}, {'model': 'unoffered-model'}, {'effort': 'low'},
+    {'agent': 'unknown'}, {'model': 'unoffered-model'}, {'effort': 'unoffered'},
     {'confidence': float('nan')}, {'confidence': 1.1}, {'confidence': True}, {'reason': ''}, {'task_type': []},
 ])
 def test_facilitator_runtime_must_satisfy_policy_and_offered_catalog(case, monkeypatch, runtime_catalog, changes):
@@ -609,7 +621,8 @@ def runtime_transport(case, monkeypatch, runtime_catalog):
         def keep_runtime(self, ctx, work_id, choice):
             saved = {**{key: choice[key] for key in ('agent', 'model', 'effort')},
                      'decision': {key: choice.get(key) for key in
-                                  ('decider', 'confidence', 'task_type', 'reason', 'task_fingerprint')}}
+                                  ('decider', 'confidence', 'task_type', 'reason', 'task_fingerprint',
+                                   'source_work_id', 'source_decider')}}
             settings[work_id] = saved
             return saved
 
@@ -630,9 +643,9 @@ def runtime_transport(case, monkeypatch, runtime_catalog):
     ({'confidence': float('inf')}, 'confidence'),
     ({'confidence': True}, 'confidence'),
     ({'confidence': '0.88'}, 'confidence'),
-    ({'agent': 'claude'}, 'agent/model/effort'),
-    ({'model': 'unoffered-model'}, 'agent/model/effort'),
-    ({'effort': 'low'}, 'agent/model/effort'),
+    ({'agent': 'unknown'}, 'agent/model/effort'),
+    ({'model': 'unoffered-model'}, 'model'),
+    ({'effort': 'unoffered'}, 'agent/model/effort'),
     ({'reason': ''}, 'reason'),
     ({'reason': '  '}, 'reason'),
     ({'reason': None}, 'reason'),
@@ -679,8 +692,9 @@ def test_assignment_credit_failure_commissions_full_model_and_records_its_choice
     assert SERVICE.prepare_runtime(ctx, SERVICE.assignment(ctx, work_id=work.id))
 
 
-def test_vague_implementation_waits_for_planner_without_closing_original_ticket(case, monkeypatch,
-                                                                             runtime_transport):
+@pytest.mark.parametrize('plan_state', ['returned', 'failed'])
+def test_separate_plan_returns_once_without_rewriting_original_ticket(case, monkeypatch, runtime_transport,
+                                                                    plan_state):
     from dataclasses import replace
 
     from metaform.modules.orchestration.state import own
@@ -698,10 +712,17 @@ def test_vague_implementation_waits_for_planner_without_closing_original_ticket(
     assert not store.ticket(work.id).work.done
     assert not SERVICE.prepare_runtime(ctx, assigned)
     assert len(SERVICE.members(ctx, assigned['team_id'])) == 2
-    store.edit_work(work.id, {'task': 'Reject alarms after expiry. Verify exact expiry boundary.'})
-    runtime_reply(monkeypatch, 'coding', 'codex', effort='medium')
-    assert SERVICE.prepare_runtime(ctx, assigned)
-    assert runtime_transport[work.id]['effort'] == 'medium'
+    original = store.ticket(work.id).work.task
+    plan = 'Reject alarms after expiry. Verify exact expiry boundary.'
+    SERVICE.returned(ctx, children[0]['work_id'], plan, evidence=['Expiry path traced.'], state=plan_state)
+    monkeypatch.setattr(jev, 'config', lambda *args: pytest.fail('A returned plan needs no repeated classification'))
+    resumed = SERVICE.assignment(ctx, work_id=work.id)
+    assert SERVICE.prepare_runtime(ctx, resumed)
+    assert SERVICE.prepare_runtime(ctx, resumed)
+    assert store.ticket(work.id).work.task == original
+    assert resumed['plan']['result'] == plan
+    assert resumed['plan']['evidence'] == ['Expiry path traced.']
+    assert len(SERVICE.members(ctx, assigned['team_id'])) == 2
     with own(ctx).tables(write=False) as tx:
         assert not tx.rows('role_requests', limit=0).results
 
@@ -719,12 +740,161 @@ def test_person_runtime_survives_assignment_without_another_jev_request(case, mo
     assert runtime_transport[work.id]['agent'] == 'claude'
 
 
+def test_person_runtime_before_catalog_priming_stays_selected(case, monkeypatch, runtime_transport,
+                                                           runtime_catalog):
+    from dataclasses import replace
+
+    ctx, _, work = case
+    expert(ctx)
+    runtime_catalog['claude'] = {'models': {}, 'efforts': []}
+    runtime_transport[work.id] = {'agent': 'claude', 'model': 'person-model', 'effort': 'person-level',
+                                'decision': {'decider': 'person', 'confidence': 1.0}}
+    monkeypatch.setattr(jev, 'config', lambda *args: pytest.fail('Preserve an explicit unchecked choice'))
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    assert assigned['state'] == 'queued'
+    assert runtime_transport[work.id]['model'] == 'person-model'
+    assert runtime_transport[work.id]['effort'] == 'person-level'
+
+
 def test_partial_person_agent_override_can_complete_a_coding_runtime(case, monkeypatch, runtime_catalog):
     ctx, _, work = case
     runtime_reply(monkeypatch, 'coding', 'claude', effort='medium')
     selected = choose_runtime(ctx, work, runtime_catalog, overrides={'agent': 'claude'})
     assert selected['agent'] == 'claude' and selected['effort'] == 'medium'
     assert selected['decider'] == 'jev'
+
+
+@pytest.mark.parametrize(('agent', 'efforts', 'effort'), [
+    ('claude', [], None), ('alternate', ['adaptive'], 'adaptive'), ('claude', ['low'], 'low'),
+])
+@pytest.mark.parametrize('task_type', ['coding', 'frontend', 'planning', 'analysis', 'routing'])
+def test_runtime_keeps_alternate_agents_and_adapter_defined_effort(case, monkeypatch, agent, efforts, effort,
+                                                                task_type):
+    """The audit's no-control/alternate-agent cases must reach selection and validation."""
+    ctx, _, work = case
+    catalog = {agent: {'models': {'only': 'The installed capable runtime.'}, 'efforts': efforts}}
+    runtime_reply(monkeypatch, task_type, agent, effort=effort)
+    chosen = choose_runtime(ctx, work, catalog)
+    assert chosen is not None
+    assert (chosen['agent'], chosen['model'], chosen['effort']) == (agent, 'only', effort)
+    supplied = {key: value for key, value in chosen.items() if key != 'decider'}
+    if effort is None:
+        supplied.pop('effort')  # A harness with no thinking control does not need a synthetic value.
+    assert choose_runtime(ctx, work, catalog, fallback=supplied)['effort'] == effort
+
+
+def test_local_implementation_uncertainty_does_not_require_another_agent(case, monkeypatch, runtime_transport):
+    from dataclasses import replace
+
+    ctx, store, work = case
+    expert(ctx)
+    store.edit_work(work.id, {'task': 'Improve the alarm error message using the existing interaction conventions.'})
+    runtime_reply(monkeypatch, 'coding', 'claude', effort='low')
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    assert assigned['state'] == 'queued'
+    assert len(SERVICE.members(ctx, assigned['team_id'])) == 1
+    assert runtime_transport[work.id]['agent'] == 'claude'
+
+
+def test_absent_effort_runtime_is_cached_without_another_model_request(case, monkeypatch,
+                                                                     runtime_transport, runtime_catalog):
+    from dataclasses import replace
+
+    ctx, _, work = case
+    expert(ctx)
+    runtime_catalog['claude']['efforts'] = []
+    runtime_reply(monkeypatch, 'coding', 'claude')
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    assert assigned['state'] == 'queued'
+    assert runtime_transport[work.id]['effort'] is None
+    monkeypatch.setattr(jev, 'config', lambda *args: pytest.fail('Retained runtime is already selected'))
+    assert SERVICE.prepare_runtime(ctx, assigned)
+
+
+def test_cached_runtime_reselects_when_dynamic_catalog_excludes_previous_agent(case, monkeypatch,
+                                                                             runtime_transport, runtime_catalog):
+    from dataclasses import replace
+
+    ctx, _, work = case
+    expert(ctx)
+    runtime_reply(monkeypatch, 'coding', 'codex', effort='medium')
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    assert assigned['state'] == 'queued'
+    runtime_catalog.pop('codex')
+    runtime_reply(monkeypatch, 'coding', 'claude', effort='medium')
+    assert SERVICE.prepare_runtime(ctx, assigned)
+    assert runtime_transport[work.id]['agent'] == 'claude'
+
+
+def test_related_card_retains_runtime_without_another_classifier(case, monkeypatch, runtime_transport):
+    from dataclasses import replace
+
+    ctx, store, work = case
+    expert(ctx)
+    runtime_reply(monkeypatch, 'coding', 'claude', effort='medium')
+    first = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    SERVICE.bind(ctx, first['assignment_id'], 'retained-worker')
+    SERVICE.returned(ctx, work.id, 'First result established.')
+    related = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Continue the alarm contribution.')
+    monkeypatch.setattr(jev, 'config', lambda *args: pytest.fail('Related work retains its runtime'))
+    second = SERVICE.claim(replace(ctx, nouns={
+        'work': related.id, 'role': 'alarm_engineering', 'continue_from': work.id}))
+    assert second['state'] == 'queued'
+    assert runtime_transport[related.id]['agent'] == 'claude'
+    assert runtime_transport[related.id]['decision']['decider'] == 'continuation'
+    assert runtime_transport[related.id]['decision']['source_work_id'] == work.id
+    assert runtime_transport[related.id]['decision']['source_decider'] == 'jev'
+
+
+@pytest.mark.parametrize('explicit_new_plan', [False, True])
+def test_continuation_reuses_consumed_plan_unless_person_requests_new_planning(case, monkeypatch,
+                                                                           runtime_transport, explicit_new_plan):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import fingerprint
+
+    ctx, store, work = case
+    expert(ctx)
+    runtime_reply(monkeypatch, 'needs_plan', 'codex', effort='ultra', strongest=True)
+    first = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    planner = next(one for one in SERVICE.members(ctx, first['team_id'])
+                   if one['authored_role_uri'] == 'metaform://role/planner')
+    plan_result = 'Apply the shared alarm deadline interface before implementing consumers.'
+    SERVICE.returned(ctx, planner['work_id'], plan_result, evidence=['Consumer dependencies established.'])
+    SERVICE.bind(ctx, first['assignment_id'], 'planned-worker-0')
+    SERVICE.returned(ctx, work.id, 'Initial contribution delivered with the retained plan.')
+    if explicit_new_plan:
+        related = store.add_work(Node('element', 'code.timer.kitchen'), None,
+                                 task='Plan a new cross-workstream dependency before continuing.')
+        runtime_transport[related.id] = {'agent': 'claude', 'model': 'option-z', 'effort': 'max', 'decision': {
+            'decider': 'person', 'confidence': 1.0, 'task_type': 'needs_plan',
+            'task_fingerprint': fingerprint(related.task)}}
+        runtime_reply(monkeypatch, 'planning', 'codex', effort='ultra', strongest=True)
+        assigned = SERVICE.claim(replace(ctx, nouns={
+            'work': related.id, 'role': 'alarm_engineering', 'continue_from': work.id}))
+        assert assigned['state'] == 'waiting' and assigned['plan'] is None
+        new_planner = next(one for one in SERVICE.members(ctx, assigned['team_id'])
+                           if one['authored_role_uri'] == 'metaform://role/planner')
+        assert new_planner['assignment_id'] != planner['assignment_id']
+        return
+    monkeypatch.setattr(jev, 'config', lambda *args: pytest.fail('Continuing consumed planning needs no new model'))
+    previous = work.id
+    for index in (1, 2):
+        related = store.add_work(Node('element', 'code.timer.kitchen'), None,
+                                 task=f'Continue alarm consumer {index} under the established plan.')
+        assigned = SERVICE.claim(replace(ctx, nouns={
+            'work': related.id, 'role': 'alarm_engineering', 'continue_from': previous}))
+        assert assigned['state'] == 'queued'
+        assert len(SERVICE.members(ctx, assigned['team_id'])) == 1
+        assert assigned['plan']['assignment_id'] == planner['assignment_id']
+        assert assigned['plan']['revision'] == fingerprint(work.task)
+        assert assigned['plan']['continued_for'] == fingerprint(related.task)
+        assert assigned['plan']['source_work_id'] == work.id
+        assert assigned['plan']['result'] == plan_result
+        assert runtime_transport[related.id]['decision']['task_type'] == 'needs_plan'
+        SERVICE.bind(ctx, assigned['assignment_id'], f'planned-worker-{index}')
+        SERVICE.returned(ctx, related.id, 'Related consumer delivered.')
+        previous = related.id
 
 
 def test_bound_facilitator_can_send_vague_implementation_to_planner(case, monkeypatch, runtime_transport):

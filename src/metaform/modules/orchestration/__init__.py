@@ -170,12 +170,23 @@ def select_runtime(ctx: Context) -> Any:
     return SERVICE.runtime(ctx, str(ctx.nouns['work']), ctx.nouns.get('choice'))
 
 
+def episode(ctx: Context) -> Any:
+    return SERVICE.episode(ctx, str(ctx.nouns['work']), continue_from=ctx.nouns.get('continue_from'),
+                           fresh=bool(ctx.nouns.get('fresh_context')))
+
+
 def functionality(ctx: Context) -> Any:
     store = ctx.require_store()
     return functional_context(store, store.ticket(str(ctx.nouns['work'])).work)
 
 
-CALL_NOUNS = (ROLE, Noun('task', 'The specialist contribution and relevant context.'), ASSIGNMENT, AT, RESULT,
+CONTINUITY = (
+    Noun('continue_from', 'Related prior work id, assignment id or episode id whose local understanding helps this contribution.',
+         required=False),
+    Noun('fresh_context', 'Keep the workstream but reconstruct useful context in a fresh session.', 'bool', required=False),
+)
+
+CALL_NOUNS = (*CONTINUITY, ROLE, Noun('task', 'The specialist contribution and relevant context.'), ASSIGNMENT, AT, RESULT,
               WAIT, KEY, CANDIDATE,
               Noun('purpose', 'Purpose of a requested new specialty.', required=False),
               Noun('contribution', 'What the new specialist must contribute.', required=False),
@@ -206,15 +217,19 @@ MODULE = Module(
                     Noun('choice', 'Facilitator choice: agent, model, effort, task_type, confidence and reason.',
                          'json', required=False, schema=OBJECT))),
         Verb('claim', claim, 'Assign a ticket directly to a specialist, creating a missing role first.',
-             nouns=(Noun('work', 'Existing root work id.'),
+             nouns=(*CONTINUITY, Noun('work', 'Existing root work id.'),
                     Noun('role', 'Reusable specialist name or URI; omitted uses the selected specialist. Missing roles are created.', required=False),
                     Noun('create', 'Have the Facilitator name and publish missing expertise before this ticket starts.',
                          'bool', required=False),
                     RESULT, SPEC, CANDIDATE,
+                    Noun('pm_session', 'Explicit recipient session for this specialist result; absent adds no PM route.',
+                         required=False),
                     Noun('mode', 'Adaptive or strict; absent uses the project default.', required=False),
                     Noun('session', 'Session binding for a local user-issued claim.', required=False))),
         Verb('inspect', inspect, 'Read assignment ownership, operative state and recorded return route.',
              effect='read', nouns=(ASSIGNMENT, Noun('work', 'Work id.', required=False))),
+        Verb('episode', episode, 'Read or select a coherent workstream and its retained session history.',
+             nouns=(Noun('work', 'Existing assigned work id.'), *CONTINUITY)),
         Verb('team', team, 'Read GC team membership, descendants and independent assessments.',
              effect='read', nouns=(Noun('team', 'GC team id; absent lists the caller team or project.', required=False),)),
         Verb('bmad', bmad_inspect, 'Inspect optional installed BMAD roles, sources and menu invocation.',
@@ -241,8 +256,10 @@ MODULE = Module(
              nouns=(Noun('state', 'running, waiting, blocked, returned, delivered or failed.'),
                     Noun('summary', 'Observed progress, result or blocker.'), ASSIGNMENT, EVIDENCE, CANDIDATE, KEY,
                     Noun('work_so_far', 'Retained work and recovery context.', required=False),
-                    Noun('findings', 'Findings requiring correction. Harsh Critic REJECT creates new dependency-linked '
-                         'tickets routed to Facilitator; functionality retains its existing correction path.',
+                    Noun('findings', 'Retained findings with stable finding_id for recurrences and local id labels. '
+                         'Functionality reopens canonical work. Harsh Critic REJECT creates dependency-linked tickets. '
+                         'An individual supersession records disposition=superseded, superseded_by as a delivered '
+                         'direction id/revision or operative change id, and supersession_reason. Other findings remain actionable.',
                          'json', required=False,
                          schema=ARRAY))),
         Verb('assess', assess, 'Deliver GC validation or a functional concern to an independent FQC assessment.',

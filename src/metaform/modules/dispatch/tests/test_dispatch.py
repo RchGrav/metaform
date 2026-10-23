@@ -381,7 +381,7 @@ def test_the_ticket_is_taken_for_the_agent_with_one_prompt_and_its_handoff_read_
     given, _, handed = blocks[0]['text'].partition(f'\n\nWork ticket {dispatch.id} with map_work')
     # the startup checkpoint every agent opens with, then the node's effective context, then the memory prompt, then
     # the work sentence, CTX-028
-    assert given.startswith('Retain this context key') and f'{{"address": "{NODE}", ' in given and handed, \
+    assert given.startswith('Context diagnostic key:') and f'{{"address": "{NODE}", ' in given and handed, \
         "the checkpoint, the node's effective context, the memory prompt, then the work sentence, CTX-028"
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of the work, CTX-028'
     assert prompt['params']['sessionId'] == 'fake-session-1'
@@ -659,14 +659,13 @@ def test_a_person_message_reaches_the_agent_as_session_prompt(dispatch, run, tmp
 @pytest.mark.req('BASE-052')
 @pytest.mark.parametrize('statuses', ['in_progress,completed', 'in_progress,failed'])
 def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, run, tmp_path, statuses):
-    """ACP's session compaction, CTX-045: the runner advertises it; on completed, what the session was shown once is
-    forgotten, all but the tools' guides and the category its AI tool still lists, and the compacted line naming the ticket and its node is
-    left for the agent's next tool call, else the next turn opens with it, said once, after the directive and the links
-    to the agent's instruction blocks, which come first; in_progress and failed change nothing, and nothing is sent on the signal
-    itself."""
+    """ACP compaction, CTX-045: completed makes node-body delivery eligible again while retaining guide/catalog
+    discovery receipts. Its notice names the ticket and node on the next natural turn or tool call, after the
+    instruction-block directive and links. In-progress and failed events change nothing. The signal itself sends
+    no model turn. Delivery eligibility and host discovery do not establish what semantic knowledge survived."""
     from metaform import prompt_files, shown
     from metaform.module import COMPACTED_KEY, agent_opening
-    opening = agent_opening(dispatch.folder, 'worker') + '\n\nYour context was compacted'
+    opening = agent_opening(dispatch.folder, 'worker') + '\n\nThe adapter reported context compaction'
     assert opening.startswith(prompt_files.module('mcp', 'connect_directive') + '\nmetaform://rules\n')
     assert '\nmetaform://role/worker\n' in opening
     gates = tmp_path / 'turns'
@@ -676,7 +675,7 @@ def test_a_compacted_context_is_given_again_what_metaform_gave_once(dispatch, ru
     assert init['session']['compaction'] == {}
     eventually(lambda: dispatch.received('session/prompt'))
     runner = next(one for one in dispatch.logged('runner') if one)
-    shown.swap(runner, 'guide:tool:map_work', 'given')  # a tool's guide lasts the whole session, KEPT_THROUGH_COMPACTION
+    shown.swap(runner, 'guide:tool:map_work', 'given')  # its discovery receipt survives compaction, KEPT_THROUGH_COMPACTION
     shown.swap(runner, 'catalog:open', 'memory')  # what the AI tool itself holds, the category it lists, stays too
     shown.swap(runner, 'brief:code.engine', 'given')  # a node's summary: given again at its next use after a compaction
     (gates / '1').touch()
@@ -2309,7 +2308,7 @@ def test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_
     [block] = prompt['params']['prompt']
     text = block['text'].strip()  # the startup checkpoint every agent opens with, then the intake as served, whole
     assert block['type'] == 'text' and text.endswith(served.strip()), 'the intake as served, nothing added after it'
-    assert text.startswith('Retain this context key'), text[:120]
+    assert text.startswith('Context diagnostic key:'), text[:120]
     from metaform.data import Store
     with Store(dispatch.store.project_id, module='dispatch').tables(write=False) as tx:
         kept = tx.get('raised', {'work_id': work_id})
@@ -2965,10 +2964,11 @@ def test_the_handoff_is_the_brief_the_ticket_its_node_and_counts_under_three_kil
     text = f'Work ticket {dispatch.id} {text}'
     assert memory_text(Path(dispatch.folder), 'proj', NODE) in given, 'the memory prompt ahead of it, CTX-028'
     first, _, rest = text.partition('\n\n')
-    assert first == (f'Work ticket {dispatch.id} with map_work and your delivered authored role. Use the supplied '
-                     f'current assignment and specification. Maintain relevant project knowledge at {NODE} according '
-                     'to the shared memory instructions. Keep progress, outcome and evidence in the ticket and result '
-                     'records.')
+    assert first.startswith(f'Work ticket {dispatch.id} with map_work and the specialist role you were given.')
+    assert 'Use the supplied current assignment and specification.' in first
+    assert (f'Maintain relevant project knowledge at {NODE} according '
+            'to the shared memory instructions. Keep progress, outcome and evidence in the ticket and result '
+            'records.') in first
     assert text.endswith(f'\n\n{prompt("work_link")}'), 'the request to link entry points ends the first prompt'
     assert f'ticket: {dispatch.id}' in rest and f'linked: {LINKED}' in rest
     assert f'▶ {NODE}' in rest and f'map_work node={NODE}' in rest and 'metaform map work' not in text, \
@@ -5801,6 +5801,34 @@ def test_partial_manual_effort_stays_fixed_after_inference_and_task_refinement(d
     refined = TRANSPORT.keep_runtime(ctx, dispatch.id, {**choice, 'model': 'heavy', 'task_fingerprint': 'after'})
     assert (refined['model'], refined['effort']) == ('heavy', 'high')
     assert refined['decision']['overrides'] == {'effort': 'high'}
+
+
+@pytest.mark.parametrize('effort', [None, 'adaptive'])
+def test_runtime_persists_optional_or_adapter_defined_effort_and_delivers_supported_options(dispatch, effort):
+    from metaform.module import Stop, context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch.orchestration import TRANSPORT
+
+    runtime_offers(dispatch, 'codex', efforts=[] if effort is None else [effort])
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    choice = {'agent': 'codex', 'model': 'balanced', 'effort': effort, 'decider': 'jev', 'confidence': 0.95,
+              'task_type': 'coding', 'reason': 'Use the installed adapter.', 'task_fingerprint': 'source'}
+    saved = TRANSPORT.keep_runtime(ctx, dispatch.id, choice)
+    assert saved['effort'] == effort
+    expected = {'model': 'balanced', **({'thought_level': effort} if effort else {})}
+    assert module.ticket_options(dispatch.store, dispatch.id) == expected
+    assert module.wanted_options(ctx, dispatch.store, 'codex', dispatch.id) == expected
+    assert TRANSPORT.keep_runtime(ctx, dispatch.id, choice)['decision'] == saved['decision']
+    related = dispatch.store.add_work(dispatch.node, None, task='Continue the same contribution.')
+    inherited = TRANSPORT.keep_runtime(ctx, related.id, {
+        **choice, 'decider': 'continuation', 'source_work_id': dispatch.id, 'source_decider': 'jev',
+        'task_fingerprint': 'related-source'})
+    assert inherited['decision']['decider'] == 'continuation'
+    assert inherited['decision']['source_work_id'] == dispatch.id
+    assert inherited['decision']['source_decider'] == 'jev'
+    with pytest.raises(Stop, match='offered model and effort'):
+        TRANSPORT.keep_runtime(ctx, dispatch.store.add_work(dispatch.node, None, task='Another task').id,
+                               {**choice, 'effort': 'invented'})
 
 
 def test_direct_start_and_reserved_start_wait_before_opening_an_unconfigured_adapter(dispatch, monkeypatch):

@@ -1752,7 +1752,8 @@ class Handler(BaseHTTPRequestHandler):
                     if given['revision'] != ticket_revision(before):
                         return self.send(409, {'error': 'This ticket changed since you opened it. Reload before saving.'})
                     edited = store.edit_work(work_id, {**fields, **{key: given[key] for key in
-                        ('held', 'hold_reason') if key in given}})
+                        ('held', 'hold_reason') if key in given}},
+                        provenance={'author': 'user', 'surface': 'web'} if 'task' in fields else None)
                     if 'hold' in given:
                         store.set_work_hold(work_id, hold=bool(given['hold']),
                                             hold_reason=given.get('hold_reason'))
@@ -1763,7 +1764,7 @@ class Handler(BaseHTTPRequestHandler):
                                               surface='web')
                         ctx.store = store
                         for _, owner in chassis.provided(ctx.folder, 'orchestration'):
-                            owner.ticket_edited(ctx, work_id, revision)
+                            owner.ticket_edited(ctx, work_id, revision, source="user")
             except (Stop, StoreError) as error:
                 return self.refuse(error, 400)
             return self.send(200, {'results': [{**plain(edited), **after}], 'revision': revision})

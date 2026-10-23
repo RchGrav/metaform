@@ -1,4 +1,4 @@
-"""Persist explicit-hold review deadlines for the existing automatic-start timer."""
+"""Review missing hold reasons once through the existing dispatch event inbox."""
 from __future__ import annotations
 
 import json
@@ -15,7 +15,6 @@ from .board import BOARD
 from .signals import announce, own_store
 from .signals import record as record_signal
 
-REVIEW_SECONDS = 15 * 60
 HOLD_REVIEW_TABLES = (
     Table('hold_reviews', place='project', key=('base_id', 'work_id'),
           columns=(Column('base_id', required=True), Column('work_id', required=True),
@@ -60,14 +59,16 @@ def _track(store: Store, base_id: str, ids: list[str], held: dict[str, dict[str,
             settings: dict[str, Any] = record.get('map') or {}
             reason = str(settings.get('hold_reason') or '')
             board = str(settings.get('board') or '')
-            if previous is not None and previous['reason'] == reason and previous['board'] == board:
+            if previous is not None and previous['reason'] == reason and previous['board'] == board \
+                    and (reason or previous['signal_key'] is not None):
                 continue
             tx.concern(work_id=work_id, kind='hold-review')
             if previous is None:
-                tx.insert('hold_reviews', {**key, 'deadline': at + REVIEW_SECONDS, 'reason': reason,
-                                          'board': board, 'signal_key': None})
+                tx.insert('hold_reviews', {**key, 'deadline': at, 'reason': reason,
+                                          'board': board, 'signal_key': ''})
             else:
-                tx.update('hold_reviews', key, {'reason': reason, 'board': board})
+                tx.update('hold_reviews', key, {'reason': reason, 'board': board,
+                                                'signal_key': '' if previous['reason'] != reason or previous['signal_key'] is None else previous['signal_key']})
                 if previous['signal_key']:
                     changed_keys.add(str(previous['signal_key']))
     for signal_key in changed_keys:
@@ -75,7 +76,7 @@ def _track(store: Store, base_id: str, ids: list[str], held: dict[str, dict[str,
 
 
 def changed(payload: dict[str, Any], ctx: Context) -> None:
-    """Reject unrelated events before reads, then update deadlines only for named work changes."""
+    """Reject unrelated events before reads, then update evidence only for named work changes."""
     kinds, tables, ids = payload.get('kinds'), payload.get('tables'), payload.get('work_ids')
     if not isinstance(kinds, list) or 'ticket' not in kinds or not isinstance(tables, list) \
             or not {'work', 'map.ticket_settings'}.intersection(cast(list[str], tables)) or not isinstance(ids, list) or not ids:
@@ -89,10 +90,10 @@ def changed(payload: dict[str, Any], ctx: Context) -> None:
 
 
 def ensure(ctx: Context) -> None:
-    """Seed existing holds once per project, preserving previously recorded deadlines across restarts."""
+    """Seed hold evidence once per project, preserving delivered review identities."""
     store = ctx.require_store()
     with own_store(store).tables(write=False) as tx:
-        if tx.get('hold_review_state', {'name': 'seeded'}) is not None:
+        if tx.get('hold_review_state', {'name': 'event-seeded'}) is not None:
             return
     at = time.time()
     for base in store.bases(limit=0).results:
@@ -101,80 +102,69 @@ def ensure(ctx: Context) -> None:
         held = {record['id']: record for record in Store(store.project_id, base=base.id).held_work()}
         _track(store, base.id, list(held), held, at)
     with own_store(store).tables() as tx:
+        tx.concern(kind='hold-review')
+        if tx.get('hold_review_state', {'name': 'event-seeded'}) is None:
+            tx.insert('hold_review_state', {'name': 'event-seeded', 'initialized': 1})
         if tx.get('hold_review_state', {'name': 'seeded'}) is None:
-            tx.concern(kind='hold-review')
             tx.insert('hold_review_state', {'name': 'seeded', 'initialized': 1})
+        else:
+            tx.update('hold_review_state', {'name': 'seeded'}, {'initialized': 1})
+        old_keys = {str(row['signal_key']) for row in tx.rows('hold_reviews', limit=0).results
+                    if row['signal_key']}
+    for signal_key in old_keys:
+        _refresh_signal(store, signal_key)
 
 
-def _due(store: Store, at: float) -> list[dict[str, Any]]:
-    found: list[dict[str, Any]] = []
-    with own_store(store).tables(write=False) as tx:
-        page = tx.rows('hold_reviews', by=('deadline',), limit=1)
-        while page.results and float(page.results[0]['deadline']) <= at:
-            found.extend(page.results)
-            if page.next is None:
-                break
-            page = tx.rows('hold_reviews', by=('deadline',), limit=1, after=page.next)
-    return found
+def reconcile(ctx: Context) -> None:
+    """Review legacy missing reasons once. Justified holds need no recurring model turn.
 
-
-def _next(store: Store) -> float | None:
-    with own_store(store).tables(write=False) as tx:
-        earliest = tx.rows('hold_reviews', by=('deadline',), limit=1).results
-    return float(earliest[0]['deadline']) if earliest else None
-
-
-def reconcile(ctx: Context) -> float | None:
-    """Queue one actionable review batch when due, returning the existing timer's next deadline."""
+    Existing dispatch timers and user messages remain available for a meaningful
+    deadline or a new release condition. This path never infers readiness.
+    """
     if not ctx.setting('dispatch_autostart'):
-        return None
+        return
     ensure(ctx)
-    store, at = ctx.require_store(), time.time()
-    due = _due(store, at)
-    if not due:
-        return _next(store)
+    _review(ctx)
+
+
+def _review(ctx: Context) -> None:
+    store = ctx.require_store()
+    with own_store(store).tables(write=False) as tx:
+        pending = [row for row in tx.rows('hold_reviews', {'signal_key': ''}, limit=0).results
+                   if not row['reason']]
+        state = tx.get('hold_review_state', {'name': 'seeded'})
+        previous_key = str(state['signal_key']) if state and state.get('signal_key') else ''
+        previous = tx.get('signals', {'session_id': 'work:', 'name': f'signal:{BOARD}:{previous_key}'}) \
+            if previous_key else None
+    if pending:
+        _, signal_key = _claim(store, pending)
+    elif previous_key and previous is None:
+        # A crash after claiming but before publishing retries the retained batch.
+        signal_key = previous_key
+    else:
+        return
+    if not signal_key:
+        return
+    members = _members(store, signal_key)
     grouped: dict[str, list[str]] = defaultdict(list)
-    for row in due:
+    for row in members:
         grouped[str(row['base_id'])].append(str(row['work_id']))
-    # Recheck only due tickets. Missed changes or a removed base cannot create a stale reminder.
     for base_id, ids in grouped.items():
-        _track(store, base_id, ids, _held(Store(store.project_id, base=base_id), ids), at)
-    due = _due(store, at)
-    if not due:
-        return _next(store)
-    current, signal_key = _claim(store, due, at)
-    if not current:
-        return _next(store)
-    # Persist the batch before advancing deadlines. A crash retries the same signal key.
+        _track(store, base_id, ids, _held(Store(store.project_id, base=base_id), ids), time.time())
     members = _members(store, signal_key)
     if not members:
-        return _next(store)
+        return
     value = record_signal(store, BOARD, key=signal_key, once=True, signal_key=signal_key, actionable=True,
                           tickets=_tickets(members), said=_explanation(members))
     refreshed = _refresh_signal(store, signal_key)
     announced = refreshed or value
     if announced is not None:
         announce(ctx, announced)
-    with own_store(store).tables() as tx:
-        signal = tx.get('signals', {'session_id': 'work:', 'name': f'signal:{BOARD}:{signal_key}'})
-        payload: dict[str, Any] = json.loads(str(signal['text'])) if signal is not None else {}
-        confirmed = {(str(ticket['base_id']), str(ticket['work_id']))
-                     for ticket in cast(list[dict[str, Any]], payload.get('tickets') or [])}
-        for row in current:
-            key = {'base_id': row['base_id'], 'work_id': row['work_id']}
-            latest = tx.get('hold_reviews', key)
-            # An inbox reader may consume an older batch between claiming its key and merging new members.
-            # Its retained payload proves which tickets reached that batch, even after consumption.
-            if (str(row['base_id']), str(row['work_id'])) in confirmed and latest is not None \
-                    and latest['signal_key'] == signal_key and float(latest['deadline']) <= at:
-                tx.concern(work_id=str(row['work_id']), kind='hold-review')
-                tx.update('hold_reviews', key, {'deadline': at + REVIEW_SECONDS})
-    return _next(store)
 
 
 def _members(store: Store, signal_key: str) -> list[dict[str, Any]]:
     with own_store(store).tables(write=False) as tx:
-        return list(tx.rows_in('hold_reviews', 'signal_key', [signal_key]))
+        return [row for row in tx.rows_in('hold_reviews', 'signal_key', [signal_key]) if not row['reason']]
 
 
 def _tickets(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -200,7 +190,7 @@ def _refresh_signal(store: Store, signal_key: str) -> dict[str, Any] | None:
         value: dict[str, Any] = json.loads(str(previous['text']))
         if not value.get('active'):
             return None
-        members = list(tx.rows_in('hold_reviews', 'signal_key', [signal_key]))
+        members = [row for row in tx.rows_in('hold_reviews', 'signal_key', [signal_key]) if not row['reason']]
         tickets = _tickets(members)
         if value.get('tickets') == tickets and value.get('active') == bool(members):
             return None
@@ -210,11 +200,11 @@ def _refresh_signal(store: Store, signal_key: str) -> dict[str, Any] | None:
         return value
 
 
-def _claim(store: Store, due: list[dict[str, Any]], at: float) -> tuple[list[dict[str, Any]], str]:
+def _claim(store: Store, due: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
     """Give concurrent passes one persisted delivery key without holding map-store locks."""
     with own_store(store).tables() as tx:
         current = [tx.get('hold_reviews', {'base_id': row['base_id'], 'work_id': row['work_id']}) for row in due]
-        current = [row for row in current if row is not None and float(row['deadline']) <= at]
+        current = [row for row in current if row is not None and not row['reason'] and not row['signal_key']]
         if not current:
             return [], ''
         state = tx.get('hold_review_state', {'name': 'seeded'})
@@ -224,7 +214,10 @@ def _claim(store: Store, due: list[dict[str, Any]], at: float) -> tuple[list[dic
         if not signal_key or signal is not None and not json.loads(str(signal['text'])).get('active'):
             signal_key = f'hold-review:{secrets.token_hex(8)}'
             tx.concern(kind='hold-review')
-            tx.update('hold_review_state', {'name': 'seeded'}, {'signal_key': signal_key})
+            if state is None:
+                tx.insert('hold_review_state', {'name': 'seeded', 'initialized': 0, 'signal_key': signal_key})
+            else:
+                tx.update('hold_review_state', {'name': 'seeded'}, {'signal_key': signal_key})
         for row in current:
             tx.concern(work_id=str(row['work_id']), kind='hold-review')
             tx.update('hold_reviews', {'base_id': row['base_id'], 'work_id': row['work_id']},

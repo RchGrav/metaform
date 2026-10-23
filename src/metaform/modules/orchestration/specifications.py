@@ -179,13 +179,13 @@ def _guard(spec: dict[str, Any], before: str, after: str, removing: list[str], s
                'name each in removing.', retry)
 
 
-def _write(ctx: Context, spec: dict[str, Any], content: str, change_id: str) -> str:
+def _write(ctx: Context, spec: dict[str, Any], content: str, change_id: str, *, provenance: Any = None) -> str:
     if spec['kind'] == 'workflow':
         verb(ctx, 'workflow', 'add_prompt', address=spec['address'], layer=spec['layer'], name=spec['name'],
              content=content, provenance={'orchestration_change': change_id})
         return read(ctx, spec)[1]
     if spec['kind'] == 'ticket':  # the earlier task is kept as the change record's before_content
-        own(ctx).edit_work(str(spec['work_id']), {'task': content})
+        own(ctx).edit_work(str(spec['work_id']), {'task': content}, provenance=provenance)
         return fingerprint(content)
     path = Path(spec['path'])
     previous_mode = path.stat().st_mode
@@ -341,7 +341,9 @@ def finish_publication(ctx: Context, runtime: Orchestration, change_id: str) -> 
                 assert retained is not None
                 _routes(ctx, tx, runtime, retained, recommendation=True)
                 return {'state': 'completed', 'change_id': change_id, 'recommendation': True}
-            new_revision = revision if already_written else _write(ctx, spec, record['content'], change_id)
+            new_revision = revision if already_written else _write(ctx, spec, record['content'], change_id,
+                provenance={'author': record['source'], 'operation': 'change_order', 'change_id': change_id,
+                            **({'text': record['user_instruction']['text']} if record.get('user_instruction') else {})})
             record = tx.update('changes', {'change_id': change_id}, {'state': 'operative',
                 'current_revision': new_revision,
                 'mode_at_publication': record['mode_at_publication'] if already_written else mode, 'updated': now()})

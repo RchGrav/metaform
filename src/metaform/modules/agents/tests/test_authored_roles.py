@@ -190,7 +190,7 @@ def test_content_is_not_repeated_under_an_alias_or_after_version_reversion(proje
     assert len(prepare_agent_context(project_folder, 'retained', [alias])['components']) == 1
 
 
-def test_startup_proof_survives_resume_and_missing_proof_reopens_only_on_demand(project_folder):
+def test_startup_marker_is_diagnostic_and_does_not_invalidate_delivered_context(project_folder):
     from metaform.modules.agents.roles import confirm_context
     instruction = prompt_files.component('prompt.test:duty', 'A retained duty that must not be dumped.')
     record_agent_context(project_folder, 'retained', [instruction])
@@ -204,16 +204,17 @@ def test_startup_proof_survives_resume_and_missing_proof_reopens_only_on_demand(
     assert finish_agent_context_check(project_folder, 'retained', first['checkpoint'])['stale']
     assert prepare_agent_context(project_folder, 'retained', [instruction])['components'] == []
     missed = finish_agent_context_check(project_folder, 'retained', resumed['checkpoint'])
-    assert missed['eligible'] and missed['epoch'] == 1
+    assert not missed['marker_match'] and missed['semantic_retention'] == 'unknown'
+    assert missed['epoch'] == 0 and 'eligible' not in missed
     finish_agent_context_check(project_folder, 'retained', resumed['checkpoint'])
-    assert agent_context_epoch(project_folder, 'retained') == 1, 'One failed checkpoint invalidates once.'
-    assert len(prepare_agent_context(project_folder, 'retained', [instruction])['components']) == 1
+    assert agent_context_epoch(project_folder, 'retained') == 0, 'A missing marker does not prove content loss.'
+    assert prepare_agent_context(project_folder, 'retained', [instruction])['components'] == []
     record_agent_context(project_folder, 'retained', [instruction])
     assert prepare_agent_context(project_folder, 'retained', [instruction])['components'] == []
     next_check = begin_agent_context_check(project_folder, 'retained')
     advance_agent_context(project_folder, 'retained')
     assert finish_agent_context_check(project_folder, 'retained', next_check['checkpoint'])['stale']
-    assert agent_context_epoch(project_folder, 'retained') == 2, 'Compaction is not counted again as failed proof.'
+    assert agent_context_epoch(project_folder, 'retained') == 1, 'Compaction is not counted again as failed marker.'
 
 
 def test_memory_instruction_body_is_shared_between_inline_and_resource(project_folder):
@@ -242,3 +243,154 @@ def test_action_bindings_follow_surface_and_adapter_without_authored_role_permis
     declared = {f'{module.id}_{verb.name}' for module in __import__('metaform.module', fromlist=['surface']).surface(
         project_folder) for verb in module.verbs}
     assert all(name in declared or name.startswith('metaform_') for name in bindings['tools'])
+
+
+def test_effective_manifest_reports_actual_source_selection_and_native_uncertainty(project_folder, tmp_path,
+                                                                                  monkeypatch):
+    from metaform.modules.agents import record, sent
+
+    name = 'prompt.orchestration:gc'
+    shipped = prompt_files.resolve(name)
+    edited, _ = prompt_files.save_edit(name, 'Use my selected GC responsibility.')
+    selected = prompt_files.resolve(name)
+    assert selected['source']['kind'] == 'selected_edit'
+    assert selected['source']['shipped_identity'] == shipped['source']['shipped_identity']
+    assert selected['actual_version_id'] == edited.version_id
+    malformed = prompts.save_prompt(name, '<unclosed>')
+    fallback = prompt_files.resolve(name)
+    assert fallback['source']['kind'] == 'fallback'
+    assert fallback['selected_version_id'] == malformed.version_id
+    assert fallback['actual_version_id'] == shipped['actual_version_id']
+    trial = tmp_path / 'trial.xml'
+    trial.write_text('<prompts><gc>Trial GC responsibility.</gc></prompts>')
+    monkeypatch.setenv(prompt_files.TRIAL, str(trial))
+    tried = prompt_files.resolve(name)
+    assert tried['source']['kind'] == 'trial' and tried['source']['path'] == str(trial)
+    assert tried['source']['shipped_identity'] == shipped['source']['shipped_identity']
+    # Changing a selected store version does not change the observed outgoing snapshot.
+    ctx = context('agents', project_folder, nouns={'session': 'manifest-session'})
+    record({'session_id': 'manifest-session', 'prompts': [{**fallback, 'text': '',
+            'version_id': fallback['actual_version_id'], 'delivery_path': 'acp_prompt', 'snapshot': True}]}, ctx)
+    manifest = sent(ctx)
+    effective = manifest['effective_instructions'][0]
+    assert effective['selected_version_id'] == malformed.version_id
+    assert effective['source']['kind'] == 'fallback' and effective['snapshot'] is True
+    assert effective['delivery_path'] == 'acp_prompt'
+    assert 'rendered_digest' in effective
+    assert manifest['native_instructions']['loaded_sources'] == 'unknown'
+    assert 'current semantic retention is unknown' in manifest['observation_scope']
+
+
+def test_named_shown_history_does_not_infer_context_loss_from_age(project_folder):
+    from metaform import home, shown
+
+    shown.swap('long-episode', 'around:entry', {'purpose': 'Prepared grounding.'})
+    shown.swap('long-episode', 'catalog:map', True)
+    shown.swap('long-episode', 'guide:workflow', True)
+    with home.chassis(write=True) as db:
+        db.execute('UPDATE shown SET at=? WHERE session=?', ('2000-01-01T00:00:00Z', 'long-episode'))
+    shown.swap('another-session', 'around:other', {})
+    assert shown.peek('long-episode', 'around:entry') == {'purpose': 'Prepared grounding.'}
+    # Observed compaction resets content hints, while host/discovery history has its separate scope.
+    assert shown.forget('long-episode') == 1
+    assert shown.peek('long-episode', 'around:entry') is None
+    assert shown.peek('long-episode', 'catalog:map') is True
+    assert shown.peek('long-episode', 'guide:workflow') is True
+
+
+def test_generated_role_resolves_selected_override_without_rewriting_definition_history(project_folder):
+    from metaform.modules.agents import override
+
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    original = authored.publish(ctx, 'selected_auditor', 'Inspect transitions.', 'The original authored duty.')
+    duty = original['components'][-1]
+    saved = override(context('agents', project_folder, nouns={
+        'name': duty['name'], 'text': 'Selected edit keeps <literal> & exact text.'}))
+    selected = authored.resolve(ctx, 'selected_auditor')
+    assert not selected['problems']
+    active = selected['components'][-1]
+    assert active['text'] == 'Selected edit keeps <literal> & exact text.'
+    assert active['number'] == saved['revision']
+    assert active['actual_version_id'] != duty['actual_version_id']
+    assert active['source']['definition_version_id'] == original['version_id']
+    with ctx.require_store().tables(write=False) as tx:
+        definition = tx.get('definitions', {'name': 'selected_auditor'})
+        history = tx.rows('definition_history', {'name': 'selected_auditor'}, limit=0).results
+    assert definition['source']['duty'] == 'The original authored duty.'
+    assert len(history) == 1 and history[0]['version_id'] == original['version_id']
+    # Historical assignment snapshots retain the exact original component.
+    assert duty['text'] == 'The original authored duty.'
+
+
+def test_changed_role_references_require_consumed_body_and_accepted_notice(project_folder):
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    original = authored.publish(ctx, 'changing_auditor', 'Inspect transitions.', 'Original instruction.')
+    assert authored.changes(ctx, 'not-started', 'changing_auditor') == []
+    record_agent_context(project_folder, 'consumer', original['components'])
+    name = original['components'][-1]['name']
+    first, _ = prompt_files.save_edit(name, 'First revised instruction.')
+    references = authored.changes(ctx, 'consumer', 'changing_auditor')
+    assert len(references) == 1 and references[0]['name'] == name
+    assert references[0]['actual_version_id'] == first.version_id
+    assert references[0]['read'] == 'metaform://role/changing_auditor'
+    assert 'text' not in references[0]
+    assert authored.changes(ctx, 'consumer', 'changing_auditor') == references
+    second, _ = prompt_files.save_edit(name, 'Latest revised instruction.')
+    authored.delivered_changes(ctx, 'consumer', references)
+    current = authored.changes(ctx, 'consumer', 'changing_auditor')
+    assert len(current) == 1 and current[0]['actual_version_id'] == second.version_id
+    authored.delivered_changes(ctx, 'consumer', current)
+    assert authored.changes(ctx, 'consumer', 'changing_auditor') == []
+    # References cannot acknowledge any body, and a canonical role read still returns the exact new duty.
+    body, _ = read_resource(project_folder, 'metaform://role/changing_auditor', 'consumer')
+    assert 'Latest revised instruction.' in body
+    assert authored.changes(ctx, 'consumer', 'changing_auditor') == []
+    prompt_files.save_edit(name, 'Original instruction.')
+    assert len(authored.changes(ctx, 'consumer', 'changing_auditor')) == 1
+
+
+def test_equal_rendered_role_revision_does_not_create_a_change_reference(project_folder):
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    resolved = authored.resolve(ctx, 'gc')
+    record_agent_context(project_folder, 'consumer', resolved['components'])
+    component = resolved['components'][-1]
+    prompt_files.save_edit(component['name'], component['text'])
+    assert authored.changes(ctx, 'consumer', 'gc') == []
+    # Existing malformed selected XML continues to fall back honestly without inventing a changed body.
+    bad = prompts.save_prompt(component['name'], '<unclosed>')
+    fallback = authored.resolve(ctx, 'gc')['components'][-1]
+    assert fallback['selected_version_id'] == bad.version_id
+    assert fallback['source']['kind'] == 'fallback' and fallback['problems']
+    assert authored.changes(ctx, 'consumer', 'gc') == []
+
+
+def test_portable_generated_definition_fallback_is_honest_and_selected_store_still_wins(project_folder,
+                                                                                      monkeypatch):
+    from metaform.data import StoreError
+
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    original = authored.publish(ctx, 'portable_auditor', 'Inspect portable state.', 'Portable original duty.')
+    name = original['components'][-1]['name']
+    selected, _ = prompt_files.save_edit(name, 'Use the available selected duty.')
+    resolve = prompt_files.resolve
+
+    def missing(reference, **fills):
+        if reference == name:
+            raise StoreError('The generated component is unavailable in this home.', 'inspect the prompt source')
+        return resolve(reference, **fills)
+
+    monkeypatch.setattr(prompt_files, 'resolve', missing)
+    fallback = authored.resolve(ctx, 'portable_auditor')['components'][-1]
+    assert fallback['text'] == 'Portable original duty.'
+    assert fallback['source']['kind'] == 'definition_fallback'
+    assert fallback['source']['definition_version_id'] == original['version_id']
+    assert fallback['actual_version_id'] == original['version_id'] and fallback['selected_version_id'] is None
+    assert fallback['problems'] and 'unavailable' in fallback['problems'][0]
+    monkeypatch.setattr(prompt_files, 'resolve', resolve)
+    available = authored.resolve(ctx, 'portable_auditor')['components'][-1]
+    assert available['text'] == 'Use the available selected duty.'
+    assert available['actual_version_id'] == available['selected_version_id'] == selected.version_id

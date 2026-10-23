@@ -14,7 +14,7 @@ If restoration is unavailable, the call reports failure without starting a repla
 A helper resumed for conversation retains its name, brief and history and stays available after replies.
 Explicit `dispatch resume` follows the same helper conversation lifecycle.
 
-dispatch starts Claude Code, Codex or Google Antigravity on one ticket, one ACP session per ticket, in the project's folder with Metaform's MCP server. What the agent does shows as notes at the ticket's node, each permission it asks for is a question there, and a person can message it or stop it. Details: `metaform help dispatch`.
+dispatch starts Claude Code, Codex or Google Antigravity on a work record in the project's folder with Metaform's MCP server. Explicitly related records can share an ACP session through an orchestration episode. What the agent does shows as notes at the ticket's node, each permission it asks for is a question there, and a person can message it or stop it. Details: `metaform help dispatch`.
 
 `metaform dispatch interrupt <work id>` cancels the current turn and keeps the session available. Messages already
 sent stay queued in arrival order. `session=<session id>` restricts the request to the chat you opened. The reply
@@ -123,7 +123,60 @@ Orchestration uses dispatch's existing launch and resume gate. A waiting caller 
 
 GC delivery records validation and closes its own root ticket. An independent `functionality` assessment has a separate team and a reviewed-work relationship. Findings create corrective GC continuations and reach the following PM. Adaptive specification changes publish through the owning provider, deliver GC change orders and write an actual message to the existing Chat surface. The `Project updates` conversation is a notification record with no model process or capacity slot. When the last ticket of a plan, the tickets tied by `after_work`, is done, one project update of kind `plan_report` says so, once for the plan: its tickets by outcome, from its first ticket to the one just done (`orchestration.plan_changed`, a `map.changed` subscription heard on the `done` kind the map says beside `ticket` on a ticket's end, reading nothing for any other change); it wakes the system agent, so the person hears the job is done, code.dispatcher.agent#10. Strict mode publishes recommendations, and later user instructions remain authoritative.
 
-A new conversation receives its initial duty and shared instructions once. Context receipts retain exact rendered and selected versions only after accepted outgoing delivery. Resume and compaction do not automatically replay rules, assignments or memory. Missing retention proof makes context eligible for a needed explicit read. Current memory revisions remain available through functional entry-point reads. Duplicate queued notes stay recorded, without claiming delivery before transport acceptance. `map.changed` drains only applicable transition events; mixed commands whose concerns are unspecified use the owning transition table, and unrelated events trigger no orchestration reads.
+A new conversation receives its initial duty and shared instructions once. Context receipts retain exact rendered and selected versions only after accepted outgoing delivery. Resume and compaction do not automatically replay rules, assignments or memory. A missing diagnostic marker does not advance the context epoch. Current memory revisions remain available through functional entry-point reads. Duplicate queued notes stay recorded, without claiming delivery before transport acceptance. `map.changed` drains only applicable transition events; mixed commands whose concerns are unspecified use the owning transition table, and unrelated events trigger no orchestration reads.
+
+## Coherent work episodes
+
+Work records retain their own identity, source requests, results and review relationships. An orchestration episode
+records that successive contributions belong to one workstream. The responsible agent or person chooses that
+relationship from the outcome and functional context. Metaform does not infer it from overlapping card titles.
+
+Use `continue_from=<prior work id, assignment id or episode id>` with `orchestration claim`, `delegate` or `call`.
+For example, after the first contribution has delivered:
+
+```bash
+metaform orchestration claim work=<next-work-id> role=implementer continue_from=<prior-work-id>
+```
+
+`orchestration episode work=<work-id>` reads the episode; the same command accepts `continue_from` to associate a
+queued contribution and `fresh_context=true` to retain the workstream while requesting fresh execution context.
+The latter option is also available on `claim`, `delegate` and `call`. A new unlinked card starts its own episode.
+Related continuation inherits an established runtime when the target has no explicit choice. An explicit target
+choice remains authoritative. Planning can remain a separate contribution when the objective needs decomposition;
+local implementation detail does not require another planning startup.
+
+Dispatch can load or resume the prior ACP session after its adapter exits when responsibility, runtime, working
+folder and the existing resume policy permit it. An active prior contribution keeps the next one queued. Explicit
+stops, dependency readiness, budgets, capacity and the dynamic blacklist keep their existing meanings. A separate
+responsibility, including independent assessment, retains its own assignment and context. `fresh_context=true`
+selects reconstruction without changing the episode identity or pretending to delete an adapter's internal text.
+
+Before the next turn, the runner changes the current work binding and its MCP work identity, then sends a compact
+handoff naming the previous and current work and the relevant assignment. Historical session-to-assignment
+bindings remain in `binding_history`. Old results remain on their original records. A delayed child result can
+therefore reach its recorded original caller after the session has moved to another card, while current tool writes
+belong to the active contribution. Historical recipient references cannot reactivate stopped work or route another
+episode's result to this continuation.
+
+Exact request provenance is available with `map work op=sources id=<work-id> [source_id=<source-id>]`. Ordinary
+ticket and assignment context carries source references and read commands. `map work op=add` and `edit` can take
+`source={"text":"<exact source>","reference":"<origin>"}` while task text remains the current interpretation.
+Subsequent task or plan changes do not replace the stored source. Actual caller provenance distinguishes user,
+agent and change-order direction. A review retains its candidate and requirements revision; newer direction does
+not discard unrelated findings. Each finding needs its own supported disposition and later change reference.
+
+Context receipts record accepted delivery, rather than knowledge of the model's hidden context. A retention marker
+is diagnostic. Observed compaction changes the context epoch; an omitted marker alone does not prove compaction.
+Explicit rereads remain available. Optional `agent.context.changes` providers attach compact references to changed
+consumed knowledge on the next already-scheduled turn. Providers coalesce external changes, retain correction and
+deletion identities, suppress unrelated or own writes, and acknowledge only the exact accepted revision. The
+`agent.role` provider separately supplies changed references to already-consumed role instructions. Neither path
+starts a model turn for routine freshness, and no guide or full memory body is broadcast automatically.
+
+ACP compaction observations retain one entity per session and `compactionId`, persisted in `state.compactions` and one stable timeline row. Lifecycle updates preserve omitted fields, replace concrete summary/error values and clear explicit nulls. Summary chunks append in receive order, while a replacement summary supersedes earlier chunks. The v1 transport replaces `_meta` objects. Completed IDs advance the parent delivery epoch once. Repeated completion, history replay and child compactions do not advance it again. Failed, cancelled and unknown statuses remain observable without inferred control behavior. Optional disclosed summaries are user-visible adapter output, with retained semantic context still unknown. Missing IDs remain explicitly labeled legacy observations. The [ACP compaction contract](https://agentclientprotocol.com/rfds/session-compaction) defines these wire semantics.
+
+See [the audit implementation record](../../../../docs/reviews/acp-context-implementation.md) and
+[measurements](../../../../docs/reviews/acp-audit-measurements.md) for evidence and limits.
 
 ## Verbs
 
@@ -379,12 +432,12 @@ metaform dispatch stop <work id>
 
 Stored choices migrate once per home and once per map upgrade: command settings, default agents, option settings, roundtable seats, ticket agents and eligibility. Explicit Antigravity settings win collisions. A custom command keeps its value. The retired shipped command becomes the native launcher. Historical sessions retain their original identities. Google’s documented Antigravity `.gemini` paths remain intact.
 
-Explicit work holds retain dedicated reasons. Held work receives a triage review deadline every 15 minutes while
-Autostart permits automatic starts. `hold_review.py` stores deadlines in project-owned `hold_reviews` rows and
-reuses the supervisor's earliest `retry_due` timer. Named ticket events update only those deadlines. Release,
-cancellation, completion and removal cancel their deadlines. Pending reminders share one Board inbox batch.
-Triage reads recorded reasons, releases valid work when its reason no longer applies, and cancels only work
-established as invalid or superseded with evidence. Explicit person stops retain their launch authority.
+Explicit work holds retain dedicated reasons. A justified hold waits for changed prerequisites, an explicit
+one-shot agent timer when a meaningful deadline exists, or user direction. Unchanged holds create no automatic
+review deadline or repeated model turn. Legacy holds without reasons receive one coalesced Board inbox review,
+with its delivery identity retained across restarts. Named ticket events update only the affected holds and retire
+released, completed, cancelled or removed members. Triage releases valid work when its reason resolves and
+cancels only invalid or superseded work with evidence. Autostart and explicit person stops retain launch authority.
 
 Startup faults publish `fault.raised` with source `start`. Autoticket files the canonical repair, then publishes `fault.filed` with its group, ticket and recurrence identity. Dispatch reuses `board-needs` signals to deliver one urgent inbox line per group and repair cycle. Ten repeats of an open fault do not wake the system agent again. Ordinary filed faults enter its routine inbox without an immediate wake.
 

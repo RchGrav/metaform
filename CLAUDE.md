@@ -95,13 +95,11 @@ If writing or interfacing with high-performance Python nodes. First remove work 
 
 ## Instructing agents
 
-Every brief, ticket, prompt and agent-facing text is written from understanding, not copied. An agent can only judge what a rule does not name if it knows what the rule is for. Words passed along without their purpose lose the intent, and the work built from them drifts and breaks things.
-- **Start from the why.** Say what the work is for and why it matters, then each instruction with its reason. An instruction without its why is a copied word: the agent follows the letter and misses the point.
-- **Encode the intent; never quote the person or use their name.** Understand what they mean and why, then write the rule as the rule. A quote or "they said" carries authority but no understanding.
-- **Research the person delivers goes in complete, as delivered.** They read it and judged it true. Don't trim it, paraphrase it, or second-guess its source. Adapt it to the real code, and drop nothing.
-- **Their corrections are for you.** Fix your own understanding and your own work with them; don't paste them into briefs.
-- **Check every brief before it goes out:** each point the person gave is present, nothing is quoted or attributed, and every instruction carries its why.
-- **When the evidence already says something fails, build.** Another audit only re-establishes what is known and spends money for nothing.
+Preserve the user's request and subsequent revisions as source material. Record interpretation and the proposed approach separately. Keep names, values, operative mechanisms, exceptions and distinctions faithful to their source. Use project-grounded lexicalization to resolve referents without changing the requested operation. A delegated assignment carries the exact source wording that matters to its contribution and a reference to the remaining source. A navigation summary does not replace that source.
+
+Explain the purpose and functional relationships that make an instruction intelligible. Keep supplied research complete and addressable, distinguish its claims from the user's instructions, and reconcile it with current artifact evidence. Carry corrections into affected work while retaining their source. When existing evidence establishes a defect, use it to repair the cause rather than repeating the same assessment.
+
+For context-delivery changes, compare the exact rendered payload and selected prompt-store version, including active role snapshots, with the intended source revision. A source-file edit alone does not establish what a running agent received. Native harness instructions and hidden model context require their own evidence.
 
 ## Specifications
 

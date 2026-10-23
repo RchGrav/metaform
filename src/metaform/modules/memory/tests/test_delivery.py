@@ -288,9 +288,9 @@ def test_revision_written_during_response_remains_unread(project, monkeypatch):
     original = served['_delivered']
     changed = False
 
-    def during_read(ctx, whole, key=None):
+    def during_read(ctx, whole, key=None, **metadata):
         nonlocal changed
-        result = original(ctx, whole, key)
+        result = original(ctx, whole, key, **metadata)
         if not changed:
             changed = True
             add_observations(reading(project, observations=[{'entityName': 'shared',
@@ -556,3 +556,98 @@ def test_a_memory_made_again_after_its_delete_is_read_once_and_not_withdrawn_aga
     for _ in range(3):
         assert mcp_read(project, B) == {'entities': [], 'relations': []}
         assert mcp_read(project) == {'entities': [], 'relations': []}
+
+
+def test_external_changes_coalesce_for_consumers_without_waking_or_reading_bodies(project):
+    from metaform.modules.memory import add_observations, delete_entities, node_count
+    from metaform.modules.memory.delivery import CHANGES
+
+    make(project)
+    consumer = reading(project, session='consumer', node=f'element:{A}')
+    mcp_open(project, session='consumer')
+    # A count-only encounter has no delivered body and must not become a correction subscription.
+    node_count(reading(project, session='count-only'), (A,))
+    add_observations(reading(project, session='other', observations=[
+        {'entityName': 'shared', 'contents': ['Updated externally.']}]))
+    first = CHANGES.pending(consumer, 'consumer')
+    assert len(first) == 1 and first[0]['receiver'] == A
+    assert first[0]['previous'] and 'entities' not in first[0]
+    assert CHANGES.pending(consumer, 'count-only') == []
+    delete_entities(reading(project, session='other', entityNames=['shared']))
+    latest = CHANGES.pending(consumer, 'consumer')
+    assert len(latest) == 1 and latest[0]['revision'] != first[0]['revision']
+    assert latest[0]['withdrawals'][0]['name'] == 'memory:entity:shared'
+    # Acknowledging an accepted older packet must not erase a later revision or tombstone.
+    CHANGES.delivered(consumer, 'consumer', first)
+    assert CHANGES.pending(consumer, 'consumer') == latest
+    CHANGES.delivered(consumer, 'consumer', latest)
+    assert CHANGES.pending(consumer, 'consumer') == []
+
+
+def test_consumer_own_writes_and_unrelated_entries_do_not_queue_notices(project):
+    from metaform.modules.memory import add_observations
+    from metaform.modules.memory.delivery import CHANGES
+
+    make(project)
+    mcp_open(project, session='consumer')
+    consumer = reading(project, session='consumer')
+    add_observations(reading(project, session='consumer', observations=[
+        {'entityName': 'shared', 'contents': ['Own new fact.']}]))
+    make(project, name='unrelated', address=B)
+    make(project, name='same-entry-unread', address=A)
+    assert CHANGES.pending(consumer, 'consumer') == []
+
+
+def test_exact_correction_reread_suppresses_obsolete_next_turn_reference(project):
+    from metaform.modules.memory import add_observations
+    from metaform.modules.memory.delivery import CHANGES
+
+    make(project)
+    mcp_open(project, session='consumer')
+    consumer = reading(project, session='consumer')
+    add_observations(reading(project, session='other', observations=[
+        {'entityName': 'shared', 'contents': ['Read this correction.']}]))
+    assert CHANGES.pending(consumer, 'consumer')
+    mcp_open(project, session='consumer')
+    assert CHANGES.pending(consumer, 'consumer') == []
+
+
+def test_recreation_keeps_withdrawal_identity_but_marks_it_superseded(project):
+    from metaform.modules.memory import delete_entities
+    from metaform.modules.memory.delivery import CHANGES
+
+    make(project)
+    mcp_open(project, session='consumer')
+    consumer = reading(project, session='consumer')
+    delete_entities(reading(project, session='other', entityNames=['shared']))
+    removed = CHANGES.pending(consumer, 'consumer')[0]
+    assert removed['withdrawals'][0]['superseded'] is False
+    make(project, text='Recreated knowledge with current evidence.')
+    recreated = CHANGES.pending(consumer, 'consumer')[0]
+    assert recreated['revision'] != removed['revision']
+    assert recreated['withdrawals'][0]['name'] == removed['withdrawals'][0]['name']
+    assert recreated['withdrawals'][0]['observed_revision'] == removed['revision']
+    assert recreated['withdrawals'][0]['superseded'] is True
+
+
+def test_concurrent_correction_after_graph_snapshot_remains_a_next_turn_reference(project, monkeypatch):
+    from metaform.modules import memory as module
+    from metaform.modules.memory.delivery import CHANGES
+
+    make(project)
+    mcp_open(project, session='consumer')
+    module.add_observations(reading(project, session='other', observations=[
+        {'entityName': 'shared', 'contents': ['First correction.']}]))
+    original = module._read
+
+    def read_then_correct(*args, **kwargs):
+        snapshot = original(*args, **kwargs)
+        module.add_observations(reading(project, session='other', observations=[
+            {'entityName': 'shared', 'contents': ['Concurrent correction.']}]))
+        return snapshot
+
+    monkeypatch.setattr(module, '_read', read_then_correct)
+    body = module.open_nodes(reading(project, session='consumer', node=f'element:{A}', names=['shared']))
+    assert 'First correction.' in body['entities'][0]['observations']
+    assert 'Concurrent correction.' not in body['entities'][0]['observations']
+    assert CHANGES.pending(reading(project), 'consumer')

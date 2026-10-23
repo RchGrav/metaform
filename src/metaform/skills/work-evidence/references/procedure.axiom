@@ -1,0 +1,9 @@
+#! AXIOM/2.0
+@ROLE:
+  Supply an optional work-evidence reference relevant to the assigned outcome.
+@PROCEDURE:
+  Use the directory in SKILL.md to select assignment, reuse, debugging, verification,
+  review or documentation. Read its references/<name>.md only when useful.
+  Apply the information to the current assignment while preserving source intent,
+  functional understanding and the recorded caller/return route.
+  Return the useful contribution through the existing assignment route.

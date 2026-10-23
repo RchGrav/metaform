@@ -49,6 +49,7 @@ from metaform.module import (
     Stop,
     ToolbarItem,
     Verb,
+    agent_caller,
     held_role,
     item_read,
     latest_item,
@@ -236,7 +237,9 @@ def _with_work_modules(ctx: Context, found: Any) -> Any:
     history = _store(ctx).work_hold_history(found.work.id)
     if history:
         data['hold_history'] = list(history)
-    data['at'] = _oriented(ctx, found.at, Node.of(found.work.node_kind, found.work.node_id))
+    data['sources'] = list(_store(ctx).work_sources(found.work.id, contents=False))
+    data['at'] = _oriented(ctx, found.at, Node.of(found.work.node_kind, found.work.node_id),
+                           focus=tuple(link.address for link in found.work.links if link.address))
     data['linked'] = [None if read is None else (link.address or _compact(read.to_dict()))
                       for link, read in zip(found.work.links, found.linked)]
     for module, value in added.items():
@@ -302,14 +305,14 @@ def _size(data: dict[str, Any]) -> int:
 
 
 def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any], budget: int, *,
-            calls: bool = False) -> dict[str, Any]:
-    """A compact read of a node with the counts told, kept within `budget` bytes, MCP-039. What an agent needs most
-    stays: the node itself and the purposes it serves, then its neighbours with their counts, then the counts at the
-    node, then the code paths. So the code paths go first, those on the joins it receives, then on the joins it
-    provides for, then the node's own; then the joins it receives, and the joins it provides for after the first, last
-    first; and only then is the tree drawn smaller, by `told`. Code paths that fit again in the room a join left come back.
-    Each kind left out is said in `more` as a count with the call that reads it, so nothing is lost, only not sent;
-    with `calls`, each call as this surface names it."""
+            calls: bool = False, focus: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Fit presentation detail without treating storage order as functional relevance.
+
+    Receiver identities and operative purposes remain addressable in every compact read. Decorative counts go
+    before implementation references. If the essential relationships exceed the display target, return them:
+    the byte target is a presentation preference, not evidence that the first stored receiver is sufficient.
+    """
+    said = dict(said)
     provides = [dict(one) for one in cast(list[dict[str, Any]], data.get('provides') or [])]
     receives = [dict(one) for one in cast(list[dict[str, Any]], data.get('receives') or [])]
     join = dict(cast(dict[str, Any], data.get('join') or {}))
@@ -318,7 +321,6 @@ def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any]
     address = element.get('address') if data.get('kind') == 'element' else None
     left: list[str] = []
     taken: list[tuple[dict[str, Any] | None, list[str]]] = []  # the code paths taken off, from where, in order
-    cut = {'provides': 0, 'receives': 0}
 
     def drawn(calls: bool = False) -> dict[str, Any]:
         shown = {*own, *join.get('sources', ()),
@@ -326,12 +328,7 @@ def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any]
         unshown = len([ref for ref in dict.fromkeys(left) if ref not in shown])
         sources = (f'metaform map where address={address} contents=true' if address else
                    f'metaform map node node=join:{found.join.id}' if found.join is not None else '')
-        more = [line for line in (
-            _prompt('summary_sources', count=str(unshown), read=sources) if unshown and sources else '',
-            _prompt('summary_provides', count=str(cut['provides']),
-                    read=f'metaform map joins element={address} as=provider') if cut['provides'] else '',
-            _prompt('summary_receives', count=str(cut['receives']),
-                    read=f'metaform map joins element={address}') if cut['receives'] else '') if line]
+        more = [_prompt('summary_sources', count=str(unshown), read=sources)] if unshown and sources else []
         kept: dict[str, Any] = {}
         for key, value in data.items():
             value = {'sources': own, 'join': join, 'provides': provides, 'receives': receives}.get(key, value)
@@ -342,7 +339,14 @@ def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any]
         return {**kept, **said}
 
     def steps() -> Any:
-        for one in (*reversed(receives), *reversed(provides), join):
+        if said:
+            said.clear()
+            yield
+        candidates = [*reversed(receives), *reversed(provides), join]
+        # Existing explicit work links express selected functional context. Keep their references after
+        # incidental references without inferring relevance from words or storage order.
+        candidates.sort(key=lambda one: bool(set(focus) & {one.get('receiver'), *one.get('providers', ())}))
+        for one in candidates:
             if one.get('sources'):
                 taken.append((one, one['sources']))
                 left.extend(one.pop('sources'))
@@ -352,20 +356,12 @@ def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any]
             left.extend(own)
             own.clear()
             yield
-        while receives and address:
-            receives.pop()
-            cut['receives'] += 1
-            yield
-        while len(provides) > 1 and address:
-            provides.pop()
-            cut['provides'] += 1
-            yield
 
     if _size(drawn()) > budget:
         for _ in steps():
             if _size(drawn()) <= budget:
                 break
-        # Code paths taken off before a join went may fit again in the room it left: the node's own first.
+        # Restore references that fit after decorative detail was removed, the node's own first.
         for one, refs in reversed(taken):
             if one is not None and not any(one is held for held in (*provides, *receives, join)):
                 continue
@@ -377,7 +373,8 @@ def _fitted(ctx: Context, found: Any, data: dict[str, Any], said: dict[str, Any]
     return drawn(calls=calls)
 
 
-def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -> Any:
+def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False,
+              focus: tuple[str, ...] = ()) -> Any:
     """A node's read for an agent: the element and its joins with the counts at it and around it, once per session,
     MCP-039, within the node_summary_bytes setting; with `contents`, or with full, everything held at it as well, as
     `map node` reads it, whatever its size."""
@@ -388,8 +385,8 @@ def _oriented(ctx: Context, found: Any, node: Node, *, contents: bool = False) -
         return {**data, **told(ctx, found)}
     data = _compact(cast(dict[str, Any], found.to_dict()))
     budget = int(ctx.setting('node_summary_bytes'))
-    said = told(ctx, found, lambda part: _size(_fitted(ctx, found, data, part, budget)) <= budget)
-    return _fitted(ctx, found, data, said, budget, calls=True)
+    said = told(ctx, found, lambda part: _size(_fitted(ctx, found, data, part, budget, focus=focus)) <= budget)
+    return _fitted(ctx, found, data, said, budget, calls=True, focus=focus)
 
 
 def _missing(store: Store, address: str) -> Stop:
@@ -1260,13 +1257,14 @@ WORK_READS: dict[str, frozenset[str]] = {
     'list': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'open', 'limit', 'after',
                        'hold', 'board'}),
     'read': frozenset({'id'}),
+    'sources': frozenset({'id', 'source_id'}),
     'remove': frozenset({'id'}),
     'add': frozenset({'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held', 'reviewed',
                       'links', 'agent', 'model', 'effort', 'fast', 'hold', 'eligible', 'after_work', 'title', 'epic',
-                      'agents', 'board', 'hold_reason'}),
+                      'agents', 'board', 'hold_reason', 'source'}),
     'edit': frozenset({'id', 'node', 'receiver', 'provider', 'address', 'condition', 'kind', 'note', 'task', 'held',
                        'reviewed', 'glyph', 'links', 'agent', 'hold', 'eligible', 'after_work', 'title',
-                       'epic', 'agents', 'board', 'model', 'effort', 'fast', 'hold_reason'}),
+                       'epic', 'agents', 'board', 'model', 'effort', 'fast', 'hold_reason', 'source'}),
     'done': frozenset({'id', 'resolution', 'why'}),
     'take': frozenset({'id', 'steps', 'by'}),
     'move': frozenset({'id', 'column', 'position', 'by', 'hold_reason'}),
@@ -1288,7 +1286,7 @@ AGENT_TYPES = TICKET_AGENTS
 # The map module's own tables, STORE-045: `glyphs` keeps the agent glyph each ticket is assigned to, keyed by the work
 # id, beside the map as the work records are, so the chassis work table holds no glyph, BASE-046 and ticket 90430bba.
 # The field each work operation cannot store its record without, BASE-038: the object it attaches to, or the record.
-WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'glyphs': (), 'read': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
+WORK_NEEDS: dict[str, tuple[str, ...]] = {'list': (), 'glyphs': (), 'read': ('id',), 'sources': ('id',), 'add': (), 'edit': ('id',), 'done': ('id',),
                                           'take': ('id',), 'plan': ('id', 'steps'), 'step': ('id',),
                                           'move': ('id', 'column'), 'distribute': ('agents',), 'remove': ('id',), 'unhold_all': ()}
 
@@ -1420,7 +1418,7 @@ def work(ctx: Context) -> Any:
     if op == 'add':
         _may_write_ticket(ctx)
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
-        raise Stop(f'{op!r} is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute, done or remove; '
+        raise Stop(f'{op!r} is not a work operation: op=list, glyphs, sources, add, edit, take, plan, step, move, distribute, done or remove; '
                    'unhold_all; with id= and '
                    'no op, the one ticket is read.', 'metaform help map work')
     _need(ctx, *WORK_NEEDS[op], verb='work')
@@ -1474,6 +1472,8 @@ def work(ctx: Context) -> Any:
         if not listed['results'] and node is None and (kept := store.kept_map_said()):
             notices.append(Notice('map', kept))  # no ticket because the active map is empty, not because none is open
         return _with_notices(listed, notices)
+    if op == 'sources':
+        return list(store.work_sources(_work_id(store, str(nouns['id'])), nouns.get('source_id')))
     if op == 'add':
         node = _named(store, nouns, notices)
         if node is None:
@@ -1491,6 +1491,7 @@ def work(ctx: Context) -> Any:
         with store.atomic():
             added = store.add_work(node, nouns.get('condition'),
                                    links=[_link(store, link) for link in nouns.get('links') or ()],
+                                   provenance=_work_provenance(ctx),
                                    **_optional(ctx, 'kind', 'note', 'task', 'held', 'reviewed', 'title', 'hold_reason'))
             # a ticket filed with no board lands on the active board, 2026-10-21; board='' names the first on purpose
             _keep(store, added.id, nouns if 'board' in nouns else {**nouns, 'board': ctx.setting('board')}, notices, ctx)
@@ -1540,8 +1541,13 @@ def work(ctx: Context) -> Any:
             changes['node'] = node
         if 'links' in nouns:
             changes['links'] = [_link(store, link) for link in nouns['links'] or ()]
+        provenance = _work_provenance(ctx) if 'task' in changes or 'source' in nouns else None
         with store.atomic():
-            edited = store.edit_work(work_id, changes)
+            edited = store.edit_work(work_id, changes, provenance=provenance)
+            if provenance is not None:
+                for _, owner in provided(ctx.folder, 'orchestration'):
+                    owner.ticket_edited(ctx, work_id, str(time.time_ns()),
+                                        source=provenance['author'])
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
             _keep(store, work_id, nouns, notices, ctx)
@@ -1633,6 +1639,21 @@ def _settings(store: Store, work_ids: list[str]) -> dict[str, dict[str, Any]]:
         if row is not None:
             kept.setdefault(work_id, {})['after_work'] = row['works']
     return kept
+
+
+def _work_provenance(ctx: Context) -> dict[str, Any]:
+    """Record authenticated caller provenance and source words without converting interpretation into a user quote."""
+    supplied = ctx.nouns.get('source')
+    details: dict[str, Any] = dict(cast(dict[str, Any], supplied)) if isinstance(supplied, dict) else {}
+    agent = ctx.session or agent_caller()
+    author = 'agent' if agent or str(ctx.surface) == 'internal' else 'user'
+    details.update(author=author, session_id=ctx.session, surface=ctx.surface)
+    word = persons_word(ctx.folder, 'Retaining the source of a work request', ctx.project) if agent else None
+    if word and not details.get('text'):
+        details['text'] = word.get('text')
+        details['message'] = {key: word[key] for key in ('id', 'at', 'session_id') if key in word}
+        details['source_author'] = 'user'
+    return details
 
 
 def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
@@ -2260,7 +2281,12 @@ WORK_NOUNS = (
           schema={'type': 'string', 'enum': ['backlog', 'todo', 'doing', 'done']}),
     _noun('position', 'move: its place in the column, from 0; the end when left out.', 'int'),
     _noun('note', 'add and edit: what and where.'),
-    _noun('task', 'add and edit: what it needs.'),
+    _noun('task', 'add and edit: the current execution description, separate from exact source wording.'),
+    _noun('source', 'add and edit: original source words and their reference or exact spans, retained separately '
+                    'from the task interpretation. Authorship comes from the caller.', 'json',
+          {'type': 'object', 'properties': {'text': {'type': 'string'}, 'reference': {'type': 'string'},
+                                           'spans': {'type': 'array', 'items': {'type': 'object'}}}}),
+    _noun('source_id', 'sources: one retained source id; omitted reads every retained revision.'),
     _noun('held', 'add and edit: put it in Backlog, where it waits: no agent starter starts it, Full Auto, Start '
                   'all, Distribute and an agent\'s glyph among them; release it to To do or start it '
                   'on its own. Holds are explicit choices. Reason-based unholding requires no person approval.', 'bool'),

@@ -258,7 +258,7 @@ def specialist():
     if SCENARIO == 'direct':
         Path('candidate.txt').write_text(SPECIALIST_RESULT)
     # This is actual context delivery through the functional entry, rather than a fixture reading receipt rows.
-    memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
+    memory = cli('memory', 'open_nodes', names=['route-grounding'], node=f'element:{os.environ["METAFORM_NODE"]}')
     log(specialist_grounding=memory)
     progress(stage=99)
     check('delivered' if SCENARIO == 'direct' else 'returned', SPECIALIST_RESULT, key='specialist-result')
@@ -269,7 +269,7 @@ def creator(assignment):
     assert 'orchestration_publish_role' in DUTY and '<system_prompt>' in DUTY
     # the commission is one line naming the request it publishes against, its role when the request names one, and
     # whether it asks only for the ticket's agent, model and thinking level
-    commission = re.search(r'specialist for \S+?(?:, role (\w+))?(, runtime only)?, request (\w+)\.$', assignment['task'])
+    commission = re.search(r'specialist for \S+?(?:, role ([\w.]+))?(, runtime only)?, request (\w+)\.$', assignment['task'])
     assert commission, assignment['task']
     brief = {'request_id': commission.group(3), 'role': commission.group(1), 'runtime_only': bool(commission.group(2))}
     request = next(one for one in cli('orchestration', 'role_requests')
@@ -288,10 +288,17 @@ def creator(assignment):
             'functionality': ('analysis', 'claude', 'high'),
             'bmad.bmm.dev': ('lookup', 'codex', 'low'),
         }[caller['authored_role_uri'].removeprefix('metaform://role/')]
-        catalog = selected['catalog'][agent]
-        assert effort in catalog['efforts']
-        model = next(value for value, description in catalog['models'].items()
-                     if ('Highest capability' in description) == (task_type in ('planning', 'analysis')))
+        choices = selected['catalog']
+        # A preference is usable only once this adapter advertised its controls. Direct-start
+        # scenarios may have primed just the current harness, which can perform every fixture role.
+        if not choices.get(agent, {}).get('models'):
+            agent = next(name for name, offered in choices.items() if offered.get('models'))
+        catalog = choices[agent]
+        efforts = catalog.get('efforts') or []
+        effort = effort if effort in efforts else next(iter(efforts), None)
+        model = next((value for value, description in catalog['models'].items()
+                      if ('Highest capability' in description) == (task_type in ('planning', 'analysis'))),
+                     next(iter(catalog['models'])))
         selected = cli('orchestration', 'runtime', work=caller['work_id'], choice={
             'agent': agent, 'model': model, 'effort': effort, 'task_type': task_type, 'confidence': 1.0,
             'reason': 'The deterministic fixture actor chooses its declared scenario responsibility.'})
@@ -336,7 +343,7 @@ def gc_requests_role(assignment, stage, text):
     # A checkpoint-only resume can arrive after the result has landed in the assignment.
     # The explicit team read above supplies it; the prompt must not need a duplicate copy.
     assert SPECIALIST_RESULT in str(specialist['result'])
-    assert SPECIALIST_RESULT in text or f'Resume ticket {assignment["work_id"]}' in text
+    assert ' complete' in text or f'Resume ticket {assignment["work_id"]}' in text
     assert 'RETAINED_GC_SPECIALIST_PLAN' not in text
     assert 'RETAINED_GC_SPECIALIST_PLAN' in json.dumps(assignment)
     Path('candidate.txt').write_text(str(specialist['result']) + '\n')
@@ -421,17 +428,18 @@ def compacted_gc(stage, text, assignment):
     if stage == 0:
         progress(stage=1)
         check('running', 'GC retains delivery through context compaction.', work_so_far='RETAINED_COMPACTION_PLAN')
-        log(compaction_grounding=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
+        log(compaction_grounding=cli('memory', 'open_nodes', names=['route-grounding'],
+                                    node=f'element:{os.environ["METAFORM_NODE"]}'))
         log(compaction_ready=True)
         gate('compact')
-        update({'sessionUpdate': 'compaction_update', 'status': 'in_progress'})
-        update({'sessionUpdate': 'compaction_update', 'status': 'completed'})
+        update({'sessionUpdate': 'compaction_update', 'compactionId': 'swarm-compaction-1', 'status': 'in_progress'})
+        update({'sessionUpdate': 'compaction_update', 'compactionId': 'swarm-compaction-1', 'status': 'completed'})
         log(compaction_completed=True)
         gate('compaction-release')
         return
-    memory = cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}')
+    memory = cli('memory', 'open_nodes', names=['route-grounding'], node=f'element:{os.environ["METAFORM_NODE"]}')
     log(compaction_restored={'text': text, 'memory': memory, 'assignment': assignment})
-    assert 'RETAINED_COMPACTION_PLAN' not in text and 'Your context was compacted' in text
+    assert 'RETAINED_COMPACTION_PLAN' not in text and 'The adapter reported context compaction.' in text
     assert 'RETAINED_COMPACTION_PLAN' in json.dumps(assignment)
     assert memory['entities']
     Path('candidate.txt').write_text(SPECIALIST_RESULT + '\n')
@@ -486,18 +494,21 @@ def communications(assignment, stage, text):
         member = next(one for one in cli('orchestration', 'team')['members']
                       if one['authored_role_uri'] == 'metaform://role/investigator')
         discovery = cli('dispatch', 'peers')
-        note = cli('dispatch', 'note', to=member['owner_session_id'], text='PEER_NOTE: report the retained result.')
-        (STATE / 'peer-note-id').write_text(str(note['note']))
         refused = cli('dispatch', 'interrupt', id=member['work_id'], direction='An ordinary peer must not interrupt.',
                       expect_error=True)
         broadcast = cli('dispatch', 'broadcast', text='An ordinary worker must not broadcast.', expect_error=True)
+        log(peer_request_ready=True, peer_interrupt_refused=refused, worker_broadcast_refused=broadcast,
+            all_agent_discovery=discovery)
+        note = cli('dispatch', 'note', to=member['owner_session_id'], wait=30,
+                   text='PEER_NOTE: report the retained result.')
         log(peer_note_sent=note, peer_interrupt_refused=refused, worker_broadcast_refused=broadcast,
             all_agent_discovery=discovery)
         gate('worker-release')
     elif ROLE == 'investigator':
         if stage == 0:
             progress(stage=1)
-            log(specialist_grounding=cli('memory', 'read_unread', node=f'element:{os.environ["METAFORM_NODE"]}'))
+            log(specialist_grounding=cli('memory', 'open_nodes', names=['route-grounding'],
+                                        node=f'element:{os.environ["METAFORM_NODE"]}'))
             check('running', 'Specialist retains work while coordinating.', work_so_far='RETAINED_SPECIALIST_STATE')
             log(specialist_ready=True, all_agent_discovery=cli('dispatch', 'peers'))
             gate('specialist-release')

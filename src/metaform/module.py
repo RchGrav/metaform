@@ -1362,7 +1362,7 @@ def begin_agent_context_check(folder: Path, session: str | None, *, project: str
 
 def finish_agent_context_check(folder: Path, session: str | None, checkpoint: str, *,
                                project: str | None = None) -> dict[str, Any]:
-    """Close an unanswered startup checkpoint; the provider makes requested context eligible once on failure."""
+    """Record the marker diagnostic. It cannot establish retention of the agent's understanding."""
     service = _agent_context_service(folder, project)
     return cast(dict[str, Any], service[1].finish_check(service[0], session, checkpoint)) if service is not None else {}
 

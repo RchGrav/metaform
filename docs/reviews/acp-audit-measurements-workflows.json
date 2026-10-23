@@ -1,0 +1,81 @@
+{
+  "scope": "Matched hold behavior and optional supplied fake-ACP traces, isolated homes, no paid model execution.",
+  "baseline": {
+    "scenario": "Same justified hardware wait, reviewed at t=1000,1900,2800,3700 seconds.",
+    "held_outcome_preserved": true,
+    "actionable_review_signals": 3,
+    "scheduled_review_deadlines": [
+      1900.0,
+      2800.0,
+      3700.0,
+      4600.0
+    ],
+    "delivered_signal_text_utf8_bytes": 945,
+    "actual_model_invocations": null,
+    "billed_tokens": null,
+    "billing_cost": null,
+    "limits": "Signals are actionable wake requests. No liaison or paid model was run. Signal text bytes exclude tool schemas, hidden context and provider billing.",
+    "source_sha256": "3c5f41671ba1b8d6500c3e9dd79a4d76e5f7b85c5ee00e75b368ec4f375ea7db",
+    "acp_trace": {
+      "trace_sha256": "32a71769d5f1a403fce9fae6b6ac611338c90e568d43510325018c0d5209522d",
+      "adapter_process_starts": 3,
+      "acp_methods": {
+        "initialize": 3,
+        "session/new": 3,
+        "session/prompt": 3,
+        "session/set_config_option": 3
+      },
+      "acp_new_sessions": 3,
+      "acp_loads": 0,
+      "acp_resumes": 0,
+      "acp_prompt_requests": 3,
+      "prompt_text_utf8_bytes": 29636,
+      "repeated_exact_paragraph_utf8_bytes": 14912,
+      "completed_fake_work": 3,
+      "actual_model_invocations": null,
+      "billed_tokens": null,
+      "billing_cost": null,
+      "limits": "Fake adapter wire observations only. ACP prompt requests are not provider model calls. Repeated paragraphs match exact text in preceding prompt requests and exclude blank separators. No inference about hidden native context, replay billing or token cost."
+    }
+  },
+  "revised": {
+    "scenario": "Same justified hardware wait, reviewed at t=1000,1900,2800,3700 seconds.",
+    "held_outcome_preserved": true,
+    "actionable_review_signals": 0,
+    "scheduled_review_deadlines": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "delivered_signal_text_utf8_bytes": 0,
+    "actual_model_invocations": null,
+    "billed_tokens": null,
+    "billing_cost": null,
+    "limits": "Signals are actionable wake requests. No liaison or paid model was run. Signal text bytes exclude tool schemas, hidden context and provider billing.",
+    "source_sha256": "b38d9bbcb08d3e697b0e9985d07e6f7e7274972142e2bef3ded757b97603b991",
+    "acp_trace": {
+      "trace_sha256": "baf5028219fb48ecd0d95c83cd2e3900d32a58c28c93dd4f62a6179207b3f3d1",
+      "adapter_process_starts": 3,
+      "acp_methods": {
+        "initialize": 3,
+        "session/load": 2,
+        "session/new": 1,
+        "session/prompt": 3,
+        "session/set_config_option": 3
+      },
+      "acp_new_sessions": 1,
+      "acp_loads": 2,
+      "acp_resumes": 0,
+      "acp_prompt_requests": 3,
+      "prompt_text_utf8_bytes": 11829,
+      "repeated_exact_paragraph_utf8_bytes": 0,
+      "completed_fake_work": 3,
+      "actual_model_invocations": null,
+      "billed_tokens": null,
+      "billing_cost": null,
+      "limits": "Fake adapter wire observations only. ACP prompt requests are not provider model calls. Repeated paragraphs match exact text in preceding prompt requests and exclude blank separators. No inference about hidden native context, replay billing or token cost."
+    }
+  },
+  "baseline_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8"
+}

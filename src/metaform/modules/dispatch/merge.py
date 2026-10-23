@@ -292,6 +292,64 @@ def dev_branch(project: str | Path) -> str | None:
     return found.stdout.strip() or None if found.returncode == 0 else None
 
 
+def _branch_worktree(project: Path, branch: str) -> Path | None:
+    """The registered location of a branch, independent of the first card that used its directory."""
+    listed = git(project, 'worktree', 'list', '--porcelain')
+    for block in listed.stdout.split('\n\n') if not listed.returncode else ():
+        lines = block.splitlines()
+        if f'branch refs/heads/{branch}' in lines:
+            return next((Path(line[9:]) for line in lines if line.startswith('worktree ')), None)
+    return None
+
+
+def episode_workspace(project: str | Path, work_id: str, folder: str | Path,
+                      previous_work_id: str) -> dict[str, str] | None:
+    """Prepare a clean retained cwd for a new card without changing ACP's saved session cwd.
+
+    Each card keeps a frozen branch and its own start snapshot. Integrated source work starts from current dev;
+    otherwise its exact candidate remains the new card's baseline and is returned as an explicit source reference.
+    A dirty, foreign or occupied workspace is left intact for the normal fresh-context path.
+    """
+    project, folder = Path(project).resolve(), Path(folder).resolve()
+    if folder == project or not (folder / '.git').is_file() or not folder.is_relative_to(project / FOLDER):
+        return None
+    common = git(folder, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    root_common = git(project, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    if common.returncode or root_common.returncode or common.stdout.strip() != root_common.stdout.strip():
+        return None
+    source_branch, branch = branch_of(previous_work_id), branch_of(work_id)
+    if dev_branch(folder) not in (source_branch, branch):
+        return None
+    dirty = git(folder, 'status', '--porcelain', '--untracked-files=all')
+    if dirty.returncode or dirty.stdout.strip():
+        return None
+    source = git(project, 'rev-parse', '--verify', '--quiet', source_branch)
+    current = git(project, 'rev-parse', '--verify', '--quiet', 'HEAD')
+    if source.returncode or current.returncode:
+        return None
+    source_head, current_head = source.stdout.strip(), current.stdout.strip()
+    used = _branch_worktree(project, branch)
+    if used is not None and used.resolve() != folder:
+        return None
+    known = git(project, 'rev-parse', '--verify', '--quiet', branch).returncode == 0
+    if known:
+        start = snapshot_of(project, branch)
+        if not start:
+            return None
+    else:
+        integrated = git(project, 'merge-base', '--is-ancestor', source_head, current_head).returncode == 0
+        start = current_head if integrated else source_head
+        saved = git(project, 'update-ref', f'{SNAPSHOTS}/{branch}', start)
+        if saved.returncode:
+            return None
+    changed = git(folder, 'switch', '--no-overwrite-ignore',
+                  *([branch] if known else ['-c', branch, start]))
+    if changed.returncode:
+        return None
+    return {'cwd': str(folder), 'branch': branch, 'baseline': start,
+            'source_candidate': source_head, 'source_branch': source_branch}
+
+
 def worktree_for(project: str | Path, work_id: str) -> Path | None:
     """The ticket's own worktree, branched from committed HEAD without copying shared uncommitted files.
     The starting commit is kept under SNAPSHOTS so merges also support older branches based on dirty snapshots.
@@ -300,14 +358,20 @@ def worktree_for(project: str | Path, work_id: str) -> Path | None:
     dev = dev_branch(project)
     if dev is None:
         return None
+    branch = branch_of(work_id)
+    registered = _branch_worktree(project, branch)
+    if registered is not None:
+        return registered if registered.is_dir() else None
     folder = project / FOLDER / work_id[:12]
-    if (folder / '.git').exists():
-        return folder
+    if folder.exists():
+        # An episode may still own the first card's stable ACP cwd on a later card's branch.
+        suffix = 1
+        while (folder := project / FOLDER / f'{work_id[:12]}-{suffix}').exists():
+            suffix += 1
     excluded = project / '.git' / 'info' / 'exclude'
     if excluded.parent.is_dir() and f'/{FOLDER}/' not in (excluded.read_text(encoding='utf-8') if excluded.exists() else ''):
         with excluded.open('a', encoding='utf-8') as written:
             written.write(f'\n/{FOLDER}/\n')
-    branch = branch_of(work_id)
     known = git(project, 'rev-parse', '--verify', '--quiet', branch).returncode == 0
     start = None if known else git(project, 'rev-parse', '--verify', '--quiet', 'HEAD').stdout.strip() or dev
     made = git(project, 'worktree', 'add', *([str(folder), branch] if known else ['-b', branch, str(folder), start or dev]))
@@ -1050,6 +1114,8 @@ def abandoned(store: Store, project: str | Path, days: int) -> list[str]:
         if branch in waiting or branch not in closed or time.time() - float(when or 0) < days * 86400:
             continue
         folder = project / FOLDER / branch.split('/', 1)[1]
+        if folder.exists() and dev_branch(folder) != branch:
+            continue  # a retained episode now works on a later card here
         removed(project, folder, branch)
         gone.append(branch)
     return gone

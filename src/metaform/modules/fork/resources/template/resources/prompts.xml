@@ -21,4 +21,9 @@
 <counts></counts>
 <!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
 <rules></rules>
+<!-- Optional agent.context.changes providers return compact references through pending(ctx, session),
+     then acknowledge the exact revisions through delivered(ctx, session, notices) after transport acceptance.
+     Any notice wording authored by the module belongs in a named prompt here and is read by that provider.
+     Do not put full knowledge bodies in notices or add a timer to send them. Dispatch includes references in
+     the next turn already scheduled for the consuming context. This template declares no provider or wording. -->
 </prompts>

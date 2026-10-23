@@ -52,16 +52,13 @@
 <!-- Placed at <count/> in around_session when the last session's numbers are not the whole span, another writer having
      numbered between them: <count/> how many are its own. Empty says nothing of it. -->
 <around_session_count> (<count/> of them)</around_session_count>
-<!-- The lines under `more` in a node's read that outgrew the node_summary_bytes setting, MCP-039: what was left out,
-     counted, with <read/> the call that reads it. What goes first is the code paths, the sources layer's refs on each
-     join and on the node: <count/> of them not shown. Over MCP each call is named as its tool. Empty says nothing of
-     what was left out. -->
+<!-- Omission notices for a display-limited node summary. Remove decorative count detail before source refs;
+     receiver identities, operative purposes and relationships remain even when their essential packet exceeds
+     the display target. <count/> counts omitted refs; <read/> reads their exact source. -->
 <summary_sources><count/> source paths not shown: <read/></summary_sources>
-<!-- Then the joins the node receives, last first, once their code paths are gone: <count/> of them not shown. The
-     tree still names each of their providers with its counts. Empty says nothing. -->
+<!-- Retained notice for readers that explicitly omit received joins; automatic fitting preserves relationships. -->
 <summary_receives><count/> more joins it receives: <read/></summary_receives>
-<!-- Last, after the tree is drawn smaller, the joins the node provides for after the first, whose purposes are what
-     the node serves: <count/> of them not shown. Empty says nothing. -->
+<!-- Retained notice for readers that explicitly omit provider joins; automatic fitting preserves receiving purposes. -->
 <summary_provides><count/> more joins it provides for: <read/></summary_provides>
 
 <!-- The project's glossary, map glossary and the MCP resource metaform://<project>: the project's own terms in the form of
@@ -81,8 +78,8 @@
 
 @CONSTRAINT:
   !> STRICTLY FORBIDDEN to paraphrase or substitute synonyms for any defined term of <project/>.
-  !> STRICTLY FORBIDDEN to attach knowledge to a {PE}. All logic MUST map to the {RE} per the {Join} rule.
-  +> MUST ground all inference, planning and authored work on <project/> in these terms. A term missing here is established from the project or the developer and registered with <add/>, never coined.<standard/></glossary>
+  +> Attach knowledge to the {RE} of the relationship it concerns per the {Join} rule. An element can receive in one relationship and provide in another.
+  +> Preserve these established meanings in inference, planning and authored work on <project/>. Establish missing canonical usage from the project or the developer and register it with <add/>. Identify a new concept or arrangement as a proposal and explain the functional relationships it serves.<standard/></glossary>
 <!-- The peer register standard the person wrote, sent exactly as written ahead of the project's glossary while the
      setting glossary_register is peer, the default. Turn it off with glossary_register none. -->
 <register_standard># Peer Register — Mandatory Project Standard
@@ -97,13 +94,13 @@ All agent inference, communication, and authored work must use the project's can
 ## 2. Canonical Terminology
 - Ground all project inference, interpretation, planning, and communication in the canonical project vocabulary.
 - Preserve established names, definitions, relationships, and conceptual distinctions.
-- Never substitute synonyms, invent terminology, or reason through independently constructed concepts.
-- Consult the MCP glossary. When terminology is missing, establish its canonical usage from project context or the developer and register it using the glossary tool. Never independently coin a replacement.
+- Preserve established meanings without synonym substitution. Identify a proposed concept or arrangement as a proposal and explain the functional relationships it serves.
+- Consult the MCP glossary. When established terminology is missing, recover its canonical usage from project context or the developer and register it using the glossary tool. Distinguish new proposals from established concepts.
 
 ## 3. Repository Authorship
 - Apply the same register to all repository writing, including documentation, specifications, READMEs, comments, implementation notes, and agent handoffs.
 - Describe functionality using canonical terms so every contributor interprets the project consistently.
-- Do not introduce competing terminology or independent conceptual models.
+- Keep established meanings intact while examining alternative realizations and clearly identified new concepts.
 
 **Principle:** One project, one shared technical language. Every agent reasons, communicates, and contributes within that register. Compliance is mandatory, not stylistic.</register_standard>
 <!-- {Register} in the glossary while the register is peer. -->

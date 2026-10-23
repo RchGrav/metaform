@@ -584,6 +584,8 @@ def test_generated_assessment_recovery_preserves_person_stop(project, monkeypatc
 
 
 def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(project, monkeypatch):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     root(project)
     SERVICE.check_in(ctx(project, 'gc-one', state='waiting', summary='Waiting for the worker.'))
     worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
@@ -772,6 +774,8 @@ def test_runtime_selection_cannot_commission_after_concurrent_cancellation(proje
 
 @pytest.mark.parametrize('source', ['delivery', 'commission', 'assessment', 'cancelled', 'completed'])
 def test_legacy_blocked_transition_recovers_source_before_assessment(project, monkeypatch, source):
+    from metaform import settings
+    settings.put('orchestration_reviews', 1, project[1])
     store, _ = project
     gc = root(project)
     if source == 'commission':
@@ -1160,7 +1164,7 @@ def test_result_sent_twice_reaches_its_recipient_once(project, monkeypatch):
         'Alarm rings at zero.', 'b1', 'n1', 'n2']
 
 
-def test_review_closes_unfiled_only_for_a_direction_about_its_part(project, monkeypatch):
+def test_component_name_in_user_direction_never_discards_review_findings(project, monkeypatch):
     read = []
     rows = implementation.TableTx.rows
     monkeypatch.setattr(implementation.TableTx, 'rows', lambda tx, table, *a, **k: read.append((table, a, k)) or
@@ -1192,20 +1196,20 @@ def test_review_closes_unfiled_only_for_a_direction_about_its_part(project, monk
 
     # the person's word about another part is not a decision about this one: the finding is filed
     assert reviewed('gc-one', 'Leave code.loop.tick as it is.', 'Make the alarm louder.')
-    # their word about the reviewed part is: the review closes without filing
-    assert not reviewed('gc-two', 'Keep code.timer.kitchen as it is.', 'Make the countdown visible.')
-    # the person speaks in short names: another part's leaves the finding filed, the reviewed part's closes it
+    # Naming the reviewed component does not supersede its individual defects.
+    assert reviewed('gc-two', 'Keep code.timer.kitchen as it is.', 'Make the countdown visible.')
+    # Short names have no stronger implication than exact component addresses.
     assert reviewed('gc-three', 'Leave the loop tick alone.', 'Make the alarm flash.')
-    assert not reviewed('gc-four', 'Keep the kitchen timer as it is.', 'Show the time left.')
-    # a specification change of theirs whose instruction names the part closes it, read by key
-    assert not reviewed('gc-five', 'Keep the kitchen timer as it is.', 'Ring twice.', ordered=True)
+    assert reviewed('gc-four', 'Keep the kitchen timer as it is.', 'Show the time left.')
+    # A change order requires a reasoned per-finding reconciliation too.
+    assert reviewed('gc-five', 'Keep the kitchen timer as it is.', 'Ring twice.', ordered=True)
 
 
-def test_a_decision_the_system_agent_relays_by_note_reaches_the_gc_as_the_persons_and_closes_its_review(
+def test_relayed_user_decision_preserves_review_findings_without_explicit_reconciliation(
         project, run, monkeypatch):
     """A note the person's own system agent marks decision=true, in the turn the person's message started, is kept
-    on the GC's assignment as a user_direction with that message, so the review under way closes on it; marked so in
-    any other turn, it is refused."""
+    on the GC's assignment as a user_direction with that message. Findings remain actionable until individually
+    reconciled against that message. Marked so in any other turn, it is refused."""
     from metaform.modules.dispatch import peering
     store, folder = project
     run('enable', 'dispatch', cwd=folder)
@@ -1231,8 +1235,10 @@ def test_a_decision_the_system_agent_relays_by_note_reaches_the_gc_as_the_person
     returned = SERVICE.returned(ctx(project), review['work_id'], 'The alarm could be louder.',
                                 findings=[{'summary': 'Make the alarm louder.'}])
     assert returned['state'] == 'returned' and store.ticket(review['work_id']).work.done
-    assert not [one for one in store.work(node=Node('element', NODE), open=True, limit=0).results
-                if 'louder' in (one.task or '')]
+    assert returned['findings'][0]['disposition'] == 'correction'
+    held = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])
+    assert any(one.get('kind') == 'review_finding' and 'louder' in one['body']
+               for one in held['pending_direction'])
 
 
 def test_a_tickets_read_shows_its_gc_steps_result_and_linked_assessment(project, monkeypatch):
@@ -1319,3 +1325,133 @@ def test_child_completion_never_wakes_closed_caller(project):
     assert [one for one in after if one['assignment_id'] == gc['assignment_id']] == [
         one for one in before if one['assignment_id'] == gc['assignment_id']]
     assert SERVICE.assignment(ctx(project), assignment_id=child['assignment_id'])['result'] == 'Retained child evidence.'
+
+
+def test_request_sources_preserve_exact_user_revisions_separate_from_interpretation(project):
+    from metaform.modules.map import work as map_work
+    store, folder = project
+    exact = '  Keep “Fast” OFF.\nDo not reset my choice.\n'
+    original = map_work(context('map', folder, project='proj', surface='web', nouns={
+        'op': 'add', 'node': NODE, 'title': 'Preserve fast choice',
+        'task': 'Persist the explicit false selection.', 'source': {'text': exact, 'reference': 'chat:request-1'}}))
+    work_id = original['id']
+    revised = 'Keep Fast off after restarting too.\n'
+    map_work(context('map', folder, project='proj', surface='web', nouns={
+        'op': 'edit', 'id': work_id, 'task': 'Persist Fast off across restart.',
+        'source': {'text': revised, 'reference': 'chat:request-2'}}))
+    sources = map_work(context('map', folder, project='proj', nouns={'op': 'sources', 'id': work_id}))
+    assert [(one['sequence'], one['text'], one['interpretation']) for one in sources] == [
+        (1, exact, 'Persist the explicit false selection.'),
+        (2, revised, 'Persist Fast off across restart.')]
+    assert all(one['provenance']['author'] == 'user' for one in sources)
+    assert sources[0]['task_revision'] != sources[1]['task_revision']
+    selected = map_work(context('map', folder, project='proj', nouns={
+        'op': 'sources', 'id': work_id, 'source_id': sources[0]['source_id']}))
+    assert selected == sources[:1]
+    assert store.ticket(work_id).work.task == 'Persist Fast off across restart.'
+    map_work(context('map', folder, project='proj', session='agent-session', nouns={
+        'op': 'edit', 'id': work_id, 'task': 'Use the persisted explicit false value.',
+        'source': {'text': 'Agent refinement', 'author': 'user'}}))
+    after = store.work_sources(work_id)
+    assert [one['text'] for one in after[:2]] == [exact, revised]
+    assert after[-1]['provenance']['author'] == 'agent'
+    assert after[-1]['interpretation'] == 'Use the persisted explicit false value.'
+
+
+def test_ticket_edit_directions_distinguish_user_agent_and_change_order(project):
+    store, _ = project
+    assigned = root(project)
+    for number, source in enumerate(('agent', 'change_order', 'user')):
+        store.edit_work(assigned['work_id'], {'task': f'Execution revision {number}'},
+                        provenance={'author': source, 'reference': str(number)})
+        SERVICE.ticket_edited(ctx(project), assigned['work_id'], str(number), source=source,
+                              source_reference=str(number))
+    directions = SERVICE.assignment(ctx(project), assignment_id=assigned['assignment_id'])['pending_direction']
+    assert [(one['kind'], one['source']) for one in directions] == [
+        ('ticket_revision', 'agent'), ('ticket_revision', 'change_order'), ('user_direction', 'user')]
+    assert 'an agent' in directions[0]['body']
+    assert 'adaptive change order' in directions[1]['body']
+    assert 'the user' in directions[2]['body']
+    assert [one['text'] for one in store.work_sources(assigned['work_id'])][-3:] == [
+        'Execution revision 0', 'Execution revision 1', 'Execution revision 2']
+
+
+def test_review_retains_candidate_revision_and_each_finding_disposition(project):
+    gc = root(project)
+    store, _ = project
+    SERVICE.returned(ctx(project), gc['work_id'], 'Candidate delivered.', candidate={'revision': 'r1'}, state='delivered')
+    gc = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])
+    review = SERVICE.assessment(ctx(project), gc, {}, 'revision-review')
+    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'new-volume',
+        'at': implementation.now(), 'text': 'Change the kitchen timer volume.', 'from': {'kind': 'user'}})
+    findings = [
+        {'finding_id': 'volume-default', 'summary': 'Restore the original volume default.',
+         'disposition': 'superseded', 'superseded_by': 'new-volume',
+         'supersession_reason': 'The new user direction explicitly changes the previous volume requirement.'},
+        {'finding_id': 'selection-loss', 'summary': 'Selection resets after changing duration.',
+         'evidence': 'Observed a selected value disappear.'},
+        {'finding_id': 'unsupported', 'summary': 'The alarm never rings.',
+         'disposition': 'superseded', 'superseded_by': 'invented-direction',
+         'supersession_reason': 'Claimed change with no retained source.'}]
+    returned = SERVICE.returned(ctx(project), review['work_id'], 'Three findings.', findings=findings)
+    assert [one['disposition'] for one in returned['findings']] == ['superseded', 'correction', 'correction']
+    assert [one['finding'] for one in returned['findings']] == findings
+    assert returned['reviewed_snapshot']['candidate'] == {'revision': 'r1'}
+    assert returned['reviewed_snapshot']['task_revision'] == fingerprint(gc['task'])
+    assert not store.ticket(gc['work_id']).work.done
+    directions = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])['pending_direction']
+    assert [one['finding_id'] for one in directions if one['kind'] == 'review_finding'] == [
+        'selection-loss', 'unsupported']
+
+
+def test_generic_finding_title_does_not_fold_distinct_defects(project):
+    store, _ = project
+    gc = root(project)
+    unrelated = store.add_work(Node('element', NODE), None, task='Regression', title='Regression')
+    SERVICE.returned(ctx(project), gc['work_id'], 'Candidate delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {}, 'generic-title')
+    returned = SERVICE.returned(ctx(project), review['work_id'], 'Two defects.', findings=[
+        {'title': 'Regression', 'detail': 'The selection clears.', 'file': 'selection.py', 'evidence': 'Value becomes null.'},
+        {'title': 'Regression', 'detail': 'The alarm stays silent.', 'file': 'alarm.py', 'evidence': 'No audio at zero.'}])
+    assert returned['findings_filed'] == [gc['work_id']]
+    assert unrelated.id not in returned['findings_filed']
+    directions = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])['pending_direction']
+    assert len([one for one in directions if one['kind'] == 'review_finding']) == 2
+    assert 'selection.py' in store.ticket(gc['work_id']).work.note
+    assert 'alarm.py' in store.ticket(gc['work_id']).work.note
+
+
+def test_linked_operative_change_supersedes_only_its_individual_finding(project):
+    store, folder = project
+    (folder / 'reviewed-spec.md').write_text('Alarm starts loud.', encoding='utf-8')
+    gc = root(project, specification={'uri': 'file:reviewed-spec.md'})
+    SERVICE.returned(ctx(project), gc['work_id'], 'Alarm delivered.', state='delivered')
+    review = SERVICE.assessment(ctx(project), gc, {}, 'new-spec')
+    changed = change(context('orchestration', folder, project='proj', surface='web', nouns={
+        'assignment': gc['assignment_id'], 'content': 'Alarm starts quietly.', 'reason': 'User chose quiet.',
+        'user_instruction': 'Start the kitchen timer alarm quietly.'}))
+    returned = SERVICE.returned(ctx(project), review['work_id'], 'Volume and selection findings.', findings=[
+        {'finding_id': 'volume', 'summary': 'Restore loud initial alarm.', 'disposition': 'superseded',
+         'superseded_by': changed['change_id'],
+         'supersession_reason': 'The operative specification now explicitly requests a quiet initial alarm.'},
+        {'finding_id': 'selection', 'summary': 'Changing volume must preserve the selected duration.'}])
+    assert [one['disposition'] for one in returned['findings']] == ['superseded', 'correction']
+    assert returned['reviewed_snapshot']['requirements'] == 'Alarm starts loud.'
+    assert returned['reviewed_snapshot']['requirements_revision'] == fingerprint('Alarm starts loud.')
+    assert (folder / 'reviewed-spec.md').read_text(encoding='utf-8') == 'Alarm starts quietly.'
+    assert store.ticket(gc['work_id']).work.column == 'todo'
+    assert returned['findings_filed'] == [gc['work_id']]
+
+
+def test_direction_already_in_reviewed_source_cannot_claim_later_supersession(project):
+    gc = root(project)
+    SERVICE.directed(ctx(project), 'gc-one', {'kind': 'user_direction', 'id': 'existing-requirement',
+        'at': implementation.now(), 'text': 'Preserve the selected timer duration.', 'from': {'kind': 'user'}})
+    SERVICE.returned(ctx(project), gc['work_id'], 'Candidate delivered.', state='delivered')
+    gc = SERVICE.assignment(ctx(project), assignment_id=gc['assignment_id'])
+    review = SERVICE.assessment(ctx(project), gc, {}, 'existing-direction')
+    returned = SERVICE.returned(ctx(project), review['work_id'], 'Selection clears.', findings=[{
+        'summary': 'Selected duration clears.', 'disposition': 'superseded',
+        'superseded_by': 'existing-requirement', 'supersession_reason': 'Claimed to be a later instruction.'}])
+    assert returned['findings'][0]['disposition'] == 'correction'
+    assert returned['reviewed_snapshot']['direction_references'] == ['existing-requirement']

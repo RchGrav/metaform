@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from metaform import home, prompt_files
 from metaform.data import Column, Index, StoreError, Table
-from metaform.module import AgentRoleDefinition, Context, Stop, context, forget_shown, provided
+from metaform.module import AgentRoleDefinition, Context, Stop, context, provided
 
 TABLES = (
     Table('definitions', place='project', key=('name',), columns=(
@@ -35,6 +35,9 @@ TABLES = (
     Table('delivered_text', place='project', key=('session_id', 'epoch', 'fingerprint'), columns=(
         Column('session_id', required=True), Column('epoch', 'int', required=True),
         Column('fingerprint', required=True), Column('at', required=True))),
+    Table('change_notices', place='project', key=('session_id', 'epoch', 'name'), columns=(
+        Column('session_id', required=True), Column('epoch', 'int', required=True), Column('name', required=True),
+        Column('fingerprint', required=True))),
     Table('context_checks', place='project', key=('session_id',), columns=(
         Column('session_id', required=True), Column('epoch', 'int', required=True),
         Column('checkpoint', required=True), Column('marker', required=True),
@@ -138,13 +141,23 @@ class RoleService:
                     if supplied is not None:
                         fills.update(cast(dict[str, str], supplied))
             try:
-                if generated_row and reference.startswith('prompt.agents:generated_') and \
-                        'duty' in generated_row['source']:
-                    one = prompt_files.component(reference, generated_row['source']['duty'])
-                    one.update(actual_version_id=generated_row['version_id'],
-                               selected_version_id=generated_row['version_id'])
-                else:
+                try:
                     one = prompt_files.resolve(reference, **fills)
+                except StoreError as error:
+                    if not (generated_row and reference.startswith('prompt.agents:generated_') and
+                            'duty' in generated_row['source']):
+                        raise
+                    # Portable project definitions survive independently of the home's prompt store. Use their
+                    # exact duty only when resolution is unavailable, preserving the missing-selection evidence.
+                    one = prompt_files.component(reference, generated_row['source']['duty'],
+                                                 version_id=generated_row['version_id'])
+                    one.update(selected_version_id=None,
+                               problems=[f'{reference}: {error}; the project definition snapshot is served.'],
+                               source={'kind': 'definition_fallback', 'path': None, 'shipped_identity': None})
+                if generated_row and reference.startswith('prompt.agents:generated_'):
+                    # The definition is provenance, not a second prompt store. Its historical duty stays available
+                    # in definition history and assignment snapshots while current resolution honors selected edits.
+                    one['source'] = {**one.get('source', {}), 'definition_version_id': generated_row['version_id']}
             except (OSError, LookupError, StoreError, ValueError) as error:
                 problems.append(f'{reference}: {error}')
                 continue
@@ -239,6 +252,55 @@ class RoleService:
         return {'epoch': epoch, 'components': due, 'previous': previous,
                 'text': '\n\n'.join(str(one.get('text') or '') for one in due)}
 
+    def changes(self, ctx: Context, session: str | None, role: str, *,
+                bindings: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        """References to changed instructions already consumed by this context, never a role-body bootstrap.
+
+        Preparing references acknowledges nothing. Equal rendered text is unchanged even when its source version
+        or selection metadata differs. Resolution uses the current selected source, separately from any assignment
+        snapshot. Delivery history cannot establish whether the model retained the earlier instruction.
+        """
+        ctx = _own(ctx)
+        if not session or ctx.store is None:
+            return []
+        resolved = self.resolve(ctx, role, bindings=bindings)
+        epoch = self.epoch(ctx, session)
+        notices: list[dict[str, Any]] = []
+        with ctx.store.tables(write=False) as tx:
+            for one in resolved['components']:
+                name, fingerprint = str(one['name']), _fingerprint(one)
+                key = {'session_id': session, 'epoch': epoch, 'name': name}
+                before = tx.get('receipts', key)
+                if before is None:
+                    continue
+                component = cast(dict[str, Any], before.get('component') or {})
+                active = component.get('active_fingerprint') or before['fingerprint']
+                if active == fingerprint:
+                    continue
+                delivered = tx.get('change_notices', key)
+                if delivered and delivered['fingerprint'] == fingerprint:
+                    continue
+                notices.append({'name': name, 'epoch': epoch, 'fingerprint': fingerprint,
+                                'previous': active, 'actual_version_id': one.get('actual_version_id'),
+                                'selected_version_id': one.get('selected_version_id'),
+                                'source': one.get('source'), 'read': resolved['uri'],
+                                'problems': one.get('problems') or []})
+        return notices
+
+    def delivered_changes(self, ctx: Context, session: str | None, notices: Sequence[dict[str, Any]]) -> None:
+        """Acknowledge accepted references independently of body receipts. Later revisions remain eligible."""
+        ctx = _own(ctx)
+        if not session or ctx.store is None or not notices:
+            return
+        with ctx.store.tables() as tx:
+            for one in notices:
+                key = {'session_id': session, 'epoch': int(one['epoch']), 'name': str(one['name'])}
+                row = {**key, 'fingerprint': str(one['fingerprint'])}
+                if tx.get('change_notices', key) is None:
+                    tx.insert('change_notices', row)
+                else:
+                    tx.update('change_notices', key, row)
+
     def record(self, ctx: Context, session: str | None, components: Sequence[dict[str, Any]], *,
                epoch: int | None = None, channel: str = 'turn') -> dict[str, Any]:
         ctx = _own(ctx)
@@ -299,10 +361,11 @@ class RoleService:
 
     def finish_check(self, ctx: Context, session: str | None, checkpoint: str,
                      *, marker: str | None = None) -> dict[str, Any]:
-        """An absent/incorrect proof makes context eligible once, without pushing it or scheduling a turn.
+        """Record a marker observation, never an inventory of the model's retained understanding.
 
-        A supplied marker confirms a pending check. A stale reply cannot confirm a newer startup or invalidate
-        context twice; completed compaction already made the old check obsolete.
+        Matching a marker only demonstrates that marker was returned. Omitting it may be ordinary noncompliance.
+        Neither observation invalidates delivered receipts or proves semantic retention. Observed compaction and
+        explicit recovery are separate operations.
         """
         ctx = _own(ctx)
         if session is None or ctx.store is None:
@@ -315,18 +378,12 @@ class RoleService:
             if not check or check['checkpoint'] != checkpoint or check['epoch'] != epoch:
                 return {'confirmed': False, 'stale': True, 'epoch': epoch}
             if not check['pending']:
-                return {'confirmed': bool(check['confirmed']), 'epoch': epoch}
+                return {'confirmed': bool(check['confirmed']), 'marker_match': bool(check['confirmed']),
+                        'semantic_retention': 'unknown', 'epoch': epoch}
             confirmed = marker is not None and hmac.compare_digest(str(check['marker']), marker)
             tx.update('context_checks', key, {'pending': False, 'confirmed': confirmed})
-            if confirmed:
-                return {'confirmed': True, 'epoch': epoch}
-            epoch += 1
-            row = {**key, 'epoch': epoch, 'reason': 'retention_unconfirmed', 'at': home.now()}
-            if current:
-                tx.update('contexts', key, row)
-            else:
-                tx.insert('contexts', row)
-        return {'confirmed': False, 'epoch': epoch, 'eligible': True}
+        return {'confirmed': confirmed, 'marker_match': confirmed, 'semantic_retention': 'unknown',
+                'epoch': epoch}
 
     def advance(self, ctx: Context, session: str | None, *, reason: str = 'compaction') -> int:
         ctx = _own(ctx)
@@ -372,12 +429,10 @@ def inspect_receipts(ctx: Context) -> dict[str, Any]:
 
 
 def confirm_context(ctx: Context) -> dict[str, Any]:
-    """Only the actual caller can acknowledge its retained key; a tool argument cannot choose another session."""
+    """Only the actual caller can report its marker; the observation says nothing about retained facts."""
     if not ctx.session:
         raise Stop('A context check belongs to the calling agent session.', 'run this from the assigned agent')
     result = SERVICE.finish_check(ctx, ctx.session, str(ctx.nouns['checkpoint']),
                                    marker=str(ctx.nouns['key']) if ctx.nouns.get('key') else None)
-    if result.get('eligible'):
-        forget_shown(ctx.session)
     return result
 

@@ -1227,3 +1227,65 @@ def test_stopping_an_agent_still_starting_ends_its_agent_group_too(dispatch, run
     assert gone([started['pid'], wrapper], limit=10), 'the runner and its agent both end'
     assert dispatch.ticket().taken is None, 'its ticket is back in To do'
     assert dispatch.id not in module.start_backoff(dispatch.store), 'a stop is no failed start'
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='waiting on a subprocess pipe with select')
+def test_fresh_brief_joins_an_early_person_message_without_losing_its_word(dispatch, run, tmp_path):
+    """A real client may speak after session publication while the initial duty is still being assembled."""
+    import select
+    import subprocess
+
+    from metaform.modules.dispatch import group_options, tell
+
+    gates = tmp_path / 'startup-turns'
+    gates.mkdir()
+    human = '  Keep my exact choice.\nStart the requested work.  '
+    script = f'''
+import asyncio
+import sys
+from pathlib import Path
+from metaform.module import context
+from metaform.modules.dispatch.runner import Session, dispatch
+original = Session.system_prompt
+def delayed(self):
+    print('BRIEF_WAITING', flush=True)
+    if sys.stdin.readline() != 'continue\\n':
+        raise RuntimeError('The test did not release startup')
+    return original(self)
+Session.system_prompt = delayed
+ctx = context('dispatch', Path.cwd(), project='proj',
+              nouns={{'id': {dispatch.id!r}, 'agent': 'claude', 'system': True}})
+asyncio.run(dispatch(ctx))
+'''
+    run('set', '--dispatch-record-on-finish', 'off', cwd=dispatch.folder)
+    dispatch.process = subprocess.Popen(
+        [sys.executable, '-c', script], cwd=dispatch.folder,
+        env=dispatch.env('replace', FAKE_ACP_TURN_GATES=str(gates)),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **group_options())
+    released = False
+    row = None
+    try:
+        assert select.select([dispatch.process.stdout], [], [], 15)[0], 'Startup did not reach its brief.'
+        assert dispatch.process.stdout.readline() == b'BRIEF_WAITING\n'
+        row = next(one.extra for one in dispatch.items('session') if one.extra['state'] == 'running')
+        status = tell(row, 'status')
+        assert status['activity'] == 'working', 'Published startup must not appear idle before its brief is ready.'
+        assert tell(row, 'message', text=human, word=True)['sent'] is True
+        assert not dispatch.received('session/prompt'), 'The initial duty must precede any executing message.'
+        dispatch.process.stdin.write(b'continue\n')
+        dispatch.process.stdin.flush()
+        released = True
+        prompts = eventually(lambda: dispatch.received('session/prompt'))
+        assert len(prompts) == 1
+        text = '\n'.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
+        assert '# Front-facing agent' in text and text.endswith(human)
+        word = tell(row, 'word', what='Starting the requested work')['word']
+        assert word is not None and word['text'] == human
+        assert len(dispatch.received('session/prompt')) == 1, 'No separate startup prompt may displace the person.'
+    finally:
+        if not released and dispatch.process.stdin and dispatch.process.poll() is None:
+            dispatch.process.stdin.write(b'continue\n')
+            dispatch.process.stdin.flush()
+        if dispatch.process.poll() is None and row is not None:
+            tell(row, 'stop')
+            dispatch.process.wait(15)

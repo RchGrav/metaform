@@ -92,3 +92,17 @@ metaform agents role name=worker        # dispatch:work: revision 2, origin edit
 metaform agents drop name=dispatch:work --confirm
 metaform agents sent session=<session id>
 ```
+
+## Delivery observations and effective instructions
+
+`agents sent session=<id>` includes `effective_instructions`, the latest observed delivery of each named component. It reports actual and selected version identities separately, rendered digest, shipped source identity, source kind/path, delivery path, fallback problems and assignment snapshot information when supplied by transport. Trial text, selected edits and malformed-source fallback remain distinguishable. Unknown historical metadata is reported as unknown. This report does not alter prompt selections or overwrite edits.
+
+Native project instruction files are discoverable candidates, marked `discovered_not_confirmed_loaded` with a digest at inspection. The current ACP adapter does not expose which native/internal instructions its model received, their priority or its retained context. The manifest therefore records Metaform delivery history, not a complete model context inventory.
+
+A startup marker is a diagnostic observation only. Matching it does not prove that a useful fact or responsibility survived. Omitting it does not invalidate delivery receipts or advance the context epoch. An actual completed compaction observation or explicit context replacement advances the epoch, making requested current grounding eligible on demand. It does not schedule a reconstruction turn. Explicit source and memory reads remain available.
+
+Generic shown records describe content delivery hints, host discovery configuration (`catalog:`) or guide discovery history (`guide:`). Process sessions end with their process. Named sessions survive process replacement without age-based invalidation. Compaction resets content hints while preserving discovery history; it cannot establish which semantic facts survived.
+
+Current generated responsibilities resolve through the same selected prompt store as other duties. Definition provenance (`source.definition_version_id`) and immutable definition history remain separate from the effective selected component. Existing assignment snapshots retain their historical bytes. If the home prompt store cannot resolve a generated duty, the project definition supplies its exact portable snapshot as `definition_fallback`, with an explicit problem and unknown selected version. An available selected edit always wins.
+
+The existing `agent.role` provider offers `changes(ctx, session, role, bindings=None)` and `delivered_changes(ctx, session, notices)`. Changes returns compact source references only for instructions previously consumed by that session/epoch whose current rendered text differs. Equal text at a new version produces no notice. A reference names the current role resource and current/previous fingerprints, without delivering or acknowledging its body. Dispatch can attach these references to the next natural turn, then acknowledge accepted notices. A later change remains eligible. The separate `change_notices` table deduplicates accepted references without claiming semantic retention or changing body receipts. This never starts a model or makes an initial role read mandatory.

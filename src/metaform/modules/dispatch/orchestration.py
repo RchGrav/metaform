@@ -56,9 +56,53 @@ def _lock(ctx: Context, ident: str) -> Path:
 
 
 def _row(ctx: Context, held: dict[str, Any], *, verify: bool = True) -> dict[str, Any] | None:
-    from . import sessions
+    from . import own_store, sessions, verified
     rows = sessions(ctx.require_store(), str(held['work_id']), verify=verify)
-    return next((row for row in reversed(rows) if row['session_id'] == held.get('owner_session_id')), None)
+    found = next((row for row in reversed(rows) if row['session_id'] == held.get('owner_session_id')), None)
+    if found is not None or not held.get('owner_session_id'):
+        return found
+    # A delayed return retains its original assignment route even after this ACP
+    # conversation moved to another card of the same explicit workstream.
+    with own_store(ctx.require_store()).tables(write=False) as tx:
+        row = tx.get('agent_sessions', {'session_id': held['owner_session_id']})
+    owner = service(ctx)
+    current = owner.assignment(ctx, session_id=str(held['owner_session_id'])) if owner else None
+    if row is None or current is None or not hasattr(owner, 'episode_context'):
+        return None
+    before: dict[str, Any] = owner.episode_context(ctx, held) or {}
+    after: dict[str, Any] = owner.episode_context(ctx, current) or {}
+    if not before.get('episode_id') or before.get('episode_id') != after.get('episode_id'):
+        return None
+    checked = verified(ctx.require_store(), [row]) if verify else [row]
+    return checked[0] if checked else None
+
+
+def episode_row(ctx: Context, held: dict[str, Any], owner: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """An explicitly related workstream offers continuity, subject to actual adapter/workspace state."""
+    from . import own_store, runtime_settings, session_state, verified
+    stream: dict[str, Any] = (owner.episode_context(ctx, held)
+                              if owner is not None and hasattr(owner, 'episode_context') else None) or {}
+    previous: dict[str, Any] = stream.get('previous_assignment') or {}
+    if stream.get('fresh_context') or not stream.get('session_id') or previous.get('stop') \
+            or previous.get('authored_role_uri') != held.get('authored_role_uri'):
+        return None, stream
+    with own_store(ctx.require_store()).tables(write=False) as tx:
+        saved = tx.get('agent_sessions', {'session_id': str(stream['session_id'])})
+    rows = verified(ctx.require_store(), [saved]) if saved is not None else []
+    row = next((one for one in rows if one['session_id'] == stream['session_id']), None)
+    if row is None:
+        return None, stream
+    if row['state'] == 'running':
+        return row, stream
+    before = runtime_settings(ctx, str(previous['work_id']))
+    after = runtime_settings(ctx, str(held['work_id']))
+    if any(after.get(field) and before.get(field) != after.get(field) for field in ('agent', 'model', 'effort')):
+        return None, stream
+    state = session_state(ctx.require_store(), str(row['session_id'])) or {}
+    cwd = state.get('cwd')
+    if not cwd or not Path(str(cwd)).is_dir():
+        return None, stream
+    return row, stream
 
 
 def identity(ctx: Context) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -179,6 +223,8 @@ class Transport:
         status = owner.routing_status(ctx, work) if owner is not None else None
         if status and status.get('state') == 'creating':
             return {'state': 'queued', 'problem': str(status.get('reason') or 'its specialist role is being made')}
+        if owner is not None and hasattr(owner, 'inherit_runtime'):
+            owner.inherit_runtime(ctx, held)
         if owner is not None and hasattr(owner, 'prepare_runtime') and not owner.prepare_runtime(ctx, held):
             return {'state': 'queued', 'problem': 'The Facilitator is choosing the ticket runtime.'}
         # A launch counts the runners it started in its delivery, `attempts`. Past dispatch_retries starts with no
@@ -201,10 +247,22 @@ class Transport:
                 asked = int(float(created) * 1_000_000_000)
             else:
                 asked = time.time_ns()
-        with home.file_lock(_lock(ctx, str(held['assignment_id']))):
+        stream: dict[str, Any] = (owner.episode_context(ctx, held)
+                                  if owner is not None and hasattr(owner, 'episode_context') else None) or {}
+        with home.file_lock(_lock(ctx, str((stream or {}).get('episode_id') or held['assignment_id']))):
+            workstream = {one['work_id'] for one in stream.get('work', [])} | {work}
             running = next((one for one in launches() if one.get('project') == ctx.project and
-                            one.get('work_id') == work), None)
+                            one.get('work_id') in workstream), None)
+            if running is not None and running.get('work_id') != work:
+                return {'state': 'queued', 'reason': 'A related episode continuation is already starting.'}
             row = _row(ctx, held)
+            retained, stream = episode_row(ctx, held, owner)
+            if stream.get('fresh_context'):
+                row = None
+            if retained is not None and retained['work_id'] != work:
+                if retained['state'] == 'running':
+                    return {'state': 'queued', 'reason': 'The related episode is executing its current contribution.'}
+                row = retained
             if running is not None:
                 if row and row['state'] == 'running':
                     return {'state': 'running', 'session_id': row['session_id'], 'runner': row.get('runner'),
@@ -221,10 +279,23 @@ class Transport:
                 run = run_of(store, str(held.get('owner_session_id') or ''))
                 if run:
                     words.append(f'run={run}')
+            if row is not None and row['work_id'] != work:
+                words.append(f'episode_previous_work={row["work_id"]}')
             checked_sessions = sessions(store, work if glyph_of(launch_ctx, ticket(store, work)) is None else None)
             if row is not None and ctx.setting('dispatch_resume_chats'):
                 kept = session_state(store, str(row['session_id'])) or {}
                 capabilities = cast(dict[str, Any], kept.get('capabilities') or {})
+                if (capabilities.get('resume') or capabilities.get('load')) and row['work_id'] != work \
+                        and Path(str(kept.get('cwd') or '')).resolve() != Path(store.project().path).resolve():
+                    from .merge import episode_workspace
+                    workspace = episode_workspace(store.project().path, work, str(kept.get('cwd') or ''),
+                                                  str(row['work_id']))
+                    if workspace is None:
+                        capabilities = {}  # preserve that workspace and reconstruct in the card's normal one
+                    else:
+                        words += [f'episode_source_candidate={workspace["source_candidate"]}',
+                                  f'episode_source_branch={workspace["source_branch"]}',
+                                  f'episode_workspace_base={workspace["baseline"]}']
                 if capabilities.get('resume') or capabilities.get('load'):
                     # A worker resumed in place goes on only with the ticket its session's own. A review finding
                     # reopens a done ticket into To do, untaken, so the session takes it back before its runner
@@ -311,6 +382,7 @@ class Transport:
             raise ValueError('An agent message requires a message body.')
         # Keep message identity and routing, never assignment snapshots, context or reports.
         line = {**{key: envelope[key] for key in MESSAGE_FIELDS if key in envelope},
+                'assignment_id': held['assignment_id'],
                 'id': envelope.get('id') or envelope.get('message_id'), 'from': sender,
                 'text': str(body), 'at': envelope.get('at') or home.now(),
                 'kind': envelope.get('kind') or 'continuation',
@@ -428,10 +500,20 @@ def actionable(ctx: Context, envelope: dict[str, Any], *, session_id: str | None
         return any(not work.done for ident in work_ids
                    if (work := held_ticket(ctx.require_store(), ident)) is not None)
     question = kind == 'question' and envelope.get('ask') is True
-    if not question and kind not in ('result', 'role_publication', 'blocked', 'change_order', 'gc_broadcast'):
+    if not question and kind not in ('result', 'role_publication', 'blocked', 'change_order', 'recommendation',
+                                     'gc_broadcast'):
         return False
     owner = service(ctx)
     target = recipient or (owner.assignment(ctx, session_id=session_id) if owner and session_id else None)
+    if recipient is None and owner and session_id and target and not target.get('stop'):
+        addressed = envelope.get('assignment_id')
+        if addressed and addressed != target['assignment_id'] and hasattr(owner, 'episode_context'):
+            original = owner.assignment(ctx, assignment_id=str(addressed))
+            if original and original.get('owner_session_id') == session_id:
+                before: dict[str, Any] = owner.episode_context(ctx, original) or {}
+                after: dict[str, Any] = owner.episode_context(ctx, target) or {}
+                if before.get('episode_id') and before.get('episode_id') == after.get('episode_id'):
+                    target = original
     if target and (target.get('stop') or target.get('state') in INACTIVE):
         return False
     from . import held_ticket
@@ -467,6 +549,11 @@ def actionable(ctx: Context, envelope: dict[str, Any], *, session_id: str | None
         return False
     if session_id and target.get('owner_session_id') != session_id:
         return False
+    if kind == 'recommendation':
+        # Strict-mode advice does not become an operative direction. Its recorded responsible
+        # caller still receives the proposal from its own contributor or independent assessment.
+        return bool(envelope.get('change_id')) and target['assignment_id'] in (
+            source.get('reviewed_assignment_id'), source.get('gc_assignment_id'), source.get('assignment_id'))
     if kind == 'change_order':
         directions = cast(list[dict[str, Any]], target.get('pending_direction') or [])
         return any(one.get('change_id') == envelope.get('change_id') and one.get('change_id')
@@ -477,6 +564,8 @@ def actionable(ctx: Context, envelope: dict[str, Any], *, session_id: str | None
         return source.get('state') == 'blocked' and source.get('gc_assignment_id') == target['assignment_id']
     # Results follow the recorded immediate caller and its handoff successors, never a project-wide recipient.
     route = cast(dict[str, Any], source.get('return_to') or {})
+    if route.get('session_id') and route['session_id'] == target.get('owner_session_id'):
+        return source.get('state') in ('returned', 'delivered', 'failed')
     parent_id = route.get('assignment_id')
     seen: set[str] = set()
     while parent_id and parent_id not in seen:
@@ -664,5 +753,6 @@ def resume_context(ctx: Context, work: str, session: str | None) -> dict[str, An
 def snapshots(sent: list[prompt_files.Sent]) -> list[dict[str, Any]]:
     return [{'name': one.name, 'text': getattr(one, 'rendered_text', ''), 'actual_version_id': one.version_id,
              'selected_version_id': one.selected_version_id, 'rendered_fingerprint': one.rendered_fingerprint,
-             'number': one.number, 'origin': one.origin, 'bindings': one.bindings, 'problems': list(one.problems)}
+             'number': one.number, 'origin': one.origin, 'bindings': one.bindings, 'problems': list(one.problems),
+             'source': dict(one.source), 'delivery_path': 'acp_prompt'}
             for one in sent]

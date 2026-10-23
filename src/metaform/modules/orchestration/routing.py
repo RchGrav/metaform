@@ -178,7 +178,7 @@ def _route(ctx: Context, work_id: str, *, refresh: bool) -> dict[str, Any]:
             tx.insert('routing', row)
         tx.concern(work_id=work_id, kind='orchestration.routing')
     if role and not assigned:
-        # Runtime and Planner admission must precede choosing an adapter. The existing transport owns launch.
+        # Retain runtime and any requested planning contribution before launch; transport owns the session.
         SERVICE.ensure(ctx, work_id, role=role, queue=True)
         status = SERVICE.routing_status(ctx, work_id)
         if status and status['state'] == 'creating':

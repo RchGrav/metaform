@@ -188,3 +188,24 @@ def test_critic_repair_inherits_only_unstopped_delivery_authority(approved, auth
         assert tx.get('ticket_settings', {'work_id': correction_id})['board'] == BOARD
         assert tx.get('after', {'work_id': correction_id})['works'] == [work.id]
     assert store.ticket(work.id).work.done
+
+
+def test_explicit_pm_result_reaches_selected_session_after_its_current_card_changes(approved):
+    from metaform.modules.dispatch import orchestration as transport
+    store, ctx, facilitator = approved
+    delivery = claim_work(ctx, board_work(store, ctx))
+    SERVICE.bind(ctx, delivery['assignment_id'], 'delivery-session')
+    # The PM keeps the selected conversation while moving to another contribution in the same workstream.
+    SERVICE.returned(ctx, facilitator['work_id'], 'Initial contribution complete.')
+    next_work = board_work(store, ctx)
+    current = SERVICE.claim(replace(ctx, consented=True, session=None, nouns={
+        'work': next_work.id, 'role': 'facilitator', 'continue_from': facilitator['work_id']}))
+    current = SERVICE.bind(ctx, current['assignment_id'], SESSION)
+    SERVICE.returned(ctx, delivery['work_id'], 'Selected specialist result.')
+    packets = [one for one in SERVICE.pending(ctx, [current['work_id']])
+               if one['kind'] == 'send' and one['payload'].get('sender_assignment_id') == delivery['assignment_id']]
+    assert len(packets) == 1
+    envelope = packets[0]['payload']
+    assert envelope['return_to'] == {'session_id': SESSION, 'kind': 'pm'}
+    assert transport.actionable(ctx, envelope, session_id=SESSION, recipient=current)
+    assert not transport.actionable(ctx, envelope, session_id='different-session', recipient=current)

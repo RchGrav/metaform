@@ -340,7 +340,7 @@ def first_turn(prompt_id, text):
             with open(os.environ['FAKE_ACP_EDIT'], 'w', encoding='utf-8') as written:
                 written.write('changed by the fake agent\n')
         named = re.search(r'\b([0-9a-f]{32})\b', text)
-        work = named.group(1) if named else os.environ['FAKE_ACP_WORK']
+        work = os.environ.get('METAFORM_WORK') or (named.group(1) if named else os.environ['FAKE_ACP_WORK'])
         if os.environ.get('FAKE_ACP_RECORD'):  # a memory at that node first, written with the runner's identity
             entity = [{'name': 'fake finding', 'entityType': 'fact', 'observations': ['seen by the fake'],
                        'why': 'The next agent here needs it.'}]
@@ -426,7 +426,7 @@ def replacing_turn(prompt_id, number):
         pass
     if number == 1 and COMPACTION[0]:  # the agent compacts its context as its first turn ends, ACP's RFD
         for status in [one for one in os.environ.get('FAKE_ACP_COMPACT', '').split(',') if one]:
-            update({'sessionUpdate': 'compaction_update', 'status': status})
+            update({'sessionUpdate': 'compaction_update', 'compactionId': f'fake-compaction-{number}', 'status': status})
     with PROMPT_LOCK:
         if ACTIVE_PROMPT[0] == prompt_id:
             reason = 'cancelled' if CANCELLED.is_set() else 'end_turn'

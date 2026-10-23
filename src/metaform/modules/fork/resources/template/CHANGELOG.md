@@ -4,6 +4,12 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- Optional `agent.context.changes` providers supply compact changed-reference notices through `pending(ctx, session)`
+  and acknowledge exact accepted revisions through `delivered(ctx, session, notices)`. Dispatch attaches notices to
+  the next scheduled turn. Providers retain consumed identities and tombstones, coalesce relevant external changes,
+  suppress own/unrelated writes, and leave newer concurrent revisions pending. No extra turn, polling or body
+  broadcast is introduced. The template documents the contract without registering an inactive provider.
+
 - `DataTx.cleanup(kind, identity)` applies recorded removal rules in the current transaction, including absent owners.
 
 - `TableTx.rows_in(table, column, values, *, where=None, by=())` reads selected rows in index order as a tuple. The selected column and equal `where` columns must form a declared index's prefix. Repeated values are read once. Queries use at most 900 bindings, including `where`, and retain global index order across batches. Empty selections issue no SQL. This lets modules read children for selected records without scanning every child.

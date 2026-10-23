@@ -95,7 +95,8 @@ NOTE_LIMIT = 2048
 # 10, which notices and reads at two nodes passed back and forth, is dropped or made an index withdrawal. Version 9
 # reads and writes the tables as before.
 # Version 11 adds project-level apply receipts, integration metadata ignored by older writers.
-TABLES_VERSION = 11
+# Version 12 adds a coalescing next-turn reference queue. Canonical graph storage remains compatible.
+TABLES_VERSION = 12
 
 
 def _upgrade(tx: TableTx, found: int) -> None:
@@ -267,6 +268,11 @@ def _reaches(store: Store, address: str) -> bool:
     return layer in store.effective_selection(address).layers
 
 
+def visible_at(store: Store, address: str) -> bool:
+    """Public visibility predicate shared by functional reads and next-turn change references."""
+    return _reaches(store, address)
+
+
 # ------------------------------------------------------------------------------------------------ the graph
 
 @dataclass
@@ -380,6 +386,7 @@ class View:
     among them, so a relation across Addresses shows from both of its ends, CTX-025."""
     graph: Graph
     names: list[str]
+    entry_revision: Row | None = None
 
     @property
     def known(self) -> set[str]:
@@ -421,7 +428,7 @@ def _changed(ctx: Context, tx: TableTx, names: list[str], removed: list[Row] | N
             for row in tx.rows('joins', {'entity': name}, limit=0).results}
     if removed is None:
         delivery.remade(tx, names)
-    delivery.changed(tx, keys, removed, ctx.session)
+    delivery.changed(tx, keys, removed, ctx.session, affected=names)
 
 
 def _bodies(ctx: Context, graph: Graph, names: list[str]) -> list[Row]:
@@ -440,7 +447,10 @@ def _view(tx: TableTx, key: Key | None, checker: Checker | None = None,
         selected = set(names) if names is not None else None
         names = [name for name in joined if selected is None or name in selected]
     graph = Graph.read(tx, checker, names)
-    return View(graph, list(graph.entities))
+    revision = tx.get('entry_revisions', {'receiver': key.receiver, 'provider': key.provider}) if key else None
+    observed = ({'receiver': key.receiver, 'provider': key.provider,
+                 'revision': revision['revision'] if revision else ''} if key else None)
+    return View(graph, list(graph.entities), observed)
 
 
 def _by(ctx: Context) -> str | None:
@@ -1033,13 +1043,14 @@ def _read(ctx: Context, notices: list[dict[str, str]], names: list[str] | None =
 EMPTY: dict[str, list[Any]] = {'entities': [], 'relations': []}
 
 
-def _delivered(ctx: Context, whole: Row, key: Key | None = None) -> Row:
+def _delivered(ctx: Context, whole: Row, key: Key | None = None, *, entry_revision: Row | None = None) -> Row:
     """A canonical graph read records the exact bodies returned."""
     if ctx.session is None:
         return whole
     if key is None:
         key = _named(ctx.require_store(), ctx.nouns, [])
-    prepared = delivery.prepare(ctx, whole, (key.receiver, key.provider) if key else None)
+    prepared = delivery.prepare(ctx, whole, (key.receiver, key.provider) if key else None,
+                                entry_revision=entry_revision)
     if key is None:
         # An inspection by identity still encounters the returned memories through their functional indexes.
         # Keeping those entry points lets a later correction reach this reader without a global memory inbox.
@@ -1058,7 +1069,7 @@ def _delivered(ctx: Context, whole: Row, key: Key | None = None) -> Row:
 def read_graph(ctx: Context) -> Any:
     given = _Given(ctx)
     view = _read(ctx, given.notices)
-    return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole()))
+    return given.said(dict(EMPTY) if view is None else _delivered(ctx, view.whole(), entry_revision=view.entry_revision))
 
 
 def _index(ctx: Context, view: View, key: Key | None = None) -> Row:
@@ -1067,7 +1078,8 @@ def _index(ctx: Context, view: View, key: Key | None = None) -> Row:
         return {'entities': view.index(), 'relations': []}
     if key is None:
         key = _named(ctx.require_store(), ctx.nouns, [])
-    prepared = delivery.prepare(ctx, view.whole(), (key.receiver, key.provider) if key else None)
+    prepared = delivery.prepare(ctx, view.whole(), (key.receiver, key.provider) if key else None,
+                                entry_revision=view.entry_revision)
     _, unread, _ = delivery.counts(prepared)
     removed = [one for one in prepared['components'] if one['kind'] not in ('entities', 'relations')]
     result: Row = {'entities': view.index(unread), 'relations': []}
@@ -1100,7 +1112,7 @@ def search_nodes(ctx: Context) -> Any:
     chosen = [name for name in view.names
               if wanted in name.lower() or wanted in view.graph.entities[name]['entity_type'].lower()
               or any(wanted in one['content'].lower() for one in view.graph.observations.get(name, []))]
-    return given.said(_delivered(ctx, view.around(chosen)))
+    return given.said(_delivered(ctx, view.around(chosen), entry_revision=view.entry_revision))
 
 
 def open_nodes(ctx: Context) -> Any:
@@ -1109,7 +1121,8 @@ def open_nodes(ctx: Context) -> Any:
     view = _read(ctx, given.notices, names)
     if view is None:
         return given.said(dict(EMPTY))
-    return given.said(_delivered(ctx, view.around([name for name in view.names if name in names])))
+    return given.said(_delivered(ctx, view.around([name for name in view.names if name in names]),
+                                  entry_revision=view.entry_revision))
 
 
 # ------------------------------------------------------------------------------------------------ joins and notes
@@ -1159,7 +1172,7 @@ def join(ctx: Context) -> Any:
                        f'ask the person to unlock it: metaform memory unlock {json.dumps(name)}')
         number = _join(tx, name, key, _written(ctx))
         if number is not None:
-            delivery.changed(tx, {(key.receiver, key.provider)})
+            delivery.changed(tx, {(key.receiver, key.provider)}, writer=ctx.session, affected=[name])
     _layered(store)
     return given.said({'entity': name, **key.said(), 'joined': number is not None,
                        **({'item': reference(key.address, number)} if number is not None else {})})
@@ -1796,7 +1809,7 @@ MODULE = Module(
     node_count=node_count,
     provides=(Provides('memory.note', person_note), Provides('memory.prompt', memory_prompt),
               Provides('memory.record', record),
-              Provides('memory.revision', delivery.revision)),
+              Provides('memory.revision', delivery.revision), Provides('agent.context.changes', delivery.CHANGES)),
     item_read=item_read,
     items_at=items_at,
     item_kinds=('memory',),

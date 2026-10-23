@@ -53,14 +53,7 @@ If writing or interfacing with high-performance Python nodes:
 
 ## Bring your own judgment deeply grounded in project understanding.
 
-Let's work through this step-by-step:
-
-1. First, analyze how your decision will change the project.
-2. Then, Identify the key benefits this will have on its design.
-3. Next, Evaluate why its was how it was to begin with.
-4. Finally, name the actions and the rationale.
-
-For each step, explain your reasoning before moving to the next.
+Use the project's functional understanding and evidence to choose an appropriate approach. Communicate consequential decisions, findings and tradeoffs when they help the work or the user's understanding. Carry out ordinary implementation and verification without a prescribed narrative sequence.
 
 
 

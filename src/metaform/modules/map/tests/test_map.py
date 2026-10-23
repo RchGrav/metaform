@@ -2607,10 +2607,8 @@ def test_the_counts_tree_aligns_its_counts_and_caps_each_side(tmp_path, monkeypa
 
 
 @pytest.mark.req('MCP-039')
-def test_a_very_busy_node_is_summarized_within_the_node_summary_budget(tmp_path, monkeypatch):
-    """However busy a node is, what an agent is first given about it stays within node_summary_bytes: the node and the
-    first purpose it serves stay, the code paths and then the joins go first, and each kind left out is counted with
-    the call that reads it."""
+def test_busy_node_preserves_all_receiving_purposes_before_decorative_counts(tmp_path, monkeypatch):
+    """A display target must not hide a governing receiver merely because it was stored after another."""
     from metaform.data import Element, Held, Item, Join, LayerGroup, Ref, Where
     from metaform.module import Context, Count
     from metaform.modules import map as module
@@ -2635,12 +2633,15 @@ def test_a_very_busy_node_is_summarized_within_the_node_summary_budget(tmp_path,
                                                                                    range(30)))})
     monkeypatch.setattr(around, 'node_counts', lambda *args, **kwargs: {'memory': counted})
     told = module._oriented(Context(module='map', folder=tmp_path), found, Node('element', 'code.hub'))
-    assert len(json.dumps(told, ensure_ascii=False).encode('utf-8')) <= 2048
+    assert len(json.dumps(told, ensure_ascii=False).encode('utf-8')) > 2048
     assert told['element']['address'] == 'code.hub' and told['provides'][0]['receiver'] == 'code.user.n0'
-    assert '▶ code.hub  hub' in told['around'] and '5 memories · 1 new' in told['around']
+    assert 'around' not in told
+    assert len(told['provides']) == len(told['receives']) == 30
+    assert told['provides'][-1]['receiver'] == 'code.user.n29'
+    assert told['provides'][-1]['purpose'] == provides[-1].purpose
     assert any(line.endswith('source paths not shown: metaform map where address=code.hub contents=true')
                for line in told['more'])
-    assert '30 more joins it receives: metaform map joins element=code.hub' in told['more']
+    assert not any('joins' in line for line in told['more'])
 
 
 @pytest.mark.req('MAP-050')
@@ -2794,3 +2795,19 @@ def test_a_scoped_address_reads_what_one_layer_holds_there(run, kitchen):
     run('map', 'hide', 'sources', '--confirm', cwd=kitchen)
     hidden = code(run, kitchen, 'where', 'code.alarm.audible@sources', ok=False)
     assert 'resolves to nothing' in hidden.stdout + hidden.stderr
+
+
+def test_explicit_work_receiver_keeps_its_source_before_incidental_relationship_detail(tmp_path):
+    from types import SimpleNamespace
+
+    from metaform.module import Context
+    from metaform.modules.map import _fitted, _size
+
+    data = {'kind': 'element', 'element': {'address': 'code.hub'}, 'provides': [
+        {'receiver': 'receiver.first', 'purpose': 'An adjacent purpose.', 'sources': ['path=' + 'x' * 500]},
+        {'receiver': 'receiver.governing', 'purpose': 'The linked outcome.', 'sources': ['path=governing.py']}]}
+    result = _fitted(Context('map', tmp_path), SimpleNamespace(join=None), data, {}, _size(data) - 300,
+                     focus=('receiver.governing',))
+    assert result['provides'][-1]['sources'] == ['path=governing.py']
+    assert 'sources' not in result['provides'][0]
+    assert result['provides'][0]['purpose'] == 'An adjacent purpose.'

@@ -1,0 +1,2105 @@
+{
+  "assignment_snapshots": [
+    {
+      "assignment_id": "223b2485a4f2599d9e9d59e49f01c351",
+      "component_refs": [
+        "component-1",
+        "component-2",
+        "component-3"
+      ],
+      "role": "metaform://role/embedded_engine_module_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "043539a7972f41dfa475a04f61d1173c"
+    },
+    {
+      "assignment_id": "2a7ed77eac8a556e82c103f6d90f2682",
+      "component_refs": [
+        "component-4",
+        "component-5"
+      ],
+      "role": "metaform://role/functionality",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "9ac06b0e419b44a1b0cfe8351ef1e1a6"
+    },
+    {
+      "assignment_id": "39ce8818f6f358bcbb226a7b4e816b63",
+      "component_refs": [
+        "component-6",
+        "component-7"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "9a92128e6d1e4a95badd14f8a1426cb2"
+    },
+    {
+      "assignment_id": "3b11f423d2045048bc593e002b81e299",
+      "component_refs": [
+        "component-4",
+        "component-5"
+      ],
+      "role": "metaform://role/functionality",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "15f058a582904c0498009f22f5d26a4d"
+    },
+    {
+      "assignment_id": "3bdbcbecbc645bfc9a237c9f6bb06ad9",
+      "component_refs": [
+        "component-8",
+        "component-9"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "78a1d054c6474be38c3a76547ddebf94"
+    },
+    {
+      "assignment_id": "4377e257217757648073113af11f762b",
+      "component_refs": [
+        "component-4",
+        "component-10"
+      ],
+      "role": "metaform://role/agent_harness_integration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "1022a104d5004d00b7d0e0568070dbaf"
+    },
+    {
+      "assignment_id": "5ac223a3b1fa542aa71f6ee07f9ad28b",
+      "component_refs": [
+        "component-6",
+        "component-11"
+      ],
+      "role": "metaform://role/memory_query_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "912480bb4b3a4e02bd8fbef1e4c9adc7"
+    },
+    {
+      "assignment_id": "62afe3fb990d5e3bb09235881f9b8f30",
+      "component_refs": [
+        "component-8",
+        "component-9"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "9bee1354ea124a218af72ff0c5443155"
+    },
+    {
+      "assignment_id": "77f7fe493b6f5d559f091116480ee380",
+      "component_refs": [
+        "component-6",
+        "component-12"
+      ],
+      "role": "metaform://role/dispatch_lifecycle_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "1ceda899b8a744e090153fabed183aaa"
+    },
+    {
+      "assignment_id": "7e41f7cf34e1546085b72cd2bf97b1a1",
+      "component_refs": [
+        "component-4",
+        "component-5"
+      ],
+      "role": "metaform://role/functionality",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "a34084e07c9640788c13563a9e21efd3"
+    },
+    {
+      "assignment_id": "80f7b1de78bf4f989330c447cc5eb9d8",
+      "component_refs": [
+        "component-13",
+        "component-14"
+      ],
+      "role": "metaform://role/facilitator",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "6ca795576c404abc90c9c037681c0a76"
+    },
+    {
+      "assignment_id": "8234fed482ea5b1e8293ad36bdcddf07",
+      "component_refs": [],
+      "role": "metaform://role/gc",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "ae60390c17a746d8a6e4ef6adb2b7799"
+    },
+    {
+      "assignment_id": "92ab794baaa653c8b465dedc36dc90cb",
+      "component_refs": [
+        "component-15",
+        "component-16",
+        "component-17"
+      ],
+      "role": "metaform://role/instruction_maintenance_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "b05c2a94fc7147d7965a6a62b37e26d9"
+    },
+    {
+      "assignment_id": "9e059e533b195a2f808688bbd202a114",
+      "component_refs": [
+        "component-6",
+        "component-7"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "9bbafd8a75054d2cbf7ba7d81ef2e092"
+    },
+    {
+      "assignment_id": "a978c5f9243459bb903bb09d12222f40",
+      "component_refs": [],
+      "role": "metaform://role/gc",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "c8d2f74d2f464897bc41f741e27ae69e"
+    },
+    {
+      "assignment_id": "ab57f14b6c05469dbbf9ab111aa74a3a",
+      "component_refs": [
+        "component-1",
+        "component-18"
+      ],
+      "role": "metaform://role/facilitator",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "88cbad933bba43749384e05d929470c6"
+    },
+    {
+      "assignment_id": "b6984ceeb83d5040aad58c40f49a256a",
+      "component_refs": [
+        "component-6",
+        "component-19"
+      ],
+      "role": "metaform://role/onboarding_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "f9daf453e137486a91d688debaeaae70"
+    },
+    {
+      "assignment_id": "b78df62ba65d5540b1a1ace2ac55a239",
+      "component_refs": [
+        "component-4",
+        "component-5"
+      ],
+      "role": "metaform://role/functionality",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "b04b845862a843269dbd29a7dd28978e"
+    },
+    {
+      "assignment_id": "b8e32a5a74fe5b13a505ef7cbe8bbd34",
+      "component_refs": [
+        "component-6",
+        "component-20"
+      ],
+      "role": "metaform://role/agent_communication_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "dbe53514b8a14bbeb7ca1b86d2f2d0a3"
+    },
+    {
+      "assignment_id": "cd13ac77aa5c59819c38b1485bd53fc2",
+      "component_refs": [
+        "component-8",
+        "component-21"
+      ],
+      "role": "metaform://role/project_layer_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "27dedd453eb541c194cefab3a2f0c8bc"
+    },
+    {
+      "assignment_id": "cf9976b1498658789a09232b5a736759",
+      "component_refs": [
+        "component-6",
+        "component-7"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "68b181f4aa064ad8a04bc56c7e50551d"
+    },
+    {
+      "assignment_id": "dfd00aa99183577cae1a43bfb6f5c22f",
+      "component_refs": [
+        "component-22",
+        "component-9"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "returned",
+      "work_id": "975804376dc24f59800073e5e4342943"
+    },
+    {
+      "assignment_id": "fc6b9a74314b5ba8a2c9fba302053f86",
+      "component_refs": [
+        "component-8",
+        "component-9"
+      ],
+      "role": "metaform://role/dispatch_orchestration_engineer",
+      "snapshot_status": "historical pinned role snapshot, not rewritten",
+      "state": "delivered",
+      "work_id": "fbd90c51d2ec4ccdba371cca5bd7092a"
+    }
+  ],
+  "baseline": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+  "changed_components": [
+    {
+      "actual_version_id": "c7e1462ff06d466e8bacc31c8b1ebe78",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "after",
+        "component_name",
+        "fingerprint",
+        "version"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.agents:restore_context",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "192fc1218bfa356286388de915e47924a2908f8de2af9a752057d6b792eda657",
+      "selected": {
+        "id": "c7e1462ff06d466e8bacc31c8b1ebe78",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c",
+      "shipped_identity": "sha256:2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c",
+      "shipped_stored_fingerprint": "2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c",
+      "shipped_version": {
+        "id": "c7e1462ff06d466e8bacc31c8b1ebe78",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c"
+      },
+      "source_path": "src/metaform/modules/agents/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/agents/resources/prompts.xml",
+        "shipped_identity": "2ba1a3d76eae5ef957b1356574681331589857c296a743dc96bd65a54214cb2c",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "34a97ec0d5254dfd9042d8d3230cd203",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "who"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.dispatch:compacted",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "a04d1a5b44780421b331880870ed6ad46974abe62ce0a78f2a88793d4ac54335",
+      "selected": {
+        "id": "34a97ec0d5254dfd9042d8d3230cd203",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "1d22f3d18a9f4816b9d6ae53ad2d06f9",
+        "stored_fingerprint": "b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec",
+      "shipped_identity": "sha256:b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec",
+      "shipped_stored_fingerprint": "b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec",
+      "shipped_version": {
+        "id": "34a97ec0d5254dfd9042d8d3230cd203",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "1d22f3d18a9f4816b9d6ae53ad2d06f9",
+        "stored_fingerprint": "b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "b2e241661aab1a19b66ede07e8207ea68ca4f3b81d72f9525146e7343b6cdeec",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "17834699bc754e46b957be323ada77f4",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "key"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.dispatch:context_retention",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "d29698f03e97040de810f197072b3fbc92199c3129ddef49c0e587b526862fae",
+      "selected": {
+        "id": "17834699bc754e46b957be323ada77f4",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "7054d47ef7d4445f84a4becd41692f8c",
+        "stored_fingerprint": "15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1",
+      "shipped_identity": "sha256:15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1",
+      "shipped_stored_fingerprint": "15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1",
+      "shipped_version": {
+        "id": "17834699bc754e46b957be323ada77f4",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "7054d47ef7d4445f84a4becd41692f8c",
+        "stored_fingerprint": "15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "15877a33bea7af7d9caefa5490b4f4ac1d9acf1f94a35010df57d442351868d1",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "65657f31707b4f51aa8ea252288af99c",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "checkpoint"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.dispatch:context_checkpoint",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "9938cf3b11ad44de89272180a11c97c2efb005148d8a29da7e61711d25522ada",
+      "selected": {
+        "id": "65657f31707b4f51aa8ea252288af99c",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "1a9842adb3e3485cacb5a1571396da4f",
+        "stored_fingerprint": "ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e",
+      "shipped_identity": "sha256:ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e",
+      "shipped_stored_fingerprint": "ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e",
+      "shipped_version": {
+        "id": "65657f31707b4f51aa8ea252288af99c",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "1a9842adb3e3485cacb5a1571396da4f",
+        "stored_fingerprint": "ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "ab5b6ffc9d2316d71612b31d533eb5d90a6b477601b9e7f1a358c28e174f9f6e",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "315a7c0e522d4e70b2b8f3c0bd11d429",
+      "changed_from_baseline": "added",
+      "conflicts": [],
+      "declared_bindings": [
+        "contribution"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.dispatch:episode_delta",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "2ab945d8548684575d2465a514ae498e1d7993af6d3fb6f3afc42ba1751078cd",
+      "selected": {
+        "id": "315a7c0e522d4e70b2b8f3c0bd11d429",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98",
+      "shipped_identity": "sha256:30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98",
+      "shipped_stored_fingerprint": "30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98",
+      "shipped_version": {
+        "id": "315a7c0e522d4e70b2b8f3c0bd11d429",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "30c3f4bb3aa5d064fd102f8e574a5d771c211adab37bb90701b061a58e872e98",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "37485465472d4383be56d5985210827c",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "mascot"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [
+        {
+          "after_number": 4,
+          "after_version_id": "e22f7c5c03524b989b53d3031c578afb",
+          "before_number": 4,
+          "before_version_id": "e22f7c5c03524b989b53d3031c578afb",
+          "conflicts": [],
+          "migration_id": "gc-led-orchestration-2026-10-18:dispatch:system",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/dispatch/resources/prompts.xml"
+          },
+          "state": "shipped"
+        }
+      ],
+      "name": "prompt.dispatch:system",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "88800d3964f1dbe095d2b866547f131c7ed3e722555edda6e3c91706b9af4604",
+      "selected": {
+        "id": "37485465472d4383be56d5985210827c",
+        "number": 16,
+        "origin": "shipped",
+        "parent_id": "5ffef11138f74457b939620313200276",
+        "stored_fingerprint": "52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938",
+      "shipped_identity": "sha256:52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938",
+      "shipped_stored_fingerprint": "52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938",
+      "shipped_version": {
+        "id": "37485465472d4383be56d5985210827c",
+        "number": 16,
+        "origin": "shipped",
+        "parent_id": "5ffef11138f74457b939620313200276",
+        "stored_fingerprint": "52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "52396a86318762373bd74aed23d01729e6893bdfb43e96956a5ca84b39edb938",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "9a517d149ac84a8c950dbeccf26b1e26",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "brief"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.dispatch:helper",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "13bd0f318736292ae587724d4d291b6a7f71621ea76b904d0b6803653f080bba",
+      "selected": {
+        "id": "9a517d149ac84a8c950dbeccf26b1e26",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "d5fc6cbd61c2432e8a0e04710cce755c",
+        "stored_fingerprint": "e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111",
+      "shipped_identity": "sha256:e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111",
+      "shipped_stored_fingerprint": "e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111",
+      "shipped_version": {
+        "id": "9a517d149ac84a8c950dbeccf26b1e26",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "d5fc6cbd61c2432e8a0e04710cce755c",
+        "stored_fingerprint": "e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111"
+      },
+      "source_path": "src/metaform/modules/dispatch/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml",
+        "shipped_identity": "e9e21032d91b916bd999a5a6971f34afb13b76a32ff797a74b49f774a0685111",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "f0c4573f56d849ccb410c81ef246b128",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "add",
+        "mode",
+        "more",
+        "project",
+        "register",
+        "standard",
+        "terms"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.map:glossary",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "e13116c20dbe88491da6f501cc62dea76d69e16d70fae6fbdd33d80e21bca33a",
+      "selected": {
+        "id": "f0c4573f56d849ccb410c81ef246b128",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79",
+      "shipped_identity": "sha256:640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79",
+      "shipped_stored_fingerprint": "640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79",
+      "shipped_version": {
+        "id": "f0c4573f56d849ccb410c81ef246b128",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79"
+      },
+      "source_path": "src/metaform/modules/map/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/map/resources/prompts.xml",
+        "shipped_identity": "640c16d6a0146ebf4e9be99db54ad6cc6dd8e3099d564d71122fca3c1dffad79",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "0964509c8c104bc1972bc07ba7175f49",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.map:register_standard",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f",
+      "selected": {
+        "id": "0964509c8c104bc1972bc07ba7175f49",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f",
+      "shipped_identity": "sha256:69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f",
+      "shipped_stored_fingerprint": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f",
+      "shipped_version": {
+        "id": "0964509c8c104bc1972bc07ba7175f49",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f"
+      },
+      "source_path": "src/metaform/modules/map/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/map/resources/prompts.xml",
+        "shipped_identity": "69b08042e525edbbe961d188203c9a377d77949504f58c230362602c639e5a4f",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "003d77fcd5b04e0e80e024aabcf47285",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [
+        {
+          "after_number": 1,
+          "after_version_id": "fef599f8f7394cd2a178b34f7e314a11",
+          "before_number": 1,
+          "before_version_id": "fef599f8f7394cd2a178b34f7e314a11",
+          "conflicts": [],
+          "migration_id": "gc-led-orchestration-2026-10-18:mcp:connect_rules",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/mcp/resources/prompts.xml"
+          },
+          "state": "shipped"
+        }
+      ],
+      "name": "prompt.mcp:connect_rules",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e",
+      "selected": {
+        "id": "003d77fcd5b04e0e80e024aabcf47285",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "242e4317b1d548f88d292e5425665f66",
+        "stored_fingerprint": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e",
+      "shipped_identity": "sha256:a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e",
+      "shipped_stored_fingerprint": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e",
+      "shipped_version": {
+        "id": "003d77fcd5b04e0e80e024aabcf47285",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "242e4317b1d548f88d292e5425665f66",
+        "stored_fingerprint": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e"
+      },
+      "source_path": "src/metaform/modules/mcp/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/mcp/resources/prompts.xml",
+        "shipped_identity": "a902785da73733933ef27568347c1d009debae74f5b1efdcddb0b8608ccd435e",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "010e4275d002406f80f5b33f44a66c9a",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.mcp:triage_note",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2",
+      "selected": {
+        "id": "010e4275d002406f80f5b33f44a66c9a",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2",
+      "shipped_identity": "sha256:1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2",
+      "shipped_stored_fingerprint": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2",
+      "shipped_version": {
+        "id": "010e4275d002406f80f5b33f44a66c9a",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2"
+      },
+      "source_path": "src/metaform/modules/mcp/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/mcp/resources/prompts.xml",
+        "shipped_identity": "1d3000ca9d869f4a9fd2a8b2cb648a0103aa62401bf7ba42cd7f8f2431b817f2",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "ac7b93780da54f18a01fbc41e812adcd",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.memory:orient",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8",
+      "selected": {
+        "id": "ac7b93780da54f18a01fbc41e812adcd",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8",
+      "shipped_identity": "sha256:1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8",
+      "shipped_stored_fingerprint": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8",
+      "shipped_version": {
+        "id": "ac7b93780da54f18a01fbc41e812adcd",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8"
+      },
+      "source_path": "src/metaform/modules/memory/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/memory/resources/prompts.xml",
+        "shipped_identity": "1cf25c9d311ecdf15cef7f9a1dd1fdefaaa6bd39d19b8b37b0e6caaec4a25bb8",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "ee9ed3e917af47698533a1b98b8e3748",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "read_unread",
+        "unread"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [
+        {
+          "after_number": 1,
+          "after_version_id": "ee9ed3e917af47698533a1b98b8e3748",
+          "before_number": 1,
+          "before_version_id": "ee9ed3e917af47698533a1b98b8e3748",
+          "conflicts": [],
+          "migration_id": "gc-led-orchestration-2026-10-18:memory:counts",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/memory/resources/prompts.xml"
+          },
+          "state": "shipped"
+        }
+      ],
+      "name": "prompt.memory:counts",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "8e76bab2815daf2809df63a25ecca8fd0938000c096322adae9d96e8b4d4cdaa",
+      "selected": {
+        "id": "ee9ed3e917af47698533a1b98b8e3748",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca",
+      "shipped_identity": "sha256:873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca",
+      "shipped_stored_fingerprint": "873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca",
+      "shipped_version": {
+        "id": "ee9ed3e917af47698533a1b98b8e3748",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca"
+      },
+      "source_path": "src/metaform/modules/memory/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/memory/resources/prompts.xml",
+        "shipped_identity": "873852237d9eeca3eb1e8e3567746f3758ed9123e75f19b589833700887f71ca",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "87d1895007ca44d1b6ff54fcf92e66ab",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.memory:refine",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d",
+      "selected": {
+        "id": "87d1895007ca44d1b6ff54fcf92e66ab",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d",
+      "shipped_identity": "sha256:6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d",
+      "shipped_stored_fingerprint": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d",
+      "shipped_version": {
+        "id": "87d1895007ca44d1b6ff54fcf92e66ab",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d"
+      },
+      "source_path": "src/metaform/modules/memory/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/memory/resources/prompts.xml",
+        "shipped_identity": "6647d33ebdfb9e5d7687101bed586df4045691db6482709a5fb429e59ee0c66d",
+        "source_problem": null
+      }
+    },
+    {
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "delivered": false,
+      "delivery_path": "module declaration consumer; not a model delivery",
+      "name": "prompt.memory:rules",
+      "rendered_fingerprint": "3a0cac41809dce25588e3d24c4065853ef111b5ef7a54c2c351cb45bffc91524",
+      "selected": null,
+      "selection_surface": "shipped_declaration",
+      "shipped_fingerprint": "ab964890500e7be154abad85f9d2372dc9bbc3e73713280d0484a4932bbdf180",
+      "shipped_identity": "sha256:ab964890500e7be154abad85f9d2372dc9bbc3e73713280d0484a4932bbdf180",
+      "shipped_version": null,
+      "source_path": "src/metaform/modules/memory/resources/prompts.xml"
+    },
+    {
+      "actual_version_id": "993e3fa515544ce3819d835a4a08693a",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [
+        {
+          "after_number": 4,
+          "after_version_id": "57cfe094079342c681aa02d8ec71935a",
+          "before_number": 4,
+          "before_version_id": "57cfe094079342c681aa02d8ec71935a",
+          "conflicts": [],
+          "migration_id": "gc-led-orchestration-2026-10-18:memory:instructions",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/memory/resources/prompts.xml"
+          },
+          "state": "shipped"
+        },
+        {
+          "after_number": 1,
+          "after_version_id": "efd1d9311e914aa1b42bc60c1a93487e",
+          "before_number": 1,
+          "before_version_id": "efd1d9311e914aa1b42bc60c1a93487e",
+          "conflicts": [],
+          "migration_id": "gc-led-orchestration-2026-10-18:memory:instructions:08f42a7830d54925bd8b51d339832afb",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/memory/resources/prompts.xml"
+          },
+          "state": "shipped"
+        },
+        {
+          "after_number": 13,
+          "after_version_id": "993e3fa515544ce3819d835a4a08693a",
+          "before_number": 12,
+          "before_version_id": "3369079091864bf9803ff936e84c88b1",
+          "conflicts": [],
+          "migration_id": "acp-context-audit-2026-10-23:memory:instructions",
+          "source": {
+            "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+            "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+            "source": "src/metaform/modules/memory/resources/prompts.xml"
+          },
+          "state": "applied"
+        }
+      ],
+      "name": "prompt.memory:instructions",
+      "origin": "edited",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "15bd85bc2969f5630b3dcc99ecfc93fb068f479f88d302229e89871b90ed248c",
+      "selected": {
+        "id": "993e3fa515544ce3819d835a4a08693a",
+        "number": 13,
+        "origin": "edited",
+        "parent_id": "3369079091864bf9803ff936e84c88b1",
+        "stored_fingerprint": "15bd85bc2969f5630b3dcc99ecfc93fb068f479f88d302229e89871b90ed248c"
+      },
+      "selected_matches_shipped": false,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "8a0b21be7876862719ed17e5e748058fea52aee92817849aa171c1cf5ff99317",
+      "shipped_identity": "sha256:8a0b21be7876862719ed17e5e748058fea52aee92817849aa171c1cf5ff99317",
+      "shipped_stored_fingerprint": "8a0b21be7876862719ed17e5e748058fea52aee92817849aa171c1cf5ff99317",
+      "shipped_version": null,
+      "source_path": "src/metaform/modules/memory/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "selected_edit",
+        "path": "/home/rich/metaform/src/metaform/modules/memory/resources/prompts.xml",
+        "shipped_identity": "8a0b21be7876862719ed17e5e748058fea52aee92817849aa171c1cf5ff99317",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "fbbe4df634aa49d4adce826bede57b20",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:runtime_task",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3",
+      "selected": {
+        "id": "fbbe4df634aa49d4adce826bede57b20",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "6266857237cf40509e9e28443386b0a4",
+        "stored_fingerprint": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3",
+      "shipped_identity": "sha256:28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3",
+      "shipped_stored_fingerprint": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3",
+      "shipped_version": {
+        "id": "fbbe4df634aa49d4adce826bede57b20",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "6266857237cf40509e9e28443386b0a4",
+        "stored_fingerprint": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "28cc08b2d62e5b64c1e691f9eb68d0f3cdb3e4c4473baab7c0ee26a74f4ec5a3",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "c55416d83a4d4a38947ece506a461e2c",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:runtime_choice",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb",
+      "selected": {
+        "id": "c55416d83a4d4a38947ece506a461e2c",
+        "number": 3,
+        "origin": "shipped",
+        "parent_id": "f3400d17e64749659e701e412de22f99",
+        "stored_fingerprint": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb",
+      "shipped_identity": "sha256:1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb",
+      "shipped_stored_fingerprint": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb",
+      "shipped_version": {
+        "id": "c55416d83a4d4a38947ece506a461e2c",
+        "number": 3,
+        "origin": "shipped",
+        "parent_id": "f3400d17e64749659e701e412de22f99",
+        "stored_fingerprint": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "1db4b36b42d65fbe6a594f6aab514537ee71ba379fba890c5a78c850c86470fb",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "dc9868b10a0e4d789edc17426a7313b0",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [
+        "work"
+      ],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:runtime_plan",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "4f6c89b84a9242c1f927753b24d996c5b23485e6e0bb7144e56f48d695383889",
+      "selected": {
+        "id": "dc9868b10a0e4d789edc17426a7313b0",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "cff6196a52a941789a6b27307f9043a8",
+        "stored_fingerprint": "4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89",
+      "shipped_identity": "sha256:4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89",
+      "shipped_stored_fingerprint": "4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89",
+      "shipped_version": {
+        "id": "dc9868b10a0e4d789edc17426a7313b0",
+        "number": 2,
+        "origin": "shipped",
+        "parent_id": "cff6196a52a941789a6b27307f9043a8",
+        "stored_fingerprint": "4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "4d41247f7233713f99641b13b8179840ee5b1892151bd423e0830adb726f5c89",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:common",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "selected": {
+        "id": "d7bc20561e814e8da4d64d44b21b568c",
+        "number": 13,
+        "origin": "shipped",
+        "parent_id": "29983e89325e49efa7ed2130b56a2f45",
+        "stored_fingerprint": "5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a",
+      "shipped_identity": "sha256:5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a",
+      "shipped_stored_fingerprint": "5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a",
+      "shipped_version": {
+        "id": "d7bc20561e814e8da4d64d44b21b568c",
+        "number": 13,
+        "origin": "shipped",
+        "parent_id": "29983e89325e49efa7ed2130b56a2f45",
+        "stored_fingerprint": "5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "5db6b980eaf58c9aea65d0f2da3d64a310bb3de5cf8994d277e041aca792576a",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "9c1c7d3d8e1043fb88c4ab5f0cd5c0f5",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:functionality",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+      "selected": {
+        "id": "9c1c7d3d8e1043fb88c4ab5f0cd5c0f5",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "f46690260b934499b5a666d8323856b4",
+        "stored_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+      "shipped_identity": "sha256:e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+      "shipped_stored_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+      "shipped_version": {
+        "id": "9c1c7d3d8e1043fb88c4ab5f0cd5c0f5",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "f46690260b934499b5a666d8323856b4",
+        "stored_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "36e4598d80214922832eb40edfb7d300",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:requirements",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e",
+      "selected": {
+        "id": "36e4598d80214922832eb40edfb7d300",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e",
+      "shipped_identity": "sha256:6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e",
+      "shipped_stored_fingerprint": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e",
+      "shipped_version": {
+        "id": "36e4598d80214922832eb40edfb7d300",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "6172267b35508fd699001585209a5ffcba8d3c325c8624e2fc6ed7bc1e54754e",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "f9944018d6ac480c862d79b5dcfb397f",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:planner",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f",
+      "selected": {
+        "id": "f9944018d6ac480c862d79b5dcfb397f",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "7aff5e5d1322446fa0bb481a521cf7af",
+        "stored_fingerprint": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f",
+      "shipped_identity": "sha256:1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f",
+      "shipped_stored_fingerprint": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f",
+      "shipped_version": {
+        "id": "f9944018d6ac480c862d79b5dcfb397f",
+        "number": 4,
+        "origin": "shipped",
+        "parent_id": "7aff5e5d1322446fa0bb481a521cf7af",
+        "stored_fingerprint": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "1264e35ad7ac80f993d734170545cece63ab4f4b5348e74f525ba31e2b7e571f",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "554ca71dd05f4e9ca2ad75db6dc64d0b",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:verifier",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930",
+      "selected": {
+        "id": "554ca71dd05f4e9ca2ad75db6dc64d0b",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930",
+      "shipped_identity": "sha256:5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930",
+      "shipped_stored_fingerprint": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930",
+      "shipped_version": {
+        "id": "554ca71dd05f4e9ca2ad75db6dc64d0b",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "5ac5b315053e45bd321e47cc3015351861151295460624b6da8e4206bd128930",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "eedc6d38424b42d7a54bd40f6960e682",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:reviewer",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4",
+      "selected": {
+        "id": "eedc6d38424b42d7a54bd40f6960e682",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4",
+      "shipped_identity": "sha256:30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4",
+      "shipped_stored_fingerprint": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4",
+      "shipped_version": {
+        "id": "eedc6d38424b42d7a54bd40f6960e682",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "30ea02df630b780e3413c84f90cb4ca2bc8c857e121ce72d70abe0feef5410a4",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "95764a0ff57d4c18b26e6f1e769dec6d",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:harsh_critic",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71",
+      "selected": {
+        "id": "95764a0ff57d4c18b26e6f1e769dec6d",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71",
+      "shipped_identity": "sha256:b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71",
+      "shipped_stored_fingerprint": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71",
+      "shipped_version": {
+        "id": "95764a0ff57d4c18b26e6f1e769dec6d",
+        "number": 1,
+        "origin": "shipped",
+        "parent_id": null,
+        "stored_fingerprint": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "b1686cf4ec87bdeead7178afe8c2b01684cd53f51d9873bb197b67aa529bdc71",
+        "source_problem": null
+      }
+    },
+    {
+      "actual_version_id": "3e340ad6747344aba5c9f0b446a5fccc",
+      "changed_from_baseline": "modified",
+      "conflicts": [],
+      "declared_bindings": [],
+      "delivered": false,
+      "delivery_path": "source resolved locally; no model turn sent",
+      "migrations": [],
+      "name": "prompt.orchestration:role_creator",
+      "origin": "shipped",
+      "problems": [],
+      "render_bindings": "diagnostic placeholder values, not a task-specific payload",
+      "rendered_fingerprint": "ee1085cd5e6e8f07d1a5267020b4fe515559da41e55bc807a2d45ece41029e55",
+      "selected": {
+        "id": "3e340ad6747344aba5c9f0b446a5fccc",
+        "number": 9,
+        "origin": "shipped",
+        "parent_id": "20f1243f67f74c658e45ed5ded7e2e00",
+        "stored_fingerprint": "b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d"
+      },
+      "selected_matches_shipped": true,
+      "selection_surface": "prompt_store",
+      "shipped_fingerprint": "b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d",
+      "shipped_identity": "sha256:b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d",
+      "shipped_stored_fingerprint": "b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d",
+      "shipped_version": {
+        "id": "3e340ad6747344aba5c9f0b446a5fccc",
+        "number": 9,
+        "origin": "shipped",
+        "parent_id": "20f1243f67f74c658e45ed5ded7e2e00",
+        "stored_fingerprint": "b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d"
+      },
+      "source_path": "src/metaform/modules/orchestration/resources/prompts.xml",
+      "source_resolution": {
+        "kind": "shipped",
+        "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+        "shipped_identity": "b473d56e3cf5a892b3254524be197097c4bbcbd65a7452613e5030d46a81622d",
+        "source_problem": null
+      }
+    }
+  ],
+  "generated_duty_audit": {
+    "action": "Preserved every bespoke generated duty without rewriting it.",
+    "checked": 55,
+    "entries": [
+      {
+        "fingerprint": "0995092f6006fdade1f6e110233cfbca84bf4a9e1cdeba13b3bb3082ac4734de",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_acceptance_qualification_engineer",
+        "number": 1,
+        "version_id": "4a4784003c584230b436c2466e16a06e"
+      },
+      {
+        "fingerprint": "1078c8cb1e5cbc62fe5b4ca4a1473edb98d8790915787586c5ae41301f222b2d",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_browser_world_player_engineer",
+        "number": 1,
+        "version_id": "1cb868698a034504a7b48bc8f527dcd2"
+      },
+      {
+        "fingerprint": "0966449cd25ce1dbaf34eedc7ec1d523cafb4255569977b93677c60e81b3e80f",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_deterministic_physics_runtime_engineer",
+        "number": 1,
+        "version_id": "f10111600a28476cb1e9bb0bbde552a4"
+      },
+      {
+        "fingerprint": "372393851342e69e344a18624d794fa80ba6d6a3103a7baaeefc7a85da79c277",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_linux_sandbox_engineer",
+        "number": 1,
+        "version_id": "81776377d1b94b50a245fd06ac47de3f"
+      },
+      {
+        "fingerprint": "f17a78da5999b1a22e10675a8705393e04b1f6edc44dfaba714abc5bc8be7b15",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_local_deployment_engineer",
+        "number": 1,
+        "version_id": "ad314924de1c4eb0ac75946d86f76f41"
+      },
+      {
+        "fingerprint": "d1210e96334839c0744fd8c64408044e7ae884edc73b16b6cfde615866df3b80",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_mcp_projection_engineer",
+        "number": 1,
+        "version_id": "65fdb1fd925646cfab3cbb4dfdd4360c"
+      },
+      {
+        "fingerprint": "f44dc4b36edd75120fd50e6dbf40941589cf1047763d8af88f83036990849333",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_metaform_module_engineer",
+        "number": 1,
+        "version_id": "4915ac03fcbf4b32977f883b1743fa61"
+      },
+      {
+        "fingerprint": "476d260c94cc0f8f218d85a1cf3424a234128ede7619b9c385b4652c37e65983",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_plan_board_decomposer",
+        "number": 1,
+        "version_id": "721ba61b216947da8cfe9572e26edbd3"
+      },
+      {
+        "fingerprint": "4bccb5a104759af7266b012178a48bf86742545c39b3a67fc23e789fdc5b1939",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_rapier_motion_certification_engineer",
+        "number": 1,
+        "version_id": "4a72a8fc9c844aa19426565f7288c9c5"
+      },
+      {
+        "fingerprint": "13a3a5df064186903d5afb73dd4c5079ae62443437c41b03526d2287a9009a6a",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_realtime_protocol_client_engineer",
+        "number": 1,
+        "version_id": "0d784fbe3972422db64892ffb2dec4d7"
+      },
+      {
+        "fingerprint": "8dff41fcbebb8e026a4d2c9e9e2d25148639bcf6637e12e42d8e5b179e22c169",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_scene_service_engineer",
+        "number": 1,
+        "version_id": "76eaaeb7665c420494c7780af38cd090"
+      },
+      {
+        "fingerprint": "71b068efa821982fde4566a6063ad2facf583c63b468172fb0ac0b5bf7977055",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_sqlite_storage_engineer",
+        "number": 1,
+        "version_id": "6575d440db3d4cf6bd8ab1b133e93045"
+      },
+      {
+        "fingerprint": "807607f2d230230e2b37d50da51fc6e8e356effd188b4caaa43cfd44497f885e",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_three_render_engineer",
+        "number": 1,
+        "version_id": "6592e12d8cf74914827de8eef772c5de"
+      },
+      {
+        "fingerprint": "76760b91e7a9412ae14bbc9856310fcf2eb7ed17461df4482ae8a4557e6818c1",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_wire_contract_engineer",
+        "number": 1,
+        "version_id": "dfdeb9c24f7348dfbb324653a05e195e"
+      },
+      {
+        "fingerprint": "d36c0b2245a3674211dfd00e45bfdece45e5004f8b117b2f93c79e0c509bdcce",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_workspace_toolchain_engineer",
+        "number": 1,
+        "version_id": "1223d20bef8545bbbebc03f2973d3bc9"
+      },
+      {
+        "fingerprint": "c4e18be99e4f597d5a1d8371b2da85b7adb2976c204f2d2e0f8d2c9573e0f7c6",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_continuum-world_world_model_engineer",
+        "number": 1,
+        "version_id": "4e260808654241d3bfd9a11786d722e2"
+      },
+      {
+        "fingerprint": "f3a1d92487aab299981a1800ad9f246e6c97928f57a38003c2b8d19591cf6d23",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_agent_communication_engineer",
+        "number": 1,
+        "version_id": "4c16f015910a4ee2bfa5c3118c4b4253"
+      },
+      {
+        "fingerprint": "bc80559ceadb734e6be65727d0ebaaa47f4cac308d023d6ff111990b382c5cef",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_agent_harness_integration_engineer",
+        "number": 1,
+        "version_id": "63347da6052e4dba806b59a8db81f22e"
+      },
+      {
+        "fingerprint": "039454f9312c12b4df24b96ac587feb1178a9ad311178ede1466fa108200b5fc",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_async_event_worker_engineer",
+        "number": 1,
+        "version_id": "f0a0c1eabe3549bfafcb24749dd6a474"
+      },
+      {
+        "fingerprint": "5bd642b198baf046412eb7af4edcea6309c36072065f1c901bd522a8f07a76bb",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_async_transport_engineer",
+        "number": 1,
+        "version_id": "9b0b43110d5e4436a2d9dd69480f6b58"
+      },
+      {
+        "fingerprint": "1710e8ec9de082c60c0f707a36ad0e4f98fbea0222aafd9950cfabffc5f0b0b6",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_browser_performance_engineer",
+        "number": 1,
+        "version_id": "578db3c3aa384e89942ba9f493c1222d"
+      },
+      {
+        "fingerprint": "4756a1d71d87b5790a4a944b71476700306a6f543a9fdc28571ac22f87686de5",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_cache_invalidation_engineer",
+        "number": 1,
+        "version_id": "38df362969644b6c95b9291aa346dcaf"
+      },
+      {
+        "fingerprint": "b05c4931692a59f58af5e13fed8441714aa68f9d8a81bb4965cd7e212e428d79",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_character_motion_engineer",
+        "number": 1,
+        "version_id": "11b7c6a494b245bfb73827bd5c24b128"
+      },
+      {
+        "fingerprint": "909ba7cc6b72a1396b506c73f77a5ff12f2641d94c6886c5a21daa4cd4d02b87",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_context_delivery_engineer",
+        "number": 1,
+        "version_id": "2d33b1bd02d9469f80289c256b1a2fed"
+      },
+      {
+        "fingerprint": "7e4a72fc080b13f393c0379edac755910194f3febb7b6bd21ef3d539f23e21c0",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_data_migration_engineer",
+        "number": 1,
+        "version_id": "aaf3b6da3ce449c488ed9ac07a494303"
+      },
+      {
+        "fingerprint": "73ae1dd2649c26300ed3602bdfd68a0b14e6baefc9a5d6083ca917371fe52939",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_dispatch_lifecycle_engineer",
+        "number": 1,
+        "version_id": "f6f7b5983e7e4be4abdd501b6eb118dd"
+      },
+      {
+        "fingerprint": "b3c53cf10dd35c6665b99553fafda8a0ec89104c1b73f9a8d4483edbae01edda",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_dispatch_orchestration_engineer",
+        "number": 2,
+        "version_id": "c39fb73ca3e44a43a54541d5fe5e8647"
+      },
+      {
+        "fingerprint": "5ed554e29a7d98b9ba648ad4c696ffc516280ac9ac7c6c3f7b595245d2556591",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_embedded_engine_module_engineer",
+        "number": 1,
+        "version_id": "6484f49f62aa4bc5ab42cd81ddcee5d1"
+      },
+      {
+        "fingerprint": "b626fcca7940848e7aafca2c84711f391b93477da8500b03a542f2b8244f8273",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_event_store_engineer",
+        "number": 1,
+        "version_id": "f9d3d61973be43c2aaf5f7a0365f9631"
+      },
+      {
+        "fingerprint": "ad7c0fd00cd22ab6494b4b20f8bb7d2460e325a3a58d4db9b6a1d163ee95e85b",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_event_stream_engineer",
+        "number": 1,
+        "version_id": "0b7a491b4d1f430cbc54d1dba5320570"
+      },
+      {
+        "fingerprint": "c8694a4baafb5e8c7c4f1ada10674402e2ca0b96b7e89bce2e441ca01289c223",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_instruction_maintenance_engineer",
+        "number": 1,
+        "version_id": "d0951737f4f64950a5a55b06640d8b62"
+      },
+      {
+        "fingerprint": "c204a53488d2655494e61ab5722ce8b1710a7e30c9bd10619a71bee62a0dc73c",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_interactive_world_architect",
+        "number": 1,
+        "version_id": "f8adb76d26bc41a6971ddf17cf2d6563"
+      },
+      {
+        "fingerprint": "586860d6c9cd9db063eaf62f1b7a0db3410ad8390c317e00c6a1f5bb9159d562",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_keyboard_navigation_engineer",
+        "number": 1,
+        "version_id": "3fd89db05b334089a150c4693b2ffdf0"
+      },
+      {
+        "fingerprint": "3dc21550ef13654c4b3ab1153192c0dd7182b6879ad5ccd6b4e4cf114269701b",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_mcp_integration_engineer",
+        "number": 1,
+        "version_id": "af0fb9b879b34b32bef871fc5e144eec"
+      },
+      {
+        "fingerprint": "33c0556a0fceecb5c5a475733f8709eeb332608169bbbc5ccccbab0d51839c47",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_memory_query_engineer",
+        "number": 2,
+        "version_id": "1b5732895fd6436c8e92c2d7ab2e2a0e"
+      },
+      {
+        "fingerprint": "49f1b1b1ac3695f45f1a8388009ac8fe97ff8a65ab6f405097d6cca07ccad43e",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_module_lifecycle_engineer",
+        "number": 1,
+        "version_id": "842b7049f96643628606a12502dae145"
+      },
+      {
+        "fingerprint": "a7aeab8dab06bcb4f610bcb4c05bd9b20133b1557788daea10956990164583cd",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_onboarding_engineer",
+        "number": 1,
+        "version_id": "da355dbc84774757a7326381ff7fbec2"
+      },
+      {
+        "fingerprint": "90ede9d13bf1560d6475e4e8a39b78c2a38baa9a9424af848e3c686039ee88ee",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_person_interaction_engineer",
+        "number": 1,
+        "version_id": "c00a213fd2b44226a3f1ad376bcb2f1c"
+      },
+      {
+        "fingerprint": "97f6035fd8d3864ba14d769662af0b4b2cea911af29cb5ccd370d9cb4558103c",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_procedural_environment_engineer",
+        "number": 1,
+        "version_id": "19415a56851841bb9cd22f886c672697"
+      },
+      {
+        "fingerprint": "135fbbbefdc623d3bb0619e102e1d7118fbbfc57eeae6557a75ae47ece0554ff",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_project_layer_engineer",
+        "number": 1,
+        "version_id": "e3e4ff88661d46afaf0c354dea614e88"
+      },
+      {
+        "fingerprint": "5a260f5fab9eac1a9737a236e526962d2f2f17383312478e365a7962be4f6271",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_python_environment_engineer",
+        "number": 1,
+        "version_id": "724ce604bfde4740b338b50725a619f5"
+      },
+      {
+        "fingerprint": "51a8067628a1dfd3f24b2f3fc62d4de76fa5e4ec58cb78cef10fb7d6397dc27e",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_python_packaging_engineer",
+        "number": 1,
+        "version_id": "7e5744ea44794d6fbe7010687c183f11"
+      },
+      {
+        "fingerprint": "24b5de62d74bae32a879922e6fe82449f9b9fe4c65f87043ad6a49be2c6f3c27",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_python_quality_engineer",
+        "number": 1,
+        "version_id": "7008472dd0d4495e864cf418cf273a03"
+      },
+      {
+        "fingerprint": "46c99ac168ceb6ac842b08978fc00a4daac211c90c0eb06401f93f651f5100ed",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_spatial_ui_engineer",
+        "number": 1,
+        "version_id": "21471138d29642879b8a5be5c15981b8"
+      },
+      {
+        "fingerprint": "e99b096354e2559c8fea33ef6cd861b6033b63c93e4a3b8f6bb886fdc1ba40cb",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_specification_reconciliation_engineer",
+        "number": 1,
+        "version_id": "8b35ea1d4fa84d8ebe7d4cd637c7a158"
+      },
+      {
+        "fingerprint": "038c1515399534f24a88cbccdfcc0116cbd485ca441dbc426fc51c2692a4c04f",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_sql_projection_engineer",
+        "number": 1,
+        "version_id": "3984a0cda4394c8088fca200476a4e12"
+      },
+      {
+        "fingerprint": "58c04547a64d0929078552f5940a12b83ba2a14cb1f9f9fd68e9b773e2768989",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_sqlite_concurrency_engineer",
+        "number": 1,
+        "version_id": "f96f906897664c47ac2c180627908cfa"
+      },
+      {
+        "fingerprint": "2be66d28b7989a2a9d08a2c4a9463eedb7c7833dc4d023a85a2e192bd657de00",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_system_reliability_engineer",
+        "number": 1,
+        "version_id": "a218b91b38d442148452388f4242922a"
+      },
+      {
+        "fingerprint": "885ff086437a3ba4d73c9693b6468f0918b6732a96e5f4abc3fa4a81e60c9c4d",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_web_authorization_engineer",
+        "number": 1,
+        "version_id": "d380fd0dc8af4b9e927e4f84cc9bcac0"
+      },
+      {
+        "fingerprint": "184a84484e0b19332aef6b095c9e75a0c8756c3a2a074d2e11bf63309b4d5465",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_web_credential_security_engineer",
+        "number": 1,
+        "version_id": "80288e7d90e4488aaf49f37b9b0e8655"
+      },
+      {
+        "fingerprint": "849d64dc86d021862351a509f918bc275b0342ea3a808339600865ddab1f66ae",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_web_runtime_engineer",
+        "number": 1,
+        "version_id": "e3de774a0ffb483b91578e9ff47a95b1"
+      },
+      {
+        "fingerprint": "aa9cbb4fac7703cface830576b5d2c5a95c34d3d8f5a120247268137e8552355",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_web_settings_engineer",
+        "number": 1,
+        "version_id": "6959f58e8b164e08ab7d3e21740b05b0"
+      },
+      {
+        "fingerprint": "26edae41a62571d5c3caaf681332a01a5a50efbb63828687f5ac8c8cc6042122",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_web_state_engineer",
+        "number": 1,
+        "version_id": "a3f6b8b2f1bf4daf8d8f14a15bfe789b"
+      },
+      {
+        "fingerprint": "780e0931ee00e16231cf2d926cda247942ad8fc2ee1b2840d89b6740ae5273e0",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_webgl_rendering_engineer",
+        "number": 1,
+        "version_id": "7d8c3bc247b2459f8c1776d8e77c1185"
+      },
+      {
+        "fingerprint": "2f613c5064e2133afcc59c781921dedb082ac50d24487dc9495416a041eeffdf",
+        "matched_contradiction_patterns": [],
+        "name": "prompt.agents:generated_metaform_work_board_engineer",
+        "number": 1,
+        "version_id": "3f4e35b4b0214632a2ef6d843c55760b"
+      }
+    ],
+    "method": "exact supplied contradiction phrase search; absence does not prove complete semantic review"
+  },
+  "memory_migration_metadata_history": {
+    "after_version_id": "993e3fa515544ce3819d835a4a08693a",
+    "before_version_id": "3369079091864bf9803ff936e84c88b1",
+    "current_manifest_source": {
+      "baseline": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+      "reviewed_baseline": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+      "source": "src/metaform/modules/memory/resources/prompts.xml"
+    },
+    "observation": "live migration was recorded before per-entry metadata correction; historical evidence retained",
+    "recorded_source": {
+      "baseline": "10e2984ea36231b474b197e30661712ff45e3765",
+      "reviewed_baseline": "eea0d1678bb9e8a4369d46380a65613379871176",
+      "source": "src/metaform/modules/memory/resources/prompts.xml"
+    }
+  },
+  "memory_selected_merge_verification": {
+    "after_version_id": "993e3fa515544ce3819d835a4a08693a",
+    "anchors": [
+      {
+        "new_after": 1,
+        "new_before": 0,
+        "new_fingerprint": "c61fc802828ecc6805c5e663d9139e4fbb2d2dbfeefc0679f12f6e2fe7037b5f",
+        "old_after": 0,
+        "old_before": 1,
+        "old_fingerprint": "9d2b0ba310b2305c9c8d59b8d9148d9e37f1a405d247517c8b19ca47ad638796"
+      },
+      {
+        "new_after": 1,
+        "new_before": 0,
+        "new_fingerprint": "05790096d68abb7d89f858d10bc8e4f46d4e335f8b05bce73bbf67e24bdc600b",
+        "old_after": 0,
+        "old_before": 1,
+        "old_fingerprint": "86ea91d7df49e2bf13708a7a2696899ffe3ec59276d1e4b7d3e610fe8d14635c"
+      }
+    ],
+    "before_version_id": "3369079091864bf9803ff936e84c88b1",
+    "migration_id": "acp-context-audit-2026-10-23:memory:instructions",
+    "unrelated_authored_text_preserved": true
+  },
+  "native_instructions": {
+    "internal_instructions": "unknown",
+    "loaded_sources": "unknown",
+    "sources": [
+      {
+        "fingerprint": "2cdb77a1eae00a441517e644647b70127ad83cc187a73c570d03d2c631ab48e1",
+        "path": "/home/rich/.codex/AGENTS.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "2b5886d4ed87e64316d348cd460dae17046c3159a6e5846b06a47a20748d1340",
+        "path": "/home/rich/.gemini/GEMINI.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "a9d5acc92c787e6111fe70fa8c228a008952e813f322acbfa5f151397bf16cf9",
+        "path": "/home/rich/AGENTS.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "14fc77683b51850486babb3b0bdc43283c6c17ce0f251c400b9985a93ddbbf75",
+        "path": "/home/rich/CLAUDE.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "493e54b4c74c5caba543954c6b48dad1b0cc013622cfd7ff3ef595a2dd1e6208",
+        "path": "/home/rich/metaform/.claude/agents/critic.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "2b872df2772f9a7f579cb7b7b0f69aca0834375de373d83492d5b6e1a9494421",
+        "path": "/home/rich/metaform/.claude/agents/mcp-context-expert.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "ed73c1b963af6c69bc556645b07560110270abbec9ce92a55e22fb4ba39e223c",
+        "path": "/home/rich/metaform/AGENTS.md",
+        "status": "discovered_not_confirmed_loaded"
+      },
+      {
+        "fingerprint": "ab760ffc4614a02182d65c1d439dc89342632ed4b5cab82cabca6c9150f6fb6c",
+        "path": "/home/rich/metaform/CLAUDE.md",
+        "status": "discovered_not_confirmed_loaded"
+      }
+    ]
+  },
+  "observed_at": "2026-10-23T04:42:26Z",
+  "project": "metaform",
+  "prompt_store": "/home/rich/.metaform/prompts.sqlite3",
+  "rendering": "Declared placeholders bound to diagnostic {name} markers for changed source components; snapshot comparisons use unbound source resolution.",
+  "resolution_errors": [],
+  "scope": "Current local source/store resolution. No model invocations, session starts or delivery claims.",
+  "snapshot_components": [
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-1",
+      "name": "prompt.orchestration:common",
+      "pinned_fingerprint": "77a2b5babf318f45216f8f0025983f3b063cd6636e8f6075a1969f7adbd70c6a",
+      "pinned_version_id": "29983e89325e49efa7ed2130b56a2f45",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "99d8d237f29a73de407cfda9f68d14a5a2635ccb2d9c588347f91e958305665d",
+      "current_version_id": "da980e4bb38546eb8c0ced4ce56e7f6b",
+      "identity": "component-2",
+      "name": "prompt.orchestration:specialist",
+      "pinned_fingerprint": "99d8d237f29a73de407cfda9f68d14a5a2635ccb2d9c588347f91e958305665d",
+      "pinned_version_id": "da980e4bb38546eb8c0ced4ce56e7f6b",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "5ed554e29a7d98b9ba648ad4c696ffc516280ac9ac7c6c3f7b595245d2556591",
+      "current_version_id": "6484f49f62aa4bc5ab42cd81ddcee5d1",
+      "identity": "component-3",
+      "name": "prompt.agents:generated_metaform_embedded_engine_module_engineer",
+      "pinned_fingerprint": "5ed554e29a7d98b9ba648ad4c696ffc516280ac9ac7c6c3f7b595245d2556591",
+      "pinned_version_id": "6484f49f62aa4bc5ab42cd81ddcee5d1",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-4",
+      "name": "prompt.orchestration:common",
+      "pinned_fingerprint": "3fb4af10e9dd9c24e261cf16abfdf0b0edd12ee58ca445d8651de97eafed36fa",
+      "pinned_version_id": "9516960cb4c94a6186667442d4e3d47a",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "e41606f2b523ac2465b3595682107f7d448966d152211e5708c094075c7cbb6b",
+      "current_version_id": "9c1c7d3d8e1043fb88c4ab5f0cd5c0f5",
+      "identity": "component-5",
+      "name": "prompt.orchestration:functionality",
+      "pinned_fingerprint": "082742bc89a7b0a1fa6b964a48be935cb1900dc8f6d6e08766c0670bca0070e3",
+      "pinned_version_id": "f46690260b934499b5a666d8323856b4",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-6",
+      "name": "orchestration:common",
+      "pinned_fingerprint": "3fb4af10e9dd9c24e261cf16abfdf0b0edd12ee58ca445d8651de97eafed36fa",
+      "pinned_version_id": "9516960cb4c94a6186667442d4e3d47a",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "b3c53cf10dd35c6665b99553fafda8a0ec89104c1b73f9a8d4483edbae01edda",
+      "current_version_id": "c39fb73ca3e44a43a54541d5fe5e8647",
+      "identity": "component-7",
+      "name": "agents:generated_metaform_dispatch_orchestration_engineer",
+      "pinned_fingerprint": "b3c53cf10dd35c6665b99553fafda8a0ec89104c1b73f9a8d4483edbae01edda",
+      "pinned_version_id": "c39fb73ca3e44a43a54541d5fe5e8647",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-8",
+      "name": "orchestration:common",
+      "pinned_fingerprint": "2c903d13c576808ce614c3ed1e11324bd23b6669473d5351241d2e1498764e31",
+      "pinned_version_id": "efeb8a3c1c0e4b709e0e7b04110336d5",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "b3c53cf10dd35c6665b99553fafda8a0ec89104c1b73f9a8d4483edbae01edda",
+      "current_version_id": "c39fb73ca3e44a43a54541d5fe5e8647",
+      "identity": "component-9",
+      "name": "agents:generated_metaform_dispatch_orchestration_engineer",
+      "pinned_fingerprint": "813c1a384a4f211b84c3c5f6446945020c018b0e6518c35d22fa0c7288fbaba3",
+      "pinned_version_id": "3f27afa88a6d4a0782809c2af2e89c89",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "bc80559ceadb734e6be65727d0ebaaa47f4cac308d023d6ff111990b382c5cef",
+      "current_version_id": "63347da6052e4dba806b59a8db81f22e",
+      "identity": "component-10",
+      "name": "prompt.agents:generated_metaform_agent_harness_integration_engineer",
+      "pinned_fingerprint": "bc80559ceadb734e6be65727d0ebaaa47f4cac308d023d6ff111990b382c5cef",
+      "pinned_version_id": "63347da6052e4dba806b59a8db81f22e",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "33c0556a0fceecb5c5a475733f8709eeb332608169bbbc5ccccbab0d51839c47",
+      "current_version_id": "1b5732895fd6436c8e92c2d7ab2e2a0e",
+      "identity": "component-11",
+      "name": "agents:generated_metaform_memory_query_engineer",
+      "pinned_fingerprint": "33c0556a0fceecb5c5a475733f8709eeb332608169bbbc5ccccbab0d51839c47",
+      "pinned_version_id": "1b5732895fd6436c8e92c2d7ab2e2a0e",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "73ae1dd2649c26300ed3602bdfd68a0b14e6baefc9a5d6083ca917371fe52939",
+      "current_version_id": "f6f7b5983e7e4be4abdd501b6eb118dd",
+      "identity": "component-12",
+      "name": "agents:generated_metaform_dispatch_lifecycle_engineer",
+      "pinned_fingerprint": "73ae1dd2649c26300ed3602bdfd68a0b14e6baefc9a5d6083ca917371fe52939",
+      "pinned_version_id": "f6f7b5983e7e4be4abdd501b6eb118dd",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-13",
+      "name": "prompt.orchestration:common",
+      "pinned_fingerprint": "9406fce73c690a6603431e9dff609307c114a5e91eb8d6efb383b9804cbdc57c",
+      "pinned_version_id": "f7e118bd7b674535b546a195c8a7d433",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "ee1085cd5e6e8f07d1a5267020b4fe515559da41e55bc807a2d45ece41029e55",
+      "current_version_id": "3e340ad6747344aba5c9f0b446a5fccc",
+      "identity": "component-14",
+      "name": "prompt.orchestration:role_creator",
+      "pinned_fingerprint": "3a7da0a648138e975451be35af1643a0195dec1f4cc2decd394cedeb53867209",
+      "pinned_version_id": "e5d26daee6df43c1b8405f0fb371964e",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-15",
+      "name": "orchestration:common",
+      "pinned_fingerprint": "9406fce73c690a6603431e9dff609307c114a5e91eb8d6efb383b9804cbdc57c",
+      "pinned_version_id": "f7e118bd7b674535b546a195c8a7d433",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "99d8d237f29a73de407cfda9f68d14a5a2635ccb2d9c588347f91e958305665d",
+      "current_version_id": "da980e4bb38546eb8c0ced4ce56e7f6b",
+      "identity": "component-16",
+      "name": "prompt.orchestration:specialist",
+      "pinned_fingerprint": "36c7da57db431a4f83f3a7d5cefb0d9cf741cab808623fff9b5c5f7b4e8e6dd5",
+      "pinned_version_id": "29a466a3898c4f6a8d0cbdee0d4f2a94",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "c8694a4baafb5e8c7c4f1ada10674402e2ca0b96b7e89bce2e441ca01289c223",
+      "current_version_id": "d0951737f4f64950a5a55b06640d8b62",
+      "identity": "component-17",
+      "name": "agents:generated_metaform_instruction_maintenance_engineer",
+      "pinned_fingerprint": "c8694a4baafb5e8c7c4f1ada10674402e2ca0b96b7e89bce2e441ca01289c223",
+      "pinned_version_id": "d0951737f4f64950a5a55b06640d8b62",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "ee1085cd5e6e8f07d1a5267020b4fe515559da41e55bc807a2d45ece41029e55",
+      "current_version_id": "3e340ad6747344aba5c9f0b446a5fccc",
+      "identity": "component-18",
+      "name": "prompt.orchestration:role_creator",
+      "pinned_fingerprint": "48097e9912041341dd9829fea9d441028f2e6a76b89fcc1aaa65932d5ee5f12b",
+      "pinned_version_id": "20f1243f67f74c658e45ed5ded7e2e00",
+      "same_rendered_text": false
+    },
+    {
+      "current_rendered_fingerprint": "a7aeab8dab06bcb4f610bcb4c05bd9b20133b1557788daea10956990164583cd",
+      "current_version_id": "da355dbc84774757a7326381ff7fbec2",
+      "identity": "component-19",
+      "name": "agents:generated_metaform_onboarding_engineer",
+      "pinned_fingerprint": "a7aeab8dab06bcb4f610bcb4c05bd9b20133b1557788daea10956990164583cd",
+      "pinned_version_id": "da355dbc84774757a7326381ff7fbec2",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "f3a1d92487aab299981a1800ad9f246e6c97928f57a38003c2b8d19591cf6d23",
+      "current_version_id": "4c16f015910a4ee2bfa5c3118c4b4253",
+      "identity": "component-20",
+      "name": "agents:generated_metaform_agent_communication_engineer",
+      "pinned_fingerprint": "f3a1d92487aab299981a1800ad9f246e6c97928f57a38003c2b8d19591cf6d23",
+      "pinned_version_id": "4c16f015910a4ee2bfa5c3118c4b4253",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "135fbbbefdc623d3bb0619e102e1d7118fbbfc57eeae6557a75ae47ece0554ff",
+      "current_version_id": "e3e4ff88661d46afaf0c354dea614e88",
+      "identity": "component-21",
+      "name": "agents:generated_metaform_project_layer_engineer",
+      "pinned_fingerprint": "135fbbbefdc623d3bb0619e102e1d7118fbbfc57eeae6557a75ae47ece0554ff",
+      "pinned_version_id": "e3e4ff88661d46afaf0c354dea614e88",
+      "same_rendered_text": true
+    },
+    {
+      "current_rendered_fingerprint": "e5d13d8b4657d9d83894985cdf6012157f7147a6d189698736200206cbb0e91e",
+      "current_version_id": "d7bc20561e814e8da4d64d44b21b568c",
+      "identity": "component-22",
+      "name": "orchestration:common",
+      "pinned_fingerprint": "8c71d709b601f8ec82a1cb48ac6e79290c04de75497d9bbf3b515670973430fa",
+      "pinned_version_id": "d016fcdd38de40c2b220c9c3f4ef883d",
+      "same_rendered_text": false
+    }
+  ]
+}

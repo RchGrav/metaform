@@ -55,6 +55,7 @@ class Sent:
     bindings: dict[str, str] = field(default_factory=dict[str, str])
     problems: tuple[str, ...] = ()
     rendered_text: str = ''
+    source: dict[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True)
@@ -241,8 +242,8 @@ def _edits() -> dict[str, str]:
 def prompt_updates() -> dict[str, dict[str, Any]]:
     """The shipped exact-anchor migrations keyed by existing component identity, including selected skill files."""
     manifest = json.loads((resources.files('metaform') / 'resources' / 'prompt_updates.json').read_text('utf-8'))
-    return {one['name']: {**one, 'baseline': manifest['baseline'],
-                         'reviewed_baseline': manifest['reviewed_baseline']} for one in manifest['updates']}
+    return {one['name']: {'baseline': manifest['baseline'],
+                         'reviewed_baseline': manifest['reviewed_baseline'], **one} for one in manifest['updates']}
 
 
 _MERGED: dict[tuple[str, str], dict[str, Any]] = {}
@@ -286,7 +287,8 @@ def merge_selected_updates(name: str, *, retry: bool = False) -> dict[str, Any] 
                                  f'has {before} old and {after} new matches; the selected edit is retained.')
         if conflicts:
             return version.text, conflicts
-        declared = set(places(version.text)) | set(places(_source(name) or ''))
+        declared = (set(places(version.text)) | set(places(_source(name) or ''))
+                    | {place for edit in update['edits'] for place in _PLACE.findall(str(edit['new']))})
         stored = encode(text, declared) if xml else text
         return stored, []
 
@@ -639,7 +641,8 @@ def component(name: str, text: str, *, version_id: str | None = None,
     return {'name': name, 'text': text, 'actual_version_id': version_id,
             'selected_version_id': version_id, 'number': None, 'origin': 'generated',
             'rendered_fingerprint': hashlib.sha256(text.encode('utf-8')).hexdigest(),
-            'bindings': dict(bindings or {}), 'problems': []}
+            'bindings': dict(bindings or {}), 'problems': [],
+            'source': {'kind': 'generated', 'path': None, 'shipped_identity': None}}
 
 
 def resolve(name: str, /, **fills: str) -> dict[str, Any]:
@@ -658,7 +661,11 @@ def resolve(name: str, /, **fills: str) -> dict[str, Any]:
     selected, notices = _selected_update(selected)
     text = rendered(selected.text, **fills) if selected.format == 'xml' else selected.text
     return {**component(name, text, version_id=selected.version_id, bindings=fills),
-            'number': selected.number, 'origin': selected.origin, 'notices': notices}
+            'number': selected.number, 'origin': selected.origin, 'notices': notices,
+            'source': {'kind': 'selected_edit' if selected.origin == 'edited' else 'shipped',
+                       'path': str(folder / 'resources' / element) if folder is not None else None,
+                       'shipped_identity': hashlib.sha256(shipped_text.encode()).hexdigest()
+                           if shipped_text is not None else None}}
 
 
 def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]:
@@ -668,12 +675,25 @@ def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]
         held = _parsed(Path(trial))
         tried = None if held is None else held.root.find(name)
         if tried is not None and ((tried.text or '').strip() or len(tried)):
-            return {**component(key, rendered(body(tried), **fills), bindings=fills), 'origin': 'trial'}
+            packaged = _parsed(folder / 'resources' / FILE)
+            original = None if packaged is None else packaged.root.find(name)
+            return {**component(key, rendered(body(tried), **fills), bindings=fills), 'origin': 'trial',
+                    'source': {'kind': 'trial', 'path': str(Path(trial).resolve()),
+                               'shipped_path': str(folder / 'resources' / FILE),
+                               'shipped_identity': hashlib.sha256(body(original).encode()).hexdigest()
+                                   if original is not None else None}}
     found = _element(folder, name)
     if found is None:
         raise LookupError(f'{folder / "resources" / FILE} has no prompt {name}.')
     from .data import prompts
     source = body(found)
+    parsed = _parsed(folder / 'resources' / FILE)
+    source_problem = None if parsed is None else parsed.broken.get(name) or (
+        parsed.lost if parsed.root.find(name) is None else None)
+    source_info = {'kind': 'fallback' if source_problem else 'shipped',
+                   'path': str(folder / 'resources' / FILE),
+                   'shipped_identity': hashlib.sha256(source.encode()).hexdigest(),
+                   'source_problem': source_problem}
     from .errors import StoreError
     try:
         existing = prompts.prompt_version(key)
@@ -694,9 +714,10 @@ def _resolved(folder: Traversable, name: str, /, **fills: str) -> dict[str, Any]
         return {**component(key, rendered(source, **fills), version_id=source_id, bindings=fills),
                 'selected_version_id': selected.version_id, 'selected_number': selected.number,
                 'number': actual.number if actual else None, 'origin': 'shipped', 'problems': [problem],
-                'notices': notices}
+                'notices': notices, 'source': {**source_info, 'kind': 'fallback'}}
     return {**component(key, text, version_id=selected.version_id, bindings=fills),
-            'number': selected.number, 'origin': selected.origin, 'notices': notices}
+            'number': selected.number, 'origin': selected.origin, 'notices': notices,
+            'source': {**source_info, 'kind': 'selected_edit' if selected.origin == 'edited' else source_info['kind']}}
 
 
 def served(folder: Traversable, name: str, /, **fills: str) -> str:
@@ -710,7 +731,7 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
         sys.stderr.write(str(problem) + '\n')
     _noted(Sent(resolved['name'], resolved['number'], resolved['origin'], resolved['actual_version_id'],
                 resolved['selected_version_id'], resolved['rendered_fingerprint'], resolved['bindings'],
-                tuple(resolved['problems']), str(resolved['text'])))
+                tuple(resolved['problems']), str(resolved['text']), dict(resolved.get('source') or {})))
     return str(resolved['text'])
 
 
@@ -723,7 +744,9 @@ def resolve_text(name: str, text: str) -> dict[str, Any]:
     from .data import prompts
     version, notices = _selected_update(prompts.shipped(name, 'text', text))
     return {**component(name, version.text, version_id=version.version_id),
-            'number': version.number, 'origin': version.origin, 'notices': notices}
+            'number': version.number, 'origin': version.origin, 'notices': notices,
+            'source': {'kind': 'selected_edit' if version.origin == 'edited' else 'shipped', 'path': None,
+                       'shipped_identity': hashlib.sha256(text.encode()).hexdigest()}}
 
 
 def served_text(name: str, text: str) -> str:
@@ -734,7 +757,8 @@ def served_text(name: str, text: str) -> str:
     for notice in resolved['notices']:
         sys.stderr.write(notice + '\n')
     _noted(Sent(name, resolved['number'], resolved['origin'], resolved['actual_version_id'],
-                resolved['selected_version_id'], resolved['rendered_fingerprint'], rendered_text=resolved['text']))
+                resolved['selected_version_id'], resolved['rendered_fingerprint'], rendered_text=resolved['text'],
+                source=dict(resolved.get('source') or {})))
     return str(resolved['text'])
 
 

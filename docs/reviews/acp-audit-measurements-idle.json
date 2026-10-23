@@ -1,0 +1,33 @@
+{
+  "scope": "Matched actual fake-ACP runner Linux idle measurements. No paid model execution.",
+  "baseline_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+  "baseline": {
+    "scenario": "Actual isolated runner and fake ACP adapter, unfinished hold-mode prompt, no incoming changes.",
+    "elapsed_seconds": 60.00041058997158,
+    "cpu_seconds": {
+      "runner": 0.13000000000000034,
+      "adapter": 0.009999999999999995
+    },
+    "cpu_percent_one_core": {
+      "runner": 0.21666518399080495,
+      "adapter": 0.01666655261467725
+    },
+    "ticket_still_open": true,
+    "limits": "Linux /proc process CPU, 1/HZ resolution. No paid model or web server process. An isolated idle workflow measures runner regression, not production throughput."
+  },
+  "revised": {
+    "scenario": "Actual isolated runner and fake ACP adapter, unfinished hold-mode prompt, no incoming changes.",
+    "elapsed_seconds": 60.00041523898835,
+    "cpu_seconds": {
+      "runner": 0.1299999999999999,
+      "adapter": 0.0
+    },
+    "cpu_percent_one_core": {
+      "runner": 0.21666516720291915,
+      "adapter": 0.0
+    },
+    "ticket_still_open": true,
+    "limits": "Linux /proc process CPU, 1/HZ resolution. No paid model or web server process. An isolated idle workflow measures runner regression, not production throughput."
+  },
+  "fixture_sha256": "361998c2e12f60c46f524531802ee593b4900994a02779a07a9cddac53640e66"
+}

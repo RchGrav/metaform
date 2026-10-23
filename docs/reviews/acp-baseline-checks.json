@@ -1,0 +1,1647 @@
+{
+  "recorded_at": "2026-10-23T05:13:02.543104+00:00",
+  "baseline_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+  "baseline_root": "/tmp/metaform-acp-baseline",
+  "current_root": "/home/rich/metaform",
+  "scope": "Baseline comparison of failures observed in halted broad and module sweeps, with targeted checks and correction evidence. These sweeps do not constitute a complete green repository suite.",
+  "baseline_source_import_verified": "/tmp/metaform-acp-baseline/src/metaform/__init__.py",
+  "selected_baseline_command": [
+    "/home/rich/metaform/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-n",
+    "4",
+    "-q",
+    "--junitxml=/tmp/metaform-acp-baseline-selected.xml",
+    "tests/test_base.py::test_every_shipped_module_has_a_readme_with_the_template_headings",
+    "tests/test_base.py::test_every_shipped_module_imports_only_the_public_base",
+    "tests/test_build.py::test_the_repository_wheel_requires_every_shipped_modules_dependencies",
+    "tests/test_cli.py::test_unset_all_unglue_returns_every_setting_to_default",
+    "tests/test_cli.py::test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available",
+    "tests/test_cli.py::test_help_is_the_brief_overview_with_its_tips",
+    "tests/test_cli.py::test_the_demo_project_comes_from_the_package_mapped_with_the_demo_agent_and_is_reused",
+    "tests/test_cli.py::test_no_command_without_the_persons_terminal_carries_their_consent_however_it_was_started",
+    "tests/test_cli.py::test_a_demo_stopped_or_killed_leaves_no_ticket_taken_for_the_next_run",
+    "tests/test_home.py::test_read_only_commands_create_only_first_run_version_records",
+    "tests/test_cli.py::test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_persons_controls",
+    "tests/test_first_run.py::test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recorded_intake",
+    "tests/test_install.py::test_direct_wheel_and_version_probe_do_not_create_a_version_database",
+    "tests/test_join_shape.py::test_the_tools_that_write_the_metaform_take_no_field_beyond_its_shape",
+    "tests/test_first_working_test.py::test_a_fresh_machine_reaches_shared_memory_under_layer_selection"
+  ],
+  "selected_baseline_environment": {
+    "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+  },
+  "selected_baseline_cwd": "/tmp/metaform-acp-baseline",
+  "selected_baseline_summary": {
+    "failed": 14,
+    "passed": 1,
+    "seconds": 96.87,
+    "exit_code": 1
+  },
+  "observed_revised_broad_summary": {
+    "failed": 15,
+    "passed": 386,
+    "skipped": 1,
+    "collection_errors": 1,
+    "seconds": 67.63,
+    "stopped_at_failure_limit": true
+  },
+  "tests": [
+    {
+      "nodeid": "tests/test_base.py::test_every_shipped_module_has_a_readme_with_the_template_headings",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 0.009,
+        "message": "AssertionError: assert {'agents': ['...covery'], ...} == {}\n  \n  Left contains 20 more items:\n  {'agents': ['## Authored roles and delivered context',\n              '## Project background services',\n              '## MCP discovery'],\n   'autoticket': ['## Authored roles and delivered context',\n                  '## Project background services',...\n  \n  ...Full output truncated (70 lines hidden), use '-vv' to show",
+        "assertion": "tests/test_base.py:711: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 0.022,
+        "message": "AssertionError: assert {'agents': ['...covery'], ...} == {}\n  \n  Left contains 20 more items:\n  {'agents': ['## Authored roles and delivered context',\n              '## Project background services',\n              '## MCP discovery'],\n   'autoticket': ['## Authored roles and delivered context',\n                  '## Project background services',...\n  \n  ...Full output truncated (70 lines hidden), use '-vv' to show",
+        "assertion": "tests/test_base.py:711: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "093b9ce15ff8c9de6177981dc1d2fa39fcc99e50c8af3d0d426dd038f7b7faed",
+        "current": "093b9ce15ff8c9de6177981dc1d2fa39fcc99e50c8af3d0d426dd038f7b7faed"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_base.py::test_every_shipped_module_imports_only_the_public_base",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 0.761,
+        "message": "AssertionError: (PosixPath('/home/rich/metaform/src/metaform/modules/dispatch/hold_review.py'), 'metaform.modules.map.storage')\nassert 'metaform.modules.map.storage' in {'metaform.data', 'metaform.events', 'metaform.finish_xml', 'metaform.frames', 'metaform.home', 'metaform.jev', ...}\n +  where 'metaform.modules.map.storage' = <ast.ImportFrom object at 0x7ef3128fd010>.module",
+        "assertion": "tests/test_base.py:77: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 0.381,
+        "message": "AssertionError: (PosixPath('/tmp/metaform-acp-baseline/src/metaform/modules/dispatch/hold_review.py'), 'metaform.modules.map.storage')\nassert 'metaform.modules.map.storage' in {'metaform.data', 'metaform.events', 'metaform.finish_xml', 'metaform.frames', 'metaform.home', 'metaform.jev', ...}\n +  where 'metaform.modules.map.storage' = <ast.ImportFrom object at 0x7c917758b690>.module",
+        "assertion": "tests/test_base.py:77: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "093b9ce15ff8c9de6177981dc1d2fa39fcc99e50c8af3d0d426dd038f7b7faed",
+        "current": "093b9ce15ff8c9de6177981dc1d2fa39fcc99e50c8af3d0d426dd038f7b7faed"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_build.py::test_the_repository_wheel_requires_every_shipped_modules_dependencies",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 2.108,
+        "message": "AssertionError: Building wheel...\n  Traceback (most recent call last):\n    File \"<string>\", line 11, in <module>\n      wheel_filename = backend.build_wheel(__import__(\"os\").fsdecode(b\"/tmp/pytest-of-rich/pytest-1450/popen-gw6/test_the_repository_wheel_requ0\"), {}, None)\n    File \"/home/rich/.cache/uv/builds-v0/.tmpXPIQvL/lib/python3.13/site-packages/hatchling/build.py\", line 58, in build_wheel\n      return os.path.basename(next(builder.build(directory=wheel_directory, versions=[\"standard\"])))\n                              ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    File \"/home/rich/.cache/uv/builds-v0/.tmpXPIQvL/",
+        "assertion": "tests/test_build.py:454: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 2.458,
+        "message": "AssertionError: Building wheel...\n  Traceback (most recent call last):\n    File \"<string>\", line 11, in <module>\n      wheel_filename = backend.build_wheel(__import__(\"os\").fsdecode(b\"/tmp/pytest-of-rich/pytest-1462/popen-gw3/test_the_repository_wheel_requ0\"), {}, None)\n    File \"/home/rich/.cache/uv/builds-v0/.tmpntCYE0/lib/python3.14/site-packages/hatchling/build.py\", line 58, in build_wheel\n      return os.path.basename(next(builder.build(directory=wheel_directory, versions=[\"standard\"])))\n                              ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    File \"/home/rich/.cache/uv/builds-v0/.tmpntCYE0/",
+        "assertion": "tests/test_build.py:454: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "57104f18001e3eca2c1aef6311f71b146bf784ccd82cb591c032de1a5523e1c3",
+        "current": "57104f18001e3eca2c1aef6311f71b146bf784ccd82cb591c032de1a5523e1c3"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_unset_all_unglue_returns_every_setting_to_default",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 8.872,
+        "message": "AssertionError: assert {'default', 'inherited'} == {'default'}\n  \n  Extra items in the left set:\n  'inherited'\n  Use -v to get more diff",
+        "assertion": "tests/test_cli.py:142: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "passed",
+        "seconds": 8.571,
+        "message": null,
+        "assertion": null
+      },
+      "isolated_recheck": {
+        "baseline_isolated": {
+          "outcome": "failed",
+          "seconds": 7.998,
+          "message": "AssertionError: assert {'default', 'inherited'} == {'default'}\n  \n  Extra items in the left set:\n  'inherited'\n  Use -v to get more diff",
+          "assertion": "tests/test_cli.py:142: AssertionError"
+        },
+        "current_isolated": {
+          "outcome": "failed",
+          "seconds": 13.313,
+          "message": "AssertionError: assert {'default', 'inherited'} == {'default'}\n  \n  Extra items in the left set:\n  'inherited'\n  Use -v to get more diff",
+          "assertion": "tests/test_cli.py:142: AssertionError"
+        },
+        "command": [
+          "/home/rich/metaform/.venv/bin/python",
+          "-m",
+          "pytest",
+          "-n",
+          "0",
+          "-q",
+          "tests/test_cli.py::test_unset_all_unglue_returns_every_setting_to_default"
+        ],
+        "baseline_environment": {
+          "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+        },
+        "note": "Baseline passes in selected parallel run and fails isolated at the same assertion as current."
+      },
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 9.44,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:227: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 12.371,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:227: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_help_is_the_brief_overview_with_its_tips",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 2.046,
+        "message": "AssertionError: assert 'Metaform 202...d defaults.\\n' == 'Metaform 202...d defaults.\\n'\n  \n  Skipping 169 identical leading characters in diff, use -v to show\n  +  metaform demo                     Watch Metaform at work on a sample project.\n  -  metaform start                    Map the project in this folder and open it.\n  +   metaform start                    Map the project in this folder and open it.\n  ? +\n      metaform add project <id> <path>  Register a project....\n  \n  ...Full output truncated (8 lines hidden), use '-vv' to show",
+        "assertion": "tests/test_cli.py:493: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 2.445,
+        "message": "AssertionError: assert 'Metaform 202...d defaults.\\n' == 'Metaform 202...d defaults.\\n'\n  \n  Skipping 169 identical leading characters in diff, use -v to show\n  +  metaform demo                     Watch Metaform at work on a sample project.\n  -  metaform start                    Map the project in this folder and open it.\n  +   metaform start                    Map the project in this folder and open it.\n  ? +\n      metaform add project <id> <path>  Register a project....\n  \n  ...Full output truncated (8 lines hidden), use '-vv' to show",
+        "assertion": "tests/test_cli.py:493: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_the_demo_project_comes_from_the_package_mapped_with_the_demo_agent_and_is_reused",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 6.559,
+        "message": "metaform.errors.Stop: The demo could not run metaform import /home/rich/metaform/src/metaform/demo/map.json: The document has schema version 21; this Metaform supports version 23.",
+        "assertion": "src/metaform/demo/__init__.py:85: Stop"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 6.132,
+        "message": "metaform.errors.Stop: The demo could not run metaform import /tmp/metaform-acp-baseline/src/metaform/demo/map.json: The document has schema version 21; this Metaform supports version 23.",
+        "assertion": "src/metaform/demo/__init__.py:85: Stop"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_no_command_without_the_persons_terminal_carries_their_consent_however_it_was_started",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 9.775,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:935: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 9.607,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:935: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_a_demo_stopped_or_killed_leaves_no_ticket_taken_for_the_next_run",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 7.242,
+        "message": "metaform.errors.Stop: The demo could not run metaform import /home/rich/metaform/src/metaform/demo/map.json: The document has schema version 21; this Metaform supports version 23.",
+        "assertion": "src/metaform/demo/__init__.py:85: Stop"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 6.889,
+        "message": "metaform.errors.Stop: The demo could not run metaform import /tmp/metaform-acp-baseline/src/metaform/demo/map.json: The document has schema version 21; this Metaform supports version 23.",
+        "assertion": "src/metaform/demo/__init__.py:85: Stop"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_home.py::test_read_only_commands_create_only_first_run_version_records",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 2.243,
+        "message": "AssertionError: assert {'schema_vers...o carry', ...} == {'schema_vers...'2026.9.30.2'}\n  \n  Omitting 3 identical items, use -vv to show\n  Left contains 3 more items:\n  {'carried:mcp-a2a-peers': 'nothing to carry',\n   'carried:speech-language': 'nothing to carry',\n   'carried:web-view-state': 'nothing to carry'}\n  Use -v to get more diff",
+        "assertion": "tests/test_home.py:116: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 2.088,
+        "message": "AssertionError: assert {'schema_vers...o carry', ...} == {'schema_vers...'2026.9.30.2'}\n  \n  Omitting 3 identical items, use -vv to show\n  Left contains 3 more items:\n  {'carried:mcp-a2a-peers': 'nothing to carry',\n   'carried:speech-language': 'nothing to carry',\n   'carried:web-view-state': 'nothing to carry'}\n  Use -v to get more diff",
+        "assertion": "tests/test_home.py:116: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "78becf02d45b02203f467b6e5645a79e885a184ad9dda1aa7644692e74508bc2",
+        "current": "78becf02d45b02203f467b6e5645a79e885a184ad9dda1aa7644692e74508bc2"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_cli.py::test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_persons_controls",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 19.647,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:904: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 21.954,
+        "message": "assert True is False",
+        "assertion": "tests/test_cli.py:904: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67",
+        "current": "f25453e3950afe1483834f6d572cbeb9df3dae31d7132f25fecf271bb5573b67"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_first_run.py::test_a_first_run_in_an_unregistered_folder_goes_from_the_question_to_a_recorded_intake",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 13.164,
+        "message": "AssertionError(\"assert {'metaform_re..., 'web_start'} <= {'metaform_catalog'}\\n  \\n  Extra items in the left set:\\n  'web_start'\\n  'metaform_register'\") [single exception in ExceptionGroup]",
+        "assertion": null
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 16.319,
+        "message": "AssertionError(\"assert {'metaform_re..., 'web_start'} <= {'metaform_catalog'}\\n  \\n  Extra items in the left set:\\n  'metaform_register'\\n  'web_start'\") [single exception in ExceptionGroup]",
+        "assertion": null
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "fc4c89ce78e415e4d25af5503c9e2c1dc13b2ab0e11e123960634139b5247c1e",
+        "current": "fc4c89ce78e415e4d25af5503c9e2c1dc13b2ab0e11e123960634139b5247c1e"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_install.py::test_direct_wheel_and_version_probe_do_not_create_a_version_database",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 1.529,
+        "message": "AssertionError: assert not True\n +  where True = exists()\n +    where exists = (PosixPath('/tmp/pytest-of-rich/pytest-1450/popen-gw10/test_direct_wheel_and_version_0/home') / 'metaform.sqlite3').exists",
+        "assertion": "tests/test_install.py:622: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 2.285,
+        "message": "AssertionError: assert not True\n +  where True = exists()\n +    where exists = (PosixPath('/tmp/pytest-of-rich/pytest-1462/popen-gw1/test_direct_wheel_and_version_0/home') / 'metaform.sqlite3').exists",
+        "assertion": "tests/test_install.py:622: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "5596ab91e1bdbb5ffccb1473fd8af94974f4421db05e223bd43c510ea2a0ab7f",
+        "current": "5596ab91e1bdbb5ffccb1473fd8af94974f4421db05e223bd43c510ea2a0ab7f"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_join_shape.py::test_the_tools_that_write_the_metaform_take_no_field_beyond_its_shape",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 0.007,
+        "message": "AssertionError: ['condition', 'name', 'name_length', 'namespace_address', 'note', 'refs', ...]\nassert {'name', 'nam...e', 'same_as'} == {'name', 'nam...refs', 'role'}\n  \n  Extra items in the left set:\n  'same_as'\n  Use -v to get more diff",
+        "assertion": "tests/test_join_shape.py:51: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 0.014,
+        "message": "AssertionError: ['condition', 'name', 'name_length', 'namespace_address', 'note', 'refs', ...]\nassert {'name', 'nam...e', 'same_as'} == {'name', 'nam...refs', 'role'}\n  \n  Extra items in the left set:\n  'same_as'\n  Use -v to get more diff",
+        "assertion": "tests/test_join_shape.py:51: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "86b86be2e56d7c4f47471eff98c29e3a4c552b8ee81e8244016984cdc4d248d6",
+        "current": "86b86be2e56d7c4f47471eff98c29e3a4c552b8ee81e8244016984cdc4d248d6"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    },
+    {
+      "nodeid": "tests/test_first_working_test.py::test_a_fresh_machine_reaches_shared_memory_under_layer_selection",
+      "current_broad": {
+        "outcome": "failed",
+        "seconds": 36.365,
+        "message": "AssertionError: assert {'metaform'} == {'fork', 'int...etaform', ...}\n  \n  Extra items in the right set:\n  'memory'\n  'mcp'\n  'map'\n  'fork'\n  'intake'\n  'web'\n  Use -v to get more diff",
+        "assertion": "tests/test_first_working_test.py:131: AssertionError"
+      },
+      "baseline_selected": {
+        "outcome": "failed",
+        "seconds": 60.375,
+        "message": "AssertionError: assert {'metaform'} == {'fork', 'int...etaform', ...}\n  \n  Extra items in the right set:\n  'memory'\n  'map'\n  'web'\n  'mcp'\n  'fork'\n  'intake'\n  Use -v to get more diff",
+        "assertion": "tests/test_first_working_test.py:131: AssertionError"
+      },
+      "isolated_recheck": null,
+      "test_file_sha256": {
+        "baseline": "2af24a47dd080bdebb1ad2b68434caac92d4ef096c729bfd2322f4160c6213a1",
+        "current": "2af24a47dd080bdebb1ad2b68434caac92d4ef096c729bfd2322f4160c6213a1"
+      },
+      "baseline_failure_reproduced": true,
+      "same_assertion_location": true
+    }
+  ],
+  "web_collection": {
+    "baseline_reproduced": true,
+    "exit_code": 2,
+    "tests_collected": 17,
+    "command": [
+      "/home/rich/metaform/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-n",
+      "0",
+      "--collect-only",
+      "-q",
+      "src/metaform/modules/packet/tests",
+      "src/metaform/modules/web/tests/test_web.py"
+    ],
+    "cwd": "/tmp/metaform-acp-baseline",
+    "environment": {
+      "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+    },
+    "failure": "test_web.py imports FAKE_AGENT from conftest, resolved to packet/tests/conftest.py, which does not define it.",
+    "evidence_excerpt": "ip_reader\n\n==================================== ERRORS ====================================\n_________ ERROR collecting src/metaform/modules/web/tests/test_web.py __________\nImportError while importing test module '/tmp/metaform-acp-baseline/src/metaform/modules/web/tests/test_web.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/home/rich/.local/share/uv/python/cpython-3.13.5-linux-x86_64-gnu/lib/python3.13/importlib/__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/metaform/modules/web/tests/test_web.py:17: in <module>\n    from conftest import FAKE_AGENT  # dispatch's ACP agent, no model, which every test home starts\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   ImportError: cannot import name 'FAKE_AGENT' from 'conftest' (/tmp/metaform-acp-baseline/src/metaform/modules/packet/tests/conftest.py)\n=========================== short test summary info ============================\nERROR src/metaform/modules/web/tests/test_web.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n17 tests collected, 1 error in 6.92s\n"
+  },
+  "public_module_import_rule": {
+    "baseline": [
+      {
+        "path": "src/metaform/modules/dispatch/hold_review.py",
+        "target": "metaform.modules.map.storage",
+        "line": 32
+      },
+      {
+        "path": "src/metaform/modules/dispatch/__init__.py",
+        "target": "metaform.caller",
+        "line": 4595
+      },
+      {
+        "path": "src/metaform/modules/dispatch/runner.py",
+        "target": "metaform.data.refs",
+        "line": 84
+      },
+      {
+        "path": "src/metaform/modules/map/__init__.py",
+        "target": "metaform.context",
+        "line": 110
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.loader",
+        "line": 3988
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.holds",
+        "line": 2023
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.storage",
+        "line": 1686
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.holds",
+        "line": 2036
+      },
+      {
+        "path": "src/metaform/modules/web/commits.py",
+        "target": "metaform.data.refs",
+        "line": 26
+      }
+    ],
+    "current": [
+      {
+        "path": "src/metaform/modules/dispatch/hold_review.py",
+        "target": "metaform.modules.map.storage",
+        "line": 31
+      },
+      {
+        "path": "src/metaform/modules/dispatch/__init__.py",
+        "target": "metaform.caller",
+        "line": 4603
+      },
+      {
+        "path": "src/metaform/modules/dispatch/runner.py",
+        "target": "metaform.data.refs",
+        "line": 84
+      },
+      {
+        "path": "src/metaform/modules/map/__init__.py",
+        "target": "metaform.context",
+        "line": 111
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.loader",
+        "line": 3989
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.holds",
+        "line": 2024
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.storage",
+        "line": 1686
+      },
+      {
+        "path": "src/metaform/modules/web/server.py",
+        "target": "metaform.modules.map.holds",
+        "line": 2037
+      },
+      {
+        "path": "src/metaform/modules/web/commits.py",
+        "target": "metaform.data.refs",
+        "line": 26
+      }
+    ],
+    "introduced_path_target_violations": [],
+    "source_test_first_failure": "dispatch/hold_review.py imports metaform.modules.map.storage on both revisions.",
+    "memory_map_storage_imports": []
+  },
+  "ruff": {
+    "command": [
+      "/home/rich/metaform/.venv/bin/ruff",
+      "check",
+      "src",
+      "tests",
+      "conftest.py",
+      "--output-format",
+      "json"
+    ],
+    "version": "ruff 0.16.9",
+    "baseline": {
+      "exit_code": 1,
+      "count": 8,
+      "diagnostics": [
+        {
+          "path": "src/metaform/modules/dispatch/__init__.py",
+          "code": "SIM102",
+          "line": 2805,
+          "column": 17,
+          "message": "Use a single `if` statement instead of nested `if` statements"
+        },
+        {
+          "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+          "code": "I001",
+          "line": 1,
+          "column": 1,
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+          "code": "BLE001",
+          "line": 21,
+          "column": 16,
+          "message": "Do not catch blind exception: `Exception`"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_ticket_fast_ui.py",
+          "code": "I001",
+          "line": 2,
+          "column": 1,
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 20,
+          "message": "Redefinition of unused `web` from line 3: `web` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 25,
+          "message": "Redefinition of unused `mapped` from line 3: `mapped` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 33,
+          "message": "Redefinition of unused `browser` from line 3: `browser` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "SIM115",
+          "line": 48,
+          "column": 15,
+          "message": "Use a context manager for opening files"
+        }
+      ]
+    },
+    "current": {
+      "exit_code": 1,
+      "count": 7,
+      "diagnostics": [
+        {
+          "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+          "code": "I001",
+          "line": 1,
+          "column": 1,
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+          "code": "BLE001",
+          "line": 21,
+          "column": 16,
+          "message": "Do not catch blind exception: `Exception`"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_ticket_fast_ui.py",
+          "code": "I001",
+          "line": 2,
+          "column": 1,
+          "message": "Import block is un-sorted or un-formatted"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 20,
+          "message": "Redefinition of unused `web` from line 3: `web` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 25,
+          "message": "Redefinition of unused `mapped` from line 3: `mapped` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "F811",
+          "line": 8,
+          "column": 33,
+          "message": "Redefinition of unused `browser` from line 3: `browser` redefined here"
+        },
+        {
+          "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+          "code": "SIM115",
+          "line": 48,
+          "column": 15,
+          "message": "Use a context manager for opening files"
+        }
+      ]
+    },
+    "introduced_diagnostics": [],
+    "removed_diagnostics": [
+      [
+        "src/metaform/modules/dispatch/__init__.py",
+        "SIM102",
+        2805,
+        17
+      ]
+    ]
+  },
+  "conclusion": "Every observed broad test failure and the collection error reproduces on the preserved baseline. The unset-all test is order-sensitive: it passes selected in parallel but fails isolated on baseline and revised code at the same assertion. Current Ruff has seven existing diagnostics versus eight baseline, with no introduced diagnostic. This does not prove the uncompleted broad suite passes.",
+  "raw_logs": [
+    "/tmp/metaform-acp-full-tests.log",
+    "/tmp/metaform-acp-full-tests.xml",
+    "/tmp/metaform-acp-baseline-selected.log",
+    "/tmp/metaform-acp-baseline-selected.xml",
+    "/tmp/metaform-acp-baseline-web-collection.log",
+    "/tmp/metaform-acp-baseline-unset.log",
+    "/tmp/metaform-acp-current-unset.log"
+  ],
+  "module_sweep_triage": {
+    "recorded_at": "2026-10-23T04:48:09.352623+00:00",
+    "baseline_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+    "revised_halted_summary": {
+      "failed": 21,
+      "passed": 393,
+      "skipped": 1,
+      "seconds": 229.73,
+      "stopped_at_failure_limit": true
+    },
+    "excluded_from_this_comparison": [
+      "src/metaform/modules/dispatch/tests/test_direct_runtime.py::test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket[automatic]",
+      "src/metaform/modules/dispatch/tests/test_direct_runtime.py::test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket[unnamed]",
+      "src/metaform/modules/dispatch/tests/test_direct_runtime.py::test_missing_specialist_reads_uri_and_delivers_one_canonical_ticket[named]"
+    ],
+    "exclusion_reason": "The three direct-runtime cases are owned by runtime_selection, which is correcting its obsolete effort fixture independently.",
+    "baseline_command": [
+      "/home/rich/metaform/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-n",
+      "6",
+      "-vv",
+      "--tb=short",
+      "--junitxml=/tmp/metaform-acp-modules-baseline.xml",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_dispatch_is_made_from_the_template_and_imports_only_the_public_base_and_acp",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_summoned_agents_do_not_consume_the_worker_budget",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time[None]",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time[extend]",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_stop_it",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer_no_one",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_and_no_other",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_turn_that_fails_is_traced_with_its_error",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_personal_start_releases_only_requested_backlog_ticket_before_routing",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_is_withheld_conclusions_and_steered_to_its_first_record",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_native_adapter_installs_once_and_preserves_companion_executables",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_stalled_board_counts_execution_and_keeps_launch_authority"
+    ],
+    "baseline_cwd": "/tmp/metaform-acp-baseline",
+    "baseline_environment": {
+      "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+    },
+    "baseline_summary": {
+      "failed": 16,
+      "passed": 2,
+      "seconds": 84.31,
+      "exit_code": 1
+    },
+    "checks": [
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 7.172,
+          "message": "AssertionError: the base relays to runners; subscribers handle their own state\nassert [<function ch...7421d3b12ac0>] == [<function ch...7421d38b6fc0>]\n  \n  Left contains 2 more items, first extra item: <function changed at 0x7421d38b7ec0>\n  Use -v to get more diff"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.284,
+          "message": "AssertionError: the base relays to runners; subscribers handle their own state\nassert [<function changed at 0x7beaad138860>, <function changed at 0x7beaae905760>, <function changed at 0x7beaad132660>, <function changed at 0x7beaad132ca0>, <function plan_changed at 0x7beaae905800>] == [<function changed at 0x7beaad138860>, <function changed at 0x7beaae905760>, <function changed at 0x7beaad132660>]\n  \n  Left contains 2 more items, first extra item: <function changed at 0x7beaad132ca0>\n  \n  Full di"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 16.951,
+          "message": "AssertionError: the answer took 106 ms\nassert 0.10629910699208267 < 0.1"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 7.393,
+          "message": "AssertionError: the answer took 134 ms\nassert 0.1340272400120739 < 0.1"
+        },
+        "classification": "preexisting_load_sensitive_latency_failure_isolated_current_passes",
+        "current_isolated": {
+          "outcome": "passed",
+          "seconds": 7.291,
+          "message": null
+        },
+        "observed_ms": {
+          "baseline_six_workers": 134,
+          "current_concurrent_sweep": 106
+        },
+        "isolated_command": [
+          "/home/rich/metaform/.venv/bin/python",
+          "-m",
+          "pytest",
+          "-n",
+          "0",
+          "-q",
+          "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms"
+        ]
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_dispatch_is_made_from_the_template_and_imports_only_the_public_base_and_acp",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 0.182,
+          "message": "AssertionError: (PosixPath('/home/rich/metaform/src/metaform/modules/dispatch/hold_review.py'), 'metaform.modules.map.storage')\nassert (not True or 'metaform.modules.map.storage' in {'metaform.data', 'metaform.events', 'metaform.home', 'metaform.jev', 'metaform.module', 'metaform.prompt_files', ...})\n +  where True = <built-in method startswith of str object at 0x7f85ae3c08a0>('metaform')\n +    where <built-in method startswith of str object at 0x7f85ae3c08a0> = 'metaform.modules.map.storage'.st"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 0.131,
+          "message": "AssertionError: (PosixPath('/tmp/metaform-acp-baseline/src/metaform/modules/dispatch/hold_review.py'), 'metaform.modules.map.storage')\nassert (not True or 'metaform.modules.map.storage' in {'metaform.module', 'metaform.settings', 'metaform.home', 'metaform.data', 'metaform.jev', 'metaform.events', 'metaform.prompt_files', 'metaform.skills'})\n +  where True = <built-in method startswith of str object at 0x72029e0b12f0>('metaform')\n +    where <built-in method startswith of str object at 0x72029e0"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 16.532,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Too loud still. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 6.294,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Too loud still. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 7.769,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- The alarm plays twice when the timer ends. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 3.017,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- The alarm plays twice when the timer ends. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 15.971,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- It drifts. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 6.241,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- It drifts. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 16.728,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 6.504,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_summoned_agents_do_not_consume_the_worker_budget",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 15.513,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Issue 1. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.728,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Issue 1. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time[None]",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 15.708,
+          "message": "AssertionError: Context diagnostic key: a4ddeed9548c67f3a3723c02. At a checkpoint, agents_confirm can report that checkpoint and the key\nassert False\n +  where False = <built-in method startswith of str object at 0x39a7b7a0>('Retain this context key')\n +    where <built-in method startswith of str object at 0x39a7b7a0> = 'Context diagnostic key: a4ddeed9548c67f3a3723c02. At a checkpoint, agents_confirm can report that checkpoint and the ...d reconnect at matching addresses. Memory access isolati"
+        },
+        "baseline": {
+          "outcome": "passed",
+          "seconds": 8.235,
+          "message": null
+        },
+        "classification": "intentional_diagnostic_prompt_change_requires_test_expectation_update"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_follows_the_served_intake_holds_no_ticket_and_one_runs_at_a_time[extend]",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 17.292,
+          "message": "AssertionError: Context diagnostic key: 740faeec142dcb1103d18673. At a checkpoint, agents_confirm can report that checkpoint and the key\nassert False\n +  where False = <built-in method startswith of str object at 0x3ad74f20>('Retain this context key')\n +    where <built-in method startswith of str object at 0x3ad74f20> = 'Context diagnostic key: 740faeec142dcb1103d18673. At a checkpoint, agents_confirm can report that checkpoint and the ...d reconnect at matching addresses. Memory access isolati"
+        },
+        "baseline": {
+          "outcome": "passed",
+          "seconds": 6.585,
+          "message": null
+        },
+        "classification": "intentional_diagnostic_prompt_change_requires_test_expectation_update"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_stop_it",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 7.731,
+          "message": "AssertionError: metaform set --hold-agent-tickets failed (2):\nError: --hold-agent-tickets is not a setting.\nNext: metaform help switches"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.939,
+          "message": "AssertionError: metaform set --hold-agent-tickets failed (2):\nError: --hold-agent-tickets is not a setting.\nNext: metaform help switches"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer_no_one",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 34.384,
+          "message": "AssertionError: assert {'a990eb59aaf...': 'recorded'} == {'a990eb59aaf...b5': 'queued'}\n  \n  Differing items:\n  {'a990eb59aaf041b392f8e8e2ef5bafb5': 'recorded'} != {'a990eb59aaf041b392f8e8e2ef5bafb5': 'queued'}\n  Use -v to get more diff"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 11.666,
+          "message": "AssertionError: assert {'a0fb52fb43cf42349fca2be8a2298685': 'recorded'} == {'a0fb52fb43cf42349fca2be8a2298685': 'queued'}\n  \n  Differing items:\n  {'a0fb52fb43cf42349fca2be8a2298685': 'recorded'} != {'a0fb52fb43cf42349fca2be8a2298685': 'queued'}\n  \n  Full diff:\n    {\n  -     'a0fb52fb43cf42349fca2be8a2298685': 'queued',\n  ?                                          ^^ ^\n  +     'a0fb52fb43cf42349fca2be8a2298685': 'recorded',\n  ?                                          ^ ^^^^\n    }"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_and_no_other",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 13.443,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 5.248,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_turn_that_fails_is_traced_with_its_error",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 5.73,
+          "message": "ValueError: not enough values to unpack (expected 1, got 0)"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.313,
+          "message": "ValueError: not enough values to unpack (expected 1, got 0)"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_personal_start_releases_only_requested_backlog_ticket_before_routing",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 5.477,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.236,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_is_withheld_conclusions_and_steered_to_its_first_record",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 75.018,
+          "message": "AssertionError: not within 60 s"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 64.737,
+          "message": "AssertionError: not within 60 s"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_native_adapter_installs_once_and_preserves_companion_executables",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 7.619,
+          "message": "AssertionError: assert ['/tmp/pytest...upport=false'] == ['/tmp/pytest...ar', '--uid=']\n  \n  Left contains one more item: '--enforce_kernel_ipv6_support=false'\n  Use -v to get more diff"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 1.71,
+          "message": "AssertionError: assert ['/tmp/pytest-of-rich/pytest-1479/popen-gw4/test_native_adapter_installs_o0/home/agents/antigravity-acp/1.4.1/agy_acp_server.par', '--uid=', '--enforce_kernel_ipv6_support=false'] == ['/tmp/pytest-of-rich/pytest-1479/popen-gw4/test_native_adapter_installs_o0/home/agents/antigravity-acp/1.4.1/agy_acp_server.par', '--uid=']\n  \n  Left contains one more item: '--enforce_kernel_ipv6_support=false'\n  \n  Full diff:\n    [\n        '/tmp/pytest-of-rich/pytest-1479/popen-gw4/test_nat"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_dispatch.py::test_stalled_board_counts_execution_and_keeps_launch_authority",
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 8.867,
+          "message": "AssertionError: metaform map work op=edit id=8068ff56d17d48c1a58b7a532eede01c held=true hold=true failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.193,
+          "message": "AssertionError: metaform map work op=edit id=cf3c483d639a48df8b1cde50d21e69f1 held=true hold=true failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      }
+    ],
+    "known_preexisting_deselections": [
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_dispatch_is_made_from_the_template_and_imports_only_the_public_base_and_acp",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_summoned_agents_do_not_consume_the_worker_budget",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_stop_it",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer_no_one",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_and_no_other",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_turn_that_fails_is_traced_with_its_error",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_personal_start_releases_only_requested_backlog_ticket_before_routing",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_is_withheld_conclusions_and_steered_to_its_first_record",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_native_adapter_installs_once_and_preserves_companion_executables",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py::test_stalled_board_counts_execution_and_keeps_launch_authority"
+    ],
+    "deselection_scope": "These nodes reproduce baseline failures and can be omitted from a concurrent continuation sweep while retaining their documented failures. The latency condition separately passes the current isolated check. This does not narrow product behavior or establish a clean full suite.",
+    "intentional_change": "The two intake cases pass baseline but expect the old Retain-this-context-key prefix. Revised diagnostic text deliberately avoids claiming agent-context retention. prompt_reconcile owns the expectation update and focused validation.",
+    "raw_evidence": [
+      "/tmp/metaform-acp-modules.log",
+      "/tmp/metaform-acp-modules.xml",
+      "/tmp/metaform-acp-modules-baseline.log",
+      "/tmp/metaform-acp-modules-baseline.xml",
+      "/tmp/metaform-acp-modules-current-latency.log",
+      "/tmp/metaform-acp-modules-current-latency.xml"
+    ],
+    "conclusion": "Of the eighteen cases assigned to this triage, sixteen fail on baseline too. Two are assertions of deliberately superseded diagnostic wording, assigned for test updates. No introduced runtime defect is established by these cases. The remaining module suite has not been completed by this triage."
+  },
+  "miscellaneous_remainder_triage": {
+    "recorded_at": "2026-10-23T04:57:12.189113+00:00",
+    "revised_halted_summary": {
+      "failed": 33,
+      "passed": 407,
+      "skipped": 1,
+      "seconds": 520.83
+    },
+    "baseline_summary": {
+      "failed": 12,
+      "passed": 0,
+      "seconds": 13.75,
+      "exit_code": 1
+    },
+    "baseline_command": [
+      "/home/rich/metaform/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-n",
+      "4",
+      "-vv",
+      "--tb=short",
+      "--junitxml=/tmp/metaform-acp-misc-baseline.xml",
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel",
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable",
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_the_agent_process_finds_this_install_first_on_path[elsewhere]",
+      "src/metaform/modules/dispatch/tests/test_progress.py::test_nonactive_base_signal_is_raised_and_cleared_only_in_its_own_base",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_design_gets_free_folder_registration_and_authored_intake",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[symlink]",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[file]",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_failed_launch_keeps_project_for_explicit_retry",
+      "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_starts_with_worker_and_helper_capacity_full",
+      "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_process_starts_while_all_capacity_is_held",
+      "src/metaform/modules/dispatch/tests/test_signals.py::test_thresholds_count_unique_calls_and_reset_on_real_steps",
+      "src/metaform/modules/dispatch/tests/test_signals.py::test_signal_events_reach_another_process_without_polling"
+    ],
+    "baseline_cwd": "/tmp/metaform-acp-baseline",
+    "baseline_environment": {
+      "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+    },
+    "scope": "Only liveness, progress, project intake, sentinel capacity and signals. Slow scripted orchestration runtime, peer-team and transport cases are assigned elsewhere and were not rerun.",
+    "checks": [
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_liveness.py::test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 3.093,
+          "message": "AssertionError: assert ['When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: Routine notes stay in records and the UI without entering model context. Current questions and required owned continuations carry your phrase; receivers read details explicitly when needed. Never write tool syntax into a chat message. Keep routine summaries to one to thre"
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 2.048,
+          "message": "AssertionError: assert ['When you se...\\nFirst turn'] == ['First turn']\n  \n  At index 0 diff: 'When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: Routine notes stay in records and the UI without entering model context. Current questions and required owned continuations carry your phrase; receivers read details explicitly when needed. Never write "
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_liveness.py::test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 3.178,
+          "message": "AssertionError: assert ['When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: Routine notes stay in records and the UI without entering model context. Current questions and required owned continuations carry your phrase; receivers read details explicitly when needed. Never write tool syntax into a chat message. Keep routine summaries to one to thre"
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 2.289,
+          "message": "AssertionError: assert ['When you se...conversation'] == ['Continue the conversation']\n  \n  At index 0 diff: 'When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: Routine notes stay in records and the UI without entering model context. Current questions and required owned continuations carry your phrase; receivers read details explicitly when neede"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_liveness.py::test_the_agent_process_finds_this_install_first_on_path[elsewhere]",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 3.307,
+          "message": "KeyError: 'env'"
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 2.152,
+          "message": "KeyError: 'env'"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_progress.py::test_nonactive_base_signal_is_raised_and_cleared_only_in_its_own_base",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.675,
+          "message": "AssertionError: assert not [{'signal': 'rework-limit', 'module': 'dispatch', 'project': 'proj', 'work_id': '25dded763dc94e8a9442c992f4a98faa', 'session_id': None, 'active': True, 'at': '2026-10-23T04:56:17Z', 'base': '13e161d294384754b98a1c5d71f81475', 'attempts': 3, 'limit': 3, 'epoch': '7b417563bddfcec4'}]\n +  where [{'signal': 'rework-limit', 'module': 'dispatch', 'project': 'proj', 'work_id': '25dded763dc94e8a9442c992f4a98faa', 'session_id': "
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 3.571,
+          "message": "AssertionError: assert not [{'signal': 'rework-limit', 'module': 'dispatch', 'project': 'proj', 'work_id': '822772d4f08f4ca4ad7f27b1cef7a403', ...}]\n +  where [{'signal': 'rework-limit', 'module': 'dispatch', 'project': 'proj', 'work_id': '822772d4f08f4ca4ad7f27b1cef7a403', ...}] = <function rows at 0x757cf3b72c00>(<metaform.data.store.Store object at 0x757cf2d02dd0>, '822772d4f08f4ca4ad7f27b1cef7a403')\n +    where <metaform.data.store.Store obje"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_project_intake.py::test_design_gets_free_folder_registration_and_authored_intake",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 1.16,
+          "message": "LookupError: /tmp/metaform-acp-baseline/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 1.714,
+          "message": "LookupError: /home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[symlink]",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 1.176,
+          "message": "LookupError: /tmp/metaform-acp-baseline/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 2.374,
+          "message": "LookupError: /home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[file]",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 1.243,
+          "message": "LookupError: /tmp/metaform-acp-baseline/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 3.01,
+          "message": "LookupError: /home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_project_intake.py::test_failed_launch_keeps_project_for_explicit_retry",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 1.152,
+          "message": "LookupError: /tmp/metaform-acp-baseline/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 2.176,
+          "message": "LookupError: /home/rich/metaform/src/metaform/modules/dispatch/resources/prompts.xml has no prompt design_intake."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_starts_with_worker_and_helper_capacity_full",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.987,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 5.009,
+          "message": "metaform.errors.StoreError: An explicit hold requires a nonblank hold_reason."
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_process_starts_while_all_capacity_is_held",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 2.592,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Investigate full capacity. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 4.058,
+          "message": "AssertionError: metaform dispatch raise code.engine --json -- Investigate full capacity. failed (2):\nError: An explicit hold requires a nonblank hold_reason.\nNext: supply hold_reason explaining why this ticket must wait"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_signals.py::test_thresholds_count_unique_calls_and_reset_on_real_steps",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 7.129,
+          "message": "AssertionError: assert not [{'signal': 'spinning-calls', 'module': 'dispatch', 'project': 'proj', 'work_id': '18ca8f4e05154029b21872ba78581f60', 'session_id': 'unit-session', 'active': True, 'at': '2026-10-23T04:56:24Z', 'base': '50a4d0858de7458db266168ff9fece8d', 'calls': 3}]"
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 9.888,
+          "message": "AssertionError: assert not [{'signal': 'spinning-calls', 'module': 'dispatch', 'project': 'proj', 'work_id': '88b08506a21a4dbdba3ddabe316124be', ...}]"
+        },
+        "classification": "preexisting_failure"
+      },
+      {
+        "nodeid": "src/metaform/modules/dispatch/tests/test_signals.py::test_signal_events_reach_another_process_without_polling",
+        "baseline": {
+          "outcome": "failed",
+          "seconds": 6.947,
+          "message": "AssertionError: assert [] == [{'signal': 'requeue', 'module': 'dispatch', 'project': 'proj', 'work_id': 'eedc21d0fec648189a605ee6eab594c7', 'session_id': None, 'active': True, 'at': '2026-10-23T04:56:24Z', 'base': 'cba69b3da5d54e369cbc001a285ba542', 'previous': 'doing'}]\n  \n  Right contains one more item: {'signal': 'requeue', 'module': 'dispatch', 'project': 'proj', 'work_id': 'eedc21d0fec648189a605ee6eab594c7', ...}\n  \n  Full diff:\n  + []\n  - ["
+        },
+        "revised_halted_run": {
+          "outcome": "failed",
+          "seconds": 9.451,
+          "message": "AssertionError: assert [] == [{'signal': '...8da64c', ...}]\n  \n  Right contains one more item: {'signal': 'requeue', 'module': 'dispatch', 'project': 'proj', 'work_id': '1a03e1b7025744828563df76488da64c', ...}\n  Use -v to get more diff"
+        },
+        "classification": "preexisting_failure"
+      }
+    ],
+    "known_preexisting_deselections": [
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable",
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_the_agent_process_finds_this_install_first_on_path[elsewhere]",
+      "src/metaform/modules/dispatch/tests/test_liveness.py::test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel",
+      "src/metaform/modules/dispatch/tests/test_progress.py::test_nonactive_base_signal_is_raised_and_cleared_only_in_its_own_base",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_failed_launch_keeps_project_for_explicit_retry",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_design_gets_free_folder_registration_and_authored_intake",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[symlink]",
+      "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[file]",
+      "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_starts_with_worker_and_helper_capacity_full",
+      "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_process_starts_while_all_capacity_is_held",
+      "src/metaform/modules/dispatch/tests/test_signals.py::test_thresholds_count_unique_calls_and_reset_on_real_steps",
+      "src/metaform/modules/dispatch/tests/test_signals.py::test_signal_events_reach_another_process_without_polling"
+    ],
+    "raw_evidence": [
+      "/tmp/metaform-acp-misc-baseline.log",
+      "/tmp/metaform-acp-misc-baseline.xml",
+      "/tmp/metaform-acp-module-remainder.log",
+      "/tmp/metaform-acp-module-remainder.xml"
+    ],
+    "conclusion": "All twelve assigned miscellaneous failures reproduce baseline. This does not classify the delegated orchestration transport/runtime cases or prove completion of the remaining suite."
+  },
+  "peer_team_fixture_triage": {
+    "nodeid": "src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py::test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_ownership",
+    "baseline_failed": true,
+    "seconds": 5.78,
+    "baseline_command": [
+      "/home/rich/metaform/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-n",
+      "0",
+      "-q",
+      "src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py"
+    ],
+    "baseline_environment": {
+      "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+    },
+    "baseline_cwd": "/tmp/metaform-acp-baseline",
+    "failure": "AssertionError: Runner ended before its live session: b'work_id: 870c9fb2de0f499dac1700408e2ac48b\\nagent: claude\\nsession_id: \\nended: orchestration suspended\\n' b''",
+    "classification": "preexisting_fixture_cannot_complete_runtime_selection",
+    "evidence": [
+      "/tmp/metaform-acp-peer-baseline.log",
+      "/tmp/metaform-acp-peer-baseline.xml",
+      "/tmp/metaform-acp-module-remainder.xml"
+    ],
+    "assessment": "Both revisions end the initial runner as orchestration suspended. The classic fake agent cannot answer the fixture's missing runtime selection commission. No product or fixture change made in this triage."
+  },
+  "owner_sweep_triage": {
+    "observed_revised_owner_summary": {
+      "failed": 12,
+      "passed": 424,
+      "seconds": 483.48
+    },
+    "baseline_selected_summary": {
+      "failed": 6,
+      "passed": 4,
+      "seconds": 35.76
+    },
+    "baseline_command": [
+      "/home/rich/metaform/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-n",
+      "4",
+      "-vv",
+      "--tb=short",
+      "--junitxml=/tmp/metaform-acp-owner-baseline.xml",
+      "src/metaform/modules/orchestration/tests/test_bmad.py::test_manifest_role_source_versions_menu_override_and_managed_call",
+      "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_and_note",
+      "src/metaform/modules/memory/tests/test_memory.py::test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id",
+      "src/metaform/modules/memory/tests/test_memory.py::test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_with_titles_from_their_first_line",
+      "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_on_the_persons_word_their_system_agent_starts_work_with_no_card_and_a_switch_still_asks",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_every_verb_that_reaches_the_network_or_writes_declares_it_in_its_annotation",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_an_open_world_verb_declared_closed_is_caught_by_the_annotation_check",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_a_write_declared_read_is_caught_by_the_network_or_writes_check",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_resources_serve_the_instructions_and_what_a_module_declares"
+    ],
+    "baseline_environment": {
+      "PYTHONPATH": "/tmp/metaform-acp-baseline/src"
+    },
+    "baseline_cwd": "/tmp/metaform-acp-baseline",
+    "classifications": {
+      "preexisting_failure_reproduced": 6,
+      "schema_version_expectation_corrected": 3,
+      "introduced_test_fixture_expectation_corrected": 2,
+      "fresh_start_ordering_race_fixed": 1
+    },
+    "tests": [
+      {
+        "nodeid": "src/metaform/modules/orchestration/tests/test_bmad.py::test_manifest_role_source_versions_menu_override_and_managed_call",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 2.055,
+          "message": "metaform.errors.Stop: No recorded assignment for this call."
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 1.364,
+          "message": "metaform.errors.Stop: No recorded assignment for this call."
+        },
+        "classification": "preexisting_failure_reproduced"
+      },
+      {
+        "nodeid": "src/metaform/modules/orchestration/tests/test_specialist_routing.py::test_ticket_runtime_uses_model_selected_advertised_choice[frontend-claude-Polish the settings panel layout and interaction states.]",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.149,
+          "message": "KeyError: 'claude'"
+        },
+        "baseline_selected": null,
+        "classification": "introduced_test_fixture_expectation_corrected",
+        "resolution": "The test now supplies explicit strength research rather than assuming removed default brand preferences. Supplied research reaches the selector unchanged. Fixture schema copies isolate registry mutations.",
+        "verification": {
+          "reported_by": "runtime_selection owner",
+          "outcome": "110 specialist routing cases passed in 63.45s",
+          "run_directory": "/tmp/metaform-runtime-selection-final-proof-fixed",
+          "report_kind": "owner terminal result; no JUnit artifact"
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/orchestration/tests/test_specialist_routing.py::test_ticket_runtime_uses_model_selected_advertised_choice[coding-codex-Reject expired tokens in auth.validate, preserving valid tokens. Verify expiry boundaries.]",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.18,
+          "message": "KeyError: 'codex'"
+        },
+        "baseline_selected": null,
+        "classification": "introduced_test_fixture_expectation_corrected",
+        "resolution": "The test now supplies explicit strength research rather than assuming removed default brand preferences. Supplied research reaches the selector unchanged. Fixture schema copies isolate registry mutations.",
+        "verification": {
+          "reported_by": "runtime_selection owner",
+          "outcome": "110 specialist routing cases passed in 63.45s",
+          "run_directory": "/tmp/metaform-runtime-selection-final-proof-fixed",
+          "report_kind": "owner terminal result; no JUnit artifact"
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_and_note",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.856,
+          "message": "assert 12 == 11"
+        },
+        "baseline_selected": {
+          "outcome": "passed",
+          "seconds": 1.535
+        },
+        "classification": "schema_version_expectation_corrected",
+        "resolution": "Expected current schema version uses TABLES.version. Exact compatible_from=9 and migration row, relation, join and note assertions remain.",
+        "current_recheck": {
+          "outcome": "passed",
+          "seconds": 1.378
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/memory/tests/test_memory.py::test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.626,
+          "message": "AssertionError: apply\nassert {'address', '...', 'receiver'} <= {'entityNames...e', 'project'}\n  \n  Extra items in the left set:\n  'address'\n  'receiver'\n  'provider'"
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 1.38,
+          "message": "AssertionError: apply\nassert {'receiver', 'provider', 'address'} <= {'mutationId', 'expectedDigest', 'node', 'project', 'mutations', 'entityNames'}\n  \n  Extra items in the left set:\n  'receiver'\n  'provider'\n  'address'"
+        },
+        "classification": "preexisting_failure_reproduced"
+      },
+      {
+        "nodeid": "src/metaform/modules/memory/tests/test_memory.py::test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_with_titles_from_their_first_line",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.763,
+          "message": "assert (12, 9) == (11, 9)\n  \n  At index 0 diff: 12 != 11\n  Use -v to get more diff"
+        },
+        "baseline_selected": {
+          "outcome": "passed",
+          "seconds": 1.643
+        },
+        "classification": "schema_version_expectation_corrected",
+        "resolution": "Expected current schema version uses TABLES.version. Exact compatible_from=9 and migration row, relation, join and note assertions remain.",
+        "current_recheck": {
+          "outcome": "passed",
+          "seconds": 1.437
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 1.49,
+          "message": "assert (12, 9) == (11, 9)\n  \n  At index 0 diff: 12 != 11\n  Use -v to get more diff"
+        },
+        "baseline_selected": {
+          "outcome": "passed",
+          "seconds": 1.24
+        },
+        "classification": "schema_version_expectation_corrected",
+        "resolution": "Expected current schema version uses TABLES.version. Exact compatible_from=9 and migration row, relation, join and note assertions remain.",
+        "current_recheck": {
+          "outcome": "passed",
+          "seconds": 1.289
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_on_the_persons_word_their_system_agent_starts_work_with_no_card_and_a_switch_still_asks",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 302.218,
+          "message": "Failed: Timeout (>300.0s) from pytest-timeout."
+        },
+        "baseline_selected": {
+          "outcome": "passed",
+          "seconds": 11.426
+        },
+        "classification": "fresh_start_ordering_race_fixed",
+        "resolution": "Fresh begin disables prompt execution before session publication and reports startup as working. The initial brief joins the first actual queued human turn via queue_startup_context. Exact human bytes and word authorization remain attached to that turn, with no extra model request.",
+        "diagnostic_evidence": {
+          "observed": "Before fix, the actual human message reached ACP prompt one and ended. A late initial role brief occupied gated prompt two without the human word. The next otherwise authorized setting change then incorrectly asked for consent. Existing permission guards were correct and remain unchanged.",
+          "reproduction_log": "/tmp/metaform-acp-owner-current-consent.log",
+          "reproduction_session": "pytest-1499/test_on_the_persons_word_their0",
+          "before_fix_independent_reproduction": "Interrupted after observing incorrect prompt ordering and live consent request, rather than waiting the full request deadline."
+        },
+        "current_recheck": {
+          "outcome": "passed",
+          "seconds": 9.442
+        }
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_every_verb_that_reaches_the_network_or_writes_declares_it_in_its_annotation",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 18.805,
+          "message": "AssertionError: agents_resolve declared read, writes: metaform_module_system_agents.roles.resolve > metaform_module_system_agents.roles.RoleService.resolve > ctx.store.tables()\n  dispatch_adapter reaches the network, open_world False: metaform_module_system_dispatch.adapter > metaform_module_system_dispatch.registry.adapter > metaform_module_system_dispatch.registry.pin > metaform_module_system_dispatch.registry._fetch > urlopen\n  dispatch_wait reaches the network, open_world False: metaform_module_system_dispatch.wait > metaform_module_system_dispatch.note > metaform_module_system_dispatch.pe"
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 17.138,
+          "message": "AssertionError: agents_resolve declared read, writes: metaform_module_system_agents.roles.resolve > metaform_module_system_agents.roles.RoleService.resolve > ctx.store.tables()\n  dispatch_adapter reaches the network, open_world False: metaform_module_system_dispatch.adapter > metaform_module_system_dispatch.registry.adapter > metaform_module_system_dispatch.registry.pin > metaform_module_system_dispatch.registry._fetch > urlopen\n  dispatch_wait reaches the network, open_world False: metaform_module_system_dispatch.wait > metaform_module_system_dispatch.note > metaform_module_system_dispatch.pe"
+        },
+        "classification": "preexisting_failure_reproduced"
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_an_open_world_verb_declared_closed_is_caught_by_the_annotation_check",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 16.066,
+          "message": "AssertionError: Open-world evidence registry differs: ['autoticket_watch', 'dispatch_broadcast', 'dispatch_login', 'dispatch_message', 'dispatch_options', 'dispatch_prompts', 'dispatch_recover', 'dispatch_stop', 'dispatch_stop-all', 'fork_upkeep', 'fork_wheel', 'mcp_a2a_cancel', 'mcp_a2a_send', 'roundtables_advance', 'roundtables_comment', 'roundtables_end', 'roundtables_hold', 'roundtables_reseat', 'twilio_call', 'twilio_serve', 'twilio_text']\nassert {'autoticket_...nfigure', ...} == {'cloud_conne...nfigure', ...}\n  \n  Extra items in the left set:\n  'roundtables_reseat'\n  'roundtables_hold'\n "
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 16.794,
+          "message": "AssertionError: Open-world evidence registry differs: ['autoticket_watch', 'dispatch_broadcast', 'dispatch_login', 'dispatch_message', 'dispatch_options', 'dispatch_prompts', 'dispatch_recover', 'dispatch_stop', 'dispatch_stop-all', 'fork_upkeep', 'fork_wheel', 'mcp_a2a_cancel', 'mcp_a2a_send', 'roundtables_advance', 'roundtables_comment', 'roundtables_end', 'roundtables_hold', 'roundtables_reseat', 'twilio_call', 'twilio_serve', 'twilio_text']\nassert {'paperclip_brief', 'dispatch_tune', 'dispatch_permit', 'dispatch_prompts', 'roundtables_hold', 'cloud_connect', 'roundtables_end', 'autoticket_"
+        },
+        "classification": "preexisting_failure_reproduced"
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_a_write_declared_read_is_caught_by_the_network_or_writes_check",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 16.404,
+          "message": "AssertionError: Write evidence registry differs: ['autoticket_watch', 'dispatch_configure', 'dispatch_fork', 'dispatch_interrupt', 'dispatch_login', 'dispatch_message', 'dispatch_options', 'dispatch_permit', 'dispatch_timer', 'intake_discard', 'map_remove-base', 'node_revoke', 'node_rotate-key', 'node_signout']\nassert {'autoticket_...ve-base', ...} == {'cloud_logou...message', ...}\n  \n  Extra items in the left set:\n  'intake_discard'\n  'autoticket_watch'\n  'map_remove-base'\n  Extra items in the right set:\n  'dispatch_permit'...\n  \n  ...Full output truncated (11 lines hidden), use '-vv' to show"
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 13.945,
+          "message": "AssertionError: Write evidence registry differs: ['autoticket_watch', 'dispatch_configure', 'dispatch_fork', 'dispatch_interrupt', 'dispatch_login', 'dispatch_message', 'dispatch_options', 'dispatch_permit', 'dispatch_timer', 'intake_discard', 'map_remove-base', 'node_revoke', 'node_rotate-key', 'node_signout']\nassert {'autoticket_watch', 'workflow_serve', 'packet_check', 'node_relay-enrol', 'intake_discard', 'map_remove-base', 'node_invite', 'twilio_text', 'dispatch_serve', 'web_stop', 'node_relay-gate', 'twilio_call', 'cloud_logout', 'hello_follow', 'workflow_resume'} == {'node_signout', 'wo"
+        },
+        "classification": "preexisting_failure_reproduced"
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_resources_serve_the_instructions_and_what_a_module_declares",
+        "owner_sweep": {
+          "outcome": "failed",
+          "seconds": 3.082,
+          "message": "AssertionError: assert (True and {'metaform://...modules', ...} == {'metaform://...modules', ...}\n  \n  Extra items in the left set:\n  'metaform://specialists'\n  Use -v to get more diff)"
+        },
+        "baseline_selected": {
+          "outcome": "failed",
+          "seconds": 2.564,
+          "message": "AssertionError: assert (True and {'metaform://role/person', 'metaform://specialists', 'metaform://intake/schema', 'metaform://runtime/compaction-state', 'metaform://intake/procedure', 'metaform://rules', 'metaform://memory', 'metaform://proj', 'metaform://modules', 'metaform://metaform', 'metaform://instructions', 'metaform://orchestration/bmad'} == {'metaform://role/person', 'metaform://intake/schema', 'metaform://runtime/compaction-state', 'metaform://orchestration/bmad', 'metaform://memory', 'metaform://rules', 'metaform://proj', 'metaform://modules', 'metaform://metaform', 'metaform://inst"
+        },
+        "classification": "preexisting_failure_reproduced"
+      }
+    ],
+    "fresh_start_final_verification": {
+      "summary": {
+        "failed": 0,
+        "passed": 5,
+        "seconds": 17.76
+      },
+      "tests": {
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt[False]": {
+          "outcome": "passed",
+          "seconds": 6.671
+        },
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_fresh_brief_joins_an_early_person_message_without_losing_its_word": {
+          "outcome": "passed",
+          "seconds": 6.253
+        },
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_stop_discards_messages_waiting_for_the_active_turn": {
+          "outcome": "passed",
+          "seconds": 5.988
+        },
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_mid_turn_messages_wait_in_order_and_cannot_replace_a_prompt[True]": {
+          "outcome": "passed",
+          "seconds": 6.536
+        },
+        "src/metaform/modules/mcp/tests/test_mcp.py::test_on_the_persons_word_their_system_agent_starts_work_with_no_card_and_a_switch_still_asks": {
+          "outcome": "passed",
+          "seconds": 9.442
+        }
+      },
+      "scope": "Deterministic real ACP early-human startup regression, two existing FIFO cases, stop-queued case, and original MCP consent workflow.",
+      "static_checks": [
+        "Ruff runner.py and test_liveness.py: passed",
+        "Pyright runner.py: 0 errors, 0 warnings"
+      ]
+    },
+    "schema_final_verification": {
+      "failed": 0,
+      "passed": 3,
+      "seconds": 2.04,
+      "tests": {
+        "src/metaform/modules/memory/tests/test_memory.py::test_memories_kept_before_numbers_are_numbered_in_the_order_they_were_made_with_titles_from_their_first_line": {
+          "outcome": "passed",
+          "seconds": 1.437
+        },
+        "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_with_times_is_upgraded_keeping_every_memory_relation_join_and_note": {
+          "outcome": "passed",
+          "seconds": 1.378
+        },
+        "src/metaform/modules/memory/tests/test_memory.py::test_memory_kept_at_version_2_is_upgraded_keeping_every_row_with_no_by": {
+          "outcome": "passed",
+          "seconds": 1.289
+        }
+      }
+    },
+    "known_preexisting_deselections": [
+      "src/metaform/modules/orchestration/tests/test_bmad.py::test_manifest_role_source_versions_menu_override_and_managed_call",
+      "src/metaform/modules/memory/tests/test_memory.py::test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_every_verb_that_reaches_the_network_or_writes_declares_it_in_its_annotation",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_an_open_world_verb_declared_closed_is_caught_by_the_annotation_check",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_a_write_declared_read_is_caught_by_the_network_or_writes_check",
+      "src/metaform/modules/mcp/tests/test_mcp.py::test_resources_serve_the_instructions_and_what_a_module_declares"
+    ],
+    "combined_known_preexisting_module_deselections": {
+      "path": "/tmp/metaform-acp-module-known-baseline-all.txt",
+      "count": 35,
+      "nodeids": [
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_turn_that_fails_is_traced_with_its_error",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_a_work_claim_holds_its_part_of_the_map_from_its_first_ticket_taken_until_its_work_has_landed",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_intake_agent_is_withheld_conclusions_and_steered_to_its_first_record",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_an_issue_raised_on_a_node_in_use_waits_until_that_work_is_complete",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_dispatch_is_made_from_the_template_and_imports_only_the_public_base_and_acp",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_native_adapter_installs_once_and_preserves_companion_executables",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_one_agent_per_glyph_works_the_glyphs_tickets_in_turn_in_board_order",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_personal_start_releases_only_requested_backlog_ticket_before_routing",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_raising_an_issue_holds_it_on_a_ticket_at_the_node_and_starts_the_sentinel_with_the_report",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_stalled_board_counts_execution_and_keeps_launch_authority",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_summoned_agents_do_not_consume_the_worker_budget",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_answer_reaches_the_agent_when_map_changed_is_fired_and_not_before",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_answer_to_its_own_permission_request_reaches_the_runner_within_100_ms",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_message_lets_their_system_agent_orchestrate_in_that_turn_and_no_other",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_the_persons_word_covers_the_work_it_started_in_later_turns_until_they_stop_it",
+        "src/metaform/modules/dispatch/tests/test_dispatch.py::test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer_no_one",
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable",
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel",
+        "src/metaform/modules/dispatch/tests/test_liveness.py::test_the_agent_process_finds_this_install_first_on_path[elsewhere]",
+        "src/metaform/modules/dispatch/tests/test_orchestration_peer_teams.py::test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_ownership",
+        "src/metaform/modules/dispatch/tests/test_progress.py::test_nonactive_base_signal_is_raised_and_cleared_only_in_its_own_base",
+        "src/metaform/modules/dispatch/tests/test_project_intake.py::test_design_gets_free_folder_registration_and_authored_intake",
+        "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[file]",
+        "src/metaform/modules/dispatch/tests/test_project_intake.py::test_existing_file_or_dangling_symlink_reserves_name[symlink]",
+        "src/metaform/modules/dispatch/tests/test_project_intake.py::test_failed_launch_keeps_project_for_explicit_retry",
+        "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_process_starts_while_all_capacity_is_held",
+        "src/metaform/modules/dispatch/tests/test_sentinel_capacity.py::test_sentinel_starts_with_worker_and_helper_capacity_full",
+        "src/metaform/modules/dispatch/tests/test_signals.py::test_signal_events_reach_another_process_without_polling",
+        "src/metaform/modules/dispatch/tests/test_signals.py::test_thresholds_count_unique_calls_and_reset_on_real_steps",
+        "src/metaform/modules/mcp/tests/test_mcp.py::test_a_write_declared_read_is_caught_by_the_network_or_writes_check",
+        "src/metaform/modules/mcp/tests/test_mcp.py::test_an_open_world_verb_declared_closed_is_caught_by_the_annotation_check",
+        "src/metaform/modules/mcp/tests/test_mcp.py::test_every_verb_that_reaches_the_network_or_writes_declares_it_in_its_annotation",
+        "src/metaform/modules/mcp/tests/test_mcp.py::test_resources_serve_the_instructions_and_what_a_module_declares",
+        "src/metaform/modules/memory/tests/test_memory.py::test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id",
+        "src/metaform/modules/orchestration/tests/test_bmad.py::test_manifest_role_source_versions_menu_override_and_managed_call"
+      ]
+    },
+    "raw_evidence": [
+      "/tmp/metaform-acp-owner-modules.log",
+      "/tmp/metaform-acp-owner-modules.xml",
+      "/tmp/metaform-acp-owner-baseline.log",
+      "/tmp/metaform-acp-owner-baseline.xml",
+      "/tmp/metaform-acp-owner-schema-final.log",
+      "/tmp/metaform-acp-owner-schema-final.xml",
+      "/tmp/metaform-acp-fresh-start-fix.log",
+      "/tmp/metaform-acp-fresh-start-fix.xml",
+      "/tmp/metaform-acp-fresh-start-final.log",
+      "/tmp/metaform-acp-fresh-start-final.xml"
+    ],
+    "conclusion": "Six owner failures reproduce on baseline. Five stale expectations were corrected while retaining meaningful assertions. The remaining consent workflow exposed a real startup ordering race and passes after the narrow startup fix. The original owner sweep was not green, and no complete repository-green claim is made."
+  }
+}

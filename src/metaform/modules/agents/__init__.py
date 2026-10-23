@@ -11,6 +11,7 @@ never dropped.
 """
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any, cast
@@ -126,7 +127,8 @@ assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record f
 # Version 2 adds the authored-role tables of roles.py: definitions, their history, role sources, and each recipient
 # context epoch with its receipts. It only adds tables, so version 1's code still reads and writes `sent`, STORE-029.
 # Version 3 adds content fingerprints and startup context checks without changing the existing tables' fields.
-TABLES = Tables(version=3, compatible_from=1, tables=(
+# Version 4 adds accepted changed-instruction references, separate from body delivery receipts.
+TABLES = Tables(version=4, compatible_from=1, tables=(
     Table('sent', place='project', key=('session_id', 'seq'),
           columns=(Column('session_id', required=True), Column('seq', 'int', required=True),
                    Column('work_id', required=True), Column('runner'), Column('role', required=True),
@@ -363,6 +365,33 @@ def role(ctx: Context) -> dict[str, Any]:
     return result
 
 
+def _native_sources(ctx: Context) -> dict[str, Any]:
+    """Discover current local candidates without claiming the adapter loaded any of them."""
+    sources: list[dict[str, Any]] = []
+    for filename in ('AGENTS.md', 'CLAUDE.md', 'GEMINI.md'):
+        path = ctx.folder / filename
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            sources.append({'path': str(path), 'digest': None, 'status': 'unread', 'problem': str(error)})
+        else:
+            sources.append({'path': str(path), 'digest': digest, 'status': 'discovered_not_confirmed_loaded'})
+    return {'sources': sources, 'loaded_sources': 'unknown', 'internal_instructions': 'unknown',
+            'observation': 'current_files_at_inspection'}
+
+
+def _manifest(one: dict[str, Any]) -> dict[str, Any]:
+    source = cast(dict[str, Any], one.get('source') or {})
+    return {'name': one['name'], 'actual_version_id': one.get('version_id') or one.get('actual_version_id'),
+            'selected_version_id': one.get('selected_version_id'), 'number': one.get('number'),
+            'origin': one.get('origin'), 'rendered_digest': one.get('rendered_fingerprint'),
+            'source': one.get('source') or {'kind': 'unknown', 'path': None, 'shipped_identity': None},
+            'delivery_path': one.get('delivery_path') or 'unknown', 'problems': one.get('problems') or [],
+            'snapshot': one.get('snapshot', source.get('snapshot', 'unknown'))}
+
+
 def sent(ctx: Context) -> dict[str, Any]:
     """Which role a session ran as and which prompt versions each of its turns carried, by its session id or its
     runner's (METAFORM_SESSION)."""
@@ -376,14 +405,19 @@ def sent(ctx: Context) -> dict[str, Any]:
     ordered = sorted((dict(row) for row in rows), key=lambda row: int(row['seq']))
     first = ordered[0]
     versions: dict[str, list[int | None]] = {}
+    effective: dict[str, dict[str, Any]] = {}
     for row in ordered:
         for one in cast(list[dict[str, Any]], row['prompts']):
+            effective[str(one['name'])] = _manifest(one)
             numbers = versions.setdefault(str(one['name']), [])
             if one.get('number') not in numbers:
                 numbers.append(one.get('number'))
     return {'session_id': first['session_id'], 'role': first['role'], 'agent': first['agent'],
             'work_id': first['work_id'], 'runners': sorted({str(row['runner']) for row in ordered if row['runner']}),
             'prompts': [{'name': name, 'versions': numbers} for name, numbers in versions.items()],
+            'effective_instructions': list(effective.values()),
+            'observation_scope': 'Metaform delivery history; current semantic retention is unknown',
+            'native_instructions': _native_sources(ctx),
             'turns': [{'at': row['at'], 'runner': row['runner'], 'prompts': row['prompts']} for row in ordered],
             'next': 'metaform prompt <name> <version> reads the exact text of a version'}
 
@@ -549,8 +583,8 @@ MODULE = Module(
              effect='read'),
         Verb('receipts', authored.inspect_receipts, 'Read context delivery fingerprints and versions, without bodies.',
              nouns=(SESSION,), effect='read'),
-        Verb('confirm', authored.confirm_context, 'Confirm a startup context checkpoint using your retained key; '
-             'omit the key if it is unavailable. Missing proof makes only requested context eligible again.',
+        Verb('confirm', authored.confirm_context, 'Report a startup context marker using your retained key; '
+             'omit the key if unavailable. The observation does not establish which facts remain in context.',
              nouns=(Noun('checkpoint', 'The checkpoint in the startup request.'),
                     Noun('key', 'The key retained from the context instructions; omit if lost.', required=False)),
              effect='write'),

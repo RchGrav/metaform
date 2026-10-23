@@ -1,8 +1,8 @@
 """Functional memory delivery, using the agents module's shared context-epoch receipts.
 
 The graph remains the source of memory bodies. These tables keep functional encounters, entry revisions and
-withdrawn identities only. Nothing is pushed to an agent when memory changes: an agent is told of unread memory when it
-reads the node it works on (the map's count of it, `node_count`), and a count never acknowledges a body.
+withdrawn identities only. Changes to consumed functional entries coalesce into references for the next natural
+turn. No change wakes an agent or broadcasts bodies. Counts never acknowledge a body.
 """
 from __future__ import annotations
 
@@ -32,6 +32,11 @@ TABLES = (
                    Column('receiver', required=True), Column('provider', required=True, default=''),
                    Column('layers', 'json')),
           indexes=(Index(('receiver', 'provider')),)),
+    Table('pending_changes', place='project', key=('session', 'epoch', 'receiver', 'provider'),
+          columns=(Column('session', required=True), Column('epoch', 'int', required=True),
+                   Column('receiver', required=True), Column('provider', required=True, default=''),
+                   Column('revision', required=True), Column('components', 'json', required=True),
+                   Column('withdrawals', 'json', required=True))),
     Table('entry_revisions', place='project', key=('receiver', 'provider'),
           columns=(Column('receiver', required=True), Column('provider', required=True, default=''),
                    Column('revision', required=True))),
@@ -94,7 +99,8 @@ def encounter(ctx: Context, key: Key, *, epoch: int | None = None) -> None:
         tx.concern(session_id=ctx.session, kind='memory.encounter')
 
 
-def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None, writer: str | None = None) -> None:
+def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None, writer: str | None = None,
+            affected: list[str] | None = None) -> None:
     """Publish enough identity for relay recipients to filter before reading. Called inside the graph mutation. The
     session that wrote, `writer`, is not among them: what it wrote is its own, `authored`."""
     for receiver, provider in sorted(keys):
@@ -115,9 +121,27 @@ def changed(tx: TableTx, keys: set[Key], withdrawals: list[Row] | None = None, w
         tx.concern(kind=f'memory:{receiver}')
         if provider:
             tx.concern(kind=f'memory:{provider}')
+        # Queue references only for encountered entries. Actual body receipts are checked at delivery time:
+        # orienting/counting an entry alone must not subscribe a session to memory corrections.
+        names = {entity_name(name) for name in affected or ()}
+        names.update(str(one['requires'] or one['name']) for one in withdrawals or ())
+        removed = [{'name': str(one['name']), 'kind': one['kind'], 'value': one['value'],
+                    'observed_revision': revision}
+                   for one in withdrawals or ()]
         for row in tx.rows('encounters', identity, limit=0).results:
-            if row['session'] != writer:
-                tx.concern(session_id=row['session'])
+            if row['session'] == writer:
+                continue
+            key = {'session': row['session'], 'epoch': row['epoch'], **identity}
+            pending = tx.get('pending_changes', key)
+            prior_removed = {one['name']: one for one in pending['withdrawals']} if pending else {}
+            prior_removed.update({one['name']: one for one in removed})
+            values = {'revision': revision, 'components': sorted(names | set(pending['components'] if pending else [])),
+                      'withdrawals': list(prior_removed.values())}
+            if pending is None:
+                tx.insert('pending_changes', {**key, **values})
+            else:
+                tx.update('pending_changes', key, values)
+            tx.concern(session_id=row['session'])
 
 
 def remade(tx: TableTx, names: list[str]) -> None:
@@ -182,11 +206,17 @@ def withdrawals(ctx: Context, key: Key | None) -> list[Row]:
     return [component(row['kind'], row['value'], name=row['component'], requires=row['requires']) for row in rows]
 
 
-def prepare(ctx: Context, whole: Row, key: Key | None = None, *, interested: bool = True) -> Row:
+def prepare(ctx: Context, whole: Row, key: Key | None = None, *, interested: bool = True,
+            entry_revision: Row | None = None) -> Row:
     """Select current unread bodies and withdrawals against the shared ledger; this does not acknowledge any."""
     current = components(whole)
     live = {one['name'] for one in current}
     removed = [one for one in withdrawals(ctx, key) if one['name'] not in live]
+    # Only a revision captured in the same transaction as the body can establish an exact reread. Reading the
+    # revision later could tag an old snapshot with a concurrent correction's revision and hide that correction.
+    if entry_revision is not None:
+        for one in current:
+            one['entry_revision'] = entry_revision
     # An index withdrawal has its own identity, but is only meaningful to an agent that received its entity.
     required = {str(one['requires']) for one in removed if one.get('requires')} - live
     probes = [{'name': name, 'text': '', 'rendered_fingerprint': ''} for name in required
@@ -237,3 +267,55 @@ def counts(prepared: Row) -> tuple[set[str], set[str], set[str]]:
         unread.update(names)
         updated.update(name for name in names if entity_name(name) in previous or one['name'] in previous)
     return current, unread, updated
+
+
+class ContextChanges:
+    """Observational change references, consumed by transport only on an already scheduled turn."""
+
+    def pending(self, ctx: Context, session: str | None) -> list[Row]:
+        from metaform.module import context
+        if not session:
+            return []
+        from . import visible_at
+        ctx = context('memory', ctx.folder, project=ctx.project, session=session, switches=ctx.switches)
+        epoch = agent_context_epoch(ctx.folder, session, project=ctx.project)
+        with ctx.require_store().tables(write=False) as tx:
+            rows = tx.rows('pending_changes', {'session': session, 'epoch': epoch}, limit=0).results
+            for row in rows:
+                row['withdrawals'] = [{**one, 'superseded': tx.get('withdrawals', {
+                    'receiver': row['receiver'], 'provider': row['provider'], 'component': one['name']}) is None}
+                    for one in row['withdrawals']]
+        notices: list[Row] = []
+        for row in rows:
+            if not visible_at(ctx.require_store(), str(row['receiver'])):
+                continue
+            probes = [{'name': name, 'text': ''} for name in row['components']]
+            previous = prepare_agent_context(ctx.folder, session, probes, project=ctx.project)['previous']
+            receiver, provider = str(row['receiver']), str(row['provider'])
+            expected = {'receiver': receiver, 'provider': provider, 'revision': row['revision']}
+            previous = {name: held for name, held in previous.items()
+                        if held.get('component', {}).get('entry_revision') != expected}
+            if not previous:
+                continue
+            read = f'metaform memory read_graph node=element:{receiver}' + (f' provider={provider}' if provider else '')
+            notices.append({'receiver': receiver, 'provider': provider, 'revision': row['revision'],
+                            'epoch': epoch, 'previous': {name: held['fingerprint'] for name, held in previous.items()},
+                            'withdrawals': row['withdrawals'], 'read': read})
+        return notices
+
+    def delivered(self, ctx: Context, session: str | None, notices: list[Row]) -> None:
+        """Acknowledge only matching revisions after acceptance. A concurrent edit remains pending."""
+        from metaform.module import context
+        if not session or not notices:
+            return
+        ctx = context('memory', ctx.folder, project=ctx.project, session=session)
+        with ctx.require_store().tables() as tx:
+            for notice in notices:
+                key = {'session': session, 'epoch': notice['epoch'],
+                       'receiver': notice['receiver'], 'provider': notice['provider']}
+                row = tx.get('pending_changes', key)
+                if row and row['revision'] == notice['revision']:
+                    tx.delete('pending_changes', key)
+
+
+CHANGES = ContextChanges()

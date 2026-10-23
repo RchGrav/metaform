@@ -159,13 +159,15 @@ reading a saved assignment alone is not evidence that the runtime delivered it.
 
 ## Specialist selection and facilitation
 
-Assignment selects each ticket's agent, model and thinking level under BASE-066. Jev classifies the task and
-chooses from advertised dispatch options within one deadline. Precise coding uses Codex at Medium or higher.
-Front-end polish uses Claude. Planning uses the highest-capability advertised model. Research helpers use Low.
-Vague coding receives a Planner contribution that refines the original ticket before implementation.
+Assignment selects each ticket's agent, model and supported thinking control from the advertised dispatch options.
+Jev uses the contribution and the person's recorded strengths within one deadline. All advertised agent families
+and effort labels remain available. An adapter without an effort selector uses its harness default.
+Workers resolve local implementation details themselves. A separate Planner contribution remains available for
+cross-workstream dependencies or consequential unresolved decisions. Its returned plan is retained separately from
+the source task and consumed once for that request revision.
 
 `runtime work=<id>` returns the saved choice or requests a Facilitator choice with the offered catalog.
-Only that ticket's commissioned Facilitator can submit `choice=<JSON>` containing agent, model, effort,
+Only that ticket's commissioned Facilitator can submit `choice=<JSON>` containing agent, model, optional effort,
 task_type, confidence and reason. This uses the Facilitator's full model when Jev is off, uncredited or unanswered.
 The choice is saved in map `ticket_settings`, with decider and confidence. Publication requires runtime selection
 before continuing each in-place ticket. Runtime-only commissions preserve already assigned expertise.
@@ -173,6 +175,10 @@ Runtime requests use the current ticket task. Each publication queues a continua
 so task revisions can resume after an earlier launch without duplicating retries.
 The card shows and edits the saved choice. Person overrides win. Dispatch applies it to that session without
 changing project defaults. Autostart reuses valid choices and prepares a new choice when the ticket task changes.
+Explicit person settings saved before the adapter advertises its controls remain selected and unchecked until
+startup can validate the actual configuration. An unavailable or dynamically excluded agent still requires a new choice.
+An explicitly related episode continuation can retain an available runtime with its source decision recorded,
+without another expertise or runtime classification. The dynamic eligible-agent list and explicit overrides still apply.
 
 Read `metaform://specialists` for the current expertise names, purposes and role URLs. The directory excludes system responsibilities and contains no role bodies. JEV selects a listed specialist or confidently selects none. A no-match, uncertain result, unavailable provider, missing key or unavailable OpenRouter credit commissions the Facilitator directly. An empty inventory does the same without paying for an empty decision.
 
@@ -180,10 +186,22 @@ A ticket writer can assign expertise with `orchestration_claim work=<id> role=<n
 
 A valid pinned specialist assignment remains eligible when its registry entry disappears. Missing expertise and lost commission records recover through canonical requests. Recovery retains a surviving creator and its publication route, or commissions one replacement when ownership is absent. Repeated reconciliation does not duplicate helpers.
 
-The Facilitator checks the registry again before authoring. It chooses a reusable domain name when the commission supplies none. Its metaprompt defines the five XML sections: identity, objective, rules, methods and output formatting. Ticket-specific paths, objectives and routing instructions remain in the assignment. The Facilitator publishes with `orchestration_publish_role request=<id> role=<name> purpose=<reusable-purpose> duty=<system_prompt-XML> match_reason=<brief-reason>`. To reuse existing expertise, it omits `duty`; publication never edits an existing role. Concurrent publications with the same name reuse the registered version.
+The Facilitator checks the registry again before authoring. It chooses a reusable domain name when the commission supplies none. Its system-prompt template defines three sections: name, short_description and key_skills_and_behaviors. Ticket-specific paths, objectives and routing instructions remain in the assignment. The Facilitator publishes with `orchestration_publish_role request=<id> role=<name> purpose=<reusable-purpose> duty=<system_prompt-XML> match_reason=<brief-reason>`. To reuse existing expertise, it omits `duty`; publication never edits an existing role. Concurrent publications with the same name reuse the registered version.
 
 That operation registers the versioned role, binds it to the original ticket, places the ticket in To do and queues its continuation. `column=backlog` instead holds it without queuing a launch. It returns the role identity, match reason, assignment and actual board column, without the prompt body. The Facilitator must report a failed operation as failed; returning a name in chat alone neither registers nor assigns it. User-stopped callers remain stopped. Repeated publication returns the recorded result without launching another worker or revising the role.
 
 The helper runs as `metaform://role/facilitator`, outside worker slots and within existing helper limits. `role_creator` remains resolvable for already recorded assignments. The delivery owner is sessionless while expertise is pending and cannot bind a generic worker before publication.
 
 Ticket assignments record outcomes, candidates and evidence on their tickets without sending routine messages to the system agent. Delegated contributions return to their recorded callers with only `<address>#<n> complete`; callers read the report and assignment evidence explicitly. Reviews and corrections retain their ticket records without system notifications. Claim returns only assignment identity and state. Startup uses MCP tool discovery without duplicating tool schemas in the assignment prompt.
+
+
+Assignment context includes addressable work-source references. The current task, an optional returned plan,
+and original request words remain separate. A Planner contribution returns a plan for the current request
+revision without rewriting the task. Direction messages distinguish user edits, agent refinements and adaptive
+change orders.
+
+Independent assessments retain the exact candidate, reviewed task revision, specification reference and every
+raw finding. A later component-name match never suppresses a report. The reviewer can explain an individual
+supersession with `disposition=superseded`, `superseded_by` naming a delivered direction id/revision or operative
+change id, and `supersession_reason`. Other findings reopen the canonical ticket through the existing correction
+route. Stable `finding_id` references can identify a recurrence. A generic title cannot merge distinct defects.

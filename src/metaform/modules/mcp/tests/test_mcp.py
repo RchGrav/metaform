@@ -4029,7 +4029,7 @@ def test_a_talk_starts_with_its_node_s_read_and_reaches_no_tool_outside_its_cate
 
 @pytest.mark.req('MCP-039')
 def test_a_lookup_result_is_trimmed_counted_filtered_or_whole_as_the_call_asks(run, home, mapped):
-    """A lookup tool's result comes lean: a list as a table with no field that holds nothing, said once how to ask
+    """A lookup tool's result comes lean: a list as a table retaining false and empty evidence, said once how to ask
     for more; view=count counts the records by a field, must_contain keeps the rows that hold the text, status_equals
     those open, fields keeps the fields named, a nested one by its own name, in the text and the structured content
     alike, and view=full gives every field as JSON. A field, a filter or a count no record holds is refused with the
@@ -4042,8 +4042,11 @@ def test_a_lookup_result_is_trimmed_counted_filtered_or_whole_as_the_call_asks(r
         return [await called(client, 'map_work', arguments) for arguments in (
             {}, {'view': 'count', 'fields': ['kind']}, {'must_contain': 'snooze'}, {'view': 'full'},
             {'view': 'sideways'}, {'status_equals': 'open'}, {'fields': ['id', 'title']},
-            {'view': 'count', 'fields': ['nosuch']}, {'fields': ['nosuch']})]
-    table, counted, narrowed, full, wrong, still_open, named, unknown, unheld = session(home, mapped, check)
+            {'view': 'count', 'fields': ['nosuch']}, {'fields': ['nosuch']},
+            {'view': 'full', 'status_equals': 'open', 'must_contain': 'snooze', 'fields': ['id', 'map.title']},
+            {'view': 'full', 'fields': ['nosuch']})]
+    table, counted, narrowed, full, wrong, still_open, named, unknown, unheld, selected_full, unknown_full = \
+        session(home, mapped, check)
     text_of = blocks(table)
     rows = next(one for one in text_of if one.startswith('results:')).splitlines()
     assert 'map.title' in rows[1].split('|') and len(rows) == 5 and 'null' not in '\n'.join(rows)
@@ -4058,7 +4061,11 @@ def test_a_lookup_result_is_trimmed_counted_filtered_or_whole_as_the_call_asks(r
     assert blocks(named)[-1].splitlines()[1] == 'id|map.title'
     assert all(set(row) == {'id', 'map'} and set(row['map']) == {'title'}
                for row in named.structured_content['results'])
-    for answer in (unknown, unheld):
+    selected = selected_full.structured_content
+    assert json.loads(blocks(selected_full)[-1]) == selected
+    assert len(selected['results']) == 1 and selected['results'][0]['map'] == {'title': 'Snooze for five minutes'}
+    assert set(selected['results'][0]) == {'id', 'map'}
+    for answer in (unknown, unheld, unknown_full):
         assert answer.is_error and 'No record here holds nosuch; they hold id, ' in blocks(answer)[-1]
 
 
@@ -4154,18 +4161,17 @@ def test_on_the_july_wire_over_http_a_session_handle_keys_the_guides_and_no_list
     assert "This call names no session, so map_where's guide is not given with it" in bare[0]
 
 
-def test_a_trimmed_result_drops_what_holds_nothing_and_lists_records_as_a_table():
-    """`shaping.shaped`: nothing empty, no false inside rows, a nested record's fields as parent.field, a | in a
-    value escaped; the structured content keeps the same lean data; view count tallies a field; a long list is cut."""
+def test_a_trimmed_result_keeps_false_and_empty_evidence_and_lists_records_as_a_table():
+    """Triage omits null defaults, preserves negative and empty evidence, escapes tables and bounds long lists."""
     from metaform.modules.mcp import shaping
     rows = {'results': [{'id': 'a', 'title': 'One', 'held': False, 'note': None, 'map': {'title': 'x'}},
                         {'id': 'b', 'title': 'Two|x', 'held': True, 'links': []}], 'next': None}
     text, data = shaping.shaped(rows, shaping.Shape(), '<n/> more')
-    assert text == 'results:\nid|title|map.title|held\na|One|x|\nb|Two\\|x||true'
-    assert data == {'results': [{'id': 'a', 'title': 'One', 'map': {'title': 'x'}},
-                                {'id': 'b', 'title': 'Two|x', 'held': True}]}
+    assert text == 'results:\nid|title|held|map.title|links\na|One|false|x|\nb|Two\\|x|true||[]'
+    assert data == {'results': [{'id': 'a', 'title': 'One', 'held': False, 'map': {'title': 'x'}},
+                                {'id': 'b', 'title': 'Two|x', 'held': True, 'links': []}]}
     counted, _ = shaping.shaped(rows, shaping.Shape(view='count', fields=('held',)), '')
-    assert json.loads(counted) == {'total': 2, 'by': {'held': {'(none)': 1, 'true': 1}}}
+    assert json.loads(counted) == {'total': 2, 'by': {'held': {'false': 1, 'true': 1}}}
     many = {'results': [{'id': str(number)} for number in range(30)]}
     cut, _ = shaping.shaped(many, shaping.Shape(), '<n/> more not shown.')
     assert cut.splitlines()[-1] == '5 more not shown.' and len(cut.splitlines()) == 1 + 1 + 25 + 1

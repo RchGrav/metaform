@@ -14,7 +14,7 @@ pytestmark = [pytest.mark.req('BASE-059'), pytest.mark.kind('fixture')]
 
 def test_skill_folders_declare_identity_and_separate_discovery_from_access():
     listed = skills.catalog()
-    assert len(listed) == 8
+    assert len(listed) == 9
     assert {one.name for one in listed if not one.discover} == {'sentinel', 'workflow-evaluator'}
     for one in listed:
         frontmatter = yaml.safe_load(skills.read(one.name, 'SKILL.md').split('---', 2)[1])

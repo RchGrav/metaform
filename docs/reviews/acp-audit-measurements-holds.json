@@ -1,0 +1,38 @@
+{
+  "scope": "Matched hold behavior, isolated temporary homes, no paid agent execution.",
+  "baseline": {
+    "scenario": "Same justified hardware wait, reviewed at t=1000,1900,2800,3700 seconds.",
+    "held_outcome_preserved": true,
+    "actionable_review_signals": 3,
+    "scheduled_review_deadlines": [
+      1900.0,
+      2800.0,
+      3700.0,
+      4600.0
+    ],
+    "delivered_signal_text_utf8_bytes": 945,
+    "actual_model_invocations": null,
+    "billed_tokens": null,
+    "billing_cost": null,
+    "limits": "Signals are actionable wake requests. No liaison or paid model was run. Signal text bytes exclude tool schemas, hidden context and provider billing.",
+    "source_sha256": "3c5f41671ba1b8d6500c3e9dd79a4d76e5f7b85c5ee00e75b368ec4f375ea7db"
+  },
+  "revised": {
+    "scenario": "Same justified hardware wait, reviewed at t=1000,1900,2800,3700 seconds.",
+    "held_outcome_preserved": true,
+    "actionable_review_signals": 0,
+    "scheduled_review_deadlines": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "delivered_signal_text_utf8_bytes": 0,
+    "actual_model_invocations": null,
+    "billed_tokens": null,
+    "billing_cost": null,
+    "limits": "Signals are actionable wake requests. No liaison or paid model was run. Signal text bytes exclude tool schemas, hidden context and provider billing.",
+    "source_sha256": "b38d9bbcb08d3e697b0e9985d07e6f7e7274972142e2bef3ded757b97603b991"
+  },
+  "baseline_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8"
+}

@@ -1,24 +1,14 @@
 """What a tool's result carries over MCP, MCP-039: the fields the next decision needs, in as few tokens as hold them.
 
-A result goes to the agent's context whole, and the agent reads every field of it, so by default a module tool's result
-is given lean, `view` triage: no field that holds nothing (None, empty text, an empty list or object), no `false` inside
-a list's rows, where it is the default, and no internal id where an Address names the thing, a record nested in another
-by its address included; a list of records comes as a table, one header line and one line a record, `a|b|c`, with a
-nested record's fields as `parent.field` and a list of values as `a, b`; a list of records inside a row comes as a
-table of its own after it, its rows led by the row they belong to; the rest as `key: value` lines, a nested record's
-fields as `parent.field: value` and text of several lines indented under its key, so no JSON is ever read inside a
-line. `view` full gives every field as compact JSON; `fields` keeps only the fields named, by name or by
-`parent.field`, in the text and the structured content alike; `view` count gives no records, only how many there are
-and how many hold each value of the fields named, for a question about a distribution that would otherwise be answered
-by reading every record.
+Selection runs on JSON-ready typed data before presentation: validate requested fields, filter records, recursively
+project fields, then render. Full preserves every selected value as compact JSON. Triage omits internal storage
+metadata and unselected null defaults, but retains false, zero and empty values because they can be evidence.
+Explicit fields preserve every requested value, including null and internal fields. Dotted paths traverse nested
+records and lists, and a bare field name selects that name wherever it occurs.
 
-A list is filtered on the server, so the agent never reads the records it would discard: `must_contain` keeps the rows
-that hold the text anywhere, `status_equals` those whose status, state, column or condition is the value. A list of more
-than LIST_MOST records with neither filter is cut there, with how many more there are and how to narrow it. A filter,
-a count or a field named that no record holds is refused with the fields the records do hold, since an answer of none
-would be read as true.
-
-The structured content keeps the same lean data as an object, for an AI tool that reads it as data.
+Lists are rendered as tables in triage. Unfiltered triage lists are bounded by LIST_MOST; full and count remain
+complete. Count reports how many rows hold each selected value, with missing and null distinguished. Text and
+structured content carry the same selected records.
 """
 from __future__ import annotations
 
@@ -38,14 +28,14 @@ ARGUMENTS = (VIEW, FIELDS, MUST_CONTAIN, STATUS_EQUALS)
 VIEWS = ('triage', 'full', 'count')
 # Each said in a few words, since every lookup tool listed carries them; the triage note says how they combine.
 SCHEMAS: dict[str, dict[str, Any]] = {
-    VIEW: {'type': 'string', 'enum': list(VIEWS), 'description': 'triage, the default, trims; full gives every field.'},
+    VIEW: {'type': 'string', 'enum': list(VIEWS),
+           'description': 'triage trims default detail; full gives all selected fields as JSON.'},
     FIELDS: {'type': 'array', 'items': {'type': 'string'}, 'description': 'Only these fields.'},
     MUST_CONTAIN: {'type': 'string', 'description': 'Only the rows holding this text.'},
     STATUS_EQUALS: {'type': 'string', 'description': 'Only the rows of this status.'},
 }
 # Fields no next decision reads: how a record is kept, not what it says. The Address or the reference names the thing.
-DEAD = frozenset({'node_kind', 'node_id', 'layer_id', 'is_work', 'age_seconds', 'existing', 'differs', 'orphaned',
-                  'position'})
+DEAD = frozenset({'node_kind', 'node_id', 'layer_id', 'age_seconds', 'position'})
 STATUS = ('status', 'state', 'column', 'condition')  # what status_equals compares
 LIST_MOST = 25  # the most rows a list is given without a filter
 
@@ -89,10 +79,10 @@ def taken(arguments: dict[str, Any], declared: set[str]) -> tuple[Shape, str | N
 
 
 def lean(value: Any, *, row: bool = False, nested: bool = False) -> Any:
-    """`value` without what holds nothing: None, empty text, lists and objects, the DEAD fields, an id whose Address is
-    beside it (`receiver` beside `receiver_address`), and the id of a record `nested` in another under a key, such as a
-    where read's element, which its address names; the result's own record and a list's rows keep theirs, since a
-    call names them by it. With `row`, inside a list's rows or a lookup's record, `false` too, the default there."""
+    """Default triage detail without storage metadata, redundant ids or null defaults.
+
+    False, zero and empty values remain evidence. Explicit projections bypass this omission step.
+    """
     if isinstance(value, dict):
         given = cast(dict[str, Any], value)
         kept: dict[str, Any] = {}
@@ -100,7 +90,7 @@ def lean(value: Any, *, row: bool = False, nested: bool = False) -> Any:
             if key in DEAD or given.get(f'{key}_address') or (nested and key == 'id' and given.get('address')):
                 continue
             made = lean(one, row=row, nested=True)
-            if made is None or made == '' or made == [] or made == {} or (row and made is False):
+            if made is None:
                 continue
             kept[key] = made
         return kept
@@ -109,26 +99,35 @@ def lean(value: Any, *, row: bool = False, nested: bool = False) -> Any:
     return value
 
 
-def _held_fields(rows: list[dict[str, Any]]) -> list[str]:
-    """Every field the rows hold, a nested record's as `parent.field`, in the order they first appear."""
-    found: list[str] = []
-    for row in rows:
-        found += [key for key in _flat(row) if key not in found]
+def _paths(value: Any, prefix: str = '') -> list[tuple[str, Any]]:
+    """All held paths and values, traversing list items without adding numeric path segments."""
+    found: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, one in cast(dict[str, Any], value).items():
+            path = f'{prefix}.{key}' if prefix else key
+            found.append((path, one))
+            found.extend(_paths(one, path))
+    elif isinstance(value, list):
+        for one in cast(list[Any], value):
+            found.extend(_paths(one, prefix))
     return found
 
 
+def _held_fields(rows: list[dict[str, Any]]) -> list[str]:
+    """Every raw field path held by any row, including empty containers and nested list items."""
+    return list(dict.fromkeys(key for row in rows for key, _ in _paths(row)))
+
+
 def _named(key: str, fields: tuple[str, ...]) -> bool:
-    """Whether a field, `parent.field` for a nested one, is one of `fields`: by its whole name, its parent's or its
-    own."""
-    return key in fields or key.split('.', 1)[0] in fields or key.rsplit('.', 1)[-1] in fields
+    """A whole path, a selected ancestor path, or a bare leaf name."""
+    return any(key == one or key.startswith(f'{one}.') or key.rsplit('.', 1)[-1] == one for one in fields)
 
 
 def _check(rows: list[dict[str, Any]], shape: Shape) -> None:
-    """Refuse a field named, to keep, count or filter by, that no row holds, with the fields they do hold; rows that
-    hold none of the status fields refuse status_equals and a bare count by status alike."""
-    held = _held_fields(rows)
-    if not rows:
+    """Refuse an explicitly requested field or status filter absent from every raw row."""
+    if not rows or not (shape.fields or shape.status_equals):
         return
+    held = _held_fields(rows)
     unheld = [one for one in shape.fields if not any(_named(key, (one,)) for key in held)]
     if unheld:
         raise Unheld(f'No record here holds {", ".join(unheld)}; they hold {", ".join(held)}.')
@@ -137,21 +136,20 @@ def _check(rows: list[dict[str, Any]], shape: Shape) -> None:
                      f'{", ".join(held)}. must_contain finds a value in any field.')
 
 
-def _trim(value: Any, fields: tuple[str, ...]) -> Any:
-    """A record, or a list of them, with only the fields named, `_named`, nested records trimmed the same way."""
+def _trim(value: Any, fields: tuple[str, ...], prefix: str = '') -> Any:
+    """Project the same field paths checked on raw values, preserving nested list shape."""
     if isinstance(value, list):
-        return [_trim(one, fields) for one in cast(list[Any], value)]
+        return [_trim(one, fields, prefix) for one in cast(list[Any], value)]
     if not isinstance(value, dict):
         return value
     kept: dict[str, Any] = {}
     for key, one in cast(dict[str, Any], value).items():
-        if key in fields:
+        path = f'{prefix}.{key}' if prefix else key
+        if _named(path, fields):
             kept[key] = one
-        elif isinstance(one, dict):
-            inner = {name: held for name, held in cast(dict[str, Any], one).items()
-                     if _named(f'{key}.{name}', fields)}
-            if inner:
-                kept[key] = inner
+        elif isinstance(one, (dict, list)) and (any(field.startswith(f'{path}.') for field in fields) or
+                                               any(_named(held, fields) for held, _ in _paths(one, path))):
+            kept[key] = _trim(one, fields, path)
     return kept
 
 
@@ -163,10 +161,14 @@ def _records(value: Any) -> bool:
 
 
 def _rows_key(data: dict[str, Any]) -> str | None:
-    """The key of the list of records a result is about: the longest list of objects in it."""
+    """The longest list of records, or an empty result envelope. An empty detail list is not a record set."""
     lists = [(len(cast(list[Any], one)), key) for key, one in data.items()
              if isinstance(one, list) and one and all(isinstance(item, dict) for item in cast(list[Any], one))]
-    return max(lists)[1] if lists else None
+    if lists:
+        return max(lists)[1]
+    if data.get('results') == []:
+        return 'results'
+    return next((key for key, one in data.items() if one == []), None) if len(data) == 1 else None
 
 
 def _status(row: dict[str, Any]) -> list[str]:
@@ -194,7 +196,7 @@ def _flat(row: dict[str, Any], prefix: str = '') -> dict[str, Any]:
     """A record with each nested record's fields as `parent.field`, all the way down."""
     found: dict[str, Any] = {}
     for key, value in row.items():
-        if isinstance(value, dict):
+        if isinstance(value, dict) and value:
             found.update(_flat(cast(dict[str, Any], value), f'{prefix}{key}.'))
         else:
             found[f'{prefix}{key}'] = value
@@ -209,7 +211,9 @@ def _values(value: list[Any]) -> bool:
 def _plain(value: Any) -> str:
     if isinstance(value, bool):
         return 'true' if value else 'false'
-    if isinstance(value, list) and _values(cast(list[Any], value)):
+    if isinstance(value, str) and value == '':
+        return '""'
+    if isinstance(value, list) and value and _values(cast(list[Any], value)):
         return ', '.join(_plain(one) for one in cast(list[Any], value))
     return value if isinstance(value, str) else compact(value) if not isinstance(value, (int, float)) else str(value)
 
@@ -220,8 +224,8 @@ def _cell(value: Any) -> str:
 
 def table(rows: list[dict[str, Any]], fields: tuple[str, ...] = (), name: str = '') -> str:
     """Records as a table: the header, the fields in the order they first appear, or those named; then a line each. A
-    field that holds a list of records in some row is no column: it comes after the table as a table of its own,
-    `<name>.<field>:`, each of its rows led by the first column of the row it belongs to."""
+    Nested lists retain an empty-list marker or record count in the parent table, then their own table. Each child
+    row is led by a scalar parent field, or its row number when every selected parent field is a nested list."""
     flat = [_flat(row) for row in rows]
     columns: list[str] = []
     for row in flat:
@@ -229,12 +233,12 @@ def table(rows: list[dict[str, Any]], fields: tuple[str, ...] = (), name: str = 
     if fields:
         columns = [key for key in columns if _named(key, fields)]
     inner = [key for key in columns if any(_records(row.get(key)) for row in flat)]
-    columns = [key for key in columns if key not in inner]
     lines = ['|'.join(columns)]
-    lines += ['|'.join(_cell(row[key]) if key in row else '' for key in columns) for row in flat]
-    lead = columns[0] if columns else ''
+    lines += ['|'.join(f'({len(row[key])} records)' if _records(row.get(key)) else
+                      _cell(row[key]) if key in row else '' for key in columns) for row in flat]
+    lead = next((key for key in columns if key not in inner), 'row')
     for key in inner:
-        nested = [{lead: row.get(lead, ''), **one} for row in flat if _records(row.get(key))
+        nested = [{lead: row.get(lead, number), **one} for number, row in enumerate(flat, 1) if _records(row.get(key))
                   for one in cast(list[dict[str, Any]], row[key])]
         lines += [f'{name}.{key}:' if name else f'{key}:', table(nested)]
     return '\n'.join(lines)
@@ -244,6 +248,8 @@ def _lines(name: str, value: Any) -> list[str]:
     """One field as the agent reads it: `name: value`; a nested record's fields as `name.field: value`; a list of
     records as `name:` and its table; text of several lines indented under `name:`."""
     if isinstance(value, dict):
+        if not value:
+            return [f'{name}: {{}}']
         found: list[str] = []
         for key, one in cast(dict[str, Any], value).items():
             found += _lines(f'{name}.{key}', one)
@@ -257,45 +263,51 @@ def _lines(name: str, value: Any) -> list[str]:
 
 
 def counted(rows: list[dict[str, Any]], fields: tuple[str, ...]) -> dict[str, Any]:
-    """How many rows there are, and for each field named, or each status field when none is, how many hold each of its
-    values, the most first."""
-    flat = [_flat(row) for row in rows]
+    """Count rows holding each value. A repeated value within a nested list counts once per outer row."""
+    paths = [_paths(row) for row in rows]
     held = _held_fields(rows)
-    named = tuple(next((key for key in held if _named(key, (one,))), one) for one in fields) or \
+    named = tuple(dict.fromkeys(key for field in fields for key in
+                               ([field] if '.' in field else
+                                [key for key in held if key.rsplit('.', 1)[-1] == field] or [field]))) or \
         tuple(key for key in STATUS if key in held)
     by: dict[str, dict[str, int]] = {}
     for key in named:
         tally: dict[str, int] = {}
-        for row in flat:
-            value = row.get(key)
-            label = '(none)' if value is None or value == '' else value if isinstance(value, str) else compact(value)
-            tally[label] = tally.get(label, 0) + 1
+        for row in paths:
+            values = [value for path, value in row if path == key]
+            labels = {('(none)' if value is None else value if isinstance(value, str) else compact(value))
+                      for value in values} if values else {'(missing)'}
+            for label in labels:
+                tally[label] = tally.get(label, 0) + 1
         by[key] = dict(sorted(tally.items(), key=lambda pair: (-pair[1], pair[0])))
     return {'total': len(rows), **({'by': by} if by else {})}
 
 
 def shaped(result: Any, shape: Shape, more: str, *, record: bool = False) -> tuple[str, dict[str, Any] | None]:
-    """A module tool's result as the call asked for it: the text the agent reads, and the structured content. `more`
-    is the line said when a list is cut at LIST_MOST, with <n/> for how many more. `record`: a lookup's result, whose
-    own `false` fields are defaults too; a write's are kept, since there `false` may be what it did."""
+    """Validate, filter and project typed results before applying the requested representation."""
     data = plain(result)
-    if shape.view == 'full':
-        return compact(data), cast(dict[str, Any], data) if isinstance(data, dict) else None
-    listed = data if not isinstance(data, dict) else cast(dict[str, Any], data).get('results')
-    data = lean(data, row=record)
     wrapped = not isinstance(data, dict)
     held: dict[str, Any] = {'results': data} if wrapped else cast(dict[str, Any], data)
     key = _rows_key(held)
-    if key is None and isinstance(listed, list) and not listed:  # a list with nothing in it says so
-        empty: list[dict[str, Any]] = []
-        held, key = {**held, 'results': empty}, 'results'
-    _check(cast(list[dict[str, Any]], held[key]) if key is not None else [held], shape)
+    rows = cast(list[dict[str, Any]], held[key]) if key is not None else [held]
+    _check(rows, shape)
     if key is not None and (shape.filtered or shape.view == 'count'):
-        held = {**held, key: _kept(cast(list[dict[str, Any]], held[key]), shape)}
+        held = {**held, key: _kept(rows, shape)}
+    if shape.fields:
+        held = {**held, key: _trim(held[key], shape.fields)} if key is not None else \
+            cast(dict[str, Any], _trim(held, shape.fields))
     if shape.view == 'count':
-        rows = cast(list[dict[str, Any]], held.get(key, []) if key is not None else [])
+        rows = cast(list[dict[str, Any]], held.get(key, []) if key is not None else [held])
         found = counted(rows, shape.fields)
         return compact(found), found
+    if shape.view == 'full':
+        return compact(held['results'] if wrapped else held), None if wrapped else held
+    if not shape.fields:
+        held = cast(dict[str, Any], lean(held, row=record))
+    elif key is not None:
+        selected = held[key]
+        held = cast(dict[str, Any], lean(held, row=record))
+        held[key] = selected  # selected rows retain nulls and ids; unselected envelope metadata stays lean
     if key == 'results' or wrapped:  # a list given trimmed, so the call says once how to ask for more; a record
         shape.given.append(True)  # with a list inside it, such as a where read's joins, is no list to narrow
     cut = ''
@@ -303,9 +315,6 @@ def shaped(result: Any, shape: Shape, more: str, *, record: bool = False) -> tup
         rest = len(held[key]) - LIST_MOST
         held = {**held, key: held[key][:LIST_MOST]}
         cut = more.replace('<n/>', str(rest))
-    if shape.fields:  # the structured content keeps what the text keeps: the rows' fields named, or the record's
-        held = {**held, key: _trim(held[key], shape.fields)} if key is not None else \
-            cast(dict[str, Any], _trim(held, shape.fields))
     lines: list[str] = []
     for name, value in held.items():
         if name == key:

@@ -40,11 +40,14 @@ def swarm(run, home, project_folder, tmp_path, request):
     run('set', '--dispatch-agent', 'claude', cwd=project_folder)
     run('map', 'work', 'op=edit', f'id={made.id}', 'agent=claude', 'model=swarm-deep', 'effort=ultra',
         cwd=project_folder)
-    from metaform.module import context
-    from metaform.modules.orchestration.state import SERVICE
-    legacy_ctx = context('orchestration', project_folder, project='proj')
-    legacy = SERVICE.ensure(legacy_ctx, made.id, role='gc')
+    from metaform.modules.orchestration.state import new_assignment
+
+    # Seed an already assigned legacy duty atomically. Calling ensure first would commission
+    # missing expertise before the snapshot exists, instead of reproducing a retained assignment.
+    work = made.store.ticket(made.id).work
     with Store('proj', module='orchestration').tables() as tx:
+        legacy = new_assignment(tx, work, 'gc', task=work.task or '', result=work.task or '',
+            locations=[{'kind': 'element', 'id': NODE, 'address': NODE}], mode='adaptive')
         tx.update('assignments', {'assignment_id': legacy['assignment_id']},
                   {'role_snapshot': resolve_agent_role(project_folder, 'gc', project='proj')})
     # Seed an explicit previously assigned duty without scheduling a second runner beside Dispatch.start().
@@ -143,7 +146,9 @@ def completed(swarm):
         found = records('orchestration', 'assignments')
         return found if found and any(one['reviewed_assignment_id'] for one in found) and all(
             one['state'] in ('returned', 'delivered') for one in found) else None
-    return wait_for(swarm, held)
+    # Generated expertise plus runtime fallbacks can require ten serialized ACP startups.
+    # Keep waiting for the complete delivery/review chain rather than timing out its live final helper.
+    return wait_for(swarm, held, limit=240)
 
 
 def pm_evidence(swarm, scenario, expected):
@@ -245,9 +250,10 @@ def delivery_evidence(swarm, scenario):
     gc_returns = [one for one in contexts if one['role'] == 'gc' and ' complete' in one['recipient_context']]
     assert gc_returns, 'The GC actually received the worker\'s return as an inbox line in an ACP prompt.'
     assert any(one.get('specialist_grounding', {}).get('entities') for one in logged)
-    # the person's system agent is told in one line that the ticket completed; the report is a read away (2026-10-20)
-    assert any(' complete' in one.get('text', '') for one in records('dispatch', 'session_lines')
-               if one['session_id'] == 'conversation-orchestration-updates')
+    # Ordinary completion is visible on its canonical assignment without creating a system-agent relay.
+    # Explicit adaptive changes still publish their user message in the dedicated change-order scenarios.
+    assert not any(' complete' in one.get('text', '') for one in records('dispatch', 'session_lines')
+                   if one['session_id'] == 'conversation-orchestration-updates')
     worker_calls = [one for one in logged if one.get('mcp_tool', {}).get('name') == 'orchestration_call']
     assert len(worker_calls) == 1 and worker_calls[0]['role'] == 'implementer'
     assert worker_calls[0]['mcp_tool']['runner_identity'] == worker_calls[0]['runner_identity']
@@ -493,11 +499,17 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     wait_for(swarm, lambda: all(any(flag in one for one in swarm.entries())
                               for flag in ('gc_ready', 'worker_ready', 'specialist_ready')))
     (swarm.swarm_state / 'peer-note').touch()
-    wait_for(swarm, lambda: any('peer_note_sent' in one for one in swarm.entries()))
+    wait_for(swarm, lambda: any('peer_request_ready' in one for one in swarm.entries()))
+    def question():
+        return next((json.loads(one['text']) for one in records('dispatch', 'session_lines')
+                     if one['kind'] == 'peer' and 'PEER_NOTE:' in one['text']), None)
+    asked = wait_for(swarm, question)
+    assert asked['kind'] == 'question' and asked['ask']
+    (swarm.swarm_state / 'peer-note-id').write_text(asked['id'])
     early = swarm.entries()
     assert not any(one.get('message', {}).get('method') in ('session/cancel', '_session/steering')
                    for one in early if one['role'] != 'facilitator')
-    peer_sent = next(one for one in early if 'peer_note_sent' in one)
+    peer_sent = next(one for one in early if 'peer_request_ready' in one)
     assert peer_sent['peer_interrupt_refused']['code'] != 0
     assert peer_sent['worker_broadcast_refused']['code'] != 0
     assert not any('PEER_NOTE:' in one.get('recipient_context', '') for one in early if one['role'] == 'investigator')
@@ -519,8 +531,11 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
             one['owner_session_id'] for one in delivery_assignments(records('orchestration', 'assignments'))}
     (swarm.swarm_state / 'specialist-release').touch()
     wait_for(swarm, lambda: any('specialist_reply' in one for one in swarm.entries()))
+    reply = wait_for(swarm, lambda: next((one['peer_note_sent'] for one in swarm.entries()
+                                        if 'peer_note_sent' in one), None))
+    assert 'PEER_REPLY:' in json.dumps(reply), 'The current question returns its threaded reply through the tool.'
     (swarm.swarm_state / 'worker-release').touch()
-    wait_for(swarm, lambda: any('PEER_REPLY:' in one.get('worker_peer_turn', '') for one in swarm.entries()))
+    wait_for(swarm, lambda: any('GC_SWARM_BROADCAST' in one.get('worker_peer_turn', '') for one in swarm.entries()))
     before_interrupt = swarm.entries()
     assert not any(one.get('message', {}).get('method') in ('session/cancel', '_session/steering')
                    for one in before_interrupt if one['role'] != 'facilitator')

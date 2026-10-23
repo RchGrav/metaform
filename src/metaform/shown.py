@@ -5,8 +5,10 @@ that agent starts, its MCP server among them; otherwise the MCP server process i
 A command line with neither has no session and is shown everything each time, as a person at a terminal expects.
 
 What a process session was shown is kept in the process, and ends with it. What a named session was shown is kept in the
-home's chassis database, so the agent's MCP server and the commands it runs in its shell share one record; a row
-older than a week is dropped when another is written.
+home's chassis database, so the agent's MCP server and shell share one record across process replacement.
+These are delivery/discovery observations, never proof of retained model understanding. Age alone does not
+invalidate them. Observed compaction clears content delivery hints while keeping host discovery configuration
+and guide discovery history. Explicit guide reads remain available.
 """
 from __future__ import annotations
 
@@ -14,13 +16,11 @@ import json
 import os
 import threading
 import uuid
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import home
 
 PROCESS = uuid.uuid4().hex[:16]  # this process's own session, while it serves one
-KEEP = timedelta(days=7)
 # A home made before this table existed is given it on the first row written.
 SHOWN = """CREATE TABLE IF NOT EXISTS shown(
   session TEXT NOT NULL,
@@ -80,7 +80,8 @@ KEPT_THROUGH_COMPACTION = ('catalog:', 'guide:')
 
 def forget(session: str | None, keep: tuple[str, ...] = KEPT_THROUGH_COMPACTION) -> int:
     """Forget what `session` was shown, but the keys starting with one of `keep`, so each piece is given again at its
-    next use: the agent's context was compacted, and what it held is gone, CTX-045. The number of records forgotten."""
+    next use after observed compaction, CTX-045. Compaction does not reveal which facts survived.
+    The number of records forgotten."""
     if session is None:
         return 0
 
@@ -112,11 +113,9 @@ def swap(session: str | None, key: str, value: Any) -> Any:
             _kept[(session, key)] = text
         return None if before is None else json.loads(before)
     stamp = home.now()
-    cutoff = (datetime.now(UTC) - KEEP).strftime('%Y-%m-%dT%H:%M:%SZ')
     with home.chassis(write=True) as db:
         db.execute(SHOWN)
         row = db.execute('SELECT value FROM shown WHERE session=? AND key=?', (session, key)).fetchone()
         db.execute('INSERT INTO shown(session, key, value, at) VALUES (?, ?, ?, ?) ON CONFLICT(session, key) '
                    'DO UPDATE SET value=excluded.value, at=excluded.at', (session, key, text, stamp))
-        db.execute('DELETE FROM shown WHERE at < ?', (cutoff,))
     return None if row is None else json.loads(row[0])
