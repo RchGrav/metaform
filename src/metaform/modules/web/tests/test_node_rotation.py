@@ -1,6 +1,7 @@
 """Distance-driven body turns preserve readable map interaction, VIEW-005."""
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -81,7 +82,7 @@ def test_a_pull_turns_the_body_and_keeps_momentum_without_turning_its_label(
             renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'unknown', frames: FRAMES.drawn};
     }""")
     print('NODE_ROTATION', json.dumps(found))
-    assert found['turn'] > .03 and found['coast'] > .01, found
+    assert found['turn'] > 1 and found['coast'] > .5, found
     assert found['labelTurn'] < 1e-6, found
     assert problems == []
 
@@ -130,13 +131,13 @@ def test_signed_distance_release_speed_decay_and_resets(run, web, mapped, motion
         const reversal=2*Math.atan2(a.__threeObj.quaternion.y,a.__threeObj.quaternion.w);
         nodeTurnEnd(); for(let i=0;i<600;i++) step(1/60);
         const settled=!TURN.moving, final=a.__threeObj.quaternion.clone(); step(10);
-        const retained=final.angleTo(a.__threeObj.quaternion);
+        const retained=final.angleTo(a.__threeObj.quaternion), upright=final.angleTo(new THREE.Quaternion());
         fresh(); a.x=300; step(.1);
         const initial=a.__threeObj.quaternion.angleTo(new THREE.Quaternion());
-        nodeTurnStart(); a.x+=3; step(.1); const prior=a.__threeObj.quaternion.clone();
+        nodeTurnStart(); a.x+=3; step(.1);
         a.x+=30; step(.1,true); step(.1,true);
-        const reduced=prior.angleTo(a.__threeObj.quaternion), reducedSpeed=TURN.moving;
-        step(.1); const resumed=prior.angleTo(a.__threeObj.quaternion);
+        const reduced=a.__threeObj.quaternion.angleTo(new THREE.Quaternion()), reducedSpeed=TURN.moving;
+        step(.1); const resumed=a.__threeObj.quaternion.angleTo(new THREE.Quaternion());
         a.__threeObj=new THREE.Object3D(); a.x=2000; step(.1);
         const replaced=a.__threeObj.quaternion.angleTo(new THREE.Quaternion());
         resetTurns(); a.x=-2000; step(.1);
@@ -147,18 +148,19 @@ def test_signed_distance_release_speed_decay_and_resets(run, web, mapped, motion
         const flight=a.__threeObj.quaternion.angleTo(new THREE.Quaternion());
         fresh(); cameraTurnStart(); camera.position.z=100; step(.1);
         const zoom=a.__threeObj.quaternion.angleTo(new THREE.Quaternion());
-        return {slow,fast,remaining,at30,at144,radiusRatio,reversal,settled,retained,initial,reduced,reducedSpeed,
+        return {slow,fast,remaining,at30,at144,radiusRatio,reversal,settled,retained,upright,initial,reduced,reducedSpeed,
             resumed,replaced,reset,orbit,flight,zoom};
     }""")
     print('ROTATION_LAWS', json.dumps(found))
     assert found['slow']['angle'] == pytest.approx(found['fast']['angle'], abs=1e-8)
     assert found['fast']['speed'] > found['slow']['speed'] * 5
     assert found['slow']['neighbor'] == pytest.approx(found['slow']['angle'] / 2)
-    assert found['remaining'] == pytest.approx(2 ** (-2 / .45))
+    assert found['slow']['angle'] == pytest.approx(1)  # 6.25x the former 0.16-radian turn
+    assert found['remaining'] == pytest.approx(2 ** (-2 / .65))
     assert found['at30'] == pytest.approx(found['at144'], abs=1e-8)
     assert found['radiusRatio'] == pytest.approx(.5)
     assert abs(found['reversal']) < 1e-8
-    assert found['settled'] and found['retained'] < 1e-7
+    assert found['settled'] and found['retained'] < 1e-7 and found['upright'] < 1e-7
     for key in ('initial', 'reduced', 'resumed', 'replaced', 'reset', 'flight', 'zoom'):
         assert found[key] < 1e-7, (key, found)
     assert not found['reducedSpeed'] and found['orbit'] > .001
@@ -174,6 +176,7 @@ def test_pointer_gestures_pulled_neighbors_batches_picking_and_idle(
         const {G, wake3d} = await import('/page/app/map3d/graph3d.js');
         const {FLIGHT, V3} = await import('/page/app/camera/flight.js');
         const {TURN} = await import('/page/app/map3d/rotation.js');
+        window.nodeTurn = TURN;
         const {MASCOT} = await import('/page/app/figures/mascot.js');
         FLIGHT.on=false; V3.auto=false; MASCOT.job=null;
         const all=G.graphData(), a=all.nodes.find(n=>n.t==='el' && n.address==='code.timer.kitchen');
@@ -189,17 +192,28 @@ def test_pointer_gestures_pulled_neighbors_batches_picking_and_idle(
         await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
         const box=document.querySelector('#stage').getBoundingClientRect(), p=G.graph2ScreenCoords(a.x,a.y,a.z);
         window.pullCheck={a,b,c,qa:a.__threeObj.quaternion.clone(),qb:b.__threeObj.quaternion.clone(),
-            bx:b.x,by:b.y,bz:b.z,geometry:a.__threeObj.geometry,material:a.__threeObj.material};
+            qc:c.__threeObj.quaternion.clone(),bx:b.x,by:b.y,bz:b.z,geometry:a.__threeObj.geometry,material:a.__threeObj.material};
         return {x:box.x+p.x,y:box.y+p.y,bgX:box.x+box.width*.85,bgY:box.y+box.height*.75};
     }""")
+    capture = os.environ.get('METAFORM_MOTION_CAPTURE')
+
+    def snapshot(name):
+        if capture:
+            folder = Path(capture)
+            folder.mkdir(parents=True, exist_ok=True)
+            page.locator('#stage').screenshot(path=str(folder / f'{"glass" if plain else "space"}-{name}.png'))
+
+    snapshot('01-rest')
     page.mouse.move(setup['x'], setup['y'])
     page.evaluate("window.pullCheck.b.fx=undefined; window.pullCheck.b.fy=undefined; window.pullCheck.b.fz=undefined")
     page.mouse.down()
     for i in range(1, 21):
         page.mouse.move(setup['x'] + i * 3, setup['y'] - i)
         page.evaluate('() => new Promise(requestAnimationFrame)')
+    snapshot('02-pull-held')
     page.mouse.up()
-    page.wait_for_function("async () => !(await import('/page/app/map3d/rotation.js')).TURN.layout")
+    snapshot('03-pull-release')
+    page.wait_for_function("() => !window.nodeTurn.layout")
     pulled = page.evaluate("""async () => {
         const {a,b,qa,qb,bx,by,bz,geometry,material}=window.pullCheck;
         const {G}=await import('/page/app/map3d/graph3d.js');
@@ -229,10 +243,18 @@ def test_pointer_gestures_pulled_neighbors_batches_picking_and_idle(
         page.evaluate('() => new Promise(requestAnimationFrame)')
     page.mouse.up()
     page.mouse.move(1, 1)
-    page.wait_for_function("async () => !(await import('/page/app/map3d/rotation.js')).TURN.moving")
+    snapshot('04-orbit-release')
     orbit = page.evaluate("""() => window.pullCheck.orbitBefore.angleTo(window.pullCheck.b.__threeObj.quaternion)""")
     print('POINTER_ORBIT', plain, orbit)
-    assert orbit > .01, orbit
+    assert orbit > .1, orbit
+    page.wait_for_function("() => !window.nodeTurn.moving")
+    snapshot('05-upright')
+    landed = page.evaluate("""() => {
+        const {a,b,c,qa,qb,qc}=window.pullCheck;
+        return [qa.angleTo(a.__threeObj.quaternion),qb.angleTo(b.__threeObj.quaternion),
+            qc.angleTo(c.__threeObj.quaternion)];
+    }""")
+    assert max(landed) < 1e-7, landed
     batched = page.evaluate("""async () => {
         const {BATCHES}=await import('/page/app/map3d/nodes3d.js');
         const object=window.pullCheck.c.__threeObj, expected=object.matrixWorld.elements;
@@ -254,9 +276,9 @@ def test_pointer_gestures_pulled_neighbors_batches_picking_and_idle(
     page.emulate_media(reduced_motion='reduce')
     page.evaluate("""async () => {
         const {FRAMES,wake3d}=await import('/page/app/map3d/graph3d.js');
-        FRAMES.rest=0; FRAMES.idle=0; wake3d();
+        FRAMES.rest=0; FRAMES.idle=0; window.rotationFrames=FRAMES; wake3d();
     }""")
-    page.wait_for_function("async () => (await import('/page/app/map3d/graph3d.js')).FRAMES.id===0")
+    page.wait_for_function("() => window.rotationFrames.id===0")
     reduced = page.evaluate("""async () => {
         const {G}=await import('/page/app/map3d/graph3d.js');
         const a=window.pullCheck.a, q=a.__threeObj.quaternion.clone();
@@ -266,4 +288,83 @@ def test_pointer_gestures_pulled_neighbors_batches_picking_and_idle(
         return q.angleTo(a.__threeObj.quaternion);
     }""")
     assert reduced < 1e-7, reduced
+    assert problems == []
+
+
+def test_authored_upright_landing_is_continuous_interruptible_and_survives_rebinding(
+        run, web, mapped, motion_browser):  # noqa: F811
+    started(run)
+    page, problems, _ = opened(motion_browser, web, plain=True)
+    found = page.evaluate("""async () => {
+        const THREE=await import('three');
+        const {TURN,bindTurns,resetTurns,nodeTurnStart,nodeTurnEnd,turn3d}=
+            await import('/page/app/map3d/rotation.js');
+        window.metaform.pause3d(true);
+        const camera=new THREE.PerspectiveCamera(), target=new THREE.Vector3(), identity=new THREE.Quaternion();
+        let a, rest, time=1000;
+        const step=(dt,reduced=false)=>{time+=dt*1000;turn3d(time,camera,target,reduced,false);};
+        const fresh=()=>{
+            const object=new THREE.Object3D(); object.rotation.set(.4,-.7,.2);
+            a={x:0,y:0,z:0,__threeObj:object}; rest=object.quaternion.clone();
+            bindTurns([a],()=>1);step(1/60);
+            nodeTurnStart();for(let i=0;i<30;i++){a.x+=.3;step(1/60);}nodeTurnEnd();
+        };
+        fresh();
+        const released=a.__threeObj.quaternion.clone(), delta=new THREE.Quaternion(), prev=released.clone();
+        step(.1);delta.copy(a.__threeObj.quaternion).multiply(prev.clone().invert());
+        const forward=delta.y, first=prev.angleTo(a.__threeObj.quaternion);prev.copy(a.__threeObj.quaternion);
+        step(.1);const second=prev.angleTo(a.__threeObj.quaternion);
+        const coast=first>0 && forward>0 && second<first;
+        const land=fps=>{
+            fresh();const start=a.__threeObj.quaternion.clone(), prev=start.clone();
+            let maxStep=0,lastStep=0;
+            for(let i=0;i<fps*3.6;i++){
+                step(1/fps);lastStep=prev.angleTo(a.__threeObj.quaternion);
+                if(i>=fps*2)maxStep=Math.max(maxStep,lastStep);
+                prev.copy(a.__threeObj.quaternion);
+            }
+            return {q:a.__threeObj.quaternion.toArray(),error:rest.angleTo(a.__threeObj.quaternion),maxStep,lastStep,
+                moving:TURN.moving,exact:a.__threeObj.quaternion.equals(rest)};
+        };
+        const at30=land(30),at144=land(144);
+        const middle=fps=>{fresh();for(let i=0;i<fps*2.5;i++)step(1/fps);return a.__threeObj.quaternion.toArray();};
+        const mid30=middle(30),mid144=middle(144);
+        fresh();step(2.5);const longMid=a.__threeObj.quaternion.toArray();step(1.2);
+        const longRest=a.__threeObj.quaternion.equals(rest),longStopped=!TURN.moving;
+        fresh();step(2.5);const landing=a.__threeObj.quaternion.clone();nodeTurnStart();step(1/60);
+        const grab=landing.angleTo(a.__threeObj.quaternion);step(5);
+        const held=landing.angleTo(a.__threeObj.quaternion);
+        a.x+=1.5;step(.1);const renewed=landing.angleTo(a.__threeObj.quaternion);nodeTurnEnd();step(4);
+        const interruptedRest=a.__threeObj.quaternion.equals(rest);
+        fresh();step(.2);const spun=a.__threeObj.quaternion.clone();
+        bindTurns([{x:a.x,y:a.y,z:a.z,__threeObj:a.__threeObj}],()=>1);step(1/60);
+        const rebound=spun.angleTo(a.__threeObj.quaternion);step(4);
+        const reboundRest=a.__threeObj.quaternion.equals(rest);
+        // Replacing a theme/type object captures its own intentional tilt, never the former spun pose.
+        const replacement=new THREE.Object3D();replacement.rotation.set(-.3,.9,-.5);
+        const replacementRest=replacement.quaternion.clone();a=TURN.nodes[0];a.__threeObj=replacement;a.x+=1000;step(.1);
+        const replacementInitial=replacement.quaternion.equals(replacementRest);
+        nodeTurnStart();a.x+=3;step(.1);nodeTurnEnd();step(4);
+        const replacementLanded=replacement.quaternion.equals(replacementRest);
+        nodeTurnStart();a.x+=3;step(.1);nodeTurnEnd();step(2.5);step(.01,true);
+        const reduced= replacement.quaternion.equals(replacementRest) && !TURN.moving;step(.1);
+        const resumed=replacement.quaternion.equals(replacementRest) && !TURN.moving;
+        nodeTurnStart();a.x+=3;step(.1);nodeTurnEnd();resetTurns();a.x+=1000;step(.1);step(4);
+        const resetRest=replacement.quaternion.equals(replacementRest);
+        return {coast,first,second,at30,at144,mid30,mid144,longMid,longRest,longStopped,grab,held,renewed,
+            interruptedRest,rebound,reboundRest,replacementInitial,replacementLanded,reduced,resumed,resetRest,
+            authoredTilt:rest.angleTo(identity)};
+    }""")
+    print('UPRIGHT_LANDING', json.dumps(found))
+    assert found['coast'] and found['authoredTilt'] > .5, found
+    for key in ('at30', 'at144'):
+        assert found[key]['error'] < 1e-7 and found[key]['lastStep'] < .001, found[key]
+        assert found[key]['maxStep'] < .15, found[key]
+    assert found['mid30'] == pytest.approx(found['mid144'], abs=1e-8)
+    assert found['mid30'] == pytest.approx(found['longMid'], abs=1e-8)
+    assert found['grab'] < 1e-7 and found['held'] < 1e-7 and found['rebound'] < 1e-7, found
+    assert found['renewed'] == pytest.approx(.5), found
+    for key in ('longRest','longStopped','interruptedRest','reboundRest','replacementInitial','replacementLanded',
+                'reduced','resumed','resetRest'):
+        assert found[key], (key, found)
     assert problems == []
