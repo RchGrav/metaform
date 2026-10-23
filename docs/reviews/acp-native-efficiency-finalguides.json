@@ -1,0 +1,3380 @@
+{
+  "label": "finalguides",
+  "checkout": "/home/rich/metaform",
+  "commit": "8df925ee398eaca74873b42aad00625724824799",
+  "model": "gpt-6-luna",
+  "effort": "low",
+  "prepared_runtime_decider": "benchmark",
+  "scope": "Selector/planner overhead excluded by identical prepared role/runtime in all arms.",
+  "cards": [
+    {
+      "work_id": "f67cd3bfadfa4eee898804783d784f14",
+      "done": true,
+      "session_ids": [
+        "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+      ],
+      "elapsed_seconds": 43.40392788499594,
+      "acceptance_passed": true,
+      "worker_unittest_passed": true,
+      "exception_preserved": true,
+      "source_task_sha256": "ffc180f1ce2816aa377637c0fd666584873b3338402e9b77a03fde18a65d4eda",
+      "artifact_sha256": "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56"
+    },
+    {
+      "work_id": "f58d2239a33540cc93b523a1ef814558",
+      "done": true,
+      "session_ids": [
+        "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+      ],
+      "elapsed_seconds": 37.22253523400286,
+      "acceptance_passed": true,
+      "worker_unittest_passed": true,
+      "exception_preserved": true,
+      "source_task_sha256": "59879418270ed3a26fba3704a11e0417a7577242edac6a939502b76ad27732fb",
+      "artifact_sha256": "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b"
+    },
+    {
+      "work_id": "07e88edf01db43d9ab3f0c6f5f571830",
+      "done": true,
+      "session_ids": [
+        "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+      ],
+      "elapsed_seconds": 40.48060866899323,
+      "acceptance_passed": true,
+      "worker_unittest_passed": true,
+      "exception_preserved": true,
+      "source_task_sha256": "0e81eb696bfba6d27d5318a47a5b222b0ff3cdc9ae2238460ec578f159d8c094",
+      "artifact_sha256": "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+    }
+  ],
+  "billing": null,
+  "source_snapshot": {
+    "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+    "tracked_src_patch_sha256": "266e0907e9dd21510f9e6c550afc9f942f0d7f1152a937c5969fabbda829071c",
+    "tracked_src_patch_bytes": 55223,
+    "harness_sha256": "9a3d674bef49b41b725f8d5559c382daf8df3ecf48e19bd1f0f83ef2ba4082ba",
+    "changed_source_files": {
+      "src/metaform/modules/agents/README.md": "ec9b57edcf5c74d219a771ba7d7ca292fe39053c5e8ba65fc1c2fc09b554da14",
+      "src/metaform/modules/agents/__init__.py": "ea5b13120e4e578b7c424996825927ef22b1337addb23ff5f894a2ef5c2b8348",
+      "src/metaform/modules/agents/roles.py": "5d9ba1e5917559f9fa1783c04880ebf7ebcc2a2361a8c910b2704e2551c79414",
+      "src/metaform/modules/agents/tests/test_authored_roles.py": "c20e3b57d5ac487086be2b495e23601fa37c364cd640bf4a5135680af1d88190",
+      "src/metaform/modules/dispatch/README.md": "fdea597b05a4d701b16ef8b1cab670e24f176b34c18a55d23f468352c5976b1c",
+      "src/metaform/modules/dispatch/resources/prompts.xml": "38be85771ea8f5625ca5cbadfef9fa3cf39a68815da6cdb9e79926b9dd790f7d",
+      "src/metaform/modules/dispatch/runner.py": "c2999a1a09515470459540dab54aa8afe82d0d9cf722fcf47ac5f6b098506d7d",
+      "src/metaform/modules/dispatch/tests/fake_swarm_agent.py": "e7247be5a765a11b56f5de3343d2bf42b34597580c6679a02197f00d1dd9ea8d",
+      "src/metaform/modules/dispatch/tests/test_direct_runtime.py": "1f4fb30d4908213770d370f4a52c85fd47540163432e839e4185e47ba6dadf05",
+      "src/metaform/modules/dispatch/tests/test_dispatch.py": "4ae39ce6cd33bc7bc52de1c02a4257a321cae3257fcedb08fdc8373852c72b1e",
+      "src/metaform/modules/dispatch/tests/test_episode_transport.py": "d3b27cf5e3ec0351b21d81582bcdbf89f83506bf077739bf259e7f2ac10711f0",
+      "src/metaform/modules/dispatch/tests/test_liveness.py": "9a42ced46c522fc9d02210121f29aa392ee3e1f612cb2c07f9149e2c2e7c1354",
+      "src/metaform/modules/dispatch/tests/test_orchestration_runtime.py": "5a56998dea1133df8ed869d8f03268491d1b4147d4aaac78206b4e223cb63864",
+      "src/metaform/modules/dispatch/tests/test_orchestration_transport.py": "0248368ed23513ce4750d3c1bacebf444cf3ba584f5fa9767db8254f1c49dd64",
+      "src/metaform/modules/map/__init__.py": "89f9d05653869f630799ab818dc1875e006177f01dc8017d9f9a8167d157b108",
+      "src/metaform/modules/mcp/resources/prompts.xml": "1adf160326c977dd4f9178ff3cbc8838362bb1c1549f0e6c45835c61997a0f1a",
+      "src/metaform/modules/mcp/server.py": "155161a448162c15041db430619c38e1c1ce234c81d3f055217a103ef3f218b7",
+      "src/metaform/modules/mcp/tests/test_mcp.py": "6c7ffdfe29f9a9875dcb1b0ccc3c73712a6bc28d09eb9a3598f506c7212d7ab7",
+      "src/metaform/modules/orchestration/tests/test_orchestration.py": "414296727ca5a263ed405f2a846b9bab572f07059a37083d34fe5efb08823062"
+    },
+    "production_patch": "docs/reviews/acp-native-efficiency-finalguides-source.patch",
+    "production_patch_status": "Contemporaneous tracked src snapshot taken before inference, including staged and unstaged changes and tests.",
+    "measured_harness": "docs/reviews/acp-native-efficiency-finalguides-harness.py.txt",
+    "measured_harness_status": "Actual harness bytes saved before inference; SHA256 matches pre-run capture."
+  },
+  "native": {
+    "sessions": [
+      {
+        "id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+        "log_sha256": "685f093ff6fbe5cfc85bcc0fe6f136602224d83ea0648675f180f1b1ddec9036",
+        "turn_contexts": [
+          {
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "root_turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "model": "gpt-6-luna",
+            "effort": "low"
+          },
+          {
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "root_turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "model": "gpt-6-luna",
+            "effort": "low"
+          },
+          {
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "root_turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "model": "gpt-6-luna",
+            "effort": "low"
+          }
+        ],
+        "events": {
+          "session_meta": 1,
+          "event_msg": 100,
+          "response_item": 94,
+          "world_state": 2,
+          "turn_context": 3,
+          "token_usage_record": 37
+        },
+        "event_message_types": {
+          "task_started": 3,
+          "item_completed": 53,
+          "token_count": 37,
+          "task_complete": 3,
+          "thread_settings_applied": 4
+        },
+        "message_bytes_by_role": {
+          "developer": 42828,
+          "user": 26624,
+          "assistant": 4696
+        },
+        "custom_tool_calls": 34,
+        "tool_output_bytes": 163860,
+        "compaction_events": [],
+        "requests": [
+          {
+            "response_id": "resp_014523f663201f52016adaf95872bc81969ce05b46fa2b48a7",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 24758,
+              "cached_input_tokens": 12800,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 89,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 24847
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf95afc7481969d4f2c75ceedff93",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 25231,
+              "cached_input_tokens": 7168,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 42,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 25273
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf95c5bc48196aca69888a78a78a7",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 26604,
+              "cached_input_tokens": 25088,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 102,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 26706
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf95e340c8196a7d98a017efde6ef",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 34891,
+              "cached_input_tokens": 26368,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 32,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 34923
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf95f9c4c819697ea089e363d3c94",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 35469,
+              "cached_input_tokens": 34688,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 43,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 35512
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf96115c081968e7d83f97e8480fe",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 35776,
+              "cached_input_tokens": 35328,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 110,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 35886
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf96308088196ae6667540867b515",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 35927,
+              "cached_input_tokens": 35584,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 67,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 35994
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9647c40819690ddbb88ea7587ad",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 36043,
+              "cached_input_tokens": 35712,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 370,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 36413
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf968b4f88196ae598ce54d493fdd",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 36437,
+              "cached_input_tokens": 35840,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 66,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 36503
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf96c2f1c81968ab1f9fb05905a95",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 36546,
+              "cached_input_tokens": 36224,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 41,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 36587
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf96e135c8196b77c0c36b28a2af7",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 36854,
+              "cached_input_tokens": 36352,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 259,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 37113
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9723700819688e58fa3e10b291c",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 37556,
+              "cached_input_tokens": 36736,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 100,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 37656
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf973f88881968040cdef0e32b37c",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 37728,
+              "cached_input_tokens": 37376,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 130,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 37858
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf97624788196b3b7c2785e15d6e9",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 38048,
+              "cached_input_tokens": 37504,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 207,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 38255
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf978da4c8196b3361df336d0c4d4",
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "usage": {
+              "input_tokens": 38307,
+              "cached_input_tokens": 37888,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 151,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 38458
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf984f88c8196998bb0f9967f3a3e",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 38955,
+              "cached_input_tokens": 38144,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 110,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 39065
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf987c1408196b50b7e54866b2cb1",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 47302,
+              "cached_input_tokens": 38784,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 63,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 47365
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9899b7081968bd119d12110e067",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 51909,
+              "cached_input_tokens": 47104,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 86,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 51995
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf98bbf78819686f64b33f7cf187b",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 52167,
+              "cached_input_tokens": 51712,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 388,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 52555
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf990b44c8196b515afa024412d87",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 52579,
+              "cached_input_tokens": 51968,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 131,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 52710
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf993087081969ed45c09a2bb7286",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 52753,
+              "cached_input_tokens": 52352,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 57,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 52810
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf994af2c81969e7f1865ed20343a",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 52971,
+              "cached_input_tokens": 52608,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 58,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 53029
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9969b588196a9f74e7021273eb2",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 53200,
+              "cached_input_tokens": 52736,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 86,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 53286
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf998905c8196b13725f21d3ce23e",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 53573,
+              "cached_input_tokens": 52992,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 126,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 53699
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf99ab7288196b57a80be96c8eaa1",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 53765,
+              "cached_input_tokens": 53376,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 103,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 53868
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf99ca7d481969666c940bff20978",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 53918,
+              "cached_input_tokens": 53632,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 214,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 54132
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf99fd8e88196ac6e49ac9a1e5e9c",
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "usage": {
+              "input_tokens": 54184,
+              "cached_input_tokens": 53760,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 128,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 54312
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9a9e16481969c00e6cb2a1661f1",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 56631,
+              "cached_input_tokens": 54016,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 107,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 56738
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9abe47c8196b917651857ec54b1",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 56792,
+              "cached_input_tokens": 56448,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 48,
+              "reasoning_output_tokens": 15,
+              "total_tokens": 56840
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9aec55c81969813cd926397d50d",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 57224,
+              "cached_input_tokens": 56576,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 57,
+              "reasoning_output_tokens": 24,
+              "total_tokens": 57281
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9b1c2588196b6e12b85fa088182",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 57499,
+              "cached_input_tokens": 57088,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 122,
+              "reasoning_output_tokens": 45,
+              "total_tokens": 57621
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9b6b2bc8196b9f65c09c046272c",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 57958,
+              "cached_input_tokens": 57344,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 101,
+              "reasoning_output_tokens": 45,
+              "total_tokens": 58059
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9ba98048196b9124371774186b4",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 66325,
+              "cached_input_tokens": 57728,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 410,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 66735
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9bf9f508196b259fd15ec3ad0fa",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 66759,
+              "cached_input_tokens": 66176,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 66,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 66825
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9c1ba1c819685fa0d1422a13cdd",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 66869,
+              "cached_input_tokens": 66560,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 111,
+              "reasoning_output_tokens": 25,
+              "total_tokens": 66980
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9c580408196b3f1f4bbab712d36",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 67030,
+              "cached_input_tokens": 66688,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 206,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 67236
+            }
+          },
+          {
+            "response_id": "resp_014523f663201f52016adaf9c8d0748196b34fc75acaf3617b",
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "usage": {
+              "input_tokens": 67288,
+              "cached_input_tokens": 66816,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 125,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 67413
+            }
+          }
+        ],
+        "instruction_messages": [
+          {
+            "ordinal": 2,
+            "turn_id": null,
+            "role": "developer",
+            "content_json_bytes": 32356,
+            "sha256": "65c30d69e0d6eac73575cd8d131d235d88ec27c6d1a07c3a451ed64a7f609046",
+            "text_utf8_bytes": 31854,
+            "text_sha256": "68b1fedde99a132284c5a27f985b30229ed6b5c7d65b5a33512646b6e9b75a7b",
+            "mentions_agents_md": true,
+            "environment_block": false,
+            "skills_catalog": true,
+            "skill_entry_count": 36,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 3,
+            "turn_id": null,
+            "role": "developer",
+            "content_json_bytes": 2501,
+            "sha256": "cf61387b05dfa946001a72b5a0e7df9ef3be8d887296ea35975557e9cc823230",
+            "text_utf8_bytes": 2429,
+            "text_sha256": "b0bee459b90df882f8df0f508ae0e6d7f1649227515121a7736c1aac9fb1d95c",
+            "mentions_agents_md": true,
+            "environment_block": false,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 4,
+            "turn_id": null,
+            "role": "developer",
+            "content_json_bytes": 307,
+            "sha256": "266d361a112cbfd1a6f1027b2134843a5f53345fc472d1d6625d383382325693",
+            "text_utf8_bytes": 271,
+            "text_sha256": "6ded806e3cdbb35599ecaf8742574bc5274908472b1729090010c404c2151e8e",
+            "mentions_agents_md": true,
+            "environment_block": false,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 5,
+            "turn_id": null,
+            "role": "user",
+            "content_json_bytes": 6051,
+            "sha256": "bc635cd85dcbb9a0e5a183268718328d0ee8d09ffb1495ece1bcaa91fb4a5d3b",
+            "text_utf8_bytes": 5778,
+            "text_sha256": "594adffb585b7a95fd10cf1ae6b916f1e161874b1498c3843d5f7a1c36c41e74",
+            "mentions_agents_md": true,
+            "environment_block": true,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 8,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "role": "user",
+            "content_json_bytes": 16962,
+            "sha256": "a8fb27dc78e001cc15af9728966935d5ec50cc3e2a4694e2ac6042f0ec5b6039",
+            "text_utf8_bytes": 16781,
+            "text_sha256": "5915b71386cca52172f7d3a4a44ffdb7f5ae0535dab546f3399c57206b59ddcf",
+            "mentions_agents_md": false,
+            "environment_block": false,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": true,
+            "first_design_body_present": true
+          },
+          {
+            "ordinal": 100,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "role": "user",
+            "content_json_bytes": 1804,
+            "sha256": "f76a45b60247ad2791b569111fe4a9c2759c4b657b03d4389f64e302a4e23be6",
+            "text_utf8_bytes": 1696,
+            "text_sha256": "1450824a6d20771f16b1ab64e7a03989b313a7970201fc14582398bcd7a85c9e",
+            "mentions_agents_md": false,
+            "environment_block": false,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 171,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "role": "developer",
+            "content_json_bytes": 7664,
+            "sha256": "3352d0629145edf2b1648b061500125998a894d7f7d8fc4331617cf751354198",
+            "text_utf8_bytes": 7570,
+            "text_sha256": "5ccd58c57b67b10556f83dd75a639e85463fcd1a73a0c924162eb1a19c1253ec",
+            "mentions_agents_md": false,
+            "environment_block": false,
+            "skills_catalog": true,
+            "skill_entry_count": 26,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          },
+          {
+            "ordinal": 174,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "role": "user",
+            "content_json_bytes": 1807,
+            "sha256": "36144b79b70a51daeaf98bb153db325b34b10fac6725744125a81fd186409508",
+            "text_utf8_bytes": 1699,
+            "text_sha256": "8cd1c9c538aeb6dfd735d59f7decc5488c7307fa9520e7f017044f9401bcf652",
+            "mentions_agents_md": false,
+            "environment_block": false,
+            "skills_catalog": false,
+            "skill_entry_count": null,
+            "gateway_guidance": false,
+            "first_design_body_present": false
+          }
+        ],
+        "tool_calls": [
+          {
+            "ordinal": 12,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": true,
+            "input_utf8_bytes": 98
+          },
+          {
+            "ordinal": 16,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 117
+          },
+          {
+            "ordinal": 23,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 131
+          },
+          {
+            "ordinal": 28,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 81
+          },
+          {
+            "ordinal": 33,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_read_graph"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 124
+          },
+          {
+            "ordinal": 40,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 184
+          },
+          {
+            "ordinal": 45,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 197
+          },
+          {
+            "ordinal": 52,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "apply_patch"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 1020
+          },
+          {
+            "ordinal": 57,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 214
+          },
+          {
+            "ordinal": 62,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 125
+          },
+          {
+            "ordinal": 69,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog",
+              "mcp__metaform__metaform_catalog",
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "dispatch_link",
+              "dispatch_link",
+              "memory_create_entities"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 781
+          },
+          {
+            "ordinal": 76,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_create_entities"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 396
+          },
+          {
+            "ordinal": 81,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_create_entities"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 580
+          },
+          {
+            "ordinal": 86,
+            "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [
+              "done"
+            ],
+            "discovery_query": false,
+            "input_utf8_bytes": 975
+          },
+          {
+            "ordinal": 104,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 131
+          },
+          {
+            "ordinal": 109,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 155
+          },
+          {
+            "ordinal": 114,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 245
+          },
+          {
+            "ordinal": 119,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "apply_patch"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 1310
+          },
+          {
+            "ordinal": 126,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 214
+          },
+          {
+            "ordinal": 131,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "dispatch_link"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 206
+          },
+          {
+            "ordinal": 136,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "dispatch_link"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 203
+          },
+          {
+            "ordinal": 143,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 114
+          },
+          {
+            "ordinal": 148,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_add_observations"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 574
+          },
+          {
+            "ordinal": 153,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_add_observations"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 458
+          },
+          {
+            "ordinal": 158,
+            "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [
+              "done"
+            ],
+            "discovery_query": false,
+            "input_utf8_bytes": 1017
+          },
+          {
+            "ordinal": 178,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 131
+          },
+          {
+            "ordinal": 184,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": true,
+            "input_utf8_bytes": 79
+          },
+          {
+            "ordinal": 190,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": true,
+            "input_utf8_bytes": 63
+          },
+          {
+            "ordinal": 196,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 212
+          },
+          {
+            "ordinal": 203,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 120
+          },
+          {
+            "ordinal": 210,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "apply_patch"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 1208
+          },
+          {
+            "ordinal": 215,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "exec_command"
+            ],
+            "catalog_tools": [],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 214
+          },
+          {
+            "ordinal": 222,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "memory_add_observations"
+            ],
+            "operations": [],
+            "discovery_query": false,
+            "input_utf8_bytes": 339
+          },
+          {
+            "ordinal": 227,
+            "turn_id": "01a1675f-20cd-7a02-9b73-1aeb53ae1403",
+            "functions": [
+              "mcp__metaform__metaform_catalog"
+            ],
+            "catalog_tools": [
+              "map_work"
+            ],
+            "operations": [
+              "done"
+            ],
+            "discovery_query": false,
+            "input_utf8_bytes": 955
+          }
+        ],
+        "metadata": {
+          "id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+          "cli_version": "0.160.1",
+          "originator": "metaform",
+          "model_provider": "openai",
+          "cwd": "/tmp/metaform-native-finalguides-g75lf8r3/project"
+        },
+        "base_instruction_utf8_bytes": 21556,
+        "base_instruction_sha256": "2181ecc51528326182f349c9d83effa598156a4a307e9fd50bc7bd050496fa7a",
+        "last_thread_cumulative_usage": {
+          "input_tokens": 1753826,
+          "cached_input_tokens": 1675264,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4712,
+          "reasoning_output_tokens": 154,
+          "total_tokens": 1758538
+        },
+        "turn_summaries": {
+          "01a1675d-e41d-7cd2-baf6-20372c2c9f8a": {
+            "request_count": 15,
+            "usage_sums": {
+              "input_tokens": 516175,
+              "cached_input_tokens": 470656,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1809,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 517984
+            },
+            "first_request_usage": {
+              "input_tokens": 24758,
+              "cached_input_tokens": 12800,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 89,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 24847
+            },
+            "custom_tool_calls": 14,
+            "last_request_usage": {
+              "input_tokens": 38307,
+              "cached_input_tokens": 37888,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 151,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 38458
+            }
+          },
+          "01a1675e-8ee4-77a3-90de-62f83deed2b0": {
+            "request_count": 12,
+            "usage_sums": {
+              "input_tokens": 617276,
+              "cached_input_tokens": 599168,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1550,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 618826
+            },
+            "first_request_usage": {
+              "input_tokens": 38955,
+              "cached_input_tokens": 38144,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 110,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 39065
+            },
+            "custom_tool_calls": 11,
+            "last_request_usage": {
+              "input_tokens": 54184,
+              "cached_input_tokens": 53760,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 128,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 54312
+            }
+          },
+          "01a1675f-20cd-7a02-9b73-1aeb53ae1403": {
+            "request_count": 10,
+            "usage_sums": {
+              "input_tokens": 620375,
+              "cached_input_tokens": 605440,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1353,
+              "reasoning_output_tokens": 154,
+              "total_tokens": 621728
+            },
+            "first_request_usage": {
+              "input_tokens": 56631,
+              "cached_input_tokens": 54016,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 107,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 56738
+            },
+            "custom_tool_calls": 9,
+            "last_request_usage": {
+              "input_tokens": 67288,
+              "cached_input_tokens": 66816,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 125,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 67413
+            }
+          }
+        },
+        "summed_requests_match_last_thread_usage": true
+      }
+    ],
+    "unique_model_response_count": 37,
+    "usage_sums": {
+      "input_tokens": 1753826,
+      "cached_input_tokens": 1675264,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 4712,
+      "reasoning_output_tokens": 154,
+      "total_tokens": 1758538
+    },
+    "first_design_source_tool_references": [
+      {
+        "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+        "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+        "ordinal": 23,
+        "call_id": "call_74ae14a040b64461800d449c1582dbec",
+        "targeted_first_work": true,
+        "explicit_source_retrieval": true
+      },
+      {
+        "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+        "turn_id": "01a1675d-e41d-7cd2-baf6-20372c2c9f8a",
+        "ordinal": 86,
+        "call_id": "call_13f61934862647dfb42d06c263e5fd15",
+        "targeted_first_work": true,
+        "explicit_source_retrieval": false
+      },
+      {
+        "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+        "turn_id": "01a1675e-8ee4-77a3-90de-62f83deed2b0",
+        "ordinal": 109,
+        "call_id": "call_14b1570bd33244318337f224e3d9691b",
+        "targeted_first_work": true,
+        "explicit_source_retrieval": true
+      }
+    ],
+    "scope": "Native per-response usage deduplicated by thread_id/response_id; cumulative turn/thread fields never summed. Provider billing unknown."
+  },
+  "wire": [
+    {
+      "time": 1792735558.4443398,
+      "direction": "client_to_adapter",
+      "method": "initialize",
+      "id": 0,
+      "bytes": 389,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478
+    },
+    {
+      "time": 1792735560.4103081,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 0,
+      "bytes": 897,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478,
+      "agentInfo": {
+        "name": "@agentclientprotocol/codex-acp",
+        "title": "Codex",
+        "version": "2.2.2"
+      }
+    },
+    {
+      "time": 1792735560.4112532,
+      "direction": "client_to_adapter",
+      "method": "session/new",
+      "id": 1,
+      "bytes": 133,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478,
+      "processes": [
+        {
+          "pid": 3079478,
+          "parent": 3079475,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079490,
+          "parent": 3079478,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079491,
+          "parent": 3079490,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079498,
+          "parent": 3079491,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079505,
+          "parent": 3079498,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": null
+    },
+    {
+      "time": 1792735561.4714391,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 1,
+      "bytes": 11418,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478,
+      "sessionId": "01a1675d-c5d3-7ba0-955d-f88b196551f7"
+    },
+    {
+      "time": 1792735561.4915113,
+      "direction": "client_to_adapter",
+      "method": "session/close",
+      "id": 2,
+      "bytes": 112,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478
+    },
+    {
+      "time": 1792735561.4935503,
+      "direction": "client_to_adapter",
+      "method": "session/delete",
+      "id": 3,
+      "bytes": 113,
+      "proxy_pid": 3079475,
+      "adapter_pid": 3079478
+    },
+    {
+      "time": 1792735565.5973833,
+      "direction": "client_to_adapter",
+      "method": "initialize",
+      "id": 0,
+      "bytes": 389,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692
+    },
+    {
+      "time": 1792735567.3481202,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 0,
+      "bytes": 897,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "agentInfo": {
+        "name": "@agentclientprotocol/codex-acp",
+        "title": "Codex",
+        "version": "2.2.2"
+      }
+    },
+    {
+      "time": 1792735567.349517,
+      "direction": "client_to_adapter",
+      "method": "session/new",
+      "id": 1,
+      "bytes": 799,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": null
+    },
+    {
+      "time": 1792735568.4553277,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 1,
+      "bytes": 11418,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "sessionId": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735568.5720258,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 2,
+      "bytes": 164,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "configuration": {
+        "configId": "model",
+        "value": "gpt-6-luna"
+      }
+    },
+    {
+      "time": 1792735568.5860126,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 3,
+      "bytes": 168,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "configuration": {
+        "configId": "reasoning_effort",
+        "value": "low"
+      }
+    },
+    {
+      "time": 1792735568.9187539,
+      "direction": "client_to_adapter",
+      "method": "session/prompt",
+      "id": 4,
+      "bytes": 17154,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "text_bytes": 16681,
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735573.9075763,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 445,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735575.6048765,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 461,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735577.0039904,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 407,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735578.4479392,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 454,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735580.6633775,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 666,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735582.092791,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 692,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735586.1169999,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1309,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735589.6499338,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 658,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735591.4022927,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 453,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735594.6607344,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 531,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735595.0805829,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 536,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735595.488274,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 728,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735597.3998733,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 740,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735599.4299393,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 928,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735602.1720815,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1311,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3079692,
+          "parent": 3079690,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079705,
+          "parent": 3079692,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079706,
+          "parent": 3079705,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3079713,
+          "parent": 3079706,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3079720,
+          "parent": 3079713,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735605.468711,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 4,
+      "bytes": 568,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692,
+      "usage": {
+        "totalTokens": 517984,
+        "inputTokens": 45519,
+        "cachedReadTokens": 470656,
+        "cachedWriteTokens": 0,
+        "outputTokens": 1809,
+        "thoughtTokens": 0
+      },
+      "stopReason": "end_turn"
+    },
+    {
+      "time": 1792735605.6742055,
+      "direction": "client_to_adapter",
+      "method": "session/close",
+      "id": 5,
+      "bytes": 112,
+      "proxy_pid": 3079690,
+      "adapter_pid": 3079692
+    },
+    {
+      "time": 1792735609.7359464,
+      "direction": "client_to_adapter",
+      "method": "initialize",
+      "id": 0,
+      "bytes": 389,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772
+    },
+    {
+      "time": 1792735611.5647693,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 0,
+      "bytes": 897,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "agentInfo": {
+        "name": "@agentclientprotocol/codex-acp",
+        "title": "Codex",
+        "version": "2.2.2"
+      }
+    },
+    {
+      "time": 1792735611.5660856,
+      "direction": "client_to_adapter",
+      "method": "session/resume",
+      "id": 1,
+      "bytes": 853,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735612.5188298,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 2,
+      "bytes": 164,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "configuration": {
+        "configId": "model",
+        "value": "gpt-6-luna"
+      }
+    },
+    {
+      "time": 1792735612.534006,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 3,
+      "bytes": 168,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "configuration": {
+        "configId": "reasoning_effort",
+        "value": "low"
+      }
+    },
+    {
+      "time": 1792735612.6387904,
+      "direction": "client_to_adapter",
+      "method": "session/prompt",
+      "id": 4,
+      "bytes": 1918,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "text_bytes": 1696,
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735616.8579385,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 461,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735618.7747998,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 461,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735621.4136572,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 810,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735626.221144,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1661,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735628.7670963,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 658,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735629.9676554,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 540,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735632.024012,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 537,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735633.8940978,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 442,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735636.0697744,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 917,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735637.9964964,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 794,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735641.1735296,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1353,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3081772,
+          "parent": 3081754,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081835,
+          "parent": 3081772,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081836,
+          "parent": 3081835,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3081844,
+          "parent": 3081836,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3081851,
+          "parent": 3081844,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735643.368441,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 4,
+      "bytes": 568,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772,
+      "usage": {
+        "totalTokens": 618826,
+        "inputTokens": 18108,
+        "cachedReadTokens": 599168,
+        "cachedWriteTokens": 0,
+        "outputTokens": 1550,
+        "thoughtTokens": 0
+      },
+      "stopReason": "end_turn"
+    },
+    {
+      "time": 1792735643.5227435,
+      "direction": "client_to_adapter",
+      "method": "session/close",
+      "id": 5,
+      "bytes": 112,
+      "proxy_pid": 3081754,
+      "adapter_pid": 3081772
+    },
+    {
+      "time": 1792735647.277977,
+      "direction": "client_to_adapter",
+      "method": "initialize",
+      "id": 0,
+      "bytes": 389,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349
+    },
+    {
+      "time": 1792735649.0078218,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 0,
+      "bytes": 897,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "agentInfo": {
+        "name": "@agentclientprotocol/codex-acp",
+        "title": "Codex",
+        "version": "2.2.2"
+      }
+    },
+    {
+      "time": 1792735649.009087,
+      "direction": "client_to_adapter",
+      "method": "session/resume",
+      "id": 1,
+      "bytes": 853,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735649.892357,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 2,
+      "bytes": 164,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "configuration": {
+        "configId": "model",
+        "value": "gpt-6-luna"
+      }
+    },
+    {
+      "time": 1792735649.9090548,
+      "direction": "client_to_adapter",
+      "method": "session/set_config_option",
+      "id": 3,
+      "bytes": 168,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "configuration": {
+        "configId": "reasoning_effort",
+        "value": "low"
+      }
+    },
+    {
+      "time": 1792735649.992994,
+      "direction": "client_to_adapter",
+      "method": "session/prompt",
+      "id": 4,
+      "bytes": 1921,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "text_bytes": 1699,
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ],
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8"
+    },
+    {
+      "time": 1792735664.3017406,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 744,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735667.8872743,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 461,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735673.0512807,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1648,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735674.5911934,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 658,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735678.5246205,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 675,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735682.1359289,
+      "direction": "adapter_to_client",
+      "method": "session/update",
+      "id": null,
+      "bytes": 1291,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "update_kind": "tool_call",
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "processes": [
+        {
+          "pid": 3082349,
+          "parent": 3082347,
+          "executable": "codex-acp@2.2.2",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082362,
+          "parent": 3082349,
+          "executable": "sh",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082363,
+          "parent": 3082362,
+          "executable": "node",
+          "role": "adapter"
+        },
+        {
+          "pid": 3082370,
+          "parent": 3082363,
+          "executable": "node",
+          "role": "native_app_server"
+        },
+        {
+          "pid": 3082377,
+          "parent": 3082370,
+          "executable": "codex",
+          "role": "native_app_server"
+        }
+      ]
+    },
+    {
+      "time": 1792735684.4188318,
+      "direction": "adapter_to_client",
+      "method": null,
+      "id": 4,
+      "bytes": 574,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349,
+      "usage": {
+        "totalTokens": 621728,
+        "inputTokens": 14935,
+        "cachedReadTokens": 605440,
+        "cachedWriteTokens": 0,
+        "outputTokens": 1353,
+        "thoughtTokens": 154
+      },
+      "stopReason": "end_turn"
+    },
+    {
+      "time": 1792735684.5572362,
+      "direction": "client_to_adapter",
+      "method": "session/close",
+      "id": 5,
+      "bytes": 112,
+      "proxy_pid": 3082347,
+      "adapter_pid": 3082349
+    }
+  ],
+  "wire_observation": {
+    "raw_sha256": "2ad8ff362c3d4145c4cb1d513eb3add9556996dd1f328fe05e4e8d2f95937a4f",
+    "raw_bytes": 191793,
+    "raw_event_count": 1049,
+    "retained_event_count": 63,
+    "method_counts": [
+      {
+        "direction": "adapter_to_client",
+        "method": "_auth/status_update",
+        "count": 4
+      },
+      {
+        "direction": "adapter_to_client",
+        "method": "response",
+        "count": 22
+      },
+      {
+        "direction": "adapter_to_client",
+        "method": "session/update",
+        "count": 1001
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "initialize",
+        "count": 4
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/close",
+        "count": 4
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/delete",
+        "count": 1
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/new",
+        "count": 2
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/prompt",
+        "count": 3
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/resume",
+        "count": 2
+      },
+      {
+        "direction": "client_to_adapter",
+        "method": "session/set_config_option",
+        "count": 6
+      }
+    ],
+    "retention": "Lifecycle/config/prompt/results and tool-call/compaction process snapshots retained; repetitive streaming chunk metadata aggregated."
+  },
+  "acp_methods": {
+    "initialize": 4,
+    "session/new": 2,
+    "session/close": 4,
+    "session/delete": 1,
+    "session/set_config_option": 6,
+    "session/prompt": 3,
+    "session/resume": 2
+  },
+  "session_final_states": [
+    {
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "state": "ended",
+      "runtime": {
+        "mode": "agent",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "low",
+        "fast-mode": false
+      }
+    },
+    {
+      "session_id": "5347d6b8-e199-4af2-ace6-64b1dcfbb209",
+      "state": "running",
+      "runtime": {
+        "mode": "default",
+        "model": "fable"
+      }
+    }
+  ],
+  "reported_spending_rows": [
+    {
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "seq": 1792735605489397161,
+      "work_id": "f67cd3bfadfa4eee898804783d784f14",
+      "run": "a6c2018745072597",
+      "day": "2026-10-23",
+      "tokens": 94394,
+      "cost": null,
+      "currency": null,
+      "input": 45519,
+      "output": 1809,
+      "cache_read": 470656,
+      "cache_write": 0,
+      "thought": 0,
+      "metered": true
+    },
+    {
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "seq": 1792735643376479601,
+      "work_id": "f58d2239a33540cc93b523a1ef814558",
+      "run": "94a4893eafb50653",
+      "day": "2026-10-23",
+      "tokens": 79575,
+      "cost": null,
+      "currency": null,
+      "input": 18108,
+      "output": 1550,
+      "cache_read": 599168,
+      "cache_write": 0,
+      "thought": 0,
+      "metered": true
+    },
+    {
+      "session_id": "01a1675d-e10e-7e33-9edd-8e4cadd1c7e8",
+      "seq": 1792735684427306080,
+      "work_id": "07e88edf01db43d9ab3f0c6f5f571830",
+      "run": "870a2d12dcab26e6",
+      "day": "2026-10-23",
+      "tokens": 76832,
+      "cost": null,
+      "currency": null,
+      "input": 14935,
+      "output": 1353,
+      "cache_read": 605440,
+      "cache_write": 0,
+      "thought": 154,
+      "metered": true
+    }
+  ],
+  "accounting_reconciliation": {
+    "application_rows": 3,
+    "application_totals_match_native": true,
+    "application_cost_fields": "absent",
+    "provider_billing": "unknown"
+  },
+  "source_verification_after_run": {
+    "production_source_unchanged": true,
+    "changed_fixture_files": [],
+    "basis": "Compared source bytes with pre-inference manifest; test fixture changes classified separately."
+  },
+  "collector_revision": {
+    "status": "Actual measured collector recognizes compaction_update/compaction_summary_chunk and retains IDs/status without bodies.",
+    "parser_sha256": "9a3d674bef49b41b725f8d5559c382daf8df3ecf48e19bd1f0f83ef2ba4082ba",
+    "compaction_evidence": "No compaction variants in retained wire metadata and no compaction events in independent exact-session native logs."
+  },
+  "comparability_note": "Same controlled workload/runtime settings as all other arms. Native inserted one additional developer skills catalog before card3 (7570 UTF-8 bytes, 26 entries, ten curated plugin skills removed from the initial36). No catalog restoration appeared. This uncontrolled upstream context variation is included, not normalized away.",
+  "guide_branch_observation": {
+    "explicit_tool_guide_requests": 0,
+    "interpretation": "The actual workflow does not exercise or establish causal savings from the explicit canonical nested-schema guide branch. Separate real MCP contract tests verify that branch."
+  }
+}

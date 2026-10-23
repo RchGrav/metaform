@@ -384,7 +384,7 @@ def test_first_peer_turn_still_initializes_a_fresh_context(dispatch, monkeypatch
 
 
 @pytest.mark.kind('fixture')
-def test_startup_checkpoint_is_small_and_retained_key_is_not_repeated_on_resume(dispatch):
+def test_explicit_marker_diagnostic_does_not_repeat_the_retained_key_on_resume(dispatch):
     import asyncio
 
     from metaform.module import agent_context_epoch, context

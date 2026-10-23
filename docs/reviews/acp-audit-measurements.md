@@ -1,6 +1,6 @@
 # ACP orchestration audit measurements
 
-Baseline: `977f1bfe99bdea89bd89dc8ef36807047befe6e8`, the repository snapshot pushed before this rework.
+Baseline: `977f1bfe99bdea89bd89dc8ef36807047befe6e8`, the repository snapshot pushed before this rework. The paired fixtures below describe the initial implementation at `8df925ee`, before the native-efficiency follow-up in [the implementation record](acp-context-implementation.md).
 
 Measurements use isolated temporary Metaform homes and the same prepared functional map. No paid model session is used for the paired fixtures. Their provider calls, reasoning tokens, cache use, native instruction composition and billing remain unknown. A separate current-only real-adapter smoke below reports the usage fields actually returned by that adapter. ACP requests and delivered text are observable and are reported separately from provider usage.
 
@@ -101,7 +101,7 @@ The reusable fixture is `scripts/acp_audit_idle_case.py`. Copy it into each chec
 
 ## Current-only authenticated native adapter
 
-A separate bounded real worker ran through the normal Metaform ACP runner in a private temporary home/project. Discovery observed Codex CLI `0.162.1`, authenticated through ChatGPT, and `@agentclientprotocol/codex-acp` `2.2.2`. Its advertised original defaults were `gpt-6.1-sol` and `high`. The isolated project's chosen `gpt-6-luna` and `low` were confirmed in the final session settings. The default native `agent` mode remained selected and Fast mode remained off.
+A separate bounded real worker ran through the normal Metaform ACP runner in a private temporary home/project. Discovery observed shell Codex CLI `0.162.1`, authenticated through ChatGPT, and `@agentclientprotocol/codex-acp` `2.2.2`. Follow-up inspection of the native session metadata establishes that the adapter actually used its bundled Codex `0.160.1`. Its advertised original defaults were `gpt-6.1-sol` and `high`. The isolated project's chosen `gpt-6-luna` and `low` were confirmed in the final session settings. The default native `agent` mode remained selected and Fast mode remained off.
 
 The worker created `result.txt` containing exactly `alpha\n`, preserved `preserved.txt` byte-for-byte, read the exact stored request through `map_work op=sources` before writing the artifact, and completed its assigned work record. Native tool-result observation confirms the exact request text, including its exception, reached the worker. All sessions in that isolated home ended. One malformed tool/arguments request was corrected before the successful source read.
 
@@ -110,12 +110,13 @@ The worker created `result.txt` containing exactly `alpha\n`, preserved `preserv
 | ACP `session/new` / `session/prompt` / `session/close` | 1 / 1 / 1 |
 | Sent prompt text, UTF-8 bytes | 9488 |
 | Adapter-reported total tokens | 466202 |
-| Adapter-reported input / output tokens | 26103 / 1187 |
+| Adapter-reported uncached input / output tokens | 26103 / 1187 |
+| Native input tokens, including cached input | 465015 |
 | Adapter-reported cached-read / cached-write tokens | 438912 / 0 |
 | Adapter-reported thought tokens | 0 |
 | Native usage records / custom-tool calls | 17 / 16 |
 
-These are adapter-reported aggregate fields for one ACP prompt, not independently verified provider billing. Native usage records and custom-tool calls do not establish a provider model-invocation count. The small artifact can still incur substantial native onboarding and tool context, so this case supports no native token-savings claim.
+These are adapter-reported aggregate fields for one ACP prompt, not independently verified provider billing. Follow-up native-log inspection identifies 17 unique response IDs with usage, corresponding to 17 successful native model requests inside that one ACP prompt. Native `token_count` and `token_usage_record` are duplicate accounting streams, so they must not be added together. Their per-request sum matches the final cumulative total: 465,015 input tokens, including 438,912 cached input tokens, plus 1,187 output tokens. Failed or unreported requests and provider-internal processing remain outside this observation. The small artifact incurred substantial native onboarding and serial tool inference, so this case supports no native token-savings claim.
 
 The preexisting person-only control refused an attempted per-ticket model/effort edit from an agent-run terminal before any model invocation. No human-terminal proof or commissioned role was fabricated. The actual smoke therefore used isolated project defaults and disabled optional orchestration to avoid JEV or extra routing. Actual native episode reuse remains unmeasured; the paired fake-ACP workflow separately proves that transport path.
 

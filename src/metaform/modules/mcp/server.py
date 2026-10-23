@@ -1245,9 +1245,10 @@ def tool_guide(folder: Path, name: str, op: str | None, session: str | None) -> 
     listed = listing(folder).get(name)
     if listed is None:
         raise Stop(f'No tool {name} on this surface.', f'call {catalog.CATALOG} with search')
-    said = listed.guide(op)
-    if not said:
-        return prompt_files.module('mcp', 'tool_guide', tool=name) or name
+    # Explicit help exposes this tool's canonical nested shapes and constraints. The module catalog and
+    # automatic first-use guides stay compact; declarations and runtime validation remain the source of truth.
+    schema = json.dumps({'inputSchema': listed.schema()}, ensure_ascii=False, separators=(',', ':'))
+    said = '\n\n'.join(part for part in (listed.guide(op), schema) if part)
     text = (prompt_files.module('mcp', 'tool_guide', tool=name) or '') + '\n' + said
     record_shown(session, f'guide:tool:{name}', True)
     given = Given(session)

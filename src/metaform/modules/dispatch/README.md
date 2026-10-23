@@ -125,6 +125,8 @@ GC delivery records validation and closes its own root ticket. An independent `f
 
 A new conversation receives its initial duty and shared instructions once. Context receipts retain exact rendered and selected versions only after accepted outgoing delivery. Resume and compaction do not automatically replay rules, assignments or memory. A missing diagnostic marker does not advance the context epoch. Current memory revisions remain available through functional entry-point reads. Duplicate queued notes stay recorded, without claiming delivery before transport acceptance. `map.changed` drains only applicable transition events; mixed commands whose concerns are unspecified use the owning transition table, and unrelated events trigger no orchestration reads.
 
+The first assigned prompt includes the pinned duty components that dispatch already resolved, rather than requiring another discovery and resource-fetch sequence for the same body. Their exact source, selected versions and bindings enter the existing receipt ledger after accepted delivery. The duty URI remains available for explicit reads. Compact catalog guidance explains direct invocation of known commands and on-demand discovery, without adding a separate startup turn or a full tool inventory. Plans and stage records remain available when decomposition, coordination or continuation benefits from them; a direct verified change can close with its exact resolution and reason.
+
 ## Coherent work episodes
 
 Work records retain their own identity, source requests, results and review relationships. An orchestration episode

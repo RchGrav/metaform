@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -74,7 +75,10 @@ def worker(output):
             pass  # Historical revisions before channels have no channel introduction.
         else:
             text += '\n\n' + startup(session.ctx, session.session_id, session.work_id, session.role)
-        text = session.context_checkpoint(session.rules(text))
+        text = session.rules(text)
+        # Historical runners requested this diagnostic automatically; current ordinary work does not.
+        if 'self.context_checkpoint' in inspect.getsource(Session.prompted):
+            text = session.context_checkpoint(text)
         add(label + '_first_prompt', text)
         role = resolve_agent_role(project, session.authored_role.removeprefix('metaform://role/'), project=store.project_id)
         add(label + '_role_read', role.get('text') or '')
@@ -178,7 +182,8 @@ def main():
             'Pinned git-ref mode measures the coherent committed baseline instead.')
     measurements['source_sha256'] = fingerprints
     measurements['first_prompt_scope'] = (
-        'Rendered ACP first text block. Includes channel startup, rules, context checkpoint. '
+        'Rendered ACP first text block. Includes channel startup and rules; a context checkpoint only when '
+        'the examined runner requests it in its normal prompt path. '
         'Typed resource links excluded. Startup already omitted embedded tools JSON before edits.')
     measurements['billed_ticket_tokens'] = {'before': None, 'after': None,
         'reason': 'Requires model execution. Fixture measures delivered text only.'}

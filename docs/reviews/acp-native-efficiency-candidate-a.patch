@@ -1,0 +1,57 @@
+--- a/src/metaform/modules/dispatch/runner.py
++++ b/src/metaform/modules/dispatch/runner.py
+@@ -4527,6 +4527,9 @@
+         from .orchestration import resume_context, snapshots
+         components: list[dict[str, Any]] = []
+         if not self.probe:
++            catalog = prompt_files.resolve('prompt.mcp:connect_catalog')
++            if catalog.get('text'):
++                components.append(catalog)
+             communication = prompt_files.module('dispatch', 'communication')
+             if communication:
+                 components.append(prompt_files.component('prompt.dispatch:communication', communication))
+--- a/src/metaform/modules/map/__init__.py
++++ b/src/metaform/modules/map/__init__.py
+@@ -2242,15 +2242,16 @@
+ WORK_NOUNS = (
+     _noun('op', 'list, the default; add; edit, which, when you stop with your ticket open, sets its note to what is '
+                 'true now and where; take, which says an agent has started on the task; plan, which says how many '
+-                'steps you plan, first, and again when the plan changes; step, which says you finished one, with what '
+-                'you did and any choice you made and why; move, which puts it in a column of the board; distribute, '
++                'meaningful stages you plan when a count helps coordination or continuation; step records a '
++                'completed stage, what you did and any choice with its reason; move, which puts it in a column of the board; distribute, '
+                 'which gives the open tickets the glyphs of N agents; glyphs, which reads the available agent glyph '
+-                'names; done, which closes it with its resolution and why once the work is complete; or remove, which '
++                'names; sources reads retained exact request revisions separately from task interpretation; '
++                'done, which closes it with its resolution and why once the work is complete; or remove, which '
+                 'deletes it for good with its steps, links and settings; unhold_all releases all open work '
+                 'across this project, preserving boards and prerequisites.',
+           schema={'type': 'string', 'enum': ['list', 'add', 'edit', 'take', 'plan', 'step', 'move', 'distribute',
+-                                             'glyphs', 'done', 'remove', 'unhold_all']}),
+-    _noun('steps', 'take and plan: how many steps you plan for the task. Say it again when your plan changes.', 'int'),
++                                             'glyphs', 'sources', 'done', 'remove', 'unhold_all']}),
++    _noun('steps', 'take and plan: optional stage count when useful for the task. Update it when that plan changes.', 'int'),
+     _noun('said', 'step: what you did in the step you finished, in a sentence, with any choice you made and its why.'),
+     _noun('node', 'list, add and edit: an element, by address; edit moves the ticket there, keeping its progress. '
+                   'list gives its own records and those on the joins it receives or provides.'),
+@@ -2514,12 +2515,14 @@
+                      'or the start of one. Only what the layers in view show is found.',
+              examples=(('metaform map find cents', 'Where the map holds anything about cents.'),),
+              effect='read', reads_layers=True),
+-        Verb('work', work, 'Work with tickets, the work records on map elements and joins: list, read, add, edit, take, '
+-                           'finish and remove them. To work a ticket handed to you: read it with id=; op=plan with the steps '
+-                           'you plan; op=step as each finishes, saying what you did and any choice you made with its '
+-                           'why; op=done with a resolution and a why when it is complete; when you stop with it open, '
+-                           'op=edit its note to say what is true now and where. A ticket never changes the map, and it '
+-                           'moves across the board as it is worked.',
++        Verb('work', work, 'Work with tickets on map elements and joins: list, read, add, edit, take, finish and remove. '
++                           'Use the supplied ticket and exact operative source; summaries do not replace that source. '
++                           'Read id= and its source references when required details are missing or changed. '
++                           'Use op=plan and op=step for meaningful stages when '
++                           'decomposition, coordination or continuation benefits; update the count when that plan '
++                           'changes. A direct change can proceed to op=done with its exact resolution and why. Record '
++                           'material progress, decisions with reasons and blockers; when stopping with work open, '
++                           'op=edit its note to say what is true now and where. A ticket never changes the map.',
+              nouns=WORK_NOUNS,
+              details='A work record is attached to one element or join and never changes the map. Its '
+                      'condition is the state of that part, never the kind of ticket: most tasks carry none. A '

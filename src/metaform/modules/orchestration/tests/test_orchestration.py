@@ -1327,8 +1327,11 @@ def test_child_completion_never_wakes_closed_caller(project):
     assert SERVICE.assignment(ctx(project), assignment_id=child['assignment_id'])['result'] == 'Retained child evidence.'
 
 
-def test_request_sources_preserve_exact_user_revisions_separate_from_interpretation(project):
+def test_request_sources_preserve_exact_user_revisions_separate_from_interpretation(project, run, home):
+    import json
+
     from metaform.modules.map import work as map_work
+    from metaform.modules.mcp.tests.test_mcp import session, tool_names, whole
     store, folder = project
     exact = '  Keep “Fast” OFF.\nDo not reset my choice.\n'
     original = map_work(context('map', folder, project='proj', surface='web', nouns={
@@ -1348,6 +1351,18 @@ def test_request_sources_preserve_exact_user_revisions_separate_from_interpretat
     selected = map_work(context('map', folder, project='proj', nouns={
         'op': 'sources', 'id': work_id, 'source_id': sources[0]['source_id']}))
     assert selected == sources[:1]
+    assert 'sources' in run('help', 'map', 'work', cwd=folder).stdout
+    by_cli = json.loads(run('map', 'work', 'op=sources', f'id={work_id}',
+                            f'source_id={sources[0]["source_id"]}', '--json', cwd=folder).stdout)
+    assert by_cli == selected
+
+    async def source_read(client, init):
+        tools = await tool_names(client)
+        assert 'sources' in tools['map_work'].input_schema['properties']['op']['enum']
+        return await whole(client, 'map_work', {
+            'op': 'sources', 'id': work_id, 'source_id': sources[0]['source_id']})
+
+    assert session(home, folder, source_read) == selected
     assert store.ticket(work_id).work.task == 'Persist Fast off across restart.'
     map_work(context('map', folder, project='proj', session='agent-session', nouns={
         'op': 'edit', 'id': work_id, 'task': 'Use the persisted explicit false value.',

@@ -2151,6 +2151,7 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
         return init.capabilities.resources.list_changed, fixed, templates, texts, refused
     changed, fixed, templates, texts, refused = session(home, mapped, check)
     assert changed and set(fixed) == {'metaform://rules', 'metaform://memory', 'metaform://role/person',
+                                      'metaform://specialists',
                                       'metaform://metaform', 'metaform://proj',
                                       'metaform://modules',
                                       'metaform://runtime/compaction-state',
@@ -4195,3 +4196,44 @@ def test_find_names_the_addresses_that_hold_the_words(run, home, mapped):
     assert found[0] == {'address': 'code.alarm.audible', 'kind': 'element', 'what': 'audible alarm'}
     assert {'address': 'code.timer.kitchen', 'kind': 'join', 'what': 'Get attention. EF: Plays a tone.'} in \
         Store('proj').find('attention')
+
+
+def test_explicit_memory_tool_guides_expose_nested_shapes_without_preloading_schemas(project_folder):
+    from metaform import shown
+    from metaform.modules.mcp.server import answer, listing, module_tools_text
+
+    named = 'nested-guide-reader'
+    catalog_text = module_tools_text(project_folder, 'memory')
+    assert 'metaform_catalog tool=metaform_instructions arguments={"tool":"<exact command name>"}' in catalog_text
+    assert '"entityName"' not in catalog_text and '"entityType"' not in catalog_text
+    assert shown.peek(named, 'guide:tool:memory_add_observations') is None
+
+    error, blocks, _ = asyncio.run(answer(project_folder, 'metaform_instructions', {
+        'tool': 'memory_add_observations'}, session=named))
+    assert not error, blocks
+    guide = '\n'.join(blocks)
+    schema = json.loads(guide.rsplit('\n\n', 1)[-1])['inputSchema']
+    assert schema == listing(project_folder)['memory_add_observations'].schema()
+    member = schema['properties']['observations']['items']
+    assert member['type'] == 'object' and member['required'] == ['entityName', 'contents']
+    assert member['properties']['entityName']['type'] == 'string'
+    assert member['properties']['contents']['type'] == 'array'
+    assert member['properties']['contents']['items'] == {'type': 'string'}
+    assert 'one fact' in member['properties']['contents']['description']
+    assert schema['required'] == ['observations'] and schema['additionalProperties'] is False
+    assert '"entityType"' not in guide and '"mutations"' not in guide
+    assert shown.peek(named, 'guide:tool:memory_add_observations') is True
+    assert shown.peek(named, 'guide:tool:memory_create_entities') is None
+
+    error, blocks, _ = asyncio.run(answer(project_folder, 'metaform_instructions', {
+        'tool': 'memory_create_entities'}, session=named))
+    assert not error, blocks
+    schema = json.loads('\n'.join(blocks).rsplit('\n\n', 1)[-1])['inputSchema']
+    entity = schema['properties']['entities']['items']
+    assert entity['required'] == ['name', 'entityType', 'observations']
+    assert entity['properties']['entityType']['type'] == 'string'
+    assert 'new entity' in entity['properties']['why']['description'].lower()
+    assert 'required' in entity['properties']['why']['description']
+    assert 'why' not in entity['required'], 'New-entity semantic checks must retain their existing conditional scope.'
+    assert 'one fact' in entity['properties']['observations']['description']
+    assert '"entityName"' not in '\n'.join(blocks) and '"mutations"' not in '\n'.join(blocks)

@@ -1643,5 +1643,637 @@
       "/tmp/metaform-acp-fresh-start-final.xml"
     ],
     "conclusion": "Six owner failures reproduce on baseline. Five stale expectations were corrected while retaining meaningful assertions. The remaining consent workflow exposed a real startup ordering race and passes after the narrow startup fix. The original owner sweep was not green, and no complete repository-green claim is made."
+  },
+  "native_efficiency_followup": {
+    "recorded_at": "2026-10-23T05:26:48.526110+00:00",
+    "observed_parent_commit": "8df925ee398eaca74873b42aad00625724824799",
+    "comparison_baseline": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+    "scope": "Failure relevance triage outside runner/orchestration, current full lint comparison, exact MCP discovery and CLI interaction regressions. Native token/process measurement and runner fixes are owned by other collaborating agents.",
+    "lint": {
+      "repository": {
+        "command": "ruff check . --output-format json",
+        "current_count": 51,
+        "baseline_count": 52,
+        "introduced": [],
+        "removed": [
+          {
+            "path": "src/metaform/modules/dispatch/__init__.py",
+            "line": 2805,
+            "column": 17,
+            "code": "SIM102",
+            "message": "Use a single `if` statement instead of nested `if` statements"
+          }
+        ],
+        "current_diagnostics": [
+          {
+            "path": ".claude/skills/.archive/metaform-map-looks-broken-triage/scripts/depth-probe.py",
+            "line": 1,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": ".claude/skills/jev/jev.py",
+            "line": 8,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": ".claude/skills/jev/jev.py",
+            "line": 12,
+            "column": 17,
+            "code": "SIM115",
+            "message": "Use a context manager for opening files"
+          },
+          {
+            "path": ".claude/skills/metaform-web-map/scripts/depth-probe.py",
+            "line": 1,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 20,
+            "column": 16,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 23,
+            "column": 39,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 28,
+            "column": 10,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 33,
+            "column": 15,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 42,
+            "column": 38,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 45,
+            "column": 73,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 58,
+            "column": 54,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 61,
+            "column": 53,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 64,
+            "column": 52,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 67,
+            "column": 56,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 73,
+            "column": 64,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 76,
+            "column": 22,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 105,
+            "column": 17,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 113,
+            "column": 50,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 114,
+            "column": 52,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 116,
+            "column": 37,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 120,
+            "column": 19,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 133,
+            "column": 21,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 150,
+            "column": 71,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 154,
+            "column": 26,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 155,
+            "column": 36,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 158,
+            "column": 10,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 159,
+            "column": 43,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 179,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 181,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 183,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 185,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 187,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 190,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 192,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "docs/reference/mcp-instruction-places.py",
+            "line": 195,
+            "column": 5,
+            "code": "ISC004",
+            "message": "Unparenthesized implicit string concatenation in collection"
+          },
+          {
+            "path": "evidence/gc-orchestration-review/live-model/export_harness.py",
+            "line": 13,
+            "column": 14,
+            "code": "FURB192",
+            "message": "Prefer `max` over `sorted()` to compute the maximum value in a sequence"
+          },
+          {
+            "path": "evidence/gc-orchestration-review/live-model/export_runtime.py",
+            "line": 2,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "evidence/gc-orchestration-review/live-model/package_evidence.py",
+            "line": 2,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "evidence/gc-orchestration-review/live-model/snapshot.py",
+            "line": 17,
+            "column": 35,
+            "code": "UP017",
+            "message": "Use `datetime.UTC` alias"
+          },
+          {
+            "path": "rich/metaform_kit/module/knowledge/__init__.py",
+            "line": 7,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "rich/metaform_kit/module/knowledge/tests/test_knowledge.py",
+            "line": 2,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "rich/metaform_kit/server.py",
+            "line": 11,
+            "column": 8,
+            "code": "F401",
+            "message": "`json` imported but unused"
+          },
+          {
+            "path": "rich/metaform_kit/server.py",
+            "line": 12,
+            "column": 8,
+            "code": "F401",
+            "message": "`sys` imported but unused"
+          },
+          {
+            "path": "scripts/calver.py",
+            "line": 33,
+            "column": 13,
+            "code": "DTZ011",
+            "message": "`datetime.date.today()` used"
+          },
+          {
+            "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+            "line": 1,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+            "line": 21,
+            "column": 16,
+            "code": "BLE001",
+            "message": "Do not catch blind exception: `Exception`"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_ticket_fast_ui.py",
+            "line": 2,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 20,
+            "code": "F811",
+            "message": "Redefinition of unused `web` from line 3: `web` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 25,
+            "code": "F811",
+            "message": "Redefinition of unused `mapped` from line 3: `mapped` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 33,
+            "code": "F811",
+            "message": "Redefinition of unused `browser` from line 3: `browser` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 48,
+            "column": 15,
+            "code": "SIM115",
+            "message": "Use a context manager for opening files"
+          }
+        ],
+        "baseline_artifact": "/tmp/metaform-acp-followup-baseline-ruff.json",
+        "current_artifact": "/tmp/metaform-acp-followup-ruff.json"
+      },
+      "ci": {
+        "command": "ruff check src tests conftest.py --output-format json",
+        "current_count": 7,
+        "baseline_count": 8,
+        "introduced": [],
+        "removed": [
+          {
+            "path": "src/metaform/modules/dispatch/__init__.py",
+            "line": 2805,
+            "column": 17,
+            "code": "SIM102",
+            "message": "Use a single `if` statement instead of nested `if` statements"
+          }
+        ],
+        "current_diagnostics": [
+          {
+            "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+            "line": 1,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "src/metaform/modules/web/page/app/.claude/skills/.archive/headless-page-smoke-check/scripts/page_smoke.py",
+            "line": 21,
+            "column": 16,
+            "code": "BLE001",
+            "message": "Do not catch blind exception: `Exception`"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_ticket_fast_ui.py",
+            "line": 2,
+            "column": 1,
+            "code": "I001",
+            "message": "Import block is un-sorted or un-formatted"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 20,
+            "code": "F811",
+            "message": "Redefinition of unused `web` from line 3: `web` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 25,
+            "code": "F811",
+            "message": "Redefinition of unused `mapped` from line 3: `mapped` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 8,
+            "column": 33,
+            "code": "F811",
+            "message": "Redefinition of unused `browser` from line 3: `browser` redefined here"
+          },
+          {
+            "path": "src/metaform/modules/web/tests/test_zz_diag_tmp.py",
+            "line": 48,
+            "column": 15,
+            "code": "SIM115",
+            "message": "Use a context manager for opening files"
+          }
+        ],
+        "baseline_artifact": "/tmp/metaform-acp-followup-baseline-ci-ruff.json",
+        "current_artifact": "/tmp/metaform-acp-followup-ci-ruff.json"
+      },
+      "changed_test_files": "ruff check src/metaform/modules/mcp/tests/test_mcp.py tests/test_cli.py: passed",
+      "conclusion": "No introduced Ruff diagnostic. Full repository51 versus baseline52; CI scope7 versus baseline8. The removed existing diagnostic is dispatch SIM102. Existing unrelated lint remains."
+    },
+    "focused_checks": {
+      "cli": {
+        "passed": 3,
+        "failed": 0,
+        "seconds": 8.31,
+        "junit": "/tmp/metaform-acp-followup-cli-final.xml",
+        "log": "/tmp/metaform-acp-followup-cli-final.log"
+      },
+      "catalog": {
+        "passed": 2,
+        "failed": 0,
+        "seconds": 4.38,
+        "junit": "/tmp/metaform-acp-followup-resource-final.xml",
+        "log": "/tmp/metaform-acp-followup-resource-final.log"
+      }
+    },
+    "checks": [
+      {
+        "nodeid": "tests/test_cli.py::test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available",
+        "outcome": "passed",
+        "seconds": 4.103,
+        "classification": "preexisting_stale_default_expectation_corrected",
+        "original_baseline": "Failed at hardcoded Jev=False assertion after preceding authorization checks passed; see selected baseline evidence above.",
+        "acp_8df925ee": "Source inspection confirms same Jev=True default and unchanged stale assertions; no separate eight-minute suite claimed.",
+        "current_fix": "Reset compares the captured configured default and default state. Authorization tests explicitly set Jev off before attempted unauthorized enables, preserving all refusal and real-person success assertions.",
+        "production_authorization_changes": false
+      },
+      {
+        "nodeid": "tests/test_cli.py::test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_persons_controls",
+        "outcome": "passed",
+        "seconds": 7.668,
+        "classification": "preexisting_stale_default_expectation_corrected",
+        "original_baseline": "Failed at hardcoded Jev=False assertion after preceding authorization checks passed; see selected baseline evidence above.",
+        "acp_8df925ee": "Source inspection confirms same Jev=True default and unchanged stale assertions; no separate eight-minute suite claimed.",
+        "current_fix": "Reset compares the captured configured default and default state. Authorization tests explicitly set Jev off before attempted unauthorized enables, preserving all refusal and real-person success assertions.",
+        "production_authorization_changes": false
+      },
+      {
+        "nodeid": "tests/test_cli.py::test_no_command_without_the_persons_terminal_carries_their_consent_however_it_was_started",
+        "outcome": "passed",
+        "seconds": 3.898,
+        "classification": "preexisting_stale_default_expectation_corrected",
+        "original_baseline": "Failed at hardcoded Jev=False assertion after preceding authorization checks passed; see selected baseline evidence above.",
+        "acp_8df925ee": "Source inspection confirms same Jev=True default and unchanged stale assertions; no separate eight-minute suite claimed.",
+        "current_fix": "Reset compares the captured configured default and default state. Authorization tests explicitly set Jev off before attempted unauthorized enables, preserving all refusal and real-person success assertions.",
+        "production_authorization_changes": false
+      },
+      {
+        "nodeid": "src/metaform/modules/mcp/tests/test_mcp.py::test_resources_serve_the_instructions_and_what_a_module_declares",
+        "outcome": "passed",
+        "seconds": 2.622,
+        "classification": "preexisting_catalog_expectation_corrected",
+        "current_fix": "Exact discovery set includes the existing metaform://specialists resource. Registry behavior check verifies names/purposes/URIs without role bodies, one delivery per revision, and renewed eligibility after compaction."
+      },
+      {
+        "nodeid": "src/metaform/modules/orchestration/tests/test_specialist_routing.py::test_specialist_registry_resource_has_names_and_urls_without_role_bodies",
+        "outcome": "passed",
+        "seconds": 1.143,
+        "classification": "existing_behavior_regression_proof",
+        "current_fix": "Exact discovery set includes the existing metaform://specialists resource. Registry behavior check verifies names/purposes/URIs without role bodies, one delivery per revision, and renewed eligibility after compaction."
+      }
+    ],
+    "remaining": [
+      {
+        "area": "MCP annotation static audit (three existing tests)",
+        "classification": "preexisting_mixed_metadata_bookkeeping_and_stale_callgraph_registry",
+        "evidence": "Owner sweep and baseline selected JUnit above both fail. Read-role resolution updates only role source manifest metadata; atomic graph writes are separate. AST network reach also crosses shared event callbacks, so each actual network declaration needs direct semantic review rather than blanket exclusions.",
+        "action": "Actual orchestration network-reach declarations passed to result_fidelity and root for ownership review; no blanket effect changes or audit exemptions introduced."
+      },
+      {
+        "area": "Memory test_no_memory_command_tells_an_agent_to_name_a_node_by_a_join_id",
+        "classification": "preexisting_atomic_batch_api_expectation_mismatch",
+        "evidence": "Current targeted followup still fails at apply schema properties; original baseline fails at same assertion. memory.batch._request intentionally requires exactly node/entityNames/expectedDigest/mutationId/mutations; test assumes every node-bearing command also exposes three alternate noun aliases.",
+        "action": "No production batch scope change or test exemption. This is independent of ACP episode, delivery, source retention and dynamic blacklist behavior."
+      },
+      {
+        "area": "Remaining original broad and module failures",
+        "classification": "previous_baseline_evidence_retained_not_reexecuted_wholesale",
+        "action": "Runner/user-word/cancellation/usage candidates coordinated with root/result_fidelity/runtime_selection. Existing style errors, demo schema, packaging/install, README/template, unrelated first-run and static schema tests left unchanged by this slice. Original failure records above retain exact outcomes; no blanket green claim or skip gate."
+      }
+    ],
+    "limits": "No production changes, policy restoration, model admission gates, mandatory stages, xfails or blanket exclusions in this slice. Existing historical deselection lists above describe earlier evidence, not a current suite exclusion policy. Corrected catalog/CLI tests should run normally. The full repository suite remains unproven; inference savings are not inferred from these test results.",
+    "exact_source_discovery_regression": {
+      "recorded_at": "2026-10-23T05:35:28.629157+00:00",
+      "classification": "introduced_in_acp_8df925ee_fixed",
+      "mechanism": "The ACP rework added map work op=sources handler, source_id noun and exact retained revisions, but omitted sources from WORK_NOUNS op enum. CLI accepted the handler and returned exact source records; live MCP discovery advertised an enum excluding sources, preventing schema-driven clients from selecting the source read.",
+      "fix": "Add sources to the existing op enum and explain it in the same op help. No handler, author metadata, source storage or policy changes.",
+      "regression": "Extend existing test_request_sources_preserve_exact_user_revisions_separate_from_interpretation with CLI help, actual CLI exact original-source read, actual MCP advertised enum, and actual MCP exact selected-source roundtrip. Original user/revision/interpretation and agent impersonation assertions remain.",
+      "before": {
+        "failed": 1,
+        "passed": 0,
+        "seconds": 16.73,
+        "assertion": "sources missing from live map_work input_schema.properties.op.enum; exact CLI roundtrip already passed",
+        "junit": "/tmp/metaform-acp-source-discovery-before.xml",
+        "log": "/tmp/metaform-acp-source-discovery-before.log"
+      },
+      "after": {
+        "failed": 0,
+        "passed": 1,
+        "seconds": 15.76,
+        "junit": "/tmp/metaform-acp-source-discovery-final.xml",
+        "log": "/tmp/metaform-acp-source-discovery-final.log"
+      },
+      "static": "Ruff map/__init__.py and orchestration/tests/test_orchestration.py passed",
+      "coordination": "Root, prompt owner and native efficiency harness owner notified before fixed native arm."
+    },
+    "final_relevant_regressions": [
+      {
+        "classification": "introduced_in_8df925ee_fixed",
+        "area": "Changed selected-duty read route",
+        "problem": "The notice advertised a role URI whose assignment reader intentionally returns the pinned historical snapshot.",
+        "correction": "Advertise agents_resolve for current selected text while retaining the exact assignment snapshot.",
+        "evidence": "agents/tests/test_authored_roles.py::test_changed_source_reference_reaches_current_text_without_rebinding_pinned_assignment"
+      },
+      {
+        "classification": "relevant_preexisting_defect_fixed",
+        "area": "Role wrapper source provenance",
+        "problem": "Dispatch role_resource bytes were labeled as orchestration source with manual component construction.",
+        "correction": "Resolve prompt.dispatch:role_resource through the prompt store, preserving selected edits, source/version and role binding.",
+        "evidence": "dispatch/tests/test_direct_runtime.py::test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_after_acceptance",
+        "baseline_evidence": "977f1bfe runner.py:4431 already labels the dispatch role_resource wrapper as prompt.orchestration:role_resource."
+      },
+      {
+        "classification": "deliberately_superseded_fixture_expectations_corrected",
+        "area": "Inline role and changed-source transport",
+        "problem": "Three fake-agent scenarios discarded initial inline duty and one expected the former role-URI freshness route.",
+        "correction": "Accumulate actual inline/resource context and assert the structured agents_resolve route without skipping checks.",
+        "initial_final_run": "4 failed, 52 passed in 120.81s; follow-up rerun recorded in the implementation review."
+      },
+      {
+        "classification": "relevant_preexisting_discovery_defect_fixed",
+        "area": "Nested payload shape discovery through gateway",
+        "problem": "Existing explicit tool guides omit nested JSON input schema; brief module signatures do not expose entityName/contents or full entity payload shape. Native trace has four rejected create payloads before a successful write.",
+        "correction": "Append the requested tool canonical inputSchema only to explicit metaform_instructions help and point there optionally from module catalog; keep automatic guides lazy and validation intact.",
+        "evidence": "Two public-guide/op-filter cases passed in 4.63s; whole-project Pyright zero errors and warnings after correction. Final matched guide arm recorded in implementation review."
+      }
+    ],
+    "final_functional_selection": {
+      "result": "9 passed in 35.35s",
+      "command": "pytest -n 0 -q: adaptive publication, strict current user direction, strict source provenance, exact source CLI/MCP history, dynamic catalog exclusion, continuation runtime reuse, two CLI consent guards, unset-all defaults",
+      "limitations": "Focused selection, not full-suite result."
+    },
+    "final_transport_validation": {
+      "initial_selection": "52 passed and 4 stale fixture failures in 120.81s",
+      "corrected_exact_four": "4 passed in 123.80s",
+      "full_orchestration_runtime": "10 passed in 372.86s",
+      "production_source_unchanged_after_native_capture": true,
+      "coverage": [
+        "nested specialist returns",
+        "generated role reuse",
+        "GC commissioning",
+        "BMAD role/source delivery",
+        "explicit compaction rereads",
+        "user stops",
+        "adaptive and strict review",
+        "peer delivery and restart"
+      ],
+      "static_checks": {
+        "whole_project_pyright": "0 errors, 0 warnings",
+        "changed_python_ruff": "passed",
+        "git_diff_check": "passed excluding preserved raw .patch evidence (standard single-space blank context lines); source snapshots retain exact recorded bytes",
+        "immutable_root_definitions": "match 977f1bfe verbatim"
+      }
+    },
+    "final_native_result": {
+      "artifact": "acp-native-efficiency-finalguides.json",
+      "all_six_arms_cards_passed": 18,
+      "native_model_responses": 37,
+      "input_including_cache": 1753826,
+      "cached_input": 1675264,
+      "uncached_input": 78562,
+      "output": 4712,
+      "billing": "unknown",
+      "explicit_nested_guide_requested": false,
+      "guide_branch_validation": "2 real public-guide/prose-op-filter cases passed; no native causal savings attributed",
+      "final_production_hashes_match_native_capture": true,
+      "whole_project_pyright": "0 errors, 0 warnings"
+    }
   }
 }

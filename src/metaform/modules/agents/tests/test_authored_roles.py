@@ -334,7 +334,7 @@ def test_changed_role_references_require_consumed_body_and_accepted_notice(proje
     references = authored.changes(ctx, 'consumer', 'changing_auditor')
     assert len(references) == 1 and references[0]['name'] == name
     assert references[0]['actual_version_id'] == first.version_id
-    assert references[0]['read'] == 'metaform://role/changing_auditor'
+    assert references[0]['read'] == {'tool': 'agents_resolve', 'arguments': {'name': 'changing_auditor'}}
     assert 'text' not in references[0]
     assert authored.changes(ctx, 'consumer', 'changing_auditor') == references
     second, _ = prompt_files.save_edit(name, 'Latest revised instruction.')
@@ -394,3 +394,35 @@ def test_portable_generated_definition_fallback_is_honest_and_selected_store_sti
     available = authored.resolve(ctx, 'portable_auditor')['components'][-1]
     assert available['text'] == 'Use the available selected duty.'
     assert available['actual_version_id'] == available['selected_version_id'] == selected.version_id
+
+
+def test_changed_source_reference_reaches_current_text_without_rebinding_pinned_assignment(project_folder, store):
+    from metaform.data import Node
+    from metaform.modules.mcp.server import answer, assigned_role
+    from metaform.modules.orchestration.state import SERVICE
+    from tests.storekit import small_map
+
+    small_map(store)
+    ctx = context('agents', project_folder, project='proj')
+    authored = service(project_folder)
+    original = authored.publish(ctx, 'pinned_source_auditor', 'Inspect source revisions.', 'Original pinned duty.')
+    work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Inspect a source revision.')
+    bound = SERVICE.ensure(context('orchestration', project_folder, project='proj'), work.id,
+                           role='pinned_source_auditor', session_id='pinned-recipient', runner='pinned-runner')
+    pinned = bound['role_snapshot']
+    original_read, _ = read_resource(project_folder, original['uri'], 'pinned-runner')
+    assert 'Original pinned duty.' in original_read
+    duty = original['components'][-1]
+    revised, _ = prompt_files.save_edit(duty['name'], 'New source text for explicit inspection.')
+    references = authored.changes(ctx, 'pinned-runner', original['name'])
+    assert len(references) == 1 and references[0]['actual_version_id'] == revised.version_id
+    assert assigned_role(project_folder, original['uri'], 'pinned-runner') == pinned
+    reference = references[0]['read']
+    assert reference == {'tool': 'agents_resolve', 'arguments': {'name': original['name']}}
+    result = asyncio.run(answer(project_folder, reference['tool'], reference['arguments'], session='pinned-runner'))
+    assert result[0] is False, result[1]
+    assert 'New source text for explicit inspection.' in json.dumps(result[2])
+    assert result[2]['components'][-1]['actual_version_id'] == revised.version_id
+    assert assigned_role(project_folder, original['uri'], 'pinned-runner') == pinned
+    authored.delivered_changes(ctx, 'pinned-runner', references)
+    assert authored.changes(ctx, 'pinned-runner', original['name']) == []

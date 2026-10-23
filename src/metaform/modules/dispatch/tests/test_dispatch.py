@@ -5443,20 +5443,25 @@ def test_a_turn_that_fails_is_traced_with_its_error(dispatch, monkeypatch):
     from unittest.mock import AsyncMock
 
     from metaform.data import Store
+    from metaform.module import context
     from metaform.modules.dispatch import runner
     spans = []
     monkeypatch.setattr(runner, 'traced', lambda attributes, started_ns, error=None: spans.append((attributes, error)))
 
     async def exercise():
-        held = runner.Session(SimpleNamespace(nouns={}), Store('proj', module='dispatch'), dispatch.ticket(), 'claude',
-                              [])
+        held = runner.Session(context('dispatch', dispatch.folder, project='proj', nouns={'prep': True}),
+                              Store('proj', module='dispatch'), dispatch.ticket(), 'claude', [], prep=True)
         held.session_id = 'failing-turn'
-        held.prep = True
+        held.spoken = True  # bootstrap delivery is covered separately; this turn tests a provider failure
+        held.context_checked = True
         held.conn = SimpleNamespace(prompt=AsyncMock(side_effect=RuntimeError('the agent fell over')))
         held.note = AsyncMock()
         held.changed = AsyncMock()
+        held.flush = AsyncMock()
         held.turn('First turn')
         await asyncio.wait_for(asyncio.gather(*tuple(held.tasks)), 5)
+        held.conn.prompt.assert_awaited_once()
+        assert held.conn.prompt.await_args.kwargs['prompt'][0].text == 'First turn'
 
     asyncio.run(exercise())
     [(attributes, error)] = spans

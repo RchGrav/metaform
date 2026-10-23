@@ -214,6 +214,7 @@ def test_a_dispatched_agent_cannot_reset_controls_or_partially_apply_a_call(run,
 @pytest.mark.req('CLI-011')
 def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_available(run):
     run('enable', 'dispatch')
+    default_jev = shown(run)['jev']['value']
     run('set', '--modules', 'chassis,map,dispatch,mcp,web', env={'METAFORM_ROLE': 'worker'})
     run('set', '--jev', env={'METAFORM_ROLE': ''})
     run('unset', '--jev')
@@ -224,7 +225,7 @@ def test_the_person_can_allow_cli_control_changes_and_ordinary_settings_stay_ava
     assert shown(run)['dispatch_prompts']['value'] == 'approve-all'
     run('unset', '--jev', env=agent)
     run('unset', 'all', '--unglue', env=agent)
-    assert shown(run)['jev']['value'] is False
+    assert (shown(run)['jev']['value'], shown(run)['jev']['state']) == (default_jev, 'default')
     assert shown(run)['agents_may_set_control']['value'] is False
 
 
@@ -885,6 +886,7 @@ def test_an_agent_that_clears_its_role_still_cannot_clear_switch_or_set_the_pers
     command the person runs, and a person-only setting is refused; the caution names the open ticket that would go.
     The same commands from the person's own shell still run."""
     run('enable', 'dispatch')
+    run('set', '--no-jev', cwd=project)
     noted(run, project, 'Counts down.')
     run('map', 'work', 'op=add', 'address=code.timer', 'task=Ring louder', 'title=Ring louder', cwd=project)
     for args in (('clear', 'project', 'proj', '--confirm'), ('add', 'base', 'fresh'), ('activate', 'base', 'main'),
@@ -916,6 +918,7 @@ def test_no_command_without_the_persons_terminal_carries_their_consent_however_i
     changes with one shell line. A command an agent's shell re-parents to init with `( cmd & )`, and one started with
     no terminal and no agent above it, switch nothing and set nothing; at a terminal of its own, the person's, the
     same command runs."""
+    run('set', '--no-jev', cwd=project)
     noted(run, project, 'Counts down.')
     out = tmp_path / 'out'
     line = f'( "$0" -m metaform map add-base evil --confirm > {out} 2>&1 & )'  # the verifier's idiom, word for word

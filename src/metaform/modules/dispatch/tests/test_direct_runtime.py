@@ -14,6 +14,116 @@ from metaform.modules.orchestration.state import SERVICE
 pytestmark = pytest.mark.kind('simulation')
 
 
+@pytest.mark.parametrize('fail_before_accept', [False, True])
+@pytest.mark.parametrize('assigned_role', [False, True])
+def test_fresh_prompt_teaches_the_gateway_and_records_its_selected_source_only_after_acceptance(
+        store, project_folder, monkeypatch, fail_before_accept, assigned_role):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from metaform import prompt_files
+    from metaform.module import prepare_agent_context, resolve_agent_role
+    from metaform.modules.dispatch import orchestration, runner
+
+    name = 'prompt.mcp:connect_catalog'
+    original = prompt_files.resolve(name)
+    selected, _ = prompt_files.save_edit(name, f'{original["text"]}\nUse exact catalog command names.')
+    expected = prompt_files.resolve(name)
+    assert expected['actual_version_id'] == selected.version_id
+    assert expected['source']['kind'] == 'selected_edit'
+    snapshot = None
+    wrapper = None
+    if assigned_role:
+        prompt_files.save_edit('prompt.orchestration:gc', 'Pinned duty for proj. Preserve this exact intent.')
+        snapshot = resolve_agent_role(project_folder, 'gc', project='proj', bindings={'project': 'proj'})
+        prompt_files.save_edit('prompt.orchestration:gc', 'A newer role revision belongs to later assignments.')
+        assert snapshot['components'][-1]['text'] == 'Pinned duty for proj. Preserve this exact intent.'
+        assert snapshot['components'][-1]['bindings']['project'] == 'proj'
+        prompt_files.save_edit('prompt.dispatch:role_resource',
+                               'Assigned pinned duty: <role/>. Use the supplied exact components.')
+        wrapper = prompt_files.resolve('prompt.dispatch:role_resource', role=snapshot['uri'])
+        assert wrapper['source']['kind'] == 'selected_edit'
+        assert wrapper['bindings'] == {'role': snapshot['uri']}
+        monkeypatch.setattr(orchestration, 'resume_context', lambda *args: {'role_snapshot': snapshot})
+        monkeypatch.setattr(runner, 'resolve_agent_role', lambda *args, **kwargs: pytest.fail(
+            'The existing assignment must use its pinned role, not a newer selected revision'))
+
+    async def exercise():
+        held = runner.Session(context('dispatch', project_folder, project='proj', nouns={'prep': True}),
+                              store, None, 'codex', [], prep=True, work_id='gateway-onboarding')
+        held.runner = 'gateway-context'
+        held.session_id = 'native-thread'
+        held.authored_role = snapshot['uri'] if snapshot else None
+        outgoing, carried = [], []
+
+        def due():
+            return prepare_agent_context(project_folder, held.runner, [expected], project='proj')['components']
+
+        async def deliver(**request):
+            text = request['prompt'][0].text
+            components = held.inflight_context['components']
+            catalog = next(one for one in components if one['name'] == name)
+            outgoing.append((text, catalog))
+            assert due(), 'Rendering and preparing the first prompt must not acknowledge delivery'
+            assert text.count(expected['text']) == 1
+            for duty in snapshot['components'] if snapshot else []:
+                delivered = next(one for one in components if one['name'] == duty['name'])
+                assert delivered == duty
+                assert text.count(duty['text']) == 1
+                assert prepare_agent_context(project_folder, held.runner, [duty], project='proj')['components']
+            if snapshot:
+                assert snapshot['uri'] in text
+                assert 'A newer role revision' not in text
+                assert next(one for one in components if one['name'] == wrapper['name']) == wrapper
+                assert text.count(wrapper['text']) == 1
+                assert not any(one['name'] == 'prompt.orchestration:role_resource' for one in components)
+            if fail_before_accept and len(outgoing) == 1:
+                raise OSError('Prompt transport failed before acceptance')
+            held.context_delivered()
+            return SimpleNamespace(stop_reason='end_turn', usage=None)
+
+        held.conn = SimpleNamespace(prompt=deliver)
+        for method in ('changed', 'note', 'flush', 'save_state', 'spend', 'peer_marked'):
+            monkeypatch.setattr(held, method, AsyncMock())
+        for method in ('hush', 'arm', 'intake_clock', 'trace'):
+            monkeypatch.setattr(held, method, lambda *args, **kwargs: None)
+        monkeypatch.setattr(runner, 'provided', lambda *args: [])
+        for function in ('begin_agent_context_check', 'finish_agent_context_check'):
+            monkeypatch.setattr(runner, function, lambda *args, **kwargs: pytest.fail(
+                'Ordinary new work must not request or finish a marker diagnostic'))
+        monkeypatch.setattr(held, 'carried', lambda versions: carried.extend(versions))
+        held.turn('Implement the requested contribution.')
+        await asyncio.gather(*tuple(held.tasks))
+        if fail_before_accept:
+            assert due() and not carried
+            held.turn('Retry the requested contribution.')
+            await asyncio.gather(*tuple(held.tasks))
+        assert not due()
+        assert held.context_check is None
+        for text, catalog in outgoing:
+            assert 'Context diagnostic' not in text and 'agents_confirm' not in text
+            assert 'metaform_catalog module=' in text and 'search=' in text
+            assert 'tool=' in text and 'arguments={...}' in text
+            for field in ('actual_version_id', 'selected_version_id', 'source', 'rendered_fingerprint'):
+                assert catalog[field] == expected[field]
+        catalog_versions = [one for one in carried if one.name == name]
+        assert len(catalog_versions) == 1
+        assert catalog_versions[0].version_id == selected.version_id
+        repeated = held.guidance('Another contribution.', [])
+        assert expected['text'] not in repeated
+        for duty in snapshot['components'] if snapshot else []:
+            assert duty['text'] not in repeated
+            assert not prepare_agent_context(project_folder, held.runner, [duty], project='proj')['components']
+            assert len([one for one in carried if one.name == duty['name']]) == 1
+        if wrapper:
+            assert wrapper['text'] not in repeated
+            [receipt] = [one for one in carried if one.name == wrapper['name']]
+            assert receipt.version_id == wrapper['actual_version_id']
+            assert receipt.source == wrapper['source'] and receipt.bindings == wrapper['bindings']
+
+    asyncio.run(exercise())
+
+
 def test_resumed_startup_batches_returns_and_preserves_exact_human_priority(store, project_folder, monkeypatch):
     from metaform.modules.dispatch.runner import Session
 
@@ -108,7 +218,6 @@ def test_cross_card_delta_rides_the_first_actual_turn_without_reordering_human_m
         held = runner.Session(called, store, None, 'claude', [], prep=True, system=True,
                               work_id='current-card', resume='retained-session')
         held.session_id = 'retained-session'
-        held.context_checked = True
         delta = 'Current contribution: card B, workspace and source references.'
         first = 'Keep this exact text.\nMy first new direction.'
         second = 'My second direction keeps its original order.'
@@ -139,6 +248,9 @@ def test_cross_card_delta_rides_the_first_actual_turn_without_reordering_human_m
         for name in ('hush', 'arm', 'intake_clock', 'trace'):
             monkeypatch.setattr(held, name, lambda *args, **kwargs: None)
         monkeypatch.setattr(runner, 'provided', lambda *args: [])
+        for function in ('begin_agent_context_check', 'finish_agent_context_check'):
+            monkeypatch.setattr(runner, function, lambda *args, **kwargs: pytest.fail(
+                'Ordinary resumed work must not request or finish a marker diagnostic'))
         monkeypatch.setattr(runner, 'agent_context_epoch', lambda *args, **kwargs: 7)
         monkeypatch.setattr(runner, 'record_agent_context', lambda *args, **kwargs: receipts.append(
             {'request': len(requests), 'components': args[2], **kwargs}))
@@ -164,6 +276,8 @@ def test_cross_card_delta_rides_the_first_actual_turn_without_reordering_human_m
         held.start_pending()
         await asyncio.gather(*held.tasks)
         assert len(requests) == 3, 'An empty startup placeholder must not add a model turn'
+        assert held.context_check is None
+        assert all('Context diagnostic' not in text and 'agents_confirm' not in text for text in requests)
         assert requests[0] == f'{delta}\n\n{first}'
         assert requests[1] == (f'{delta}\n\n{second}' if fail_before_accept else second)
         assert 'Original child evidence is ready.' in requests[2] and delta not in requests[2]

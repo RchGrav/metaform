@@ -1,4 +1,5 @@
 """Actual ACP process replacement reuses one context for three explicitly related work records."""
+import json
 import os
 
 import pytest
@@ -102,7 +103,9 @@ def test_changed_consumed_prompt_reaches_next_real_turn_as_reference_once(
         prompt_files.save_edit('prompt.orchestration:implementer', replacement, format='text')
         worker.turn('Continue with the next local step.')
         [first] = sent(monkeypatch, worker)
-        assert 'prompt_changes' in first and 'metaform://role/implementer' in first
+        [notice] = json.loads(first.partition('\n\n')[2])['prompt_changes']
+        assert notice['name'] == 'prompt.orchestration:implementer'
+        assert notice['read'] == {'tool': 'agents_resolve', 'arguments': {'name': 'implementer'}}
         assert 'Keep the exact source exception.' not in first, 'A revision notice is not an unsolicited body replay.'
         worker.turns = 1
         worker.turn('Continue once more.')

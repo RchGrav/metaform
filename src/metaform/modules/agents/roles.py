@@ -283,7 +283,10 @@ class RoleService:
                 notices.append({'name': name, 'epoch': epoch, 'fingerprint': fingerprint,
                                 'previous': active, 'actual_version_id': one.get('actual_version_id'),
                                 'selected_version_id': one.get('selected_version_id'),
-                                'source': one.get('source'), 'read': resolved['uri'],
+                                'source': one.get('source'),
+                                # The authored URI intentionally reads a pinned assignment snapshot. A changed
+                                # selected source needs the existing current-source inspection tool instead.
+                                'read': {'tool': 'agents_resolve', 'arguments': {'name': resolved['name']}},
                                 'problems': one.get('problems') or []})
         return notices
 

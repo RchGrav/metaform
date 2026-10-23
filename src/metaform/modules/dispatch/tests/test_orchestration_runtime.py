@@ -231,9 +231,9 @@ def delivery_evidence(swarm, scenario):
                   if one['name'] == 'prompt.orchestration:common')  # the canonical prompt identity, CTX-082
     for role in ('gc', 'implementer'):
         own = [one for one in contexts if one['role'] == role]
-        assert not any(common in one['recipient_context'] for one in own)
+        assert sum(common in one['recipient_context'] for one in own) == 1
         resources = [one['role_resource'] for one in logged if one['role'] == role and 'role_resource' in one]
-        assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in resources) == 1
+        assert not any(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in resources)
     receipts = records('agents', 'receipts')
     assert any(one['name'] == 'prompt.orchestration:common' and one['actual_version_id'] and
                one['component']['text'] == common for one in receipts)
@@ -294,9 +294,9 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     assert requested['creator_assignment_id'], 'A missing role commissions its helper automatically.'
     received = [one['recipient_context'] for one in logged if one.get('role') == 'route_specialist'
                 and 'recipient_context' in one]
-    assert len(received) >= 2 and all('You are the Route Specialist.' not in one for one in received)
+    assert sum('You are the Route Specialist.' in one for one in received) == 2
     duties = [one['role_resource'] for one in logged if one['role'] == 'route_specialist' and 'role_resource' in one]
-    assert len(duties) >= 2 and all('You are the Route Specialist.' in json.dumps(one) for one in duties)
+    assert len(duties) >= 2 and all('You are the Route Specialist.' not in json.dumps(one) for one in duties)
     generated = [one for one in records('agents', 'definitions') if one['name'] == 'route_specialist']
     assert len(generated) == 1
     assert requested['source']['name'] == 'route_specialist'
@@ -352,7 +352,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     duty = [one for one in records('agents', 'receipts')
             if one['name'] == 'prompt.agents:generated_proj_route_specialist']
     assert len(duty) == 1 and duty[0]['actual_version_id'] == definition['version_id']
-    assert any('You are the Route Specialist.' in json.dumps(one.get('role_resource', {}))
+    assert any('You are the Route Specialist.' in one.get('recipient_context', '')
                for one in logged if one['role'] == 'route_specialist')
     pm_evidence(swarm, 'gc-generated', ['GC_VALIDATED', 'FQC_ACCEPTED'])
 
@@ -417,9 +417,9 @@ def test_actual_acp_compaction_recovers_role_assignment_and_memory_only_when_rea
         assert {one['epoch'] for one in receipts if one['name'] == name} == {0, 1}
     contexts = [one['recipient_context'] for one in swarm.entries()
                 if one['role'] == 'gc' and 'recipient_context' in one]
-    assert not any(common in text for text in contexts)
+    assert sum(common in text for text in contexts) == 1
     duties = [one['role_resource'] for one in swarm.entries() if one['role'] == 'gc' and 'role_resource' in one]
-    assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in duties) == 2
+    assert sum(common in json.dumps(one, ensure_ascii=False).replace('\\n', '\n') for one in duties) == 1
     assert len(delivery_assignments(assignments)) == 2 and swarm.ticket().done
     capacities = [one['capacity'] for one in swarm.entries()
                   if 'capacity' in one and one['role'] not in ('facilitator', 'role_creator', 'triage')]

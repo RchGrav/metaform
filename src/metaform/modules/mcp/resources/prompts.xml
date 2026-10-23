@@ -251,7 +251,7 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <!-- Purpose of the project connection, before the module discovery instructions. -->
 <connect_use>Use Metaform to work with this project's functional map, tickets and shared knowledge.</connect_use>
 
-<connect_catalog>Metaform is extended by named modules. Read metaform://modules for their descriptions, then metaform://&lt;module&gt;/tools for the commands of the module you need. Reference commands by their exact listed names. metaform_catalog module=&lt;name&gt; loads that module; search=&lt;words&gt; finds commands, including approximate names. If your host cannot refresh tools, invoke them through metaform_catalog tool=&lt;name&gt; arguments={...}.</connect_catalog>
+<connect_catalog>Use the host-advertised handle for Metaform's metaform_catalog gateway; its name may include a host prefix. Invoke a known Metaform command through that handle with tool=&lt;name&gt; arguments={...}. Put the target command, such as map_work, in tool, not the gateway's own handle. When command names or arguments need discovery, metaform_catalog module=&lt;name&gt; loads one module and search=&lt;words&gt; finds commands. metaform://modules and metaform://&lt;module&gt;/tools also provide discovery. Read those indexes when needed; known commands and arguments can be used directly.</connect_catalog>
 <!-- The line of metaform://role/<role> on compaction, only for an agent no runner follows, such as the
      person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
      context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
@@ -294,6 +294,6 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <already_read><uri/> is unchanged since you read it in this session, so it is not given again; <again/> reads it whole.</already_read>
 <module_index>Metaform is extended by named modules. Each module publishes its own capability description and commands. Read only the module tools resource needed for your work. Search commands with metaform_catalog search=&lt;words&gt;.</module_index>
 <chassis_description>Manage Metaform configuration, projects, prompts, skills and reports.</chassis_description>
-<module_tools>Commands owned by <module/>. Arguments marked ? are optional. Use metaform_catalog module=<module/> to expose these tools, or call metaform_catalog tool=&lt;exact command name&gt; arguments={...}.</module_tools>
+<module_tools>Commands owned by <module/>. Arguments marked ? are optional. Use metaform_catalog module=<module/> to expose these tools, or call metaform_catalog tool=&lt;exact command name&gt; arguments={...}. For argument shapes or details, call metaform_catalog tool=metaform_instructions arguments={"tool":"&lt;exact command name&gt;"} for one guide.</module_tools>
 <catalog_module>The declaring module's exact name from metaform://modules; load its commands, or narrow a search.</catalog_module>
 </prompts>

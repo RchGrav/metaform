@@ -4527,6 +4527,9 @@ class Session:
         from .orchestration import resume_context, snapshots
         components: list[dict[str, Any]] = []
         if not self.probe:
+            catalog = prompt_files.resolve('prompt.mcp:connect_catalog')
+            if catalog.get('text'):
+                components.append(catalog)
             communication = prompt_files.module('dispatch', 'communication')
             if communication:
                 components.append(prompt_files.component('prompt.dispatch:communication', communication))
@@ -4538,8 +4541,8 @@ class Session:
             if role.get('missing') or role.get('problems'):
                 raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
                            'metaform agents roles')
-            components.append(prompt_files.component('prompt.orchestration:role_resource',
-                prompt('role_resource', role=self.authored_role)))
+            components.append(prompt_files.resolve('prompt.dispatch:role_resource', role=self.authored_role))
+            components.extend(role.get('components') or [])
             if held:
                 self.assignment = held
         if not self.probe and (self.authored_role or self.role == 'worker'):
@@ -4596,7 +4599,7 @@ class Session:
         return f'{prepared["text"]}\n\n{text}'
 
     def context_checkpoint(self, text: str) -> str:
-        """Piggyback one retention check on the first actual turn of a start/resume, never a separate model call."""
+        """Render an explicitly requested marker diagnostic; ordinary work does not request this tool round trip."""
         if self.probe or self.context_checked:
             return text
         if self.context_check is None:
@@ -4614,13 +4617,12 @@ class Session:
         return '\n\n'.join(part for part in (prepared['text'], request, text) if part)
 
     async def context_check_finished(self) -> None:
+        """Finish an explicit marker diagnostic without inferring semantic retention or changing delivery state."""
         if not self.context_check or self.context_checked:
             return
-        result = await asyncio.to_thread(finish_agent_context_check, Path(self.root), self.runner,
-                                          str(self.context_check['checkpoint']), project=self.store.project_id)
+        await asyncio.to_thread(finish_agent_context_check, Path(self.root), self.runner,
+                                str(self.context_check['checkpoint']), project=self.store.project_id)
         self.context_checked = True
-        if result.get('eligible'):
-            await asyncio.to_thread(forget_shown, self.runner)
 
     def context_delivered(self) -> None:
         """Record only after ACP accepted the outgoing bytes; the body snapshots cannot race a later prompt edit."""
@@ -4913,7 +4915,6 @@ class Session:
                                 self.inflight_memory_changes.append((provider, notices))
                                 text += '\n\n' + json.dumps({'context_changes': notices}, ensure_ascii=False)
                         await asyncio.to_thread(self.startup_context_receipt, text)
-                        text = await asyncio.to_thread(self.context_checkpoint, text)
                         self.inflight_versions += [self.sent.pop(0) for _ in range(len(self.sent))]
                         self.inflight_peers = marks
                         self.cost_open, self.provisional = False, 0
@@ -4939,8 +4940,6 @@ class Session:
                     reason = f'error: {error}'
                     if began_ns is not None:  # a turn sent and failed is reported too, as an error
                         self.trace(None, 'error', began_ns, error=str(error) or type(error).__name__)
-                if began_ns is not None:
-                    await self.context_check_finished()
                 self.hush()
                 async with self.interrupt_lock:
                     self.active_turn = None

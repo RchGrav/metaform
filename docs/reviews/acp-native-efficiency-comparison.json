@@ -1,0 +1,877 @@
+{
+  "schema": 1,
+  "workload": "Three related label/sequence/render contributions. Same task templates except per-arm receipt IDs. Prepared implementer runtime. Focused unittest, external acceptance and preserved-file checks.",
+  "configuration": {
+    "adapter": "@agentclientprotocol/codex-acp@2.2.2",
+    "native_codex_cli": "0.160.1",
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "mode": "agent",
+    "fast_mode": false,
+    "full_auto": true,
+    "stay_connected": false,
+    "selection": "Existing runtime provider save, honest benchmark provenance, excludes selector/planner overhead."
+  },
+  "arms": {
+    "original977f": {
+      "artifact": "docs/reviews/acp-native-efficiency-original977f.json",
+      "actual_native_sessions": 3,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3019331,
+        3021237,
+        3023805
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 0,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 96,
+      "input_including_cache": 3834562,
+      "cached_input": 3655552,
+      "uncached_input": 179010,
+      "output": 7668,
+      "total_tokens": 3842230,
+      "per_card_native_responses": [
+        30,
+        31,
+        35
+      ],
+      "per_card_custom_tool_calls": [
+        29,
+        30,
+        34
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 23783,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 78,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 23861
+          },
+          "last": {
+            "input_tokens": 43662,
+            "cached_input_tokens": 43264,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 101,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 43763
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 23905,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 89,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 23994
+          },
+          "last": {
+            "input_tokens": 51402,
+            "cached_input_tokens": 51072,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 110,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 51512
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 23897,
+            "cached_input_tokens": 12800,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 76,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 23973
+          },
+          "last": {
+            "input_tokens": 61372,
+            "cached_input_tokens": 60928,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 131,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 61503
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "977f1bfe99bdea89bd89dc8ef36807047befe6e8",
+        "status": "Detached immutable checkout during measured arm; no product-source edits."
+      }
+    },
+    "prior8df": {
+      "artifact": "docs/reviews/acp-native-efficiency-prior8df.json",
+      "actual_native_sessions": 1,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3017873,
+        3019864,
+        3020634
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 2,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 55,
+      "input_including_cache": 2729731,
+      "cached_input": 2628992,
+      "uncached_input": 100739,
+      "output": 5808,
+      "total_tokens": 2735539,
+      "per_card_native_responses": [
+        31,
+        15,
+        9
+      ],
+      "per_card_custom_tool_calls": [
+        30,
+        14,
+        8
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 23616,
+            "cached_input_tokens": 7168,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 106,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 23722
+          },
+          "last": {
+            "input_tokens": 53153,
+            "cached_input_tokens": 44544,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 142,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 53295
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 53844,
+            "cached_input_tokens": 31616,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 217,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 54061
+          },
+          "last": {
+            "input_tokens": 70092,
+            "cached_input_tokens": 69376,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 161,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 70253
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 70817,
+            "cached_input_tokens": 69888,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 231,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 71048
+          },
+          "last": {
+            "input_tokens": 76896,
+            "cached_input_tokens": 76544,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 164,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 77060
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+        "status": "Detached immutable checkout during measured arm; no product-source edits."
+      }
+    },
+    "fixedcurrent": {
+      "artifact": "docs/reviews/acp-native-efficiency-fixedcurrent.json",
+      "actual_native_sessions": 1,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3027897,
+        3029736,
+        3030210
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 2,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 61,
+      "input_including_cache": 3209539,
+      "cached_input": 3040000,
+      "uncached_input": 169539,
+      "output": 5724,
+      "total_tokens": 3215263,
+      "per_card_native_responses": [
+        42,
+        11,
+        8
+      ],
+      "per_card_custom_tool_calls": [
+        41,
+        10,
+        7
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 23670,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 87,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 23757
+          },
+          "last": {
+            "input_tokens": 57603,
+            "cached_input_tokens": 57216,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 154,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 57757
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 58302,
+            "cached_input_tokens": 35840,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 120,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 58422
+          },
+          "last": {
+            "input_tokens": 68769,
+            "cached_input_tokens": 68352,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 127,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 68896
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 69443,
+            "cached_input_tokens": 68608,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 105,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 69548
+          },
+          "last": {
+            "input_tokens": 79344,
+            "cached_input_tokens": 78848,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 94,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 79438
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+        "status": "Reconstructed after run, not a contemporaneous snapshot. Actual native message and prompt hashes identify delivered bytes.",
+        "production_patch": "docs/reviews/acp-native-efficiency-candidate-a.patch",
+        "production_patch_sha256": "e699ceb0d0f2ed5b5e39b53ac93491cff0a3e57988d3d47236b6eba484decc32",
+        "changed_source_files": {
+          "src/metaform/modules/dispatch/runner.py": "d66470978fc3e681b14af1558111bc5e4c8fd18ff56f917069bf33cdb9f7c9cd",
+          "src/metaform/modules/map/__init__.py": "89f9d05653869f630799ab818dc1875e006177f01dc8017d9f9a8167d157b108"
+        }
+      }
+    },
+    "candidateb": {
+      "artifact": "docs/reviews/acp-native-efficiency-candidateb.json",
+      "actual_native_sessions": 1,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3036849,
+        3038755,
+        3039197
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 2,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 33,
+      "input_including_cache": 1390982,
+      "cached_input": 1322368,
+      "uncached_input": 68614,
+      "output": 4371,
+      "total_tokens": 1395353,
+      "per_card_native_responses": [
+        17,
+        8,
+        8
+      ],
+      "per_card_custom_tool_calls": [
+        16,
+        7,
+        7
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 24883,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 96,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 24979
+          },
+          "last": {
+            "input_tokens": 40119,
+            "cached_input_tokens": 39680,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 145,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 40264
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 40805,
+            "cached_input_tokens": 39936,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 266,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 41071
+          },
+          "last": {
+            "input_tokens": 51879,
+            "cached_input_tokens": 51456,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 112,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 51991
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 52530,
+            "cached_input_tokens": 51712,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 128,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 52658
+          },
+          "last": {
+            "input_tokens": 62881,
+            "cached_input_tokens": 62464,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 117,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 62998
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+        "tracked_src_patch_sha256": "ec8622ae2425a20dd9be57f27abdbcfeaff2e2ce112fea2bb7ec16e7db65f189",
+        "tracked_src_patch_bytes": 24339,
+        "harness_sha256": "977a7f7591c0883ebcc17dea1e0c40bde62e1405080eaf0895438132326a6d5b",
+        "changed_source_files": {
+          "src/metaform/modules/dispatch/resources/prompts.xml": "38be85771ea8f5625ca5cbadfef9fa3cf39a68815da6cdb9e79926b9dd790f7d",
+          "src/metaform/modules/dispatch/runner.py": "61dc307ffdaca07f6993270a8055e59b1485ae9f11bd37f5f4b04e6caced5202",
+          "src/metaform/modules/dispatch/tests/test_direct_runtime.py": "4ed4d554b9afe556aece6a228d525da54c01ecf9acffc0e85fe6e0fc4f975693",
+          "src/metaform/modules/dispatch/tests/test_dispatch.py": "4ae39ce6cd33bc7bc52de1c02a4257a321cae3257fcedb08fdc8373852c72b1e",
+          "src/metaform/modules/dispatch/tests/test_liveness.py": "9a42ced46c522fc9d02210121f29aa392ee3e1f612cb2c07f9149e2c2e7c1354",
+          "src/metaform/modules/map/__init__.py": "89f9d05653869f630799ab818dc1875e006177f01dc8017d9f9a8167d157b108",
+          "src/metaform/modules/mcp/resources/prompts.xml": "e17a5628efd752f84c64401069b984e8479cf05b12586b5a35ec7f7671b9a0d1",
+          "src/metaform/modules/mcp/tests/test_mcp.py": "4cc9b7edc15962dcc241a270e0b0bd452a1c7e233e876e67c59cfc14da75fa90",
+          "src/metaform/modules/orchestration/tests/test_orchestration.py": "414296727ca5a263ed405f2a846b9bab572f07059a37083d34fe5efb08823062"
+        },
+        "production_patch": "docs/reviews/acp-native-efficiency-candidate-b.patch",
+        "production_patch_status": "Contemporaneous tracked src snapshot taken before the measured run; includes test changes."
+      }
+    },
+    "finalcurrent": {
+      "artifact": "docs/reviews/acp-native-efficiency-finalcurrent.json",
+      "actual_native_sessions": 1,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3047882,
+        3051488,
+        3052893
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 2,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 45,
+      "input_including_cache": 2569790,
+      "cached_input": 2481792,
+      "uncached_input": 87998,
+      "output": 7040,
+      "total_tokens": 2576830,
+      "per_card_native_responses": [
+        25,
+        10,
+        10
+      ],
+      "per_card_custom_tool_calls": [
+        24,
+        9,
+        9
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 24750,
+            "cached_input_tokens": 7168,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 116,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 24866
+          },
+          "last": {
+            "input_tokens": 51537,
+            "cached_input_tokens": 50816,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 196,
+            "reasoning_output_tokens": 26,
+            "total_tokens": 51733
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 54057,
+            "cached_input_tokens": 51328,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 115,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 54172
+          },
+          "last": {
+            "input_tokens": 73464,
+            "cached_input_tokens": 72832,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 136,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 73600
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 76754,
+            "cached_input_tokens": 73344,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 178,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 76932
+          },
+          "last": {
+            "input_tokens": 87056,
+            "cached_input_tokens": 86656,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 130,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 87186
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+        "tracked_src_patch_sha256": "f78b3104a78ed77bb60e9fe8f69faeb6490e5779e669a2b126199f8b59722c3f",
+        "tracked_src_patch_bytes": 43550,
+        "harness_sha256": "366fb64fee84ad8ed8eeded12db1b91136ba32075f000d8f2fbacb2688960053",
+        "changed_source_files": {
+          "src/metaform/modules/agents/README.md": "ec9b57edcf5c74d219a771ba7d7ca292fe39053c5e8ba65fc1c2fc09b554da14",
+          "src/metaform/modules/agents/__init__.py": "ea5b13120e4e578b7c424996825927ef22b1337addb23ff5f894a2ef5c2b8348",
+          "src/metaform/modules/agents/roles.py": "5d9ba1e5917559f9fa1783c04880ebf7ebcc2a2361a8c910b2704e2551c79414",
+          "src/metaform/modules/agents/tests/test_authored_roles.py": "c20e3b57d5ac487086be2b495e23601fa37c364cd640bf4a5135680af1d88190",
+          "src/metaform/modules/dispatch/README.md": "fdea597b05a4d701b16ef8b1cab670e24f176b34c18a55d23f468352c5976b1c",
+          "src/metaform/modules/dispatch/resources/prompts.xml": "38be85771ea8f5625ca5cbadfef9fa3cf39a68815da6cdb9e79926b9dd790f7d",
+          "src/metaform/modules/dispatch/runner.py": "c2999a1a09515470459540dab54aa8afe82d0d9cf722fcf47ac5f6b098506d7d",
+          "src/metaform/modules/dispatch/tests/test_direct_runtime.py": "1f4fb30d4908213770d370f4a52c85fd47540163432e839e4185e47ba6dadf05",
+          "src/metaform/modules/dispatch/tests/test_dispatch.py": "4ae39ce6cd33bc7bc52de1c02a4257a321cae3257fcedb08fdc8373852c72b1e",
+          "src/metaform/modules/dispatch/tests/test_liveness.py": "9a42ced46c522fc9d02210121f29aa392ee3e1f612cb2c07f9149e2c2e7c1354",
+          "src/metaform/modules/dispatch/tests/test_orchestration_transport.py": "0248368ed23513ce4750d3c1bacebf444cf3ba584f5fa9767db8254f1c49dd64",
+          "src/metaform/modules/map/__init__.py": "89f9d05653869f630799ab818dc1875e006177f01dc8017d9f9a8167d157b108",
+          "src/metaform/modules/mcp/resources/prompts.xml": "e17a5628efd752f84c64401069b984e8479cf05b12586b5a35ec7f7671b9a0d1",
+          "src/metaform/modules/mcp/tests/test_mcp.py": "4cc9b7edc15962dcc241a270e0b0bd452a1c7e233e876e67c59cfc14da75fa90",
+          "src/metaform/modules/orchestration/tests/test_orchestration.py": "414296727ca5a263ed405f2a846b9bab572f07059a37083d34fe5efb08823062"
+        },
+        "production_patch": "docs/reviews/acp-native-efficiency-final-source.patch",
+        "production_patch_status": "Contemporaneous tracked src snapshot taken before inference; includes test changes.",
+        "measured_harness": "docs/reviews/acp-native-efficiency-final-harness.py.txt",
+        "measured_harness_status": "Historical source recovered byte-for-byte after run and verified against contemporaneously captured harness SHA256."
+      }
+    },
+    "finalguides": {
+      "artifact": "docs/reviews/acp-native-efficiency-finalguides.json",
+      "actual_native_sessions": 1,
+      "execution_proxy_processes": 3,
+      "native_codex_appserver_pids": [
+        3079720,
+        3081851,
+        3082377
+      ],
+      "acp_prompts": 3,
+      "acp_resume": 2,
+      "catalog_prime_new_sessions_excluded": 1,
+      "native_model_responses": 37,
+      "input_including_cache": 1753826,
+      "cached_input": 1675264,
+      "uncached_input": 78562,
+      "output": 4712,
+      "total_tokens": 1758538,
+      "per_card_native_responses": [
+        15,
+        12,
+        10
+      ],
+      "per_card_custom_tool_calls": [
+        14,
+        11,
+        9
+      ],
+      "per_card_context_boundaries": [
+        {
+          "first": {
+            "input_tokens": 24758,
+            "cached_input_tokens": 12800,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 89,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 24847
+          },
+          "last": {
+            "input_tokens": 38307,
+            "cached_input_tokens": 37888,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 151,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 38458
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 38955,
+            "cached_input_tokens": 38144,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 110,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 39065
+          },
+          "last": {
+            "input_tokens": 54184,
+            "cached_input_tokens": 53760,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 128,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 54312
+          }
+        },
+        {
+          "first": {
+            "input_tokens": 56631,
+            "cached_input_tokens": 54016,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 107,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 56738
+          },
+          "last": {
+            "input_tokens": 67288,
+            "cached_input_tokens": 66816,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 125,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 67413
+          }
+        }
+      ],
+      "phase_artifact_sha256": [
+        "eeee025430300e60b57de8a2d50c12ad87b987dc1132356356090ad078647d56",
+        "aac9b7cd6681d42ec56968c7779fbb4f8da188b7fc8b3c4d26c0126fe83bd04b",
+        "9989f1d934fb22bb362197d63fc8ce7a4ee1b72c0fa72846297e2cc13dce5b2c"
+      ],
+      "all_acceptance_passed": true,
+      "compaction_events": 0,
+      "native_accounting_reconciled": true,
+      "application_accounting_reconciled": true,
+      "source_snapshot": {
+        "base_commit": "8df925ee398eaca74873b42aad00625724824799",
+        "tracked_src_patch_sha256": "266e0907e9dd21510f9e6c550afc9f942f0d7f1152a937c5969fabbda829071c",
+        "tracked_src_patch_bytes": 55223,
+        "harness_sha256": "9a3d674bef49b41b725f8d5559c382daf8df3ecf48e19bd1f0f83ef2ba4082ba",
+        "changed_source_files": {
+          "src/metaform/modules/agents/README.md": "ec9b57edcf5c74d219a771ba7d7ca292fe39053c5e8ba65fc1c2fc09b554da14",
+          "src/metaform/modules/agents/__init__.py": "ea5b13120e4e578b7c424996825927ef22b1337addb23ff5f894a2ef5c2b8348",
+          "src/metaform/modules/agents/roles.py": "5d9ba1e5917559f9fa1783c04880ebf7ebcc2a2361a8c910b2704e2551c79414",
+          "src/metaform/modules/agents/tests/test_authored_roles.py": "c20e3b57d5ac487086be2b495e23601fa37c364cd640bf4a5135680af1d88190",
+          "src/metaform/modules/dispatch/README.md": "fdea597b05a4d701b16ef8b1cab670e24f176b34c18a55d23f468352c5976b1c",
+          "src/metaform/modules/dispatch/resources/prompts.xml": "38be85771ea8f5625ca5cbadfef9fa3cf39a68815da6cdb9e79926b9dd790f7d",
+          "src/metaform/modules/dispatch/runner.py": "c2999a1a09515470459540dab54aa8afe82d0d9cf722fcf47ac5f6b098506d7d",
+          "src/metaform/modules/dispatch/tests/fake_swarm_agent.py": "e7247be5a765a11b56f5de3343d2bf42b34597580c6679a02197f00d1dd9ea8d",
+          "src/metaform/modules/dispatch/tests/test_direct_runtime.py": "1f4fb30d4908213770d370f4a52c85fd47540163432e839e4185e47ba6dadf05",
+          "src/metaform/modules/dispatch/tests/test_dispatch.py": "4ae39ce6cd33bc7bc52de1c02a4257a321cae3257fcedb08fdc8373852c72b1e",
+          "src/metaform/modules/dispatch/tests/test_episode_transport.py": "d3b27cf5e3ec0351b21d81582bcdbf89f83506bf077739bf259e7f2ac10711f0",
+          "src/metaform/modules/dispatch/tests/test_liveness.py": "9a42ced46c522fc9d02210121f29aa392ee3e1f612cb2c07f9149e2c2e7c1354",
+          "src/metaform/modules/dispatch/tests/test_orchestration_runtime.py": "5a56998dea1133df8ed869d8f03268491d1b4147d4aaac78206b4e223cb63864",
+          "src/metaform/modules/dispatch/tests/test_orchestration_transport.py": "0248368ed23513ce4750d3c1bacebf444cf3ba584f5fa9767db8254f1c49dd64",
+          "src/metaform/modules/map/__init__.py": "89f9d05653869f630799ab818dc1875e006177f01dc8017d9f9a8167d157b108",
+          "src/metaform/modules/mcp/resources/prompts.xml": "1adf160326c977dd4f9178ff3cbc8838362bb1c1549f0e6c45835c61997a0f1a",
+          "src/metaform/modules/mcp/server.py": "155161a448162c15041db430619c38e1c1ce234c81d3f055217a103ef3f218b7",
+          "src/metaform/modules/mcp/tests/test_mcp.py": "6c7ffdfe29f9a9875dcb1b0ccc3c73712a6bc28d09eb9a3598f506c7212d7ab7",
+          "src/metaform/modules/orchestration/tests/test_orchestration.py": "414296727ca5a263ed405f2a846b9bab572f07059a37083d34fe5efb08823062"
+        },
+        "production_patch": "docs/reviews/acp-native-efficiency-finalguides-source.patch",
+        "production_patch_status": "Contemporaneous tracked src snapshot taken before inference, including staged and unstaged changes and tests.",
+        "measured_harness": "docs/reviews/acp-native-efficiency-finalguides-harness.py.txt",
+        "measured_harness_status": "Actual harness bytes saved before inference; SHA256 matches pre-run capture."
+      }
+    }
+  },
+  "limits": [
+    "One observation per arm, not a statistical estimate of general savings.",
+    "Prior8df and original977f overlapped. Provider prefix caching and order can affect cache reads.",
+    "Prior8df initial wall time includes setup waiting before inference, so no latency comparison.",
+    "Native input includes cached input. Uncached input is their difference. Sum unique response_id usage once, never cumulative totals or duplicate token_count events.",
+    "Provider billing is unknown. Application cost fields are null.",
+    "All arms require three contributions, three ACP prompts and three native turns.",
+    "Reused native thread restores persisted history. Three execution processes restart in every arm. No complete hidden-context inventory is available.",
+    "Source rereading and artifact/test reads can aid later work. Successful acceptance is not proof of exclusive memory-only reasoning.",
+    "Candidate A regressed against prior8df. All attempts are retained.",
+    "Automatic native skills catalog drift is included: checkpoint C/finalcurrent emitted7570+11087-byte developer blocks, while finalguides emitted only7570bytes before card3. Cause of plugin availability variation is unknown.",
+    "Historical wire collectors in the first five arms missed actual compaction update variants. Corrected collector was used during finalguides. All exact-session native logs independently show no compaction events.",
+    "Finalguides made zero explicit requested-tool guide calls. Its measured workflow improvement does not establish use or causal savings of the separately contract-tested schema-guide branch."
+  ],
+  "all_phase_artifacts_equal": true,
+  "observed_change_from": {
+    "original977f": {
+      "prior8df": {
+        "native_model_responses": {
+          "difference": -41,
+          "percent": -42.708
+        },
+        "uncached_input": {
+          "difference": -78271,
+          "percent": -43.724
+        },
+        "input_including_cache": {
+          "difference": -1104831,
+          "percent": -28.812
+        },
+        "output": {
+          "difference": -1860,
+          "percent": -24.257
+        }
+      },
+      "fixedcurrent": {
+        "native_model_responses": {
+          "difference": -35,
+          "percent": -36.458
+        },
+        "uncached_input": {
+          "difference": -9471,
+          "percent": -5.291
+        },
+        "input_including_cache": {
+          "difference": -625023,
+          "percent": -16.3
+        },
+        "output": {
+          "difference": -1944,
+          "percent": -25.352
+        }
+      },
+      "candidateb": {
+        "native_model_responses": {
+          "difference": -63,
+          "percent": -65.625
+        },
+        "uncached_input": {
+          "difference": -110396,
+          "percent": -61.67
+        },
+        "input_including_cache": {
+          "difference": -2443580,
+          "percent": -63.725
+        },
+        "output": {
+          "difference": -3297,
+          "percent": -42.997
+        }
+      },
+      "finalcurrent": {
+        "native_model_responses": {
+          "difference": -51,
+          "percent": -53.125
+        },
+        "uncached_input": {
+          "difference": -91012,
+          "percent": -50.842
+        },
+        "input_including_cache": {
+          "difference": -1264772,
+          "percent": -32.983
+        },
+        "output": {
+          "difference": -628,
+          "percent": -8.19
+        }
+      },
+      "finalguides": {
+        "native_model_responses": {
+          "difference": -59,
+          "percent": -61.458
+        },
+        "uncached_input": {
+          "difference": -100448,
+          "percent": -56.113
+        },
+        "input_including_cache": {
+          "difference": -2080736,
+          "percent": -54.263
+        },
+        "output": {
+          "difference": -2956,
+          "percent": -38.55
+        }
+      }
+    },
+    "prior8df": {
+      "original977f": {
+        "native_model_responses": {
+          "difference": 41,
+          "percent": 74.545
+        },
+        "uncached_input": {
+          "difference": 78271,
+          "percent": 77.697
+        },
+        "input_including_cache": {
+          "difference": 1104831,
+          "percent": 40.474
+        },
+        "output": {
+          "difference": 1860,
+          "percent": 32.025
+        }
+      },
+      "fixedcurrent": {
+        "native_model_responses": {
+          "difference": 6,
+          "percent": 10.909
+        },
+        "uncached_input": {
+          "difference": 68800,
+          "percent": 68.295
+        },
+        "input_including_cache": {
+          "difference": 479808,
+          "percent": 17.577
+        },
+        "output": {
+          "difference": -84,
+          "percent": -1.446
+        }
+      },
+      "candidateb": {
+        "native_model_responses": {
+          "difference": -22,
+          "percent": -40.0
+        },
+        "uncached_input": {
+          "difference": -32125,
+          "percent": -31.889
+        },
+        "input_including_cache": {
+          "difference": -1338749,
+          "percent": -49.043
+        },
+        "output": {
+          "difference": -1437,
+          "percent": -24.742
+        }
+      },
+      "finalcurrent": {
+        "native_model_responses": {
+          "difference": -10,
+          "percent": -18.182
+        },
+        "uncached_input": {
+          "difference": -12741,
+          "percent": -12.648
+        },
+        "input_including_cache": {
+          "difference": -159941,
+          "percent": -5.859
+        },
+        "output": {
+          "difference": 1232,
+          "percent": 21.212
+        }
+      },
+      "finalguides": {
+        "native_model_responses": {
+          "difference": -18,
+          "percent": -32.727
+        },
+        "uncached_input": {
+          "difference": -22177,
+          "percent": -22.014
+        },
+        "input_including_cache": {
+          "difference": -975905,
+          "percent": -35.751
+        },
+        "output": {
+          "difference": -1096,
+          "percent": -18.871
+        }
+      }
+    }
+  }
+}

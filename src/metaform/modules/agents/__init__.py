@@ -63,9 +63,10 @@ class Role:
 
 # Sent to an agent of any role that dispatch runs, after its own.
 ANY = (
-    Sends('prompt.dispatch:context_retention', 'once per context epoch, to establish the retained startup key'),
-    Sends('prompt.dispatch:context_checkpoint', 'on the first necessary turn of a start or resume'),
-    Sends('prompt.dispatch:role_resource', 'when an authored role is assigned, and as a link after compaction'),
+    Sends('prompt.dispatch:context_retention', 'only when an explicit context diagnostic requests a startup key'),
+    Sends('prompt.dispatch:context_checkpoint', 'only when an explicit context diagnostic requests a marker check'),
+    Sends('prompt.mcp:connect_catalog', 'with the initial instructions, through accepted delivery receipts'),
+    Sends('prompt.dispatch:role_resource', 'with the exact pinned duty components in the first assigned prompt'),
     Sends('prompt.dispatch:communication', 'once per context epoch, with the initial instructions'),
     Sends('prompt.dispatch:timer', 'as a turn when a timer the agent set with dispatch timer is due'),
     Sends('prompt.dispatch:workflow_answered', 'as a turn, or into the turn in flight, when a workflow run it paused is '

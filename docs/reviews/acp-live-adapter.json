@@ -3,7 +3,9 @@
     "name": "@agentclientprotocol/codex-acp",
     "version": "2.2.2",
     "codex_cli_version": "0.162.1",
-    "auth_presence": "authenticated ChatGPT"
+    "auth_presence": "authenticated ChatGPT",
+    "native_bundled_cli_version": "0.160.1",
+    "cli_version_note": "codex_cli_version records the shell command; native session metadata establishes the adapter's bundled CLI version."
   },
   "runtime": {
     "model": "gpt-6-luna",
@@ -32,6 +34,21 @@
     }
   ],
   "provider_billing": null,
+  "native_accounting_reconciliation": {
+    "native_request_count": 17,
+    "unique_response_ids": 17,
+    "input_tokens_including_cache": 465015,
+    "cached_input_tokens": 438912,
+    "uncached_input_tokens": 26103,
+    "output_tokens": 1187,
+    "total_tokens": 466202,
+    "adapter_input_tokens_note": "The preserved reported_tokens.input_tokens field is uncached input; cached_read_tokens is separate.",
+    "duplicate_stream_note": "Native token_count and token_usage_record describe the same usage; sum only one stream and deduplicate response IDs.",
+    "acp_prompt_count": 1,
+    "native_tool_call_count": 16,
+    "initial_discovery_tool_calls": 9,
+    "provider_billing": null
+  },
   "mode": "direct_worker",
   "runtime_provenance": "isolated project defaults",
   "billing_limit": "Current-only real adapter smoke, no production before/after billing inference.",

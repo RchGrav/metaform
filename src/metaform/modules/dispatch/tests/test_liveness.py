@@ -86,10 +86,11 @@ def test_stop_during_queued_turn_start_does_not_send_a_prompt_after_cancel(dispa
 
     async def exercise():
         held = Session(context('dispatch', dispatch.folder, project='proj', nouns={'prep': True}),
-                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
+                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [], prep=True)
         held.session_id = 'controlled-turn'
-        held.prep = True
-        held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn')),
+        held.spoken = True  # cancellation is exercised after the initial brief has been delivered
+        held.context_checked = True
+        held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn', usage=None)),
                                     close=AsyncMock())
         held.note = AsyncMock()
         starting, proceed = asyncio.Event(), asyncio.Event()
@@ -124,11 +125,12 @@ def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(d
 
     async def exercise():
         held = Session(context('dispatch', dispatch.folder, project='proj', nouns={'prep': True}),
-                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [])
+                       Store('proj', module='dispatch'), dispatch.ticket(), 'codex', [], prep=True)
         held.session_id = 'controlled-interrupt'
-        held.prep = True
+        held.spoken = True
+        held.context_checked = True
         held.process = SimpleNamespace(returncode=None)
-        held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn')),
+        held.conn = SimpleNamespace(prompt=AsyncMock(return_value=SimpleNamespace(stop_reason='end_turn', usage=None)),
                                     cancel=AsyncMock())
         held.note = AsyncMock()
         starting, proceed = asyncio.Event(), asyncio.Event()
@@ -201,7 +203,7 @@ def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(d
             assert (await control('interrupt'))['requested'] is True
             status = await control('status')
             assert status['activity'] == 'working' and status['interrupting'] is True
-            later_answer.set_result(SimpleNamespace(stop_reason='cancelled'))
+            later_answer.set_result(SimpleNamespace(stop_reason='cancelled', usage=None))
             await asyncio.wait_for(asyncio.gather(*later_turn), 5)
             assert attempts == 2 and later_answer.done()
             status = await control('status')
@@ -209,7 +211,7 @@ def test_interrupt_during_turn_start_prevents_the_prompt_and_keeps_chat_usable(d
         finally:
             proceed.set()
             if 'later_answer' in locals() and not later_answer.done():
-                later_answer.set_result(SimpleNamespace(stop_reason='end_turn'))
+                later_answer.set_result(SimpleNamespace(stop_reason='end_turn', usage=None))
             await asyncio.gather(*tuple(held.tasks), return_exceptions=True)
             server.close()
             await server.wait_closed()

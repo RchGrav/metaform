@@ -561,7 +561,7 @@ def turn(ident, text):
             retained = progress().get('context_key')
             cli('agents', 'confirm', checkpoint=checkpoint[1], **({'key': retained} if retained else {}))
         if f'Your assigned duty is metaform://role/{ROLE}' in text:
-            DUTY = read_duty()
+            DUTY = f'{text}\n\n{read_duty()}'  # An explicit reread can omit components already supplied inline.
         capacity = cli('dispatch', 'agents')['slots']
         if ROLE == 'triage':
             # The Liaison observes actual recipient context. It neither replays fixture work nor edits the graph.
