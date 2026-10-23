@@ -4,7 +4,7 @@ import '/page/app/dock/helpdesk.js';  // the part before runs first, so the part
 import {$} from '/page/app/core/dom.js';
 import {toast} from '/page/app/core/controls.js';
 import {S, read} from '/page/app/core/reads.js';
-import {DOCK, STANDBY, dockState, dockNote, dockGoingAway} from '/page/app/dock/embody.js';
+import {DOCK, STANDBY, dockState, dockNote, dockGoingAway, askEmbody} from '/page/app/dock/embody.js';
 import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
 import {reaching, startFailed, syncResume} from '/page/app/dock/send.js';
@@ -17,6 +17,7 @@ import {openIntakeChat, posted} from '/page/app/intake/intake.js';
 
 /* The chat's own commands, offered with the agent's when the person types / in the message box. */
 const DOCK_COMMANDS = [{name: 'help', description: "What the chat's commands do"},
+  {name: 'mascot', description: 'Choose or change the glyph for this chat’s agent'},
   {name: 'list', description: 'The agents at work, numbered'},
   {name: 'chat', hint: '<number>', description: 'Talk with an agent at work, by its number in /list'},
   {name: 'system', description: 'Start a chat with your system agent'},
@@ -27,7 +28,7 @@ const DOCK_COMMANDS = [{name: 'help', description: "What the chat's commands do"
   {name: 'clear', description: 'The same as /new: a new conversation, the old one kept as a closed thread'}];
 /* The chat's own commands even where the agent on view offers one of the same name, so they do the same with every
  * agent. */
-const DOCK_WINS = new Set(['new', 'clear']);
+const DOCK_WINS = new Set(['new', 'clear', 'mascot']);
 export const dockOffered = () => {
   const agents = commandsOf(DOCK.target ? DOCK.state : null, DOCK.agent).filter(one => !DOCK_WINS.has(one.name));
   const own = DOCK_COMMANDS.filter(one => !agents.some(agent => agent.name === one.name));
@@ -45,10 +46,12 @@ export async function dockCommand(text) {
 }
 /* What each of the chat's own commands does: (text, command, rest). */
 const CHAT_COMMANDS = {
-  help: () => dockNote('/list shows the agents at work · /chat <number> talks with one of them · /system calls '
+  help: () => dockNote('/mascot chooses your agent’s glyph · /list shows the agents at work · '
+    + '/chat <number> talks with one of them · /system calls '
     + 'your system agent · /fork [text] starts a side conversation with the agent on view · /apps lists the views the '
     + 'modules offer · /new or /clear ends the conversation on view and starts a new one with the same agent, '
     + "resuming nothing · the agent's own commands are offered as you type /."),
+  mascot: () => askEmbody(),
   list: listAgents,
   chat: (text, command, rest) => chatWith(rest[0]),
   system: () => callSystem(),

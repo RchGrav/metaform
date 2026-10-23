@@ -90,20 +90,6 @@ settings.choice('web_theme', list(THEMES), 'space', scope='global',
                 details='Chosen in the View menu, with U for space and back, or here, and kept for every browser. '
                         'Until a theme is chosen, each browser keeps the one it last showed, space in a new one.',
                 label='Theme', heading='Look')
-# Giving an agent in the chat a body on the map: the page offers it once per conversation, in its thread, at a pause
-# (a turn ended or a ticket closed, never while it works), after EMBODY_TURNS turns or EMBODY_MINUTES minutes in
-# page/app/dock/embody.js, whichever comes first. Asked too soon, the offer interrupts a conversation that has not shown it is worth keeping;
-# about eight turns or twenty minutes is a conversation the person is staying with. always gives each conversation the
-# first character free; never makes no offer. The system agent's body is the person's mascot, web_mascot: while it is
-# set the system agent has it in every conversation and is never offered one. The figure itself is the flow's,
-# `window.metaform.embody`.
-settings.choice('web_embody', ['offer', 'always', 'never'], 'offer', scope='global',
-                help='Whether the chat offers to give its agent a body on the map: offer, always or never.',
-                details='offer asks once per conversation, at a pause, after eight turns or twenty minutes; always '
-                        'gives every conversation the first character free; never makes no offer. Your system agent '
-                        'is never offered one while you have a mascot: it is your mascot in every conversation. The '
-                        'avatar in the chat\'s head, its menu or B give or change a body at any time.',
-                label='Agents take a figure', heading='Mascot and agents')
 # What a chat's thread shows of the agent's work. Off, it shows what the agent says to the person, its messages and the
 # lines it says on the map, so an agent that comes out in the chat speaks without its tool calls and thinking between
 # its words; those are debug detail, shown with this on, or for one page with W.

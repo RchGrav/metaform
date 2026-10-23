@@ -700,19 +700,17 @@ Line 8687: const clockOf = (when, day = false) => {
 Line 8693: const STANDBY = 'Please stand by while we contact an agent for you.';
 Line 8694: const DOCKMOTION = {anim: null, dir: null};  // the chat going into it
 Line 8695: const dockGoingAway = () => Boolean(DOCKMOTION.anim) && (DOCKMOTION.di
-Line 8702: const EMBODY = {offered: new Set(), given: new Set(), since: new Map()
+Line 8702: const EMBODY = {open: null, session: null, stops: []};
 Line 8704: const embodyHooks = () => ['embody', 'characters', 'bodies'].every(nam
 Line 8705: const hooked = (name, ...given) => { try { return window.metaform[name
 Line 8708: const embodiable = chat => Boolean(chat && ['system', 'conversation'].
 Line 8709: const bodyFor = work => (hooked('bodies') || []).find(one => one.work 
 Line 8710: function characterList(work) {
 Line 8718: function stopPreviews() { for (const stop of EMBODY.stops.splice(0)) {
-Line 8720: function embodyAs(work, glyph, quiet = false) {
-Line 8736: function embodyOffer(work, session, lines, busy) {
+Line 8720: function embodyAs(work, glyph) {
 Line 8758: function askEmbody() {
 Line 8770: function embodyRows(work) {
-Line 8794: function paintAvatar(work) {
-Line 8815: function drawEmbody() { if ($('#helpdesk') && !$('#helpdesk').hidden) 
+Line 8794: function paintAvatar(work, session) {
 Line 8818: const SOURCES = {agent: 'Agent at work', intake: 'Intake', system: 'Yo
 Line 8820: const sourceOf = workId => isIntake(workId) ? 'intake' : workId === DO
 Line 8822: const sourceChip = source => h('span', {class: 'src', 'data-source': s

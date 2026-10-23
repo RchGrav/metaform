@@ -9,7 +9,7 @@ import {ticketNode} from '/page/app/figures/agents.js';
 import {mascotHeard} from '/page/app/figures/ask.js';
 import {EASE} from '/page/app/camera/fly3d.js';
 import {asked} from '/page/app/selection/select.js';
-import {DOCK, clockOf, STANDBY, UPDATES_ONLY, DOCKMOTION, dockGoingAway, embodyOffer, embodyRows,
+import {DOCK, clockOf, STANDBY, UPDATES_ONLY, DOCKMOTION, dockGoingAway, paintAvatar, embodyRows,
   dockState} from '/page/app/dock/embody.js';
 import {showChat, drawProposals, drawTabs, drawThreadBar, drawSubagents, drawSpend, sessionStatus,
   chatActivity, drawAgentSessions} from '/page/app/dock/threads.js';
@@ -60,7 +60,7 @@ export async function drawHelpdesk(trouble) {
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;
   const busy = DOCK.target && activity.busy && session?.activity !== 'waiting';
-  embodyOffer(target, session, lines, busy);  // a body for this chat's agent on the map, offered at a pause
+  paintAvatar(target, session);
   const connecting = Boolean(DOCK.calling) || (DOCK.target && !session);
   chatHead(session, activity, busy, connecting);
   const log = $('#helpdesk .log');

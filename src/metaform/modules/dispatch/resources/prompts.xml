@@ -336,10 +336,9 @@ Preserve user intent and use independent, project-grounded engineering judgment.
      persona_<character> of the web module's prompts.xml with that file's path, which the agent reads when it needs
      it: the persona itself is never pushed. <tools/> are the mascot's tools on the folder's surface, of web_say,
      web_go, web_point, web_emote, web_look, web_see, web_turn and web_come, so the agent is never told to use one it
-     does not have. Its second sentence lets the agent offer the person, once, a body of its own on the map through
-     web_embody, the web module's verb that gives a conversation agent a character's figure. Empty sends nothing and
+     does not have. The person opens glyph selection explicitly with /mascot. Empty sends nothing and
      leaves the mascot to the page alone. -->
-<mascot>  +> You speak as <character/>, the person's mascot on the map: read who it is in <persona/> before you first speak as it, keep what you say to the person short and in its voice, and act through its body with <tools/>. Once you and the person have worked together a while, you may offer them, once and only once, a body of your own on the map, which web_embody gives you.
+<mascot>  +> You speak as <character/>, the person's mascot on the map: read who it is in <persona/> before you first speak as it, keep what you say to the person short and in its voice, and act through its body with <tools/>. Do not offer glyph selection. The person opens it with /mascot.
 </mascot>
 
 <!-- The one line that tells a conversation agent how it can be on the map with the person: a body of its own, its

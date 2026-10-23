@@ -207,7 +207,7 @@ function startFigure(ticket, data, home, target) {
 }
 /* A body for a conversation agent, VIEW-005: the person's system agent, from Call, or an agent the person chats with
  * about a node or a ticket. Unembodied, it is drawn as it always was: no figure while the person has a mascot, else a
- * plain one while it works. Given a body, `embody`, by the person from the chat dock's offer or by the agent itself
+ * plain one while it works. Given a body, `embody`, by the person through /mascot or by the agent itself
  * with web_embody, it walks out from the map's primary node in that character, with its motion and its temper: the
  * system agent to what the person has selected, or beside the mascot, and an agent chatting about something to it.
  * It sees from its own eyes, `seer`, and speaks in its own bubble. The body the person gives the system agent is the

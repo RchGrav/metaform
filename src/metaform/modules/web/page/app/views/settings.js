@@ -20,7 +20,7 @@ import {setTheme} from '/page/app/map3d/draw3d.js';
  * web_agents_window; the 3D map's physics, web_physics; the 2D map's direction, web_map_direction; and the rest of
  * what the View menu and the keys change. A change made here is kept in the person's view, never as a setting, so
  * every project and every reload opens the same way (settings cleanup, 2026-10-15). The web module's settings the page
- * follows, web_embody, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
+ * follows, web_mascot, web_chat_details and web_theme, are read beside it. Reading writes nothing. Whether the page is
  * drawn from its workspace is web_panes, which the workspace reads itself. */
 export const VIEW = {agents: 'auto', physics: 'organic', read: null, reading: null, signs: 'facing', mascot: null};
 // the bar's Info choice, web_hover_info, `showInfo`, drawn as the view is read
@@ -88,11 +88,10 @@ function followView(rows, view) {
   agentsWindow();
   peekParts();
 }
-/* The person's mascot, web_mascot, and whether the chat offers bodies, web_embody, as the server holds them. A change
+/* The person's mascot, web_mascot, as the server holds it. A change
  * of the mascot is told to the figures, `metaform:mascot`, and the chat's avatar is drawn again. */
 function followMascot(rows) {
   const setting = (key, otherwise) => rows.find(row => row.key === key)?.value ?? otherwise;
-  VIEW.embody = String(setting('web_embody', 'offer'));
   const mascot = String(setting('web_mascot', 'none'));
   if (mascot === VIEW.mascot) return;
   VIEW.mascot = mascot;
@@ -107,7 +106,7 @@ function mascotHeard(event) {
   if (HEARD.reading) { HEARD.again = true; return; }
   HEARD.reading = true;
   const project = S.project;
-  read('settings', {keys: 'web_embody,web_mascot'}).then(found => { if (S.project === project) followMascot(found.settings || []); })
+  read('settings', {keys: 'web_mascot'}).then(found => { if (S.project === project) followMascot(found.settings || []); })
     .catch(() => { /* the next change reads again */ })
     .finally(() => {
       HEARD.reading = false;
@@ -120,11 +119,11 @@ document.addEventListener('metaform:settings', mascotHeard);
 export function keepMascot(glyph) {
   const was = VIEW.mascot;
   if (glyph === was) return;
-  followMascot([{key: 'web_embody', value: VIEW.embody}, {key: 'web_mascot', value: glyph}]);
+  followMascot([{key: 'web_mascot', value: glyph}]);
   posted('/api/settings', {key: 'web_mascot', value: glyph}).then(done => {
     if (done.ok) return;
     toast(done.body.error || 'Your mascot was not kept.');
-    followMascot([{key: 'web_embody', value: VIEW.embody}, {key: 'web_mascot', value: was || 'none'}]);
+    followMascot([{key: 'web_mascot', value: was || 'none'}]);
   });
 }
 /* A view choice kept in the person's view, /api/view; the saves of one key go one after another, so quick presses of

@@ -10,7 +10,7 @@ import {S, read} from '/page/app/core/reads.js';
 import {joinOf} from '/page/app/graph/data.js';
 import {MAC} from '/page/app/map2d/camera.js';
 import {openHelp} from '/page/app/keys/keys.js';
-import {DOCK, HELD, UPDATES_ONLY, embodyHooks, embodiable, askEmbody, dockState,
+import {DOCK, HELD, UPDATES_ONLY, dockState,
   dockNote} from '/page/app/dock/embody.js';
 import {drawTabs, interruptChat, onOther, showMine, listShown} from '/page/app/dock/threads.js';
 import {drawHelpdesk, followLog, putChatAway} from '/page/app/dock/helpdesk.js';
@@ -359,7 +359,6 @@ function drawDockMenu() {
   const item = (label, key, run, shown = true) => shown ? h('button', {type: 'button', role: 'menuitem',
     onclick: () => { DOCKMENU.hidden = true; run(); }}, h('span', {}, label), key ? h('kbd', {}, key) : null) : null;
   fill(DOCKMENU,
-    item('Give this agent a body…', 'B', askEmbody, embodyHooks() && embodiable(DOCK.chat)),
     item('Agent and settings…', 'Alt ,', openSessionPop),
     item('Apps…', '/apps', showGallery),
     item(big ? 'Back to its size' : 'Make it large', null, () => $('#helpdesk .big').click(), !narrowPage()),
