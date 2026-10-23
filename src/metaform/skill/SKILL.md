@@ -11,6 +11,4 @@ Tool instructions are delivered before execution when they are due. If a call re
 
 Read the applicable project instructions, functional map, source request and relevant knowledge for your assignment. A tool guide explains tool use; it does not replace that functional understanding. Module instructions are available through `metaform_instructions module=<id>` or `metaform://instructions/<id>`. Follow the concrete next step returned with an error.
 
-Reusable methods can run in the current informed context: `orchestration_methods` lists their families and `orchestration_apply` loads a selected method with per-context delivery receipts. The `facilitator` skill is the entry point for finding, reusing and creating specialist expertise. Loading a method or publishing expertise keeps the current assignment; claim, delegate, call and handoff assign execution separately. Use continued episodes for related work and separate agents for useful parallelism, requested independence or genuine isolation.
-
 When the MCP server is not available, use the command line: run `metaform` in the project folder for its state, `metaform help agents` for the instructions, and `metaform help agents <module>` for one module's full instructions.

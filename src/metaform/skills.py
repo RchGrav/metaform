@@ -123,29 +123,6 @@ def deployment_files(one: Skill) -> dict[str, bytes]:
                                    for name, text in libraries(one).items()}}
 
 
-def components(name: str) -> list[dict[str, Any]]:
-    """Exact selected procedure/library components, without recording model delivery.
-
-    A caller with a real Context queues these through the shared receipt ledger.
-    Native deployment still writes complete artifacts and records no receipts.
-    """
-    one = get(name)
-    selected = prompt_files.resolve_text(prompt_files.address('skill', one.name), procedure(one.name))
-    pieces = []
-    for lib, text in libraries(one).items():
-        piece = prompt_files.component(prompt_files.address('skills', lib), text)
-        sections = []
-        for section in SECTIONS:
-            key = prompt_files.address('skills', section)
-            version = prompts.prompt_version(key)
-            body = prompt_files.rendered(version.text) if version.format == 'xml' else version.text
-            if body and body in text:
-                sections.append({'name': key, 'version_id': version.version_id})
-        piece['source'] = {'kind': 'composed_library', 'sections': sections}
-        pieces.append(piece)
-    return [*pieces, selected]
-
-
 def load(name: str) -> dict[str, Any]:
     one = get(name)
     libs = libraries(one)
