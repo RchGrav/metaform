@@ -140,3 +140,98 @@ def test_cli_accepts_design_intake_without_current_project(run, tmp_path):
     assert result.returncode != 0
     assert 'Provide the design and its project name.' in result.stdout + result.stderr
     assert 'No project for this folder.' not in result.stdout + result.stderr
+
+
+@pytest.mark.req('PROJ-030')
+@pytest.mark.parametrize('inherited', [False, True])
+@pytest.mark.parametrize('override', [None, 'claude'])
+def test_new_project_keeps_saved_default_after_intake(home, tmp_path, monkeypatch, inherited, override):
+    from metaform import settings
+    from metaform.modules import dispatch, intake
+    from metaform.modules.web.server import module_verb
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    work = source / 'work'
+    work.mkdir()
+    registry.add_project('source', source)
+    settings.put('dispatch_agent', 'codex', source if inherited else work)
+    user_home = tmp_path / 'user'
+    user_home.mkdir()
+    monkeypatch.setattr(Path, 'home', classmethod(lambda cls: user_home))
+    monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
+    launched = []
+    monkeypatch.setattr(dispatch, 'spawn', lambda store, work_id, agent, *args, **kwargs:
+                        launched.append(agent) or {'pid': 12345})
+    nouns = {'project_name': 'Clock', 'text': 'Clock design'}
+    if override:
+        nouns['agent'] = override
+    result = dispatch.intake(Context('dispatch', work, project='source', nouns=nouns))
+    assert result['state'] == 'starting', result
+    assert result['agent'] == (override or 'codex')
+    folder = Path(result['folder'])
+    assert settings.value('dispatch_agent', work) == 'codex'
+    assert settings.value('dispatch_agent', folder) == 'codex'
+    # The page reads the new project's default, separately from its intake session's agent.
+    assert module_verb({'project': result['project']}, 'dispatch', 'agents', {})['default'] == 'codex'
+    target = Context('intake', folder, project=result['project'], store=Store(result['project']))
+    intake.start(target)
+    target.nouns = {'namespace_address': 'code.timer.kitchen', 'role': 'DE'}
+    intake.element(target)
+    target.nouns = {}
+    intake.finish(target)
+    # A later unqualified intake, including a fresh base, still starts Codex.
+    dispatch.intake(Context('dispatch', folder, project=result['project'], store=Store(result['project']),
+                            nouns={'map': 'new', 'name': 'fresh'}))
+    assert launched == [override or 'codex', 'codex']
+    assert settings.value('dispatch_agent', folder) == 'codex'
+
+
+@pytest.mark.parametrize('override', ['agent', 'switch'])
+def test_intake_override_without_saved_default_stays_temporary(home, tmp_path, monkeypatch, override):
+    from metaform import settings
+    from metaform.modules import dispatch
+
+    monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
+    monkeypatch.setattr(dispatch, 'spawn', lambda *args, **kwargs: {'pid': 12345})
+    nouns = {'project_name': 'Clock', 'text': 'Clock design'}
+    switches = {}
+    if override == 'agent':
+        nouns['agent'] = 'codex'
+    else:
+        switches['dispatch_agent'] = 'codex'
+    result = dispatch.intake(Context('dispatch', tmp_path, nouns=nouns, switches=switches))
+    assert result['agent'] == 'codex'
+    assert settings.value('dispatch_agent', Path(result['folder'])) == 'claude'
+    assert settings.state('dispatch_agent', Path(result['folder'])) == 'default'
+    assert settings.state('dispatch_agent', tmp_path) == 'default'
+
+
+def test_failed_codex_intake_keeps_default_and_error_for_retry(home, tmp_path, monkeypatch):
+    from metaform import settings
+    from metaform.modules import dispatch
+
+    source = tmp_path / 'source'
+    source.mkdir()
+    settings.put('dispatch_agent', 'codex', source)
+    monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
+    launched = []
+
+    def fail(store, work_id, agent, *args, **kwargs):
+        launched.append(agent)
+        raise Stop('Codex usage limit reached.', 'Check your Codex quota.')
+
+    monkeypatch.setattr(dispatch, 'spawn', fail)
+    result = dispatch.intake(Context('dispatch', source, nouns={'project_name': 'Clock', 'text': 'Clock design'}))
+    assert result['state'] == 'failed'
+    assert result['error'] == 'Codex usage limit reached.'
+    assert launched == ['codex']
+    folder = Path(result['folder'])
+    assert settings.value('dispatch_agent', source) == settings.value('dispatch_agent', folder) == 'codex'
+    monkeypatch.setattr(dispatch, 'spawn', lambda store, work_id, agent, *args, **kwargs:
+                        launched.append(agent) or {'pid': 12345})
+    retried = dispatch.intake(Context('dispatch', folder, project=result['project'], store=Store(result['project'])))
+    assert retried['agent'] == 'codex'
+    assert launched == ['codex', 'codex']

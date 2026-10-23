@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from metaform import home, prompt_files
+from metaform import home, prompt_files, settings
 from metaform.data import Store
 from metaform.module import Context, Stop
 
@@ -22,6 +22,10 @@ def start(ctx: Context) -> dict[str, Any]:
     if not name or not design.strip():
         raise Stop('Provide the design and its project name.',
                    'metaform dispatch intake project_name=<name> -- "<complete design>"')
+    # A new sibling project cannot inherit this folder's saved default. Carry that
+    # choice alone, never the intake's agent override or any automation authority.
+    saved_agent = (settings.value('dispatch_agent', ctx.folder)
+                   if settings.state('dispatch_agent', ctx.folder) != 'default' else None)
     # mkdir is exclusive: files, folders and dangling symlinks all reserve their names.
     # Registry ids also reserve names, even when registered outside the user's home.
     home.mkdir_private(home.projects_dir())
@@ -46,6 +50,8 @@ def start(ctx: Context) -> dict[str, Any]:
                     folder.rmdir()
                 raise
             break
+    if saved_agent is not None and settings.value('dispatch_agent', folder) != saved_agent:
+        settings.put('dispatch_agent', saved_agent, folder)
     asked = prompt_files.required(resources.files('metaform.modules.dispatch'), 'design_intake', design=design)
     target = Context('dispatch', folder, project=project, store=Store(project, module='dispatch'),
                      nouns={key: value for key, value in ctx.nouns.items()

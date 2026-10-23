@@ -7,6 +7,11 @@
      the merge's branch, <dev/> with the dev branch, and <node/> with where a finished worker records what it learned.
      Comments are never sent. -->
 <prompts>
+<design_intake>Target: the intended project described by this Architect design. Follow the authored intake on this design so planning receives this project's functional map. The new folder contains no implementation yet. Record intended elements and receiver purposes from the design.
+
+&lt;&lt;DATA: Architect design&gt;&gt;
+<design/>
+&lt;&lt;END DATA&gt;&gt;</design_intake>
 <!-- Full Auto found unfinished active-board work without ticket execution after its normal startup pass.
      Stored as actionable board evidence. Triage diagnoses and uses existing launch authority for recovery. -->
 <stalled_board>

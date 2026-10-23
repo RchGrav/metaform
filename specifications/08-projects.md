@@ -471,6 +471,7 @@ Where sources disagree, the latest decision is the design. Earlier readings that
 - Acceptance: A supplied design reaches the existing intake prompt in the newly registered folder. Intake records belong to that project's map. Existing folders, files, symlinks and project registrations remain unchanged. Invalid input creates no folder. Failed admission preserves the identity for retry.
 - Relates to: PROJ-001, PROJ-005, BASE-039, BASE-052.
 - Status: Confirmed by ticket code.processor.intake#1a, 2026-10-21.
+- Amendment, 2026-10-23, code.dispatcher.agent#170: Creating the design's project carries the caller folder's saved `dispatch_agent`, including an inherited choice, into the new project's default when needed. A per-intake `agent` or per-call `dispatch_agent` switch changes only that launch. With no saved source choice, normal destination-folder inheritance and declared defaults apply. Intake completion, a fresh base and a failed launch leave the saved default intact. No authentication, automation authority or other settings are copied. Why: moving the design to its own project must retain the person's selected harness without turning a temporary override into a standing choice. Acceptance: `dispatch/tests/test_project_intake.py` covers creation, overrides, inheritance, the page's agents response, completion, another unqualified intake and a reported launch failure.
 
 ## Open questions
 
