@@ -3882,17 +3882,22 @@ def test_the_log_dates_each_start_stop_and_error_and_leaves_out_pages_that_went_
     serving.start()
     assert started.wait(10)
     [server] = instances
-    for _ in range(4):
+    for index in range(4):
         with socket.create_connection(('127.0.0.1', server.port), timeout=5) as asking:
             asking.sendall(f'GET /api/projects HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\n\r\n'.encode())
-            asking.recv(1)  # the server closes it once the error is handled
+            answer = asking.recv(4096)
+            if index < 3:
+                assert answer == b''  # a disconnected request is closed without a fabricated 500
+            else:
+                assert b'500 Internal Server Error' in answer
     threading.Thread(target=server.shutdown, daemon=True).start()
     serving.join(10)
     log = capsys.readouterr().err
     stamp = r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00'
     assert re.search(rf'{stamp} Process {os.getpid()} started on port {server.port}, code \w{{12}}, schema version '
                      rf'{served.SCHEMA_VERSION}\n', log)
-    assert re.search(rf'{stamp} Error answering .*ZeroDivisionError: not a page going away\n', log, re.DOTALL)
+    assert re.search(rf'{stamp} Fault answering GET /api/projects:.*ZeroDivisionError: not a page going away\n',
+                     log, re.DOTALL)
     assert re.search(rf'{stamp} Process {os.getpid()} stopped\n', log)
     assert not re.search('ConnectionResetError|BrokenPipeError|ConnectionAbortedError', log)
 

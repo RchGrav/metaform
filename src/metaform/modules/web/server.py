@@ -851,12 +851,16 @@ class Handler(BaseHTTPRequestHandler):
         entry = Busy(f'GET {path}', waits_on(path), time.monotonic(), read=True)
         held: list[tuple[int, bytes, str, dict[str, str]]] = []
         done = threading.Event()
+        disconnected: Exception | None = None
 
         def work() -> None:
+            nonlocal disconnected
             _held.set(held)
             try:
                 with self.gui.tracked(entry):
                     self.answered('GET')
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as error:
+                disconnected = error  # the request thread hands this to the server's disconnect handler
             except Exception:  # noqa: BLE001  answered has said all it can; what is left goes to the log
                 log(f'Error answering GET {path}:\n{traceback.format_exc().rstrip()}')
             finally:
@@ -872,6 +876,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(503, {
                 'error': f'The server did not answer {path} within {READ_LIMIT:.0f} s: it is waiting on {entry.what}.',
                 'next': f'Ask again shortly.{restarts} run/web.log in the Metaform home names what it waited on.'})
+        if disconnected is not None:
+            raise disconnected
         if not held:
             return self.send(500, {'error': f'The server gave no answer to {path}.',
                                    'next': 'run/web.log in the Metaform home says why'})
