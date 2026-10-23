@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import {createAgent, orientAgent, motionOf, strokeOf, reserveGlyph, GLYPHS} from '/page/agents3d.js';
 import {$, css, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
-import {ROAM, nodeById, primaryOf, ballOf, ownBody, isSystemTalk} from '/page/app/figures/agents.js';
+import {ROAM, nodeById, primaryOf, ballOf, ownBody, systemTalk} from '/page/app/figures/agents.js';
 import {AHEAD, TOWARD, easeBoth, nudgeNode, markTrail, SPOT, steer, driveGoal, driveFace}
   from '/page/app/figures/walk.js';
 import {CUT, mascotForCut} from '/page/app/figures/cut.js';
@@ -40,7 +40,7 @@ export function preferredGlyph() {
   return GLYPHS.includes(VIEW.mascot) ? VIEW.mascot : null;
 }
 export function mascotGlyph() {
-  const glyph = preferredGlyph(), ticket = glyph ? (S.tickets || []).find(isSystemTalk) : null;
+  const glyph = preferredGlyph(), ticket = glyph ? systemTalk() : null;
   if (!ticket || ownBody(ticket)) return null;
   return D.sessions.some(one => one.work_id === ticket.id && one.state === 'running') ? glyph : null;
 }
@@ -68,7 +68,7 @@ export function mascotDriven() {
   const now = performance.now();
   if (!MASCOT.driven || now >= MASCOT.driven) { if (MASCOT.driven) releaseMascot(); return false; }
   if (!MASCOT.held && now - (MASCOT.drivenAt || 0) > 3000) {  // its turn has ended: the agent let it go
-    const ticket = (S.tickets || []).find(isSystemTalk);
+    const ticket = systemTalk();
     const live = ticket && D.sessions.filter(one => one.work_id === ticket.id && one.state === 'running').at(-1);
     if (!live || live.activity !== 'working') { releaseMascot(); return false; }
   }

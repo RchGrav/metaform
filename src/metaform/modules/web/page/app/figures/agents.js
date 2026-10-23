@@ -108,7 +108,7 @@ export function figures(tickets) {
   setFocus('work', tickets.filter(ticket => !ticket.done && !conversing(ticket)
     && (ticket.taken || live.has(ticket.id))).map(ticketNode));
   flowTickets(tickets);  // a work record written lands on its node as a record, `FLOW`
-  const drawn = helpers(live, tickets);
+  const drawn = helpers(live, figureTickets(tickets));
   figures2d(drawn);
   if (!G) return;
   const data = G.graphData(), home = primaryOf(data);
@@ -216,6 +216,27 @@ function startFigure(ticket, data, home, target) {
  * ticket, so a resumed conversation comes back in the same body; the person's choice stands over the agent's, and no
  * two figures at work share a character. */
 const SYSTEM_TALK = 'Conversation with the system agent';  // the system agent's ticket, dispatch's SYSTEM_TASK
+// Current system conversations live in dispatch, outside the board. This view record only gives their bodies the
+// existing figure lifecycle; it never enters S.tickets or creates a work ticket.
+const SYSTEM_CONVERSATION = {id: 'conversation-system', node_kind: 'element', node_id: null,
+  held: true, done: null, task: SYSTEM_TALK};
+export function conversationOf(work) {
+  if (work !== SYSTEM_CONVERSATION.id) return ticketOf(work);
+  for (let i = 0; i < D.sessions.length; i++) {
+    const session = D.sessions[i];
+    if (session.work_id === work && session.state === 'running') return SYSTEM_CONVERSATION;
+  }
+  return null;
+}
+export const systemTalk = () => conversationOf(SYSTEM_CONVERSATION.id) || (S.tickets || []).find(isSystemTalk);
+function figureTickets(tickets) {
+  const system = conversationOf(SYSTEM_CONVERSATION.id);
+  if (!system || tickets.some(ticket => ticket.id === system.id)) return tickets;
+  // The primary element is the conversation's home on either map, even after switching bases.
+  system.node_id = [...S.elements.values()].find(item => item.element.role === 'DE')?.element.id
+    || S.elements.keys().next().value || null;
+  return [...tickets, system];
+}
 function keptBodies() {
   try { return JSON.parse(localStorage.getItem('metaform.bodies') || '{}'); } catch { return {}; }
 }
@@ -241,7 +262,7 @@ export const ownBody = ticket => {
 export const isSystemTalk = ticket => Boolean(ticket?.held && ticket.task === SYSTEM_TALK);
 /* A conversation agent's body: the system agent's own, else the person's mascot; any other's, the one kept for it. */
 export function bodyOf(work) {
-  const ticket = ticketOf(work);
+  const ticket = conversationOf(work);
   if (isSystemTalk(ticket)) return ownBody(ticket) || mascotGlyph();
   return heldBody(work)?.glyph || null;
 }
@@ -279,7 +300,7 @@ function nearestElement(data, point) {
 /* An embodied conversation figure follows what it is about: it walks on to a new selection, along the map's edges. */
 export function retarget(figure, data) {
   if (!figure.talk || figure.stage !== 'circling' || figure.done) return;
-  const ticket = ticketOf(figure.id), wanted = ticket && talkTarget(ticket, data);
+  const ticket = conversationOf(figure.id), wanted = ticket && talkTarget(ticket, data);
   if (!wanted || wanted === figure.target || !nodeById(data, wanted)) return;
   const way = routeOf(data, figure.target, wanted);
   Object.assign(figure, {target: wanted, stage: 'going', u: 0, clock: 0,
@@ -287,7 +308,7 @@ export function retarget(figure, data) {
 }
 /* Give a conversation agent a body: `by` the person, whose choice stands, or the agent, `web_embody`. */
 export function embody(work, glyph, by = 'person') {
-  const ticket = ticketOf(work), key = bodyKey(work), held = BODIES.chosen[key];
+  const ticket = conversationOf(work), key = bodyKey(work), held = BODIES.chosen[key];
   if (!GLYPHS.includes(glyph)) return {error: `${glyph} is not a character.`};
   if (!ticket) return {error: 'There is no such conversation on this page.'};
   const system = isSystemTalk(ticket);
@@ -331,7 +352,7 @@ document.addEventListener('metaform:mascot', () => {
 });
 /* Each conversation agent and its body, for the chat dock's offer. */
 export function bodies() {
-  return (S.tickets || []).filter(ticket => conversing(ticket) && talking(ticket)).map(bodyRow);
+  return figureTickets(S.tickets || []).filter(ticket => conversing(ticket) && talking(ticket)).map(bodyRow);
 }
 function bodyRow(ticket) {
   const character = bodyOf(ticket.id), system = isSystemTalk(ticket);

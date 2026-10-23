@@ -230,3 +230,5 @@ metaform web stop
 Roundtable creation offers `Automate Ticket Creation`, off by default. `/api/roundtable-open` accepts the boolean `automate_ticket_creation`. Enabled preparation finishes through a populated inactive board and saved execution outline without decisions. Default-off creation retains person-reviewed transitions. Neither choice automatically activates the prepared board.
 
 The chat command `/mascot` opens the agent glyph picker. It stays closed across new contexts, elapsed time and conversation turns until requested. A glyph chosen for the system agent remains the person’s mascot across conversations.
+
+Explicit `web_embody` also works for the live `conversation-system` session without a board ticket. The agent's own body supports movement and sight without changing the person's persisted mascot selection.
