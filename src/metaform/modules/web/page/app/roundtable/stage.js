@@ -114,6 +114,10 @@ UI.newTable = h('button', {class: 'btn sm quiet rt-new', type: 'button', hidden:
   onclick: () => openRoundtable(true)}, 'New table');
 UI.hold = h('button', {class: 'btn sm rt-hold', type: 'button', hidden: true,
   onclick: () => chairControl(TABLE.state === 'held' ? 'continue' : 'hold')}, 'Hold');
+UI.endDiscussion = h('button', {class: 'btn sm rt-end-discussion', type: 'button', hidden: true,
+  onclick: () => chairControl('advance')}, 'End discussion');
+UI.continueDiscussion = h('button', {class: 'btn sm rt-continue-discussion', type: 'button', hidden: true,
+  onclick: () => chairControl('continue')}, 'Continue discussion');
 UI.discussionComment = h('textarea', {class: 'rt-discussion-comment', rows: 2,
   'aria-label': 'Discussion comment', placeholder: 'Add to the discussion', oninput: renderChair});
 UI.sendDiscussion = h('button', {class: 'btn sm', type: 'submit'}, 'Send comment');
@@ -122,7 +126,8 @@ UI.discussion = h('form', {class: 'rt-discussion', hidden: true,
   UI.discussionComment, UI.sendDiscussion,
   h('small', {}, 'Comments enter at the next gap. Hold pauses AI turns. Continue resumes them.'));
 UI.transcript = h('ol', {class: 'rt-transcript', tabindex: '0', 'aria-label': 'The transcript'});
-UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold, UI.newTable, UI.leave),
+UI.foot = h('div', {class: 'rt-foot'}, h('div', {class: 'rt-head'}, UI.topic, UI.state, UI.hold,
+  UI.endDiscussion, UI.continueDiscussion, UI.newTable, UI.leave),
   UI.transcript, UI.discussion);
 UI.question = h('textarea', {rows: 3, 'aria-label': 'Your question to the table',
   placeholder: 'What should the table answer?'});
@@ -135,6 +140,7 @@ UI.replyLimit = h('input', {type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER
   name: 'reply_limit', required: true});
 UI.automate = h('input', {type: 'checkbox', name: 'automate_ticket_creation',
   'aria-describedby': 'rt-automate-description'});
+UI.judging = h('input', {type: 'checkbox', name: 'judging', checked: true});
 UI.start = h('button', {class: 'btn primary rt-start', type: 'submit'}, 'Start');
 UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefault(); startTable(); }},
   h('h2', {}, 'Roundtable', UI.where), UI.question,
@@ -142,6 +148,8 @@ UI.setup = h('form', {class: 'rt-setup', onsubmit: event => { event.preventDefau
     h('small', {}, 'Start remembers this browser’s lineup. Save participants sets this project’s defaults.')),
   h('label', {}, 'Maximum reply length (characters)', UI.replyLimit),
   h('small', {}, 'Applies to each discussion reply.'),
+  h('label', {}, UI.judging, 'Judge novelty with Jev'),
+  h('small', {}, 'Optional. Off keeps substantive replies without filtering.'),
   h('label', {style: {display: 'flex', 'align-items': 'center', gap: '8px'}}, UI.automate,
     'Automate Ticket Creation'),
   h('small', {id: 'rt-automate-description'},
@@ -180,6 +188,7 @@ export async function openRoundtable(fresh = false) {
   try {
     const found = await getJson(`/api/roundtable?project=${encodeURIComponent(project)}`);
     if (project !== S.project) return;
+    UI.judging.checked = found.judging !== false;
     OFFERED.clear();  // each agent's models read again, as it offers them now
     if (LINEUP.project !== project || !UI.seatList.children.length) {
       fill(UI.seatList);
@@ -258,6 +267,7 @@ async function startTable() {
   UI.state.textContent = 'Opening the table: its seats are starting…';
   UI.topic.textContent = topic;
   const answer = await wrote('/api/roundtable-open', {topic, reply_limit: replyLimit,
+    judging: UI.judging.checked,
     automate_ticket_creation: UI.automate.checked,
     ...(TABLE.address ? {address: TABLE.address} : {}),
     ...(listed.length ? {seats: listed} : {})});
@@ -441,11 +451,12 @@ function seated(status) {
     seatAll();
   }
   if (status.state === 'ended') ended(status);
-  else stateIs(status.state, status.reason);
+  else { TABLE.ended = false; stateIs(status.state, status.reason); }
 }
 function heard(event) {
   if (event.kind === 'turn' || event.kind === 'veto') return turn(event);
-  if (event.kind === 'stage') { TABLE.stage = event.stage; if (event.stage !== 'discussion') TABLE.floor = -1; }
+  if (event.kind === 'stage') { TABLE.stage = event.stage; if (event.stage !== 'discussion') TABLE.floor = -1;
+    renderChair(); }
   else if (event.kind === 'ideas') ideas(event.ideas || []);
   else if (event.kind === 'rankings') rankings(event.rankings || []);
   else if (event.kind === 'summary') summary(event.text, event.name);
@@ -460,6 +471,7 @@ function turn(event) {
   said(vetoed ? 'rt-turn vetoed' : 'rt-turn', event.seat, event.text || '',
     vetoed ? ` (vetoed${event.failed?.length ? `: ${event.failed.join(', ')}` : ''})`
       : event.outcome === 'unjudged' ? ' (never judged: the table ended first)' : '');
+  if (event.outcome === 'handoff' || event.outcome === 'carry') return;
   if (n < 0 || TABLE.ended) return;
   TABLE.floor = n;
   const seat = SEATS.list[n];
@@ -632,13 +644,18 @@ async function decidePipeline(action) {
 function renderChair() {
   const active = !!TABLE.id && (TABLE.state === 'running' || TABLE.state === 'held');
   UI.hold.hidden = UI.discussion.hidden = !active;
+  UI.endDiscussion.hidden = !active || (!!TABLE.stage && TABLE.stage !== 'discussion');
+  UI.endDiscussion.disabled = CHAIR.writing;
+  UI.continueDiscussion.hidden = TABLE.state !== 'ended';
+  UI.continueDiscussion.disabled = CHAIR.writing;
   UI.hold.textContent = TABLE.state === 'held' ? 'Continue' : 'Hold';
   UI.hold.disabled = CHAIR.writing;
   UI.discussionComment.disabled = CHAIR.writing;
   UI.sendDiscussion.disabled = CHAIR.writing || !UI.discussionComment.value.trim();
 }
 async function chairControl(action) {
-  if (!TABLE.id || CHAIR.writing || !['running', 'held'].includes(TABLE.state)) return;
+  if (!TABLE.id || CHAIR.writing || (!['running', 'held'].includes(TABLE.state)
+      && !(action === 'continue' && TABLE.state === 'ended'))) return;
   const table = TABLE.id, text = UI.discussionComment.value;
   if (action === 'comment' && !text.trim()) return;
   CHAIR.writing = true;
@@ -647,6 +664,10 @@ async function chairControl(action) {
     const found = await wrote('/api/roundtable-control', {table, action,
       ...(action === 'comment' ? {text} : {})});
     if (!found || TABLE.id !== table) return;
+    if (action === 'continue' && TABLE.ended) {
+      TABLE.ended = false;
+      TABLE.stage = 'discussion';
+    }
     if (found.state) stateIs(found.state, found.reason);
     if (action === 'comment') {
       UI.discussionComment.value = '';
@@ -656,6 +677,7 @@ async function chairControl(action) {
 }
 function stateIs(state, reason) {
   TABLE.state = state || TABLE.state;
+  if (TABLE.state === 'running' || TABLE.state === 'held') TABLE.ended = false;
   const words = {running: 'The table is talking', held: 'Held', ended: 'Ended', ending: 'Ending', opening: 'Opening',
     refused: 'Refused'}[TABLE.state] || TABLE.state;
   UI.state.textContent = reason && TABLE.state !== 'running' ? `${words}: ${reason}` : words;

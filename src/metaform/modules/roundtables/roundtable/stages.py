@@ -3,9 +3,8 @@ order given at open, and the stages each passes through:
 
     discussion → synthesis → ranking → top three → bottom three → host summary → the next topic … → report
 
-- **discussion**: the seats' turns, as a table without topics has them, until the topic has collected enough: Jev
-  finding it covered with nothing new for 2 rounds running, a round that kept nothing, or its token budget, each
-  after its fewest rounds; or its round cap, or the chair's `advance`;
+- **discussion**: participant turns until every participant voluntarily replies PASS in one full round,
+  or the chair explicitly chooses `advance`; context handoff continues discussion without ending it;
 - **synthesis**: the synthesizer, in a fresh request holding only the topic and what entered its discussion, names
   every idea collected, and the code numbers them I1 and on;
 - **ranking**: every seat, in its own conversation, ranks every idea best to worst; a ranking that is not every id

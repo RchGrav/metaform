@@ -50,13 +50,13 @@ from .names import names as named
 STATES = ('running', 'held', 'ending', 'ended')  # a table runs, is held by its chair or by Jev failing, then ends
 AVAILABILITY = ('active', 'degraded', 'unavailable')  # a seat's, from its failures in a row (`health`)
 STAGES = ('discussion', 'synthesis', 'ranking', 'top_three', 'bottom_three', 'host_summary', 'report')
-KINDS = ('seat', 'chair', 'none', 'pass')  # a seat's submission, a chair's comment, no submission, a seat's PASS
+KINDS = ('seat', 'chair', 'none', 'pass', 'carry', 'handoff')
 NOULS = ('new', 'valuable', 'relevant', 'keep')  # Jev's four nouls, in the order the review's array gives them
 VETO = ('new_context', 'on_topic')  # Jev's two nouls for a submission at a table with topics
-ENOUGH = ('round_added', 'covered')  # Jev's two nouls after each round of a topic
 JUDGMENTS = ('veto', 'dedup', 'sufficiency')
 JSON = frozenset({'messages', 'reply', 'unjudged', 'models', 'extra', 'imported', 'snapshot', 'host', 'synthesizer',
-                  'ideas', 'ranking', 'request', 'response', 'nouls', 'floors', 'usage', 'seat_mcp'})
+                  'ideas', 'ranking', 'request', 'response', 'nouls', 'floors', 'usage', 'seat_mcp',
+                  'continuation', 'handoff'})
 # What an operational event says happened, in `events`: OpenRouter's credits ran out, the table held or resumed, a
 # seat left the table, was degraded or came back, the table's runner stopped
 EVENTS = ('credits', 'held', 'resumed', 'seat_lost', 'seat_degraded', 'seat_restored', 'runner_stopped', 'report')
@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS discussions(
   report TEXT, export TEXT, report_error TEXT, created TEXT NOT NULL, ended TEXT,
   context_id TEXT, task_id TEXT, imported TEXT, snapshot TEXT,
   topic INTEGER NOT NULL DEFAULT 0, stage TEXT, host TEXT, synthesizer TEXT, advance_asked INTEGER NOT NULL DEFAULT 0,
-  unpaid INTEGER NOT NULL DEFAULT 0, mechanical TEXT, seat_mcp TEXT);
+  unpaid INTEGER NOT NULL DEFAULT 0, mechanical TEXT, seat_mcp TEXT,
+  continuation TEXT, handoff TEXT, pass_after INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS seats(
   discussion INTEGER NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL,
   agent TEXT, model TEXT, reported TEXT, session TEXT, gone TEXT,
@@ -131,13 +132,15 @@ CREATE TABLE IF NOT EXISTS events(
 ADDED = {'discussions': (('context_id', 'TEXT'), ('task_id', 'TEXT'), ('imported', 'TEXT'), ('snapshot', 'TEXT'),
                          ('topic', 'INTEGER NOT NULL DEFAULT 0'), ('stage', 'TEXT'), ('host', 'TEXT'),
                          ('synthesizer', 'TEXT'), ('advance_asked', 'INTEGER NOT NULL DEFAULT 0'),
-                         ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT')),
+                         ('unpaid', 'INTEGER NOT NULL DEFAULT 0'), ('mechanical', 'TEXT'), ('seat_mcp', 'TEXT'),
+                         ('continuation', 'TEXT'), ('handoff', 'TEXT'), ('pass_after', 'INTEGER NOT NULL DEFAULT 0')),
          'seats': (('extra', 'TEXT'), ('availability', "TEXT NOT NULL DEFAULT 'active'"),
                    ('failures', 'INTEGER NOT NULL DEFAULT 0'), ('failing', 'TEXT'), ('reason', 'TEXT'),
                    ('since', 'TEXT'), ('retry_at', 'REAL'), ('submitted', 'INTEGER NOT NULL DEFAULT 0'),
                    ('reseated', 'INTEGER NOT NULL DEFAULT 0')),
          'submissions': (('original', 'TEXT'), ('truncated', 'INTEGER NOT NULL DEFAULT 0'), ('topic', 'INTEGER'),
-                         ('new_context', 'REAL'), ('on_topic', 'REAL'), ('label', 'TEXT'), ('repeat_of', 'INTEGER'))}
+                         ('new_context', 'REAL'), ('on_topic', 'REAL'), ('label', 'TEXT'), ('repeat_of', 'INTEGER'),
+                         ('unjudged', 'INTEGER NOT NULL DEFAULT 0'))}
 # What a seat's turn or stage answer wrote, its completion and reasoning tokens, and why its model stopped, added to
 # every store, old or new, as `submissions` and `stages` are opened.
 WRITTEN = (('completion_tokens', 'INTEGER'), ('reasoning_tokens', 'INTEGER'), ('finish_reason', 'TEXT'))
@@ -305,13 +308,13 @@ def submission(number: int, at: int) -> dict[str, Any]:
 # ----------------------------------------------------------------------------------------------- writes
 
 def opened(row: Mapping[str, Any], chosen: list[dict[str, str]],
-           topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512) -> int:
+           topics: Sequence[Mapping[str, str]] = (), reply_limit: int = 512, judging: bool | None = None) -> int:
     """A new discussion with its seats in order, and its topics in order when it has them, the first open; its
     number, the next one."""
     from . import render
 
     names = named(chosen)
-    snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit)
+    snapshot = render.snapshot(names, staged=bool(topics), reply_limit=reply_limit, judging=judging)
     with connect() as db:
         number = 1 + int(db.execute('SELECT COALESCE(MAX(number), 0) FROM discussions').fetchone()[0])
         insert(db, 'discussions', {**row, 'snapshot': snapshot, 'number': number, 'state': 'running', 'created': stamp(),
@@ -371,24 +374,6 @@ def release(number: int, token: str) -> None:
         db.execute('UPDATE discussions SET runner=NULL WHERE number=? AND runner=?', (number, token))
 
 
-def resume_unpaid(number: int) -> bool:
-    """A table held for want of credits running again, unless its chair has held, continued or ended it since;
-    whether it was."""
-    with connect() as db:
-        fence(db, number)
-        return bool(db.execute("UPDATE discussions SET state='running', reason=NULL, unpaid=0 "
-                               "WHERE number=? AND state='held' AND unpaid=1", (number,)).rowcount)
-
-
-def stale(seconds: float) -> list[int]:
-    """The tables left running, or held for want of credits, whose runner has not beaten in `seconds`: those a
-    server starting gives a runner again."""
-    with connect() as db:
-        return [int(row[0]) for row in db.execute(
-            "SELECT number FROM discussions WHERE (state='running' OR (state='held' AND unpaid=1)) "
-            'AND (runner IS NULL OR beat<?) ORDER BY number', (time.time() - seconds,))]
-
-
 def spend(number: int, cost: float) -> None:
     """One paid call's cost added to what the table has spent, in one transaction. Not fenced: a call paid for is
     spent by the table whichever runner made it."""
@@ -442,6 +427,33 @@ def decide(number: int, judgment: Mapping[str, Any] | None, changes: Mapping[str
         update(db, 'discussions', {'number': number}, changes)
 
 
+def close_round(number: int, reason: str) -> None:
+    """Check voluntary votes and pending comments in the same transaction as the round decision."""
+    with connect() as db:
+        fence(db, number)
+        found = plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
+        if found is None or found['state'] != 'running':
+            return
+        rows = db.execute('SELECT position, kind FROM submissions WHERE discussion=? AND number>? AND round=? '
+                          'AND topic IS ? AND kind NOT IN (\'chair\', \'carry\', \'handoff\')',
+                          (number, found['pass_after'], found['round'],
+                           found['topic'] if found['stage'] else None)).fetchall()
+        participants = db.execute('SELECT position FROM seats WHERE discussion=?', (number,)).fetchall()
+        waiting = db.execute('SELECT 1 FROM waiting WHERE discussion=? LIMIT 1', (number,)).fetchone()
+        unanimous = not waiting and len(rows) == len(participants) and all(
+            sum(one['position'] == seat['position'] and one['kind'] == 'pass' for one in rows) == 1
+            for seat in participants)
+        if not unanimous:
+            update(db, 'discussions', {'number': number},
+                   {'round': int(found['round']) + 1, 'position': 0, 'round_kept': 0})
+        elif found['stage']:
+            update(db, 'discussions', {'number': number}, {'stage': 'synthesis', 'position': 0})
+            update(db, 'topics', {'discussion': number, 'topic': found['topic']},
+                   {'discussed': stamp(), 'advanced_by': 'passes', 'why': reason})
+        else:
+            update(db, 'discussions', {'number': number}, {'state': 'ending', 'reason': reason, 'position': 0})
+
+
 def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
            judgment: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """One submission, numbered next in its discussion; a seat's counts its turn and, when accepted, its keep.
@@ -455,6 +467,8 @@ def record(number: int, entry: Mapping[str, Any], *, judged: bool = False,
         row = {'over512': False, 'truncated': False, 'accepted': False, **entry, 'discussion': number, 'number': latest + 1,
                'created': stamp()}
         insert(db, 'submissions', row)
+        if row['kind'] in ('chair', 'handoff'):
+            update(db, 'discussions', {'number': number}, {'pass_after': row['number']})
         if entry.get('position') is not None:  # a slot filled; a submission only when the seat contributed
             db.execute('UPDATE seats SET taken=taken+1, kept=kept+?, submitted=submitted+? '
                        'WHERE discussion=? AND position=?',
@@ -496,6 +510,9 @@ def reseat(number: int, position: int, fresh: bool) -> None:
 def wait_comment(number: int, text: str) -> None:
     with connect() as db:
         insert(db, 'waiting', {'discussion': number, 'seq': time.time_ns(), 'text': text})
+        # Invalidate votes at enqueue, even if the runner is deciding a completed round.
+        db.execute('UPDATE discussions SET pass_after=(SELECT COALESCE(MAX(number), 0)+1 FROM submissions '
+                   'WHERE discussion=?) WHERE number=?', (number, number))
 
 
 def take_comments(number: int) -> list[dict[str, Any]]:
@@ -505,6 +522,64 @@ def take_comments(number: int) -> list[dict[str, Any]]:
         found = [dict(row) for row in db.execute('SELECT * FROM waiting WHERE discussion=? ORDER BY seq', (number,))]
         db.execute('DELETE FROM waiting WHERE discussion=?', (number,))
     return found
+
+
+def install_handoff(number: int, continuation: Mapping[str, Any], round_number: int,
+                    topic: int | None, text: str) -> None:
+    """Commit the visible marker and replacement seat contexts together."""
+    with connect() as db:
+        fence(db, number)
+        latest = int(db.execute('SELECT COALESCE(MAX(number), 0)+1 FROM submissions WHERE discussion=?',
+                                (number,)).fetchone()[0])
+        insert(db, 'submissions', {'discussion': number, 'number': latest, 'round': round_number, 'position': None,
+                                   'seat': 'handoff', 'name': 'Context handoff', 'kind': 'handoff',
+                                   'text': text, 'topic': topic, 'created': stamp()})
+        _reset_context(db, number, {**continuation, 'through': latest}, None)
+
+
+def _reset_context(db: sqlite3.Connection, number: int, continuation: Mapping[str, Any], topic: int | None) -> None:
+    fence(db, number)
+    through = int(continuation['through'])
+    update(db, 'discussions', {'number': number},
+           {'continuation': dict(continuation), 'handoff': None, 'pass_after': through,
+            'context_id': uuid.uuid4().hex, 'task_id': uuid.uuid4().hex,
+            **({'topic': topic, 'stage': 'discussion', 'position': 0, 'round': 1,
+                'state': 'running', 'reason': None, 'ended': None, 'advance_asked': False,
+                'report': None, 'export': None, 'mechanical': None, 'report_error': None,
+                'unjudged': None, 'unpaid': False} if topic is not None else {})})
+    db.execute("UPDATE seats SET session=NULL, messages='[]', extra=NULL, seen=?, reseated=reseated+1, "
+               "gone=NULL, availability='active', failures=0, failing=NULL, reason=NULL, retry_at=NULL, "
+               "pending=NULL, reply=NULL, asked=NULL, owner=NULL WHERE discussion=?", (through, number))
+
+
+def reopen(number: int, summary: str) -> None:
+    """Explicitly continue a completed table as another topic, retaining previous topics and outputs."""
+    unfinished = pending(number)
+    with connect() as db:
+        fence(db, number)
+        found = plain(db.execute('SELECT * FROM discussions WHERE number=?', (number,)).fetchone())
+        if found is None or found['state'] != 'ended':
+            raise ValueError('Only a completed table can continue from its saved summary.')
+        if unfinished:
+            insert(db, 'submissions', unfinished)
+        at = int(db.execute('SELECT COALESCE(MAX(topic), -1)+1 FROM topics WHERE discussion=?',
+                            (number,)).fetchone()[0])
+        original = db.execute('SELECT * FROM topics WHERE discussion=? ORDER BY topic LIMIT 1', (number,)).fetchone()
+        insert(db, 'topics', {'discussion': number, 'topic': at, 'name': f'continuation-{at}',
+                              'title': original['title'] if original else found['subject'],
+                              'text': original['text'] if original else found['opening'], 'opened': stamp()})
+        latest = int(db.execute('SELECT COALESCE(MAX(number), 0) FROM submissions WHERE discussion=?',
+                                (number,)).fetchone()[0]) + 1
+        insert(db, 'submissions', {'discussion': number, 'number': latest, 'round': 1, 'position': None,
+                                   'seat': 'handoff', 'name': 'Context handoff', 'kind': 'handoff',
+                                   'text': 'Discussion continued from saved summary.', 'topic': at, 'created': stamp()})
+        from . import render
+        from .prompts import said
+        snapshot = render.captured(found)
+        update(db, 'discussions', {'number': number}, {'snapshot': {
+            **{key: value for key, value in snapshot.items() if key not in ('sufficiency', 'sufficiency_floors')},
+            'rules': said('discussion_start' if render.judging(found) else 'discussion_unjudged')}})
+        _reset_context(db, number, {'text': summary, 'notes': [], 'through': latest, 'topic': at}, at)
 
 
 def offer(agent: str, models: list[dict[str, str]]) -> None:

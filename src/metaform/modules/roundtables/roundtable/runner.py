@@ -1,40 +1,12 @@
-"""The runner of a table: one detached process per table, started when the table opens, so a table outlives the MCP
-client that opened it. It opens every seat, gives each its turn in a fixed round-robin order through the one seat
-interface whatever its kind,
-skipping a seat that has left, has Jev judge each submission, enters the chair's comments at the gaps, ends the table
-at its limits, and when it ends has the reporter seat write the report and writes the export beside it. What goes
-wrong, credits run out, a hold, a seat lost, the runner stopped, it tells the chair as an operational event
-(`store.event`), never as a submission, so no seat sees it and Jev never judges it.
+"""One detached runner per table, with persistent turns and fenced writes.
 
-Everything the runner knows is in the store, so a runner that stops, and the one started in its place by `continue`,
-`comment` or `end`, picks up where the table is: the next seat, a submission Jev did not judge yet. It says it is alive
-by its beat every few seconds; one silent for half a minute has stopped. A runner owns its table by the token it
-claims, and every write it makes is fenced on that token (`store.claim`), so once another runner has taken the table
-this one stops. A server starting gives a runner again to every table left running whose runner has stopped (`sweep`).
-On SIGTERM the runner closes every seat, the agent processes' whole groups with them, and stops.
+Only unanimous voluntary PASS replies in one complete round or explicit chair advancement finish discussion.
+Novelty filtering is optional. Resource limits and errors hold discussion with a reason. A held runner closes
+its seats and stops. Continue explicitly starts it again without changing the table's identity or transcript.
 
-OpenRouter out of credits, HTTP 402, never ends a table. A seat refused is only that seat out: it is unavailable and
-probed, free of charge, until credits are back (`health`). Jev, the synthesizer or the host refused holds the table,
-says why and tells its chair, and its runner asks OpenRouter every minute, free of charge, whether credits are back,
-and goes on by itself once they are.
-
-Each seat is `active`, `degraded` or `unavailable` (`health`), from its failures of one kind in a row; an unavailable
-seat's turns are skipped until its probe passes, or the chair reseats it. A reply taken and paid for is judged before
-anything else happens to its seat, even when the seat has gone since, and no chair comment is entered while it waits,
-so a comment never takes its number. A seat may PASS: the pass is recorded and never judged. A seat that repeats a
-submission is told so plainly, and after every REPEATS repeats on a topic its conversation is started again.
-
-When a table ends its report is written in a fresh request holding only the record: by the reporter seat, else by
-each other seat that can, else by the `report_model` through OpenRouter; and always, beside it, the mechanical report
-from the record (`export.mechanical`), which is the report when no model wrote one, so a report is never null.
-
-A Roundtable 2 table, one with topics, runs the same turns on its open topic, then, once the topic's discussion is
-over, its stages (`stages`): the synthesis and the host's summary each in a fresh request, the ranking and the two
-explanations from every seat in its own conversation, one seat at a time. Each stage's answer is stored as it comes,
-so a runner started again goes on from the seat or the stage that has not answered yet. After the last seat of each
-round of a topic, Jev judges whether the topic has collected enough (`round_over`), and the topic goes to synthesis
-on the first of its triggers to fire, recorded with it. A seat's conversation is bounded by its topic: begun again
-when the seat first comes to a new topic, after its system message.
+Before context fills, every participant writes an attributed carry-forward note. One fresh editor compacts shared
+history. Fresh seat contexts receive that continuation and all intact notes. Notes bypass novelty filtering.
+Topic synthesis, rankings, explanations and host summaries follow discussion. Their existing stages remain intact.
 """
 from __future__ import annotations
 
@@ -67,12 +39,10 @@ COUNTED = ('prompt_tokens', 'cached_tokens', 'cache_write_tokens', 'completion_t
 
 log = logging.getLogger(__name__)
 
-SETTLED = 2  # the rounds running Jev must find a topic covered with nothing new for it to go to synthesis
 POLL = 0.25  # seconds between looks at the table while it is held
 BEAT = 5.0
 STALE = 30.0
 REPORT_WAIT = 900  # seconds the reporter has to write the report
-PROBE = 60.0  # seconds between asking OpenRouter whether credits are back, while a table is held for want of them
 REPEATS = 3  # after this many repeats on a topic, and each this many more, a seat's conversation is started again
 
 
@@ -114,10 +84,6 @@ def spawn(number: int) -> int | None:
     return child.pid
 
 
-def sweep() -> list[int]:
-    """Every table left running, or held for want of credits, whose runner has stopped, given a runner again, as a
-    server starts; the numbers of those started."""
-    return [number for number in store.stale(STALE) if spawn(number) is not None]
 
 
 class Table:
@@ -128,7 +94,6 @@ class Table:
         self.token = secrets.token_hex(8)
         self.seated: dict[int, Seat] = {}
         self.stopped = False  # SIGTERM asked this runner to stop, or another runner took the table
-        self.asked_credits = 0.0  # when OpenRouter was last asked whether credits are back, by the monotonic clock
         self.retired: list[Seat] = []  # seats the chair reseated, closed with the rest
 
     def row(self) -> dict[str, Any]:
@@ -152,27 +117,10 @@ class Table:
         store.event(self.number, kind, text)
 
     def unpaid(self, error: BaseException) -> None:
-        """OpenRouter out of credits, HTTP 402: the table holds with the reason and its chair is told; the runner
-        probes and goes on once credits are back. A table never ends on 402."""
+        """A credit failure holds discussion until explicit Continue. It never counts as PASS."""
         reason = said('held_credits', error=error)
         store.change(self.number, state='held', reason=reason, unpaid=True)  # fenced; told once, as credits
-        self.asked_credits = time.monotonic()
         self.tell('credits', reason)
-
-    async def probe(self) -> None:
-        """For a table held for want of credits, OpenRouter asked at most once a minute whether they are back; when
-        they are, the table runs again from the call that was refused, unless its chair has moved it since."""
-        if time.monotonic() - self.asked_credits < PROBE:
-            return
-        self.asked_credits = time.monotonic()
-        try:
-            await asyncio.to_thread(openrouter.credited)
-        except openrouter.Silent as error:
-            log.info('Table %s: still held for want of credits: %s', self.number, error)
-            return
-        if store.resume_unpaid(self.number):
-            log.info('Table %s: OpenRouter has credits again; the table goes on', self.number)
-            self.tell('resumed', said('resumed_credits'))
 
     def stop(self, main: asyncio.Task[Any]) -> None:
         """This runner stopped: its loop cancelled, so its seats are closed and the table let go."""
@@ -224,7 +172,7 @@ class Table:
         beating = asyncio.ensure_future(self.beat(main))
         try:
             found = self.row()
-            if found['state'] in ('running', 'held'):
+            if found['state'] == 'running':
                 await self.seat_all()
             while True:
                 found = self.row()
@@ -232,6 +180,7 @@ class Table:
                 waiting = cast(dict[str, Any], given).get('position') if isinstance(given, dict) else None
                 if waiting is None or found['state'] not in ('running', 'held'):  # a held reply keeps its number
                     self.enter_comments()
+                    found = self.row()
                 if found['state'] == 'ended':
                     return self.summary()
                 if found['state'] == 'ending':
@@ -242,31 +191,30 @@ class Table:
                         self.change(state='ending', report_error=said('report_failed', error=named(error)))
                     return self.summary()
                 if found['state'] == 'held':
-                    if found['unpaid']:
-                        await self.probe()
-                    await asyncio.sleep(POLL)
+                    return self.summary()
+                if found['advance_asked']:
+                    self.discussed(found, 'chair')
                     continue
                 seated = store.seats(self.number)
                 if waiting is None and not any(health.usable(seat) for seat in seated):
                     if not any(health.returns(seat) for seat in seated):
-                        self.ending(said('ended_empty'))
+                        self.change(state='held', reason=said('held_empty'))
                         continue
                     if not any([await self.probed(seat) for seat in seated if health.due(seat)]):
                         await asyncio.sleep(POLL)  # every seat waits for its probe; the table stays where it is
                     continue
                 spent, most = float(found['spent'] or 0), float(found['spend'])
-                if spent > 0 and spent >= most:
-                    self.ending(said('ended_spend', spend=dollars(most), spent=dollars(spent)))
+                if spent >= most and self.requires_payment(found):
+                    self.change(state='held', reason=said('held_spend', spend=dollars(most), spent=dollars(spent)))
                     continue
                 if found['stage'] and found['stage'] != 'discussion':
                     await self.stage(found)
                     continue
-                if found['stage'] and found['advance_asked'] and waiting is None and \
-                        int(found['round']) > self.fewest(found):  # a held reply is judged first
-                    self.discussed(found, 'chair')
-                    continue
-                if found['stage'] and int(found['position']) >= len(seated):  # a topic's round is over
+                if int(found['position']) >= len(seated):
                     await self.round_over(found)
+                    continue
+                if waiting is None and (found.get('handoff') or self.context_due(found)):
+                    await self.handoff(found)
                     continue
                 row = seated[int(found['position'])]
                 if row['position'] != waiting and (row['gone'] or (not health.usable(row) and
@@ -316,107 +264,31 @@ class Table:
                 'report': found['report'], 'export': found['export']}
 
     def advance(self) -> None:
-        """The next seat; after the last, the next round, or, once the discussion is over, the end; for a table with
-        topics, past the last seat, where Jev judges the round next (`round_over`)."""
-        found = self.row()
-        position = int(found['position']) + 1
-        if position < len(store.seats(self.number)) or found['stage']:
-            self.change(position=position)
-            return
-        why = self.enough(found)
-        if why is None:
-            self.change(round=int(found['round']) + 1, position=0, round_kept=0)
-        elif why == 'round':
-            self.change(state='ending', reason=said('ended_round'), position=0)
-        else:
-            self.change(state='ending', reason=said('ended_rounds', rounds=found['rounds']), position=0)
-
-    def enough(self, found: dict[str, Any]) -> str | None:
-        """Why a table without topics' discussion is over after a full round: `round` when the round kept nothing,
-        `rounds` when it was the last; None while it goes on."""
-        if int(found['round_kept']) == 0:
-            return 'round'
-        if int(found['round']) >= int(found['rounds']):
-            return 'rounds'
-        return None
-
-    def fewest(self, found: dict[str, Any]) -> int:
-        """The fewest rounds a topic runs before anything but its round cap ends its discussion."""
-        return min(int(config.value('min_rounds')), int(found['rounds']))
-
-    def limit(self, found: dict[str, Any], given: dict[str, Any]) -> str | None:
-        """Why a topic's discussion is over after a round without asking Jev: `rounds` at its round cap; after its
-        fewest rounds, `chair` when the chair asked to advance it, `round` when the round kept nothing and `budget`
-        when Jev's state `given` for it has reached the topic's budget; None while it goes on."""
-        at = int(found['round'])
-        if at >= int(found['rounds']):
-            return 'rounds'
-        if at < self.fewest(found):
-            return None
-        if found['advance_asked']:
-            return 'chair'
-        if int(found['round_kept']) == 0:
-            return 'round'
-        if judge.tokens(given) >= int(config.value('topic_tokens')):
-            return 'budget'
-        return None
+        """Next seat, then examine the full round without inferring anyone's vote."""
+        self.change(position=int(self.row()['position']) + 1)
 
     async def round_over(self, found: dict[str, Any]) -> None:
-        """A topic's round over: Jev is asked `round_added` and `covered` on the topic's state after every full round,
-        in a request of its own, and its judgment is written with the decision it causes. The topic goes to synthesis
-        at its round cap, or after its fewest rounds at the chair's advance, on a round that kept nothing, at its
-        budget, or once Jev finds it `covered` with nothing new (`round_added` below its bar) for SETTLED rounds
-        running (`sufficient`); else the next round. The table holds when Jev gives none, never ending for want of
-        credits, and continue asks again."""
-        at = int(found['round'])
-        entered = [one for one in store.submissions(self.number)
-                   if one['topic'] == found['topic'] and render.entered(one)]
-        given = judge.round_state(self.topic(found), entered, at)
-        captured = render.captured(found)
-        criteria = captured.get('sufficiency') or judge.questions(store.ENOUGH)
-        floors = cast(dict[str, float], captured.get('sufficiency_floors') or (
-            {'round_added': float(captured['keep']), 'covered': float(captured['keep'])} if captured else
-            {'round_added': config.floor('keep_round_added'), 'covered': config.floor('keep_covered')}))
-        asked = await asyncio.to_thread(judge.ask, given, criteria, model=captured.get('jev_model'))
-        where = {'topic': found['topic'], 'round': at}
-        if asked.nouls is None:
-            self.unjudged(asked, asked.row('sufficiency', floors, None, **where))
-            return
-        settled = asked.nouls['covered'] >= floors['covered'] and asked.nouls['round_added'] < floors['round_added']
-        judged = asked.row('sufficiency', floors, 'settled' if settled else 'continue', **where)
-        why = self.limit(found, given)
-        if why is None and at >= self.fewest(found):
-            earlier = {int(one['round']): one['decision'] for one in store.judgments(self.number, int(found['topic']))
-                       if one['kind'] == 'sufficiency' and one['decision']}
-            running = 0
-            while settled and running < SETTLED and (running == 0 or earlier.get(at - running) == 'settled'):
-                running += 1
-            why = 'sufficient' if running >= SETTLED else None
-        if why is None:
-            store.decide(self.number, judged, {'round': at + 1, 'position': 0, 'round_kept': 0})
-        else:
-            self.discussed(found, why, judged)
+        """Only an explicit PASS from every participant in this round completes discussion."""
+        store.close_round(self.number, said('why_passes'))
 
     def unjudged(self, asked: judge.Asked, judged: dict[str, Any]) -> None:
-        """Jev gave no judgment: the table holds and says why, in one transaction with the judgment that failed; when
-        OpenRouter is out of credits the chair is told, and a probe that finds credits again resumes it."""
+        """Persist a failed judgment with its hold. Continue retries the saved submission."""
         if asked.unpaid:
             reason = said('held_credits', error=asked.error)
             store.decide(self.number, judged, {'state': 'held', 'reason': reason, 'unpaid': True})
-            self.asked_credits = time.monotonic()
             self.tell('credits', reason)
             return
         reason = said('held_jev', error=asked.error)
         store.decide(self.number, judged, {'state': 'held', 'reason': reason})
         self.tell('held', reason)
 
-    def discussed(self, found: dict[str, Any], why: str, judged: dict[str, Any] | None = None) -> None:
-        """The open topic's discussion over, and why, `sufficient`, `round`, `budget`, `rounds` or `chair`, recorded
-        with the topic and with the judgment that decided it; its synthesis next."""
-        store.decide(self.number, judged, {'stage': 'synthesis', 'position': 0, 'advance_asked': False},
-                     {'discussed': store.stamp(), 'advanced_by': why,
-                      'why': said(f'why_{why}', rounds=found['rounds'], settled=SETTLED,
-                                  tokens=config.value('topic_tokens'))})
+    def discussed(self, found: dict[str, Any], why: str) -> None:
+        """Finish discussion by unanimous voluntary passes or explicit chair advancement."""
+        if not found['stage']:
+            self.ending(said(f'why_{why}'))
+            return
+        store.decide(self.number, None, {'stage': 'synthesis', 'position': 0, 'advance_asked': False},
+                     {'discussed': store.stamp(), 'advanced_by': why, 'why': said(f'why_{why}')})
 
     def enter_comments(self) -> None:
         """The chair's comments waiting, entered inline in order, unjudged."""
@@ -490,6 +362,118 @@ class Table:
 
     # ------------------------------------------------------------------------------------------- a turn
 
+    def requires_payment(self, found: dict[str, Any]) -> bool:
+        if found['stage'] in ('synthesis', 'host_summary'):
+            return found['synthesizer' if found['stage'] == 'synthesis' else 'host']['kind'] == 'openrouter'
+        return (found['stage'] in (None, 'discussion') and render.judging(found)) or any(
+            one['kind'] == 'openrouter' for one in store.seats(self.number)) or any(
+            cast(dict[str, Any], found.get(role) or {}).get('kind') == 'openrouter'
+            for role in ('host', 'synthesizer'))
+
+    def context_limit(self, found: dict[str, Any]) -> int:
+        """The smallest active configured trigger, independent of whether judging is enabled."""
+        limits = [int(config.value('context_tokens'))]
+        budgets = config.context_budgets()
+        participants = [one for one in store.seats(self.number) if health.usable(one)]
+        participants += [found[role] for role in ('host', 'synthesizer') if found.get(role)]
+        limits += [int(budgets[one['id']]) for one in participants if one['id'] in budgets]
+        if render.judging(found):
+            limits.append(min(24000, int(config.value('judging_context_tokens'))))
+        return min(limits)
+
+    def segment(self, found: dict[str, Any]) -> list[dict[str, Any]]:
+        return [one for one in store.submissions(self.number, int(render.continuation(found).get('through', 0)))
+                if one['topic'] == (found['topic'] if found['stage'] else None)
+                and one['kind'] not in ('carry', 'handoff')]
+
+    def editor_view(self, found: dict[str, Any], notes: list[dict[str, Any]]) -> str:
+        """One editor sees original instructions, previous continuation, the new segment and intact notes."""
+        return said('continuation_editor', opening=found['opening'], previous=render.shared(found),
+                    topic=self.topic(found)['text'] if found['stage'] else found['opening'],
+                    turns='\n\n'.join(f'{render.who(one)} [{render.outcome(one)}]:\n{one["text"]}'
+                                      for one in self.segment(found)),
+                    notes='\n\n'.join(f'{one["name"]} (seat {int(one["position"]) + 1}):\n{one["text"]}'
+                                       for one in notes), limit=max(256, self.context_limit(found) // 4))
+
+    def context_due(self, found: dict[str, Any]) -> bool:
+        """Count seat history, editor input and judging state plus criteria before another normal turn."""
+        limit = render.reply_limit(found)
+        # Notes, their request framing and editor output need room before any context reaches its trigger.
+        reserve = judge.tokens('x' * (2 * limit * len(store.seats(self.number)))) + 3072
+        sizes = [judge.tokens(self.editor_view(found, []))]
+        for row in store.seats(self.number):
+            if health.usable(row):
+                seat = self.seat(row)
+                sizes.append(judge.tokens([seat.system, seat.messages, render.shared(found)]) +
+                             judge.tokens([one for one in self.segment(found) if one['number'] > row['seen']]))
+        if render.judging(found):
+            sizes.append(judge.tokens([found['opening'], render.shared(found), self.segment(found),
+                                       render.captured(found).get('criteria')]))
+        return max(sizes) + reserve >= self.context_limit(found)
+
+    async def handoff(self, found: dict[str, Any]) -> None:
+        """Capture every participant's note before one editor compacts history. Failures hold, never finish."""
+        pending = cast(dict[str, Any], found.get('handoff') or {'after': max(
+            (int(one['number']) for one in store.submissions(self.number)), default=0)})
+        if not found.get('handoff'):
+            self.change(handoff=pending)
+        notes = [one for one in store.submissions(self.number, int(pending['after'])) if one['kind'] == 'carry']
+        try:
+            for row in store.seats(self.number):
+                if any(one['position'] == row['position'] for one in notes):
+                    continue
+                if self.row()['state'] != 'running' or self.row()['advance_asked']:
+                    return
+                if not health.usable(row) or row['gone']:
+                    raise NoReply(f'{row["name"]} is unavailable. Reseat this participant, then Continue.')
+                if float(self.row()['spent']) >= float(found['spend']) and self.requires_payment(found):
+                    raise NoReply('The spending limit is reached. Raise the table budget, then Continue.')
+                seat = self.seat(row)
+                await self.topical(found, seat)
+                unseen = [one for one in self.segment(found) if one['number'] > int(row['seen'])]
+                prompt = said('carry_forward', limit=2 * render.reply_limit(found),
+                              turns=render.labeled(unseen), continuation=render.shared(found))
+                if judge.tokens([seat.system, seat.messages, prompt]) + 2048 >= self.context_limit(found):
+                    raise NoReply('Seat context cannot fit its carry-forward request. '
+                                  'Raise the smallest context budget, then Continue, or choose End discussion.')
+                try:
+                    reply = await seat.reply(prompt, float(config.value('agent_wait')))
+                except NoReply as error:
+                    self.keep(seat, None)
+                    self.failing(row, error)
+                    raise
+                if not reply.text.strip():
+                    raise NoReply(f'{row["name"]} gave no carry-forward note. Continue to retry.')
+                note = store.record(self.number, self.entry(found, row, reply.text, kind='carry',
+                                    **{key: value for key, value in reply.use.items() if key in USE}))
+                notes.append(note)
+                self.keep(seat, max([one['number'] for one in unseen], default=int(row['seen'])))
+            if self.row()['state'] != 'running' or self.row()['advance_asked']:
+                return
+            if float(self.row()['spent']) >= float(found['spend']) and self.requires_payment(found):
+                raise NoReply('The spending limit is reached. Raise the table budget, then Continue.')
+            editor = self.editor_view(found, notes)
+            if judge.tokens(editor) + 2048 >= self.context_limit(found):
+                raise NoReply('Editor context cannot fit the shared history and intact notes. '
+                              'Raise the smallest context budget, then Continue, or choose End discussion.')
+            reply = await self.ask_fresh(found, 'synthesizer', editor)
+            if not reply.text.strip():
+                raise NoReply('The continuation editor returned no summary. Continue to retry.')
+            compact = {'text': reply.text, 'notes': [
+                {'position': one['position'], 'name': one['name'], 'text': one['text']} for one in notes],
+                'topic': found['topic']}
+            candidate = {**found, 'continuation': compact}
+            if judge.tokens([found['opening'], render.shared(candidate)]) + 2048 >= self.context_limit(found):
+                raise NoReply('Original instructions, summary and intact notes exceed the context trigger. '
+                              'Raise the smallest context budget or reduce reply length, then Continue.')
+            store.install_handoff(self.number, compact, int(found['round']),
+                                  found['topic'] if found['stage'] else None, said('handoff_marker'))
+            await self.unseat()
+        except Interrupted:
+            return
+        except NoReply as error:
+            self.change(state='held', reason=said('held_handoff', error=error))
+
     async def turn(self, found: dict[str, Any], row: dict[str, Any]) -> bool:
         """The turn of the seat whose turn it is, whatever its kind; False when the table holds or ends before it is
         recorded."""
@@ -500,7 +484,8 @@ class Table:
             use = cast(dict[str, Any], unjudged.get('use') or {})
         else:
             seat = self.seat(row)
-            since = store.submissions(self.number, int(row['seen']))
+            since = store.submissions(self.number, max(int(row['seen']),
+                                      int(render.continuation(found).get('through', 0))))
             if found['stage']:
                 await self.topical(found, seat)
                 view = self.topic_view(found, row, seat, since)
@@ -511,6 +496,8 @@ class Table:
                          if not (seat.messages and one['position'] == row['position'] and render.entered(one))]
                 view = render.seat_view(shown, not seat.messages, links=seat.kind == 'agent',
                                         limit=render.reply_limit(found))
+            if not seat.messages and render.shared(found):
+                view = render.shared(found) + '\n\n' + view
             mine = [one for one in since if one['position'] == row['position']]
             if not seat.messages and mine and mine[-1].get('repeat_of') is not None:  # started again after repeats
                 view = render.tidy(said('repeat_rebuilt', count=REPEATS) + '\n\n' + view)
@@ -522,6 +509,7 @@ class Table:
                 self.keep(seat, None)
                 store.record(self.number, self.entry(found, row, '', kind='none', reason=failure.reason()))
                 self.failing(row, failure)
+                self.unpaid(error)
                 return True
             except Interrupted:
                 return False
@@ -554,6 +542,10 @@ class Table:
         submission on the topic, or at a table without topics in the discussion, kept or vetoed, is vetoed with no
         call; any other is judged by Jev against what entered, at the bars the table opened with. False when the
         table holds or ends before it is recorded."""
+        if not render.judging(found):
+            recorded = store.record(self.number, {**entry, 'accepted': True}, judged=True)
+            self.settle(row, str(entry.get('original') or entry['text']), recorded)
+            return True
         staged = bool(found['stage'])
         text = str(entry['text'])
         rows = [one for one in store.submissions(self.number) if not staged or one['topic'] == found['topic']]
@@ -566,7 +558,9 @@ class Table:
             await self.repeating(found, row)
             return True
         captured = render.captured(found)
-        entered = [one for one in rows if render.entered(one)]
+        entered = [one for one in rows if render.entered(one)
+                   and one['number'] > int(render.continuation(found).get('through', 0))
+                   and one['kind'] not in ('carry', 'handoff')]
         if staged:  # a topic is judged against itself and what entered on it, its seats unnamed
             given = judge.topic_state(self.topic(found), entered, {'position': row['position'], 'text': text})
             criteria = captured['criteria'] if captured.get('floors') else judge.questions(store.VETO)
@@ -577,6 +571,8 @@ class Table:
             given = judge.state(str(found['opening']), entered, row['name'], text)
             criteria = captured.get('criteria') or judge.questions()
             floors = render.floors(captured) if captured else {name: config.keep() for name in store.NOULS}
+        given['continuation'] = render.shared(found)
+        given['original_instructions'] = found['opening']
         asked = await asyncio.to_thread(judge.ask, given, criteria, model=captured.get('jev_model'))
         if asked.nouls is None:
             self.unjudged(asked, asked.row('veto', floors, None, **where))
@@ -615,7 +611,7 @@ class Table:
         mine = [one for one in store.submissions(self.number) if one['position'] == row['position']]
         fresh = not seat.messages
         spoken = not fresh and any(one['topic'] == found['topic'] for one in mine)
-        digest = '' if spoken else render.digest(self.number, int(found['topic']))
+        digest = '' if spoken or render.shared(found) else render.digest(self.number, int(found['topic']))
         return render.topic_view(str(self.topic(found)['text']), own[-1] if own else None, others,
                                  fresh and not mine, spoken, digest, limit=render.reply_limit(found))
 
@@ -653,7 +649,11 @@ class Table:
 
     def fresh(self, found: dict[str, Any], role: str) -> Seat:
         """The synthesizer or the host as a seat of its own for one request, with nothing before it."""
-        given = cast(dict[str, Any], found[role])
+        empty: dict[str, Any] = {}
+        given = cast(dict[str, Any], found.get(role) or next(
+            (one for one in store.seats(self.number) if seating.able(one)), empty))
+        if not given:
+            raise NoReply('No participant can edit continuation. Seat an ACP, OpenRouter or A2A participant.')
         row: dict[str, Any] = {**given, 'position': store.SYNTHESIZER if role == 'synthesizer' else store.HOST,
                                'messages': [], 'session': None, 'reported': None, 'extra': None}
         return KINDS[str(given['kind'])](found, row, self.pay)
@@ -676,9 +676,10 @@ class Table:
             self.change(stage='ranking', position=0)
             return
         topic = self.topic(found)
-        rows = [one for one in store.submissions(self.number) if one['topic'] == found['topic'] and render.entered(one)]
+        rows = [one for one in self.segment(found) if render.entered(one)]
         text = said('synthesis', topic=topic['text'],
-                    turns='\n\n'.join(render.entry(one) for one in rows) or said('no_contributions'))
+                    turns=render.shared(found) + '\n\n' + ('\n\n'.join(render.entry(one) for one in rows)
+                                                          or said('no_contributions')))
         try:
             reply = await self.ask_fresh(found, 'synthesizer', text)
         except openrouter.Unpaid as error:
@@ -799,14 +800,17 @@ class Table:
     def writers(self, found: dict[str, Any]) -> list[dict[str, Any]]:
         """Who is asked for the report, in turn: the named reporter, every other seat that can write it and has not
         left, an ACP seat first, then the `report_model` through OpenRouter. Never Claude through OpenRouter."""
-        seated = [one for one in store.seats(self.number) if seating.able(one)]
+        remaining = float(found['spent']) < float(found['spend'])
+        seated = [one for one in store.seats(self.number) if seating.able(one)
+                  and (one['kind'] != 'openrouter' or remaining)]
         chosen = [one for one in seated if one['id'] == found['reporter'] and not one['gone']]
         others = sorted((one for one in seated if one['id'] != found['reporter'] and health.usable(one)),
                         key=lambda one: one['kind'] != 'acp')
         model = str(config.value('report_model') or '').strip()
         given: dict[str, Any] = {'kind': 'openrouter', 'id': model, 'model': model, 'agent': None}
         extra = [{**given, 'name': named_base(given), 'position': store.REPORTER}] \
-            if model and seating.able(given) and all(one['id'] != model for one in seated) else []
+            if remaining and config.openrouter_key() and model and seating.able(given) and all(
+                one['id'] != model for one in seated) else []
         return [*chosen, *others, *extra]
 
     async def report(self, found: dict[str, Any], record: str) -> str:

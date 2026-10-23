@@ -37,8 +37,8 @@ STAGE_MARKS = ('# Topic synthesis', '# Rank collected ideas', '# Explain your to
                '# Host summary', REPORT_MARK, 'could not be read as every idea')  # the offline proof's
 
 def stubbed(*, pace: float = 0.0) -> Any:
-    """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and a Jev
-    that finds the topic covered with nothing added each round, so the topic goes to synthesis on its sufficiency.
+    """The stub with a table's worth of behaviour, as the offline proof has it: vega's second turn vetoed, and voluntary PASS replies
+    after three contributions, so a complete unanimous round ends discussion.
     `pace` slows every seat's turn so the chair acts while the table runs."""
     base = fakes.Stub
 
@@ -51,16 +51,10 @@ def stubbed(*, pace: float = 0.0) -> Any:
             if code == 200 and body['model'] == 'stub/vega' and asked == 2 and not any(mark in last
                                                                                      for mark in STAGE_MARKS):
                 answer['choices'][0]['message']['content'] = 'vega agrees, veto this, it adds nothing.'
+            if code == 200 and asked >= 4 and not any(mark in last for mark in STAGE_MARKS):
+                answer['choices'][0]['message']['content'] = 'PASS'
             return code, answer
 
-        def decide(self, body: dict[str, Any]) -> tuple[int, dict[str, Any] | None]:
-            if body['state'].get('latest_round') is None:
-                return super().decide(body)
-            with self.lock:
-                self.decisions.append(body)
-            values = {'covered': 0.92, 'round_added': 0.2}
-            return 200, {'model': body['model'], 'answers': {name: {'type': 'noul', 'noul': values.get(name, 0.92)}
-                                                             for name in body['questions']}, 'usage': {'cost': 0.0001}}
     return Offline()
 
 
@@ -88,10 +82,11 @@ def table(run, tmp_path, monkeypatch):
     log = tmp_path / 'fake-acp.log'
     for key, value in {'ROUNDTABLE_HOME': str(engine_home), 'OPENROUTER_API_KEY': 'stub-key',
                        'ROUNDTABLE_AGENT_CLAUDE': f'{sys.executable} {FAKE_AGENT}',
-                       'ROUNDTABLE_AGENT_WAIT': '30', 'ROUNDTABLE_MIN_ROUNDS': '1', 'ROUNDTABLE_ROUNDS': '4',
+                       'ROUNDTABLE_AGENT_WAIT': '30', 'FAKE_ACP_PASS_AFTER': '3',
                        'ROUNDTABLE_REPORT_MODEL': 'stub/reporter', 'FAKE_ACP_LOG': str(log)}.items():
         monkeypatch.setenv(key, value)
-    return folder, log
+    yield folder, log
+    run('dispatch', 'stop-all', cwd=folder, ok=False)
 
 
 def serve(monkeypatch, stub: Any) -> Any:
@@ -199,7 +194,7 @@ def test_a_fresh_install_with_no_engine_on_path_runs_a_table_whose_seats_speak_i
     held = serve(monkeypatch, stubbed())
     heard = Heard()
     try:
-        answer = json.loads(run('roundtables', 'open', 'How should a table be heard?', 'host=stub/host', 'rounds=2',
+        answer = json.loads(run('roundtables', 'open', 'How should a table be heard?', 'host=stub/host',
                                 'seats=' + json.dumps(['stub/vega', 'claude/haiku', 'stub/orion']), '--json',
                                 cwd=folder).stdout)
         assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
@@ -221,7 +216,7 @@ def test_a_table_at_an_address_opens_on_the_parts_context_and_its_events_are_hea
     held = serve(monkeypatch, stub)
     heard = Heard()
     try:
-        answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'stub/vega']), 'host=stub/host', 'rounds=3')
+        answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'stub/vega']), 'host=stub/host')
         assert len(seat_entries(home)) == 2, 'each seat holds one agent slot while the table runs'
         assert heard.ended.wait(LIMIT), f'the table did not end: {heard.kinds()}'
         kinds = heard.kinds()
@@ -425,6 +420,46 @@ def page_servers() -> list[int]:
         if b'web' in words and f'ROUNDTABLE_HOME={os.environ["ROUNDTABLE_HOME"]}'.encode() in environ:
             found.append(int(proc.name))
     return found
+
+
+@pytest.mark.timeout(100)
+def test_unjudged_acp_table_runs_and_continues_without_provider_credentials(run, home, table, monkeypatch):
+    """Real shipped MCP/ACP processes use fake agents only, retaining saved records across continuation."""
+    folder, log = table
+    run('set', '--no-jev', cwd=folder)
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    heard = Heard()
+    answer = None
+    try:
+        answer = opened(run, folder, 'seats=' + json.dumps(['claude/haiku', 'claude/opus']), 'judging=false')
+        assert heard.ended.wait(35), heard.kinds()
+        before = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+        original_record = folder / before['saved'] / 'export.json'
+        original_bytes = original_record.read_bytes()
+        assert gone(lambda: seat_entries(home))
+        assert gone(lambda: json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+                    ['follower'] == 'running')
+        heard.ended.clear()
+        resumed = json.loads(run('roundtables', 'continue', answer['table'], '--json', cwd=folder).stdout)
+        assert resumed['table'] == answer['table'] and resumed['state'] == 'running'
+        assert heard.ended.wait(35), heard.kinds()
+        after = json.loads(run('roundtables', 'status', answer['table'], '--json', cwd=folder).stdout)
+        assert after['discussion'] == before['discussion']
+        assert after['seats'] == before['seats'] and after['seated'] == before['seated']
+        assert len(after['topics']) == 2 and after['answered']
+        assert original_record.read_bytes() == original_bytes
+        assert after['saved'] != before['saved']
+        exported = json.loads((folder / after['saved'] / 'export.json').read_text())
+        assert not exported['judgments']
+        assert any(one['kind'] == 'handoff' for one in exported['submissions'])
+        prompts = [line['message']['params'] for line in map(json.loads, log.read_text().splitlines())
+                   if line.get('message', {}).get('method') == 'session/prompt']
+        assert any('Shared continuation:' in json.dumps(one) for one in prompts)
+        assert gone(lambda: seat_entries(home))
+    finally:
+        if answer and not heard.ended.is_set():
+            run('roundtables', 'end', answer['table'], cwd=folder, ok=False)
+        heard.close()
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads /proc for the page servers left')

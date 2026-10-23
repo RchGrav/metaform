@@ -3,8 +3,8 @@
 A chair opens a table with an opening message and its seats. The seats speak in turn, round robin, in a fixed order,
 each within the table's reply limit (512 characters by default), and a submission enters only when Jev finds it new, valuable, relevant
 and worth keeping, each at `keep` (0.83) or above. A vetoed submission is shown to every seat as its verdict, the four
-questions with their nouls and a link to its text. The table ends after a full round that kept nothing, at its most
-rounds or OpenRouter dollars, when OpenRouter is out of credits, or when its chair ends it; a seat at the table writes
+questions with their nouls and a link to its text. Discussion ends only after every participant voluntarily passes in one complete round,
+or explicit chair advancement. Novelty judging is optional. Resource failures hold rather than finish discussion; a seat at the table writes
 the report, and the whole record is exported as JSON beside it.
 
 Three protocols, each for its job: MCP is how clients open, chair and read tables (`server`); ACP runs the local

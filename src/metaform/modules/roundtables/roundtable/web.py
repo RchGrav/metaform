@@ -263,12 +263,12 @@ async def open_table(request: Request) -> Response:
     topics: Any = given.get('topics')  # absent or null: the Roundtable 2 topics; a list, those; [] none
     try:
         answer = await server.opened(str(given.get('opening') or ''), [str(one) for one in cast(list[Any], given.get('seats') or [])],
-                                     str(given.get('subject') or '') or None, number('rounds', int),
+                                     str(given.get('subject') or '') or None,
                                      number('spend', float), str(given.get('reporter') or '') or None,
                                      str(given.get('folder') or '') or None, 'web',
                                      [str(one) for one in cast(list[Any], topics)] if isinstance(topics, list) else None,
                                      str(given.get('host') or '') or None, str(given.get('synthesizer') or '') or None,
-                                     given.get('seat_mcp'))
+                                     given.get('seat_mcp'), judging=given.get('judging'))
     except (ToolError, ValueError) as error:
         return refused(error)
     return JSONResponse(answer)
@@ -279,7 +279,7 @@ async def open_table(request: Request) -> Response:
 def limits(request: Request) -> Response:
     """What the open form needs: the configured limits a table may lower, the reporter setting, the bar, and
     whether OpenRouter's key is set."""
-    return JSONResponse({'rounds': int(config.value('rounds')), 'spend': float(config.value('spend')),
+    return JSONResponse({'judging': bool(config.value('judging')), 'spend': float(config.value('spend')),
                          'reporter': config.value('reporter'), 'keep': config.keep(),
                          'topics': [{'name': one['name'], 'title': one['title']} for one in stages.topics_of(None)],
                          'host': stages.HOST,

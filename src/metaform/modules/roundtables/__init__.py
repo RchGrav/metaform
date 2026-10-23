@@ -1,8 +1,8 @@
 """roundtables: the person brings a question to a table of agents, and the agents debate it, build on each other's
 ideas and go on until it is answered, through the Roundtable 2 engine. The finished result goes directly to the page.
 
-The engine is the person's standalone program, `roundtable`, an MCP and A2A server
-(https://github.com/RchGrav/roundtable); this module connects Metaform to it and ports nothing of it. Its seats speak
+The Roundtable 2 engine ships inside this module as its `roundtable` package. This bridge owns its lifecycle
+and connects its MCP and event interfaces to Metaform. Its seats speak
 in turn, within the table's reply limit (512 characters by default); Jev, through OpenRouter, keeps only what is new and on the topic; after the discussion a
 synthesizer names the ideas, every seat ranks them and explains its choices, and the host summarises.
 
@@ -16,7 +16,7 @@ synthesizer names the ideas, every seat ranks them and explains its choices, and
 - A follower for each table, `follow.py`, turns what the table does into events: on the bus as `roundtables.event`,
   and in the project's `events` table, whose writes reach every other process of the home, the web page's among them,
   as `map.changed` naming the kind `roundtables`.
-- The table ends when Jev judges its topic covered and the host has summarised, or when the person ends it. Its
+- Discussion ends after every participant voluntarily passes in one full round or explicit chair advancement. Its
   answer is the host's summary. Its record is saved in the project; the page shows every topic's synthesis and
   rankings, the final answer and links to the transcript. Adopting an idea as a ticket, `adopt`, comes after.
 
@@ -24,8 +24,7 @@ Guardrails. Each seat takes one of dispatch's agent slots, through dispatch's ow
 fewer are free than its seats. A table spends at most `roundtables_spend` US dollars through OpenRouter, a cap only
 the person raises. Seats read the project folder and change nothing: the engine gives them only reading tools, refuses
 every write they ask for, and this module never gives them an MCP server. Operational events, credits, holds and a
-seat lost, are the person's and never reach a seat or Jev. Opening a table sends the question, and the part's context
-when a part is given, to OpenRouter, so it waits for the person's own `jev` setting. The tables and their events are
+seat lost, are the person's and never reach a seat or Jev. Judged tables require the person's `jev` setting. ACP-only unjudged tables need no provider credential. The tables and their events are
 kept at the project's level, so a base switch, a clear or a restore never takes them.
 """
 from __future__ import annotations
@@ -59,7 +58,19 @@ CHAIR = ('state', 'reason', 'stage', 'topic', 'round', 'turn_of', 'spend', 'spen
 settings.number('roundtables_spend', 2, min=0, max=100, person_only=True, label='Most a table spends (US dollars)',
                 category='integrations', heading='Roundtables',
                 help='The most one table spends through OpenRouter, its model seats and Jev; open may only lower it.',
-                details='OPENROUTER_API_KEY must be set where Metaform runs: Jev judges every turn through OpenRouter.')
+                details='OPENROUTER_API_KEY is required for judging or OpenRouter seats. ACP-only unjudged tables '
+                        'use their agent logins.')
+
+settings.boolean('roundtables_judging', True, person_only=True, label='Judge discussion novelty with Jev',
+                 category='integrations', heading='Roundtables',
+                 help='Optional novelty filtering. Off keeps every substantive reply and needs no Jev credential '
+                      'for ACP-only tables. Discussion completion always requires unanimous PASS or End discussion.')
+settings.number('roundtables_context_tokens', 24000, min=4096, max=1000000, person_only=True,
+                label='Seat context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
+                help='Compact before seat context fills. The smallest active seat or judging budget wins.')
+settings.number('roundtables_judging_context_tokens', 24000, min=4096, max=24000, person_only=True,
+                label='Jev context handoff trigger (estimated tokens)', category='integrations', heading='Roundtables',
+                help='State plus judging criteria. Conservative headroom under the unconfirmed OpenRouter limits.')
 
 
 def _check_seats(seats: Any, folder: Path) -> list[str] | None:
@@ -237,7 +248,8 @@ def started(ctx: Context, table_id: str) -> dict[str, Any]:
 
 
 def open_table(ctx: Context) -> dict[str, Any]:
-    if not settings.value('jev', ctx.folder):
+    judging = ctx.nouns.get('judging', ctx.setting('roundtables_judging'))
+    if judging and not settings.value('jev', ctx.folder):
         raise Stop('A table sends your question, and the part\'s context when it is about a part, to OpenRouter, where '
                    'Jev judges every turn, and only you allow project text to leave this machine.',
                    'metaform set --jev')
@@ -265,9 +277,9 @@ def open_table(ctx: Context) -> dict[str, Any]:
     with ctx.require_store().tables() as tx:
         tx.concern(kind=follow.CHANGE_KIND)
         tx.insert('tables', {'table_id': table_id, 'address': address or None, 'topic': topic, 'opening': text,
-                             'seats': seats, **roles, 'rounds': ctx.nouns.get('rounds'), 'spend': spend,
+                             'seats': seats, **roles, 'spend': spend,
                              'state': 'opening', 'created': follow.now(),
-                             'followed': {'reply_limit': reply_limit,
+                             'followed': {'reply_limit': reply_limit, 'judging': judging,
                                           'automate_ticket_creation': bool(ctx.nouns.get('automate_ticket_creation')),
                                           'opener': 'person' if ctx.surface == 'web' or (
                                  ctx.surface == 'cli' and agent_caller() is None) else 'agent'}})
@@ -298,7 +310,25 @@ def hold(ctx: Context) -> dict[str, Any]:
 
 
 def continued(ctx: Context) -> dict[str, Any]:
-    return chaired(ctx, 'continue')
+    row = table_row(ctx)
+    spend = float(ctx.nouns['spend']) if ctx.nouns.get('spend') is not None else None
+    if spend is not None and not 0 <= spend <= float(ctx.setting('roundtables_spend')):
+        raise Stop('spend exceeds roundtables_spend.', 'metaform roundtables continue')
+    if row['state'] != 'ended' and follow.alive(row.get('follower')):
+        return chaired(ctx, 'continue', spend=spend)
+    if follow.alive(row.get('follower')):
+        raise Stop('The previous follower is still closing. Continue once it stops.', 'metaform roundtables status')
+    # Admission precedes reopening. The follower owns all participant slots before fresh sessions start.
+    with ctx.require_store().tables() as tx:
+        tx.concern(kind=follow.CHANGE_KIND)
+        tx.concern(kind=f'{follow.CHANGE_KIND}:{row["table_id"]}')
+        tx.update('tables', {'table_id': row['table_id']}, {'state': 'continuing',
+                  'followed': {**cast(dict[str, Any], row.get('followed') or {}), 'continue_spend': spend,
+                               'continue_from': row['state']}})
+    answer = started(ctx, str(row['table_id']))
+    if 'refused' in answer:
+        raise Stop(str(answer['refused']), str(answer.get('next') or 'metaform roundtables status'))
+    return {'table': row['table_id'], 'state': 'running'}
 
 
 def advance(ctx: Context) -> dict[str, Any]:
@@ -437,7 +467,7 @@ MODULE = Module(
     id='roundtables',
     summary='Bring a question to a table of agents, through the Roundtable 2 engine; its report is the outcome.',
     purpose='Opens a table of agents on the person\'s question, through the person\'s Roundtable 2 engine: the seats '
-            'debate it, focused on a part only when an Address is given, Jev keeps what is new, the host summarises '
+            'debate it, focused on a part only when an Address is given, optional Jev judging filters novelty, the host summarises '
             'the answer, and the page shows its synthesis, rankings and saved transcript. Details: metaform help roundtables.',
     details='Seats are claude/<model>, codex/<model>, antigravity/<model> or OpenRouter model ids. Each seat takes one '
             'of dispatch\'s agent slots. A table spends at most roundtables_spend dollars. Its events reach the bus as '
@@ -453,20 +483,23 @@ MODULE = Module(
                     Noun('host', 'Who summarises the seats\' rankings; the first seat when left out.',
                          required=False),
                     Noun('synthesizer', 'Who names the ideas; the host when left out.', required=False),
-                    Noun('rounds', 'The most rounds of discussion, up to the engine\'s own most.', kind='int',
-                         required=False),
+                    Noun('judging', 'Use optional Jev novelty filtering; project default when omitted.',
+                         kind='bool', required=False),
                     Noun('reply_limit', 'Maximum characters in each discussion reply; 512 when omitted.', kind='int',
                          required=False),
                     Noun('spend', 'The most US dollars, such as 0.50, up to roundtables_spend.', required=False),
                     Noun('automate_ticket_creation', 'Automate Ticket Creation: prepare through an inactive populated '
                          'board and execution outline without decisions. Default off.', kind='bool', required=False)),
-             switches=('roundtables_spend', 'roundtables_seats'), open_world=True),
+             switches=('roundtables_spend', 'roundtables_seats', 'roundtables_judging',
+                       'roundtables_context_tokens', 'roundtables_judging_context_tokens'), open_world=True),
         Verb('comment', comment, 'As the chair, say something to the table at its next gap between turns.',
              nouns=(TABLE, Noun('text', 'What the chair says.')), open_world=True),
         Verb('hold', hold, 'As the chair, hold the table after the turn in flight.', nouns=(TABLE,),
              open_world=True),
-        Verb('continue', continued, 'As the chair, run a held table again.', nouns=(TABLE,), open_world=True),
-        Verb('advance', advance, 'As the chair, end the topic\'s discussion after its fewest rounds, for its '
+        Verb('continue', continued, 'Resume a held table or continue a completed table from its saved summary.',
+             nouns=(TABLE, Noun('spend', 'Optional replacement table budget, up to roundtables_spend.',
+                                required=False)), open_world=True),
+        Verb('advance', advance, 'As the chair, end discussion explicitly, for its '
                                  'synthesis, rankings and summary.', nouns=(TABLE,), open_world=True),
         Verb('reseat', reseat, 'As the chair, bring a seat that left or failed back to the table.',
              nouns=(TABLE, Noun('seat', 'The seat, by its id or its name at the table.')), open_world=True),

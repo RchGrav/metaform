@@ -11,8 +11,7 @@ spend, so only the person, who owns the file and the environment, sets them. A c
 limits than these, never higher.
 
 Settings are read afresh on every call. A discussion keeps the rules, judgment questions and the bars captured when
-it opened, `keep` and for a table with topics each noul's own (`keep_new`, `keep_on_topic`, `keep_covered`,
-`keep_round_added`); changes to those apply to new discussions. Other changes take effect at the next turn.
+it opened, `keep` and for a table with topics each noul's own (`keep_new`, `keep_on_topic`); changes to those apply to new discussions. Other changes take effect at the next turn.
 """
 from __future__ import annotations
 
@@ -28,11 +27,9 @@ DEFAULTS: dict[str, Any] = {
     'keep': 0.83,  # the bar each of Jev's four nouls must reach for a submission to enter the discussion
     'keep_new': '',  # on a table with topics, the bar Jev's new_context noul must reach; empty is keep
     'keep_on_topic': '',  # on a table with topics, the bar Jev's on_topic noul must reach; empty is keep
-    'keep_covered': '',  # the bar covered must reach after a round for it to count as settled; empty is keep
-    'keep_round_added': '',  # the bar round_added must fall below for a round to count as settled; empty is keep
-    'rounds': 8,  # the most rounds a table runs, or a table with topics runs on each topic
-    'min_rounds': 3,  # the fewest rounds a topic runs before Jev, a round that kept nothing or its budget end it
-    'topic_tokens': 12000,  # a topic's discussion goes to synthesis once Jev's state for it reaches this estimate
+    'judging': True,  # Jev novelty filtering, captured at open; false retains every substantive reply
+    'context_tokens': 24000,  # seat/editor context trigger, with room for handoff notes and editing
+    'judging_context_tokens': 24000,  # conservative state plus criteria trigger under Jev's 32K/question default
     'spend': 2.0,  # the most US dollars a table spends through OpenRouter: its seats, Jev and an OpenRouter reporter
     'agent_wait': 300,  # seconds a seat's agent has for its turn, and an outside agent seat to submit
     'jev_wait': 300,  # seconds one of Jev's judgments has for every attempt and the waits between them
@@ -106,7 +103,16 @@ def floor(key: str) -> float:
     return found / 100 if found > 1 else found
 
 
-FLOORS = ('keep_new', 'keep_on_topic', 'keep_covered', 'keep_round_added')
+def context_budgets() -> dict[str, int]:
+    """Optional per-seat context triggers in config.toml, keyed by exact seat id."""
+    budgets = cast(dict[str, Any], file().get('context_budgets') or {})
+    found = {str(key): int(value) for key, value in budgets.items()}
+    if any(value < 1 for value in found.values()):
+        raise ValueError('context_budgets entries must be positive token counts.')
+    return found
+
+
+FLOORS = ('keep_new', 'keep_on_topic')
 
 
 def reports() -> Path:

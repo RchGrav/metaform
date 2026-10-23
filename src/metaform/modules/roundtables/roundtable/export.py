@@ -90,7 +90,8 @@ def build(number: int) -> dict[str, Any]:
            **({'stage': found['stage'], 'topic': int(found['topic']) + 1, 'host': found['host'],
                'synthesizer': found['synthesizer']} if found.get('stage') else {}),
            'keep': render.captured(found).get('keep'), 'snapshot': found.get('snapshot'),
-           'rules': render.rules([str(seat['name']) for seat in seated], found)},
+           'rules': render.rules([str(seat['name']) for seat in seated], found),
+           'continuation': found.get('continuation')},
         'seats': seats_out,
         **({'topics': topics_of(number)} if found.get('stage') else {}),
         'submissions': turns,
@@ -252,7 +253,7 @@ def legend(found: dict[str, Any]) -> dict[str, str]:
     criteria = cast(dict[str, Any], held.get('criteria') or {})
     questions = ' '.join(f'({name}) {question["instructions"]}' for name, question in criteria.items())
     threshold = (', '.join(f'{name} {bar:.2f}' for name, bar in render.floors(held).items()) if held.get('floors')
-                 else f"{held['keep']:.2f}" if held else 'an unrecorded threshold')
+                 else f"{held['keep']:.2f}" if held.get('keep') is not None else 'no novelty threshold')
     named = ', '.join(criteria) or ', '.join(NOULS)
     return {
         'scores': f"Every score array is [{named}]: Jev's probability that each of its questions is true of the "
@@ -387,6 +388,7 @@ def discussion_file(number: int) -> dict[str, Any]:
     counted = stats(number)
     return {'table': table_of(found, seated), 'legend': legend(found),
             'rules': render.rules([str(seat['name']) for seat in seated], found),
+           'continuation': found.get('continuation'),
             'summary': {key: counted[key] for key in counted if key not in ('seats', 'per_turn', 'discussion')}
             | {'by_seat': {seat['name']: {'kept': seat['kept'], 'taken': seat['taken'], 'outcomes': seat['outcomes'],
                                           'excluded_by': seat['excluded_by']} for seat in counted['seats']}},

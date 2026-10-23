@@ -12,9 +12,18 @@ def test_roundtable_forwards_reply_limit(monkeypatch):
     monkeypatch.setattr(server, 'module_verb', lambda given, owner, verb, arguments:
                         calls.append(arguments) or {'table': 'created'})
     handler = _Handler()
-    server.Handler.roundtable_open(handler, {'topic': 'Discuss the project', 'reply_limit': 1200})
+    server.Handler.roundtable_open(handler, {'topic': 'Discuss the project', 'reply_limit': 1200, 'judging': False})
     assert handler.answers == [(200, {'table': 'created'})]
     assert calls[0]['reply_limit'] == 1200
+    assert calls[0]['judging'] is False
+
+
+@pytest.mark.parametrize('invalid', ['false', 0, 1])
+def test_roundtable_rejects_invalid_judging(monkeypatch, invalid):
+    monkeypatch.setattr(server, 'module_verb', lambda *args: pytest.fail('Invalid judging must not start a table.'))
+    handler = _Handler()
+    server.Handler.roundtable_open(handler, {'topic': 'Discuss', 'judging': invalid})
+    assert handler.answers[0][0] == 400
 
 
 @pytest.mark.parametrize('invalid', [0, -1, 1.5, True, '100', None])

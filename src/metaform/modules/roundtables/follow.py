@@ -148,9 +148,10 @@ class Follower:
     def opened(self, row: dict[str, Any]) -> dict[str, Any]:
         """The table opened by the engine from what `open` kept; the chair token and the engine's ids kept with it."""
         answer = engine.call(self.ctx.folder, 'open', seats=row['seats'], opening=row['opening'],
-                             topics=[row['topic']], subject=f'{self.table_id} {row["topic"]}'[:80], rounds=row['rounds'],
+                             topics=[row['topic']], subject=f'{self.table_id} {row["topic"]}'[:80],
                              spend=row['spend'], host=row['host'], synthesizer=row['synthesizer'],
                              reply_limit=self.followed.get('reply_limit', 512),
+                             judging=self.followed.get('judging', True),
                              folder=str(self.ctx.folder))
         a2a = cast(dict[str, Any], answer.get('a2a') or {})
         changes = {'discussion': int(answer['discussion']), 'chair': str(answer['chair']), 'state': 'running',
@@ -170,8 +171,8 @@ class Follower:
             if now_.get('state') in DONE and (now_.get('report') or now_.get('runner') == 'stopped'):
                 self.ended(page, number)
                 return
-        self.emit('end', 'person', changes={'state': 'ended', 'reason': GONE, 'ended': now(), 'follower': None},
-                  reason=GONE, answered=False, answer=None)
+        self.emit('state', 'person', changes={'state': 'held', 'reason': GONE, 'follower': None},
+                  state='held', reason=f'{GONE} Restore its saved engine record before continuing.')
 
     def followed_to_end(self, number: int) -> None:
         """The table followed to its end on a page server of this follower's; a stop or an error before then winds it
@@ -181,8 +182,22 @@ class Follower:
             page = engine.Page(self.ctx.folder, engine.folder_log() / f'page-{self.table_id}.log')
             self.follow(page, number)
             return
-        except (Exception, Stopped) as error:  # noqa: BLE001  whatever stops the following, the table is ended
+        except Stopped as error:
             why = named(error)
+        except Exception as error:  # noqa: BLE001  a stream failure holds discussion rather than completing it
+            why = named(error)
+            engine.call(self.ctx.folder, 'hold', discussion=number, chair=(self.row() or {}).get('chair'))
+            self.emit('operational', 'person', changes={'state': 'held', 'reason': why},
+                      what='follower_stopped', text=f'{why}. Discussion is held. Continue restarts following.')
+            recovery = engine.Page(self.ctx.folder, engine.folder_log() / f'page-{self.table_id}.log')
+            try:
+                # Admission stays reserved until the held runner has closed all participant processes.
+                for snapshot in recovery.changes(number):
+                    if snapshot.get('state') == 'held' and snapshot.get('runner') == 'stopped':
+                        break
+            finally:
+                recovery.close()
+            return
         finally:
             if page is not None:
                 page.close()
@@ -313,18 +328,21 @@ class Follower:
         """The table's record saved in the project under docs/roundtables/<n>-<topic>/ as the engine wrote it: its JSON
         export, which holds every turn and the Borda count, and its mechanical report, the record as text; written
         once, so a follower started again keeps the folder it wrote. Returns the folder, from the project's folder."""
-        if self.followed.get('saved'):
+        if self.followed.get('saved') and not self.followed.get('refresh_record'):
             return str(self.followed['saved'])
         exported = cast(dict[str, Any], page.get(f'/tables/{number}/download/export.json'))
         root = Path(self.store.project().path)
         topic = str((self.row() or {}).get('topic') or '')
         folder = root / 'docs' / 'roundtables' / f'{number}-{slug(topic)}'
+        if self.followed.get('continuations'):
+            folder /= f'continuation-{self.followed["continuations"]}'
         folder.mkdir(parents=True, exist_ok=True)
         mechanical = Path(str(exported.get('mechanical_report') or ''))
         if mechanical.name and mechanical.is_file():  # the engine's own file, on this machine
             (folder / 'mechanical-report.md').write_text(mechanical.read_text(encoding='utf-8'), encoding='utf-8')
         (folder / RECORD).write_text(json.dumps(exported, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
         self.followed['saved'] = folder.relative_to(root).as_posix()
+        self.followed['refresh_record'] = False
         return str(self.followed['saved'])
 
     def recorded(self, listed: list[dict[str, Any]], answer: str, saved: str) -> tuple[str | None, str | None]:
@@ -417,17 +435,38 @@ def run(ctx: Context, table_id: str) -> dict[str, Any]:
         try:
             held = hold_seats(ctx, table_id, len(seats))
             follower.change(follower=os.getpid())
-            told = follower.opened(row) if row.get('state') == 'opening' else {}
+            if row.get('state') == 'continuing':
+                # Keep every prior artifact at its existing path. A later completion writes a fresh revision folder.
+                if follower.followed.get('continue_from') == 'ended':
+                    follower.followed['previous_results'] = [*follower.followed.get('previous_results', []),
+                        {key: row.get(key) for key in ('answer', 'answered', 'ended')} |
+                        {key: follower.followed.get(key) for key in ('saved', 'result_topics')}]
+                    follower.followed['refresh_record'] = True
+                    follower.followed['continuations'] = int(follower.followed.get('continuations', 0)) + 1
+                    follower.change(followed=follower.followed)
+                answer = engine.call(ctx.folder, 'continue', discussion=int(row['discussion']), chair=row['chair'],
+                                     spend=follower.followed.get('continue_spend'))
+                follower.followed['state'] = answer.get('state')
+                follower.emit('state', 'person', changes={'state': answer.get('state'), 'ended': None},
+                              state=answer.get('state'), reason=None)
+                told = {'continued': table_id}
+            else:
+                told = follower.opened(row) if row.get('state') == 'opening' else {}
         except Stop as refused:
-            if row.get('state') == 'opening':
-                follower.change(state='refused', reason=refused.message, follower=None)
-            say({'refused': refused.message, 'next': refused.next_step})
-            return {'refused': refused.message}
+            reason = f'The table did not open: {refused.message}' if row.get('state') == 'opening' else refused.message
+            if row.get('state') in ('opening', 'continuing'):
+                follower.change(state=str(follower.followed.get('continue_from') or 'held')
+                                if row.get('state') == 'continuing' else 'refused',
+                                reason=reason, follower=None)
+            say({'refused': reason, 'next': refused.next_step})
+            return {'refused': reason}
         except (Exception, Stopped) as error:  # noqa: BLE001  any other failure refuses the opening and says why
             reason = (f'The table did not open: {named(error)}. The engine\'s log is in the Metaform home under '
                       'run/roundtables/engine.log.')
             if row.get('state') == 'opening':
                 follower.change(state='refused', reason=reason, follower=None)
+            elif row.get('state') == 'continuing':
+                follower.change(state='held', reason=reason, follower=None)
             say({'refused': reason, 'next': f'metaform roundtables status {table_id}'})
             if row.get('state') == 'opening' and held:  # the engine may have opened it before the failure
                 follower.unchaired(reason)

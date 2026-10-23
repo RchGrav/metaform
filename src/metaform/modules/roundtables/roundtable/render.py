@@ -22,7 +22,7 @@ from typing import Any, cast
 
 from . import config, store
 from .prompts import said
-from .store import ENOUGH, NOULS, VETO, nouls
+from .store import NOULS, VETO, nouls
 
 LIMIT = 512  # default reply length, including historical discussions without a saved limit
 PASS = re.compile(r'\W*(?:T\d+\W*)?pass\W*', re.IGNORECASE)  # PASS alone, perhaps labeled or marked up
@@ -50,7 +50,7 @@ def who(row: Mapping[str, Any]) -> str:
 
 def entered(row: Mapping[str, Any]) -> bool:
     """Whether the turn entered the discussion: an accepted submission or a comment."""
-    return bool(row['accepted']) or row['kind'] == 'chair'
+    return bool(row['accepted']) or row['kind'] in ('chair', 'carry', 'handoff')
 
 
 def outcome(row: Mapping[str, Any]) -> str:
@@ -58,6 +58,8 @@ def outcome(row: Mapping[str, Any]) -> str:
     for a turn the first version refused unjudged for its length, in a table imported from it."""
     if row['kind'] == 'chair':
         return 'comment'
+    if row['kind'] in ('carry', 'handoff'):
+        return str(row['kind'])
     if row.get('unjudged'):
         return 'unjudged'
     if row['kind'] in ('none', 'pass'):
@@ -67,23 +69,28 @@ def outcome(row: Mapping[str, Any]) -> str:
     return 'kept' if row['accepted'] else 'vetoed'
 
 
-def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMIT) -> dict[str, Any]:
+def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMIT,
+             judging: bool | None = None) -> dict[str, Any]:
     """The rules and judgment criteria fixed when a discussion opens; for a Roundtable 2 table, `staged`, its rules
     are the discussion instructions every seat receives, its criteria Jev's two nouls for a submission, each with its
-    own bar in `floors`, and its two nouls for a round in `sufficiency`, with theirs."""
+    own bar in `floors`. Completion is independent of judging."""
     from .judge import questions
 
     keep = config.keep()
+    judging = config.value('judging') if judging is None else judging
+    common = {'judging': judging, 'context_tokens': config.value('context_tokens'),
+              'judging_context_tokens': config.value('judging_context_tokens'),
+              'context_budgets': config.context_budgets()}
+    if not judging:
+        return {**common, 'rules': said('discussion_unjudged'), 'reply_limit': reply_limit}
     if staged:
-        return {'rules': said('discussion_start'), 'reply_limit': reply_limit, 'keep': keep, 'criteria': questions(VETO),
+        return {**common, 'rules': said('discussion_start'), 'reply_limit': reply_limit, 'keep': keep,
+                'criteria': questions(VETO),
                 'jev_model': config.value('jev_model'),
                 'floors': {'new_context': config.floor('keep_new'), 'on_topic': config.floor('keep_on_topic')},
-                'sufficiency': questions(ENOUGH),
-                'sufficiency_floors': {'round_added': config.floor('keep_round_added'),
-                                       'covered': config.floor('keep_covered')},
                 'failed': {name: said(f'failed_{name}') for name in (*VETO, 'repeat')}}
     rules = said('rules', seats=', '.join(names), limit=reply_limit, keep=f'{keep:.2f}')
-    return {'rules': rules, 'reply_limit': reply_limit,
+    return {**common, 'rules': rules, 'reply_limit': reply_limit,
             'keep': keep, 'criteria': questions(), 'jev_model': config.value('jev_model'),
             'failed': {name: said(f'failed_{name}') for name in NOULS}}
 
@@ -91,12 +98,29 @@ def snapshot(names: Sequence[str], staged: bool = False, reply_limit: int = LIMI
 def floors(held: Mapping[str, Any]) -> dict[str, float]:
     """The bar of each noul a captured table judges submissions on: its own when it has one, else `keep`."""
     own = cast(dict[str, Any], held.get('floors') or {})
-    return {name: float(own.get(name, held['keep'])) for name in cast(dict[str, Any], held['criteria'])}
+    return {name: float(own.get(name, held['keep'])) for name in cast(dict[str, Any], held.get('criteria') or {})}
 
 
 def captured(discussion: Mapping[str, Any]) -> dict[str, Any]:
     given = discussion.get('snapshot')
     return cast(dict[str, Any], given) if isinstance(given, dict) else {}
+
+
+def judging(discussion: Mapping[str, Any]) -> bool:
+    return bool(captured(discussion).get('judging', True))
+
+
+def continuation(discussion: Mapping[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], discussion.get('continuation') or {})
+
+
+def shared(discussion: Mapping[str, Any]) -> str:
+    held = continuation(discussion)
+    if not held or held.get('topic') != discussion.get('topic'):
+        return ''
+    notes = '\n\n'.join(f'{one["name"]} (seat {int(one["position"]) + 1}):\n{one["text"]}'
+                        for one in held.get('notes', []))
+    return said('continuation_context', summary=held['text'], notes=notes)
 
 
 def reply_limit(discussion: Mapping[str, Any]) -> int:
@@ -154,6 +178,8 @@ def short(row: Mapping[str, Any]) -> str:
         return said('short_unjudged', turn=at, seat=seat)
     if kind == 'over512':
         return said('short_over512', turn=at, seat=seat)
+    if kind in ('carry', 'handoff'):
+        return f'{at} {seat}: {kind}'
     return said('short_comment', turn=at, seat=seat)
 
 

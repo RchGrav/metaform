@@ -1,25 +1,8 @@
-"""Jev's judgments: of each seat submission, and at a table with topics of each round of the open topic.
+"""Optional Jev novelty judgments through OpenRouter, with persistent request and response evidence.
 
-Jev is TypeSafe's Jev, asked through OpenRouter's decisions route with OPENROUTER_API_KEY, at the fixed version the
-table captured from `jev_model` when it opened, so the bars stay tied to one model; an alias (latest, preview,
-router) is refused with no call. Its state names every field and never relies on a list position.
-
-Before Jev is asked, the code takes off a `T###:` label a seat wrote at the head of its reply (the record keeps the
-original) and compares what is left, normalised, with every submission on the topic, kept or vetoed: an exact or
-near-exact match is vetoed as a repeat with no call, since Jev does not count.
-
-At a table with topics a submission is judged on two nouls, `new_context` and `on_topic`, against the open topic and
-every turn kept on it, never a window of them, each seat under a neutral label (S1 and on) so that Jev judges what
-was said and not who said it. After each round a separate request on the same state, with the round just ended as
-`latest_round`, asks `round_added` and `covered`. A table without topics is judged as it always was: four nouls
-against the opening and the discussion as it entered, each turn under its seat's name, the oldest entries dropped
-over 24,000 tokens and the drop logged.
-
-Every call comes back as an `Asked`, paid or failed: the request exactly as sent, the raw answer, the model that
-answered, the nouls read, the usage and cost, the latency and attempts, and the error when there was one. The runner
-writes it as a row of `judgments` in the same transaction as the decision it causes. Jev failing is never a fallback:
-the table holds and says why, since nothing enters unjudged. One judgment's attempts and the waits between them share
-one deadline, `jev_wait`; a 402 holds the table until a probe finds credits again, never ending it.
+Submission filtering never votes PASS or decides completion. Inline handoff bounds state with compact shared
+continuation and intact participant notes. Original instructions remain present. Failed judgments hold their
+pending submission for explicit retry. No oldest-entry truncation or sufficiency-based completion remains.
 """
 from __future__ import annotations
 
@@ -37,14 +20,12 @@ from typing import Any, cast
 from . import config, openrouter
 from .prompts import said
 from .render import turn, who
-from .store import ENOUGH, NOULS
+from .store import NOULS
 
 log = logging.getLogger(__name__)
 
-STATE_TOKENS = 24_000  # past this the oldest entries leave a table without topics' state, inside Jev's 32,000
 CHARS_PER_TOKEN = 3  # an estimate on the safe side
 NEAR = 0.95  # how alike two submissions' words are, at least, for the later to be a repeat of the earlier
-SUFFICIENCY = ENOUGH  # the two nouls of a round
 MODEL_VERSION = re.compile(r'(?:typesafe/)?jev-\d+\.\d+(?:\.\d+)?(?:-\d{8})?')  # a fixed version, never an alias
 LABEL = re.compile(r'^\s*(?:\*\*)?\s*(T\d+)\s*(?:\*\*)?\s*[:.)\]–—-]\s*(?:\*\*)?\s*', re.IGNORECASE)
 
@@ -99,15 +80,9 @@ def questions(names: Sequence[str] = NOULS) -> dict[str, dict[str, Any]]:
 
 def state(opening: str, entered: Sequence[Mapping[str, Any]], seat: str, text: str) -> dict[str, Any]:
     """A table without topics' state: the opening, the discussion as it entered, and the contribution judged."""
-    held = list(entered)
-    while True:
-        built = {'opening': opening,
-                 'discussion': {turn(int(row['number'])): {'seat': who(row), 'text': row['text']} for row in held},
-                 'contribution': {'seat': seat, 'text': text}}
-        if tokens(built) <= STATE_TOKENS or not held:
-            return built
-        log.info('Turn %s left Jev\'s state, which was over %s tokens.', held[0]['number'], STATE_TOKENS)
-        held = held[1:]
+    return {'opening': opening,
+            'discussion': {turn(int(row['number'])): {'seat': who(row), 'text': row['text']} for row in entered},
+            'contribution': {'seat': seat, 'text': text}}
 
 
 def neutral(row: Mapping[str, Any]) -> str:
@@ -128,12 +103,6 @@ def topic_state(topic: Mapping[str, Any], entered: Sequence[Mapping[str, Any]],
     if latest_round is not None:
         built['latest_round'] = latest_round
     return built
-
-
-def round_state(topic: Mapping[str, Any], entered: Sequence[Mapping[str, Any]], latest_round: int) -> dict[str, Any]:
-    """The state a round's sufficiency is judged on: the topic's, the same as a submission's, with the round just
-    ended in place of the contribution."""
-    return topic_state(topic, entered, latest_round=latest_round)
 
 
 def sha(criteria: Mapping[str, Any]) -> str:

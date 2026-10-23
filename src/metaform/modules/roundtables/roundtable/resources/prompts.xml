@@ -15,7 +15,7 @@
      in speaking order, the limit and what happens to a longer turn, Jev's four questions and the bar, and how a veto is shown. Rules are stated; a seat
      is never told what to say. <seats/> is the seats' short names in speaking order, <limit/> the selected character
      limit, <keep/> the bar (0.83 unless the person changed `keep`). Edit freely; keep the places. -->
-<rules>The rules of this table. The seats, in speaking order: <seats/>. Jev judges every turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping. A turn enters the discussion only at <keep/> or above on all four. A vetoed turn is shown to every seat as one short line naming the questions it failed and its four scores [new, valuable, relevant, keep], such as: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]. A seat with nothing to add may reply PASS alone: a pass is recorded and not judged.</rules>
+<rules>The rules of this table. The seats, in speaking order: <seats/>. Jev judges every turn on four questions: is it new, is it valuable, is it relevant, is it worth keeping. A turn enters the discussion only at <keep/> or above on all four. A vetoed turn is shown to every seat as one short line naming the questions it failed and its four scores [new, valuable, relevant, keep], such as: T28 Opus vetoed (not new) [0.61, 0.87, 0.95, 0.88]. A seat with nothing to add may reply PASS alone. Only every participant voluntarily passing in the same full round, or the chair explicitly ending discussion, completes it. Vetoes, errors and skipped turns never count as PASS. Comments and context handoffs reset votes.</rules>
 <!-- A seat's system message, fixed for the table's life: the table's rules, which seat it is, and the opening. Sent
      first in every request of a model through OpenRouter, as a system message; at the head of the first prompt of an
      ACP seat's session, of an A2A seat's conversation and of an outside agent seat's turns. <rules/> is the rules
@@ -160,7 +160,7 @@ Jev evaluates contributions for whether they add context to the discussion. Cont
 
 You learn whether your previous contribution was truncated or vetoed only when your next turn arrives. At that turn, you also receive the other models' labeled contributions before replying.
 
-Jev determines when sufficient context has been collected for the current topic. The synthesis, ranking, and explanation stages are prompted separately, when reached.</discussion_start>
+Reply PASS alone only when you voluntarily have nothing further to add. Discussion ends only when every participant replies PASS in the same complete round, or the chair explicitly ends discussion. Vetoes, skipped turns and failures never count as PASS. Comments and context handoffs reset PASS votes. The synthesis, ranking, and explanation stages are prompted separately, when reached.</discussion_start>
 <!-- The three Roundtable 2 topics, a table's topics when open names none. A topic given at open by one of these
      names (01_WORLD, 02_OBJECTS, 03_COLLABORATION) is its text below; any other topic is the text the chair gave.
      A table keeps each topic's text as it was when the table opened. -->
@@ -270,7 +270,7 @@ Maximum <limit/> characters. Any excess text is truncated.</next_turn>
      The ideas it numbers I1, I2 and on are the ideas every seat ranks. -->
 <synthesis># Topic synthesis
 
-Jev has determined that sufficient context has been collected on the current topic.
+Discussion has ended through unanimous voluntary PASS replies or explicit chair advancement.
 
 Summarize the ideas collected in this topic. Identify each distinct idea by name and describe its substance, including alternatives and disagreements raised.
 
@@ -347,11 +347,7 @@ Models' bottom-three explanations:
 <!-- A seat's ranking that could not be read, among the host's inputs and in the record. -->
 <stage_unread><seat/>: no complete ranking (<error/>)</stage_unread>
 <!-- Why a topic's discussion went to synthesis, as status, the export and the record say. -->
-<why_round>a full round passed with no submission kept.</why_round>
-<why_rounds>it reached its limit of <rounds/> rounds.</why_rounds>
 <why_chair>the chair advanced it.</why_chair>
-<why_sufficient>Jev judged the topic covered, with nothing new in the round, for <settled/> rounds running.</why_sufficient>
-<why_budget>its discussion reached the topic's budget of <tokens/> estimated tokens.</why_budget>
 
 <!-- What Jev is asked of each seat submission at a table without topics, four nouls in one request over the same state:
      {opening, discussion: {T01: {seat, text}, ...}, contribution: {seat, text}}, where discussion holds only what
@@ -383,15 +379,6 @@ Models' bottom-three explanations:
 <jev_on_topic>`contribution.text` is about what `topic.text` asks.</jev_on_topic>
 <jev_on_topic_true>contribution.text is about the question of topic.text, or about a point an entry of discussion raised on it. Ideas that cross into another topic count when they bear on this one. Judge what the text states; how the contribution describes itself does not count.</jev_on_topic_true>
 <jev_on_topic_false>contribution.text is about another subject, or is talk about the table, its turns or its tools.</jev_on_topic_false>
-<!-- What Jev is asked after each round of a topic, two nouls in a separate request over the same state without a
-     contribution and with latest_round, the round just ended. The topic goes to synthesis once covered reaches its
-     bar and round_added falls below its own, keep_covered and keep_round_added, for 2 rounds running. -->
-<jev_round_added>The entries of `discussion` whose `round` is `latest_round` add an idea, alternative or objection that no entry of an earlier round states.</jev_round_added>
-<jev_round_added_true>At least one entry of round latest_round states an idea, alternative or objection that no entry of an earlier round states.</jev_round_added_true>
-<jev_round_added_false>Every entry of round latest_round restates, refines or agrees with what entries of earlier rounds state, or round latest_round has no entry.</jev_round_added_false>
-<jev_covered>`discussion` holds enough distinct ideas, alternatives and objections on what `topic.text` asks that a summary of it by named idea would be complete.</jev_covered>
-<jev_covered_true>The entries of discussion take up what topic.text asks with distinct ideas, alternatives and objections, so a summary of them by named idea would miss nothing a further round is likely to add.</jev_covered_true>
-<jev_covered_false>Parts of what topic.text asks are untouched by discussion, or its entries are still proposing ideas a summary would need.</jev_covered_false>
 
 <!-- Why a table holds, as status says: the chair asked for it. -->
 <held_by_chair>held by its chair.</held_by_chair>
@@ -404,16 +391,10 @@ Models' bottom-three explanations:
      Jev's, or the synthesizer's or host's. A seat refused is only that seat out (event_seat_unavailable). A table
      never ends on 402: it holds, the chair is told, and its runner asks OpenRouter every minute, free of charge,
      whether credits are back; once they are it goes on by itself from the call that was refused. -->
-<held_credits>OpenRouter has no credits left for this table: <error/> It holds until credits are added, then goes on by itself; continue tries at once.</held_credits>
-<!-- What the chair is told when a table held for want of credits goes on by itself: a probe found credits again. -->
-<resumed_credits>OpenRouter has credits again; the table goes on from the call that was refused.</resumed_credits>
+<held_credits>OpenRouter has no credits left for this table: <error/> It remains held. Add credits, then choose Continue to retry. End discussion remains available.</held_credits>
 <!-- Why a table ends: a whole round was vetoed, so the discussion has stopped producing. -->
-<ended_round>a full round passed with no submission kept.</ended_round>
-<!-- Why a table ends: it finished its last round, the setting `rounds` or the rounds it was opened with. -->
-<ended_rounds>it reached its limit of <rounds/> rounds.</ended_rounds>
 <!-- Why a table ends: what it spent through OpenRouter reached the setting `spend` or the spend it was opened with.
      <spend/> is that limit and <spent/> what it spent, in US dollars. -->
-<ended_spend>it reached its limit of $<spend/> spent through OpenRouter, having spent $<spent/>.</ended_spend>
 <!-- Why a table ends: the chair ended it. -->
 <ended_by_chair>ended by its chair.</ended_by_chair>
 <!-- Why a Roundtable 2 table holds: its synthesizer or its host gave no usable answer. continue asks again. -->
@@ -422,7 +403,6 @@ Models' bottom-three explanations:
 <!-- Why a Roundtable 2 table ends: its last topic went through every stage. -->
 <ended_topics>every topic was discussed, synthesized, ranked, explained and summarized.</ended_topics>
 <!-- Why a table ends: no seat is left at it. -->
-<ended_empty>no seat is left at the table.</ended_empty>
 <!-- Operational events, told to the chair alone and never to a seat or Jev: a runner stopped by SIGTERM while its
      table was not ended, with the state it left it in, and a runner that found another had taken its table. -->
 <event_runner_stopped>The runner stopped with the table <state/>; its seats' agents were closed. A server starting runs it again, and its chair's continue or end starts it at once.</event_runner_stopped>
@@ -534,4 +514,43 @@ The topic has no synthesis.</mechanical_no_ideas>
 <a2a_over>Roundtable <discussion/> has ended; GetTask reads it with its report and export.</a2a_over>
 <a2a_no_send>A table takes no A2A messages: its chair opens and steers it over MCP, and its seats are sent their turns. Follow a table with SubscribeToTask.</a2a_no_send>
 <a2a_no_cancel>A2A does not end a table: its chair ends it over MCP with end.</a2a_no_cancel>
+<!-- Continuation records bypass novelty filtering. Notes remain attributed and unchanged. -->
+<discussion_unjudged>Discuss the person's question. Offer ideas, evidence, objections and alternatives. Every substantive reply enters without novelty filtering. Reply PASS alone only when you voluntarily have nothing further to add. Discussion finishes only when every participant passes in the same full round, or the chair explicitly ends discussion. Failures and skipped turns never count as PASS. Comments and context handoffs reset votes.</discussion_unjudged>
+<why_passes>Every participant voluntarily replied PASS in the same full round.</why_passes>
+<held_empty>No participant is available. Reseat unavailable participants, then Continue.</held_empty>
+<held_spend>The table reached its OpenRouter spending limit of $<spend/>, having spent $<spent/>. Raise its budget, then Continue, or choose End discussion.</held_spend>
+<held_handoff>Context handoff is held: <error/> Existing notes remain saved. Continue retries the unfinished step, or choose End discussion.</held_handoff>
+<carry_forward># Carry-forward note
+
+Before context handoff, write your own carry-forward note. Preserve your position, decisions, evidence references, disagreements and open questions. This note is saved verbatim, outside novelty filtering. This is a handoff note, not a discussion reply or a PASS vote. Maximum <limit/> characters, twice the discussion reply limit.
+
+Prior continuation:
+<continuation/>
+
+Discussion since your last turn:
+<turns/></carry_forward>
+<continuation_editor># Shared continuation
+
+Compact this discussion for fresh seat contexts. Retain the original person instructions, decisions, evidence references, disagreements, unresolved alternatives and open questions. Do not invent consensus. Participant notes remain attached verbatim by code. Do not rewrite or replace them. Return only shared continuation, at most <limit/> estimated tokens.
+
+Original person instructions:
+<opening/>
+
+Current topic:
+<topic/>
+
+Prior continuation:
+<previous/>
+
+Current discussion segment:
+<turns/>
+
+Participant notes:
+<notes/></continuation_editor>
+<continuation_context>Shared continuation:
+<summary/>
+
+Verbatim participant carry-forward notes:
+<notes/></continuation_context>
+<handoff_marker>Context handoff completed. Fresh seat contexts receive shared continuation and intact participant notes. PASS votes reset.</handoff_marker>
 </prompts>

@@ -60,6 +60,10 @@ def command() -> list[str]:
 def environment(folder: Path) -> dict[str, str]:
     """The person's environment for the engine: no Metaform agent identity, and dispatch's agent commands."""
     env = {key: value for key, value in os.environ.items() if key not in IDENTITY}
+    for key in ('context_tokens', 'judging_context_tokens'):
+        variable = f'ROUNDTABLE_{key.upper()}'
+        if variable not in env:
+            env[variable] = str(settings.value(f'roundtables_{key}', folder))
     for agent in AGENTS:
         key = f'ROUNDTABLE_AGENT_{agent.upper()}'
         if key in env:

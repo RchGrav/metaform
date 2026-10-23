@@ -2593,7 +2593,8 @@ class Handler(BaseHTTPRequestHandler):
                 chassis.refresh_modules()  # roundtables declares the setting once it is loaded
                 if 'roundtables_seats' not in settings.SCHEMA:
                     raise Stop('Roundtables are off in this home.', 'metaform enable roundtables')
-                return self.send(200, {'seats': settings.value('roundtables_seats', folder)})
+                return self.send(200, {'seats': settings.value('roundtables_seats', folder),
+                                       'judging': settings.value('roundtables_judging', folder)})
             table = {'table': given['table']}
             if given.get('pipeline'):
                 return self.send(200, module_verb(given, 'roundtables', 'review', table))
@@ -2621,8 +2622,8 @@ class Handler(BaseHTTPRequestHandler):
     def roundtable_control(self, given: dict[str, Any]) -> None:
         """The person's discussion controls, using the existing table and its stored chair token."""
         action, table = given.get('action'), given.get('table')
-        if action not in ('hold', 'continue', 'comment'):
-            return self.send(400, {'error': 'Choose Hold, Continue or Comment.'})
+        if action not in ('hold', 'continue', 'comment', 'advance'):
+            return self.send(400, {'error': 'Choose Hold, Continue, Comment or End discussion.'})
         if not isinstance(table, str) or not table.strip():
             return self.send(400, {'error': 'Choose a roundtable.'})
         nouns = {'table': table}
@@ -2655,6 +2656,9 @@ class Handler(BaseHTTPRequestHandler):
         table's follower has opened it."""
         address, topic, seats = given.get('address'), given.get('topic'), given.get('seats')
         automate_ticket_creation = given.get('automate_ticket_creation', False)
+        judging = given.get('judging')
+        if judging is not None and type(judging) is not bool:
+            return self.send(400, {'error': 'Judging is true or false.'})
         reply_limit = given.get('reply_limit', 512)
         if type(reply_limit) is not int or reply_limit < 1:
             return self.send(400, {'error': 'Maximum reply length is a positive whole number of characters.'})
@@ -2670,6 +2674,7 @@ class Handler(BaseHTTPRequestHandler):
         nouns: dict[str, Any] = {'topic': topic.strip(),
                                **({'reply_limit': reply_limit} if 'reply_limit' in given else {}),
                                'automate_ticket_creation': automate_ticket_creation,
+                               **({'judging': judging} if judging is not None else {}),
                                **({'address': address.strip()} if address and address.strip()
                                                             else {}), **({'seats': seats} if seats else {})}
         try:

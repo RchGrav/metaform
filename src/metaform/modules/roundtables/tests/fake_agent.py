@@ -77,6 +77,14 @@ def call_mcp(request_id, call_id, server):
 
 def staged(text):
     """A Roundtable 2 stage's answer, or None for a discussion turn."""
+    if '# Topic synthesis' in text:
+        return 'I1. Evidence: inspect source.\nI2. Disagreement: preserve alternatives.'
+    if '# Host summary' in text:
+        return f'{STATE["model"]} summarises the evidence and unresolved disagreement.'
+    if '# Shared continuation' in text:
+        return 'Keep original instructions. Preserve evidence, decisions, disagreement and open questions.'
+    if '# Carry-forward note' in text:
+        return f'{STATE["model"]} retains its evidence and disagreement. Question remains open.'
     if '# Rank collected ideas' in text or 'could not be read as every idea' in text:
         ids = sorted(set(re.findall(r'\bI(\d+)\b', text)), key=int)
         turn = len(STATE['model']) % max(len(ids), 1)
@@ -107,6 +115,8 @@ def turn(ident, text):
         reply = f'# Report\n\nThe fake {STATE["model"]} read {text.count(chr(10))} lines of the record.'
     elif staged(text) is not None:
         reply = staged(text)
+    elif STATE['prompts'] > int(os.environ.get('FAKE_ACP_PASS_AFTER', '999999')):
+        reply = 'PASS'
     elif os.environ.get('FAKE_ACP_LONG') == '1' and STATE['prompts'] == 1:
         reply = 'long ' * 120
     else:

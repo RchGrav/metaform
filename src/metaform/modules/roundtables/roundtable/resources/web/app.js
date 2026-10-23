@@ -70,7 +70,7 @@ function stageText(table) {  // a table with topics: its open topic and the stag
 
 function limitsText(table) {
   if (table.imported) return 'not capped (imported)';
-  return `${table.rounds} rounds, ${dollars(table.spend)}`;
+  return `${dollars(table.spend)}`;
 }
 
 // ------------------------------------------------------------------------------------------------ the tables
@@ -89,7 +89,7 @@ async function drawTables() {
        one.imported ? el('div', {class: 'soft small', text: 'imported'}) : null),
     el('td', {}, one.state, one.stage ? el('div', {class: 'soft small', text: stageText(one)}) : null),
     el('td', {class: 'small', text: one.seats.join(', ')}),
-    el('td', {class: 'num', text: one.imported ? one.round : `${one.round} of ${one.rounds}`}),
+    el('td', {class: 'num', text: one.imported ? one.round : `${one.round}`}),
     el('td', {class: 'num', text: one.imported ? dollars(one.spent) : `${dollars(one.spent)} of ${dollars(one.spend)}`}),
     el('td', {class: 'small', text: when(one.created)}),
     el('td', {class: 'small', text: when(one.ended)})));
@@ -194,7 +194,7 @@ async function showOpen() {
   const single = el('input', {type: 'checkbox', id: 'single'});
   const host = el('input', {id: 'host', placeholder: `${limits.host} when Codex offers it`});
   const synthesizer = el('input', {id: 'synthesizer', placeholder: 'the host when left empty'});
-  const rounds = el('input', {id: 'rounds', type: 'number', min: 1, max: limits.rounds, value: limits.rounds});
+  const judging = el('input', {id: 'judging', type: 'checkbox', checked: limits.judging});
   const spend = el('input', {id: 'spend', type: 'number', min: 0, max: limits.spend, step: '0.01', value: limits.spend});
   const folder = el('input', {id: 'folder', value: limits.folder});
   const told = el('div', {});
@@ -207,7 +207,7 @@ async function showOpen() {
     try {
       const named = topics.value.split('\n').map((one) => one.trim()).filter(Boolean);
       const answer = await api('open', {subject: subject.value, opening: opening.value, seats: chosen.map((seat) => seat.id),
-        rounds: rounds.value, spend: spend.value, reporter: reporter.value, folder: folder.value,
+        judging: judging.checked, spend: spend.value, reporter: reporter.value, folder: folder.value,
         topics: single.checked ? [] : named.length ? named : null, host: host.value, synthesizer: synthesizer.value});
       put(told, notice(`Table ${answer.discussion} is open. Its chair token, for an agent to chair it over MCP: ${answer.chair}` +
         (answer.notices ? '. ' + answer.notices.join(' ') : '')));
@@ -225,7 +225,7 @@ async function showOpen() {
     el('h2', {text: 'Seats, in speaking order'}), picked,
     el('label', {for: 'reporter', text: 'Reporter'}), reporter,
     el('h2', {text: 'Limits'}),
-    el('div', {class: 'row'}, el('label', {for: 'rounds', text: `Rounds, at most ${limits.rounds}`}), rounds,
+    el('div', {class: 'row'}, judging, el('label', {for: 'judging', text: 'Judge novelty with Jev'}),
        el('label', {for: 'spend', text: `Spend in US dollars, at most ${dollars(limits.spend)}`}), spend),
     el('label', {for: 'folder', text: 'Folder the ACP seats read in'}), folder,
     el('p', {}, open), told,
@@ -261,7 +261,7 @@ async function showTable(number, tab) {
       facts([['State', table.state + (table.reason ? `: ${table.reason}` : '')],
              ['Topic', table.stage ? `${table.topic.number} of ${table.topic.of}: ${table.topic.title}` : null],
              ['Stage', table.stage ? STAGES[table.stage] || table.stage : null],
-             ['Round', table.imported ? `${table.round}` : `${table.round} of ${table.rounds}` + (table.stage ? ' on this topic' : '')],
+             ['Round', table.imported ? `${table.round}` : `${table.round}` + (table.stage ? ' on this topic' : '')],
              ['Spent', table.imported ? dollars(table.spent) : `${dollars(table.spent)} of ${dollars(table.spend)}`],
              ['Limits', limitsText(table)],
              ['Seats', table.seats.join(', ')], ['Reporter', table.reporter],

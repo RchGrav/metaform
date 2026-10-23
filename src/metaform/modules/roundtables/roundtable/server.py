@@ -98,7 +98,7 @@ def turn_of(found: dict[str, Any], held: list[dict[str, Any]]) -> str | None:
     if found['stage'] in ('synthesis', 'host_summary'):
         return str(found['synthesizer' if found['stage'] == 'synthesis' else 'host']['name'])
     if int(found['position']) >= len(held):
-        return 'Jev'
+        return None
     return str(held[int(found['position'])]['name'])
 
 
@@ -129,7 +129,7 @@ def status_of(found: dict[str, Any]) -> dict[str, Any]:
     latest = store.submissions(int(found['number']))
     return {'discussion': found['number'], 'subject': found['subject'], 'state': found['state'],
             'reason': found['reason'], **topic_of(found), 'round': found['round'], 'turn_of': turn_of(found, held),
-            'latest': latest[-1]['number'] if latest else 0, 'rounds': found['rounds'], 'spend': found['spend'],
+            'latest': latest[-1]['number'] if latest else 0, 'judging': render.judging(found), 'spend': found['spend'],
             'reply_limit': render.reply_limit(found),
             'spent': round(float(found['spent'] or 0), 4), 'reporter': found['reporter'], 'report': found['report'],
             'export': found['export'], **({'report_error': found['report_error']} if found['report_error'] else {}),
@@ -146,13 +146,16 @@ def status_of(found: dict[str, Any]) -> dict[str, Any]:
 
 # ----------------------------------------------------------------------------------------------- the chair's tools
 
-async def opened(opening: str | None, seats: list[str] | str, subject: str | None, rounds: int | None,
+async def opened(opening: str | None, seats: list[str] | str, subject: str | None,
                  spend: float | None, reporter: str | None, folder: str | None, chair_key: str | None,
                  topics: list[str] | None = None, host: str | None = None,
-                 synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT) -> dict[str, Any]:
+                 synthesizer: str | None = None, seat_mcp: Any = None, reply_limit: int = LIMIT,
+                 judging: bool | None = None) -> dict[str, Any]:
     """A table opened and its runner started, for `open` and the web page alike; ToolError says why it cannot be.
     With topics, the three Roundtable 2 topics unless others are given, it runs the Roundtable 2 protocol, its
     opening the Roundtable 2 opening unless one is given; with `topics=[]` it discusses its opening alone."""
+    if judging is not None and type(judging) is not bool:
+        raise ToolError('judging is true or false.')
     if type(reply_limit) is not int or reply_limit < 1:
         raise ToolError('reply_limit is a positive whole number of characters.')
     listed = stages.topics_of(topics)
@@ -185,26 +188,25 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
     if any(seat['kind'] == 'openrouter' for seat in [*chosen, *roles.values()]) and not config.openrouter_key():
         raise ToolError(f'{config.KEY} is not set where this server runs, and a model seat is called through '
                         'OpenRouter.')
-    if not config.openrouter_key():
+    judging = bool(config.value('judging')) if judging is None else judging
+    if judging and not config.openrouter_key():
         raise ToolError(f'{config.KEY} is not set where this server runs, and Jev judges every submission through '
                         'OpenRouter.')
-    most_rounds, most_spend = int(config.value('rounds')), float(config.value('spend'))
-    if rounds is not None and not 1 <= rounds <= most_rounds:
-        raise ToolError(f'rounds is 1 to {most_rounds}, the configured most; only the person raises it.')
+    most_spend = float(config.value('spend'))
     if spend is not None and not 0 <= spend <= most_spend:
         raise ToolError(f'spend is 0 to ${most_spend:g}, the configured most; only the person raises it.')
     token = secrets.token_urlsafe(18)
     number = store.opened({'subject': render.slug(subject or opening), 'opening': opening, 'folder': where,
                            'chair_key': chair_key, 'chair_token': token, 'reporter': writer,
-                           'rounds': rounds or most_rounds, 'spend': most_spend if spend is None else spend,
-                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit)
+                           'rounds': 0, 'spend': most_spend if spend is None else spend,
+                           **({'seat_mcp': servers} if servers else {}), **roles}, chosen, listed, reply_limit, judging)
     pid = runner.spawn(number)
     found = store.discussion(number)
     return {'discussion': number, 'chair': token, 'a2a': {'context_id': found['context_id'],
                                                           'task_id': found['task_id']}, 'seats': [{'seat': seat['id'], 'name': seat['name']}
                                                             for seat in store.seats(number)],
             'reporter': writer, 'reply_limit': reply_limit,
-            'rounds': rounds or most_rounds, 'spend': most_spend if spend is None else spend,
+            'judging': judging, 'spend': most_spend if spend is None else spend,
             **({'topics': [one['title'] for one in listed], 'host': roles['host']['id'],
                 'synthesizer': roles['synthesizer']['id']} if listed else {}),
             'runner': pid, 'privacy': said('privacy'), **({'notices': notices} if notices else {}),
@@ -214,9 +216,10 @@ async def opened(opening: str | None, seats: list[str] | str, subject: str | Non
 @server.tool(annotations=PAID)
 async def open(seats: list[str], opening: str | None = None, topics: list[str] | None = None,
                host: str | None = None, synthesizer: str | None = None, subject: str | None = None,
-               rounds: int | None = None, spend: float | None = None, reporter: str | None = None,
+               spend: float | None = None, reporter: str | None = None,
                folder: str | None = None, seat_mcp: list[dict[str, Any]] | None = None,
-               ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT) -> dict[str, Any]:
+               ctx: Context[Any, Any] | None = None, reply_limit: int = LIMIT,
+               judging: bool | None = None) -> dict[str, Any]:
     """Open a roundtable with its seats, in speaking order; you chair it.
 
     Seats: acp:<claude|codex>/<model> (the agent on the person's own login, read-only), an OpenRouter model id
@@ -226,15 +229,15 @@ async def open(seats: list[str], opening: str | None = None, topics: list[str] |
     explanations, and the host's summary: 01_WORLD, 02_OBJECTS, 03_COLLABORATION (the default) or any topic's text;
     topics=[] discusses the opening alone. opening defaults to the Roundtable 2 opening when there are topics.
     host summarizes each topic's rankings (default acp:codex/gpt-6 when Codex offers it); synthesizer names its
-    ideas (default the host). rounds (per topic) and spend (US dollars) may lower the configured limits for this
-    table, never raise them. reply_limit sets the maximum characters in each discussion reply (default 512).
+    ideas (default the host). spend (US dollars) may lower the configured budget.
+    judging=false keeps every substantive reply without Jev or its credential. reply_limit sets the maximum characters in each discussion reply (default 512).
     reporter is the seat that writes the report (default: the configured reporter when it is
     seated). folder is where ACP seats read; the server's own folder by default. seat_mcp names MCP servers for the
     ACP seats, [{name, url, headers, seat?}]: given in each seat's session, never a config file, its tools allowed;
     seat (a 1-based place in speaking order) gives one to that seat alone, as for a playground body's own endpoint
     and token. Other seats stay text-only. Returns the table's number and the chair token."""
-    return await opened(opening, seats, subject, rounds, spend, reporter, folder, connection(ctx), topics, host,
-                        synthesizer, seat_mcp, reply_limit)
+    return await opened(opening, seats, subject, spend, reporter, folder, connection(ctx), topics, host,
+                        synthesizer, seat_mcp, reply_limit, judging)
 
 
 # The chair's actions on a table already found to be the caller's: the MCP tools check the chair first, the web page
@@ -258,9 +261,21 @@ def held(found: dict[str, Any]) -> dict[str, Any]:
     return status_of(found)
 
 
-def continued(found: dict[str, Any]) -> dict[str, Any]:
+def continued(found: dict[str, Any], spend: float | None = None) -> dict[str, Any]:
+    if spend is not None:
+        most = float(config.value('spend'))
+        if not 0 <= spend <= most:
+            raise ToolError(f'spend must be from 0 to ${most:g}, the configured maximum.')
+        found = store.change(int(found['number']), spend=spend)
     if found['state'] == 'ended':
-        raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
+        summaries = [one for one in store.staged(int(found['number']))
+                     if one['stage'] == 'host_summary' and one['text']]
+        if not summaries:
+            raise ToolError('The completed table has no saved host summary to continue from.')
+        if runner.alive(found):
+            raise ToolError('The previous runner is still closing. Continue once it stops.')
+        store.reopen(int(found['number']), str(summaries[-1]['text']))
+        found = table(int(found['number']))
     if found['state'] == 'held':
         found = store.change(int(found['number']), state='running', reason=None, unpaid=False)
     runner.spawn(int(found['number']))
@@ -268,14 +283,12 @@ def continued(found: dict[str, Any]) -> dict[str, Any]:
 
 
 def advanced(found: dict[str, Any]) -> dict[str, Any]:
-    """The open topic's discussion ends after its fewest rounds and goes to synthesis."""
+    """Explicitly end discussion at the next gap, without a minimum round count."""
     if found['state'] == 'ended':
         raise ToolError(f'Roundtable {found["number"]} has ended; status shows its report.')
-    if not found['stage']:
-        raise ToolError(f'Roundtable {found["number"]} discusses its opening alone; end ends it.')
-    if found['stage'] != 'discussion':
+    if found['stage'] and found['stage'] != 'discussion':
         raise ToolError(f'Roundtable {found["number"]} is past its topic\'s discussion, at {found["stage"]}.')
-    found = store.change(int(found['number']), advance_asked=True)
+    found = store.change(int(found['number']), advance_asked=True, state='running', reason=None, unpaid=False)
     runner.spawn(int(found['number']))
     return status_of(found)
 
@@ -320,14 +333,15 @@ def hold(discussion: int, chair: str | None = None, ctx: Context[Any, Any] | Non
 
 
 @server.tool(name='continue', annotations=PAID)
-def resume(discussion: int, chair: str | None = None, ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
+def resume(discussion: int, chair: str | None = None, ctx: Context[Any, Any] | None = None,
+           spend: float | None = None) -> dict[str, Any]:
     """As the chair, continue a held table, judging first a submission Jev left unjudged."""
-    return continued(chaired(discussion, chair, ctx, 'continue it'))
+    return continued(chaired(discussion, chair, ctx, 'continue it'), spend)
 
 
 @server.tool(annotations=PAID)
 def advance(discussion: int, chair: str | None = None, ctx: Context[Any, Any] | None = None) -> dict[str, Any]:
-    """As the chair, end the open topic's discussion once its fewest rounds have run: its synthesis, every seat's
+    """As the chair, end discussion at the next gap: its synthesis, every seat's
     ranking and explanations and the host's summary follow, then the next topic."""
     return advanced(chaired(discussion, chair, ctx, 'advance its topic'))
 
@@ -493,7 +507,6 @@ def export_resource(discussion: str) -> str:
 def serve(http: bool = False, host: str | None = None, port: int | None = None) -> None:
     """MCP over stdio; or, with `http`, MCP at /mcp and A2A beside it on the same loopback port: the Agent Card at
     /.well-known/agent-card.json, JSON-RPC at /a2a and HTTP+JSON under /a2a/rest; and the web page on `web_port`."""
-    swept()
     if not http:
         server.run('stdio')
         return
@@ -518,14 +531,6 @@ def serve(http: bool = False, host: str | None = None, port: int | None = None) 
     asyncio.run(both())
 
 
-def swept() -> None:
-    """Every table left running whose runner has stopped given a runner again, as the server starts; said on stderr,
-    so stdio's stdout stays MCP's."""
-    started = runner.sweep()
-    if started:
-        print(f'Runners started again for tables {", ".join(map(str, started))}.', file=sys.stderr)
-
-
 def loopback(host: str | None) -> str:
     found = host or config.value('host')
     if found not in ('127.0.0.1', 'localhost', '::1'):
@@ -544,7 +549,6 @@ def web_server(host: str, port: int) -> Any:
 
 def serve_web(host: str | None = None, port: int | None = None) -> None:
     """The web page alone, on `web_port`."""
-    swept()
     from . import web
     host = loopback(host)
     port = port or int(config.value('web_port'))

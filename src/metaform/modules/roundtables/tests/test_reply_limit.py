@@ -50,7 +50,7 @@ def test_reply_limit_reaches_engine_from_module(run, table, monkeypatch):  # noq
     answer = None
     try:
         answer = opened(run, folder, 'seats=' + json.dumps(['stub/long']), 'host=stub/long',
-                        'rounds=1', 'reply_limit=700')
+                        'reply_limit=700')
         assert answer['reply_limit'] == 700
         assert heard.ended.wait(35), heard.kinds()
         turns = [one['payload']['text'] for one in heard.events if one['kind'] in ('turn', 'veto')]
