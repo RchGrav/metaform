@@ -19,9 +19,10 @@ its provider's prompt cache stays warm between its turns; each runs on its own m
   the rest refused, and any question the agent puts is declined;
 - the agent's environment has no ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY or CODEX_API_KEY, so it runs
   on the person's subscription;
-- it runs in an empty folder of its own under the home, `seats/<table>-<position>`, and Claude Code with
+- its process runs in an empty folder of its own under the home, `seats/<table>-<position>`, and Claude Code with
   `settingSources: []`, so no project's CLAUDE.md, AGENTS.md, skills or commands enter its base prefix; the table's
-  folder is given to Claude Code as a directory it may also read.
+  folder is given to Claude Code as a directory it may also read. Antigravity's session cwd is the table's folder:
+  its native file tools restrict reads to that workspace and ignore additional directories.
 
 On its turn a seat is sent the seat view as one prompt; its reply is the last text the agent wrote in that turn. A
 turn that runs past `agent_wait` is cancelled and passes with no submission; the session stays. When a topic opens the
@@ -156,6 +157,7 @@ class Session:
         self.model = str(seat['model'])
         self.folder = folder
         self.reads = reads  # a folder besides its own that the seat may read: the table's
+        self.workspace = reads if self.agent == 'antigravity' and reads else folder
         self.process: asyncio.subprocess.Process | None = None
         self.conn: Any = None
         self.session_id: str | None = None
@@ -298,14 +300,14 @@ class Session:
                                            f'{", ".join(one["name"] for one in self.servers)} for its seats')
         servers, meta = self.mcp_servers(), self.meta()
         if resume is None:
-            return await self.conn.new_session(cwd=self.folder, mcp_servers=servers, **meta)
+            return await self.conn.new_session(cwd=self.workspace, mcp_servers=servers, **meta)
         self.session_id = resume
         sessions = getattr(caps, 'session_capabilities', None)
         if sessions is not None and sessions.resume is not None:
-            return await self.conn.resume_session(session_id=resume, cwd=self.folder, mcp_servers=servers, **meta)
+            return await self.conn.resume_session(session_id=resume, cwd=self.workspace, mcp_servers=servers, **meta)
         if caps is not None and caps.load_session:
             self.replaying = True  # the history it replays is already this seat's conversation
-            return await self.conn.load_session(cwd=self.folder, session_id=resume, mcp_servers=servers, **meta)
+            return await self.conn.load_session(cwd=self.workspace, session_id=resume, mcp_servers=servers, **meta)
         raise acp.RequestError(-32601, f'{self.agent} offers neither session/resume nor session/load')
 
     def take(self, made: Any) -> None:

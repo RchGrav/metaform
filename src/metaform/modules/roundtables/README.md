@@ -36,6 +36,7 @@ Nothing. It uses dispatch's `dispatch.seats` and `orchestration.transport`, orch
 - `comment <table> <text>`, `hold <table>`, `continue <table>`, `advance <table>`, `reseat <table> <seat>`, `end <table>`, write, open world: the chair's controls, as the engine offers them, passed with the table's chair token.
   The GUI exposes Hold, Continue and discussion comments beside the transcript. Comments can be queued while held, without resuming AI turns. They enter at the next gap between turns. Continue resumes the same table. Plan review comments remain separate.
   Start remembers the participant lineup in this browser per project. Save participants stores the chosen order and models in the existing `roundtables_seats` project setting without starting agents. A fresh browser uses those defaults.
+  Gemini's ACP session uses the table's project folder as its workspace so native file tools can inspect source. Its process still runs in the private seat folder. File writes and terminal requests retain the seat's existing permission restrictions.
 - `status <table> [report=true]`, read: the table's state, seats, spend, follower, answer, every topic's synthesis and rankings as `topics`, `saved`, `recorded`, and `report`, the mechanical transcript's saved path. `report=true` includes its text as `report_text`.
 - `tables`, read: every table of the project, newest first.
 - `events <table> [after=<seq>]`, read: the table's events after a cursor.
