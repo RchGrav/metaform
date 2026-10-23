@@ -20,7 +20,8 @@ import {picked, hovered} from '/page/app/map3d/pick3d.js';
 import {placeTip} from '/page/app/map3d/readout.js';
 import {FLOW} from '/page/app/flow/flow.js';
 import {flow3d} from '/page/app/flow/fx3d.js';
-import {flight} from '/page/app/camera/flight.js';
+import {flight, FLIGHT} from '/page/app/camera/flight.js';
+import {turn3d} from '/page/app/map3d/rotation.js';
 import {small3d, SMALL_NAME, MEET, frameWhileSpreading, holdMet, pivot3d, meetEnds} from '/page/app/camera/fly3d.js';
 import {PHYS, signsFacing} from '/page/app/views/bar.js';
 import {joinTitle} from '/page/app/map2d/inside.js';
@@ -553,6 +554,7 @@ export function prepare3d() {
   // ULTRA: in outer space ultra's own bloom glows on everything bright, and its sky, bodies and governor run here.
   if (BLOOM) BLOOM.enabled = !ULTRA.on() && (Boolean(R.key) || signaled);
   ULTRA.frame(now, data);
+  turn3d(now, G.camera(), G.controls().target, reduced(), FLIGHT.on);
   placeTip();
   FRAMES.busy = !reduced() && (Boolean(R.key) || ROAM.figures.size > 0 || GHOSTS.built.size > 0 || signaled
     || mascotAwake());

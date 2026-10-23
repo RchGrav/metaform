@@ -20,6 +20,8 @@ import {readout, rehover3d, figureWords, agentTip} from '/page/app/map3d/readout
 import {prepare3d} from '/page/app/map3d/labels.js';
 import {fibers3d} from '/page/app/map3d/fibers3d.js';
 import {nodes3d} from '/page/app/map3d/nodes3d.js';
+import {TURN, bindTurns, resetTurns, cameraTurnStart, cameraTurnEnd, cameraTurnStop,
+  nodeTurnStart, nodeTurnEnd, layoutTurnEnd} from '/page/app/map3d/rotation.js';
 import {swap, V3, FLIGHT} from '/page/app/camera/flight.js';
 import {MEET, meetEnds, settled3d, PIVOT, pivotOn} from '/page/app/camera/fly3d.js';
 import {VIEW} from '/page/app/views/settings.js';
@@ -204,11 +206,14 @@ function frame3d(now) {
  * drawing, and the next act, or the tab coming back into view, wakes it. It is never drawn at a lower rate. */
 function moving3d(now, still) {
   if (now < FRAMES.until || FRAMES.engine || FRAMES.moved || FLIGHT.on) return true;
-  if (AFTER.length > 0 || WARM.waiting !== null) return true;  // a wait on the figures, or shaders linking
+  if (TURN.moving || AFTER.length > 0 || WARM.waiting !== null) return true;
   return (FRAMES.busy || FRAMES.flowing) && (FRAMES.rest === null || still < FRAMES.idle);
 }
 // A tab the person comes back to is drawn at once: a hidden tab gets no frames, and nothing else would wake it.
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake3d(); });
+document.addEventListener('visibilitychange', () => {
+  resetTurns();
+  if (document.visibilityState === 'visible') wake3d();
+});
 /* The library's setters and the methods that change what is drawn wake the map, as does every camera move asked for
  * from outside the page's own flights; such a move also ends a flight under way and, unless it fits the whole map,
  * tells the settled layout not to fit it again, since someone put the camera where it is. */
@@ -224,6 +229,7 @@ function wakeful(graph) {
       if (reading) return method.apply(this, args);
       if (name === 'graphData' || name === 'refresh' || name.startsWith('link')) FIBERS.version++;
       if (name === 'cameraPosition' || name === 'zoomToFit') {
+        cameraTurnStop();
         FLIGHT.on = false;
         V3.focus = V3.hold = null;
         V3.auto = name === 'zoomToFit';
@@ -231,7 +237,9 @@ function wakeful(graph) {
         wake3d(FRAMES.grace + takes);
         setTimeout(rehover3d, takes);  // the readout decided again once the flight is done
       } else wake3d();
-      return method.apply(this, args);
+      const result = method.apply(this, args);
+      if (name === 'graphData') bindTurns(args[0].nodes, nodeSize);
+      return result;
     };
   }
 }
@@ -428,9 +436,9 @@ function configure3d() {
     // view if nobody has moved the camera, `settled3d`.
     .d3AlphaMin(0.001)
     .onEngineTick(() => { FRAMES.engine = true; V3.ticks++; })
-    .onEngineStop(() => { if (V3.ticks > 30) settled3d(); V3.ticks = 0; })
+    .onEngineStop(() => { layoutTurnEnd(); if (V3.ticks > 30) settled3d(); V3.ticks = 0; })
     .onNodeDrag(dragNode)
-    .onNodeDragEnd(() => { HANDDRAG.node = null; G.d3AlphaMin(0.001).d3VelocityDecay(PHYS.decay); })
+    .onNodeDragEnd(() => { nodeTurnEnd(); HANDDRAG.node = null; G.d3AlphaMin(0.001).d3VelocityDecay(PHYS.decay); })
     .onNodeClick((node, event) => clickedAt3d(event))
     // a click on no node takes the nearest join's edge within reach, `linkAt3d`, as the 2D map does
     .onLinkClick((link, event) => clickedAt3d(event))
@@ -443,6 +451,7 @@ function configure3d() {
  * while one is held, DRAG_FRICTION, so the map follows gently. The mascot never pushes the node in the person's hand,
  * and lets go of one taken from it. */
 function dragNode(node) {
+  nodeTurnStart();
   HANDDRAG.node = node;
   if (MASCOT.holding === node) { MASCOT.holding = null; MASCOT.job = null; }
   G.d3AlphaMin(0).d3VelocityDecay(DRAG_FRICTION);
@@ -471,6 +480,10 @@ export const touched = () => { TOUCHED.at = performance.now(); };
 /* The 3D map's own pointer and keys: any act wakes it; the pointer's node, edge or figure is marked; a click on a
  * figure opens its thread; a press elsewhere or a key ends the tooltip. */
 function listen3d(stage) {
+  stage.addEventListener('pointerdown', cameraTurnStart, true);
+  stage.addEventListener('wheel', cameraTurnStop, {passive: true, capture: true});
+  document.addEventListener('pointerup', cameraTurnEnd);
+  document.addEventListener('pointercancel', cameraTurnEnd);
   for (const type of ['pointerdown', 'wheel', 'keydown']) {
     stage.addEventListener(type, () => { touched(); wake3d(); }, {passive: true});
   }
