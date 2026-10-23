@@ -1,0 +1,1 @@
+Bug found: global app.css aside rule (grid-area:side) broke grid -> side column is a div. / app.css gives every aside element grid-area:side, so an aside inside a window grid lands in a phantom grid column. / first screenshot showed side column in wrong grid cell: global aside{grid-area:side} rule; fixed by using div, second screenshot correct

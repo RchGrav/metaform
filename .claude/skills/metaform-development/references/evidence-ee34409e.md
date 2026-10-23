@@ -1,0 +1,1 @@
+Prompt fix done: `map_work op=read id=TICKET` → `map_work id=TICKET` (tool rejects op=read). No test pins text. Checking commit convention.

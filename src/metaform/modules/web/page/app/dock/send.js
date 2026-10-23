@@ -27,9 +27,15 @@ import {sharing, startShare, shareFrame, CLICKED, clickedLine} from '/page/app/f
 /* A start that answered before its session runs: a resume names its session at once, though the session is live only
  * once the resume is done. Until then the thread is being reached, and a message written meanwhile waits for it and
  * starts nothing more; a start that never comes is given up after a minute and a half. */
-export function reaching(started) {
-  if (DOCK.chat && DOCK.chat.target === started.work_id) {
-    DOCK.chat.starting = started.state === 'running' ? 0 : Date.now();
+export function reaching(started, chat = DOCK.chat, previous = null) {
+  if (chat && chat.target === started.work_id) {
+    chat.starting = started.state === 'running' ? 0 : Date.now();
+    if (previous) for (const item of DOCK.queue) {
+      if (item.state === 'waiting' && item.target === previous.target && item.session === previous.session) {
+        item.target = chat.target;
+        item.session = chat.session;
+      }
+    }
   }
 }
 const beingReached = chat => Boolean(chat?.starting) && Date.now() - chat.starting < 90000;
@@ -54,24 +60,25 @@ export function queuedRows() {
   // a message sent is let go once the agent has it, or half a minute on; one kept on its ticket once the agent has it
   const settled = item => (item.state === 'sent' || item.state === 'held') && (DOCK.heard.has((item.sent || item.text)
     .trim()) || item.state === 'sent' && Date.now() - item.at > 30000);
-  DOCK.queue = DOCK.queue.filter(item => !settled(item));
+  DOCK.queue = DOCK.queue.filter(item => !addressedHere(item) || !settled(item));
   // one kept on its ticket stays in that ticket's thread, however long its agent takes to start
-  return DOCK.queue.filter(item => item.state !== 'held' || item.target === DOCK.target).map((item, index) => ({
+  return DOCK.queue.filter(addressedHere).map((item, index) => ({
     key: `queued:${item.id}`,
     text: `${item.state}:${index}`, make: () => messageRow(item.text, {mine: true, who: 'You', first: index === 0,
       at: item.at, pending: {waiting: 'Sent once the agent is there', sending: 'Sending…', sent: 'Sent', held: HELD}[
         item.state] || ''})}));
 }
 const unsent = item => item.state === 'waiting' || item.state === 'sending';
+const addressedHere = item => item.target === DOCK.target && (!item.session || item.session === DOCK.session);
 let QUEUE_ID = 0;
 export async function deliverQueued(session) {
   if (DOCK.delivering || DOCK.calling || session?.state !== 'running' || session.session_id !== DOCK.session
-    || !DOCK.queue.some(one => one.state === 'waiting')) return;
+    || !DOCK.queue.some(one => addressedHere(one) && one.state === 'waiting')) return;
   const work = DOCK.target;
   DOCK.delivering = true;
   try {
-    for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
-      if (DOCK.target !== work) return;
+    for (const item of DOCK.queue.filter(one => addressedHere(one) && one.state === 'waiting')) {
+      if (DOCK.target !== work || DOCK.session !== session.session_id) return;
       item.state = 'sending';
       const lead = item.clicked ? `${item.clicked}\n\n` : '';  // what the person clicked stays first
       // the view's context goes to the agent only; the item keeps the person's own words, so a failed send puts back
@@ -83,7 +90,8 @@ export async function deliverQueued(session) {
       if (!done.ok) {
         contextBack(taken);  // kept for the resend
         item.state = 'waiting';
-        startFailed(done.body?.error || 'The message was not sent.', done.body?.next);
+        if (addressedHere(item)) startFailed(done.body?.error || 'The message was not sent.', done.body?.next);
+        else toast(done.body?.error || 'The message was not sent. It remains in its conversation.');
         return;
       }
       item.state = 'sent';
@@ -95,11 +103,11 @@ export async function deliverQueued(session) {
  * waiting goes to its ticket at once, which keeps it and gives it to the session when it starts as the person's own
  * message, dispatch's `_kept_for_start`; in the thread it is marked as kept until the agent has it. */
 async function holdQueued() {
-  if (DOCK.delivering || !DOCK.queue.some(one => one.state === 'waiting')) return;
+  if (DOCK.delivering || !DOCK.queue.some(one => addressedHere(one) && one.state === 'waiting')) return;
   const work = DOCK.target;
   DOCK.delivering = true;
   try {
-    for (const item of DOCK.queue.filter(one => one.state === 'waiting')) {
+    for (const item of DOCK.queue.filter(one => addressedHere(one) && one.state === 'waiting')) {
       if (DOCK.target !== work) return;
       item.state = 'sending';
       const lead = item.clicked ? `${item.clicked}\n\n` : '';
@@ -110,7 +118,8 @@ async function holdQueued() {
       if (!done.ok) {
         contextBack(taken);
         item.state = 'waiting';
-        startFailed(done.body?.error || 'The message was not kept.', done.body?.next);
+        if (addressedHere(item)) startFailed(done.body?.error || 'The message was not kept.', done.body?.next);
+        else toast(done.body?.error || 'The message was not kept. It remains in its conversation.');
         return;
       }
       item.state = done.body?.held ? 'held' : 'sent';  // a session that started meanwhile has it already
@@ -123,11 +132,11 @@ async function holdQueued() {
  * waits on; any other agent's failure leaves that question waiting. */
 export function startFailed(reason, next = null, system = false) {
   // what the person wrote, without the line about their click, which was never theirs to see in the box
-  const left = DOCK.queue.filter(unsent);
+  const left = DOCK.queue.filter(item => addressedHere(item) && unsent(item));
   const waiting = left.map(item => item.text.slice(item.clicked ? item.clicked.length + 2 : 0));
   // the message never went, so the click it named is still untold: the resend carries it while it is fresh
   if (left.some(item => item.clicked)) CLICKED.told = false;
-  DOCK.queue = DOCK.queue.filter(item => !unsent(item));
+  DOCK.queue = DOCK.queue.filter(item => !left.includes(item));
   const box = $('#helpdesk .say');
   if (waiting.length) { box.value = [...waiting, box.value.trim()].filter(Boolean).join('\n\n'); growSay(); }
   dockNote(`${reason}${next ? ` Next: ${next}` : ''}${waiting.length ? ' Your message is back in the box.' : ''}`);
@@ -190,8 +199,11 @@ const toSystem = () => !DOCK.target || DOCK.target === DOCK.mine || DOCK.chat?.s
  * agent's; with no agent there yet it waits in the thread, and one is reached. */
 async function sendMessage(event) {
   event.preventDefault();
+  const selection = DOCK.selection;
   if (notificationState(DOCK.state)) return dockNote(UPDATES_ONLY);
   if (DOCK.attaching) await DOCK.attaching;  // files still being saved go with the message
+  if (DOCK.selection !== selection) return;
+  const target = DOCK.target, session = DOCK.session;
   const box = $('#helpdesk .say'), text = box.value.trim();
   if (!text && !DOCK.files.length) return;
   if (text) remember(text);
@@ -217,8 +229,9 @@ async function sendMessage(event) {
   // agent tells the system agent nothing, so it leaves the click untold. Set as it is taken, so a follow-up, or a click
   // made while this one goes, is never counted as this one's, and put back if the message fails
   if (told) CLICKED.told = true;
-  if (!fork && (!DOCK.live || DOCK.queue.some(unsent))) {
-    DOCK.queue.push({id: ++QUEUE_ID, target: DOCK.target, text: lead + text + attached, sent: '', clicked: told,
+  if (!fork && (!DOCK.live || DOCK.queue.some(item => addressedHere(item) && unsent(item)))) {
+    DOCK.queue.push({id: ++QUEUE_ID, target: DOCK.target, session: DOCK.session,
+      text: lead + text + attached, sent: '', clicked: told,
       state: 'waiting', at: Date.now()});
     DOCK.files = []; fill($('#helpdesk .files'));
     ensureAgent();
@@ -227,18 +240,22 @@ async function sendMessage(event) {
   }
   // a spoken message's recording goes with it, where the agent takes audio
   const audio = await voiceAudio(text, !fork && DOCK.state?.capabilities?.audio === true);
-  const taken = fork ? null : takeContext({work: DOCK.target, session: DOCK.session});
+  const taken = fork ? null : takeContext({work: target, session});
   const said = fork ? text + attached : lead + withContext(taken, text + attached);
-  const sent = await wrote('/api/dispatch-message', {work_id: DOCK.target, session: DOCK.session, text: said,
+  const sent = await wrote('/api/dispatch-message', {work_id: target, session, text: said,
     ...(fork ? {fork} : {}), ...audio, ...(frame ? {image: frame.jpeg} : {})});
   if (sent) {
-    DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
+    if (DOCK.selection === selection) {
+      DOCK.files = []; DOCK.frame = null; drawAttached(); drawHelpdesk();
+    }
     if (sent.queued && sent.child) dockNote('Queued for this subagent.');
     if (frame && sent.image !== true) toast('Your words were sent, but the frame did not reach the agent.');
   } else {  // the views' context and the click are kept for the resend
     contextBack(taken);
     if (told) CLICKED.told = false;  // only a click this message told: a click made while it went stays as it is
-    box.value = text; growSay();
+    if (DOCK.selection === selection) { box.value = text; growSay(); }
+    else DOCK.queue.push({id: ++QUEUE_ID, target, session, text: lead + text + attached, sent: '', clicked: told,
+      state: 'waiting', at: Date.now()});
   }
 }
 $('#helpdesk .compose').onsubmit = sendMessage;

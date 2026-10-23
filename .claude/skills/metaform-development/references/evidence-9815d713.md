@@ -1,0 +1,4 @@
+{"type":"tool_result","content":"{\"merges\":[{\"work_id\":\"6bfc6140ed78455ea018b1b951690400\",\"state\":\"ready\"},{\"work_id\":\"5576dbecdbf248c0beb5b3a22b223bf8\",\"state\":\"merging\"}]}"}
+{"type":"tool_result","content":"            return {'work_id': work_id, 'merged': False, 'why': 'another merge is under way; retry delivery'}"}
+{"type":"tool_result","content":"Error: No tool dispatch_merge on this surface.\nNext: list the tools"}
+{"type":"tool_result","content":"        Verb('merge', merge, 'Merge a waiting worktree whose review time is up, after its checks pass again.',\n             nouns=(Noun('id', 'The work id of the ticket whose merge waits.'),), surfaces=('cli',)),"}

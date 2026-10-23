@@ -2,7 +2,8 @@
  * page shows. */
 import '/page/app/dock/helpdesk.js';  // the part before runs first, so the parts run in the page's order
 import {$} from '/page/app/core/dom.js';
-import {read} from '/page/app/core/reads.js';
+import {toast} from '/page/app/core/controls.js';
+import {S, read} from '/page/app/core/reads.js';
 import {DOCK, STANDBY, dockState, dockNote, dockGoingAway} from '/page/app/dock/embody.js';
 import {openHelpdesk} from '/page/app/dock/threads.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
@@ -107,6 +108,8 @@ async function forkSession(first) {
  * last conversation while Resume is checked, which the server's system chat does, and never with `fresh`, /new. A
  * start that fails says why in the chat, and what was written for it goes back into the box. */
 export async function callSystem({fresh = false} = {}) {
+  const selection = DOCK.selection, project = S.project;
+  const previous = {target: DOCK.target, session: DOCK.session};
   syncResume();
   dockState($('#dock').className.startsWith('open') ? $('#dock').className : 'open');
   Object.assign(DOCK, {since: Date.now(), waiting: STANDBY});
@@ -120,14 +123,17 @@ export async function callSystem({fresh = false} = {}) {
   DOCK.calling = null;
   $('#helpdesk .call').disabled = false;
   if (!started) {
+    if (DOCK.selection !== selection) return toast(done.body?.error || 'The agent did not start.');
     startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next, true);
     return null;
   }
   const closed = $('#helpdesk').hidden || dockGoingAway();
+  if (S.project !== project) return started;
   DOCK.mine = started.work_id;
-  openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id, 'system');
-  reaching(started);
-  if (closed) dockState('resting');
+  const activate = DOCK.selection === selection;
+  const chat = openHelpdesk(started.work_id, 'your system agent', STANDBY, started.session_id, 'system', {activate});
+  reaching(started, chat, previous);
+  if (closed && activate) dockState('resting');
   return started;
 }
 /* Chat on anything the page shows, VIEW-042: a ticket, open or done, a node, a question, or an agent's session. An
@@ -135,18 +141,23 @@ export async function callSystem({fresh = false} = {}) {
 export async function talkAbout(given, label) {
   // an intake's agent is a conversation already, never a ticket: its chat opens on its session
   if (isIntake(given.id)) return openIntakeChat(given.id, null);
+  const selection = DOCK.selection, project = S.project;
+  const previous = given.session === `${DOCK.target}:${DOCK.session}`
+    ? {target: DOCK.target, session: DOCK.session} : null;
   const agent = summonAgent();  // the agent a new chat starts with; one at work on it is talked to as it is
   DOCK.talking = true;  // a message written meanwhile waits for this start, and starts no other
   let done;
   try { done = await posted('/api/talk', {...given, ...(agent ? {agent} : {})}); } finally { DOCK.talking = false; }
   const started = done.ok && done.body?.state !== 'held' ? done.body : null;  // held: alive, and it does not answer
   if (!started) {
+    if (DOCK.selection !== selection) return toast(done.body?.error || 'The agent did not start.');
     startFailed(done.body?.error || done.body?.reason || 'The agent did not start.', done.body?.next);
     return null;
   }
-  if (started.conversation) DOCK.mine = started.work_id;
-  openHelpdesk(started.work_id, label, started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
-    started.session_id, started.conversation ? 'conversation' : null);
-  reaching(started);
+  if (S.project !== project) return started;
+  const chat = openHelpdesk(started.work_id, label,
+    started.state === 'running' ? 'It answers when its current step ends.' : STANDBY,
+    started.session_id, started.conversation ? 'conversation' : null, {activate: DOCK.selection === selection});
+  reaching(started, chat, previous);
   return started;
 }

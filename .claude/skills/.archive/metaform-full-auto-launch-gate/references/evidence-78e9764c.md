@@ -1,0 +1,2 @@
+{"command":"nohup sh -c 'sleep 20; /home/rich/metaform/.venv/bin/python -m metaform dispatch stop id=800b54a70e9b45768b63a3adaa5a0fad' >/tmp/claimprobe/selfstop.log 2>&1 &\necho scheduled","description":"Schedule this session's runner to stop in 20 s"}
+{"type":"text","text":"I cant it is going to ruin my mouse"}

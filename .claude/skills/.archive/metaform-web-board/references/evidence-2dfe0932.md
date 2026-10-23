@@ -1,0 +1,5 @@
+git commit -q -F - message: "Board: a move or a map op no longer makes every card again; 400 of 500 cards rebuilt per move, now 0
+
+Cause: a card was made again whenever its text changed, and its text held the whole ticket, its place in the column, and a count bumped by every element or join op. A move renumbers the stored positions below it, so one move changed 400 of 500 cards' text ... Fix (board.js, refs.js, dom.js, ops.js): a card's text is what it shows: the ticket without its position, whether it is first or last, and its chips' drawn names; the order buttons count the card's place when clicked. One address index per draw replaces a map scan per chip. The B.names counter is deleted."
+
+Test: test_a_board_of_500_tickets_opens_in_time_and_a_move_makes_no_other_card_again (open under 5 s, and no card made again by a move); it fails on the old code.

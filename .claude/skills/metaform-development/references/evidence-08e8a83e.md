@@ -1,0 +1,1 @@
+Worktree venv lacks pytest, so the main venv's pytest ran against main code. Rerunning with `PYTHONPATH` pointed at the worktree source. ... /home/rich/metaform/.venv/bin/pytest (output of `uv run which pytest` from the worktree)

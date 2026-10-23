@@ -158,7 +158,6 @@ from . import (
     started_well,
     startup_fault,
     stop_end,
-    system_sessions,
     ticket,
     ticket_label,
     today,
@@ -291,7 +290,8 @@ def inbox_entry(held: dict[str, Any]) -> tuple[str, bool]:
         if sender.get('agent') == 'metaform':
             return str(held['text']), True
     update, state, ask = str(held.get('update') or ''), str(held.get('state') or ''), bool(held.get('ask'))
-    return inbox_status(held), inbox_wakes(update, state, ask)
+    actionable_board = held.get('kind') == 'board' and held.get('actionable') is True
+    return inbox_status(held), actionable_board or inbox_wakes(update, state, ask)
 
 
 def said_as(held: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -353,7 +353,7 @@ def role(nouns: dict[str, Any], work_id: str) -> str:
     session's flags, since intake, helpers and the summoned agents run as prep too."""
     if intake_id(work_id):
         return 'intake'
-    if helper_id(work_id):
+    if helper_id(work_id) and not nouns.get('talk'):
         return 'helper'
     if nouns.get('system'):
         return 'sentinel' if nouns.get('sentinel') else 'talk' if nouns.get('talk') else 'system'
@@ -826,6 +826,7 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
                                                    work_id=work_id, resume=resume).run())
     if helper_id(work_id):  # a helper the system agent started with a brief: no ticket; its session is its record
         return await moved_on(store, await Session(ctx, store, None, agent, command, resumed, prep=True,
+                                                   system=bool(ctx.nouns.get('talk')),
                                                    work_id=work_id, resume=resume).run())
     if ctx.nouns.get('system'):  # the person's system agent, the +1: talks with them in the project's folder
         # on its held ticket; with no map, or on a ticket a map cleared since took with it, on no ticket, PROJ-026
@@ -3885,8 +3886,8 @@ class Session:
         conversation not yet given its opening turn needs none, since that turn carries the line. A routine entry (a
         ticket complete, a board item, a peer note, a commit) is never named: it stays in its thread for dispatch notes,
         and only what needs the person or the system agent reaches its conversation (2026-10-20: routine lines flooded it)."""
-        # Roundtable references wait for the next person turn without starting one themselves.
-        if not wakes and not passive:
+        # Informational references never piggyback on a person's next turn.
+        if not wakes:
             return
         if any(one[0] == note_id for one in self.inbox):
             return
@@ -4011,6 +4012,8 @@ class Session:
                         now = time.time()
                         await self.peer_note({'deliver': True, 'line': {
                             'id': secrets.token_hex(8), 'kind': 'board', 'board': str(value['signal_key']),
+                            'actionable': value.get('actionable') is True,
+                            'tickets': value.get('tickets') or [],
                             'at': stamp(), 'epoch': now, 'text': str(value.get('said') or value['signal_key']),
                             'from': {'agent': 'metaform', 'session_id': '', 'work_id': work,
                                      'item': named[work][0] if work in named else work or 'the board'},
@@ -4270,7 +4273,7 @@ class Session:
         so it waits for the turn boundary as a person's message does, and the open pages draw it as a pulse of the
         flow from the sender's figure to this one; a reply to a question this session is waiting on is held for that
         wait instead, which returns it. The sender's own copy notes how long it waits, `awaiting`. A note the same,
-        `said_as`, as one still waiting for its turn is marked delivered and given no turn of its own; once a turn
+        `said_as`, as one still waiting for its turn stays recorded and receives no turn of its own; once a turn
         has carried the first, the same words come again as a new note. The person's decision their
         system agent relays, kind `user_direction`, goes as the person's own message does: into the turn in flight
         where the agent takes steering, else ahead of every prompt waiting."""
@@ -4278,6 +4281,11 @@ class Session:
         if self.ending or self.session_id is None or not isinstance(line, dict):
             return {'noted': False, 'error': 'The session has not started or is ending.'}
         held, busy = cast(dict[str, Any], line), bool(self.turns)
+        from .orchestration import actionable, delivery_metadata
+        allowed = await asyncio.to_thread(actionable, self.ctx, held, session_id=self.session_id) \
+            if asked.get('deliver') else False
+        if asked.get('replay') and held.get('kind') == 'board':
+            allowed = False  # Board producers reconcile current signals themselves.
         if not held.get('ask') and (held.get('update') or held.get('kind')) in (
                 'result', 'role_publication', 'functional_assessment', 'functional_correction') and held.get('state') in (
                     'returned', 'delivered', 'completed'):
@@ -4298,17 +4306,15 @@ class Session:
                         return saved.get('session_states', {}).get(self.session_id)
                 return None
             prior_state = await asyncio.to_thread(prior_delivery)
-            if prior_state in ('delivered', 'read', 'replied'):
+            if prior_state in ('recorded', 'delivered', 'read', 'replied'):
                 return {'noted': True, 'queued': False, 'reused': True, 'state': prior_state}
         sender = cast(dict[str, Any], held.get('from') or {})
-        # the same words from the same sender as a note still waiting for its turn, under another note's id, reach
-        # it once: marked delivered, never a second turn
+        # Repeated words waiting under another ID remain records. Only the original request can be delivered.
         said_key = said_as(held)
         earlier = self.peer_said.get(said_key, note_id)
-        if asked.get('deliver') and earlier != note_id and (any(one[0] == earlier for one in self.inbox) or any(
-                waiting_id == earlier for _, marks in zip(self.pending, self.peered) for waiting_id, _ in marks)):
-            self.spawn(self.peer_marked([(note_id, str(sender.get('session_id') or ''))], 'delivered'))
-            return {'noted': True, 'queued': False, 'reused': True, 'same_text': True}
+        duplicate = bool(asked.get('deliver') and earlier != note_id and (
+            any(one[0] == earlier for one in self.inbox) or any(
+                waiting_id == earlier for marks in self.peered for waiting_id, _ in marks)))
         if asked.get('deliver') and sender.get('node') and self.node is not None and not self.probe:
             # the pulse between the two figures, riding the event the note's line fires
             self.flowing.append({'session_id': sender.get('session_id'), 'agent': sender.get('agent'),
@@ -4317,6 +4323,9 @@ class Session:
         async with self.lock:
             await self.flush()
             await self.note(f'peer:{note_id}', 'peer', json.dumps(held, ensure_ascii=False))
+            if allowed and not duplicate:
+                await self.note(f'peer_delivery:{note_id}', 'peer_delivery',
+                                json.dumps(delivery_metadata(held), ensure_ascii=False))
         if not asked.get('deliver'):
             if asked.get('awaiting'):
                 self.awaiting[note_id] = {'until': time.monotonic() + float(asked['awaiting']) + AWAIT_SPARE,
@@ -4326,6 +4335,10 @@ class Session:
         # unawait records consumed IDs before releasing that wait, so the reply never becomes a second turn.
         if note_id in self.queued_peer_ids:
             return {'noted': True, 'queued': False, 'reused': True}
+        if duplicate:
+            self.queued_peer_ids.add(note_id)
+            await self.peer_marked([(note_id, str(sender.get('session_id') or ''))], 'recorded')
+            return {'noted': True, 'queued': False, 'reused': True, 'same_text': True}
         reply_to = str(held.get('reply_to') or '')
         # Keep routing, receipts and assignment data in the stored envelope. The model receives the note's one line,
         # `peering.line`; dispatch_notes reads the whole, its sender and return route when the work needs them.
@@ -4339,10 +4352,14 @@ class Session:
             # the waiting call returns it; one it does not take is given as its line, `unawait`
             cast(list[Any], waiting['held']).append((note_id, delivered_line(held, note_id), marks))
             return {'noted': True, 'queued': False, 'awaited': True}
+        if not allowed:
+            await self.peer_marked(marks, 'recorded')
+            return {'noted': True, 'queued': False, 'record_only': True}
         if self.role == 'system' and held.get('kind') != 'user_direction':
             # the person's system agent works like an inbox: the note waits in its thread, read with dispatch notes,
             # and the next turn names it in one line, by ticket and kind (2026-10-19: one turn held 30 full reports)
             said, wakes = inbox_entry(held)
+            wakes = wakes or allowed
             self.inbox_add(note_id, marks[0][1], said, wakes, passive=held.get('update') == 'roundtable_result')
             return {'noted': True, 'queued': True, 'busy': busy, 'inbox': True}
         if held.get('kind') == 'user_direction':  # the person's decision their system agent relays goes as theirs
@@ -4453,9 +4470,8 @@ class Session:
         return text
 
     def rules(self, text: str) -> str:
-        """The rules every agent works by, metaform://rules, at the head of its first turn in each context epoch. The
-        receipt ledger leaves them out while the epoch holds them unchanged, so they come again only after compaction.
-        Without a runner id there is no ledger to count them against, so nothing is sent rather than every turn."""
+        """Bootstrap rules once for a new conversation. Context loss only permits a later needed resource read.
+        Without a runner ID there is no ledger to count them against, so no rules are sent."""
         if self.probe or self.runner is None:
             return text
         rules = prompt_files.resolve('prompt.mcp:connect_rules')
@@ -4517,39 +4533,35 @@ class Session:
         if marks:
             self.spawn(self.peer_marked(marks, 'delivered'))
 
-    async def replay_peers(self) -> None:
-        """A restart requeues retained, unacknowledged recipient messages before draining new continuations. The
-        person's system agent also takes the notes left waiting for it, `waiting`, in the threads of its earlier
-        conversations: `peering` keeps a note in its last conversation's thread while no system session runs, so a
-        resumed conversation and a new one alike get it, once, whichever thread's copy says it was read."""
-        system = self.role == 'system'
+    def pending_peer(self, note_id: str) -> dict[str, Any] | None:
+        """Revalidate one queued request before its turn. Historical peer bodies are never scanned."""
+        from .orchestration import actionable
+        with self.store.tables(write=False) as tx:
+            marker = tx.get('session_lines', {'session_id': self.session_id, 'name': f'peer_delivery:{note_id}'})
+            if marker is None:
+                return None
+            metadata = json.loads(str(marker['text']))
+            if not actionable(self.ctx, metadata, session_id=self.session_id):
+                return None
+            row = tx.get('session_lines', {'session_id': self.session_id, 'name': f'peer:{note_id}'})
+        if row is None:
+            return None
+        held = json.loads(str(row['text']))
+        state = held.get('session_states', {}).get(self.session_id)
+        if state in ('recorded', 'delivered', 'read', 'replied', 'failed'):
+            return None
+        return held if actionable(self.ctx, held, session_id=self.session_id) else None
 
+    async def replay_peers(self) -> None:
+        """Replay only typed requests retained for this exact session. Legacy untyped notes remain readable."""
         def pending() -> list[dict[str, Any]]:
-            threads = [str(self.session_id)]
-            if system:
-                threads += [str(row['session_id']) for row in system_sessions(self.store)
-                            if str(row['session_id']) != self.session_id]
             with self.store.tables(write=False) as tx:
-                rows = [(thread, row) for thread in threads for row in tx.rows(
-                    'session_lines', {'session_id': thread}, by=('session_id', 'seq'), limit=0).results
-                    if row['kind'] == 'peer']
-            found: dict[str, dict[str, Any]] = {}
-            over: set[str] = set()
-            for thread, row in rows:
-                with contextlib.suppress(ValueError, TypeError, AttributeError):
-                    held = json.loads(row['text'])
-                    waits = system and held.get('waiting') == 'system'
-                    if thread != self.session_id and not waits:
-                        continue
-                    state = held.get('session_states', {}).get(self.session_id) or held.get('states', {}).get(self.work_id)
-                    # to the system agent, a note an inbox line named is delivered: it stays in the inbox, not new
-                    if state in ('read', 'replied', 'failed') or (system and state == 'delivered'):
-                        over.add(str(held.get('id')))
-                    elif waits or any(one.get('work_id') == self.work_id for one in held.get('to', [])):
-                        found.setdefault(str(held.get('id')), held)
-            return [held for note_id, held in found.items() if note_id not in over]
+                markers = tx.rows('session_lines', {'session_id': self.session_id, 'kind': 'peer_delivery'},
+                                  limit=0).results
+            return [held for marker in markers
+                    if (held := self.pending_peer(str(json.loads(str(marker['text']))['id']))) is not None]
         for held in await asyncio.to_thread(pending):
-            await self.peer_note({'line': held, 'deliver': True})
+            await self.peer_note({'line': held, 'deliver': True, 'replay': True})
 
     async def orchestration_changes(self) -> None:
         """Coalesce relevant changes; there is no orchestration polling timer."""
@@ -4656,6 +4668,15 @@ class Session:
                     current.word = self.worded.popleft() if self.worded else None
                     if self.typed:
                         self.typed.popleft()
+                    if marks and current.word is None and not beside:
+                        from .peering import line as delivered_line
+                        valid = [(mark, await asyncio.to_thread(self.pending_peer, mark[0])) for mark in marks]
+                        marks = [mark for mark, held in valid if held is not None]
+                        text = '\n\n'.join(str(held.get('text') or '') if held.get('kind') == 'user_direction'
+                                           else delivered_line(held, mark[0]) for mark, held in valid if held is not None)
+                    if self.inbox:
+                        self.inbox = [entry for entry in self.inbox
+                                      if await asyncio.to_thread(self.pending_peer, entry[0]) is not None]
                     # the person's system agent's turn carries its one inbox line, naming what waits, `inbox_add`
                     told = self.inbox_said() if self.role == 'system' else ''
                     if told:
@@ -4671,6 +4692,9 @@ class Session:
                 self.heard = stamp()  # a tool call of this turn began no earlier than its prompt
                 began_ns: int | None = None
                 try:
+                    if self.role == 'worker':
+                        from .board import worker_started
+                        await asyncio.to_thread(worker_started, self.ctx, self.work_id)
                     await self.changed(tables='dispatch', kinds=['session'])
                     if self.ending:
                         break  # stop may arrive while the turn-start event is published
@@ -4705,9 +4729,9 @@ class Session:
                         # schema or memory dump; resources and tool guides become eligible at their next use.
                         if fresh and not compacted:
                             text = await asyncio.to_thread(self.guidance, text, supplied)
+                            text = await asyncio.to_thread(self.rules, text)
                         else:  # what a failed send left was never delivered, so it stays due for the next turn
                             self.inflight_context = None
-                        text = await asyncio.to_thread(self.rules, text)
                         if fresh and self.acp.get('name'):  # its own name, told once, since it signs its messages so
                             told = prompt('named', called=str(self.acp['name']))
                             text = f'{told}\n\n{text}' if told else text
@@ -4759,7 +4783,8 @@ class Session:
             self.turns -= 1
             if self.turns == 0:
                 self.idle.set()
-        await self.changed(tables='dispatch', kinds=['session'])  # readers now see idle after the queue drained
+        await self.changed(tables='dispatch', kinds=['session', 'worker-idle'] if self.role == 'worker'
+                           and self.turns == 0 else ['session'])
         # A helper whose turns are drained has done its brief; one the person interrupted waits for what they say.
         if self.turns == 0 and not self.ending and self.role == 'helper' and not self.interrupted:
             await self.helper_done(reason)
@@ -4785,10 +4810,7 @@ class Session:
                     await self.raise_signal('stopped-open', stop_reason=reason, steps=record.steps_done)
 
     async def helper_done(self, reason: str) -> None:
-        """A helper's brief is done: one line goes to the person's system agent's inbox, as a project update every
-        system conversation takes, running now or started later, and the session ends, giving its place back. The
-        result itself stays in its thread, read on demand; a turn that did not end normally is reported failed, which
-        is the one kind that wakes the system agent."""
+        """Keep the helper result visible in project updates and end its session without waking unrelated agents."""
         state = 'done' if reason == 'end_turn' else 'failed'
         named = helper_item(self.work_id)
         brief = ' '.join(str(self.acp.get('brief') or '').split())

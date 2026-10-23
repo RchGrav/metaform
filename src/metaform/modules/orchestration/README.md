@@ -81,10 +81,12 @@ reviews, configured checks and application data validation. Record the resolutio
 User confirmation remains available after delivery and never gates closure. A resolved ticket closes directly through
 done or a move to Done. No commit, merge, push, activation, review or receipt is a prerequisite.
 Feature commits remain a separate delivery step. With Full Auto (`dispatch_autostart`) on, integrate locally
-automatically without pushing; otherwise retain the feature commit. Report delivery failures separately without
+automatically into the project development branch without pushing; otherwise retain the feature commit. Report delivery failures separately without
 keeping resolved errors open. Records retain ticket identity, artifacts, verification and available branch and
 commit IDs. Non-Git projects retain checked results without invented commits. Actual recurrence or supported
-review findings may reopen faults. Closure clears the resolved fault's light through existing completion events.
+review findings may reopen faults. Actual unresolved repairs remain engineering work and cannot be reported
+as successful. Restart only when the particular project and repair require it; restart never gates closure.
+Publishing remains available when explicitly requested. Closure clears the resolved fault's light through existing completion events.
 
 ## Functional adaptation
 
@@ -167,12 +169,16 @@ Only that ticket's commissioned Facilitator can submit `choice=<JSON>` containin
 task_type, confidence and reason. This uses the Facilitator's full model when Jev is off, uncredited or unanswered.
 The choice is saved in map `ticket_settings`, with decider and confidence. Publication requires runtime selection
 before continuing each in-place ticket. Runtime-only commissions preserve already assigned expertise.
+Runtime requests use the current ticket task. Each publication queues a continuation identified by its request,
+so task revisions can resume after an earlier launch without duplicating retries.
 The card shows and edits the saved choice. Person overrides win. Dispatch applies it to that session without
-changing project defaults. Autostart does not classify the ticket again.
+changing project defaults. Autostart reuses valid choices and prepares a new choice when the ticket task changes.
 
 Read `metaform://specialists` for the current expertise names, purposes and role URLs. The directory excludes system responsibilities and contains no role bodies. JEV selects a listed specialist or confidently selects none. A no-match, uncertain result, unavailable provider, missing key or unavailable OpenRouter credit commissions the Facilitator directly. An empty inventory does the same without paying for an empty decision.
 
 A ticket writer can assign expertise with `orchestration_claim work=<id> role=<name>` or explicitly hand off with `create=true`. Automatic routing preserves existing assignments and commissions the Facilitator for unassigned tickets without requiring a triage relay. The existing event-driven starter also drains legacy `triage` entries one per pass; unchanged cached decisions are handed off without another JEV lookup. Held tickets and explicit user stops remain effective. The ticket shows “Facilitator is selecting expertise” while its commission is pending.
+
+A valid pinned specialist assignment remains eligible when its registry entry disappears. Missing expertise and lost commission records recover through canonical requests. Recovery retains a surviving creator and its publication route, or commissions one replacement when ownership is absent. Repeated reconciliation does not duplicate helpers.
 
 The Facilitator checks the registry again before authoring. It chooses a reusable domain name when the commission supplies none. Its metaprompt defines the five XML sections: identity, objective, rules, methods and output formatting. Ticket-specific paths, objectives and routing instructions remain in the assignment. The Facilitator publishes with `orchestration_publish_role request=<id> role=<name> purpose=<reusable-purpose> duty=<system_prompt-XML> match_reason=<brief-reason>`. To reuse existing expertise, it omits `duty`; publication never edits an existing role. Concurrent publications with the same name reuse the registered version.
 
@@ -180,28 +186,4 @@ That operation registers the versioned role, binds it to the original ticket, pl
 
 The helper runs as `metaform://role/facilitator`, outside worker slots and within existing helper limits. `role_creator` remains resolvable for already recorded assignments. The delivery owner is sessionless while expertise is pending and cannot bind a generic worker before publication.
 
-## Reusable preparation and review duties
-
-Each duty resolves at `metaform://role/<name>` and returns its deliverable to its caller.
-Interviewer produces the guided interview brief. Researcher establishes requirements and technology evidence.
-Architect produces the complete design. Planner writes the implementation plan for review.
-Decomposer reads that complete plan, creates a fresh board through `map_boards op=add`, and creates tickets
-one at a time. Logical `depends_on` relationships use the existing `map_work after_work=[ids]` completion gate.
-Decomposer returns the board, tickets, dependencies and written execution outline.
-
-Every generated domain role combines `common`, the shared `specialist` duty and its authored expertise.
-Older generated definitions acquire that shared duty on their next resolution. Existing assignment snapshots
-retain their delivered versions and ordinary prompt receipts record the individual components.
-
-Harsh Critic is separately callable as `harsh_critic`. Its delegation accepts `context.reviewed_work` to select
-the delivered ticket while preserving the immediate caller's return route. Facilitator calls require this field
-to distinguish specialist work from the role commission. Other callers may review their own assigned work.
-Ended role commissions cannot initiate review. The active calling workflow requests that later contribution.
-It returns `APPROVE` or `REJECT` through check-in. Rejection requires structured findings and creates one new
-corrective ticket per finding. Each correction retains the complete finding, review references and evidence,
-inherits the reviewed board, waits on the reviewed ticket through `after_work`, and commissions the Facilitator.
-Repeated returns do not create duplicate corrections. The verdict, correction references and corrected work
-return to the review caller. The calling workflow assigns fresh review when corrected work returns.
-The existing functionality, reviewer, verifier and remaining roles retain their duties and runtime paths.
-
-Completion messages contain only `<address>#<n> complete`. Read the report on the ticket and its assignment evidence explicitly. Claim returns only assignment identity and state. Startup uses MCP tool discovery without duplicating tool schemas in the assignment prompt.
+Ticket assignments record outcomes, candidates and evidence on their tickets without sending routine messages to the system agent. Delegated contributions return to their recorded callers with only `<address>#<n> complete`; callers read the report and assignment evidence explicitly. Reviews and corrections retain their ticket records without system notifications. Claim returns only assignment identity and state. Startup uses MCP tool discovery without duplicating tool schemas in the assignment prompt.

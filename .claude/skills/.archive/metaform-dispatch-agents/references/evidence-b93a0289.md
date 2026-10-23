@@ -1,0 +1,1 @@
+Error: The project has 8 helpers active. Wait for a helper to finish; worker limits do not block the advisor.

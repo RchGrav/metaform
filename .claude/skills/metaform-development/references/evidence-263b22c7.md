@@ -1,0 +1,2 @@
+Those loader-lock and "no withdrawal before replacement" observations actually belong to the set-aside Codex branch (`8747caac`), not main or this branch, so I'll correct that and add the identified cause.
+8747caac Set aside: unreviewed Codex agent work of 2026-10-19/20 (interactions, channels, playground, store reuse, audits)

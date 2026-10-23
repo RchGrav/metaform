@@ -1,0 +1,2 @@
+Error: 'note' is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute, done or remove; with id= and no op, the one ticket is read.
+Next: call map_work with the arguments its input schema lists

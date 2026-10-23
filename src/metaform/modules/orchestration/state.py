@@ -427,7 +427,8 @@ class Orchestration:
         store = own(ctx)
         with store.tables(write=False) as tx:
             assignment = row_for(tx, assignment_id=assignment['assignment_id']) or assignment
-        if assignment.get('stop') or store.ticket(str(assignment['work_id'])).work.done:
+        record = store.ticket(str(assignment['work_id'])).work
+        if assignment.get('stop') or record.done:
             return False
         if assignment['authored_role_uri'] in FACILITATORS:
             return True
@@ -437,6 +438,20 @@ class Orchestration:
                        if one['state'] == 'commissioned' and role_options(one).get('assign_in_place')]
             creators = [row_for(tx, assignment_id=one['creator_assignment_id']) for one in pending]
         if pending:
+            if not restart and any(one is None for one in creators) and not record.held:
+                # Missing ownership cannot publish a choice. Recreate only absent helpers, never stopped ones.
+                with store.atomic(), store.tables() as tx:
+                    current = row_for(tx, assignment_id=assignment['assignment_id'])
+                    gc = row_for(tx, assignment_id=assignment.get('gc_assignment_id'))
+                    work = store.ticket(str(assignment['work_id'])).work
+                    if (current and not current.get('stop') and current['state'] not in ENDED
+                            and gc and not gc.get('stop') and not work.done and not work.held):
+                        for request in pending:
+                            latest = tx.get('role_requests', {'request_id': request['request_id']})
+                            if (latest and latest['state'] == 'commissioned'
+                                    and row_for(tx, assignment_id=latest['creator_assignment_id']) is None):
+                                self._commission(tx, store, current, latest)
+                return False
             if restart and not assignment.get('stop') and all(
                     one is None or one.get('stop') or one['state'] in ENDED for one in creators):
                 # An explicit root restart authorizes replacement work. Old stopped descendants remain stopped.
@@ -448,13 +463,53 @@ class Orchestration:
                         'task': request['task'], 'key': 'restart:' + request['request_id'],
                         'context': role_options(request)}), assignment, request['role'])
             return False  # Its existing Facilitator owns both expertise and runtime before publication.
+        if not assignment.get('role_snapshot'):
+            placeholder = (assignment['authored_role_uri'] == 'metaform://role/gc'
+                           and not assignment.get('parent_assignment_id')
+                           and not assignment.get('reviewed_assignment_id'))
+            resolution = {'missing': True} if placeholder else resolve(ctx, assignment['authored_role_uri'])
+            if resolution.get('missing'):
+                # Restore lost expertise requests without replacing a surviving creator or its publication ID.
+                with store.atomic(), store.tables() as tx:
+                    current = row_for(tx, assignment_id=assignment['assignment_id'])
+                    work = store.ticket(str(assignment['work_id'])).work
+                    if (not current or current.get('stop') or current['state'] in ENDED
+                            or work.done or work.held):
+                        return False
+                    if (current.get('role_snapshot')
+                            or current['authored_role_uri'] != assignment['authored_role_uri']):
+                        return False
+                    requests = tx.rows('role_requests', {
+                        'caller_assignment_id': current['assignment_id']}, limit=0).results
+                    if any(one['state'] == 'commissioned' and role_options(one).get('assign_in_place')
+                           for one in requests):
+                        return False
+                    children = tx.rows('assignments', {
+                        'parent_assignment_id': current['assignment_id']}, limit=0).results
+                    orphaned = [one for one in children if one['authored_role_uri'] in FACILITATORS
+                                and cast(dict[str, Any], one.get('return_to') or {}).get('role_request_id')
+                                and not tx.get('role_requests', {
+                                    'request_id': one['return_to']['role_request_id']})]
+                    creator = max(orphaned, key=lambda one: (
+                        not one.get('stop') and one['state'] not in ENDED, one['created'], one['assignment_id']),
+                        default=None)
+                    if creator and (creator.get('stop') or creator['state'] in ENDED):
+                        return False
+                    self.request_role(replace(ctx, nouns={
+                        'task': work.task or '', 'key': 'expertise:' + uuid.uuid4().hex,
+                        'context': {'assign_in_place': True, 'choose_name': placeholder}}), current,
+                        '' if placeholder else str(current['authored_role_uri']).removeprefix('metaform://role/'),
+                        creator=creator)
+                return False
+            if resolution.get('problems'):
+                raise Stop(f'Cannot assign {assignment["authored_role_uri"]}: {resolution["problems"]}', HELP)
         work_id = str(assignment['work_id'])
         selected = self.runtime(ctx, work_id)
         if selected['state'] == 'unmanaged':
             return True
         if selected['state'] != 'selected':
             request_ctx = replace(ctx, nouns={
-                'task': assignment['task'], 'key': 'runtime:' + fingerprint(str(assignment['task'])),
+                'task': record.task or '', 'key': 'runtime:' + fingerprint(record.task or ''),
                 'context': {'assign_in_place': True, 'runtime_only': True}})
             self.request_role(request_ctx, assignment,
                               str(assignment['authored_role_uri']).removeprefix('metaform://role/'))
@@ -472,7 +527,7 @@ class Orchestration:
         self._delegate(replace(ctx, nouns={
             'assignment': assignment['assignment_id'], 'role': 'planner', 'task': task,
             'result': 'Refine the implementation ticket with concrete behavior and acceptance evidence.',
-            'key': 'runtime-plan:' + fingerprint(str(assignment['task'])), 'wait': True,
+            'key': 'runtime-plan:' + fingerprint(record.task or ''), 'wait': True,
             '_runtime_choice': inherited}), assignment, waiting=True, internal=True)
         return False
 
@@ -704,7 +759,7 @@ class Orchestration:
                 _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
                 assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
                     task=record.task or '', result=record.task or '', locations=places,
-                    mode=str(ctx.setting('orchestration_mode')), return_to={'kind': 'pm'}, persons=persons)
+                    mode=str(ctx.setting('orchestration_mode')), persons=persons)
                 if queue:
                     transition(tx, assignment, 'launch', {}, 'initial')
             if persons and not assignment.get('stop'):
@@ -929,7 +984,7 @@ class Orchestration:
                 task=record.task or '', result=str(ctx.nouns.get('result') or record.task or ''),
                 locations=places, mode=mode, specification=ctx.nouns.get('specification'),
                 candidate=ctx.nouns.get('candidate'), session=session,
-                return_to={'session_id': ctx.nouns.get('pm_session'), 'kind': 'pm'}, persons=bool(persons))
+                persons=bool(persons))
             if not resolution.get('missing'):
                 assignment = update(tx, assignment, role_snapshot=resolution)
                 if not session:
@@ -1026,13 +1081,14 @@ class Orchestration:
         return self.assignment(ctx, assignment_id=child['assignment_id']) or child
 
     def request_role(self, ctx: Context, parent: Mapping[str, Any], name: str,
-                     handoff: bool = False) -> dict[str, Any]:
+                     handoff: bool = False, *, creator: Mapping[str, Any] | None = None) -> dict[str, Any]:
         gc_id = parent.get('gc_assignment_id')
         if not gc_id:
             raise Stop('A missing specialty needs its delivery GC to commission the role.', HELP)
         request_key = str(ctx.nouns.get('key') or fingerprint(json.dumps(
             {'call': ctx.nouns, 'handoff': handoff}, sort_keys=True, default=str)))
-        request_id = identity(parent['assignment_id'], 'role_request', request_key)
+        request_id = str(creator['return_to']['role_request_id']) if creator else identity(
+            parent['assignment_id'], 'role_request', request_key)
         store = own(ctx)
         _, places = location(store, ctx.nouns.get('at'), parent)
         task = str(ctx.nouns['task'])
@@ -1044,6 +1100,14 @@ class Orchestration:
             previous = tx.get('role_requests', {'request_id': request_id})
             if previous:
                 return previous
+            if creator is None:
+                surviving = [one for one in tx.rows('assignments', {
+                    'parent_assignment_id': parent['assignment_id']}, limit=0).results
+                    if one['authored_role_uri'] in FACILITATORS
+                    and cast(dict[str, Any], one.get('return_to') or {}).get('role_request_id') == request_id]
+                creator = max(surviving, key=lambda one: (
+                    not one.get('stop') and one['state'] not in ENDED, one['created'], one['assignment_id']),
+                    default=None)
             gc = row_for(tx, assignment_id=gc_id)
             if gc is None or gc.get('stop'):
                 raise Stop('The delivery GC is unavailable or stopped.', HELP)
@@ -1065,6 +1129,10 @@ class Orchestration:
                 'child_assignment_id': None, 'state': 'requested', 'source': None, 'created': now()})
             update(tx, parent, state='waiting')
             transition(tx, parent, 'suspend', {'reason': 'Waiting for a requested specialist role.'}, request_id)
+            if creator:
+                tx.update('role_requests', {'request_id': request_id}, {
+                    'state': 'commissioned', 'creator_assignment_id': creator['assignment_id']})
+                return {**made, 'state': 'commissioned', 'creator_assignment_id': creator['assignment_id']}
             # Concurrent tickets needing the same specialty share one authoring helper. Each
             # request retains its own caller, task and continuation; publication releases all.
             runtime_only = cast(dict[str, Any], ctx.nouns.get('context') or {}).get('runtime_only')
@@ -1225,12 +1293,16 @@ class Orchestration:
                 if caller.get('stop'):
                     update(tx, child, state='stopped', stop=caller['stop'])
                 else:
-                    store.move_work(child['work_id'], column, kept=True)
-                    if column != 'backlog':
-                        transition(tx, child, 'launch', {'role_request_id': request['request_id']}, 'initial')
+                    current_work = store.ticket(str(child['work_id'])).work
+                    if not (in_place and (current_work.held or current_work.done)):
+                        store.move_work(child['work_id'], column, kept=True)
+                        if column != 'backlog':
+                            transition(tx, child, 'launch', {'role_request_id': request['request_id']},
+                                       request['request_id'])
                 published_assignments.append(child)
         for assigned in published_assignments:
-            if not assigned.get('stop'):
+            current_work = store.ticket(str(assigned['work_id'])).work
+            if not assigned.get('stop') and not current_work.held and not current_work.done:
                 self.prepare_runtime(ctx, assigned)
         reference = {key: published.get(key) for key in ('name', 'uri', 'version_id')}
         self.returned(ctx, creator['work_id'], {'published_role': reference, 'request_id': request_id},
@@ -1438,7 +1510,6 @@ class Orchestration:
                       'sender_assignment_id': held['assignment_id'],
                       'sender_session_id': held['owner_session_id'], 'work_id': work_id,
                       'return_to': held['return_to']}
-            user_packet = packet
             route: dict[str, Any] = held['return_to'] or {}
             parent = row_for(tx, assignment_id=route.get('assignment_id'))
             followed: set[str] = set()
@@ -1455,20 +1526,13 @@ class Orchestration:
                                       outcome='failed' if state == 'failed' else 'completed')
                 update(tx, predecessor, result=result, evidence=returned['evidence'], candidate=returned['candidate'])
             result_key = identity(held['assignment_id'], 'result', str(held.get('attempt') or 1), key or 'completion')
-            if parent:
+            if parent and not parent.get('stop') and parent['state'] not in ENDED and \
+                    not store.ticket(parent['work_id']).work.done:
                 transition(tx, parent, 'send', packet, result_key)
                 if held['authored_role_uri'] not in FACILITATORS:
                     self.wake(tx, parent, result_key)
-            elif route.get('kind') == 'pm':
-                transition(tx, returned, 'user_message', user_packet, result_key)
             touch(tx, returned, 'return')
-            if reviewed_gc:
-                transition(tx, returned, 'user_message', {**user_packet, 'kind': 'functional_assessment',
-                    'reviewed_assignment_id': reviewed_gc['assignment_id']}, result_key)
             owns_delivery = held['gc_assignment_id'] == held['assignment_id'] and not held['reviewed_assignment_id']
-            if owns_delivery and held['parent_assignment_id']:
-                transition(tx, returned, 'user_message', {**user_packet, 'kind': 'functional_correction',
-                    'responsible_gc_assignment_id': held['parent_assignment_id']}, result_key)
             reviews = tx.rows('assignments', {'reviewed_assignment_id': held['assignment_id']}, limit=0).results
             if owns_delivery and state != 'failed' and len(reviews) < int(ctx.setting('orchestration_reviews')):
                 transition(tx, returned, 'assessment', {'report': {}, 'key': result_key}, result_key)

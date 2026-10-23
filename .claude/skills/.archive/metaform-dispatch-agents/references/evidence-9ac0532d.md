@@ -1,0 +1,5 @@
+{"type":"assistant","text":"First choice not accepted, no error shown. Reading `choose()` to see why."}
+choose() docstring (tool result): "No heuristic decision replaces unavailable, failed or uncertain Jev. None asks the caller to commission the Facilitator without waiting for Jev to recover."
+TASKS (tool result): "TASKS = { 'planning': 'Build a concrete specification, plan, goal, tickets or their order.', 'needs_plan': ..., 'frontend': ..., 'coding': ..., 'lookup': ..., 'routing': ..., 'analysis': ..., 'writing': ... }"
+_validated (tool result): "if (not isinstance(task_type, str) or task_type not in TASKS or isinstance(confidence, bool) ... ): return None"
+{"type":"assistant","text":"Cause found: `task_type` must be one of `TASKS` keys; invalid choice returns `needs_choice` silently. Retrying with `coding`."}

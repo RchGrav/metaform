@@ -1,0 +1,1 @@
+Error: No record here holds id, map.item, status, steps, steps_done, taken_by; they hold number, said, at. Next: call map_work without it, or with view=full

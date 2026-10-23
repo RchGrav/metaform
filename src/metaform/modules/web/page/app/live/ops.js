@@ -521,19 +521,17 @@ export function listen() {
 }
 /* The topics the page takes apart from the map's changes. */
 /* The code the server runs, said first on every stream, VIEW-002: the first is the code this page opened with. A later
- * one that differs means the server was updated while the page stayed open on the old code: the page says so, with
- * Reload, and reloads itself only when it is out of view, so nothing the person is doing is taken from them. */
+ * one that differs means the server was updated while the page stayed open on the old code. Offer Reload without
+ * navigating automatically: a hidden tab still holds open conversations, panels and unsent text. */
 const CODE = {opened: null, told: false};
 function codeHeard(code) {
   if (!code) return;
   if (CODE.opened === null) { CODE.opened = code; return; }
   if (code === CODE.opened || CODE.told) return;
   CODE.told = true;
-  if (document.hidden) { location.reload(); return; }
   banner('updated', {tone: 'info', title: 'Metaform was updated', closable: true,
     text: 'This page still runs the version it opened with. Reload to use the new one.',
     actions: [{label: 'Reload', primary: true, run: () => location.reload()}]});
-  document.addEventListener('visibilitychange', () => { if (document.hidden) location.reload(); }, {once: true});
 }
 const TOPICS = {
   hello: payload => codeHeard(payload.code),  // the server's code, first on each stream, `CODE`

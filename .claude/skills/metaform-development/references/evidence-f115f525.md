@@ -1,0 +1,1 @@
+{"state":"selected","choice":{"agent":"claude","model":"opus","effort":"medium","decision":{"decider":"facilitator","confidence":0.75,"task_type":"frontend","reason":"3D map figure sizing: agents and caps one size, ~node height/width, perspective-scaled. Front-end visual work -> Claude, person override agent=claude kept. Concrete behavior, few files -> Opus at medium."

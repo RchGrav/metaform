@@ -1,0 +1,1 @@
+user: "Why cant I open up tickets and edit them or copy the text" / user: "Isnt that a flaw" / assistant tool result (board.js card builder): const box = h('div', {class: 'card', draggable: 'true', 'data-id': ticket.id, 'data-kind': ticket.kind || 'none', onclick: open}, cardTop(ticket), h('div', {class: 'text'}, ...taskWords(ticket.task || ticket.note || '')),

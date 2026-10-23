@@ -1,0 +1,1 @@
+{"action": "create", "reason": "A store layout change (layout 23 moving base notes into the critic layer) was shipped and verified by hand. The read-only per-store verification path and the backup-per-upgrade layout are reusable for any future layout bump and were not written down anywhere.", "evidence": "references/evidence-3a112034.md"}

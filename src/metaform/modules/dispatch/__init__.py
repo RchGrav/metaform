@@ -424,10 +424,11 @@ settings.choice('dispatch_record_on_finish', ['off', 'when-missing', 'always'], 
                         'sends nothing whatever the setting.')
 settings.boolean('dispatch_resume_chats', True, person_only=True, label='Resume chats',
                  help='Call and Chat go on with your last conversation about the same thing, so the agent keeps its '
-                      'memory of it; off starts a new conversation each time.',
+                      'memory of it; off starts a new conversation unless you select an existing session.',
                  details='A conversation is resumed in place with session/resume or session/load, as dispatch resume '
                          'does, when its agent is the one chosen and offers either; otherwise a new one starts. The '
-                         'checkbox beside Call in the chat dock sets it too.')
+                         'checkbox beside Call in the chat dock sets it too. Selecting an existing session always '
+                         'preserves that session; unavailable context is reported without a replacement.')
 # The person's system agent kept running, VIEW-045: the companion that is always there to talk to, and their mascot's
 # mind while they have one. Off by default: a running agent holds a login and a process the person did not ask for.
 settings.boolean('dispatch_stay_connected', False, person_only=True, label='Keep triage connected',
@@ -1241,9 +1242,8 @@ def ticket(store: Store, work_id: str) -> WorkRecord:
 # session's is since version 17, so an intake into a new base, and that base once the person activates it, both reach
 # it, VIEW-045 and BASE-039.
 INTAKE = 'intake-'
-# The person's conversations hang on a held ticket of the map, `anchor`; with no map yet, or none since a clear, they
-# hang on this work id, which is never a ticket either, so the person always talks with their own agent and an intake
-# is offered, never required first, VIEW-045.
+# System and node conversations use a project identity, never a board ticket. Editor conversations also use this
+# prefix when no map exists. Legacy ticket anchors remain readable, VIEW-045.
 CONVERSATION = 'conversation-'
 # A helper the person's system agent starts with a brief, `helper`, holds no ticket either: its work id is this prefix
 # and a token of its own, and its record is its session, its brief kept in the session's state and its work in its
@@ -2672,7 +2672,18 @@ def autostart(ctx: Context) -> dict[str, Any]:
     start_raised(ctx, store, asked)  # the person raised these, so they start whether Full Auto is checked or not
     hold_review_due = review_holds(ctx)
     connected = stay_connected(ctx, store, asked)  # the person's own, whether Full Auto is checked or not
-    started = start_work(ctx, store, recovered, asked)
+    from .board import stalled
+    try:
+        started = start_work(ctx, store, recovered, asked)
+    except OSError:
+        stalled(ctx)
+        raise
+    if not started.get('started') and not started.get('resumed'):
+        stalled(ctx)
+    if started.pop('runtime_pending', False):
+        # Preparation may have commissioned a helper after the first drain. Continue it in this pass because
+        # listeners ignore their own writes, and helpers have capacity independent of the worker slots.
+        continued.extend(drain(ctx))
     due = [one for one in (started.get('retry_due'), connected.pop('retry_due', None), hold_review_due) if one is not None]
     return {**started, **connected,
             'more': bool(started.get('more') or owner is not None and owner.routing_waiting(ctx)),
@@ -2761,20 +2772,51 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     now = time.time()
     ends = [float(row['next_at']) for row in backoff.values() if not row['handed'] and float(row['next_at']) > now]
     start_due = min(ends) if ends else None
-    if not may_start(ctx, store, opened, backoff):
-        return {'started': [], 'recovery': recovered,
-                'capacity_waiting': bool(opened) and slots(ctx, store)['machine_free'] == 0,
-                **merged_due(retry(ctx, store, opened, asked), start_due), **paused}
-    # Assignment routing records runtime choices before dispatch starts a ticket. Starting never makes a new
-    # model decision or waits on a decision service.
+    # Assignment orchestration prepares runtime choices before dispatch reserves capacity for a ticket.
     from .orchestration import service
     owner = service(ctx)
-    eligible_roles = None if owner is None else {
-        record.id for record in opened if not record.taken and not record.held and
-        owner.selected_specialist(ctx, record.id)}
+    eligible_roles: set[str] | None = None
+    runtime_pending = False
     if owner is not None:
-        owner.queue_routing(ctx, [record.id for record in opened
-                                  if not record.taken and not record.held and record.id not in (eligible_roles or ())])
+        eligible_roles = set()
+        unrouted: list[str] = []
+        # Runtime preparation can commission work, so it runs outside the reservation transaction. A ticket
+        # waiting for its runtime must neither consume capacity nor prevent other work through the healing gate.
+        kept_runtime = ticket_settings(ctx)
+        open_runtime_ids = {record.id for record in opened}
+        for record in opened:
+            if (record.taken or record.held
+                    or not (record.task or '').strip() and record.condition not in MARKERS
+                    or kept_runtime.get(record.id, {}).get('hold')
+                    or waits(record, kept_runtime.get(record.id), open_runtime_ids)
+                    or set_aside(ctx, record.id, kept_runtime) is not None
+                    or backing_off(backoff.get(record.id), now)):
+                continue
+            held = owner.assignment(ctx, work_id=record.id)
+            if held is not None:
+                if held.get('stop') or held.get('state') in ('returned', 'delivered', 'failed', 'stopped', 'transferred'):
+                    continue
+                # A GC placeholder needs missing expertise work repaired before specialist selection.
+                status = owner.routing_status(ctx, record.id) if held.get('authored_role_uri') == 'metaform://role/gc' \
+                    else None
+                missing_role = (held.get('authored_role_uri') == 'metaform://role/gc'
+                                and not held.get('role_snapshot') and not held.get('parent_assignment_id')
+                                and not held.get('reviewed_assignment_id'))
+                if (held.get('authored_role_uri') != 'metaform://role/gc'
+                        or status and status.get('state') == 'creating' or missing_role):
+                    if not owner.prepare_runtime(ctx, held):
+                        runtime_pending = True
+                        continue
+            if owner.selected_specialist(ctx, record.id):
+                eligible_roles.add(record.id)
+            else:
+                unrouted.append(record.id)
+        owner.queue_routing(ctx, unrouted)
+    # A full worker queue still permits preparation helpers. Only worker reservation waits for worker capacity.
+    if not may_start(ctx, store, opened, backoff):
+        return {'started': [], 'recovery': recovered, 'runtime_pending': runtime_pending,
+                'capacity_waiting': bool(opened) and slots(ctx, store)['machine_free'] == 0,
+                **merged_due(retry(ctx, store, opened, asked), start_due), **paused}
     # The supervisor's retries first, so a session it resumes takes its slot before a new ticket does, and both share
     # the one count of the gate. UX review round 1, 2026-10-17 (dispatch-concurrency F7): a retry handed over in the
     # same pass left its slot to the next pass, which nothing then brought. A ticket's progress is reconciled where its
@@ -2916,6 +2958,7 @@ def start_work(ctx: Context, store: Store, recovered: dict[str, Any], asked: int
     if failed is not None:
         raise failed
     return {'started': started, 'recovery': recovered, 'capacity_waiting': bool(candidates),
+            'runtime_pending': runtime_pending,
             'more': bool(ctx.nouns.get('batch') and started and len(candidates) > len(reserved)), **retried, **paused}
 
 
@@ -3179,7 +3222,7 @@ def stay_connected(ctx: Context, store: Store, asked: int | None = None) -> dict
     kept_on = bool(ctx.setting('dispatch_stay_connected'))
     if not kept_on and not (ctx.setting('dispatch_autostart') and board_waiting(store)):
         return {}
-    held = anchor(ctx, store)  # with no map, a work id that is no ticket: the person's agent needs no intake first
+    held = anchor(ctx, store)
     mine = system_sessions(store)
     if not kept_on and mine and str(mine[-1].get('how') or '') in SYSTEM_STOPS \
             and mine[-1]['state'] != 'running':
@@ -3198,6 +3241,10 @@ def stay_connected(ctx: Context, store: Store, asked: int | None = None) -> dict
             with own.tables() as tx:  # it outlived its wait, or the person brought it back: the count starts again
                 tx.delete('session_attempts', {'work_id': held})
         return {}
+    if last is not None:
+        legacy = held_ticket(store, str(last['work_id']))
+        if legacy is not None and legacy.task == SYSTEM_TASK and legacy.outcome == 'cancelled':
+            return {}  # cancellation also holds when its conversation had already ended
     from .signals import publish
     if last is not None and not last.get('origin'):
         # recorded before sessions kept their origin: it may be another home's in a copied store, so nothing resumes
@@ -3607,6 +3654,12 @@ def run_reserved(ctx: Context, reservation: str, given: dict[str, str | None] | 
     if owner is not None and (held := owner.assignment(ctx, work_id=work_id)) is not None:
         if not auto:
             held = owner.ensure(ctx, work_id, persons=True)
+        if held.get('stop'):
+            given_back_reservation(store, work_id, reservation)
+            return {'state': 'stopped', 'work_id': work_id}
+        if held.get('state') in ('returned', 'delivered', 'failed', 'stopped', 'transferred'):
+            given_back_reservation(store, work_id, reservation)
+            return {'state': held['state'], 'work_id': work_id}
         if not owner.prepare_runtime(ctx, held):
             given_back_reservation(store, work_id, reservation)
             return {'state': 'queued', 'work_id': work_id, 'reason': 'The Facilitator is preparing the ticket runtime.'}
@@ -3638,22 +3691,21 @@ def prep(ctx: Context) -> dict[str, Any]:
     return {'state': 'starting', 'work_id': work_id, 'agent': agent, **started}
 
 
-SYSTEM_TASK = 'Conversation with the system agent'  # the ticket that anchors the person's system agent chat; held, so no agent works it
+SYSTEM_TASK = 'Conversation with the system agent'  # identifies legacy system conversation tickets
 
 
 def conversation_id(task: str) -> str:
-    """The work id a held ticket's conversations hang on while the map holds no element: the system agent's,
-    `conversation-system`, or another held ticket's, by its task's words. It is no ticket."""
+    """A conversation identity outside board work: the system agent's, or an editor's when no map exists."""
     return CONVERSATION + ('system' if task == SYSTEM_TASK else re.sub(r'[^a-z0-9]+', '-', task.lower()).strip('-'))
 
 
 def anchor(ctx: Context, store: Store, at: str | None = None, task: str = SYSTEM_TASK) -> str:
-    """The work id the person's conversations hang on when what they talk about has no ticket of its own: the system
-    agent, a node, an ended agent's thread; with `task`, another held ticket of the person's, such as the one the
-    sessions an editor runs through `dispatch serve` hang on, BASE-062. It is a held ticket, so no agent works it, made
-    at the DE the first time. A map with no element, never made or cleared since, has nowhere to hold one: the
-    conversation then hangs on `conversation_id`, which is no ticket, and nothing is written to the map, so the person
-    talks with their own agent before any intake, which is offered and never required, VIEW-045."""
+    """System and node conversations use the project's conversation identity, independent of board work. Existing
+    sessions retain their legacy work ids until resumed. Other tasks, including editor sessions, keep their held
+    ticket at the DE, or use a conversation identity when no map exists, BASE-062 and VIEW-045."""
+    if task == SYSTEM_TASK:
+        return conversation_id(task)
+
     def anchored() -> WorkRecord | None:
         return next((record for record in store.work(open=True, limit=0).results if record.task == task), None)
     found = anchored()
@@ -3702,8 +3754,8 @@ def system(ctx: Context) -> dict[str, Any]:
     about anything in the project, from the project's folder, and stays until stopped. A running one is reused, except
     with `fresh`, /new on My agent: then the running one ends as the person's stop ends it, changing no setting, and a
     new one starts resuming nothing, so /new always gives a new conversation. The person's Call starts the
-    supervisor's count of its ends again, `stay_connected`. It needs no map and no intake: with no element on the map
-    it talks on a work id that is no ticket, `anchor`, VIEW-045, and their earlier conversation with it is found
+    supervisor's count of its ends again, `stay_connected`. It uses a work id that is no ticket, `anchor`, VIEW-045,
+    with or without a map, and their earlier conversation with it is found
     whatever it hangs on, a map cleared, restored or switched for another since among them, PROJ-026."""
     store = ctx.require_store()
     held = anchor(ctx, store)
@@ -3771,7 +3823,7 @@ def resumed_session(ctx: Context, store: Store, row: dict[str, Any], about: str,
     """The very session the person named, ended, resumed in place with its own agent as a conversation, so they can
     ask it what happened: the person speaks to any past context, an intake's included, since without it understanding
     a problem takes deep investigation (the person's rule, 2026-10-20). None when its agent can neither load nor resume
-    it, its folder is gone, or another home started it; a new conversation about the thread starts then."""
+    it, its folder is gone, or another home started it; the caller must report this without replacing its context."""
     kept = session_state(store, str(row['session_id'])) or {}
     caps = cast(dict[str, Any], kept.get('capabilities') or {})
     cwd = kept.get('cwd')
@@ -5006,8 +5058,8 @@ def raise_issue(ctx: Context) -> dict[str, Any]:
 
 def talk(ctx: Context) -> dict[str, Any]:
     """Talk with an agent about anything the person clicks, VIEW-042: a ticket, open or done, a node, or an ended
-    agent's session. An agent at work on it is talked to directly; otherwise a conversation agent starts, told
-    what it is about. One summoned agent is always the person's; more use the agent slots left free, and past them
+    agent's session. A named session is resumed in place or refused without replacement. Other subjects reuse an
+    agent at work or start a conversation about them. One summoned agent is always the person's; more use the slots left free, and past them
     a chat is refused until a slot frees. An agent whose role the person holds back starts no agent, may_steer, and
     talks to an agent at work only by a note, which never starts one."""
     if (held := held_role(ctx)) is not None:
@@ -5034,18 +5086,23 @@ def talk(ctx: Context) -> dict[str, Any]:
         about = f'thread:{session_id}'
     else:
         work_id, about = anchor(ctx, store, ref), f'node:{ref}'
-    if kind in ('id', 'session'):  # an agent at work on it is talked to directly, never restarted
+    if kind == 'session':
+        named = next(row for row in everyone if row['work_id'] == work_id and row['session_id'] == ref.partition(':')[2])
+        if named['state'] == 'running':
+            return {key: named[key] for key in ('work_id', 'agent', 'session_id', 'state')}
+        # Naming a conversation selects its context. The new-chat default never authorizes replacing it.
+        if (again := resumed_session(ctx, store, named, about)) is not None:
+            return again
+        raise Stop('This conversation cannot resume its saved context. No replacement agent was started.',
+                   f'metaform dispatch sessions id={work_id} session={named["session_id"]}')
+    if kind == 'id':  # an agent at work on it is talked to directly, never restarted
         working = next((row for row in reversed(running) if row['work_id'] == work_id and not summoned(row)), None)
-        if working is not None and (kind != 'session' or working['session_id'] == ref.partition(':')[2]):
+        if working is not None:
             return {key: working[key] for key in ('work_id', 'agent', 'session_id', 'state')}
     talking = next((row for row in running if summoned(row) and row['work_id'] == work_id
                     and f'talk={about}' in command_line(row['pid'])), None)
     if talking is not None:  # the chat about this is already open: it is reused
         return {key: talking[key] for key in ('work_id', 'agent', 'session_id', 'state')}
-    if kind == 'session' and ctx.setting('dispatch_resume_chats'):  # restore named context only when enabled
-        named = next(row for row in everyone if row['work_id'] == work_id and row['session_id'] == ref.partition(':')[2])
-        if named['state'] != 'running' and (again := resumed_session(ctx, store, named, about)) is not None:
-            return again
     # the slots are counted by the gate alone, under its lock, which names the limit that binds (spawn-gate F4); one
     # starting about this already is reused there too
     # a thread whose ticket went with a cleared map is talked about all the same, on no ticket
@@ -6858,7 +6915,7 @@ def resume(ctx: Context) -> dict[str, Any]:
     """Resume an ended agent session in place, with the agent's own memory of it, where its agent can load or resume
     a session: its thread goes on where it ended. A worker whose ticket is still its own goes on as that ticket's
     worker; any other session comes back as a conversation the person summoned. It waits for the person's next
-    message. An agent that can do neither is refused, with a fresh agent that reads the thread as the next step."""
+    message. An agent that can do neither is refused without starting a replacement."""
     may_steer(ctx)
     store = ctx.require_store()
     work_id = str(ctx.nouns['id'])
@@ -6879,15 +6936,15 @@ def resume(ctx: Context) -> dict[str, Any]:
         return {**said, 'state': 'running'}
     if intake_id(work_id):  # one intake agent at a time, BASE-039: not beside another starting or at work
         refuse_second_intake(store, work_id)
-    fresh = f'metaform dispatch talk session={work_id}:{session_id}'
+    inspect = f'metaform dispatch sessions id={work_id} session={session_id}'
     kept = session_state(held, session_id) or {}
     caps = cast(dict[str, Any], kept.get('capabilities') or {})
     if not (caps.get('resume') or caps.get('load')):
         raise Stop(f'{agent_label(agent)} did not offer to resume its sessions, so session {session_id} cannot go on; '
-                   'a new agent can read its thread instead.', fresh)
+                   'no replacement agent was started.', inspect)
     cwd = kept.get('cwd')
     if not isinstance(cwd, str) or not os.path.isdir(cwd):
-        raise Stop(f'The folder session {session_id} worked in, {cwd}, is gone.', fresh)
+        raise Stop(f'The folder session {session_id} worked in, {cwd}, is gone.', inspect)
     runnable(ctx, agent)
     held = base_store(held, row)  # its ticket is in the metaform its runner was pinned to, and it goes on there
     record = None if intake_id(work_id) else held_ticket(held, work_id)
@@ -6910,7 +6967,8 @@ def resume(ctx: Context) -> dict[str, Any]:
     if assignment and owner is not None and not automatic:
         admit(ctx, held, work_id, 'worker' if worker else 'summoned', agent=agent)
         owner.reopen(ctx, work_id)
-    started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *([] if worker else ['system=true'])], 'resume',
+    conversation = [] if worker else ['system=true', *([f'talk=thread:{session_id}'] if helper_id(work_id) else [])]
+    started = resume_spawn(held, work_id, agent, [f'resume={session_id}', *conversation], 'resume',
                            ctx=ctx, auto=automatic)
     if started.get('state') == 'running' and silent(row, started.get('pid')):
         return held_session(row, int(started['pid']))
@@ -7324,6 +7382,7 @@ def cancel(ctx: Context) -> dict[str, Any]:
     stopped: dict[str, Any] | None = None
     live = next((row for row in reversed(sessions(store, work_id)) if row['state'] == 'running'), None)
     if live is not None:
+        disconnect(ctx, store, live)
         stopped = tell(live, 'cancel')
     store.finish_work(work_id, f'Cancelled: {reason}' if reason else 'Cancelled.', reason or 'cancelled by the person',
                       outcome='cancelled')

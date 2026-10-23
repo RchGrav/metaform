@@ -805,3 +805,277 @@ def test_explicit_restart_replaces_stopped_runtime_chooser_without_reopening_it(
     SERVICE.ensure(ctx, work.id, persons=True)
     with own(ctx).tables(write=False) as tx:
         assert len(tx.rows('role_requests', limit=0).results) == 2
+
+
+@pytest.mark.parametrize('protection', ['caller_stop', 'caller_ended', 'creator_stop', 'creator_ended', 'held', 'closed'])
+def test_missing_expertise_request_preserves_stops_and_holds(case, monkeypatch, routing_transport, protection):
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    monkeypatch.setattr(jev, 'config', lambda *args: None)
+    SERVICE.route(ctx, work.id)
+    caller = SERVICE.assignment(ctx, work_id=work.id)
+    with own(ctx).tables() as tx:
+        request, = tx.rows('role_requests', limit=0).results
+        tx.delete('role_requests', {'request_id': request['request_id']})
+        if protection.startswith(('caller_', 'creator_')):
+            target = caller['assignment_id'] if protection.startswith('caller_') else request['creator_assignment_id']
+            tx.update('assignments', {'assignment_id': target}, {
+                'state': 'stopped' if protection.endswith('_stop') else 'returned',
+                'stop': {'by': 'person'} if protection.endswith('_stop') else None})
+    if protection == 'held':
+        store.move_work(work.id, 'backlog', kept=True, hold_reason='Wait for person to release this ticket.')
+    elif protection == 'closed':
+        store.finish_work(work.id, 'Person cancelled this work.', outcome='cancelled')
+    before = {one.id for one in store.work(limit=0).results}
+
+    assert not SERVICE.prepare_runtime(ctx, caller)
+
+    assert {one.id for one in store.work(limit=0).results} == before
+    with own(ctx).tables(write=False) as tx:
+        assert not tx.rows('role_requests', limit=0).results
+
+
+def test_missing_unpinned_role_commissions_without_reusing_historical_publication(case, routing_transport):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import own
+
+    ctx, _, work = case
+    expert(ctx)
+    caller = SERVICE.claim(replace(ctx, nouns={
+        'work': work.id, 'role': 'alarm_engineering', 'automatic': True}))
+    old = SERVICE.request_role(replace(ctx, nouns={
+        'task': work.task, 'key': 'expertise', 'context': {'assign_in_place': True}}), caller, 'missing_alarm_domain')
+    with own(ctx).tables() as tx:
+        tx.update('role_requests', {'request_id': old['request_id']}, {'state': 'published'})
+        tx.update('assignments', {'assignment_id': caller['assignment_id']}, {
+            'authored_role_uri': 'metaform://role/missing_alarm_domain', 'role_snapshot': None})
+
+    assert not SERVICE.prepare_runtime(ctx, caller)
+    assert not SERVICE.prepare_runtime(ctx, caller)
+
+    with own(ctx).tables(write=False) as tx:
+        pending = tx.rows('role_requests', {'role': 'missing_alarm_domain', 'state': 'commissioned'}, limit=0).results
+    assert len(pending) == 1
+    assert pending[0]['role'] == 'missing_alarm_domain'
+    assert pending[0]['request_id'] != old['request_id']
+    assert pending[0]['caller_assignment_id'] == caller['assignment_id']
+
+
+@pytest.mark.parametrize('protection', ['held', 'closed'])
+def test_publication_preserves_ticket_protected_during_commission(case, monkeypatch, routing_transport, protection):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    monkeypatch.setattr(jev, 'config', lambda *args: None)
+    registered = expert(ctx)
+    SERVICE.route(ctx, work.id)
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
+    SERVICE.drain(ctx)
+    creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
+    if protection == 'held':
+        store.move_work(work.id, 'backlog', kept=True, hold_reason='Await revised acceptance conditions.')
+    else:
+        store.finish_work(work.id, 'Person cancelled this work.', outcome='cancelled')
+    before = store.ticket(work.id).work
+    monkeypatch.setattr(SERVICE, 'prepare_runtime',
+                        lambda *args, **kwargs: pytest.fail('Protected publication cannot prepare follow-up work'))
+
+    SERVICE.publish_role(replace(ctx, session=creator['owner_session_id'], nouns={
+        'request': request['request_id'], 'role': registered['uri']}))
+
+    after = store.ticket(work.id).work
+    assert (after.held, after.done, after.outcome) == (before.held, before.done, before.outcome)
+    assert not any(one['kind'] == 'launch' for one in SERVICE.pending(ctx, [work.id]))
+
+
+@pytest.mark.parametrize('creator_state', ['running', 'stopped', 'returned'])
+def test_lost_runtime_request_reuses_surviving_creator(case, monkeypatch, runtime_transport, creator_state):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    expert(ctx)
+    monkeypatch.setattr(jev, 'config', lambda *args: None)
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    with own(ctx).tables() as tx:
+        request, = tx.rows('role_requests', limit=0).results
+        tx.delete('role_requests', {'request_id': request['request_id']})
+    creator = SERVICE.bind(ctx, request['creator_assignment_id'], 'runtime-creator')
+    if creator_state != 'running':
+        with own(ctx).tables() as tx:
+            tx.update('assignments', {'assignment_id': creator['assignment_id']}, {
+                'state': creator_state, 'stop': {'by': 'person'} if creator_state == 'stopped' else None})
+    before = {one.id for one in store.work(limit=0).results}
+
+    assert not SERVICE.prepare_runtime(ctx, assigned)
+
+    with own(ctx).tables(write=False) as tx:
+        restored, = tx.rows('role_requests', limit=0).results
+    assert restored['creator_assignment_id'] == creator['assignment_id']
+    assert restored['request_id'] == request['request_id']
+    assert SERVICE.assignment(ctx, assignment_id=creator['assignment_id'])['owner_session_id'] == 'runtime-creator'
+    assert SERVICE.assignment(ctx, assignment_id=creator['assignment_id'])['state'] == creator_state
+    assert {one.id for one in store.work(limit=0).results} == before
+
+
+@pytest.mark.parametrize('automatic_request', [True, False])
+def test_revised_ticket_runtime_gets_new_request_and_launch(case, monkeypatch, runtime_transport,
+                                                         automatic_request):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import fingerprint, own
+
+    ctx, store, work = case
+    expert(ctx)
+    monkeypatch.setattr(jev, 'config', lambda *args: None)
+    assigned = SERVICE.claim(replace(ctx, nouns={'work': work.id, 'role': 'alarm_engineering'}))
+    choice = {'agent': 'codex', 'model': 'option-z', 'effort': 'medium', 'confidence': 0.88,
+              'task_type': 'coding', 'reason': 'Concrete alarm expiry requirements.'}
+
+    def publish(request):
+        creator_ctx = replace(ctx, nouns={'assignment': request['creator_assignment_id']})
+        assert SERVICE.runtime(creator_ctx, work.id, choice)['state'] == 'selected'
+        return SERVICE.publish_role(replace(creator_ctx, nouns={**creator_ctx.nouns,
+            'request': request['request_id'], 'role': 'alarm_engineering'}))
+
+    with own(ctx).tables(write=False) as tx:
+        first = tx.rows('role_requests', {'caller_assignment_id': assigned['assignment_id']}, limit=0).results[0]
+    publish(first)
+    for event in SERVICE.pending(ctx, [work.id]):
+        SERVICE.delivered(ctx, event['transition_id'], {'state': 'completed'})
+    assert not SERVICE.pending(ctx, [work.id])
+
+    revised = 'Reject expired alarms and verify the exact expiry boundary.'
+    store.edit_work(work.id, {'task': revised})
+    if automatic_request:
+        assert not SERVICE.prepare_runtime(ctx, assigned)
+    else:
+        # Isolate publication from request identity so both losses fail independently.
+        SERVICE.request_role(replace(ctx, nouns={
+            'task': revised, 'key': 'runtime:' + fingerprint(revised),
+            'context': {'assign_in_place': True, 'runtime_only': True}}), assigned, 'alarm_engineering')
+    with own(ctx).tables(write=False) as tx:
+        pending = [one for one in tx.rows('role_requests', {
+            'caller_assignment_id': assigned['assignment_id']}, limit=0).results if one['state'] == 'commissioned']
+    assert len(pending) == 1
+    assert pending[0]['task'].startswith(revised)
+    assert pending[0]['request_id'] != first['request_id']
+    published = publish(pending[0])
+    assert published['assignment']['assignment_id'] == assigned['assignment_id']
+    launches = [event for event in SERVICE.pending(ctx, [work.id]) if event['kind'] == 'launch']
+    assert len(launches) == 1
+    assert launches[0]['payload']['role_request_id'] == pending[0]['request_id']
+    SERVICE.publish_role(replace(ctx, nouns={
+        'assignment': pending[0]['creator_assignment_id'], 'request': pending[0]['request_id'],
+        'role': 'alarm_engineering'}))
+    assert [event for event in SERVICE.pending(ctx, [work.id]) if event['kind'] == 'launch'] == launches
+    assert SERVICE.prepare_runtime(ctx, assigned)
+    assert runtime_transport[work.id]['decision']['task_fingerprint'] == fingerprint(revised)
+
+
+@pytest.fixture
+def routing_transport(case, monkeypatch):
+    from metaform.modules.orchestration.tests.test_orchestration import Transport
+
+    made = Transport(capacity=5)
+    namespace = SERVICE.drain.__func__.__globals__
+    original = namespace['provided']
+    monkeypatch.setitem(namespace, 'provided', lambda folder, kind: [('fixture', made)]
+                        if kind == 'orchestration.transport' else original(folder, kind))
+    return made
+
+
+def test_pinned_specialist_survives_removal_from_current_registry(case, routing_transport):
+    from dataclasses import replace
+
+    ctx, _, work = case
+    expert(ctx)
+    assigned = SERVICE.claim(replace(ctx, nouns={
+        'work': work.id, 'role': 'alarm_engineering', 'automatic': True}))
+    snapshot = assigned['role_snapshot']
+    with context('agents', ctx.folder, project='proj').require_store().tables() as tx:
+        tx.delete('definitions', {'name': 'alarm_engineering'})
+    assert 'metaform://role/alarm_engineering' not in {one['uri'] for one in ROLES.specialists(ctx)}
+
+    assert SERVICE.selected_specialist(ctx, work.id) == 'metaform://role/alarm_engineering'
+    SERVICE.drain(ctx)
+    bound = SERVICE.assignment(ctx, work_id=work.id)
+    assert bound['assignment_id'] == assigned['assignment_id']
+    assert bound['role_snapshot'] == snapshot
+    assert bound['state'] == 'running'
+    assert [one[0]['work_id'] for one in routing_transport.launches] == [work.id]
+
+
+@pytest.mark.parametrize('loss', ['none', 'creator', 'commission', 'request', 'request_with_stopped_history'])
+def test_fresh_routing_commissions_publishes_and_continues_once(case, monkeypatch, routing_transport,
+                                                             loss):
+    from dataclasses import replace
+
+    from metaform.modules.orchestration.state import own
+
+    ctx, store, work = case
+    monkeypatch.setattr(jev, 'config', lambda *args: None)
+    registered = expert(ctx)
+    existing = store.add_work(Node('element', 'code.alarm.audible'), None, task='Keep existing expertise.')
+    preserved = SERVICE.claim(replace(ctx, nouns={
+        'work': existing.id, 'role': 'alarm_engineering', 'automatic': True}))
+    work_changed({'project': 'proj', 'tables': ['work'], 'kinds': ['filed'],
+                  'work_ids': [work.id, existing.id]}, ctx)
+    assert SERVICE.route_pending(ctx)[0]['state'] == 'creating'
+    owner = SERVICE.assignment(ctx, work_id=work.id)
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', limit=0).results
+    assert request['caller_assignment_id'] == owner['assignment_id']
+    if loss != 'none':
+        if loss.startswith('request'):
+            SERVICE.drain(ctx)
+        historical = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Stopped old commission.') \
+            if loss == 'request_with_stopped_history' else None
+        with own(ctx).tables() as tx:
+            if not loss.startswith('request'):
+                tx.delete('assignments', {'assignment_id': request['creator_assignment_id']})
+            if loss == 'commission' or loss.startswith('request'):
+                tx.delete('role_requests', {'request_id': request['request_id']})
+            if loss == 'request_with_stopped_history':
+                active = tx.get('assignments', {'assignment_id': request['creator_assignment_id']})
+                tx.insert('assignments', {**active, 'assignment_id': 'f' * 32, 'work_id': historical.id,
+                    'state': 'stopped', 'stop': {'by': 'person'}, 'owner_session_id': None,
+                    'created': '2099-01-01T00:00:00Z',
+                    'return_to': {'assignment_id': owner['assignment_id'], 'role_request_id': 'historical-request'}})
+        assert not SERVICE.prepare_runtime(ctx, owner)
+    SERVICE.queue_routing(ctx, [work.id, existing.id])
+    assert SERVICE.route_pending(ctx) == []
+    assert not SERVICE.prepare_runtime(ctx, owner)
+    with own(ctx).tables(write=False) as tx:
+        current, = tx.rows('role_requests', limit=0).results
+    if loss != 'commission':
+        assert current['request_id'] == request['request_id']
+    assert (current['creator_assignment_id'] != request['creator_assignment_id']) == (loss in ('creator', 'commission'))
+
+    SERVICE.drain(ctx)
+    creator = SERVICE.assignment(ctx, assignment_id=current['creator_assignment_id'])
+    assert creator['state'] == 'running' and not creator['persons_start']
+    assert SERVICE.assignment(ctx, work_id=existing.id)['role_snapshot'] == preserved['role_snapshot']
+    writer = replace(ctx, session=creator['owner_session_id'], nouns={
+        'request': current['request_id'], 'role': registered['uri'],
+        'match_reason': 'Existing alarm expertise covers this ticket.'})
+    published = SERVICE.publish_role(writer)
+    assert published['assignment']['assignment_id'] == owner['assignment_id']
+    assert published['assignment']['work_id'] == work.id
+    SERVICE.publish_role(writer)
+    SERVICE.queue_routing(ctx, [work.id, existing.id])
+    SERVICE.route_pending(ctx)
+    SERVICE.drain(ctx)
+    SERVICE.drain(ctx)
+    assert SERVICE.assignment(ctx, work_id=work.id)['state'] == 'running'
+    assert SERVICE.assignment(ctx, work_id=work.id)['role_snapshot']['uri'] == registered['uri']
+    assert [one[0]['work_id'] for one in routing_transport.launches].count(work.id) == 1
+    assert [one[0]['work_id'] for one in routing_transport.launches].count(existing.id) == 1
+    with own(ctx).tables(write=False) as tx:
+        assert len(tx.rows('role_requests', limit=0).results) == 1

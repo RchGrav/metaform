@@ -1,0 +1,1 @@
+Error: ... "Ticket fcfdfabf127e4d169e… is not available for specialist assignment." (failed to start 4 times). Orchestration.ensure raises it when routing.route returns no role; a published Facilitator role "binds the ticket and clears the cause of the refusal" per the memory entry. The ticket's map item already named Codex, and that choice was kept.

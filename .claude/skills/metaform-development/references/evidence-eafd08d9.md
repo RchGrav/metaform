@@ -1,0 +1,1 @@
+delivery: Ticket stays open. Missing: Merge this ticket's own commits into main, push, activate changed code, then clear its fault light.

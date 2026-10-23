@@ -1,0 +1,1 @@
+metaform-full-auto-launch-gate [project]: Use when "Full Auto is off" refuses a Metaform start, or before stopping any agent, running a stop-all, or switching Full Auto.

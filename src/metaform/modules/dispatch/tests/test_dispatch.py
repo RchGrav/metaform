@@ -2174,7 +2174,7 @@ def test_a_permission_request_is_a_choice_among_its_options_that_the_person_answ
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 @pytest.mark.parametrize('resume', [False, True])
-def test_ended_named_chat_reopening_honors_resume_without_transcript_replay(dispatch, run, dispatch_runners, resume):
+def test_ended_named_chat_always_resumes_selected_context(dispatch, run, dispatch_runners, resume):
     from metaform import settings
 
     run('set', '--dispatch-resume-chats' if resume else '--no-dispatch-resume-chats', cwd=dispatch.folder)
@@ -2185,37 +2185,33 @@ def test_ended_named_chat_reopening_honors_resume_without_transcript_replay(disp
     assert dispatch.process.wait(30) == 0
     old = dispatch.session().extra['session_id']
     assert settings.value('dispatch_resume_chats', dispatch.folder) is resume
-    before = len(dispatch.received('session/prompt'))
     started = json.loads(run('dispatch', 'talk', f'session={name}', '--json', cwd=dispatch.folder,
                              env=dispatch.env('hold', FAKE_ACP_LOAD='1')).stdout)
     dispatch_runners.append((started, dispatch.folder, dispatch.log))
-    if resume:
-        eventually(lambda: dispatch.received('session/load'))
-        assert started['session_id'] == old
-        assert len(dispatch.received('session/new')) == 1
-    else:
-        eventually(lambda: len(dispatch.received('session/new')) == 2 or dispatch.received('session/load'))
-        assert not dispatch.received('session/load')
-        prompts = eventually(lambda: dispatch.received('session/prompt')[before:])
-        fresh = prompts[0]['params']['sessionId']
-        assert fresh != old
-        assert not dispatch.received('session/load')
-        assert len(dispatch.received('session/new')) == 2
-        text = '\n'.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
-        assert 'whole thread' not in text
-        assert 'thread=false' in text
-        assert 'only when needed' in text
-        again = json.loads(run('dispatch', 'talk', f'session={dispatch.id}:{old}', '--json', cwd=dispatch.folder).stdout)
-        assert again['session_id'] == fresh, 'running follow-ups reuse their conversation'
+    assert started['session_id'] == old
+    eventually(lambda: dispatch.received('session/load'))
+    assert len(dispatch.received('session/new')) == 1
     dispatch.stop()
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-039')
+def test_named_session_without_saved_context_refuses_replacement(dispatch, run):
+    from metaform.data import Store
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'unavailable', 'work_id': dispatch.id, 'agent': 'codex',
+                                    'state': 'ended', 'started': '2026-10-01T00:00:00Z', 'seq': 1})
+    refused = run('dispatch', 'talk', f'session={dispatch.id}:unavailable', cwd=dispatch.folder, ok=False)
+    assert refused.returncode != 0
+    assert 'No replacement agent was started' in refused.stdout + refused.stderr
+    assert not dispatch.received('session/new')
 
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('VIEW-039')
 def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispatch, run, dispatch_runners):
     """The agent loads its own session again: the same session id, its thread going on with nothing replayed into
-    it twice, and its ticket still its own; a session whose agent offered no way back is refused with a fresh agent
-    that can consult its retained thread when needed as the next step."""
+    it twice, and its ticket still its own; unavailable context is refused without a replacement."""
     from metaform.data import Store
     dispatch.start('hold', FAKE_ACP_LOAD='1')
     eventually(lambda: dispatch.logged('grandchild'))
@@ -2248,7 +2244,7 @@ def test_an_ended_session_is_resumed_in_place_where_its_agent_can_load_it(dispat
         tx.insert('agent_sessions', {'session_id': 'older', 'work_id': dispatch.id, 'agent': 'codex', 'state': 'ended',
                                'started': '2026-10-01T00:00:00Z', 'seq': 1})
     refused = run('dispatch', 'resume', dispatch.id, 'session=older', cwd=dispatch.folder, ok=False)
-    assert refused.returncode != 0 and f'dispatch talk session={dispatch.id}:older' in refused.stdout + refused.stderr
+    assert refused.returncode != 0 and f'dispatch sessions id={dispatch.id} session=older' in refused.stdout + refused.stderr
     run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder)
 
 
@@ -2271,7 +2267,7 @@ def test_missing_rollout_ends_resume_and_preserves_thread_without_another_fault(
     assert not [line for line in after['lines'] if line['kind'] == 'failed']
     refused = run('dispatch', 'resume', dispatch.id, cwd=dispatch.folder, ok=False)
     assert refused.returncode != 0
-    assert 'a new agent can read its thread instead' in refused.stdout + refused.stderr
+    assert 'no replacement agent was started' in refused.stdout + refused.stderr
 
 
 @pytest.mark.req('BASE-052')
@@ -2405,11 +2401,41 @@ def test_a_helper_runs_its_brief_on_no_ticket_outside_the_worker_slots_seen_live
     assert ended[0]['how'] == 'stopped by the person', ended
 
 
-def test_a_helper_that_finishes_its_brief_puts_one_line_in_the_system_agents_inbox_and_ends(dispatch, run,
+@pytest.mark.parametrize('route', ['talk', 'resume'])
+def test_replying_to_ended_helper_preserves_context_and_keeps_conversation_open(dispatch, run, dispatch_runners, route):
+    run('set', '--no-dispatch-resume-chats', cwd=dispatch.folder)
+    brief = 'Remember this investigation and answer follow-up questions.'
+    started = json.loads(run('dispatch', 'helper', '--json', '--', brief, cwd=dispatch.folder,
+                             env=dispatch.env('plain', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((started, dispatch.folder, dispatch.log))
+    work = started['work_id']
+    ended = eventually(lambda: got if (got := read(run, dispatch, work))['sessions']
+                       and got['sessions'][0]['state'] == 'ended' else None)
+    session = ended['sessions'][0]['session_id']
+    name = ended['states'][session]['name']
+    args = ['talk', f'session={work}:{session}'] if route == 'talk' else ['resume', work, f'session={session}']
+    again = json.loads(run('dispatch', *args, '--json', cwd=dispatch.folder,
+                           env=dispatch.env('plain', FAKE_ACP_LOAD='1')).stdout)
+    dispatch_runners.append((again, dispatch.folder, dispatch.log))
+    assert again['session_id'] == session
+    eventually(lambda: dispatch.received('session/load'))
+    eventually(lambda: read(run, dispatch, work)['sessions'][0]['state'] == 'running')
+    run('dispatch', 'message', work, f'session={session}', '--', 'Explain the same investigation.', cwd=dispatch.folder)
+    eventually(lambda: len(dispatch.received('session/prompt')) == 2)
+    found = eventually(lambda: got if (got := read(run, dispatch, work))['sessions'][0].get('activity') == 'idle'
+                       else None)
+    assert len(found['sessions']) == 1
+    assert found['sessions'][0]['state'] == 'running'
+    assert found['states'][session]['role'] == 'talk'
+    assert found['states'][session]['brief'] == brief
+    assert found['states'][session]['name'] == name
+    assert len(dispatch.received('session/new')) == 1
+    run('dispatch', 'stop', work, cwd=dispatch.folder)
+
+
+def test_a_helper_that_finishes_its_brief_records_one_ui_update_and_ends(dispatch, run,
                                                                                           dispatch_runners):
-    """code.dispatcher.agent#78: once its brief's turn ends, a helper tells the person's system agent in one inbox line,
-    named by the helper and its result's state, never its words, with where its whole result is read; its session
-    ends, giving its place back, and stays readable with its brief."""
+    """A finished helper keeps its result visible without broadcasting completion into model context."""
     from metaform.module import context
     from metaform.modules.dispatch.orchestration import update_entries, user_updates
     brief = 'Check that the README names every dispatch verb.'
@@ -2424,9 +2450,8 @@ def test_a_helper_that_finishes_its_brief_puts_one_line_in_the_system_agents_inb
     [session] = ended['sessions']
     assert session['how'] == 'its brief is done' and ended['states'][session['session_id']]['brief'] == brief, ended
     ctx = context('dispatch', dispatch.folder, project='proj')
-    waiting = eventually(lambda: user_updates(ctx))
-    [(_, said, wakes)] = update_entries(ctx, waiting)
-    assert said == f'Ticket helper {work_id[len("helper-"):][:8]} — done' and not wakes, said
+    assert user_updates(ctx) == []
+    assert update_entries(ctx, [f'helper:{session["session_id"]}']) == []
     from metaform.data import Store
     from metaform.modules.dispatch.orchestration import UPDATES
     with Store('proj', module='dispatch').tables(write=False) as tx:
@@ -3996,7 +4021,7 @@ def test_the_supervisor_hands_a_logged_out_session_over_at_once_and_keeps_its_ru
 
 
 def stay_connected(dispatch, run, monkeypatch, caps):
-    """dispatch_stay_connected on, the held system ticket, and one system session s1 on it that ended on its own
+    """dispatch_stay_connected on, the system conversation identity, and one session s1 that ended on its own
     with the capabilities given; nothing is started: each runner spawned and each new conversation is only noted."""
     from metaform import settings
     from metaform.data import Store
@@ -4005,7 +4030,7 @@ def stay_connected(dispatch, run, monkeypatch, caps):
     for agent in ('claude', 'codex', 'antigravity'):  # the fake, before anything could start
         assert str(FAKE) in settings.value(f'dispatch_{agent}', dispatch.folder)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    held = module.anchor(ctx, dispatch.store, NODE)  # this map has no roots, so the held ticket is at the node
+    held = module.anchor(ctx, dispatch.store, NODE)
     with Store('proj', module='dispatch').tables() as tx:
         tx.insert('agent_sessions', {'session_id': 's1', 'work_id': held, 'agent': 'claude', 'state': 'ended',
                                'how': 'the agent ended with exit code 1', 'started': '2026-10-11T00:00:00Z', 'seq': 1,
@@ -4019,6 +4044,89 @@ def stay_connected(dispatch, run, monkeypatch, caps):
     assert module.stay_connected(ctx, dispatch.store) == {}, 'off by default: nothing starts'
     run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
     return module, ctx, held, started
+
+
+@pytest.mark.req('BASE-052')
+@pytest.mark.req('VIEW-045')
+@pytest.mark.parametrize('removed', [False, True])
+def test_system_conversations_never_recreate_legacy_work(dispatch, run, monkeypatch, removed):
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    dispatch.store.add_element(None, 'code', name_length=1, role='DE')
+    legacy = dispatch.store.add_work(dispatch.node, None, task=module.SYSTEM_TASK, held=True).id
+    if removed:
+        run('map', 'work', 'op=remove', f'id={legacy}', cwd=dispatch.folder)
+    else:
+        run('dispatch', 'cancel', legacy, cwd=dispatch.folder)
+    before = dispatch.store.work(limit=0).results
+    started = []
+    monkeypatch.setattr(module, 'converse', lambda ctx, store, work_id, agent, extra, **_: started.append(work_id)
+                        or {'state': 'starting', 'work_id': work_id})
+    run('set', '--dispatch-stay-connected', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    assert module.stay_connected(ctx, dispatch.store)['connected']['work_id'] == 'conversation-system'
+    assert module.system(ctx)['work_id'] == 'conversation-system'
+    chat = context('dispatch', dispatch.folder, project='proj', nouns={'node': NODE})
+    assert module.talk(chat)['work_id'] == 'conversation-system'
+    assert started == ['conversation-system'] * 3
+    assert dispatch.store.work(limit=0).results == before
+    # An ordinary work item remains removable through the same public operation.
+    run('map', 'work', 'op=remove', f'id={dispatch.id}', cwd=dispatch.folder)
+    assert dispatch.id not in {one.id for one in dispatch.store.work(limit=0).results}
+
+
+@pytest.mark.req('VIEW-045')
+def test_cancelled_legacy_system_conversation_stays_stopped_with_board_attention(dispatch, run, monkeypatch):
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    dispatch.store.add_element(None, 'code', name_length=1, role='DE')
+    dispatch.store.finish_work(dispatch.id, 'Fixture complete.', 'No unrelated work during reconnect.')
+    dispatch.id = dispatch.store.add_work(dispatch.node, None, task=module.SYSTEM_TASK, held=True).id
+    run('set', '--dispatch-stay-connected', '--dispatch-autostart', cwd=dispatch.folder)
+    dispatch.start('hold', 'system=true')
+    eventually(lambda: [line for line in dispatch.items('note') if line.extra['name'] == 'state'])
+    first = dispatch.session().extra
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    before = dispatch.store.work(limit=0).results
+    assert module.system(ctx)['session_id'] == first['session_id']
+    assert module.stay_connected(ctx, dispatch.store) == {}
+    assert dispatch.store.work(limit=0).results == before
+    run('dispatch', 'cancel', dispatch.id, cwd=dispatch.folder)
+    assert dispatch.process.wait(LIMIT) == 0
+    assert dispatch.session().extra['how'] == 'cancelled by the person'
+    transcript = dispatch.items('note')
+    monkeypatch.setattr(module, 'board_waiting', lambda store: True)
+    monkeypatch.setattr(module, 'spawn', lambda *args, **kwargs: pytest.fail('cancelled conversation restarted'))
+    monkeypatch.setattr(module, 'converse', lambda *args, **kwargs: pytest.fail('replacement conversation started'))
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    for _ in range(3):
+        assert module.stay_connected(ctx, dispatch.store) == {}
+    assert not ctx.setting('dispatch_stay_connected')
+    assert dispatch.items('note') == transcript
+    assert not any(one.task == module.SYSTEM_TASK for one in dispatch.store.work(open=True, limit=0).results)
+
+
+@pytest.mark.req('VIEW-045')
+def test_cancelled_ended_legacy_conversation_waits_for_call(dispatch, run, monkeypatch):
+    from metaform.data import Store
+    module, ctx, _, started = stay_connected(dispatch, run, monkeypatch, {'load': True})
+    legacy = dispatch.store.add_work(dispatch.node, None, task=module.SYSTEM_TASK, held=True).id
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.update('agent_sessions', {'session_id': 's1'}, {'work_id': legacy})
+        tx.update('session_lines', {'session_id': 's1', 'name': 'state'}, {'work_id': legacy})
+    run('dispatch', 'cancel', legacy, cwd=dispatch.folder)
+    monkeypatch.setattr(module, 'board_waiting', lambda store: True)
+    assert module.stay_connected(ctx, dispatch.store) == {}
+    assert started == []
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        before = tx.rows('session_lines', limit=0).results
+    run('set', '--dispatch-system-agent=claude', cwd=dispatch.folder)
+    called = module.system(ctx)
+    assert called['work_id'] == 'conversation-system' and called['session_id'] == 's1'
+    assert started == [['resume=s1', 'system=true']]
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        assert tx.rows('session_lines', limit=0).results == before
+    assert not any(one.task == module.SYSTEM_TASK for one in dispatch.store.work(open=True, limit=0).results)
 
 
 def due(work_id):
@@ -6271,87 +6379,160 @@ def test_retired_agent_settings_roll_back_one_database_and_retry(dispatch, monke
     assert home.stored('global', 'dispatch', 'dispatch_antigravity') == ['custom-acp']
     assert home.stored('global', 'dispatch', 'dispatch_agent') == ['antigravity']
 
-
-@pytest.mark.parametrize('choice, expected', [('none', 'true'), ('true', 'true'), ('false', 'false')])
-def test_fast_ticket_inherits_or_overrides_project_and_survives_reopen(dispatch, run, choice, expected):
-    from metaform import settings
+@pytest.mark.req('VIEW-045')
+def test_stalled_board_counts_execution_and_keeps_launch_authority(dispatch, run, monkeypatch):
     from metaform.module import context
-    from metaform.modules import dispatch as module
-    runtime_offers(dispatch, 'codex')
-    with module.own_store(dispatch.store).tables() as tx:
-        row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
-        tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
-            {'id': 'speed_switch', 'category': 'model_config', 'name': 'Fast mode', 'type': 'boolean', 'current': False}]})
-    assert settings.SCHEMA['dispatch_codex_fast'].options(dispatch.folder) == ['default', 'true', 'false']
-    assert settings.value('dispatch_codex_fast', dispatch.folder) == 'default'
-    run('set', '--dispatch-codex-fast', 'false' if choice == 'true' else 'true', cwd=dispatch.folder)
-    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', f'fast={choice}', cwd=dispatch.folder)
+    from metaform.modules import dispatch as owner
+    from metaform.modules.dispatch import board
+    from metaform.modules.dispatch.signals import rows, taken
+
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    assert module.wanted_options(ctx, dispatch.store, 'codex', dispatch.id)['model_config'] == expected
-    shown = json.loads(run('map', 'work', f'id={dispatch.id}', '--json', cwd=dispatch.folder).stdout)['map']
-    assert shown.get('fast') == (None if choice == 'none' else choice)
-    assert 'model_config' not in module.wanted_options(ctx, dispatch.store, 'claude', dispatch.id)
-    listed = json.loads(run('dispatch', 'options', 'agent=codex', '--json', cwd=dispatch.folder).stdout)['agents'][0]
-    fast = next(one for one in listed['settings'] if one['key'] == 'model_config')
-    assert fast['id'] == 'speed_switch' and fast['type'] == 'boolean'
-    assert [one['value'] for one in fast['picks']] == ['default', 'true', 'false']
-    assert [one['value'] for one in fast['choices']] == ['true', 'false']
-    # Assignment refinement changes model/effort, never the person's Fast choice.
-    module.keep_runtime(ctx, dispatch.id, {'agent': 'codex', 'model': 'balanced', 'effort': 'medium',
-        'decider': 'jev', 'confidence': 0.9, 'task_type': 'coding', 'reason': 'Backend task.'},
-        {'codex': {'models': ['balanced'], 'efforts': ['medium']}})
-    assert module.runtime_settings(ctx, dispatch.id).get('fast') == (None if choice == 'none' else choice)
+    calls = []
+    monkeypatch.setattr(owner, 'stay_connected', lambda *args: calls.append('triage') or {})
+    monkeypatch.setattr(owner, 'launches', list)
+    monkeypatch.setattr(owner, 'capacity_kind', lambda ctx, work, kind: kind)
+    monkeypatch.setattr(owner, 'summoned', lambda row: row.get('chat', False))
+    monkeypatch.setattr(owner, 'verified', lambda store, rows, opened: rows)
+    current = []
+    monkeypatch.setattr(owner, 'sessions', lambda *args, **kwargs: current)
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'held=true', 'hold=true', cwd=dispatch.folder)
+    prerequisite = dispatch.store.add_work(dispatch.node, None, task='Required first').id
+    run('map', 'work', 'op=edit', f'id={dispatch.id}', f'after_work=["{prerequisite}"]', cwd=dispatch.folder)
+    other = dispatch.store.add_work(dispatch.node, None, task='Other board').id
+    run('map', 'boards', 'op=add', 'name=elsewhere', cwd=dispatch.folder)
+    run('map', 'work', 'op=edit', f'id={other}', 'board=elsewhere', cwd=dispatch.folder)
+    current[:] = [{'work_id': dispatch.id, 'session_id': 'suspended', 'state': 'ended',
+                       'activity': 'working', 'how': 'orchestration suspended'}]
+    board.stalled(ctx)
+    [notice] = [one for one in rows(dispatch.store) if one['signal_key'].startswith('stalled:')]
+    assert notice['actionable'] is True
+    assert {one['work_id'] for one in notice['tickets']} == {dispatch.id, prerequisite}
+    evidence = next(one for one in notice['tickets'] if one['work_id'] == dispatch.id)
+    assert evidence['held'] and evidence['hold'] and evidence['prerequisites'] == [prerequisite]
+    assert evidence['session']['how'] == 'orchestration suspended'
+    assert dispatch.store.work(ids=[dispatch.id], limit=1).results[0].held
+    assert calls == ['triage']
+    taken(dispatch.store, notice)
+    for _ in range(10):
+        board.stalled(ctx)
+    assert calls == ['triage'], 'unchanged evidence must never wake triage twice'
+    current[:] = [{'work_id': prerequisite, 'session_id': 'worker', 'state': 'running', 'activity': 'working'}]
+    board.stalled(ctx)
+    assert calls == ['triage'], 'executing ticket worker prevents a stalled notice'
+    current[:] = [{'work_id': dispatch.id, 'session_id': 'chat', 'state': 'running', 'activity': 'working', 'chat': True}]
+    board.stalled(ctx)
+    assert calls == ['triage', 'triage'], 'chat is not ticket execution'
+    current[:] = [{'work_id': prerequisite, 'session_id': 'idle-worker', 'state': 'running', 'activity': 'idle', 'pid': 123}]
+    monkeypatch.setattr(owner, 'launches', lambda: [{'project': 'proj', 'work_id': prerequisite, 'kind': 'worker', 'pid': 123}])
+    board.stalled(ctx)
+    assert len(calls) == 3, 'live idle worker ledger is not execution'
+    current[:] = []
+    board.stalled(ctx)
+    assert len(calls) == 3, 'actual startup reservation still has time to start'
+    monkeypatch.setattr(owner, 'launches', list)
+    monkeypatch.setattr(owner, 'capacity_kind', lambda *args: 'helper')
+    current[:] = [{'work_id': prerequisite, 'session_id': 'helper', 'state': 'running', 'activity': 'working'}]
+    board.stalled(ctx)
+    assert len(calls) == 4, 'startup ending without execution creates a new stall'
+    board.stalled(ctx)
+    assert len(calls) == 4, 'helper activity never creates another stall'
+    run('set', '--no-dispatch-autostart', cwd=dispatch.folder)
+    monkeypatch.setattr(owner, 'sessions', lambda *args, **kwargs: pytest.fail('Full Auto off reads sessions'))
+    board.stalled(context('dispatch', dispatch.folder, project='proj'))
+    assert len(calls) == 4
 
 
-@pytest.mark.parametrize('kind', [None, 'select'])
-def test_fast_rejects_missing_or_nonboolean_capability(dispatch, run, kind):
-    from metaform.modules import dispatch as module
-    runtime_offers(dispatch, 'codex')
-    if kind:
-        with module.own_store(dispatch.store).tables() as tx:
-            row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
-            tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
-                {'id': 'other_config', 'category': 'model_config', 'type': kind, 'options': [{'value': 'true'}]}]})
-    result = run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', 'fast=false',
-                 cwd=dispatch.folder, ok=False)
-    assert 'Fast' in result.stderr and 'boolean' in result.stderr
-
-
-@pytest.mark.parametrize('choice', ['none', 'true', 'false'])
-def test_fast_saved_options_reach_session_advertised_id_as_boolean(dispatch, run, monkeypatch, choice):
-    from types import SimpleNamespace
-    from unittest.mock import AsyncMock
-
+@pytest.mark.req('VIEW-045')
+def test_stalled_board_rearms_when_same_session_works_again(dispatch, run, monkeypatch):
     from metaform.module import context
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import runner
-    runtime_offers(dispatch, 'codex')
-    with module.own_store(dispatch.store).tables() as tx:
-        row = tx.rows('catalog', {'agent': 'codex'}, limit=1).results[0]
-        tx.update('catalog', {'agent': row['agent'], 'version': row['version']}, {'settings': [*row['settings'],
-            {'id': 'vendor_speed', 'category': 'model_config', 'type': 'boolean', 'current': False}]})
-    run('set', '--dispatch-codex-fast', 'true', cwd=dispatch.folder)
-    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'agent=codex', f'fast={choice}', cwd=dispatch.folder)
+    from metaform.modules import dispatch as owner
+    from metaform.modules.dispatch import board
+    from metaform.modules.dispatch.signals import rows, taken
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    held = runner.Session(ctx, module.own_store(dispatch.store), dispatch.ticket(), 'codex', ['unused'])
-    held.session_id = 'worker-session'
-    expected = choice != 'false'
-    held.config = [{'id': 'vendor_speed', 'name': 'Fast mode', 'category': 'model_config', 'type': 'boolean',
-                    'currentValue': not expected}]
-    conn = SimpleNamespace(set_config_option=AsyncMock(return_value=SimpleNamespace(config_options=None)))
-    held.conn = conn
-    for name in ('flush', 'note', 'save_state'):
-        monkeypatch.setattr(held, name, AsyncMock())
-    applied = asyncio.run(held.apply_options())
-    assert applied == [{'key': 'model_config', 'value': 'true' if expected else 'false'}]
-    conn.set_config_option.assert_awaited_once_with(config_id='vendor_speed', session_id='worker-session', value=expected)
-    # Reapplication uses the adapter's latest state, avoiding duplicate writes on resume/load.
-    assert asyncio.run(held.apply_options()) == []
-    # A resumed older adapter no longer offering the capability receives no unsupported command.
-    for unavailable in ([], [{'id': 'vendor_speed', 'name': 'Other config', 'category': 'model_config',
-                              'type': 'select', 'currentValue': 'other',
-                              'options': [{'value': 'true'}, {'value': 'false'}]}]):
-        held.config = unavailable
-        conn.set_config_option.reset_mock()
-        asyncio.run(held.apply_options())
-        conn.set_config_option.assert_not_awaited()
+    calls = []
+    monkeypatch.setattr(owner, 'stay_connected', lambda *args: calls.append('triage') or {})
+    monkeypatch.setattr(owner, 'launches', list)
+    monkeypatch.setattr(owner, 'capacity_kind', lambda ctx, work, kind: kind)
+    monkeypatch.setattr(owner, 'summoned', lambda row: False)
+    monkeypatch.setattr(owner, 'verified', lambda store, rows, opened: rows)
+    row = {'work_id': dispatch.id, 'session_id': 'same-session', 'state': 'running', 'activity': 'working'}
+    monkeypatch.setattr(owner, 'sessions', lambda *args, **kwargs: [row])
+    board.stalled(ctx)
+    assert calls == []
+    row['activity'] = 'idle'
+    board.stalled(ctx)
+    [first] = [one for one in rows(dispatch.store) if one.get('actionable')]
+    taken(dispatch.store, first)
+    row['activity'] = 'working'
+    board.stalled(ctx)
+    row['activity'] = 'idle'
+    board.stalled(ctx)
+    [second] = [one for one in rows(dispatch.store) if one.get('actionable')]
+    assert first['signal_key'] != second['signal_key']
+    taken(dispatch.store, second)
+    for _ in range(10):
+        board.stalled(ctx)
+    assert len(calls) == 2
+    # A short turn can end before reconciliation observes working. Its producer rearms directly.
+    board.worker_started(ctx, dispatch.id)
+    board.stalled(ctx)
+    assert len(calls) == 3
+
+
+@pytest.mark.req('VIEW-045')
+def test_stalled_board_wakes_live_triage_once(dispatch, run, tmp_path):
+    from metaform.module import context
+    from metaform.modules.dispatch import board
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    gates = tmp_path / 'stalled-turns'
+    gates.mkdir()
+    for number in range(1, 6):
+        (gates / str(number)).touch()
+    dispatch.start('replace', 'system=true', FAKE_ACP_TURN_GATES=str(gates))
+    eventually(lambda: any(row.get('activity') == 'idle' for row in read(run, dispatch)['sessions']))
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    try:
+        board.stalled(ctx)
+        eventually(lambda: len(dispatch.received('session/prompt')) == 2)
+        eventually(lambda: read(run, dispatch)['sessions'][-1].get('activity') == 'idle')
+        for _ in range(5):
+            board.stalled(ctx)
+        assert len(dispatch.received('session/prompt')) == 2
+        from metaform.modules.dispatch import own_store
+        with own_store(dispatch.store).tables(write=False) as tx:
+            notes = [json.loads(row['text']) for row in tx.rows('session_lines', limit=0).results
+                     if row['kind'] == 'peer' and '"kind": "board"' in row['text']]
+        [notice] = [one for one in notes if one['board'].startswith('stalled:')]
+        assert 'Investigate' in notice['text'] and notice['actionable']
+        assert 'stalled' in dispatch.received('session/prompt')[1]['params']['prompt'][0]['text']
+    finally:
+        dispatch.stop()
+
+
+@pytest.mark.req('VIEW-045')
+@pytest.mark.parametrize('failure', [False, True])
+def test_stalled_board_reconciles_startup_and_failed_launches(dispatch, run, monkeypatch, failure):
+    from metaform.module import context
+    from metaform.modules import dispatch as owner
+    from metaform.modules.dispatch import recovery
+    from metaform.modules.dispatch.signals import rows
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    monkeypatch.setattr(recovery, 'recover', lambda ctx: {})
+    monkeypatch.setattr(recovery, 'settle', lambda ctx: None)
+    monkeypatch.setattr(owner, 'start_raised', lambda *args: None)
+    monkeypatch.setattr(owner, 'stay_connected', lambda *args: {})
+    def start(*args):
+        if failure:
+            raise OSError('runner spawn failed')
+        return {'started': []}
+    monkeypatch.setattr(owner, 'start_work', start)
+    if failure:
+        with pytest.raises(OSError, match='runner spawn failed'):
+            owner.autostart(ctx)
+    else:
+        owner.autostart(ctx)
+    [notice] = [one for one in rows(dispatch.store) if one.get('actionable')]
+    assert notice['tickets'][0]['work_id'] == dispatch.id

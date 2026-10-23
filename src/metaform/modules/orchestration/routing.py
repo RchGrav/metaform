@@ -47,6 +47,10 @@ def selected(ctx: Context, work_id: str) -> str | None:
         if assigned.get('parent_assignment_id') or assigned.get('reviewed_assignment_id'):
             return str(assigned['authored_role_uri'])
         role = str(assigned['authored_role_uri'])
+        snapshot: dict[str, Any] = assigned.get('role_snapshot') or {}
+        if (snapshot.get('uri') == role and snapshot.get('specialist') and snapshot.get('text')
+                and not snapshot.get('missing') and not snapshot.get('problems')):
+            return role  # Existing assignments retain their pinned expertise when the registry changes.
     else:
         role = str(row['role']) if row and row['state'] == 'selected' else ''
     return role if role in {one['uri'] for one in service(ctx, 'agent.role').specialists(ctx)} else None

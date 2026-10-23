@@ -1,0 +1,1 @@
+code.processor.intake#5 Notes already stored in bases are never moved out: private paths and critic judgments are still served at the node: delivery pending. Complete the missing delivery steps to close this ticket. delivery: Ticket stays open. Missing: Merge this ticket's own commits into main, push, activate changed code, then clear its fault light.

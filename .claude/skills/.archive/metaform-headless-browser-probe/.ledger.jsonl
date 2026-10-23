@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Agent spent several failed runs getting a one-off headless browser probe of the settings screen to execute: the probe needed the web fixtures imported from test_web/test_ticket_detail, a kind marker, and a cwd on the CLI run. A future web check should start from the working recipe.", "evidence": "references/evidence-2e640d11.md"}

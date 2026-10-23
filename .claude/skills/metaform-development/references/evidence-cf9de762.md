@@ -1,0 +1,1 @@
+The role prompt pinned to an assignment keeps its old text. The prompt change reaches new assignments only.

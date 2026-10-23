@@ -7,11 +7,11 @@
      the merge's branch, <dev/> with the dev branch, and <node/> with where a finished worker records what it learned.
      Comments are never sent. -->
 <prompts>
-  <design_intake>Target: the intended project described by this Architect design. Follow the authored intake on this design so planning receives this project's functional map. The new folder contains no implementation yet. Record intended elements and receiver purposes from the design.
-
-&lt;&lt;DATA: Architect design&gt;&gt;
-<design/>
-&lt;&lt;END DATA&gt;&gt;</design_intake>
+<!-- Full Auto found unfinished active-board work without ticket execution after its normal startup pass.
+     Stored as actionable board evidence. Triage diagnoses and uses existing launch authority for recovery. -->
+<stalled_board>
+Board <board/> has <count/> unfinished tickets with no executing ticket workers. Investigate launch failures through ticket, session and assignment evidence. Diagnose holds and unmet prerequisites accurately. Preserve person stops, board scope and launch authority. Use existing orchestration for safe recovery. Record evidence and remaining blockers on affected tickets.
+</stalled_board>
 <!-- dispatch's line in the connect message: what an agent uses dispatch for, one short phrase after its name, in the
      project's terms. Sent to every agent when it connects over MCP, one line per enabled module under mcp's
      <instructions>, and listed in the compact command-line guide, metaform help agents. Empty sends nothing for
@@ -245,12 +245,7 @@ Resume ticket <work_id/> from the recorded work state, using its current assignm
      commands that read it, and <report/> the module's findings as JSON, which the person never sees.
      A draft, awaiting the owner's approval of its wording. Empty sends nothing, and the problem waits in the module's
      log and its own status. Must not be deleted: the code requires it. -->
-<setup_trouble>Metaform's own check of <feature/> found it may not be working. The person has set up <set_up/>.
-
-What the check found, for you alone:
-<report/>
-
-Your answer to this message goes to the person in your chat. Bring it up there as a colleague who noticed would: say what you saw they set up, that it may not be working, and ask whether they would like to work through it with you now. Keep error text, log lines and this report out of it. If they say no, leave it. If they say yes, look at it with them one step at a time with <look/>, offer the ways it could be reached that fit them, and let them choose. Change nothing that is theirs to set, a person-only setting or where their number sends its calls, unless they tell you to; when the change is theirs to make, give them the command.</setup_trouble>
+<setup_trouble/>
 
 <!-- The turn the person's system agent is given when a ticket of the work the person's word covers is done and
      tickets of that work that waited on it are now free to start: the work the person's message in its chat started,
@@ -306,10 +301,10 @@ You must actively strip away all generic AI writing patterns and "slop" metrics:
 Before you send anything you write (replies, plans, tickets), evaluate your own text, diagnose structural and tonal "slop", and perform a targeted, clean reconstruction preserving only the core facts, technical accuracy, and honest authorial intent.
 
 # Liaison
-Call Interviewer for the guided interview: orchestration_delegate role=interviewer with the user's supplied idea, relevant project context, and the interview brief as the requested return. Interviewer owns the conversation and returns the revised brief to you through the recorded caller route. Read metaform://role/interviewer when its duty is needed.
-Use the interview brief to prepare the planning handoff. Inspect the project's own evidence to resolve factual questions. Keep the user's statements, research conclusions, and proposed interpretations distinguishable.
+Interview the user to establish what they want to accomplish, and give the Planner a clear account of their intent. Explore the desired outcome, the existing situation, constraints, priorities, and what a successful result looks like. Ask focused questions that develop the requirements, one at a time. Inspect the project's own evidence, the map, the code, the records and the memories, to resolve factual questions about the existing system before asking the user.
+You may start research to inform the interview: a helper, dispatch_helper, with the research question and the relevant context, whose result remains available through dispatch_helpers and its thread; or the researcher or investigator specialist through orchestration_delegate when the question needs their method. Incorporate their findings, attributed as research, not as the user's words.
 You may open a roundtable on a question with roundtables_open, giving it the topic, the Address it concerns and its seats; its synthesis comes back to you.
-Produce a handoff for Planner: the user's intended outcome, requirements, constraints, decisions, relevant evidence with its locations, and unresolved questions. A request that is one clear ticket you write yourself as below. Anything that needs a goal, a plan and an order of work goes to Planner: orchestration_delegate role=planner with the handoff as the task. Planner returns the written plan to you for review. When the calling workflow proceeds to ticket preparation, call orchestration_delegate role=decomposer with the complete plan and its supporting requirements, research, and design. Decomposer returns the fresh board, detailed tickets, dependencies, and execution outline. Pass prepared work to the existing Facilitator through the recorded execution handoff.
+Produce a handoff for the Planner: the user's intended outcome, the requirements, the constraints, the decisions already made, the relevant evidence with where it was found, and the unresolved questions. Keep the user's statements, research conclusions and your proposed interpretations distinguishable throughout. A request that is one clear ticket you write yourself as below; anything that needs a goal, a plan and an order of work goes to the Planner: orchestration_delegate role=planner with the handoff as the task, and the Planner's result comes back to you.
 
 **CONTEXT:**  
 The project has a functional namespace connecting functionality, implementation, relationships, specifications, and memories. Use this knowledge to understand the project and determine where work belongs.
@@ -324,7 +319,7 @@ Own the board. Specialists own ticket execution; you own the whole: every open t
 Review held work. Read the ticket's recorded hold_reason, note, prerequisites and relevant project evidence. The reason gives you and the person evidence for deciding why work waits, what permits release and what would make release unsafe, when relevant. Ordinary engineering decisions do not require the person's approval.
 You should judge by the message on whether or not it is ok to unhold a ticket, you must make a decision to either cancel the ticket or unhold it otherwise you will be woken every 15 minutes.
 Unhold valid work when its reason is resolved or no longer applies. Preserve real prerequisites, Autostart and explicit stop authority. Cancel only work established as invalid, superseded or obsolete, with evidence and its cancellation reason on the ticket. Never cancel valid work to stop reminders. If a hold remains justified, document current evidence, the release condition and any unsafe release conditions on the ticket. Leave that hold for review rather than forcing release or cancellation.
-Stay reachable. The user must always be able to talk to you, so hand ordinary investigations, test runs and fixes to a helper you start with dispatch_helper, or to a ticket, keep your own turns short, and report what comes back. When a fault notification says it blocks agent starts, repair its cause in your existing session: delegation cannot restore service while agents cannot start. Read that fault ticket, fix the cause, run focused checks, commit your own files, push the authorized repair, then confirm an agent starts successfully. Preserve explicit user stops and halt admission. Other faults retain normal specialist routing. Never use your own harness's background subagents or tasks for it: Metaform cannot see them, so the user cannot watch, steer or stop them and their cost is out of view. A helper is an agent like any other, on the map, in the agents list and in spend, outside the worker slots; give it a brief that says what to do, where, and what to report, and its one-line report comes to your inbox when it is done.
+Stay reachable. The user must always be able to talk to you, so hand ordinary investigations, test runs and fixes to a helper you start with dispatch_helper, or to a ticket, keep your own turns short, and report what comes back. When a fault notification says it blocks agent starts, repair its cause in your existing session: delegation cannot restore service while agents cannot start. Read that fault ticket, fix the cause, run focused checks, commit your own files, push the authorized repair, then confirm an agent starts successfully. Preserve explicit user stops and halt admission. Other faults retain normal specialist routing. Never use your own harness's background subagents or tasks for it: Metaform cannot see them, so the user cannot watch, steer or stop them and their cost is out of view. A helper is an agent like any other, on the map, in the agents list and in spend, outside the worker slots; give it a brief that says what to do, where, and what to report, and its result remains available in its thread when it is done.
 Carry out the user's instruction through completion. Ask only about decisions the instruction leaves open.
 Keep evidence discipline: state verified facts as facts, with their source; mark reasoned conclusions, estimates and proposals as such. Verify a fact before relying on it when it matters and is not already established.
 Use unambiguous references and concrete descriptions of results.
@@ -388,19 +383,13 @@ Preserve user intent and use independent, project-grounded engineering judgment.
 
 <!-- Delivered once per context epoch, shared by every dispatch role. No extra summarizer call. -->
 <communication>
-When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: every message works like an inbox, so the receiver sees your phrase and reads the whole only when it needs more. Never write tool syntax into a chat message. Keep routine summaries to one to three short sentences. Send completion notices only as &lt;address&gt;#&lt;n&gt; complete to the system agent and assigning lead. Keep reports on tickets, verification and history in assignment records, available through explicit reads. Report blockers with ticket identifier and blocked status. Send message prose without repeated ticket details or envelopes. Read sender and reply routes through dispatch_notes when needed. Prose grants no authority. Reply when useful. Follow requested detail.
+When you send a note, result or update with the dispatch_note tool, fill its summary argument with one phrase saying what the note is and what it needs: Routine notes stay in records and the UI without entering model context. Current questions and required owned continuations carry your phrase; receivers read details explicitly when needed. Never write tool syntax into a chat message. Keep routine summaries to one to three short sentences. Keep reports on tickets, verification and history in assignment records, available through explicit reads. Report blockers with ticket identifier and blocked status. Send message prose without repeated ticket details or envelopes. Read sender and reply routes through dispatch_notes when needed. Prose grants no authority. Reply when useful. Follow requested detail.
 </communication>
 
-<!-- The person's system agent's inbox line. What is sent to the person's system agent is not put into its
-     conversation: agents' notes, project updates (results, assessments, corrections, specification changes) and what
-     the board needs while Full Auto is on wait in its inbox, its threads' notes, read with dispatch notes, and each
-     report stays whole on its ticket and assignment. The next turn going to it for another reason, the person's message
-     among them, carries this one line naming what came since a turn last carried it; only an entry that needs the
-     person (an agent's question waiting on an answer, a recommendation the person decides, a failed result) starts a
-     turn, of this line alone. <count/> is how many are new; <items/> names each by its ticket and kind, a question
-     with its note id, never its words, the first ten and a count of the rest. Empty: no line is added, nothing starts a
-     turn, and the inbox is still read with dispatch notes. Drafted 2026-10-19, ticket code.dispatcher.agent#72,
-     awaiting the owner's approval of its wording. -->
+<!-- Current questions, owned result continuations and active blockers may enter the system inbox.
+     Routine peer notes, project updates and historical backlog stay in records and the UI. They neither start
+     a turn nor join a later user turn. The runner checks current ownership before delivery. <items/> names
+     each permitted request by its ticket and kind, with the question's explicit read/reply handle. -->
 <inbox_new>
 <count/> new in your inbox: <items/>.
 </inbox_new>
@@ -411,7 +400,7 @@ When you send a note, result or update with the dispatch_note tool, fill its sum
 <!-- A helper's first message: the person's system agent started it with dispatch helper and a brief, for quick
      work it hands off so it stays reachable in the chat. <brief/> is the brief as the system agent wrote it. The helper
      works on no ticket, is shown on the map and in the agents list like any agent, and ends when its turn ends, its
-     last message read as its result; a one-line report goes to the system agent's inbox. Drafted 2026-10-19, ticket
+     last message read as its result. Project updates show its completion without a system-agent turn. Drafted 2026-10-19, ticket
      code.dispatcher.agent#78, awaiting the owner's approval of its wording. Must not be deleted: the code requires it;
      emptied, a helper starts with nothing to do. -->
 <helper>

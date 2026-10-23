@@ -1,0 +1,3 @@
+{"type":"tool_result","content":"No matching deferred tools found","toolUseResult":{"matches":[],"query":"agents_confirm","total_deferred_tools":26}}
+{"tool":"orchestration_runtime","arguments":{"work":"b94921daed6d4a9f88e50bcf51029dd3"}} -> {"state":"needs_choice","work_id":"b94921daed6d4a9f88e50bcf51029dd3","catalog":{"claude":{"models":{"default":"Default (recommended): Fable 5.1","opus":"Opus 5.5: For complex work and everyday tasks"...},"efforts":["default","low","medium","high","xhigh","max"]},"codex":{...}}}
+{"tool":"mcp__metaform__metaform_catalog","input":{"tool":"agents_confirm","arguments":{"checkpoint":"d404b1ff35fd5094","key":"493243a4f43460aff532e4fc"}}} -> {"confirmed":true,"epoch":0}

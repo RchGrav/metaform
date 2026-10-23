@@ -1,0 +1,1 @@
+kill step case 'read-tree' becomes 'checkout', the durable step advance now takes; 12 passed in 40 s across test_auto_delivery.py and the merge selection

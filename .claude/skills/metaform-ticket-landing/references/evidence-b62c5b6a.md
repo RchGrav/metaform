@@ -1,0 +1,1 @@
+delivery: Ticket stays open. Missing: no test command is set: metaform set --dispatch-test-command "..." ; merge.py: return False, 'no test command is set: metaform set --dispatch-test-command "<command>"'

@@ -8,8 +8,11 @@ opening turn carries the line. Nothing here runs on a timer: each comes from the
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
+import secrets
 from typing import Any, cast
 
 from metaform.data import Store, StoreError
@@ -22,7 +25,7 @@ BOARD = 'board-needs'
 
 
 def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: str = '', start: bool = True,
-           urgent: bool = False) -> bool:
+           urgent: bool = False, **details: Any) -> bool:
     """Keep one thing the board needs, `said` in a line, once for its `key`, while Full Auto is on, and tell the
     system agent; with `start`, a system agent is started for it when none runs. Whether it was raised now."""
     automatic = ctx.setting('dispatch_autostart')
@@ -30,7 +33,7 @@ def raised(ctx: Context, key: str, said: str, *, work_id: str = '', session_id: 
         return False
     store = ctx.require_store()
     value = keep(store, BOARD, work_id=work_id, session_id=session_id, key=key, once=True, signal_key=key,
-                   said=said, urgent=urgent)
+                   said=said, urgent=urgent, **details)
     if value is None:
         return False
     announce(ctx, value)
@@ -67,6 +70,106 @@ def waiting(store: Store) -> bool:
     """Whether anything the board needs waits for the system agent, read through the signals' index alone."""
     from .signals import rows
     return any(value.get('signal') == BOARD for value in rows(store))
+
+
+def _episode(store: Store, board: str | None, fingerprint: str | None) -> str:
+    """Persist stall episodes beside other dispatch bookkeeping, outside any agent transcript.
+
+    Clearing the fingerprint records real execution. A later identical stall gets a new delivery key.
+    Keeping the key before raising its signal makes a crash between the writes safely retryable.
+    """
+    from .signals import own_store
+    bound = store.bound_base()
+    where = {'session_id': f'board:{bound.id if bound else ""}:{board or ""}', 'name': 'stalled-state'}
+    own = own_store(store)
+    with own.tables(write=False) as tx:
+        previous = tx.get('session_lines', where)
+    state = json.loads(str(previous['text'])) if previous else {'fingerprint': None, 'episode': ''}
+    if state['fingerprint'] == fingerprint:
+        return str(state['episode'])
+    with own.tables() as tx:
+        previous = tx.get('session_lines', where)
+        state = json.loads(str(previous['text'])) if previous else {'fingerprint': None, 'episode': ''}
+        if state['fingerprint'] == fingerprint:
+            return str(state['episode'])
+        state = {'fingerprint': fingerprint, 'episode': secrets.token_hex(8) if fingerprint else ''}
+        text = json.dumps(state)
+        tx.concern(session_id=where['session_id'], kind='board-state')
+        if previous:
+            tx.update('session_lines', where, {'text': text})
+        else:
+            tx.insert('session_lines', {**where, 'work_id': '', 'kind': 'board-state', 'text': text, 'seq': 1})
+    return str(state['episode'])
+
+
+def worker_started(ctx: Context, work_id: str) -> None:
+    """The mutating runner rearms attention before its turn, even if that turn ends before reconciliation."""
+    if not ctx.setting('dispatch_autostart'):
+        return
+    from . import active_board, capacity_kind, set_aside, ticket_settings
+    if capacity_kind(ctx, work_id, 'worker') == 'worker' and set_aside(ctx, work_id, ticket_settings(ctx)) is None:
+        _episode(ctx.require_store(), active_board(ctx), None)
+
+
+def stalled(ctx: Context) -> None:
+    """Reconcile after the existing starter pass, never on routine thread or progress events.
+
+    An unfinished active board with no executing ticket worker needs diagnosis, including when holds or
+    prerequisites explain the wait. This requests attention only; existing orchestration owns every recovery.
+    The evidence fingerprint survives delivery and restart, so unchanged stalls never start another turn.
+    """
+    if not ctx.setting('dispatch_autostart'):
+        return
+    from . import (
+        SYSTEM_TASK,
+        active_board,
+        capacity_kind,
+        launches,
+        sessions,
+        set_aside,
+        summoned,
+        ticket_settings,
+        verified,
+        waiting_on,
+    )
+    store = ctx.require_store()
+    board = active_board(ctx)
+    kept = ticket_settings(ctx)
+    opened = store.work(open=True, limit=0).results
+    unfinished = [record for record in opened if record.task != SYSTEM_TASK
+                  and set_aside(ctx, record.id, kept) is None]
+    if not unfinished:
+        _episode(store, board, None)
+        return
+    ids = {record.id for record in unfinished}
+    # Pending assignments are not sessions. Filter chats/helpers and other boards before any runner probes.
+    rows = [row for row in sessions(store, verify=False) if row['work_id'] in ids and not summoned(row)
+            and capacity_kind(ctx, str(row['work_id']), 'worker') == 'worker']
+    checked = verified(store, rows, opened)
+    if any(row['state'] == 'running' and row.get('activity') == 'working' for row in checked):
+        _episode(store, board, None)
+        return
+    made = {row.get('pid') for row in rows}
+    if any(entry.get('project') == store.project_id and entry.get('work_id') in ids and entry.get('pid') not in made
+           and entry.get('kind') == 'worker' for entry in launches()):
+        _episode(store, board, None)
+        return  # a runner actually launching is different from an assignment waiting for launch
+    latest = {str(row['work_id']): row for row in checked}
+    evidence: list[dict[str, Any]] = []
+    for record in sorted(unfinished, key=lambda one: one.id):
+        row = latest.get(record.id, {})
+        evidence.append({'work_id': record.id, 'held': bool(record.held), 'hold': bool(kept.get(record.id, {}).get('hold')),
+                         'prerequisites': waiting_on(kept.get(record.id), {one.id for one in opened}),
+                         'taken_by': record.taken_by,
+                         'session': {key: row.get(key) for key in ('session_id', 'state', 'activity', 'how')}})
+    bound = store.bound_base()
+    fingerprint = hashlib.sha256(json.dumps([bound.id if bound else None, board, evidence],
+                                            sort_keys=True).encode()).hexdigest()
+    from . import prompt
+    episode = _episode(store, board, fingerprint)
+    raised(ctx, f'stalled:{fingerprint}:{episode}', prompt('stalled_board', board=board or 'first',
+                                               count=str(len(unfinished))),
+           actionable=True, board=board, tickets=evidence)
 
 
 def _plain(title: str | None) -> str:

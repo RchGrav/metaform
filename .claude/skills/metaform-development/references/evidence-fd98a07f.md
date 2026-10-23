@@ -1,0 +1,1 @@
+Worker's step 6 record: "test_user_control.py::test_typed_turn_is_bare_once_the_conversation_has_its_duty fails with AttributeError inbox_said on its SimpleNamespace stand-in, identically at HEAD 5ae3c80e without this change: pre-existing, not touched." And the follow-up in the ticket note: "Checked failing identically at 5ae3c80e, before this ticket's change."

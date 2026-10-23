@@ -1,0 +1,1 @@
+Final reply of the episode: "The result and evidence reached #31's assignment, and the worker for #31 is running with the role and runtime I chose. ... **Delivery** (the destination is #31's assignment `40043731…`, through role request `5bde961…`): - **Role request:** its state is `published`. ... **Memory at code.router.assignment:** ... coded-engine"

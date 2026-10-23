@@ -1,0 +1,5 @@
+User: "Correction to your brief: functionality comes first; requirements are secondary. Judge each part by whether the product works for the person... Many records were written by agents and stamped as the owner's (CTX-020 was an agent's paraphrase), so a record is evidence of intent, not a rule to defend. ... Check it against what is newer: CLAUDE.md as it reads now, the owner's own recent commits (git log, 2026-10-19 and 20...), docs/reviews/2026-10-19-api-cost-and-token-waste-audit.md."
+
+Assistant tool result: "2026-10-19-token-waste-analysis.md" listed under docs/reviews, while the brief named "2026-10-19-api-cost-and-token-waste-audit.md".
+
+Tool result: "e50dc6d9 2026-10-19 21:30:31 -0400 Connect directive: read the instruction resources linked below, without 'applicable' or 'whose contents are due'" followed by the assistant note: "The tree moved while I wrote: a new commit and an uncommitted edit change the connect directive."

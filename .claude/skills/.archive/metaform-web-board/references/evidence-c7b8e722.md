@@ -1,0 +1,1 @@
+I removed two gates and pushed to origin main as `222ca950`. `board_line` is no longer person-only, and a start the person asks for, directly or through their system agent, now launches with Full Auto off.

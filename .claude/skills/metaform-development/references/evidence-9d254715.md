@@ -1,0 +1,2 @@
+IT NEEDS TO FUCKING STOPI HAVE BEEN REPEATING THIS FOR DAYS EVERY MESSAGE EXTENDS YOUR CONTEXT
+they can message each other when its needed if there is a prompt that says always messagew you after every task it needs to be fixed

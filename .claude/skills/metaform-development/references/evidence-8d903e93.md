@@ -1,0 +1,1 @@
+{"type":"tool_result","content":"Error: No work record has the id code.processor.intake#5.\nNext: call map_work open=true"}  ...  {"tool":"orchestration_runtime","arguments":{"work":"4e8e39ecb8ea4f28bfeadce6848abbdc","choice":{"agent":"claude","model":"opus","effort":"high","task_type":"coding","confidence":0.8}}}

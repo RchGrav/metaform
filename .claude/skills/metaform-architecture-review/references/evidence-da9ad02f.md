@@ -1,0 +1,1 @@
+Trace: the helper wrote "Review written" to docs/architecture/2026-10-20-map-layers-store.md after finding "[V] The storage specification describes a store that no longer exists. STORE-004 to STORE-019 ... still specify current_* tables", and its probe failed with "AttributeError: 'GraphElement' object has no attribute 'address'" after it had assumed the attribute existed.

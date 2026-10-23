@@ -10,6 +10,172 @@ from metaform.modules.dispatch.tests.test_dispatch import dispatch  # noqa: F401
 pytestmark = [pytest.mark.kind('fixture'), pytest.mark.req('VIEW-042')]
 
 
+def test_runtime_pending_healing_never_reserves_worker_capacity(dispatch, run, monkeypatch):  # noqa: F811
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    pending = dispatch.store.add_work(dispatch.node, 'broken', kind='broken', task='Repair runtime failure').id
+    stopped = dispatch.store.add_work(dispatch.node, 'broken', kind='broken', task='Stopped repair').id
+    workers = [dispatch.id, *(dispatch.store.add_work(dispatch.node, None, task=f'Eligible work {n}').id
+                              for n in range(4))]
+    prepared, launched = [], []
+
+    def prepare(ctx, held):
+        work_id = held['work_id']
+        prepared.append((work_id, bool(dispatch.store.ticket(work_id).work.taken)))
+        return work_id != pending
+
+    owner = SimpleNamespace(
+        selected_specialist=lambda *args: 'metaform://role/backend_engineer', queue_routing=lambda *args: None,
+        assignment=lambda ctx, work_id, **kwargs: {
+            'work_id': work_id, 'authored_role_uri': 'metaform://role/backend_engineer',
+            'stop': 'person' if work_id == stopped else None},
+        prepare_runtime=prepare)
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: owner)
+
+    def launch(ctx, store, work_id, *args, **kwargs):
+        launched.append(work_id)
+        return {'pid': 1}
+
+    monkeypatch.setattr(module, 'start_runner', launch)
+    result = module.start_work(context('dispatch', dispatch.folder, project='proj'), dispatch.store, {})
+    assert launched == workers
+    assert len(result['started']) == 5
+    assert (pending, False) in prepared and (pending, True) not in prepared
+    assert not any(work_id == stopped for work_id, taken in prepared)
+    assert not dispatch.store.ticket(pending).work.taken
+    assert not dispatch.store.ticket(stopped).work.taken
+
+
+@pytest.mark.parametrize('state', ('returned', 'delivered', 'failed', 'stopped', 'transferred'))
+def test_reserved_automatic_start_preserves_stop_before_runtime_preparation(dispatch, monkeypatch, state):  # noqa: F811
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    owner = SimpleNamespace(
+        assignment=lambda *args, **kwargs: {
+            'work_id': dispatch.id, 'state': state, 'stop': 'person' if state == 'stopped' else None},
+        prepare_runtime=lambda *args: pytest.fail('Stopped work must not prepare runtime'))
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: owner)
+    monkeypatch.setattr(module, 'start_runner', lambda *args, **kwargs: pytest.fail('Stopped work started'))
+    reservation = 'dispatch starting stop-regression'
+    dispatch.store.take_work(dispatch.id, by=reservation)
+    ctx = context('dispatch', dispatch.folder, project='proj', nouns={'id': dispatch.id, 'agent': 'claude'})
+    result = module.run_reserved(ctx, reservation, auto=True)
+    assert result['state'] == state
+    assert not dispatch.ticket().taken
+
+
+def test_runtime_preparation_leaves_ineligible_work_untouched(dispatch, run, monkeypatch):  # noqa: F811
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    held = dispatch.store.add_work(dispatch.node, None, task='Held work', held=True, hold_reason='Wait for release').id
+    stopped = dispatch.store.add_work(dispatch.node, None, task='Stopped work').id
+    returned = dispatch.store.add_work(dispatch.node, None, task='Returned candidate').id
+    blocked = dispatch.store.add_work(dispatch.node, None, task='Dependent work').id
+    run('map', 'work', 'op=edit', f'id={blocked}', f'after_work=["{dispatch.id}"]', cwd=dispatch.folder)
+    run('map', 'boards', 'op=add', 'name=next', cwd=dispatch.folder)
+    other_board = dispatch.store.add_work(dispatch.node, None, task='Other board work').id
+    run('map', 'work', 'op=edit', f'id={other_board}', 'board=next', cwd=dispatch.folder)
+    prepared = []
+    owner = SimpleNamespace(
+        selected_specialist=lambda *args: 'metaform://role/backend_engineer', queue_routing=lambda *args: None,
+        assignment=lambda ctx, work_id, **kwargs: {
+            'work_id': work_id, 'stop': 'person' if work_id == stopped else None,
+            'state': 'returned' if work_id == returned else 'queued',
+            'authored_role_uri': 'metaform://role/backend_engineer'},
+        prepare_runtime=lambda ctx, held: prepared.append(held['work_id']) or True)
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: owner)
+    monkeypatch.setattr(module, 'start_runner', lambda *args, **kwargs: {'pid': 1})
+    result = module.start_work(context('dispatch', dispatch.folder, project='proj'), dispatch.store, {})
+    assert [one['work_id'] for one in result['started']] == [dispatch.id]
+    assert set(prepared) == {dispatch.id}
+    assert all(not dispatch.store.ticket(work_id).work.taken
+               for work_id in (held, stopped, returned, blocked, other_board))
+
+
+@pytest.mark.parametrize('routing_state', ('creating', 'waiting'))
+def test_gc_runtime_preflight_repairs_before_specialist_selection(dispatch, run, monkeypatch, routing_state):  # noqa: F811
+    from types import SimpleNamespace
+
+    from metaform.module import context
+    from metaform.modules import dispatch as module
+    from metaform.modules.dispatch import orchestration
+
+    run('set', '--dispatch-autostart', cwd=dispatch.folder)
+    prepared = []
+    held = {'work_id': dispatch.id, 'state': 'queued', 'authored_role_uri': 'metaform://role/gc'}
+    owner = SimpleNamespace(
+        selected_specialist=lambda *args: None, queue_routing=lambda *args: None,
+        assignment=lambda *args, **kwargs: held,
+        routing_status=lambda *args: {'state': routing_state},
+        prepare_runtime=lambda ctx, assignment: prepared.append(assignment['work_id']) or False)
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: owner)
+    monkeypatch.setattr(module, 'start_runner', lambda *args, **kwargs: pytest.fail('Unprepared work started'))
+    result = module.start_work(context('dispatch', dispatch.folder, project='proj'), dispatch.store, {})
+    assert prepared == [dispatch.id]
+    assert result['started'] == []
+    assert not dispatch.ticket().taken
+
+
+def test_full_worker_capacity_still_prepares_and_launches_helper_in_same_pass(dispatch, run, monkeypatch):  # noqa: F811
+    from importlib import import_module
+
+    from metaform.module import context, provided
+
+    run('enable', 'orchestration', cwd=dispatch.folder)
+    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=dispatch.folder)
+    from metaform.modules import dispatch as module
+    from metaform.modules.orchestration.state import SERVICE, own
+
+    ctx = context('dispatch', dispatch.folder, project='proj')
+    monkeypatch.setattr(SERVICE, 'runtime', lambda *args, **kwargs: {'state': 'unmanaged'})
+    assigned = SERVICE.ensure(ctx, dispatch.id, role='gc')
+    with own(ctx).tables(write=False) as tx:
+        request, = tx.rows('role_requests', {'caller_assignment_id': assigned['assignment_id']}, limit=0).results
+    creator = SERVICE.assignment(ctx, assignment_id=request['creator_assignment_id'])
+    with own(ctx).tables() as tx:
+        tx.delete('assignments', {'assignment_id': creator['assignment_id']})
+    dispatch.store.finish_work(creator['work_id'], 'Original creator removed.', outcome='cancelled')
+    occupied = {**module.slots(ctx, dispatch.store), 'free': 0, 'machine_free': 0, 'room': 5}
+    monkeypatch.setattr(module, 'slots', lambda *args, **kwargs: occupied)
+    launched = []
+
+    def spawn(launch_ctx, store, work_id, *args, **kwargs):
+        assert module.capacity_kind(launch_ctx, work_id, 'worker') == 'helper'
+        assert kwargs['auto'] is True
+        launched.append(work_id)
+        return {'pid': 1}
+
+    monkeypatch.setattr(module, 'start_runner', spawn)
+    # The registered transport loads its dispatch module under the registry's own module name.
+    transport = provided(ctx.folder, 'orchestration.transport')[0][1]
+    registered = import_module(type(transport).__module__.rsplit('.', 1)[0])
+    monkeypatch.setattr(registered, 'slots', lambda *args, **kwargs: occupied)
+    monkeypatch.setattr(registered, 'start_runner', spawn)
+    result = module.autostart(ctx)
+    with own(ctx).tables(write=False) as tx:
+        recovered = tx.get('role_requests', {'request_id': request['request_id']})
+    replacement = SERVICE.assignment(ctx, assignment_id=recovered['creator_assignment_id'])
+    assert replacement is not None and replacement['assignment_id'] != creator['assignment_id']
+    assert launched == [replacement['work_id']], json.dumps(result)
+    assert any(one.get('pid') == 1 for one in result['continuations'])
+    assert result['started'] == []
+    assert not dispatch.ticket().taken
+
+
 def test_autostart_reads_work_once_and_uses_bulk_settings(dispatch, run, monkeypatch):  # noqa: F811
     from metaform.data import Store
     from metaform.module import context
@@ -311,9 +477,9 @@ def test_a_ticket_after_another_starts_only_once_that_one_is_done(dispatch, run,
 
 
 @pytest.mark.req('VIEW-042')
-def test_the_last_ticket_of_a_plan_done_says_so_once_in_the_system_agents_inbox(dispatch, run, monkeypatch):  # noqa: F811
+def test_the_last_ticket_of_a_plan_records_one_ui_update_without_context(dispatch, run, monkeypatch):  # noqa: F811
     """code.dispatcher.agent#10, item 4: a plan is tickets tied by after_work; when its last ticket is done, one project
-    update of kind plan_report names the plan's tickets by outcome and wakes the system agent, once for the plan. A
+    update of kind plan_report names the plan's tickets by outcome without waking an agent, once for the plan. A
     change that ends no ticket reads nothing."""
     from metaform.data import Store
     from metaform.module import context
@@ -342,8 +508,7 @@ def test_the_last_ticket_of_a_plan_done_says_so_once_in_the_system_agents_inbox(
         said
     ctx = context('dispatch', dispatch.folder, project='proj')
     entries = orchestration.update_entries(ctx, orchestration.user_updates(ctx))
-    [(_, named, wakes)] = [entry for entry in entries if 'plan report' in entry[1]]
-    assert named == 'Ticket 3 — plan report' and wakes, "the plan's report wakes the system agent"
+    assert entries == [], 'A completed plan stays visible without model context.'
     orchestration.plan_changed({'project': 'proj', 'kinds': ['ticket', 'done'], 'work_ids': [third]}, ctx)
     assert len(reports()) == 1, 'the same plan is said once'
     reads = Counter()

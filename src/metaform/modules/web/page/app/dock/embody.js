@@ -21,7 +21,7 @@ import {chatDocked} from '/page/app/workspace/workspace.js';
  * its head is dragged. */
 export const DOCK = {target: null, session: null, label: '', since: 0, notes: [], list: [], files: [], mine: null,
   waiting: '', calling: null,
-  chats: [], chat: null,  // chats: every open thread, one a tab; chat: the one on view
+  chats: [], chat: null, selection: 0,  // selection changes only when a thread is chosen
   pinned: true,
   queue: [],  // messages written before the agent was there, sent in order once it is
   attaching: null,  // the files still being saved, attached with the paperclip, pasted or dropped; a send waits for them

@@ -157,7 +157,7 @@ DISPATCH_CHANGES = frozenset({'work', 'messages', 'orchestration.routing', 'map.
 # runner's own state, working or idle, which starts nothing. A ticket's words, `note`, and its plan and steps, `step`,
 # start nothing either, so an agent editing its note or reporting a step costs the starter no pass (UX review round 1,
 # runaway F3): only `ticket` does, a ticket written, released, freed, done or given a task.
-STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'question'})
+STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'question', 'worker-idle'})
 UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
                       'dispatch.claims',
                       'dispatch.claim_work', 'dispatch.raised'})

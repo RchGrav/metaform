@@ -1,0 +1,2 @@
+Error: 2 observation(s) hold more than one fact: 'Paper plane figure motion': 'A clock-driven 14-degree wing rock in the plane animation made it roll while fly'...; 'Paper plane figure motion': 'Only hover characters tip their gait nose-down with speed; glide and dart noses '.... One fact per observation, in one sentence: a single fact can be read, cited, marked stale and corrected alone.
+Next: split each into one observation per fact (no semicolons, line breaks or second sentences) and send the same call again

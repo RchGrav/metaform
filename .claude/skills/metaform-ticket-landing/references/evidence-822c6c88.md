@@ -1,0 +1,1 @@
+git -C /home/rich/metaform status --short: M src/metaform/modules/dispatch/README.md, M src/metaform/modules/dispatch/__init__.py, M src/metaform/modules/dispatch/orchestration.py. Blocker note sent: "Delivery of code.dispatcher.agent#10 blocked by your uncommitted edits in the main checkout; commit them by name, then retry the merge"

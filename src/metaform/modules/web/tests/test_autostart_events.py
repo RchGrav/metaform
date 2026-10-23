@@ -65,9 +65,11 @@ def test_explicit_merge_remains_available_through_dispatch_call(monkeypatch):
     ({}, True),
     # what the change concerns, when every write said it: only the kinds that can start work
     ({'tables': 'dispatch', 'kinds': ['line'], 'session_ids': ['s']}, False),
+    ({'tables': ['dispatch.session_lines'], 'kinds': ['board-state'], 'session_ids': ['board:b:']}, False),
     ({'tables': ['dispatch.sessions', 'dispatch.spending'], 'kinds': ['spend']}, False),
     ({'tables': ['work'], 'kinds': ['ticket'], 'work_ids': ['w']}, True),
     ({'tables': ['work_steps'], 'kinds': ['ticket'], 'work_ids': ['w']}, False),
+    ({'tables': 'dispatch', 'kinds': ['session', 'worker-idle'], 'session_ids': ['s']}, True),
     ({'tables': 'dispatch', 'kinds': ['session'], 'session_ids': ['s']}, False),  # a runner's working or idle
     ({'tables': ['dispatch.sessions', 'work']}, True),  # a session's end releases its ticket, with no kinds
     ({'tables': ['map.glyphs'], 'kinds': []}, True),
@@ -156,6 +158,7 @@ def test_repeated_changes_queue_one_followup_without_concurrent_batches(monkeypa
     server.retry_timers = {}
     server.dispatch_busy = False
     server.dispatch_errors = {}
+    server.retry_timers = {}
     threads = []
     monkeypatch.setattr(module.threading, 'Thread', lambda **kwargs: SimpleNamespace(start=lambda: threads.append(kwargs)))
     monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
@@ -246,3 +249,112 @@ def test_new_worker_starts_rotate_projects_and_capacity_release_wakes_waiters(mo
     server.changed({'project': 'other', 'tables': ['dispatch.sessions', 'work']})
     assert scheduled == ['other']
     assert server.dispatch_pending == {('a', None), ('b', None)}
+
+
+@pytest.mark.parametrize(('project_id', 'active_board', 'inactive_board'), [
+    ('orchard', 'repairs', 'later'),
+    ('harbor', 'delivery', 'planned'),
+])
+def test_runtime_pending_work_does_not_block_event_driven_fill_and_refill(
+        run, tmp_path, monkeypatch, project_id, active_board, inactive_board):
+    """Real selection and reservations, with process launch stubbed, fill five slots from one board event."""
+    import json
+
+    from metaform.data import Store
+    from metaform.module import context
+
+    folder = tmp_path / project_id
+    folder.mkdir()
+    run('add', 'project', project_id, str(folder))
+    run('enable', 'dispatch')
+    run('disable', 'orchestration')
+    store = Store(project_id)
+    store.layer('parts', 'test', 'The parts.', mutable=True, hideable=True, ready=True)
+    store.add_element('parts', 'code.engine')
+    store.add_element('parts', 'code.runtime')
+    for board in (active_board, inactive_board):
+        run('map', 'boards', 'op=add', f'name={board}', cwd=folder)
+    run('set', f'--board={active_board}', '--dispatch-autostart', '--dispatch-agents=5', cwd=folder)
+
+    def work(task, *nouns, node='code.engine'):
+        return json.loads(run('map', 'work', 'op=add', f'node={node}', f'task={task}', f'title={task}',
+                              *nouns, '--json', cwd=folder).stdout)['id']
+
+    pending = work('Runtime pending repair', 'condition=broken', 'kind=broken', node='code.runtime')
+    workers = [work(f'Eligible work {number}') for number in range(7)]
+    held = work('Held work', 'held=true', 'hold_reason=Wait for user review')
+    stopped = work('Stopped work')
+    blocked = work('Dependent work', f'after_work=["{workers[-1]}"]')
+    inactive = work('Other board work', f'board={inactive_board}')
+    prepared, launched = [], []
+    from metaform.modules import dispatch as starter
+    from metaform.modules.dispatch import orchestration, recovery
+
+    def prepare(ctx, assignment):
+        prepared.append(assignment['work_id'])
+        return assignment['work_id'] != pending
+
+    owner = SimpleNamespace(
+        route_pending=lambda ctx: [], routing_waiting=lambda ctx: False, drain=lambda *args: [],
+        selected_specialist=lambda *args: 'metaform://role/backend_engineer', queue_routing=lambda *args: None,
+        assignment=lambda ctx, work_id, **kwargs: {
+            'work_id': work_id, 'authored_role_uri': 'metaform://role/backend_engineer',
+            'stop': 'person' if work_id == stopped else None},
+        prepare_runtime=prepare)
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: owner)
+    monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
+    # System conversations have separate capacity and do not belong to this worker admission fixture.
+    monkeypatch.setattr(starter, 'stay_connected', lambda *args: {})
+
+    def launch(ctx, store, work_id, *args, **kwargs):
+        launched.append(work_id)
+        assert sum((work.taken_by or '').startswith('dispatch starting ')
+                   for work in store.work(open=True, limit=0).results) <= 5
+        return {'pid': 1}
+
+    monkeypatch.setattr(starter, 'start_runner', launch)
+    server = object.__new__(module.Server)
+    server.listeners, server.listening = set(), threading.Lock()
+    server.dispatch_lock, server.dispatch_busy, server.dispatch_errors = threading.Lock(), False, {}
+    server.dispatch_pending, server.capacity_waiters = set(), set()
+    monkeypatch.setattr(module.threading, 'Thread', lambda target, **kwargs: SimpleNamespace(start=target))
+    monkeypatch.setattr(module.chassis, 'refresh_modules', lambda: None)
+    monkeypatch.setattr(module.events, 'announce', lambda *args: [])
+    monkeypatch.setattr(module.events, 'publish', lambda *args: [])
+    monkeypatch.setattr(server, 'watch_backgrounds', lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, 'watch_runners', lambda *args: None)
+    monkeypatch.setattr(server, 'schedule_retry', lambda *args: None)
+    passes = []
+
+    def autostart(target, module_id, verb, nouns, **kwargs):
+        assert (module_id, verb, nouns) == ('dispatch', 'autostart', {'batch': 1})
+        passes.append(target)
+        assert len(passes) <= 20, 'runtime preparation kept scheduling passes without starting workers'
+        assert target['project'] == project_id
+        return starter.autostart(context('dispatch', folder, project=project_id, nouns=nouns))
+
+    monkeypatch.setattr(module, 'module_verb', autostart)
+    server.changed({'project': project_id, 'tables': ['work'], 'kinds': ['ticket'], 'work_ids': workers})
+    assert launched == workers[:5], [(work_id, store.ticket(work_id).work.task) for work_id in launched]
+    assert not server.dispatch_busy and not server.dispatch_pending
+
+    store.finish_work(workers[0], 'Done.', 'Completed first worker.')
+    server.changed({'project': project_id, 'tables': ['work'], 'kinds': ['ticket'], 'work_ids': [workers[0]]})
+    assert launched == workers[:6], 'completion must start the next eligible ticket'
+
+    # The death watcher has released its verified dead runner before notifying the server.
+    reservation = store.ticket(workers[1]).work.taken_by
+    starter.given_back_reservation(store, workers[1], reservation)
+    # Keep the abandoned ticket owned while its continuation is resolved, as an ended session does.
+    store.take_work(workers[1], by='claude ended-session')
+    server.runner_died({'project': project_id, 'work_ids': [workers[1]], 'kinds': ['ticket']})
+    assert launched == workers, 'unexpected exit must refill from eligible work'
+    assert all(not store.ticket(work).work.taken for work in (pending, held, stopped, blocked, inactive))
+    assert pending in prepared
+    assert not set(prepared) & {held, stopped, blocked, inactive}
+    assert not server.dispatch_busy and not server.dispatch_pending
+
+    before = len(passes)
+    for _ in range(100):
+        server.changed({'project': project_id, 'tables': ['work'], 'kinds': ['note'], 'work_ids': [held]})
+    assert len(passes) == before, 'unrelated notes must not read scheduler inputs'

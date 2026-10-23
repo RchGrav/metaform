@@ -552,11 +552,14 @@ function peerRow(line) {
   const named = end => `${agentName(end.agent)} on ${end.item || end.work_id || 'another ticket'}`
     + (end.project && here && end.project !== here ? ` in project ${end.project}` : '');
   const what = note.reply_to ? 'Reply' : note.ask ? 'Question' : 'Note';
-  const lead = sent ? `${what} to ${to.map(end => `${named(end)} (${states[end.work_id] || 'queued'})`).join(', ')}:`
-    : `${what} from ${named(note.from || {})}, a fellow agent (${states[line.work_id] || 'queued'}):`;
+  const status = work => note.withdrawn ? 'withdrawn' : note.resolved ? 'resolved' : note.superseded ? 'superseded'
+    : states[work] || 'recorded';
+  const lead = sent ? `${what} to ${to.map(end => `${named(end)} (${status(end.work_id)})`).join(', ')}:`
+    : `${what} from ${named(note.from || {})}, a fellow agent (${status(line.work_id)}):`;
   const titles = (sent ? to : [note.from || {}]).map(end => end.title).filter(Boolean).join('\n');
-  return h('div', {class: 'system peer', title: `${titles}${note.at ? `\n${note.at}` : ''}\n${note.id || ''}`.trim()},
-    h('b', {}, lead), ` ${note.text || ''}`);
+  return h('details', {class: 'system peer', title: `${titles}${note.at ? `\n${note.at}` : ''}\n${note.id || ''}`.trim()},
+    h('summary', {}, lead, ` ${note.summary || String(note.text || '').split('\n')[0].slice(0, 200)}`),
+    h('div', {}, note.text || ''));
 }
 /* A question still open as its card; one without a request said in a quiet line, with what became of it. */
 function elicitationRow(line, work, agent) {

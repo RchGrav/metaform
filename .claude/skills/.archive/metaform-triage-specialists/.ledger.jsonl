@@ -1,0 +1,2 @@
+{"action": "create", "reason": "Triage was reasoning over the system roles list and so always fell back to the generic implementer, never requesting a domain specialist. The person corrected this: system roles are not specialists. The rule belongs in the skill that governs ticket assignment.", "evidence": "references/evidence-3981a45e.md"}
+{"action": "patch", "reason": "Specialist routing starts one extra Facilitator agent per ticket when no specialist exists; this is a fault the skill should warn about until fixed.", "evidence": "references/evidence-9fedfaa8.md"}

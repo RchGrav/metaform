@@ -1,0 +1,1 @@
+"Now we can't because everything's so damn slow." ... "set all of them aside now." ... "board_line: (none) → 2026-10-20T01:23:32Z 79104B 0.410365s cards 21 done 0" ... "i'm not running fucking agile here i'm not doing full epics and stories and user journeys that's not the freaking design but we do need the freaking track tickets and we do need to see shit get done"

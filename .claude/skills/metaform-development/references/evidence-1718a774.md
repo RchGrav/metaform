@@ -1,0 +1,3 @@
+{"type":"tool_result","content":"How to use memory_create_entities, given once in this session: Existing names are skipped; extend them with add_observations and index them with join. Without node, new entities have no functional index association. ... Nothing new to record: each memory and observation was held already."}
+memory_join(entity, node?, receiver?, provider?, address?): Index an existing memory entity at a functional element or join without copying it
+{"type":"tool_result","content":"{\"entity\":\"Metaform specification reconciliation expertise\",\"address\":\"code.graph.knowledge\",\"joined\":true,\"item\":\"code.graph.knowledge#38\"}"}

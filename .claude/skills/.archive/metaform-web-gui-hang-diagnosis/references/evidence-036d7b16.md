@@ -1,0 +1,1 @@
+Trace: the helper copied the home with the backup API read-only into /tmp/arch-review/home and ran `METAFORM_HOME=/tmp/arch-review/home .venv/bin/python -I -` timing `Store.tag` and `add_item` (write floor median 1.8 ms / 5.0 ms), and reported "A read in another thread waited 3.84 s behind a write that was itself waiting on another process's write lock".

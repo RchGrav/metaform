@@ -1,0 +1,1 @@
+{"tool":"map_work","arguments":{"id":"84b04a16da4d4411878736e6cff830f4","op":"step","text":"Runtime a0 -> claude/fable/max, task_type planning. Why: proposal sets goal, tickets, order; ..."}} → Result: "Notice: text: map work has no noun text; it was ignored.\ncode.system.management.knowledge#a1 Create specialist role for this ticket: step 2 of 2 recorded."

@@ -1,0 +1,1 @@
+Ticket code.dispatcher.agent#ed (this episode): "orchestration_runtime choice with task_type outside TASKS -> silent needs_choice, same catalog, no reason. Facilitator retries blind." Facilitator final report: "My first task_type, backend_concurrency_debugging, isn't one of the allowed task types in runtime.py. The tool just returned needs_choice again with no reason."

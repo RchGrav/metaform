@@ -1,0 +1,1 @@
+codex tends to be better with system level backend work while you are better with frontend

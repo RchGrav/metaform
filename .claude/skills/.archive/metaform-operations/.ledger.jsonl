@@ -1,0 +1,1 @@
+{"action": "create", "reason": "The person asked to restart the web and to know how to restart MCP. The answer was not recorded anywhere, and the agent had to discover that /mcp reconnect is unavailable in ACP-run sessions. Restart steps belong in one operations skill.", "evidence": "references/evidence-3facb838.md"}

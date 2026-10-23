@@ -1,0 +1,1 @@
+metaform-web-gui-hang-diagnosis [project]: Use when a Metaform web page freezes or hangs on a click.

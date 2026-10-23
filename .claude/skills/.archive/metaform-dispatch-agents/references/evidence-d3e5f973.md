@@ -1,0 +1,1 @@
+                needed['reason'] = rejection_reason(fallback, catalog, overrides)

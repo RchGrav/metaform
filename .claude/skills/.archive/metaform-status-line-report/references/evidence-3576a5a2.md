@@ -1,0 +1,3 @@
+-# The person's system agent is woken for routine ticket status at most this often, and only when status changed since
+-# its last status line, which carries a count and never a ticket: every token of its context counts (the person's
+-# rule, 2026-10-20).

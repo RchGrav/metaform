@@ -1,0 +1,1 @@
+user: "Start the web, too." / tool result: state: restarted address: http://127.0.0.1:7433/ / user: "how to restart mcp" / tool result: 19537 parent: /home/rich/.npm/_npx/... 35559 parent: /home/rich/.local/share/uv/tools/metaform/bin/python -m metaform mcp serve

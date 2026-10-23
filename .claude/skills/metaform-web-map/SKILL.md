@@ -1,6 +1,6 @@
 ---
 name: metaform-web-map
-description: Use when editing the Metaform web map or its chat page.
+description: Use when editing the Metaform web page, board or map.
 category: development
 ---
 
@@ -20,6 +20,9 @@ Never draw flow on a canvas over the map. Build each edge's shapes once, write `
 
 ## Word bubbles: SVG over both maps, tail to the speaker
 Every word bubble, agents' and the mascot's, is SVG in the one fixed `#bubbles` layer over both maps, drawn each frame by `bubbles3d` in `figures/bubble3d.js` (graphical#c7, 2026-10-18). Do not bring back per-map planes or a canvas for bubbles. `say` in `figures/cut.js` only records the line in `BUBBLE` (`figures/bubble.js`), and `placeBubble` reads the speaker's head on the page just before `bubbles3d` draws. The head is the eye point plus `LOOK.lift`, so import `LOOK` from `bubble3d.js` in any test; never copy its literals. The tail runs from the body to the speaker's head on screen, so it keeps pointing at the speaker when the body is pushed apart; when the head is off the map area the tip is where that line leaves the area. A click on an agent's bubble picks that agent through `figureAt` to `bubbleAt(x, y)`, and each bubble element carries `data-who`. Guard: `test_word_bubbles_point_at_their_speakers_stay_apart_in_view_and_the_watched_agent_speaks_at_the_bottom` in `web/tests/test_working_figures.py`. The mascot's reply field still opens in the plain `.mascot-bubble` box, which `bubbles3d` positions over the speaker's head.
+
+## Agent figure click opens the agent's chat; a message to an unstarted ticket is held
+Every agent figure, on the 3D and the 2D map, opens its chat with a box to write in, by one path: `openFigure` in `figures/ask.js`, which the 2D click calls too. Do not add a second click path. The chat opens the latest running session of the figure's ticket that is not a notification session. A figure whose ticket has no running session opens the chat marked held (head "Not started yet", thread "It reads this when it starts."), and a message written there goes at once to `/api/dispatch-message` with no session (`holdQueued` in `dock/send.js`). The server keeps it on the ticket's orchestration assignment (`_kept_for_start` in `dispatch/__init__.py`, BASE-052), and the session reads it as the person's own words on start. A ticket with no assignment is still refused "No agent is running". A native subagent takes no messages of its own: its words go to the agent that started it, and the box says so; a fork takes words written in its thread itself. The project's updates thread is read-only, and its box says why. Guard: `test_a_message_to_a_ticket_whose_agent_has_not_started_is_kept_and_read_when_it_starts` in `web/tests/test_web.py`. Spec: VIEW-039 and BASE-052 amendments of 2026-10-21.
 
 ## Mascot and agent figures: moving them
 Read `web_embody` first: `figure: false` means every move drives the person's mascot, so stop and report instead of moving. Treat `address=` moves as approximate, confirm with one `web_look`, and send one act at a time, waiting for its `done`. Details: `references/mascot-navigation.md`.
@@ -42,5 +45,45 @@ Never infer the person's project from folder file times or any other activity th
 ## Roundtable stage: leaving keeps the figures in the scene
 `leaveStage` in `page/app/roundtable/stage.js` must leave the seat meshes in `VIEW.scene`. The stage is not drawn while the person is away, so keeping them costs nothing, and removing them makes a returning table show names and bubbles with the tails pointing at empty space. Only `unseat` removes them, and only when the table has ended or never opened. The `roundtable_stage` browser test in `web/tests/test_working_figures.py` leaves a table that is still running, returns with `T` or the Roundtable button, and asserts every seat mesh has a parent in the scene.
 
+## Chat ticket references: `<address>#<n>` is a link when the number holds a ticket
+Chat text `<address>#<n>` is drawn by `linked()` in `board/refs.js`, on the same reference path as spec codes and ids (VIEW-042). It becomes a link only when `/api/lookup` (`item_reference` in `server.py`) finds a ticket at that number; an unknown number stays plain text. A click opens the ticket panel in `board/detail.js`, which shows the board and column that `/api/ticket-detail` returns explicitly, since the plain ticket read does not carry the column.
+- Item numbers are hex: `#55` is `0x55`.
+- Percent-encode `#` as `%23` in lookup URLs, or the query is cut at the fragment.
+- Guard: `test_a_ticket_named_by_address_and_number_is_found_with_its_board_and_an_unknown_number_is_not` in `test_ticket_detail.py`.
+- A `server.py` change reaches the person's live page only after the live server restarts. Ask the person before `metaform web restart`, and say in the check-in that a restart happened or is still needed.
+
+## Verifying a worktree's page against the live server
+The live server on 127.0.0.1:7433 serves the main checkout, not a worktree, so a worktree's page changes are not on it. To check them against the person's live data, run a headless probe (GPU as the real machine has it) that routes the page's `/page/` requests to the worktree's files and reads only: no posted view or pointer state, and layer toggles kept page-local, so the person's shared view is not overwritten. Record the console errors and the exact values the change claims (colours, row heights, card lead text, counts) in the check-in evidence, and say which tests failed at base as well.
+
+## Panel layout: look at the screenshot, and beware global element selectors
+A browser test that passes does not prove a panel's layout. Look at a screenshot of the panel before reporting it. `app.css` styles every `aside` element as the page's side column (`grid-area: side`), so an `aside` inside a window grid lands in a phantom grid column with no error. Window content that needs a side column uses a `div` with its own class. Before naming an element in a new window, grep `app.css` for a bare element selector that would match it.
+
 ## Checks
 Run `node --input-type=module --check < FILE` on each changed page part: the parts are ES modules with `import`/`export`, and plain `node --check FILE` is not the check to rely on. Keep lines within 120 characters. To prove a queued path, the browser test marks the system agent's session `starting` by rewriting `/api/dispatch-sessions`, asks, then makes the session live through `renderAgents`, so the waiting step actually runs. The browser-test procedure is in the metaform-development skill (web page and browser tests). In the small area the open chat dock covers the 3D mascot, so a test that clicks the mascot swaps the 3D map back to the large area first; a click on the covered mascot misses without any error.
+
+## Agent hover labels: one reused element, names first
+The hover label is one reused `#agenttip` element, set by `agentTip` in `map3d/readout.js` and called from both maps (`pointAt3d` in `map3d/graph3d.js`, `map2d/hover.js`). Its text changes only when the hovered figure changes, it follows the pointer, and it hides on pointer leave, a drag, a key or a press outside the 3D stage. It reads name, then model and thinking level through `optionWords` in `agents/pickers.js`, the same words the dock's settings line uses: keep one copy of those words. Agent names come from `nameOf` and `agentLabel` in `agents/dispatch.js`; every agent key, tab and list shows the name before the ticket number. Verify on a scratch instance: hover two agents in 2D and 3D, read the label text each time, and move off to confirm it hides.
+
+## Verify on a scratch instance, never the person's server
+Run a page change on a scratch home with its own port, a fake agent, headless software GL and reduced motion. Then stop the scratch server and runners by finding every process whose `/proc/PID/environ` holds that home's `METAFORM_HOME`, and only then delete the temp folders. Port 7433 runs the main tree, so a scratch run on a worktree does not show the person's page: say that in the report.
+
+## Ticket board and Archive
+- The board shows open tickets only. A ticket that is done moves to the Archive at once, and nothing is deleted. Keep the board to open work: hundreds of done cards hang the browser.
+- A card click opens the ticket itself: title, task, note and log, as selectable text, with the title and task editable through the server's `store.edit_work`. Only the card's top line is draggable, because a draggable card swallows mouse-drag text selection. Do not add a click action that only selects the map node.
+- Archiving done tickets from the board is open to the system agent: `board_line` is not `person_only`. Do not re-add `person_only` to it.
+- A card is rebuilt only when what it shows changes. Its comparison text holds the ticket's own fields and the names its chips draw, never its position in the column or a map-wide counter. Keep `test_a_board_of_500_tickets_opens_in_time_and_a_move_makes_no_other_card_again` passing (open under 5 s, no card rebuilt by a move).
+- Measure a slow board on its read before and after: `curl` `/api/work?project=ID&limit=0&board=shown` and record bytes and seconds. On 2026-10-20 the read was 855 KB for 157 cards; archiving the done tickets gave 79 KB for 21 cards.
+- On open, the page first draws from the ticket list it loaded at startup, so done tickets can flash and then drop away. Check the board's own read before reporting tickets missing.
+- Setting tickets aside is not closing them: a "set aside" close files them as finished in the Archive. Before telling the person that an action reverses (moving a ticket back to To do reopens it), run that reversal on one ticket and read it back.
+- Board features the person has not specified (epics, stories, sprints) are outside this design. Propose organisation only in the person's terms, such as named boards the person can move tickets between.
+
+## Frozen page or growing web server
+- Start from the live server's record: `~/.metaform/run/web.log` holds lines like `Slow: GET /api/... has run 3 s, waiting on ...`, which name the endpoint and what it waited on.
+- Find the real route names in `src/metaform/modules/web/server.py` and the fetch calls in `src/metaform/modules/web/page/app/` before probing. A guessed path answers 404 in milliseconds, which says nothing about speed.
+- Probe the endpoints the clicked control calls, with the nonce from `~/.metaform/run/web.json`, and record each response's size and time. A multi-megabyte payload or a 3 s wait is the lead.
+- Sample the server's memory from `/proc/PID/status` (VmRSS, VmHWM, Threads, open fds) at two moments. Few threads and fds with large RSS points at Python heap held between requests: find what the server keeps in module or instance state.
+- Never attach to, signal or restart the person's live server to measure it. Measure a test server or the code path instead. A fix in the working tree shows on the live page only after a restart the person agrees to.
+- Store-level cost: copy the live home with SQLite's backup API over read-only connections (`file:...?mode=ro`) into a scratch folder, point `METAFORM_HOME` at the copy, and run timing scripts with `.venv/bin/python -I` against it. Time a write and a read in separate threads, so a read stalled behind another process's write lock shows the freeze directly.
+- A restart that reports "does not answer" while `/api/server` answers in milliseconds a minute later is a starved server, not a dead one. Find the burst of reads in `web.log` and fix its cause: batch per-item reads (`/api/lookup` takes several refs at once) and make the page request only what it draws. Do not lengthen the readiness probe's timeout to hide the burst.
+- Change detection on a read compares only the fields the view shows. A field that changes on every read (such as `age_seconds`) makes every row look changed, so exclude such fields from the compare.
+- A page drawn from many items does one batched read per drawn set, not one request per card. Count the requests a page opening sends (about 926 per board open was the fault) before and after the fix.

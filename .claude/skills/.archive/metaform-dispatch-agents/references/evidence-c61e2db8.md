@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_01LSFnYFwWab5rYJgCrzn9V5","type":"tool_result","content":"Error: No work record has the id code.interface.graphical#1ae.\nNext: call map_work open=true","is_error":true}]}}
+{"tool":"orchestration_runtime","arguments":{"work":"code.interface.graphical#1ae"}}
+{"tool":"map_work","arguments":{"id":"code.interface.graphical#1ae"}} -> {"id":"e1996ba39ade4fdebbea905ae36e9356","address":"code.interface.graphical", ...}
+{"tool":"orchestration_runtime","arguments":{"work":"e1996ba39ade4fdebbea905ae36e9356"}} -> {"state":"needs_choice", ...catalog...}

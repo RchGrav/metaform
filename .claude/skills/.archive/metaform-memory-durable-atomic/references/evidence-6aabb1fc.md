@@ -1,0 +1,1 @@
+It's supposed to be durable atomic memories that are valuable.

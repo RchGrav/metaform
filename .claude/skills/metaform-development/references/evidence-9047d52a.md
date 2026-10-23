@@ -1,0 +1,1 @@
+Orchestration check-in evidence, 2026-10-21 ticket code.system.management.knowledge#76: "first screenshot showed side column in wrong grid cell: global aside{grid-area:side} rule; fixed by using div, second screenshot correct". Map step 2/3: "Bug found: global app.css aside rule (grid-area:side) broke grid -> side column is a div."

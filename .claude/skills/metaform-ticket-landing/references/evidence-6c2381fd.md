@@ -1,0 +1,1 @@
+test_advance_lands_beside_local_edits_and_keeps_staged_peer_work: landed hunk at the top, peer edit at the bottom, both in the file afterwards; git diff names only notes.txt, git diff --cached only the peer's README.md; added and deleted paths taken

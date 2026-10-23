@@ -6,7 +6,6 @@ is accepted by a recipient's normal-turn queue, and its thread records the later
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import time
@@ -290,6 +289,8 @@ class Transport:
     def send(self, ctx: Context, held: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
         from . import held_ticket, sessions, tell
         from .peering import side
+        if not actionable(ctx, envelope, recipient=held):
+            return {'state': 'completed', 'accepted': True, 'record_only': True}
         row = _row(ctx, held)
         if row is None or row['state'] != 'running':
             return {'state': 'queued', 'reason': 'The recipient will read this after its recorded continuation.'}
@@ -331,9 +332,6 @@ class Transport:
         from .signals import add_line, own_store
         body = message if isinstance(message, str) else str(message.get('text') or message.get('body') or
                                                           message.get('summary') or '')
-        if isinstance(message, dict) and (message.get('update') or message.get('kind')) in (
-                'result', 'role_publication', 'functional_assessment', 'functional_correction') and message.get('state') in ('returned', 'delivered', 'completed'):
-            body = inbox_status(message)
         if not body:
             raise ValueError('A user notification requires an actual message body.')
         message_id = str(message.get('message_id') or change_id) if isinstance(message, dict) else change_id
@@ -362,28 +360,14 @@ class Transport:
                         {key: message.get(key) for key in ('work_id', 'kind', 'state', 'table', 'record')},
                         ensure_ascii=False), seq + 2)
                 tx.concern(work_id=UPDATES, session_id=UPDATES, kind='session')
-        # Updates retain message ids and ticket status. Completion reports remain on their tickets.
-        # A failed relay can retry the same id.
-        from . import sessions, system_sessions
-        running = [row for row in sessions(ctx.require_store()) if row['state'] == 'running']
-        route: dict[str, Any] = (message.get('return_to') or {}) if isinstance(message, dict) else {}
-        preferred = route.get('session_id')
-        pms = [row for row in running if row['session_id'] == preferred] if preferred else system_sessions(
-            ctx.require_store(), running)
-        delivered_pm: list[dict[str, Any]] = []
-        for pm in pms:  # `update` keeps the update's own kind, which the system agent's inbox names it by
-            envelope = {**({key: message[key] for key in MESSAGE_FIELDS if key in message}
-                           if isinstance(message, dict) else {}), 'id': message_id, 'text': body,
-                        'kind': 'project_update', 'update': message.get('kind') if isinstance(message, dict) else None}
-            delivered_pm.append(self.send(ctx, {'work_id': pm['work_id'], 'owner_session_id': pm['session_id'],
-                                                'assignment_id': None}, envelope))
-        return {'state': 'delivered', 'session_id': UPDATES, 'message_id': message_id, 'text': body, 'pm': delivered_pm}
+        # Project updates are UI records. They never enter any agent's context or resume queue.
+        return {'state': 'delivered', 'session_id': UPDATES, 'message_id': message_id, 'text': body, 'pm': []}
 
     def plan_done(self, ctx: Context, store: Store, work_id: str, records: list[Any]) -> dict[str, Any] | None:
         """One project update for a plan whose last ticket is done, `PLAN_UPDATE`: one line with the plan's tickets
         by outcome, from its first ticket to the one just done, named by the plan's tickets so the same plan is said
-        once; None when it was said already. The person's system agent hears it in its inbox and is woken for it,
-        since the job it fanned out is done (code.dispatcher.agent#10, item 4)."""
+        once; None when it was said already. The UI shows it without waking an agent,
+        since completion alone requires no model turn (code.dispatcher.agent#10, item 4)."""
         from .signals import own_store
         members = sorted(str(record.id) for record in records)
         ident = f'plan:{hashlib.sha256(" ".join(members).encode()).hexdigest()[:16]}'
@@ -411,10 +395,102 @@ TRANSPORT = Transport()
 # Authenticated routing and delivery metadata remain available through dispatch_notes.
 MESSAGE_FIELDS = ('work_id', 'assignment_id', 'sender_assignment_id', 'sender_session_id', 'team_id',
                   'change_id', 'transition_id', 'return_to', 'state', 'update', 'ask', 'reply_to',
-                  'decision', 'board', 'epoch', 'table', 'record')
+                  'decision', 'board', 'epoch', 'table', 'record', 'withdrawn', 'resolved', 'superseded', 'cancelled')
 
 
-CARRIED = ('delivered', 'read', 'replied')
+INACTIVE = frozenset(('returned', 'delivered', 'failed', 'stopped', 'superseded', 'transferred', 'completed',
+                      'resolved', 'withdrawn', 'cancelled'))
+
+
+def actionable(ctx: Context, envelope: dict[str, Any], *, session_id: str | None = None,
+               recipient: dict[str, Any] | None = None) -> bool:
+    """Allow only current requests and owned continuations. Routine metadata causes no ownership reads."""
+    kind = str(envelope.get('kind') or '')
+    if any(envelope.get(key) for key in ('withdrawn', 'resolved', 'superseded', 'cancelled')) or \
+            envelope.get('state') in ('withdrawn', 'resolved', 'superseded', 'cancelled', 'stopped'):
+        return False
+    if kind == 'user_direction':
+        return True
+    sender = cast(dict[str, Any], envelope.get('from') or {})
+    if kind == 'board':
+        if sender.get('agent') != 'metaform':
+            return False
+        from . import held_ticket
+        if str(envelope.get('board') or '').startswith('start-fault:'):
+            work = held_ticket(ctx.require_store(), str(sender.get('work_id') or ''))
+            return work is not None and not work.done
+        if envelope.get('actionable') is not True:
+            return False
+        tickets = cast(list[dict[str, Any]], envelope.get('tickets') or [])
+        work_ids = [str(one.get('work_id') or '') for one in tickets]
+        if sender.get('work_id'):
+            work_ids.append(str(sender['work_id']))
+        return any(not work.done for ident in work_ids
+                   if (work := held_ticket(ctx.require_store(), ident)) is not None)
+    question = kind == 'question' and envelope.get('ask') is True
+    if not question and kind not in ('result', 'role_publication', 'blocked', 'change_order', 'gc_broadcast'):
+        return False
+    owner = service(ctx)
+    target = recipient or (owner.assignment(ctx, session_id=session_id) if owner and session_id else None)
+    if target and (target.get('stop') or target.get('state') in INACTIVE):
+        return False
+    from . import held_ticket
+    if target:
+        work = held_ticket(ctx.require_store(), str(target.get('work_id') or ''))
+        if work is not None and work.done:
+            return False
+    source_ctx, source_owner = ctx, owner
+    if question and sender.get('project') and sender['project'] != ctx.project:
+        from .peering import destination
+        source_ctx = destination(ctx, sender['project'], sender.get('base'))
+        source_owner = service(source_ctx)
+    source_id = envelope.get('sender_assignment_id') or sender.get('assignment_id')
+    source = source_owner.assignment(source_ctx, assignment_id=str(source_id)) if source_owner and source_id else None
+    if question:
+        if source:
+            work = held_ticket(source_ctx.require_store(), str(source.get('work_id') or ''))
+            if work is not None and work.done:
+                return False
+            return not source.get('stop') and source.get('state') not in INACTIVE and \
+                source.get('owner_session_id') == sender.get('session_id')
+        # Unmanaged conversations may ask questions while that exact sender still runs.
+        from .signals import own_store
+        if not sender.get('session_id'):
+            return False
+        with own_store(source_ctx.require_store()).tables(write=False) as tx:
+            row = tx.get('agent_sessions', {'session_id': sender['session_id']})
+        if not row or row['state'] != 'running' or row['work_id'] != sender.get('work_id'):
+            return False
+        work = held_ticket(source_ctx.require_store(), str(row['work_id']))
+        return work is None or not work.done
+    if not target or not source or source.get('stop'):
+        return False
+    if session_id and target.get('owner_session_id') != session_id:
+        return False
+    if kind == 'change_order':
+        directions = cast(list[dict[str, Any]], target.get('pending_direction') or [])
+        return any(one.get('change_id') == envelope.get('change_id') and one.get('change_id')
+                   and not one.get('superseded') for one in directions)
+    if kind == 'gc_broadcast':
+        return source.get('state') not in INACTIVE and target.get('gc_assignment_id') == source['assignment_id']
+    if kind == 'blocked':
+        return source.get('state') == 'blocked' and source.get('gc_assignment_id') == target['assignment_id']
+    # Results follow the recorded immediate caller and its handoff successors, never a project-wide recipient.
+    route = cast(dict[str, Any], source.get('return_to') or {})
+    parent_id = route.get('assignment_id')
+    seen: set[str] = set()
+    while parent_id and parent_id not in seen:
+        if parent_id == target['assignment_id']:
+            return source.get('state') in ('returned', 'delivered', 'failed')
+        seen.add(parent_id)
+        parent = owner.assignment(ctx, assignment_id=parent_id)
+        parent_id = parent.get('successor_assignment_id') if parent and not parent.get('stop') else None
+    return False
+
+
+def delivery_metadata(held: dict[str, Any]) -> dict[str, Any]:
+    """Small replay marker beside a peer line, using the existing session/kind index. No message body."""
+    return {key: held[key] for key in (*MESSAGE_FIELDS, 'id', 'kind', 'from', 'to', 'actionable', 'tickets') if key in held}
 
 
 def inbox_what(update: str, state: str, ask: bool, note_id: str, board: str) -> str:
@@ -457,63 +533,18 @@ def inbox_status(held: dict[str, Any]) -> str:
 
 
 def inbox_wakes(update: str, state: str, ask: bool) -> bool:
-    """Whether an inbox entry needs the person, so it may start the system agent's turn: an agent's question waiting
-    on an answer, a recommendation the person decides, a failed result the person must act on, or a plan whose
-    last ticket is done."""
-    return ask or update in ('specification_recommendation', PLAN_UPDATE) or state == 'failed'
+    """A question or recommendation may need a turn only after current ownership checks."""
+    return ask or update == 'specification_recommendation'
 
 
 def user_updates(ctx: Context) -> list[str]:
-    """The project updates the person's system agent, one role across its conversations, has not carried, by id: a
-    conversation, new or resumed, takes those written while none ran. One is carried once any system conversation's
-    inbox line named it, shown by its `carried:<id>` mark here, or by its note delivered in a system thread."""
-    from . import system_sessions
-    from .signals import own_store
-    store = ctx.require_store()
-    systems = system_sessions(store)
-    with own_store(store).tables(write=False) as tx:
-        rows = tx.rows('session_lines', {'session_id': UPDATES}, by=('session_id', 'seq'), limit=0).results
-        carried = {str(row['name']).partition(':')[2] for row in rows if str(row['name']).startswith('carried:')}
-        updates = [str(row['name']).partition(':')[2] for row in rows if str(row['name']).startswith('notification:')]
-        for ident in set(updates) - carried:
-            for system in systems:
-                line = tx.get('session_lines', {'session_id': system['session_id'], 'name': f'peer:{ident}'})
-                held: Any = json.loads(str(line['text'])) if line is not None else {}
-                states = [*cast(dict[str, Any], held.get('session_states') or {}).values(),
-                          *cast(dict[str, Any], held.get('states') or {}).values()]
-                if any(state in CARRIED for state in states):
-                    carried.add(ident)
-                    break
-    return [ident for ident in updates if ident not in carried]
+    """Project history is read explicitly. Startup must not scan notification bodies or replay old notices."""
+    return []
 
 
 def update_entries(ctx: Context, idents: list[str], *, passive: set[str] | None = None) -> list[tuple[str, str, bool]]:
-    """Each project update as the system agent's inbox names it, by id: its ticket and kind, from the `about:<id>`
-    line its notification keeps, never its words, and whether it needs the person."""
-    from .signals import own_store
-    if not idents:
-        return []
-    store = ctx.require_store()
-    about: dict[str, dict[str, Any]] = {}
-    with own_store(store).tables(write=False) as tx:
-        for ident in idents:
-            line = tx.get('session_lines', {'session_id': UPDATES, 'name': f'about:{ident}'})
-            with contextlib.suppress(ValueError, TypeError):
-                about[ident] = json.loads(str(line['text'])) if line is not None else {}
-    from . import helper_id, helper_item
-    works = sorted({str(one.get('work_id')) for one in about.values() if one.get('work_id')
-                    and not helper_id(one.get('work_id'))})
-    named: dict[str, Any] = store.numbers_of('work', works) if works else {}
-    entries: list[tuple[str, str, bool]] = []
-    for ident in idents:
-        held = about.get(ident) or {}
-        work, update, state = str(held.get('work_id') or ''), str(held.get('kind') or 'update'), str(held.get('state') or '')
-        item = str(named[work][0]) if work in named else helper_item(work) if helper_id(work) else work
-        if update == 'roundtable_result' and passive is not None:
-            passive.add(ident)
-        entries.append((ident, inbox_status({**held, 'id': ident, 'from': {'item': item}}),
-                        inbox_wakes(update, state, False)))
-    return entries
+    """Retained notification IDs from older runners confer no permission to consume model context."""
+    return []
 
 
 def carried_updates(ctx: Context, idents: list[str]) -> None:

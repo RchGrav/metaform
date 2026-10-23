@@ -1,0 +1,1 @@
+17 ticket changes since your last status line: 6 board finished, 6 complete, 4 peer, 1 specification adaptation. Check before stating anything: dispatch_sessions thread=false, map_work, dispatch_notes. Report only what you checked, each problem by ticket address#n. Significant work since last commit -> have it reviewed.

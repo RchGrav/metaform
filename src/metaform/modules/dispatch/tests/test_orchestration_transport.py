@@ -1,7 +1,6 @@
 """Transport gates and event costs in addition to the full fake swarm scenarios."""
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import time
@@ -275,7 +274,8 @@ def sent(monkeypatch, session, guide=None):
     async def nothing(*args, **kwargs):
         return None
 
-    session.conn, session.session_id, session.prep, session.link_asked = SimpleNamespace(prompt=prompt), 's', True, True
+    session.conn, session.session_id, session.prep, session.link_asked = (
+        SimpleNamespace(prompt=prompt), session.session_id or 's', True, True)
     session.context_checked = True  # These delivery tests represent a recipient past its startup checkpoint.
     for name in ('changed', 'note', 'flush', 'save_state', 'spend', 'peer_marked'):
         monkeypatch.setattr(session, name, nothing)
@@ -303,7 +303,7 @@ def busy(dispatch):
 @pytest.mark.parametrize('completion_state', ['returned', 'delivered', 'completed'])
 def test_peer_wire_carries_only_message_and_keeps_details_available(
         dispatch, monkeypatch, completion_kind, completion_state):
-    """A completion reaches its recipient once as a ticket reference. Routing survives without report copies."""
+    """An unowned completion stays readable without prompting its recipient."""
     import asyncio
 
     worker = busy(dispatch)
@@ -316,9 +316,8 @@ def test_peer_wire_carries_only_message_and_keeps_details_available(
             'to': [{'session_id': 'recipient', 'work_id': worker.work_id}],
             'context_components': [{'name': 'irrelevant', 'text': detail}]}
     asyncio.run(worker.peer_note({'line': line, 'deliver': True}))
-    returned = 'claude code.dispatcher.agent#7d: Fix selection: code.dispatcher.agent#7d complete'
-    assert list(worker.pending) == [returned]
-    assert list(worker.prompt_contexts) == [[]]
+    assert list(worker.pending) == []
+    assert list(worker.prompt_contexts) == []
     with worker.store.tables(write=False) as tx:
         kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:brief-result'})['text'])
     assert not {'evidence', 'candidate', 'context_components'} & kept.keys()
@@ -327,7 +326,7 @@ def test_peer_wire_carries_only_message_and_keeps_details_available(
     def no_context(*args):
         pytest.fail('A message must not rebuild the assignment or append its context.')
 
-    assert sent(monkeypatch, worker, guide=no_context) == [returned]
+    assert sent(monkeypatch, worker, guide=no_context) == []
 
 
 @pytest.mark.kind('fixture')
@@ -352,14 +351,10 @@ def test_a_note_reaches_its_receiver_as_one_line_and_the_whole_stays_in_the_thre
                                   'deliver': True}))  # other words: the same words from one sender arrive once
     asyncio.run(worker.peer_note({'line': {'id': 'n-short', 'kind': 'peer', 'text': 'Done with dom.js.', 'from': sender,
                                            'to': to}, 'deliver': True}))
-    lines = '\n\n'.join(worker.pending).split('\n\n')  # notes that arrive while a turn waits join it, one line each
-    assert len(lines) == 3 and not any('\n' in one for one in lines), lines
+    from metaform.modules.dispatch.peering import line
+    assert not worker.pending
     said = f'{body[:199].rstrip()}…'
-    assert lines[0] == f'{head}{said} (the whole: dispatch_notes note=n-long)', lines[0]
-    assert len(said) == 200, len(said)  # the cap is the code's: 1,000 characters arrive as one line of a sentence
-    assert lines[1] == f'{head}Selection breaks on pointer leave; needs your pane change. ' \
-        '(the whole: dispatch_notes note=n-said)', lines[1]
-    assert lines[2] == f'{head}Done with dom.js.', lines[2]
+    assert line({'text': body, 'from': sender}, 'n-long') == f'{head}{said} (the whole: dispatch_notes note=n-long)'
     with worker.store.tables(write=False) as tx:
         kept = json.loads(tx.get('session_lines', {'session_id': 'recipient', 'name': 'peer:n-long'})['text'])
     assert kept['text'] == body, 'the whole stays in the thread, read on demand'
@@ -369,7 +364,10 @@ def test_a_note_reaches_its_receiver_as_one_line_and_the_whole_stays_in_the_thre
 def test_first_peer_turn_still_initializes_a_fresh_context(dispatch, monkeypatch):
     worker = busy(dispatch)
     worker.spoken = False
-    worker.turn('A required result.', peers=[('result', 'sender')])
+    import asyncio
+    worker.session_id = 'recipient'
+    asyncio.run(worker.peer_note({'line': {'id': 'direction', 'kind': 'user_direction',
+        'text': 'A required result.', 'from': {'session_id': 'sender'}}, 'deliver': True}))
     initialized = []
 
     def guide(text, components):
@@ -411,9 +409,8 @@ def test_startup_checkpoint_is_small_and_retained_key_is_not_repeated_on_resume(
 
 
 @pytest.mark.kind('fixture')
-def test_rules_reach_an_agent_once_per_context_epoch(dispatch, monkeypatch):
-    """The output rules head the first turn, are left out while the epoch holds them, and come again once after the
-    agent's context is compacted."""
+def test_rules_reach_retained_context_once_without_compaction_replay(dispatch, monkeypatch):
+    """Output rules arrive once. Compaction alone does not prove loss or authorize an automatic dump."""
     import asyncio
 
     rules = prompt_files.module('mcp', 'connect_rules')
@@ -445,7 +442,7 @@ def test_rules_reach_an_agent_once_per_context_epoch(dispatch, monkeypatch):
     worker.turn('Later still.')
     monkeypatch.setattr(worker, 'prompted', compaction_then_turns)
     again, later = sent(monkeypatch, worker)
-    assert again.count(rules) == 1 and again.endswith('After compaction.') and later == 'Later still.'
+    assert again == 'After compaction.' and later == 'Later still.'
 
 
 @pytest.mark.kind('fixture')
@@ -538,6 +535,12 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
 
     started.clear()
     system.spoken = True  # its turns went out, as the agent's ACP connection says
+    with system.store.tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'gc-session-30', 'work_id': 'gc-work-30', 'agent': 'codex',
+            'state': 'running', 'pid': os.getpid(), 'runner': 'question-owner', 'started': '2026-10-21T00:00:00Z',
+            'seq': 2, 'origin': origin()})
+    # Restore actual note writes after the earlier fake prompt drain.
+    monkeypatch.setattr(system, 'note', runner.Session.note.__get__(system))
     asyncio.run(system.peer_note({'line': result(30, kind='question', ask=True), 'deliver': True}))
     assert 'prompted' in started and list(system.pending) == [''], 'A question starts a turn of its own.'
     [woken] = sent(monkeypatch, system)
@@ -547,7 +550,7 @@ def test_the_system_agents_reports_wait_in_its_inbox_and_its_next_turn_carries_o
     worker = busy(dispatch)
     worker.session_id = 'w'
     asyncio.run(worker.peer_note({'line': result(40), 'deliver': True}))
-    assert worker.pending[0] == 'claude code.router.assignment#40: Held cap 40: code.router.assignment#40 complete'
+    assert not worker.pending, 'An unrelated recipient receives no completion context.'
     assert not worker.inbox
 
 
@@ -936,7 +939,7 @@ def test_a_delivery_whose_runners_keep_ending_without_a_session_is_handed_over_a
 @pytest.mark.kind('simulation')
 def test_idle_cpu_evidence(run, home, project_folder, tmp_path):
     """Run the same measurement on the exact base and candidate source; no queries during the idle interval."""
-    options = {'orchestration': True} if 'orchestration' in inspect.signature(Dispatch).parameters else {}
+    options = {}  # Measure dispatch's idle delivery loop without commissioning runtime selection.
     dispatch = Dispatch(run, home, project_folder, tmp_path, **options)
     if options:
         from metaform.modules.agents.roles import SERVICE as roles
@@ -997,6 +1000,11 @@ def test_transport_drops_assignment_copies_but_keeps_authenticated_routes(dispat
                 'return_to': {'session_id': 'lead'}, 'state': 'completed', 'kind': 'result',
                 'assignment': {'role_snapshot': 'private role' * 1000},
                 'context_components': [{'text': 'context' * 1000}], 'report': {'body': 'ticket report'}}
+    from types import SimpleNamespace
+    source_assignment = {'assignment_id': 'sender-assignment', 'state': 'returned',
+                         'return_to': {'assignment_id': 'recipient-assignment'}}
+    monkeypatch.setattr(orchestration, 'service', lambda ctx: SimpleNamespace(
+        assignment=lambda ctx, **kwargs: source_assignment))
     assert orchestration.TRANSPORT.send(ctx, held, envelope)['accepted']
     [line] = delivered
     assert line['text'] == envelope['text'] and line['from'] == source
@@ -1020,27 +1028,7 @@ def test_completion_inbox_names_the_ticket_without_its_report():
 
 
 @pytest.mark.kind('fixture')
-def test_delivered_completion_notification_stores_only_ticket_reference(dispatch, monkeypatch):
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import orchestration
-
-    monkeypatch.setattr(module, 'sessions', lambda *args, **kwargs: [])
-    ctx = context('dispatch', dispatch.folder, project='proj')
-    message = {'message_id': 'delivered-completion', 'kind': 'functional_correction', 'state': 'delivered',
-               'work_id': 'opaque-id', 'from': {'item': 'code.dispatcher.agent#7d'},
-               'body': 'Private report', 'report': {'body': 'Private report'},
-               'assignment': {'role_snapshot': 'Private role'}}
-    result = orchestration.TRANSPORT._notify_user(ctx, message, 'change')
-    assert result['text'] == 'code.dispatcher.agent#7d complete'
-    with Store('proj', module='dispatch').tables(write=False) as tx:
-        rows = tx.rows('session_lines', {'session_id': orchestration.UPDATES}, limit=0).results
-    stored = json.dumps(rows)
-    assert 'Private report' not in stored and 'Private role' not in stored
-    assert 'code.dispatcher.agent#7d complete' in stored
-
-
-@pytest.mark.kind('fixture')
-def test_roundtable_reference_waits_for_person_turn_without_waking_system(dispatch, monkeypatch):
+def test_roundtable_reference_stays_in_ui_without_entering_person_turn(dispatch, monkeypatch):
     import asyncio
 
     from metaform.modules.dispatch import orchestration, runner
@@ -1056,34 +1044,10 @@ def test_roundtable_reference_waits_for_person_turn_without_waking_system(dispat
         'table': table, 'record': record, 'text': f'Roundtable {table}: {record}'}, ident)
     asyncio.run(system.updates_due())
     asyncio.run(system.updates_due())
-    assert turns == [] and len(system.inbox) == 1
-    said = system.inbox_said()
-    assert f'Roundtable {table}: {record}' in said
-    assert 'proposal_text' not in said and 'synthesis' not in said
-    # A notification delivered through the running session uses the same passive behavior.
-    system.inbox.clear()
+    assert turns == [] and system.inbox == []
+    assert system.inbox_said() == ''
     system.inbox_add('live-reference', '', f'Roundtable {table}: {record}', False, passive=True)
-    assert turns == [] and len(system.inbox) == 1
-    system.inbox_add('ordinary-completion', '', 'Ticket 9 complete', False)
-    assert len(system.inbox) == 1, 'routine completions keep their previous behavior'
-
-
-@pytest.mark.kind('simulation')
-def test_automatic_assessment_transport_rechecks_current_review_policy(dispatch, monkeypatch):
-    from metaform import settings
-    from metaform.modules.dispatch import orchestration
-    from metaform.modules.orchestration.state import SERVICE
-
-    ctx = context('dispatch', dispatch.folder, project='proj')
-    dispatch.run('enable', 'orchestration')
-    owner = SERVICE.ensure(ctx, dispatch.id, role='gc', session_id='delivery')
-    settings.put('orchestration_reviews', 1, dispatch.folder)
-    review = SERVICE.assessment(ctx, owner, {}, 'automatic', automatic=True)
-    settings.put('orchestration_reviews', 0, dispatch.folder)
-
-    def unexpected(*args, **kwargs):
-        pytest.fail('Disabled assessment reached runtime preparation.')
-
-    monkeypatch.setattr(SERVICE, 'prepare_runtime', unexpected)
-    result = orchestration.Transport().launch(ctx, review, 'pending-review')
-    assert result == {'state': 'queued', 'problem': 'Automatic assessments are disabled.'}
+    assert turns == [] and system.inbox == []
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        kept = tx.get('session_lines', {'session_id': orchestration.UPDATES, 'name': f'notification:{ident}'})
+    assert kept['text'] == f'Roundtable {table}: {record}'

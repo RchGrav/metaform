@@ -22,9 +22,13 @@
      the one dispatch starts. The empty elements are filled in: message, the error's first line; source, what raised
      it (the web server, the web page, an MCP tool call, an agent run, a feedback report or a watched log); count,
      first and last, how often and when it was seen when filed; sample, its example with secrets masked; reproduce,
-     how its source says to make it happen again. Later counts go to the ticket's note. Wording drafted for the
-     person's approval, ticket code.scheduler.task#8 (2026-10-18). -->
-<ticket>An error was seen while the project ran, and nothing has fixed it yet. Find its cause and fix it.
+     how its source says to make it happen again. Later counts go to the ticket's note. Repairs stay minimal and
+     preserve behavior in the affected paths. -->
+<ticket>An error was seen while the project ran, and nothing has fixed it yet.
+
+First try to reproduce the error. Establish its cause. If evidence shows a situational error with no repair needed, record the cause and verification, cancel this ticket with that reason, then take the next eligible ticket. Do not cancel valid unresolved work merely because one retry succeeds. Otherwise, fix the cause.
+
+Do not hide the error. Fix its cause using the smallest adequate code change. Keep changes limited to this repair. Ensure the fix does not break other parts of the codebase. Verify the affected behavior and its dependencies before closing the ticket. Do not suppress the failure, disable functionality, weaken checks or make unrelated changes.
 
 What failed: <message/>
 Raised by <source/>, seen <count/>, first <first/>, last <last/>.
@@ -36,4 +40,9 @@ How to reproduce it: <reproduce/>
 The fix comes with a check that proves this error no longer happens: a test that fails before the fix and passes after it, or the reproduction above run again without the error. Say in your resolution what the check was and what it showed. The ticket's note counts each time the error comes back while the ticket is open. Record the verified resolution and close the repaired ticket directly with map_work op=done or by moving it to Done. No commit, merge, push, activation, review or delivery receipt is a prerequisite. Save its feature commit as a separate delivery step. With Full Auto, dispatch_autostart, on, integrate locally automatically without pushing; otherwise retain the feature commit. Report delivery failures separately without keeping a resolved error open. For a project without Git, record the checked result without inventing a commit. Closure clears its fault light. Actual recurrence or supported review findings may reopen the fault.
 
 Repair the existing purpose under the project's effective automation policy. Ordinary engineering choices are part of doing the repair. If an action changes that purpose or requires approval under that policy, record the precise action and reason; continue independent authorized work. Do not infer a need for approval from words in the error message.</ticket>
+<!-- Why a ticket filed for a feedback report waits for the person, in Backlog: written at the start of its note. -->
+<held_design>Feedback says how Metaform should work, and what to change is a design choice.</held_design>
+<!-- Why a ticket filed for an error naming deleting or removing data waits for the person, in Backlog: written at the
+     start of its note. -->
+<held_data>The error is about deleting or removing data, so its fix may delete or remove data.</held_data>
 </prompts>

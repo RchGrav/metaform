@@ -1,0 +1,3 @@
+{"type":"tool_result","content":"Error: 'close' is not a work operation: op=list, glyphs, add, edit, take, plan, step, move, distribute, done or remove; with id= and no op, the one ticket is read.\nNext: call map_work with the arguments its input schema lists"}
+{"type":"tool_result","content":"Error: The resolution has no why.\nNext: add why: one line saying why it was resolved this way"}
+{"type":"tool_result","content":"code.graph.knowledge#3f Choose ticket runtime: done.\nid: This work record was done at 2026-10-21T13:48:08Z; its resolution was kept."}

@@ -1,0 +1,2 @@
+{"type":"text","text":"these messages flooding your context MUST STOP NOW\n\n10 new in your inbox: code.router.assignment#2f complete, Ticket 58512fdd419043298a96b4016cb982c5 — ticket-commit, Ticket 2f — board finished, code.interface.graphical#194 complete, document.specification#8 complete, code.dispatcher.agent#da complete, Ticket 194 — peer, Ticket da — board finished, Ticket 1a2 — board duplicate, Ticket 8 — peer."}
+{"type":"text","text":"flooding automated messages\n\n1 new in your inbox: Ticket 194 — board finished."}

@@ -1,0 +1,1 @@
+report.md of roundtable 5 says all four seats put I1 in their top seven, but the rankings in mechanical-report.md put I1 14th for Sol. ; "Ticket stays open" ... proposal committed as 1b052693 with mechanical-report.md and export.json, "copied from the project folder where the follower had left them untracked; report.md unchanged"

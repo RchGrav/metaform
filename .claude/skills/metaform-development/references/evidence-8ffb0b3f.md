@@ -1,0 +1,1 @@
+"`metaform://rules` and `metaform://memory` both answered \"unchanged since you read it in this session\" the first time this session asked for them, and sent no text. The delivery receipts are a likely cause."

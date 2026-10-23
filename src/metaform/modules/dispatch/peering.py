@@ -7,8 +7,8 @@ or a folder, `file=<path>`, from the paths its tool calls named; or the tickets 
 `file=` answers who else is in that part or file before an edit, with a note ready to send them.
 
 A note is a `peer` line, `peer:<id>`, in the sender's thread and in each receiver's, the same JSON on every copy, so
-both tickets keep every exchange and no table changes. Each receiver's runner takes it as a turn after any in flight,
-never steered into one, and marks its delivery on its copy and on the sender's, `signals.mark_peer`: queued, delivered,
+both tickets keep every exchange and no table changes. Each receiver keeps informational notes for explicit reads without a model turn. Current questions and owned
+continuations wait for the turn boundary. The runner marks delivery on its copy and on the sender's, `signals.mark_peer`: queued, delivered,
 read, replied. With `wait=<seconds>` the note is a question and the call waits for the replies threaded to it,
 `reply=<id>`, and says plainly who did not answer; a reply that reaches a waiting sender is returned by the call rather
 than given to it again as a turn. A note never starts, stops, interrupts or redirects anyone, so the authority check
@@ -412,7 +412,7 @@ def relayed(store: Store, mine: dict[str, Any]) -> dict[str, Any]:
 def kept_waiting(ctx: Context, entry: dict[str, Any], line: dict[str, Any]) -> dict[str, Any]:
     """A note to a system agent no session runs for, `system_agent`: kept in its last conversation's thread as the
     runner keeps a note it is given, marked `waiting`, and announced to that project's processes as any change is. The
-    next system session there gives it, `Session.replay_peers`; nothing waits on a timer for it."""
+    note stays available through explicit reads; no future system session replays this historical inbox."""
     target = destination(ctx, entry.get('project'))
     row = cast(dict[str, Any], entry['_row'])
     try:
@@ -422,7 +422,7 @@ def kept_waiting(ctx: Context, entry: dict[str, Any], line: dict[str, Any]) -> d
     except StoreError as error:
         return {'error': str(error)}
     events.announce(target.folder, 'cli')
-    return {'noted': True, 'waiting': True, 'pending': True}
+    return {'noted': True, 'record_only': True, 'pending': False}
 
 
 def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
@@ -473,7 +473,8 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
                                                            'pending': bool(answer.get('pending')),
                                                            **({'error': str(answer.get('error') or 'no answer')}
                                                               if not answer.get('noted') else
-                                                              {'turn': 'when its next session starts'
+                                                              {'turn': 'kept for explicit read' if answer.get('record_only') else
+                                                               'when its next session starts'
                                                                if answer.get('waiting') else
                                                                'after the turn in flight' if answer.get('busy')
                                                                else 'now'})})
@@ -562,7 +563,7 @@ async def note(ctx: Context) -> dict[str, Any]:
         words += ' Replies: ' + ' '.join(line(one, str(one['id'])) for one in got)
     if silent:
         words += (f' No reply came from {", ".join(one["item"] for one in silent)} within {wait:g} seconds; a later '
-                  'reply reaches you as a turn of its own.')
+                  'reply remains available through dispatch notes.')
     return {**sent, 'replies': [{'note': one['id'], 'from': {key: cast(dict[str, Any], one['from']).get(key)
                                                               for key in ('project', 'base', 'work_id', 'session_id',
                                                                           'assignment_id', 'item', 'title', 'agent')},

@@ -28,7 +28,7 @@ import {notificationState, assignmentSummary} from '/page/app/session/orchestrat
  * person chose it, so its agent and its part are shown on the maps; `fresh` that it is a new conversation, /new, so the
  * thread it follows on the same ticket is never taken for it. */
 export function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting for the next available agent.',
-  session = null, source = null, {focus = false, fresh = false} = {}) {
+  session = null, source = null, {focus = false, fresh = false, activate = true} = {}) {
   const same = DOCK.chats.filter(one => one.target === workId);
   const live = one => !one.session || D.sessions.some(row => row.session_id === one.session && row.state === 'running');
   let chat = fresh ? null : session ? DOCK.chats.find(one => one.session === session) || same.find(one => !one.session)
@@ -37,12 +37,16 @@ export function openHelpdesk(workId, label = 'an agent', waiting = 'Waiting for 
   if (chat) Object.assign(chat, {label, waiting, source: kind, ...(session ? {session} : {})});
   else DOCK.chats.push(chat = {target: workId, session, label, waiting, mine: DOCK.mine === workId, since: Date.now(),
     source: kind, held: false});
-  showChat(chat, {focus});
-  if (!$('#dock').className.startsWith('open')) dockState('open');
+  if (activate) {
+    showChat(chat, {focus});
+    if (!$('#dock').className.startsWith('open')) dockState('open');
+  } else drawTabs();
+  return chat;
 }
 /* Several threads are open at once, each a tab; the one on view is the dock's target, and switching keeps each
  * conversation and its session. A thread the person chooses shows its agent and its part on the maps. */
 export function showChat(chat, {focus = false} = {}) {
+  DOCK.selection++;
   const moved = DOCK.chat !== chat;
   Object.assign(DOCK, {chat, target: chat.target, session: chat.session, label: chat.label, waiting: chat.waiting,
     since: chat.since});
@@ -142,6 +146,7 @@ export function showMine() {
   }
   Object.assign(DOCK, {chat: null, target: null, session: null, label: '', waiting: '', since: Date.now(),
     pinned: true, child: null});
+  DOCK.selection++;
   drawTabs();
   drawHelpdesk();
 }
@@ -415,7 +420,7 @@ async function stopThread(event) {
   } catch (error) { toast(error.message); }
   finally { STOPPING.delete(sessionId); button.disabled = false; }
 }
-/* Continue, once a session has ended: an agent that reads the thread first. */
+/* Continue resumes the selected session's own context. */
 function continueThread() {
   const chat = DOCK.chat;
   if (chat?.session) talkAbout({session: `${chat.target}:${chat.session}`}, chat.label);

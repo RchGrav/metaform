@@ -1,0 +1,2 @@
+code.system.management.knowledge#62 Error: 'autoticket_similarity': step 1 of 1 recorded.
+condition: This task was not taken when the step was reported; the step was stored. Take a task before its first step.

@@ -1,0 +1,1 @@
+{"type":"tool_result","is_error":true,"content":"Error: No record here holds id, status, steps_done, map.item; they hold number, said, at.\nNext: call map_work without it, or with view=full"}

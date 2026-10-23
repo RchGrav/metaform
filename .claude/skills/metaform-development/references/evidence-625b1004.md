@@ -1,0 +1,1 @@
+Cannot start metaform://role/functionality: ['prompt.orchestration:common: Prompt address conflict: memory:instructions -> prompt.memory:instructions; no prompts were renamed.', 'prompt.orchestration:functionality: Prompt address conflict: memory:instructions -> prompt.memory:instructions; no prompts were renamed.']

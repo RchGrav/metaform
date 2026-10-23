@@ -1,0 +1,2 @@
+merge receipt: {'work_id': '98c9bc72090b433180fe57c7e069e3af', 'branch': 'metaform/98c9bc72090b', 'state': 'failed', 'reason': "error: Entry 'src/metaform/modules/dispatch/README.md' not uptodate. Cannot merge.", 'head': '71e9061245c46cdac94f26f5819458b2e6b9c23d'}
+git -C /home/rich/metaform status --short: M dispatch/README.md, M dispatch/__init__.py, M dispatch/orchestration.py

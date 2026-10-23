@@ -1,0 +1,1 @@
+you are supposed to do that automatically

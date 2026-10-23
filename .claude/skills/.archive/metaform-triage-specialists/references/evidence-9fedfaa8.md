@@ -1,0 +1,1 @@
+{"assistant": "Specialist routing (`orchestration/routing.py`, from c0209306) runs on every ticket. With Jev off and no specialists registered, it starts a \"Facilitator\" to create expertise for each ticket. That's the 253 \"board specialist\" lines in my inbox, and the Codex agents that kept replacing each other as I stopped them."}

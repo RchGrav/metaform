@@ -1,0 +1,20 @@
+---
+name: metaform-ticket-landing
+description: Use when a ticket landing fails, is stuck pending, says "Ticket stays open. Missing: Merge this ticket's own commits", says "not uptodate. Cannot merge", or when tempted to merge or push a ticket branch by hand.
+category: development
+---
+
+# A landing merges around local edits in the project checkout; check, clear identical copies, retry through dispatch
+
+When a ticket's delivery fails, read the git error the worker was sent, then work the cause through dispatch's own merge path. Never merge by hand: a by-hand merge skips the merge lock and the `merges` journal and leaves the ticket unable to close itself. Closure never waits on a landing: `op=done` closes the ticket with or without its feature commit landing, and a landing failure is reported as its own fault, never as an open ticket. Keep the ticket's own commits to the dispatch path; if the ticket still reads "Missing: Merge this ticket's own commits into main", send the worker to `dispatch merge`, not another push. A ticket still reading "Ticket stays open. Missing: ..." is no longer a gate: the ticket is closed. Do not push or merge by hand to clear the message; report it on the board and retry `dispatch merge` once its cause is fixed.
+
+- Landing runs in the project checkout through `advance` in `src/metaform/modules/dispatch/merge.py`. It refuses when a file the delta adds already exists untracked there, even if the bytes match.
+- `error: Entry '<path>' not uptodate. Cannot merge.` is the old refusal, retired by the change to `advance` that lets a landing go on beside local edits. A path the delta changes that is clean in the project checkout is taken as landed. A locally modified path takes the landed hunks by three-way merge into the working copy (and into its index entry when staged), so `git status` afterwards shows only the peers' own work. Only a clash (overlapping hunks, a local deletion, a landed deletion of an edited file) is left exactly as it was, and the landing names it in one board-needs line `landing:<work id>`; the ticket stays closed and the owner of the named files resolves it. Never stash, reset, commit or move a peer's edits yourself. Check with `git -C <project> status --short -- <paths>` before a landing and after it. If a landing still prints the old refusal, the change is not on main yet: record the git status evidence on the ticket and stop; do not clear the edits.
+- A branch that merged `main` after its recorded start lands from their merge-base (`merge.landing_base`). A landing that reports `CONFLICT (content)` in files the branch had already resolved was using the start as the three-way base: re-run the landing on current code before any manual edit.
+- The roundtables module leaves finished record files untracked in `docs/roundtables/<folder>/`. A ticket that commits them hits this refusal. Procedure: `cmp` each untracked copy against the committed one; if identical, remove the untracked copies and `rmdir` an emptied folder; if any differs, stop and report the difference on the ticket instead of deleting.
+- A delivery that reports `no test command is set` cannot clear by retrying. The test command is a project setting the person chooses. Do not set or change it. Record the blocker and the one-line fix on the ticket as a question for the person, then stop retrying.
+- Retry with `metaform dispatch merge id=<work id> --json`. A success reports `"merged": true, "pushed": false`: ordinary landings never push. Closing is separate and is already done by `op=done`; a landing does not close the ticket.
+- Confirm with `git log --oneline -2` in the main checkout and `git ls-files` on the delivered folder; claim activation only if the response lists a restart the person must do.
+- The landing runs when the worker's turn ends with no queued turn. A worker re-sent the hand-off after its result was returned should record that in its ticket step and end the turn, not write new work.
+
+Observed failure and resolution: `references/landing-refusal-2026-10-21.md`.

@@ -1,0 +1,1 @@
+dispatch-result-delivery-once [project]: Use when a dispatch result or note reaches an agent twice, or when results, review findings, memory notices or board lists flood the system agent's conversation.

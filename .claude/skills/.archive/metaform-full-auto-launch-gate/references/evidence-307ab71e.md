@@ -1,0 +1,1 @@
+I stopped everything. Here's what happened: Full Auto was on. Stop-all just turned it off, so it had been switched on since the set-aside. Then: Then stopping them was wrong of me. Those were your agents, on your choice.

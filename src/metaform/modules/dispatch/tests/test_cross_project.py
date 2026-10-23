@@ -95,11 +95,8 @@ def test_reconnected_runner_does_not_repeat_an_acknowledged_peer_note(run, home,
     assert answer['reused'] and not resumed.pending
 
 
-def test_the_same_words_sent_twice_by_note_reach_a_session_once(run, home, project_folder, tmp_path):
-    """Two notes from one sender with the same words and different ids, the first still waiting for its turn, are
-    one: the second is marked delivered, never given again; another sender's same words, and a reply, still arrive.
-    Once a turn has carried the first, the same words come again, and so does the person's decision relayed again
-    from a new message of theirs."""
+def test_informational_duplicates_stay_recorded_and_user_direction_reaches_session(run, home, project_folder, tmp_path):
+    """Repeated informational notes remain records. Each distinct relayed user decision retains delivery."""
     import asyncio
 
     from metaform.module import context
@@ -140,129 +137,63 @@ def test_the_same_words_sent_twice_by_note_reach_a_session_once(run, home, proje
         await asyncio.sleep(0.1)  # the delivered mark the second note takes
         return answers, waiting
     answers, waiting = asyncio.run(delivered())
-    assert [bool(one.get('same_text')) for one in answers] == [False, True, False, False, False, False, False, False]
-    assert waiting == ['first', 'other', 'yes-1', 'yes-2']  # the notes that waited joined one turn
-    assert [note_id for marks in resumed.peered for note_id, _ in marks] == ['later']
+    assert all(one.get('record_only') for one in answers[:6])
+    assert all(one.get('queued') for one in answers[6:])
+    assert waiting == [] and not resumed.pending
 
 
-def test_a_gc_check_in_result_reaches_the_system_agents_session_once(run, home, project_folder, tmp_path,
-                                                                      monkeypatch):
-    """code.router.assignment#f: a GC's returned check-in is one entry in the person's system agent's inbox, though
-    its first relay fails, two drains run at once, a drain runs again, another process replays the notification, the
-    session is handed to a runner on newer code, the resumed runner replays its notes and its project updates, and a
-    new conversation of the system agent starts; an update written while none ran is given to the next one alone,
-    named by its ticket and kind (code.dispatcher.agent#72)."""
-    import asyncio
-    import importlib
+@pytest.mark.parametrize('start', ['claim', 'ensure'])
+def test_ticket_check_in_keeps_outcome_without_system_inbox_changes(run, home, project_folder, tmp_path,
+                                                                 monkeypatch, start):
     import os
-    from concurrent.futures import ThreadPoolExecutor
-    from contextvars import copy_context
 
-    from metaform.module import context, provided, refresh_modules
+    from metaform.module import context, provided, refresh_modules, work_reads
+    from metaform.modules.dispatch.orchestration import UPDATES
+    from metaform.modules.dispatch.peering import peer_lines
 
     live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
-    run('set', '--orchestration-reviews', '0', cwd=project_folder)  # no assessment launches a runner here
-    gc_work = live.store.add_work(live.node, None, task='Count only open tickets toward the held cap.').id
+    run('set', '--orchestration-reviews', '0', cwd=project_folder)
+    work = live.store.add_work(live.node, None, task='Count only open tickets toward the held cap.')
     refresh_modules()
     transport = provided(project_folder, 'orchestration.transport')[0][1]
     owner = provided(project_folder, 'orchestration')[0][1]
-    module = sys.modules[type(transport).__module__.rpartition('.')[0]]  # dispatch, as the loader runs it
-    monkeypatch.setattr(module, 'runner_of', lambda pid: live.id)  # this process stands for the system's runner
-
-    def conversation(session_id, state='running'):  # one conversation of the person's system agent
-        with Store('proj', module='dispatch').tables() as tx:
-            if tx.get('agent_sessions', {'session_id': session_id}) is not None:
-                tx.update('agent_sessions', {'session_id': session_id}, {'state': state})
-                return
-            tx.insert('agent_sessions', {'session_id': session_id, 'work_id': live.id, 'agent': 'claude',
-                                         'state': state, 'pid': os.getpid(), 'runner': f'r-{session_id}',
-                                         'started': '2026-10-19T00:00:00Z', 'seq': 1, 'origin': module.origin()})
-            tx.insert('session_lines', {'session_id': session_id, 'name': 'state', 'work_id': live.id, 'kind': 'state',
-                                        'text': json.dumps({'about': 'system', 'role': 'system'}), 'seq': 1})
-    conversation('system')
-    told: list[dict] = []
-    failing = [True]
-
-    def tell(row, op, **given):
-        if op != 'note':
-            return {}
-        if failing.pop() if failing else False:
-            raise OSError('The runner did not answer in time.')
-        told.append(given['line'])
-        return {'noted': True}
-    monkeypatch.setattr(module, 'tell', tell)
+    module = sys.modules[type(transport).__module__.rpartition('.')[0]]
+    monkeypatch.setattr(module, 'runner_of', lambda pid: live.id)
+    dispatch_store = Store('proj', module='dispatch')
+    with dispatch_store.tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'system', 'work_id': live.id, 'agent': 'claude',
+                                     'state': 'running', 'pid': os.getpid(), 'runner': 'r-system',
+                                     'started': '2026-10-21T00:00:00Z', 'seq': 1, 'origin': module.origin()})
+        tx.insert('session_lines', {'session_id': 'system', 'name': 'state', 'work_id': live.id, 'kind': 'state',
+                                    'text': json.dumps({'about': 'system', 'role': 'system'}), 'seq': 1})
+    told = []
+    monkeypatch.setattr(module, 'tell', lambda *args, **kwargs: told.append((args, kwargs)))
 
     def ctx(**nouns):
-        return context('orchestration', project_folder, project='proj', session='gc', nouns=nouns)
-    owner.claim(ctx(work=gc_work, role='gc', session='gc', pm_session='system'))
-    owner.check_in(ctx(state='returned', summary='The held cap counts only open, not-held tickets.'))
+        return context('orchestration', project_folder, project='proj', session='worker', nouns=nouns)
 
-    def drain():
-        return copy_context().run(owner.drain, ctx())
-    drain()
-    assert told == [] and not failing, 'the first relay failed'
-    with ThreadPoolExecutor(max_workers=2) as pool:  # two drains at once, as two processes' do
-        list(pool.map(lambda _: drain(), range(2)))
-    drain()
-    assert told, 'a relay that failed is sent again'
-    # another process that read the transition as pending before it was marked delivered relays it again
-    transport.notify_user(context('dispatch', project_folder, project='proj'), {**told[0], 'message_id': told[0]['id']},
-                          told[0]['id'])
-    line = told[0]
-    assert {one['id'] for one in told} == {line['id']}
-    assert line['text'].endswith(' complete') and 'held cap' not in line['text'], 'a completion is a reference, never its words'
-    Session = importlib.import_module(f'{module.__name__}.runner').Session
-
-    def session(session_id='system'):
-        made = Session(context('dispatch', project_folder, project='proj', nouns={'system': True}),
-                       Store('proj', module='dispatch'), live.ticket(), 'claude', ['unused'])
-        made.session_id, made.turns = session_id, 1  # a turn in flight: notes wait as prompts
-        return made
-    first = session()
-
-    async def received():  # every relay the runner is told of
-        for one in told:
-            await first.peer_note({'line': one, 'deliver': True})
-    asyncio.run(received())
-    # a routine result never enters the inbox and starts no turn: it is counted toward the status line the agent is
-    # woken with at most every fifteen minutes (2026-10-20)
-    assert not first.inbox and not first.pending and first.digest_count == 1, 'counted, never named, no turn'
-
-    # handed to a runner on newer code; the new runner replays its notes and updates into one inbox entry
-    path = module.handed_path('system')
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'carried': []}), encoding='utf-8')
-    taken = session()
-
-    async def resumed():
-        await taken.taken_over()
-        await taken.replay_peers()
-        await taken.updates_due()
-    asyncio.run(resumed())
-    assert not taken.inbox and not taken.pending, 'the replay puts nothing in the inbox and starts no turn'
-    asyncio.run(taken.peer_marked([(line['id'], '')], 'delivered'))  # the turn carrying its inbox line went out
-
-    # the conversation ends; an update arrives while no system agent runs, and the next conversation starts
-    conversation('system', 'ended')
-    transport.notify_user(context('dispatch', project_folder, project='proj'),
-                          {'body': 'The web log now rotates daily.', 'kind': 'result', 'state': 'returned',
-                           'work_id': gc_work}, 'offline-1')
-    conversation('system-2')
-    second = session('system-2')
-    asyncio.run(second.updates_due())
-    gc_item = live.store.numbers_of('work', [gc_work])[gc_work][0]
-    assert gc_item and second.inbox == [] and not second.pending, 'a routine update is counted, never named'
-
-    async def accepted():  # the turn carrying its inbox line went out
-        second.inflight_updates = ['offline-1']
-        second.context_delivered()
-        await asyncio.sleep(0.5)
-    asyncio.run(accepted())
-    conversation('system-2', 'ended')
-    conversation('system-3')
-    third = session('system-3')
-    asyncio.run(third.updates_due())
-    assert third.inbox == [], 'no update reaches a third conversation again'
+    if start == 'claim':
+        owner.claim(ctx(work=work.id, role='implementer', session='worker'))
+    else:
+        owner.ensure(ctx(), work.id, role='implementer', session_id='worker')
+    before = peer_lines(live.store, live.id)
+    with dispatch_store.tables(write=False) as tx:
+        lines = tx.rows('session_lines', limit=0).results
+        assert tx.get('agent_sessions', {'session_id': UPDATES}) is None
+    owner.check_in(ctx(state='returned', summary='Only open, active tickets count toward the held cap.',
+                       candidate={'revision': 'held-cap'}, evidence=['Closed tickets leave the count.']))
+    owner.drain(ctx())
+    owner.drain(ctx())
+    assert told == []
+    assert peer_lines(live.store, live.id) == before
+    with dispatch_store.tables(write=False) as tx:
+        assert tx.rows('session_lines', limit=0).results == lines
+        assert tx.get('agent_sessions', {'session_id': UPDATES}) is None
+    ticket = live.store.ticket(work.id).work
+    assert ticket.done and ticket.resolution == 'Only open, active tickets count toward the held cap.'
+    retained = work_reads(project_folder, ticket, project='proj')['orchestration']
+    assert retained['candidate'] == {'revision': 'held-cap'}
+    assert retained['evidence'] == ['Closed tickets leave the count.']
 
 
 @pytest.mark.kind('fixture')
@@ -287,9 +218,8 @@ def test_reply_returned_while_its_thread_is_written_is_not_also_queued(run, home
     assert answer['reused'] and not held.pending and not held.awaiting
 
 
-def test_notes_that_arrive_while_one_waits_for_its_turn_join_that_turn(run, home, project_folder, tmp_path):
-    """A burst of notes behind a turn in flight is one turn, not one each, so the last is not hours behind the first;
-    the person's message still goes ahead of them, and a relayed decision never joins a note's turn."""
+def test_notes_stay_out_of_busy_queue_while_user_messages_keep_priority(run, home, project_folder, tmp_path):
+    """A burst of notes causes no model turn. User messages and relayed decisions retain arrival order."""
     import asyncio
 
     from metaform.module import context
@@ -310,10 +240,9 @@ def test_notes_that_arrive_while_one_waits_for_its_turn_join_that_turn(run, home
         held.turn('The person asks something.', first=True, typed=True)
         await held.peer_note({'line': line('d1', 'system', 'The person decided.', 'user_direction'), 'deliver': True})
     asyncio.run(burst())
-    assert len(held.pending) == 3, list(held.pending)
+    assert len(held.pending) == 2, list(held.pending)
     assert held.pending[0] == 'The person asks something.' and 'The person decided.' in held.pending[1]
-    assert all(f'Finding {number}.' in held.pending[2] for number in range(5))
-    assert [note_id for note_id, _ in held.peered[2]] == [f'n{number}' for number in range(5)]
+    assert not any('Finding' in text for text in held.pending)
 
 
 def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_persons_chat(run, home, project_folder,
@@ -378,7 +307,7 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
         # routine note is counted toward the status line and never named, so the opening turn carries none of it
         first.close()
         again = command(second, b, f'reply={sent["note"]}', '--', 'It is fixed now.')
-        assert again['to'][0]['project'] == 'proj' and again['to'][0]['turn'] == 'when its next session starts'
+        assert again['to'][0]['project'] == 'proj' and again['to'][0]['turn'] == 'kept for explicit read'
         before = len(first.received('session/prompt'))
         first.start('plain', 'system=true')
         c = eventually(lambda: live('proj', but=(a['session_id'],)))
@@ -387,7 +316,7 @@ def test_two_projects_system_agents_exchange_a_note_and_reply_each_side_in_each_
         # and the other way: no system session runs in B's project, so the note waits for its next one
         second.close()
         later = command(first, c, 'target_project=other', 'to=system', '--', 'Its help text is stale too.')
-        assert later['to'][0]['turn'] == 'when its next session starts', later
+        assert later['to'][0]['turn'] == 'kept for explicit read', later
         before = len(second.received('session/prompt'))
         second.start('plain', 'system=true')
         opening = json.dumps(eventually(lambda: second.received('session/prompt')[before:]))

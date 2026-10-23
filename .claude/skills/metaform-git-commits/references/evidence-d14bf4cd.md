@@ -1,0 +1,1 @@
+Skill rule: finished ticket commits itself; no hand commits. Edit came after completion → would sit orphaned. Reverting it; routing fix to worker on 0c499eaf, who edits that same commission prompt.

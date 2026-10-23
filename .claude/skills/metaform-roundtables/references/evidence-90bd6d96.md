@@ -1,0 +1,1 @@
+Roundtable 5's proposal (docs/roundtables/5-.../proposal.md, T1-T11, D1-D9) landed on main at 3914944e while this one was written. Sections 3-9 rewritten against it: RT5's tickets kept, each change marked with its why

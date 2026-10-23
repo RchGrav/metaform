@@ -1,0 +1,1 @@
+{'work_id': '2c8615f6b29d41d7a883090267283500', 'merged': False, 'why': 'conflict: Auto-merging README.md\nE         CONFLICT (content): Merge conflict in README.md'} ... 1 failed ... 7 passed, 27 deselected in 30.51s

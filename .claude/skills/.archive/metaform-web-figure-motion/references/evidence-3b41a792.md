@@ -1,0 +1,3 @@
+src/metaform/modules/web/page/agents3d.js:65:  plane: {go: 'glide', speed: 1.4, accel: 0.8, corner: 'bank', stride: 3, lift: 0.08, orbit: 1.7, lap: 12, dir: -1,
+src/metaform/modules/web/page/app/figures/walk.js:114:export const STIFF = {dart: 40, roll: 30, walk: 26, hover: 24, flutter: 30, flap: 20, glide: 14, float: 10, pulse: 12,
+src/metaform/modules/web/page/app/figures/walk.js:166:/* The way a body faces, flat on the ground plane, into `out`. */

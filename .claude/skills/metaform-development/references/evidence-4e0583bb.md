@@ -1,0 +1,2 @@
+{"type":"tool_result","is_error":true,"content":"Error: No record here holds state, child_assignment_id, source; they hold kind, id, address.\nNext: call orchestration_role_requests without it, or with view=full"}
+Call: mcp__metaform__orchestration_role_requests {"request":"0395391fb74859a7bc48cd9120c5cc2a","fields":["state","child_assignment_id","source"]}

@@ -76,7 +76,7 @@ def add_line(tx: Any, session_id: str, work_id: str, key: str | None, kind: str,
 # A peer note's delivery to one receiver, `dispatch note`, in the order it only ever moves forward: queued in the
 # receiver's runner, delivered when the turn carrying it is sent, read when that turn ends, replied when the receiver
 # answers it. A note no runner took is failed, which only a queued state becomes.
-PEER_STATES = ('queued', 'delivered', 'read', 'replied')
+PEER_STATES = ('queued', 'recorded', 'delivered', 'read', 'replied')
 
 
 def mark_peer(tx: Any, session_id: str, note_id: str, work_id: str, state: str,

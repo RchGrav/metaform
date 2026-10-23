@@ -1,0 +1,1 @@
+Episode closing reply (code.router.assignment#31 commission): a bulleted multi-section report beginning "The result and evidence reached #31's assignment..." with sections **Delivery**, **Memory at code.router.assignment**, and bullets for role request, assignment, ticket and worker, ending "coded-engine".

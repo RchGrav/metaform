@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The autoticket module's prompts: the text Metaform sends to agents for the autoticket module.
+     Each element is one prompt, named by its tag. What is between the tags is sent exactly as written.
+     Comments are never sent.
+
+     Log registration and repair follow the project automation policy. -->
+<prompts>
+<intake_step>Identify the artifact’s real runtime logs. Register existing local paths or SSH sources with autoticket_add. For greenfield or non-running artifacts, record autoticket_no-logs and why; do not invent log paths. Verify registration through autoticket_logs.</intake_step>
+<connect_notice>No runtime logs are registered. During triage, register the project’s existing logs or record that it has none yet. The server keeps configured watchers alive across project navigation.</connect_notice>
+<!-- autoticket's line in the connect message, after the module's name. Empty, as here, sends nothing. Off until the
+     module is enabled. -->
+<connect></connect>
+<!-- autoticket's instructions. Returned by metaform_instructions with module autoticket, at
+     metaform://instructions/autoticket, and printed by metaform help agents autoticket. Off until the module is
+     enabled. -->
+<instructions>autoticket is active.</instructions>
+<!-- The line under the counts an agent is told at its node. autoticket counts nothing at nodes, so it is empty. -->
+<counts></counts>
+<!-- autoticket's rules, MCP-031. Empty sends nothing. -->
+<rules></rules>
+<!-- The task of a ticket autoticket files for a new kind of error, read by the agent that takes it, under Autostart
+     the one dispatch starts. The empty elements are filled in: message, the error's first line; source, what raised
+     it (the web server, the web page, an MCP tool call, an agent run, a feedback report or a watched log); count,
+     first and last, how often and when it was seen when filed; sample, its example with secrets masked; reproduce,
+     how its source says to make it happen again. Later counts go to the ticket's note. Repairs stay minimal and
+     preserve behavior in the affected paths. -->
+<ticket>An error was seen while the project ran, and nothing has fixed it yet. Find its cause and fix it.
+
+Do not hide the error. Fix its cause using the smallest adequate code change. Keep changes limited to this repair. Ensure the fix does not break other parts of the codebase. Verify the affected behavior and its dependencies before closing the ticket. Do not suppress the failure, disable functionality, weaken checks or make unrelated changes.
+
+What failed: <message/>
+Raised by <source/>, seen <count/>, first <first/>, last <last/>.
+A sample, with secrets masked:
+<sample/>
+
+How to reproduce it: <reproduce/>
+
+The fix comes with a check that proves this error no longer happens: a test that fails before the fix and passes after it, or the reproduction above run again without the error. Say in your resolution what the check was and what it showed. The ticket's note counts each time the error comes back while the ticket is open. Complete delivery before closing the ticket. Missing delivery leaves it open and names the missing steps. Successful delivery closes it immediately and clears its fault light. If the fault returns, its existing ticket reopens and its light returns.
+
+Repair the existing purpose under the project's effective automation policy. Ordinary engineering choices are part of doing the repair. If an action changes that purpose or requires approval under that policy, record the precise action and reason; continue independent authorized work. Do not infer a need for approval from words in the error message.</ticket>
+</prompts>

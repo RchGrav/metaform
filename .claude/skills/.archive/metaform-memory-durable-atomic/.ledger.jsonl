@@ -1,0 +1,1 @@
+{"action": "create", "reason": "User clarified that memories are durable, atomic, valuable facts, not work logs, and that a memory server must not burn context. The agent needs a rule for what to write, and a test plan that proves agents actually use memory.", "evidence": "references/evidence-6aabb1fc.md"}
