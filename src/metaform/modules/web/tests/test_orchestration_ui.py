@@ -121,14 +121,24 @@ def test_native_role_menu_uses_registered_definitions_and_the_independent_assess
     run('enable', 'dispatch', cwd=mapped)
     run('enable', 'orchestration', cwd=mapped)
     owner, gc = managed_assignment(mapped)
+    registry = provided(mapped, 'agent.role')[0][1]
+    expert = registry.publish(context('agents', mapped, project='proj'), 'timer_domain',
+                              'Inspect timer domain behavior.', 'Preserve exact timer semantics.')
     menu = role_choices({'project': 'proj'})
     native = {one['role']: one for one in menu['roles'] if one['provider'] == 'orchestration'}
-    assert len(native) == 17
+    assert len(native) == 23
+    assert all(one['uri'].startswith('metaform://role/') for one in menu['roles'])
+    [specialist] = [one for one in menu['specialists'] if one['role'] == 'timer_domain']
+    assert specialist['uri'] == expert['uri'] == 'metaform://specialist/timer_domain'
+    assert 'timer_domain' not in native and specialist['launch'] == 'call'
     assert native['functionality']['launch'] == 'assessment'
     assert native['role_creator']['launch'] == 'commission' and native['gc']['launch'] == 'claim'
     child = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': 'verifier',
                       'task': 'Verify the selected candidate.', 'result': 'Return observations.'})
     assert child['parent_assignment_id'] == gc['assignment_id'] and child['team_id'] == gc['team_id']
+    domain_child = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': specialist['uri'],
+                             'task': 'Inspect timer accuracy.'})
+    assert domain_child['authored_role_uri'] == specialist['uri']
     assessment = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': 'functionality',
                            'task': 'Independently assess the timer interactions.'})
     assert assessment['parent_assignment_id'] is None and assessment['team_id'] != gc['team_id']
@@ -198,11 +208,11 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         page.get_by_role('button', name='Choose specialist').click()
         picker = page.get_by_label('Specialist responsibility')
         picker.wait_for(state='visible')
-        assert picker.locator('optgroup[label="Native"] option').count() == 17
-        assert picker.locator('optgroup[label="BMAD"] option').count() == 1
-        picker.select_option('verifier')
+        assert picker.locator('optgroup[label="Native"] option').count() == 23
+        assert picker.locator('optgroup[label="Specialists"] option').count() == 1
+        picker.select_option('metaform://role/verifier')
         assert 'observed behavior' in page.locator('#helpdesk .rolecall .hint').first.inner_text()
-        picker.select_option('bmad.bmm.dev')
+        picker.select_option('metaform://specialist/bmad.bmm.dev')
         page.get_by_text('Installed BMAD menu', exact=True).click()
         assert 'cmd="CR"' in page.locator('#helpdesk .rolecall pre').inner_text()
         assert str(source) in page.locator('#helpdesk .rolecall .source').inner_text()
@@ -221,7 +231,7 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         delivered = eventually(received, limit=30)
         assert authored in delivered
         assert 'CR: review the fixture candidate and return evidence.' in delivered
-        assert 'metaform://role/bmad.bmm.dev' in delivered
+        assert 'metaform://specialist/bmad.bmm.dev' in delivered
         assert source.read_text() == authored
         capacity = json.loads(run('dispatch', 'agents', '--json', cwd=mapped).stdout)['slots']
         assert capacity['limit'] == capacity['used'] == capacity['machine_limit'] == capacity['machine_used'] == 1

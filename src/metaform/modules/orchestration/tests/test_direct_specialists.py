@@ -108,7 +108,7 @@ def test_review_reopens_canonical_ticket_without_a_recursive_chain(store, projec
     settings.put('orchestration_reviews', 1, project_folder)
     ctx.nouns.update(work=work.id, role='alarm_engineering')
     assigned = SERVICE.claim(ctx)
-    assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
+    assert assigned['authored_role_uri'] == 'metaform://specialist/alarm_engineering'
     SERVICE.bind(ctx, assigned['assignment_id'], 'worker')
     SERVICE.returned(ctx, work.id, 'Implemented.', evidence=['Control test passed.'], state='delivered')
     review = SERVICE.assessment(ctx, assigned, {'summary': 'Review result.'}, 'one')

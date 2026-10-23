@@ -156,7 +156,8 @@ DEPENDENCIES = ()
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
 
-# Reusable domain expertise; set specialist=False on framework responsibilities. Tasks stay in assignments.
+# Domain expertise uses definition.uri under metaform://specialist/; specialist=False uses metaform://role/.
+# Tasks stay in assignments; prompt-store source names and full instruction bodies stay with their owner.
 ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(

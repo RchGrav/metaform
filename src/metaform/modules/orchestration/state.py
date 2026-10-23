@@ -23,6 +23,7 @@ from metaform.module import (
     Context,
     Stop,
     agent_caller,
+    agent_role_name,
     call,
     context,
     held_role,
@@ -98,6 +99,110 @@ def own(ctx: Context) -> Store:
     base = store.bound_base()
     return Store(store.project_id, module='orchestration',
                  base=None if base is None else base.id, toggled=store.toggled)
+
+
+def migrate_specialist_references(ctx: Context, *, work_ids: Sequence[str] | None = None,
+                                  request_id: str | None = None) -> dict[str, int]:
+    """Persist the namespace change in operational identity fields, never prompt or historical event bodies.
+
+    Public registry metadata is read before the write transaction. Pinned specialist classifications also survive
+    a temporarily unavailable provider. Supplying work IDs limits lazy migration to encountered assignments.
+    """
+    store = own(ctx)
+    with store.tables(write=False) as tx:
+        assignments = ([row for work in work_ids for row in tx.rows('assignments', {'work_id': work}, limit=1).results]
+                       if work_ids is not None else [] if request_id else list(tx.rows('assignments', limit=0).results))
+        routes = ([row for work in work_ids if (row := tx.get('routing', {'work_id': work})) is not None]
+                  if work_ids is not None else [] if request_id else list(tx.rows('routing', limit=0).results))
+        requests = ([row] if (row := tx.get('role_requests', {'request_id': request_id})) else []) if request_id else (
+            [] if work_ids is not None else list(tx.rows('role_requests', limit=0).results))
+        pending = ([] if request_id else [row for work in work_ids for row in
+                    tx.rows('transitions', {'work_id': work, 'state': 'pending'}, limit=0).results]
+                   if work_ids is not None else list(tx.rows('transitions', {'state': 'pending'}, limit=0).results))
+    candidates = [str(row['authored_role_uri']) for row in assignments]
+    candidates.extend(str(row.get('role') or '') for row in routes)
+    snapshots = [cast(dict[str, Any], value) for value in [
+        *(row.get('role_snapshot') for row in assignments), *(row.get('source') for row in requests),
+        *(row['payload'].get('role_snapshot') for row in pending if row['kind'] == 'launch')]
+        if isinstance(value, dict)]
+    candidates.extend(str(snapshot.get('uri') or '') for snapshot in snapshots)
+    candidates.extend(str(row['payload'].get('authored_role_uri') or '') for row in pending if row['kind'] == 'launch')
+    counts = {'assignments': 0, 'routing': 0, 'role_requests': 0, 'pending_launches': 0}
+    if not any(one.startswith('metaform://role/') for one in candidates):
+        return counts
+    mapping: dict[str, str] = {}
+    procedural: set[str] = set()
+    for snapshot in snapshots:
+        if snapshot.get('specialist') is True:
+            name = str(snapshot.get('name') or agent_role_name(str(snapshot.get('uri') or '')))
+            if name:
+                mapping[f'metaform://role/{name}'] = f'metaform://specialist/{name}'
+        elif snapshot.get('specialist') is False:
+            procedural.add(str(snapshot.get('uri')))
+    if any(one.startswith('metaform://role/') and one not in mapping and one not in procedural for one in candidates):
+        registries = provided(ctx.folder, 'agent.role')
+        if len(registries) == 1:
+            mapping.update({f'metaform://role/{agent_role_name(str(one["uri"]))}': str(one['uri'])
+                            for one in registries[0][1].specialists(ctx)})
+    if not any(one in mapping for one in candidates):
+        return counts
+
+    def snapshot_uri(value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        snapshot = cast(dict[str, Any], value)
+        return {**snapshot, 'uri': mapping[snapshot['uri']]} if snapshot.get('uri') in mapping else snapshot
+
+    with store.atomic(), store.tables() as tx:
+        for before in assignments:
+            row = tx.get('assignments', {'assignment_id': before['assignment_id']})
+            if row is None:
+                continue
+            changes: dict[str, Any] = {}
+            if row['authored_role_uri'] in mapping:
+                changes['authored_role_uri'] = mapping[row['authored_role_uri']]
+            snapshot = snapshot_uri(row.get('role_snapshot'))
+            if snapshot != row.get('role_snapshot'):
+                changes['role_snapshot'] = snapshot
+            if changes:
+                tx.update('assignments', {'assignment_id': row['assignment_id']}, changes)
+                counts['assignments'] += 1
+        for before in routes:
+            row = tx.get('routing', {'work_id': before['work_id']})
+            if row and row.get('role') in mapping:
+                tx.update('routing', {'work_id': row['work_id']}, {'role': mapping[row['role']]})
+                counts['routing'] += 1
+        for before in requests:
+            row = tx.get('role_requests', {'request_id': before['request_id']})
+            if row and snapshot_uri(row.get('source')) != row.get('source'):
+                tx.update('role_requests', {'request_id': row['request_id']}, {'source': snapshot_uri(row['source'])})
+                counts['role_requests'] += 1
+        for before in pending:
+            row = tx.get('transitions', {'transition_id': before['transition_id']})
+            if row and row['state'] == 'pending' and row['kind'] == 'launch':
+                payload = row['payload']
+                updated_payload = {**payload}
+                if payload.get('authored_role_uri') in mapping:
+                    updated_payload['authored_role_uri'] = mapping[payload['authored_role_uri']]
+                if snapshot_uri(payload.get('role_snapshot')) != payload.get('role_snapshot'):
+                    updated_payload['role_snapshot'] = snapshot_uri(payload['role_snapshot'])
+                if updated_payload != payload:
+                    tx.update('transitions', {'transition_id': row['transition_id']}, {'payload': updated_payload})
+                    counts['pending_launches'] += 1
+    return counts
+
+
+def _migrated_assignment(ctx: Context, row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    snapshot = cast(dict[str, Any], row.get('role_snapshot') or {})
+    legacy = str(row['authored_role_uri']).startswith('metaform://role/') and snapshot.get('specialist') is not False
+    if legacy or (snapshot.get('specialist') is True and str(snapshot.get('uri')).startswith('metaform://role/')):
+        changed = migrate_specialist_references(ctx, work_ids=[str(row['work_id'])])
+        if changed['assignments']:
+            with own(ctx).tables(write=False) as tx:
+                return tx.get('assignments', {'assignment_id': row['assignment_id']})
+    return row
 
 
 # Version 2 adds an assignment's `role_snapshot` and `attempt`; version 3 its `findings_filed`, the tickets its
@@ -245,6 +350,7 @@ def requested(ctx: Context, assignment_id: str | None = None) -> dict[str, Any]:
         held = row_for(tx, assignment_id=assignment_id, session_id=session)
         caller = row_for(tx, session_id=session)
         bound = tx.get('sessions', {'session_id': held['owner_session_id']}) if held else None
+    held = _migrated_assignment(ctx, held)
     if held is None:
         raise Stop('No recorded assignment for this call.', 'metaform orchestration claim <work>')
     if session and (caller is None or caller['assignment_id'] != held['assignment_id']):
@@ -321,7 +427,8 @@ def new_assignment(tx: TableTx, work: WorkRecord, role: str, *, ident: str | Non
         'team_id': team, 'gc_assignment_id': gc, 'parent_assignment_id': None if parent is None else
         parent['assignment_id'], 'reviewed_assignment_id': None if review is None else review['assignment_id'],
         'successor_assignment_id': None,
-        'owner_session_id': session, 'authored_role_uri': f'metaform://role/{role}', 'execution_role': 'worker',
+        'owner_session_id': session, 'authored_role_uri': role if role.startswith('metaform://') else f'metaform://role/{role}',
+        'execution_role': 'worker',
         'functional_locations': [dict(one) for one in locations], 'task': task, 'requested_result': result,
         'candidate': candidate, 'specification': specification, 'plan': None,
         'reviewed_snapshot': None if review is None else {
@@ -376,13 +483,15 @@ def role_options(request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def resolve(ctx: Context, role: str) -> dict[str, Any]:
-    name = role.removeprefix('metaform://role/')
-    return service(ctx, 'agent.role').resolve(ctx, name)
+    found = service(ctx, 'agent.role').resolve(ctx, role)
+    if role.startswith('metaform://') and found.get('specialist') is not None and found.get('uri') != role:
+        raise Stop(f'{agent_role_name(role)} is available at {found["uri"]}.', 'metaform agents specialists')
+    return found
 
 
 def resolved_role(ctx: Context, role: str) -> str:
-    name = role.removeprefix('metaform://role/')
-    found = resolve(ctx, name)
+    name = agent_role_name(role)
+    found = resolve(ctx, role)
     if found.get('problems'):
         raise Stop(f'Role {name} cannot be resolved: {found["problems"]}', f'metaform agents resolve {name}')
     return name
@@ -530,7 +639,7 @@ class Orchestration:
                     self.request_role(replace(ctx, nouns={
                         'task': work.task or '', 'key': 'expertise:' + uuid.uuid4().hex,
                         'context': {'assign_in_place': True, 'choose_name': placeholder}}), current,
-                        '' if placeholder else str(current['authored_role_uri']).removeprefix('metaform://role/'),
+                        '' if placeholder else agent_role_name(str(current['authored_role_uri'])),
                         creator=creator)
                 return False
             if resolution.get('problems'):
@@ -544,7 +653,7 @@ class Orchestration:
                 'task': record.task or '', 'key': 'runtime:' + fingerprint(record.task or ''),
                 'context': {'assign_in_place': True, 'runtime_only': True}})
             self.request_role(request_ctx, assignment,
-                              str(assignment['authored_role_uri']).removeprefix('metaform://role/'))
+                              agent_role_name(str(assignment['authored_role_uri'])))
             return False
         choice = selected['choice']
         decision = choice.get('decision') or choice
@@ -606,7 +715,7 @@ class Orchestration:
         its launch. False when no request waits or the role is not a registered specialist. 2026-10-20: a ticket sat for
         hours at 'Facilitator is selecting expertise' with no Facilitator running and Jev able to choose."""
         store = own(ctx)
-        registered = resolve(ctx, role_uri.removeprefix('metaform://role/'))
+        registered = resolve(ctx, role_uri)
         if registered.get('missing') or registered.get('problems') or not registered.get('specialist'):
             return False
         released = False
@@ -692,17 +801,20 @@ class Orchestration:
     def assignment(self, ctx: Context, work_id: str | None = None, session_id: str | None = None,
                    assignment_id: str | None = None) -> dict[str, Any] | None:
         with own(ctx).tables(write=False) as tx:
-            return row_for(tx, assignment_id=assignment_id, work_id=work_id,
-                           session_id=session_id or (ctx.session if not (assignment_id or work_id) else None))
+            row = row_for(tx, assignment_id=assignment_id, work_id=work_id,
+                          session_id=session_id or (ctx.session if not (assignment_id or work_id) else None))
+        return _migrated_assignment(ctx, row)
 
     def members(self, ctx: Context, team_id: str) -> list[dict[str, Any]]:
         with own(ctx).tables(write=False) as tx:
-            return list(tx.rows('assignments', {'team_id': team_id}, limit=0).results)
+            rows = list(tx.rows('assignments', {'team_id': team_id}, limit=0).results)
+        return [cast(dict[str, Any], _migrated_assignment(ctx, row)) for row in rows]
 
     def assignments(self, ctx: Context) -> list[dict[str, Any]]:
         """Enumerate registered assignments, including work awaiting its first session."""
         with own(ctx).tables(write=False) as tx:
-            return list(tx.rows('assignments', limit=0).results)
+            rows = list(tx.rows('assignments', limit=0).results)
+        return [cast(dict[str, Any], _migrated_assignment(ctx, row)) for row in rows]
 
     def related(self, ctx: Context, assignment_id: str) -> dict[str, list[dict[str, Any]]]:
         with own(ctx).tables(write=False) as tx:
@@ -857,11 +969,16 @@ class Orchestration:
         service call. It reuses that take rather than claiming the work twice.
         """
         store = own(ctx)
-        if role is None and self.assignment(ctx, work_id=work_id) is None:
+        existing = self.assignment(ctx, work_id=work_id)
+        if role is None and existing is None:
             role = routing.route(ctx, work_id).get('role')
             if role is None and self.assignment(ctx, work_id=work_id) is None:
                 raise Stop(f'Ticket {work_id} is not available for specialist assignment.',
                            f'metaform orchestration route work={work_id}')
+        if role is not None and existing is None:
+            resolution = resolve(ctx, role)
+            if not resolution.get('missing'):
+                role = str(resolution['uri'])
         with store.atomic(), store.tables() as tx:
             assignment = row_for(tx, work_id=work_id)
             if assignment and assignment['state'] in ENDED and not assignment.get('stop') and not store.ticket(work_id).work.done:
@@ -870,7 +987,6 @@ class Orchestration:
                         'previous_evidence': assignment['evidence'], 'previous_candidate': assignment['candidate']})
             if assignment is None:
                 assert role is not None
-                role = role.removeprefix('metaform://role/')
                 record = store.ticket(work_id).work
                 # Assignment alone leaves work in To do. A bound runner may take it when dispatch has not.
                 if (session_id or runner) and not record.taken and not record.done:
@@ -899,10 +1015,10 @@ class Orchestration:
 
     def context(self, ctx: Context, work_id: str | None = None,
                 session_id: str | None = None) -> dict[str, Any] | None:
+        held = self.assignment(ctx, work_id=work_id, session_id=session_id)
+        if held is None:
+            return None
         with own(ctx).tables(write=False) as tx:
-            held = row_for(tx, work_id=work_id, session_id=session_id or ctx.session)
-            if held is None:
-                return None
             result = dict(held)
             result['sources'] = list(own(ctx).work_sources(str(held['root_work_id']), contents=False))
             result['mode'] = current_mode(tx, held)
@@ -1052,10 +1168,10 @@ class Orchestration:
         if not chosen:
             raise Stop(f'Ticket {work_id} is not available for specialist assignment.',
                        f'metaform orchestration route work={work_id}')
-        role = str(chosen).removeprefix('metaform://role/')
+        role = agent_role_name(str(chosen))
         # A sessionless delivery owner records responsibility until the creator names real expertise.
         # It is never launched as a generic worker; publication replaces its role before launch.
-        resolution = {'missing': True} if create else resolve(ctx, role)
+        resolution = {'missing': True} if create else resolve(ctx, str(chosen))
         if create and session:
             raise Stop('Publish the specialist before binding a worker session.', HELP)
         if resolution.get('problems') and not resolution.get('missing'):
@@ -1101,7 +1217,7 @@ class Orchestration:
                 store.take_work(work_id, by=session)
             at = record.address or record.receiver_address
             _, places = location(store, {'kind': record.node_kind, 'id': record.node_id, 'address': at})
-            assignment = new_assignment(tx, record, role, ident=identity('gc', work_id),
+            assignment = new_assignment(tx, record, str(resolution.get('uri') or role), ident=identity('gc', work_id),
                 task=record.task or '', result=str(ctx.nouns.get('result') or record.task or ''),
                 locations=places, mode=mode, specification=ctx.nouns.get('specification'),
                 candidate=ctx.nouns.get('candidate'), session=session,
@@ -1130,7 +1246,7 @@ class Orchestration:
 
     def _delegate(self, ctx: Context, parent: Mapping[str, Any], *, waiting: bool = False,
                   handoff: bool = False, internal: bool = False) -> dict[str, Any]:
-        name = str(ctx.nouns['role']).removeprefix('metaform://role/')
+        name = agent_role_name(str(ctx.nouns['role']))
         if name == 'functionality':
             raise Stop('The FQC assesses independently of a GC swarm and returns findings to the responsible GC.',
                        'metaform orchestration assess summary="The candidate and functional concern."')
@@ -1147,7 +1263,7 @@ class Orchestration:
                     parent['assignment_id'], 'role_request', str(ctx.nouns['key']))})
                 if prior_request:
                     return row_for(tx, assignment_id=prior_request.get('child_assignment_id')) or prior_request
-        resolution = resolve(ctx, name)
+        resolution = resolve(ctx, str(ctx.nouns['role']))
         if resolution.get('missing'):
             return self.request_role(ctx, parent, name, handoff=handoff)
         if resolution.get('problems'):
@@ -1183,7 +1299,7 @@ class Orchestration:
             if current.get('stop'):
                 raise Stop('The parent was stopped before delegation.', HELP)
             work = store.add_work(node, None, task=task, title=ctx.nouns.get('title') or result.split('\n')[0])
-            child = new_assignment(tx, work, name, ident=ident, parent=current, task=task,
+            child = new_assignment(tx, work, str(resolution['uri']), ident=ident, parent=current, task=task,
                 review=reviewed,
                 result=result, locations=places, mode=current_mode(tx, current),
                 specification=(reviewed or current)['specification'],
@@ -1215,6 +1331,7 @@ class Orchestration:
 
     def request_role(self, ctx: Context, parent: Mapping[str, Any], name: str,
                      handoff: bool = False, *, creator: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        name = agent_role_name(name)
         gc_id = parent.get('gc_assignment_id')
         if not gc_id:
             raise Stop('A missing specialty needs its delivery GC to commission the role.', HELP)
@@ -1297,7 +1414,7 @@ class Orchestration:
         item, title = (numbered[0], ' '.join(str(numbered[1] or '').split())) if numbered else (work_id, '')
         task = prompt_files.served(
             resources.files('metaform.modules.orchestration'), 'commission',
-            agent=f'{str(owner["authored_role_uri"]).removeprefix("metaform://role/")} {item}',
+            agent=f'{agent_role_name(str(owner["authored_role_uri"]))} {item}',
             task=(title if len(title) <= TITLE else title[:TITLE - 1].rstrip() + '…') or 'no ticket', ticket=item,
             role=f', role {request["role"]}' if request['role'] else '',
             runtime=', runtime only' if role_options(request).get('runtime_only') else '',
@@ -1344,6 +1461,12 @@ class Orchestration:
             request = tx.get('role_requests', {'request_id': request_id})
         if request is None or request['creator_assignment_id'] != creator['assignment_id']:
             raise Stop('This role publication does not match this GC commission.', HELP)
+        if request.get('child_assignment_id'):
+            self.assignment(ctx, assignment_id=request['child_assignment_id'])
+        if isinstance(request.get('source'), dict) and str(request['source'].get('uri')).startswith('metaform://role/'):
+            migrate_specialist_references(ctx, request_id=request_id)
+            with store.tables(write=False) as tx:
+                request = tx.get('role_requests', {'request_id': request_id}) or request
         column = str(ctx.nouns.get('column') or 'todo')
         if column not in ('todo', 'backlog'):
             raise Stop('A specialist handoff places pending work in todo or backlog.', HELP)
@@ -1351,7 +1474,7 @@ class Orchestration:
                   'creator_assignment_id': creator['assignment_id'],
                   'creator_session_id': creator['owner_session_id'],
                   'creator_caller_id': ctx.session or os.environ.get('METAFORM_SESSION')}
-        role = str(ctx.nouns.get('role') or request['role']).removeprefix('metaform://role/')
+        role = agent_role_name(str(ctx.nouns.get('role') or request['role']))
         if not role:
             raise Stop('Name the reusable expertise being published.', 'metaform orchestration publish_role role=<name>')
         runtime_only = bool(role_options(request).get('runtime_only'))
@@ -1360,7 +1483,7 @@ class Orchestration:
         lock = home.home() / 'run' / 'role-publication' / f'{fingerprint(f"{ctx.project}:{role}")}.lock'
         home.mkdir_private(lock.parent)
         with home.file_lock(lock):
-            registered = resolve(ctx, role)
+            registered = resolve(ctx, str(ctx.nouns.get('role') or request['role']))
             choose_name = role_options(request).get('choose_name')
             if request['state'] == 'published':
                 published = request['source']  # Retried delivery cannot revise an already published duty.
@@ -1409,7 +1532,7 @@ class Orchestration:
                 else:
                     node, places = location(store, request['functional_locations'][0], caller)
                     work = store.add_work(node, None, task=request['task'], title=request['requested_result'].split('\n')[0])
-                    child = new_assignment(tx, work, published['name'], parent=caller,
+                    child = new_assignment(tx, work, published['uri'], parent=caller,
                         task=request['task'], result=request['requested_result'], locations=places,
                         mode=current_mode(tx, caller), specification=caller['specification'],
                         candidate=caller['candidate'], return_to={'assignment_id': caller['assignment_id'],

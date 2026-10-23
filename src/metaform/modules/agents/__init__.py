@@ -345,9 +345,10 @@ def roles(ctx: Context) -> dict[str, Any]:
                        'held_back': each.name in held,
                        'running': sum(1 for one in running if one['role'] == each.name)})
     return {'roles': listed,
-            'authored': [{'role': role.name, 'uri': f'metaform://role/{role.name}', 'provider': owner,
+            'authored': [{'role': role.name, 'uri': role.uri, 'provider': owner,
                            'purpose': role.purpose, 'prompts': list(role.prompts)}
-                          for owner, role in authored.definitions(ctx)],
+                          for owner, role in authored.definitions(ctx) if not role.specialist],
+            'specialists': authored.SERVICE.specialists(ctx),
             'next': 'metaform agents role name=<execution role>; metaform agents resolve name=<authored role>'}
 
 
@@ -573,14 +574,14 @@ MODULE = Module(
     verbs=(
         Verb('roles', roles, 'List the roles of the agents Metaform starts, with the prompts each is sent.',
              effect='read'),
-        Verb('specialists', authored.SERVICE.specialists, 'List reusable expertise and role URLs, without duty bodies.',
+        Verb('specialists', authored.SERVICE.specialists, 'List reusable expertise and specialist URLs, without duty bodies.',
              effect='read'),
         Verb('role', role, 'Read one role: what it is for, each prompt it is sent with its text and version, its '
                            'tools and authority, and the agents running as it.',
              nouns=(Noun('name', 'The role: intake, system, sentinel, talk, prep or worker.'),), effect='read'),
-        Verb('resolve', authored.resolve, "Resolve a role's responsibilities and the prompt components actually selected "
+        Verb('resolve', authored.resolve, 'Resolve role responsibilities or specialist expertise and selected prompt components '
                                           'without changing an agent assignment.',
-             nouns=(Noun('name', 'The role name or URI from an enabled module provider.'),),
+             nouns=(Noun('name', 'The responsibility or specialist name or registered URI.'),),
              effect='read'),
         Verb('receipts', authored.inspect_receipts, 'Read context delivery fingerprints and versions, without bodies.',
              nouns=(SESSION,), effect='read'),
@@ -610,7 +611,9 @@ MODULE = Module(
     subscriptions=(Subscription('prompt.sent', record), Subscription('session.compacted', authored.compacted)),
     provides=(Provides('agent.role', authored.SERVICE), Provides('agent.roles', authored.generated)),
     resources=(Resource('metaform://specialists', 'Specialist registry',
-                        'Reusable specialist names, purposes and role URLs, without prompt bodies.', 'specialists'),
+                        'Reusable specialist names, purposes and specialist URLs, without prompt bodies.', 'specialists'),
+               Resource('metaform://specialist/{name}', 'Specialist expertise',
+                        'The specialist expertise, provider and resolved prompt versions.', 'resolve'),
                Resource('metaform://role/{name}', 'Authored role',
                         'The authored responsibility, provider and resolved prompt versions.', 'resolve'),),
     tables=TABLES,

@@ -25,7 +25,8 @@ STATE = Path(os.environ['FAKE_SWARM_STATE'])
 STATE.mkdir(parents=True, exist_ok=True)
 SCENARIO = os.environ.get('FAKE_SWARM_SCENARIO', 'nested')
 WORK = os.environ.get('METAFORM_WORK', 'catalog-prime')
-ROLE = os.environ.get('METAFORM_AUTHORED_ROLE', '').removeprefix('metaform://role/')
+ROLE_URI = os.environ.get('METAFORM_AUTHORED_ROLE', '')
+ROLE = ROLE_URI.removeprefix('metaform://role/').removeprefix('metaform://specialist/')
 SESSION = ''
 MCP_SERVER = None
 DUTY = ''
@@ -118,7 +119,20 @@ def mcp_call(name, arguments):
     async def invoke():
         async with stdio_client(parameters) as (read, write), ClientSession(read, write) as client:
             await client.initialize()
-            return await client.call_tool(name, arguments)
+            result = await client.call_tool(name, arguments)
+            needed = result.structured_content
+            if needed is None:
+                try:
+                    needed = json.loads('\n'.join(one.text for one in result.content if one.type == 'text'))
+                except ValueError:
+                    needed = None
+            if result.is_error and isinstance(needed, dict) and needed.get('error') == 'instructions_required':
+                instruction = needed['read_tool']
+                guide = await client.call_tool(instruction['tool'], instruction['arguments'])
+                if guide.is_error:
+                    return guide
+                result = await client.call_tool(name, arguments)
+            return result
 
     result = asyncio.run(invoke())
     value = result.structured_content
@@ -239,7 +253,7 @@ def worker(stage):
         return
     members = cli('orchestration', 'team')['members']
     returned = [one for one in members if one['work_id'] != WORK and
-                one['authored_role_uri'] in ('metaform://role/investigator', 'metaform://role/route_specialist')
+                one['authored_role_uri'] in ('metaform://role/investigator', 'metaform://specialist/route_specialist')
                 and one['state'] in ('returned', 'delivered')]
     assert returned and all(SPECIALIST_RESULT in str(one['result']) for one in returned)
     log(worker_received={'stage': stage, 'results': returned})
@@ -287,7 +301,7 @@ def creator(assignment):
             'route_specialist': ('lookup', 'codex', 'low'),
             'functionality': ('analysis', 'claude', 'high'),
             'bmad.bmm.dev': ('lookup', 'codex', 'low'),
-        }[caller['authored_role_uri'].removeprefix('metaform://role/')]
+        }[caller['authored_role_uri'].removeprefix('metaform://role/').removeprefix('metaform://specialist/')]
         choices = selected['catalog']
         # A preference is usable only once this adapter advertised its controls. Direct-start
         # scenarios may have primed just the current harness, which can perform every fixture role.
@@ -334,7 +348,7 @@ def gc_requests_role(assignment, stage, text):
         suspend()
         return
     specialist = next(one for one in cli('orchestration', 'team')['members']
-                      if one['authored_role_uri'] == 'metaform://role/route_specialist')
+                      if one['authored_role_uri'] == 'metaform://specialist/route_specialist')
     if specialist['state'] not in ('returned', 'delivered'):
         check('waiting', 'GC follows the pending generated specialist contribution.',
               work_so_far='RETAINED_GC_SPECIALIST_PLAN')
@@ -405,7 +419,7 @@ def installed_bmad(assignment, stage, text):
             suspend()
             return
         child = next(one for one in cli('orchestration', 'team')['members']
-                     if one['authored_role_uri'] == 'metaform://role/bmad.bmm.dev')
+                     if one['authored_role_uri'] == 'metaform://specialist/bmad.bmm.dev')
         assert child['state'] == 'returned' and 'BMAD_INSTALLED_REVIEW' in str(child['result'])
         Path('candidate.txt').write_text(str(child['result']) + '\n')
         log(bmad_caller_received={'result': child['result'], 'text': text})
@@ -543,7 +557,7 @@ def read_duty():
     async def read():
         async with stdio_client(parameters) as (incoming, outgoing), ClientSession(incoming, outgoing) as client:
             await client.initialize()
-            return await client.read_resource(f'metaform://role/{ROLE}')
+            return await client.read_resource(ROLE_URI)
     resource = asyncio.run(read())
     log(role_resource=resource.model_dump(mode='json'))
     return '\n'.join(getattr(one, 'text', '') for one in resource.contents)
@@ -560,7 +574,7 @@ def turn(ident, text):
                 progress(context_key=key[1])
             retained = progress().get('context_key')
             cli('agents', 'confirm', checkpoint=checkpoint[1], **({'key': retained} if retained else {}))
-        if f'Your assigned duty is metaform://role/{ROLE}' in text:
+        if f'Your assigned duty is {ROLE_URI}' in text:
             DUTY = f'{text}\n\n{read_duty()}'  # An explicit reread can omit components already supplied inline.
         capacity = cli('dispatch', 'agents')['slots']
         if ROLE == 'triage':

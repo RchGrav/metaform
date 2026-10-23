@@ -46,12 +46,14 @@ def test_manifest_role_source_versions_menu_override_and_managed_call(project_fo
     inspected = verb(called, 'orchestration', 'bmad')
     entry = inspected['roles'][0]
     assert entry['name'] == 'bmad.bmm.dev'
+    assert entry['uri'] == 'metaform://specialist/bmad.bmm.dev'
     assert entry['source'] == str(source)
     assert entry['source_fingerprint'] == hashlib.sha256(source.read_bytes()).hexdigest()
     assert entry['installed_version'] == 'fixture-installed-version'
     assert 'cmd="CR"' in entry['menu']
     initial = resolve_agent_role(project_folder, entry['name'], project='proj')
     assert not initial['problems']
+    assert initial['uri'] == entry['uri']
     assert source.read_text() in initial['text']
     assert str(source.parent) in initial['text']
     first_version = initial['components'][-1]['actual_version_id']
@@ -78,7 +80,8 @@ def test_manifest_role_source_versions_menu_override_and_managed_call(project_fo
     ticket = store.add_work(Node('element', 'code.timer.kitchen'), None,
                             task='Preserve the timer interaction.', title='Timer delivery')
     gc = SERVICE.claim(context('orchestration', project_folder, project='proj', session='gc',
-                               nouns={'work': ticket.id, 'session': 'gc'}))
+                               nouns={'work': ticket.id, 'role': 'gc', 'session': 'gc'}))
+    SERVICE.bind(called, gc['assignment_id'], 'gc')
     specialist = verb(context('orchestration', project_folder, project='proj', session='gc'),
         'orchestration', 'call', role=entry['name'], task='UX: observe the full timer adjustment.',
         result='Return the observed constraints.', context={'candidate': 'installed-candidate'}, key='bmad-review')

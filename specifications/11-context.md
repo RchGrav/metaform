@@ -1370,6 +1370,16 @@ Each record below is amended by the records of this section, as each record's Re
 - Relates to: CTX-091, CTX-092, CTX-093, CTX-094, BASE-054, BASE-055, BASE-056, BASE-059, MCP-044, D116, D117, D118, D124.
 - Status: owner direction confirmed, 2026-10-23. Prior assignments are completed in their implemented scopes, but the last task ignored systematic prompt migration and the role/skill execution-cost problem. Prompt reconciliation and Pro handoff continue that same context-management objective. Final taxonomy and runtime migration are open, not implemented by this record.
 
+### CTX-096 Procedural roles and domain specialists have distinct resource namespaces
+
+- Requirement: Serve authored procedural responsibilities at `metaform://role/<name>` and reusable domain expertise at `metaform://specialist/<name>`, according to the definition's existing specialist classification.
+- What this means: The 23 procedural definitions remain roles. The 39 registered domain definitions remain specialists. `metaform://specialists` lists the expertise roster without loading duty bodies. The shared procedural `metaform://role/specialist` duty remains a role resource. Generated and installed definitions use the same classification; a name alone does not change their kind.
+- Why: The resource identity should distinguish an operational responsibility from domain expertise without replacing their instructions or execution mechanisms.
+- Build: Use `AgentRoleDefinition.uri` for classified resource identities. Preserve the existing prompt-store names, selected versions, full instruction bodies and pinned assignment instruction content. Namespace-qualified requests resolve only the matching kind. The web menu keeps procedural roles and specialists in separate groups and uses their supplied URI for inspection and calls.
+- Acceptance: Inventory and resource checks distinguish the 23 procedural definitions from the 39 domain entries; wrong-namespace reads fail. Generated expertise, BMAD metadata, source versions, assignment returns and the two web menu groups retain their actual classified identity. No namespace change rewrites the original instructions or adds another execution stage.
+- Relates to: CTX-091, CTX-092, CTX-093, CTX-095, MCP-044, BASE-054, BASE-059.
+- Status: confirmed by the owner, 2026-10-23. This record covers resource identity only.
+
 ## Open questions
 
 1. Where does a property's link go when the two addresses it was recorded at share no segment (for example `code.x` and `data.y`)? Recommended for what counts as the same property: an item with the same value in the same layer; a property layer that is the same node. (CTX-009)

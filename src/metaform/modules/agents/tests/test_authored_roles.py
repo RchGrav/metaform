@@ -87,7 +87,7 @@ def test_generated_role_has_no_xml_and_retains_source_and_version_history(projec
     with ctx.require_store().tables(write=False) as tx:
         history = tx.rows('definition_history', {'name': 'protocol_auditor'}, limit=0).results
     assert {row['source']['requester'] for row in history} == {'worker-2', 'worker-3'}
-    reused = resolve_agent_role(project_folder, 'metaform://role/protocol_auditor')
+    reused = resolve_agent_role(project_folder, 'metaform://specialist/protocol_auditor')
     assert reused['components'][-1]['actual_version_id'] == second['version_id']
 
 
@@ -419,7 +419,7 @@ def test_changed_role_references_require_consumed_body_and_accepted_notice(proje
     authored.delivered_changes(ctx, 'consumer', current)
     assert authored.changes(ctx, 'consumer', 'changing_auditor') == []
     # References cannot acknowledge any body, and a canonical role read still returns the exact new duty.
-    body, _ = read_resource(project_folder, 'metaform://role/changing_auditor', 'consumer')
+    body, _ = read_resource(project_folder, 'metaform://specialist/changing_auditor', 'consumer')
     assert 'Latest revised instruction.' in body
     assert authored.changes(ctx, 'consumer', 'changing_auditor') == []
     prompt_files.save_edit(name, 'Original instruction.')

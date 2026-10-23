@@ -4,6 +4,10 @@ Each change to the module contract, newest first, so a module copied from the te
 
 ## Unreleased
 
+- `AgentRoleDefinition.uri` identifies domain expertise as `metaform://specialist/<name>` and procedural
+  responsibilities as `metaform://role/<name>`. `agent_role_name(uri)` reads either identity's name. Specialist
+  discovery is separate from procedural role discovery; prompt-store identities and version histories stay intact.
+
 - MCP requires current tool instructions before execution. Ordinary verb guides are generated from declarations;
   optional `Provides('agent.tool.instructions', callable)` components supplement them. The callable receives
   `(ctx: Context, tool: str, op: str | None)` and returns exact named/versioned components. Canonical reads use

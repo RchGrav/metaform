@@ -38,10 +38,14 @@ def queue(ctx: Context, work_ids: list[str], *, invalidate: bool = False) -> Non
 
 
 def selected(ctx: Context, work_id: str) -> str | None:
-    from .state import own, row_for, service
+    from .state import SERVICE, migrate_specialist_references, own, service
+    assigned = SERVICE.assignment(ctx, work_id=work_id)
     with own(ctx).tables(write=False) as tx:
-        assigned = row_for(tx, work_id=work_id)
         row = tx.get('routing', {'work_id': work_id})
+    if row and str(row.get('role')).startswith('metaform://role/'):
+        migrate_specialist_references(ctx, work_ids=[work_id])
+        with own(ctx).tables(write=False) as tx:
+            row = tx.get('routing', {'work_id': work_id})
     if assigned:
         # Managed internal responsibilities (Role Creator, assessment) keep their recorded assignment.
         if assigned.get('parent_assignment_id') or assigned.get('reviewed_assignment_id'):

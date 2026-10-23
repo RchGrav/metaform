@@ -2177,7 +2177,8 @@ def test_resources_serve_the_instructions_and_what_a_module_declares(run, home, 
     assert all(one.description and one.name for one in fixed.values())
     assert templates == {'metaform://tools/{tool}/instructions', 'metaform://tools/{tool}/instructions/{op}',
                          'metaform://{module}/tools', 'metaform://instructions/{module}', 'metaform://prompts/{name}', 'metaform://reports/{name}',
-                         'metaform://role/{name}', 'metaform://orchestration/assignment/{assignment}',
+                         'metaform://role/{name}', 'metaform://specialist/{name}',
+                         'metaform://orchestration/assignment/{assignment}',
                          'metaform://{address}', 'metaform://{address}/items/{n}'}
     from metaform import prompt_files
     assert texts['metaform://instructions'].startswith(prompt_files.chassis('surface_mcp'))  # the guide, served

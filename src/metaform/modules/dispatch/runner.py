@@ -3877,7 +3877,7 @@ class Session:
         if owner is not None and not self.prep:
             persons = bool(self.ctx.nouns.get('persons'))
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id,
-                role=self.authored_role.removeprefix('metaform://role/') if self.authored_role else None,
+                role=self.authored_role,
                 session_id=str(self.session_id), runner=self.runner, persons=persons)
             self.authored_role = str(cast(dict[str, Any], self.assignment)['authored_role_uri'])
             if persons and not cast(dict[str, Any], self.assignment).get('role_snapshot'):

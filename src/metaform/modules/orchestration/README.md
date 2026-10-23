@@ -6,7 +6,15 @@ dispatch provider must be available to run its queued assignments. It contribute
 native authored responsibilities through `agent.roles`. An authored role and an adapter's
 operational execution role are recorded separately.
 
-The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to selected reusable specialist expertise, with its exact versioned duty at `metaform://role/<name>`. A missing specialty automatically commissions one bounded Facilitator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
+The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to selected reusable specialist expertise, with its exact versioned duty at `metaform://specialist/<name>`. A missing specialty automatically commissions one bounded Facilitator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
+
+Procedural responsibilities keep `metaform://role/<name>`; reusable domain expertise uses
+`metaform://specialist/<name>`. The 23 procedural definitions and 39 registered domain definitions retain their
+names, complete duty text and prompt-store histories. Provider classification (`AgentRoleDefinition.specialist`)
+determines the URI, including generated or installed expertise. The shared procedural duty
+`metaform://role/specialist` remains a role resource. The directory `metaform://specialists` lists expertise
+without its duty bodies. Instruction bodies, selected versions, assignment identities and recorded return routes
+are preserved; newly resolved resources use the classified namespace.
 
 An independent `functionality` assessment can inspect the delivered candidate. `orchestration_reviews` bounds automatic reviews per canonical ticket (zero by default, enabled by the person). Findings reopen that ticket with the repair instruction and verification steps, preserving prior evidence. They do not build recursive coordinator/correction trees. The legacy `gc` role and identity fields remain readable for existing assignments; new work needs no coordinator per ticket.
 
@@ -180,7 +188,7 @@ startup can validate the actual configuration. An unavailable or dynamically exc
 An explicitly related episode continuation can retain an available runtime with its source decision recorded,
 without another expertise or runtime classification. The dynamic eligible-agent list and explicit overrides still apply.
 
-Read `metaform://specialists` for the current expertise names, purposes and role URLs. The directory excludes system responsibilities and contains no role bodies. JEV selects a listed specialist or confidently selects none. A no-match, uncertain result, unavailable provider, missing key or unavailable OpenRouter credit commissions the Facilitator directly. An empty inventory does the same without paying for an empty decision.
+Read `metaform://specialists` for the current expertise names, purposes and specialist URLs. The directory excludes system responsibilities and contains no duty bodies. JEV selects a listed specialist or confidently selects none. A no-match, uncertain result, unavailable provider, missing key or unavailable OpenRouter credit commissions the Facilitator directly. An empty inventory does the same without paying for an empty decision.
 
 A ticket writer can assign expertise with `orchestration_claim work=<id> role=<name>` or explicitly hand off with `create=true`. Automatic routing preserves existing assignments and commissions the Facilitator for unassigned tickets without requiring a triage relay. The existing event-driven starter also drains legacy `triage` entries one per pass; unchanged cached decisions are handed off without another JEV lookup. Held tickets and explicit user stops remain effective. The ticket shows “Facilitator is selecting expertise” while its commission is pending.
 

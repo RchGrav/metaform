@@ -34,6 +34,14 @@ Shipped modules and a user's modules share these public services, BASE-004 and Q
 
 `metaform.home` offers the home and its projects: `home()`, `project(id)` and `projects()`; `to_clear(project)` and `clear_project(project)`; `backups(project)` and `restore_project(project, name=None)`; and `not_empty(project)`, `removal_caution(project)` and `remove_project(project)`. The caller obtains the operation's confirmation through its declared `Verb.caution`. `remove_project` enforces that the project is empty and keeps its source files, history and backups. `metaform.data` offers `query_reads()` to list named reads and `query_read(store, name, arguments)` to run one with its existing text argument conversions. `Record` supports module-defined records, `plain(value)` converts nested records to JSON-ready data, and `NewerStore` identifies a store requiring newer code. `metaform.outline.markdown(store, address=None, selection=None, raw=False)` and `metaform.finish_xml.xml(store, address=None, selection=None, raw=False)` are the shared map document writers. The map command and web export use them directly so each format has one implementation, BASE-004, MAP-052, MAP-059 and VIEW-024. Hello's `basedemo` shows the shared reads and removal preview, `base-restore` and `base-remove` show the project actions, and its existing `follow` shows `Context.listen`.
 
+## Authored responsibilities
+
+An `AgentRoleDefinition` contributed through `Provides('agent.roles', definitions)` uses its `uri` property
+for resource identity: reusable domain expertise (`specialist=True`) is `metaform://specialist/<name>`;
+procedural or framework responsibilities (`specialist=False`) are `metaform://role/<name>`. The shared
+`metaform://role/specialist` execution duty remains procedural. Keep the classification independent of tasks,
+prompt-store source names and adapter execution roles.
+
 ## Optional context change references
 
 A module that holds consumed knowledge can expose `Provides('agent.context.changes', provider)` through the public

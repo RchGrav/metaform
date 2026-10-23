@@ -2027,6 +2027,7 @@ RULES_URI = 'metaform://rules'
 MEMORY_URI = 'metaform://memory'
 FIRSTRUN_URI = 'metaform://firstrun'
 ROLE_URI = 'metaform://role/'
+SPECIALIST_URI = 'metaform://specialist/'
 PERSON = 'person'  # the role named in metaform://role/<role> for the person's own sessions, which no runner names
 
 
@@ -2084,8 +2085,12 @@ def memory_text(folder: Path) -> str | None:
 def _role_read(reading: Reading, uri: str) -> str | None:
     if uri == ROLE_URI + (catalog.role() or PERSON):
         return role_text(reading.folder, reading.client, reading.session, reading.keyed)
-    if uri.startswith(ROLE_URI):
+    if uri.startswith((ROLE_URI, SPECIALIST_URI)):
         found = assigned_role(reading.folder, uri, reading.session)
+        if 'specialist' in found and bool(found['specialist']) != uri.startswith(SPECIALIST_URI):
+            target = SPECIALIST_URI if found['specialist'] else ROLE_URI
+            raise Missing(f'{found["name"]} is available at {target}{found["name"]}.',
+                          'read the resource at its registered URI')
         if found.get('missing'):
             return None
         return '\n\n'.join(part for part in (str(found.get('text') or ''),
@@ -2144,7 +2149,7 @@ def links(folder: Path, role: str | None = None, withheld: str = '') -> list[str
     assignment = assignment_context(folder, served_session())
     authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or '')
     if authored_role:
-        uri = authored_role if authored_role.startswith(ROLE_URI) else ROLE_URI + authored_role
+        uri = authored_role if authored_role.startswith((ROLE_URI, SPECIALIST_URI)) else ROLE_URI + authored_role
         if uri not in found:
             found.append(uri)
     return found
@@ -2176,8 +2181,11 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
     blocks = {RULES_URI: ('Rules', 'Read first: the rules every agent works by.'),
               MEMORY_URI: ('Memory', 'How to keep memory in this project.'),
               FIRSTRUN_URI: ('First run', 'What to do first: this project has no intake yet.'),
-              **{uri: ('Role', ('What your role is for, the module commands it gets, and what else you need before '
-                                'your first call.')) for uri in applies if uri.startswith(ROLE_URI)}}
+              **{uri: ('Specialist', 'Assigned specialist expertise and selected prompt versions.')
+                 if uri.startswith(SPECIALIST_URI) else
+                 ('Role', ('What your role is for, the module commands it gets, and what else you need before '
+                           'your first call.'))
+                 for uri in applies if uri.startswith((ROLE_URI, SPECIALIST_URI))}}
     listed = [*({'uri': uri, 'name': name, 'description': description, 'mime_type': 'text/plain'}
                 for uri, (name, description) in blocks.items() if uri in applies),
               {'uri': GLOSSARY_URI, 'name': 'Metaform glossary',
@@ -2235,7 +2243,7 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
     if uri == MODULES_URI or MODULE_TOOLS.fullmatch(uri):
         text = await anyio.to_thread.run_sync(discovery_delivery, folder, session, uri, text)
     components: list[dict[str, Any]] = []
-    if uri.startswith(ROLE_URI) and uri != ROLE_URI + (catalog.role() or PERSON):
+    if uri.startswith((ROLE_URI, SPECIALIST_URI)) and uri != ROLE_URI + (catalog.role() or PERSON):
         resolved = await anyio.to_thread.run_sync(assigned_role, folder, uri, session)
         components = list(resolved.get('components') or [])
         if resolved.get('missing'):

@@ -460,3 +460,46 @@ Checks ran on Linux with Python 3.13. Passing counts below describe separate run
 The initial default-discovery run stopped after 15 failures, with 386 passes, one skip and one collection error. Its failures and collection issue were reproduced against the preserved baseline. Broader module sweeps also stopped at their failure limits. The owner-module sweep had 424 passes and 12 failures: six historical failures, five stale fixture expectations subsequently corrected, and one startup race subsequently fixed. [The baseline comparison artifact](acp-baseline-checks.json) records exact cases and commands, including historical annotation registries, incomplete fake-agent runtime fixtures, missing historical prompt references and a web-test import collision. Global Ruff retains seven existing diagnostics; changed Python files pass Ruff. These limits are explicit rather than treated as a green repository-wide result. The full browser and operating-system CI matrix was not run locally.
 
 The wider sweep also exposed a startup race: a fresh session could publish idle before its initial brief was ready, letting a human message run before a later unowned brief turn. Startup now queues messages until that brief is assembled, reports working during assembly, and keeps the original human turn and authorization attached to the first actual prompt. Five final startup/FIFO/consent checks pass, including the unchanged system-agent authorization test and a deterministic early-message ACP case. Existing authorization controls remain unchanged.
+
+## Specialist resource namespace migration
+
+The scoped namespace change separates reusable domain expertise at `metaform://specialist/<name>` from
+procedural responsibilities at `metaform://role/<name>`. The 23 procedural definitions remain roles; the shared
+`metaform://role/specialist` duty is unchanged. The connected MCP specialist roster returns 39 entries with the
+new canonical prefix. Classification follows `AgentRoleDefinition.specialist`, including installed BMAD entries,
+without changing their instructions. The two assigned runtime prompt edits change only domain URI tokens.
+The web picker keeps procedural roles and specialists in separate groups and uses each supplied URI for
+inspection and calls.
+
+SQLite backups were taken under `~/.metaform/backups/specialist-namespace-20261023T212745Z` before the live
+metadata migration. It updated 26 assignment records, 26 routing records and 156 published role-request source
+metadata records, with zero pending launches changed. A second pass reported zero changes in every category.
+Full row comparisons preserved all nonidentity fields, including states, tasks, stops, return routes and
+instruction components. Read-only fingerprints matched before and after for all 39 definitions, 39 definition
+history rows, 39 generated prompt records and 41 prompt versions.
+
+Local verification passed 120 specialist-routing/direct-specialist cases and four BMAD/web cases. The web
+case uses the public registry, keeps its 23 procedural entries, exposes generated expertise separately and
+passes the selected specialist URI to the managed call. The BMAD case retains its source, version, menu and
+selected-edit assertions. Its previous missing-caller failure was reproduced against archived `7be121e9`
+source in a temporary home; the fixture now explicitly claims and binds its GC rather than changing runtime
+authority. Changed-file Ruff, scoped Pyright, JavaScript syntax and exact prompt-byte comparisons pass.
+These are namespace, preservation and local execution checks, not inference-efficiency measurements. No paid
+model run was performed for this migration.
+
+The authored-resource and namespace selection passed 36 cases, including separate discovery, rejected old
+specialist URLs, exact selected edits and shared delivery receipts. Four namespace cases also exercise pinned
+assignment reads before and after legacy-reference migration. Twelve focused operational cases preserve stopped
+assignments, publication retries and historical evidence while migrating operational identity fields.
+These selections overlap and are not added together.
+
+The managed specialist creation/return/reuse scenario passed through real runner subprocesses and a fake ACP
+adapter in 113.93 seconds. Its fixture now follows the existing read-before-use instruction response and uses
+the actual authored URI rather than rebuilding a role URL. The initial fixture failed on `instructions_required`
+before executing its specialist call. Whole-project Pyright reports zero errors and warnings; changed Python
+files pass Ruff. The existing swap file and the stashed, abandoned Pro-repair attempt remain untouched.
+
+A focused Chromium picker run passed the separate-group, canonical selection, installed-menu and source-path
+assertions, then timed out waiting for the fake adapter's first prompt. Its full browser launch path remains
+unverified. No production change was added to bypass that fixture's commissioning/runtime setup; the separate
+managed creation/return/reuse scenario above passed through the actual runner transport.

@@ -117,7 +117,7 @@ def discover(ctx: Context) -> dict[str, Any]:
                 continue
             seen.add((name, fingerprint))
             metadata = _frontmatter(text)
-            roles.append({'name': name, 'uri': f'metaform://role/{name}', 'purpose': metadata.get('description') or purpose,
+            roles.append({'name': name, 'purpose': metadata.get('description') or purpose,
                 'source': str(source), 'source_directory': str(source.parent), 'source_fingerprint': fingerprint,
                 'installed_version': installation['version'] or metadata.get('version'), 'installation': installation,
                 'format': kind, 'menu': _menu(text), 'text': text, 'project_root': str(folder)})
@@ -138,13 +138,14 @@ def _definition(ctx: Context, record: dict[str, Any]) -> AgentRoleDefinition:
         'source', 'source_directory', 'project_root', 'installed_version', 'source_fingerprint'))
     prompts.shipped('prompt.orchestration:bmad_bridge', 'text', BRIDGE)
     selected = prompts.shipped(reference, 'text', provenance + '\n\n' + record['text'])
-    record.update(prompt=reference, selected_version_id=selected.version_id,
+    definition = AgentRoleDefinition(record['name'], str(record['purpose']),
+                                     ('prompt.orchestration:common', 'prompt.orchestration:bmad_bridge', reference))
+    record.update(uri=definition.uri, prompt=reference, selected_version_id=selected.version_id,
                   actual_version_id=selected.version_id, selected_origin=selected.origin,
                   rendered_fingerprint=_hash(selected.text), source_menu=record['menu'], menu=_menu(selected.text),
                   call={'verb': 'orchestration call', 'role': record['name'],
                         'task': 'The requested contribution, including its installed menu selection.'})
-    return AgentRoleDefinition(record['name'], str(record['purpose']),
-                               ('prompt.orchestration:common', 'prompt.orchestration:bmad_bridge', reference))
+    return definition
 
 
 def definitions(ctx: Context) -> tuple[AgentRoleDefinition, ...]:

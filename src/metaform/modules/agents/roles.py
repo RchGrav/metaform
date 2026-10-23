@@ -12,7 +12,7 @@ from typing import Any, cast
 
 from metaform import home, prompt_files
 from metaform.data import Column, Index, StoreError, Table, TableTx
-from metaform.module import AgentRoleDefinition, Context, Stop, context, provided
+from metaform.module import AgentRoleDefinition, Context, Stop, agent_role_name, context, provided
 
 TABLES = (
     Table('definitions', place='project', key=('name',), columns=(
@@ -129,14 +129,16 @@ class RoleService:
         counts: dict[str, int] = {}
         for _, one in declared:
             counts[one.name] = counts.get(one.name, 0) + 1
-        return [{'name': one.name, 'purpose': one.purpose, 'uri': f'metaform://role/{one.name}', 'provider': owner}
+        return [{'name': one.name, 'purpose': one.purpose, 'uri': one.uri, 'provider': owner}
                 for owner, one in declared if one.specialist and counts[one.name] == 1]
 
     def resolve(self, ctx: Context, name: str, *, bindings: dict[str, str] | None = None) -> dict[str, Any]:
         ctx = _own(ctx)
-        name = name.removeprefix('metaform://role/')
+        requested = name
+        name = agent_role_name(name)
         matched = [(owner, one) for owner, one in definitions(ctx) if one.name == name]
-        result: dict[str, Any] = {'uri': f'metaform://role/{name}', 'name': name, 'provider': None,
+        result: dict[str, Any] = {'uri': requested if requested.startswith('metaform://') else f'metaform://role/{name}',
+                                  'name': name, 'provider': None,
                                   'purpose': '', 'components': [], 'problems': [], 'missing': False}
         if not matched:
             known: Sequence[dict[str, Any]] = ()
@@ -151,7 +153,10 @@ class RoleService:
             result['problems'] = [f'Role {name} is claimed by providers: {", ".join(owner for owner, _ in matched)}.']
             return result
         owner, definition = matched[0]
-        result.update(provider=owner, purpose=definition.purpose, specialist=definition.specialist)
+        result.update(uri=definition.uri, provider=owner, purpose=definition.purpose, specialist=definition.specialist)
+        if requested.startswith('metaform://') and requested != definition.uri:
+            result.update(problems=[f'{name} is available at {definition.uri}.'])
+            return result
         if ctx.store is not None:
             with ctx.store.tables() as tx:
                 key = {'name': name, 'provider': owner}
@@ -209,7 +214,7 @@ class RoleService:
     def publish(self, ctx: Context, name: str, purpose: str, duty: str,
                 source: dict[str, Any] | None = None) -> dict[str, Any]:
         ctx = _own(ctx)
-        name = name.removeprefix('metaform://role/')
+        name = agent_role_name(name)
         if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', name):
             raise Stop('A role name must fit one resource path segment.', 'use a registered role identity')
         conflicts = [owner for owner, one in definitions(ctx) if one.name == name and owner != 'agents']

@@ -61,6 +61,7 @@ __all__ = [
     'agent_context_collecting',
     'agent_context_epoch',
     'agent_context_session',
+    'agent_role_name',
     'aliases',
     'begin_agent_context_check',
     'call',
@@ -552,6 +553,15 @@ class AgentRoleDefinition:
     purpose: str
     prompts: tuple[str, ...]
     specialist: bool = True  # Reusable domain expertise; False for framework/operational responsibilities.
+
+    @property
+    def uri(self) -> str:
+        return f'metaform://{"specialist" if self.specialist else "role"}/{self.name}'
+
+
+def agent_role_name(name: str) -> str:
+    """The registry name carried by a role or specialist identity."""
+    return name.removeprefix('metaform://role/').removeprefix('metaform://specialist/')
 
 
 @dataclass(frozen=True)

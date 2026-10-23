@@ -105,4 +105,12 @@ Generic shown records describe content delivery hints, host discovery configurat
 
 Current generated responsibilities resolve through the same selected prompt store as other duties. Definition provenance (`source.definition_version_id`) and immutable definition history remain separate from the effective selected component. Existing assignment snapshots retain their historical bytes. If the home prompt store cannot resolve a generated duty, the project definition supplies its exact portable snapshot as `definition_fallback`, with an explicit problem and unknown selected version. An available selected edit always wins.
 
+Authored procedural responsibilities use `metaform://role/<name>`. Reusable domain expertise uses
+`metaform://specialist/<name>`, as determined by `AgentRoleDefinition.specialist`; `definition.uri` exposes
+that classified address. The 23 procedural and 39 registered domain definitions retain their names and full
+instructions. Generated and installed provider definitions follow the same classification. The directory
+`metaform://specialists` lists expertise without loading every duty. `metaform://role/specialist` remains the
+shared procedural duty, not a domain-specialist alias. This namespace distinction changes no tool authority,
+assignment ownership or prompt-store source identity. Pinned instruction bodies and version identities remain intact.
+
 The existing `agent.role` provider offers `changes(ctx, session, role, bindings=None)` and `delivered_changes(ctx, session, notices)`. Changes returns compact source references only for instructions previously consumed by that session/epoch whose current rendered text differs. Equal text at a new version produces no notice. A reference carries an `agents_resolve` lookup for the current source and current/previous fingerprints, without delivering or acknowledging its body. The authored assignment resource continues to return its exact pinned snapshot. Dispatch can attach these references to the next natural turn, then acknowledge accepted notices. A later change remains eligible. The separate `change_notices` table deduplicates accepted references without claiming semantic retention or changing body receipts. This never starts a model or makes an initial role read mandatory.

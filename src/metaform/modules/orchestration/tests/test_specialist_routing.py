@@ -7,7 +7,7 @@ import pytest
 
 from metaform import jev
 from metaform.data import Node, functional_context
-from metaform.module import Stop, context
+from metaform.module import Stop, agent_role_name, context
 from metaform.modules.agents.roles import SERVICE as ROLES
 from metaform.modules.orchestration import routing
 from metaform.modules.orchestration.runtime import choose as choose_runtime
@@ -35,7 +35,7 @@ def test_specialist_inventory_excludes_framework_duties_and_keeps_reusable_urls(
     expert(ctx)
     inventory = ROLES.specialists(ctx)
     assert [one['name'] for one in inventory] == ['alarm_engineering']
-    assert inventory[0]['uri'] == 'metaform://role/alarm_engineering'
+    assert inventory[0]['uri'] == 'metaform://specialist/alarm_engineering'
     assert 'Diagnose timing' not in json.dumps(inventory)
     assert ROLES.resolve(ctx, 'implementer')['specialist'] is False
 
@@ -48,11 +48,11 @@ def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(cas
 
     def choose(folder, question, options, state, **kwargs):
         sent.append((options, state))
-        return SimpleNamespace(sure=True, answer='metaform://role/alarm_engineering')
+        return SimpleNamespace(sure=True, answer='metaform://specialist/alarm_engineering')
     monkeypatch.setattr(jev, 'pick_one', choose)
     routing.queue(ctx, [work.id])
     found = SERVICE.route_pending(ctx)
-    assert found[0]['role'] == 'metaform://role/alarm_engineering'
+    assert found[0]['role'] == 'metaform://specialist/alarm_engineering'
     assert not store.ticket(work.id).work.taken
     assert 'metaform://role/implementer' not in sent[0][0]
     assert sent[0][1]['function']['requirements'][0]['purpose'] == 'Get attention when a countdown ends.'
@@ -166,7 +166,7 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
     assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     assert capacity_kind(ctx, creator['work_id'], 'worker') == 'helper'
     ticket, title, _ = store.numbers_of('work', [work.id])[work.id]  # one line naming the ticket, none of its content
-    role = owner['authored_role_uri'].removeprefix('metaform://role/')
+    role = agent_role_name(owner['authored_role_uri'])
     assert creator['task'] == f'{role} {ticket}: {title}: Select or create a specialist for {ticket}, ' \
         f'request {request["request_id"]}.', creator['task']
     assert '\n' not in creator['task'] and work.task not in creator['task']
@@ -178,7 +178,7 @@ def test_confident_none_commissions_facilitator_and_publication_continues_origin
         'request': request['request_id'], 'role': 'timer_diagnostics',
         'purpose': 'Diagnose timer behavior.', 'duty': duty})
     result = publish_role(writer)
-    assert result['role']['uri'] == 'metaform://role/timer_diagnostics'
+    assert result['role']['uri'] == 'metaform://specialist/timer_diagnostics'
     assert result['assignment']['work_id'] == work.id
     assert result['assignment']['assignment_id'] == owner['assignment_id']
     assert result['assignment']['state'] == 'queued'
@@ -228,15 +228,15 @@ def test_a_route_stuck_at_creating_with_no_creator_running_is_routed_again_and_j
     with own(ctx).tables(write=False) as tx:
         assert len(tx.rows('role_requests', limit=0).results) == 1, 'no second creator is commissioned'
         assert not _stale_row(tx.get('routing', {'work_id': work.id}))
-    answers.append('metaform://role/alarm_engineering')
+    answers.append('metaform://specialist/alarm_engineering')
     with own(ctx).tables() as tx:
         tx.update('routing', {'work_id': work.id}, {'updated': '2026-10-20T00:00:00Z'})
     [routed] = SERVICE.route_pending(ctx)  # the agent starter's pass finds the stale creating route
-    assert routed['state'] == 'selected' and routed['role'] == 'metaform://role/alarm_engineering', routed
+    assert routed['state'] == 'selected' and routed['role'] == 'metaform://specialist/alarm_engineering', routed
     assert SERVICE.routing_status(ctx, work.id)['state'] != 'creating'
     assigned = SERVICE.assignment(ctx, work_id=work.id)
     assert assigned['assignment_id'] == owner['assignment_id'] and assigned['state'] == 'queued'
-    assert assigned['authored_role_uri'] == 'metaform://role/alarm_engineering'
+    assert assigned['authored_role_uri'] == 'metaform://specialist/alarm_engineering'
     with own(ctx).tables(write=False) as tx:
         request, = tx.rows('role_requests', limit=0).results
         launches = [one for one in tx.rows('transitions', {'assignment_id': owner['assignment_id']}, limit=0).results
@@ -266,7 +266,7 @@ def test_no_jev_key_preserves_writer_assignment_or_automatically_hands_to_facili
     monkeypatch.setattr(jev, 'pick_one', lambda *a, **kw: pytest.fail('Missing key must not call JEV'))
     routed = SERVICE.route(ctx, work.id)
     if existing:
-        assert routed['role'] == 'metaform://role/alarm_engineering'
+        assert routed['role'] == 'metaform://specialist/alarm_engineering'
         assert SERVICE.assignment(ctx, work_id=work.id) == assigned
         with own(ctx).tables(write=False) as tx:
             assert not tx.rows('role_requests', limit=0).results
@@ -1171,9 +1171,9 @@ def test_pinned_specialist_survives_removal_from_current_registry(case, routing_
     snapshot = assigned['role_snapshot']
     with context('agents', ctx.folder, project='proj').require_store().tables() as tx:
         tx.delete('definitions', {'name': 'alarm_engineering'})
-    assert 'metaform://role/alarm_engineering' not in {one['uri'] for one in ROLES.specialists(ctx)}
+    assert 'metaform://specialist/alarm_engineering' not in {one['uri'] for one in ROLES.specialists(ctx)}
 
-    assert SERVICE.selected_specialist(ctx, work.id) == 'metaform://role/alarm_engineering'
+    assert SERVICE.selected_specialist(ctx, work.id) == 'metaform://specialist/alarm_engineering'
     SERVICE.drain(ctx)
     bound = SERVICE.assignment(ctx, work_id=work.id)
     assert bound['assignment_id'] == assigned['assignment_id']

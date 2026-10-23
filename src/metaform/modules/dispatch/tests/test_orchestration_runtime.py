@@ -205,7 +205,7 @@ def delivery_evidence(swarm, scenario):
     root = next(one for one in assignments if one['work_id'] == swarm.id)
     worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
     specialists = [one for one in assignments if one['authored_role_uri'] in (
-        'metaform://role/investigator', 'metaform://role/route_specialist')]
+        'metaform://role/investigator', 'metaform://specialist/route_specialist')]
     critic = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/functionality')
     assert swarm.ticket().done and root['state'] == 'delivered'
     assert root['authored_role_uri'] == 'metaform://role/gc'
@@ -287,7 +287,7 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     requested = requests[0]
     creator = next(one for one in assignments if one['assignment_id'] == requested['creator_assignment_id'])
     worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
-    specialists = [one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist']
+    specialists = [one for one in assignments if one['authored_role_uri'] == 'metaform://specialist/route_specialist']
     assert requested['caller_assignment_id'] == worker['assignment_id']
     assert requested['creator_assignment_id'] == creator['assignment_id'] and len(specialists) == 2
     assert requested['context']['contribution'] == 'Verify functional return behavior.'
@@ -314,7 +314,7 @@ def test_capacity_one_gc_requests_and_commissions_own_missing_role_then_receives
     root = next(one for one in assignments if one['work_id'] == swarm.id)
     request = creation_requests()[0]
     creator = next(one for one in assignments if one['assignment_id'] == request['creator_assignment_id'])
-    specialist = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/route_specialist')
+    specialist = next(one for one in assignments if one['authored_role_uri'] == 'metaform://specialist/route_specialist')
     critic = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/functionality')
     assert len(delivery_assignments(assignments)) == 3 and root['state'] == 'delivered' and swarm.ticket().done
     assert creator['parent_assignment_id'] == specialist['parent_assignment_id'] == root['assignment_id']
@@ -371,7 +371,7 @@ def test_installed_bmad_menu_and_source_reach_managed_specialist_and_return_to_g
     swarm.start(FAKE_SWARM_SCENARIO='bmad', FAKE_SWARM_STATE=str(swarm.swarm_state))
     assignments = completed(swarm)
     gc = next(one for one in assignments if one['work_id'] == swarm.id)
-    specialty = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/bmad.bmm.dev')
+    specialty = next(one for one in assignments if one['authored_role_uri'] == 'metaform://specialist/bmad.bmm.dev')
     assert specialty['parent_assignment_id'] == gc['assignment_id'] and specialty['team_id'] == gc['team_id']
     assert specialty['return_to']['assignment_id'] == gc['assignment_id']
     actual = next(one['bmad_installed_observation'] for one in swarm.entries() if 'bmad_installed_observation' in one)

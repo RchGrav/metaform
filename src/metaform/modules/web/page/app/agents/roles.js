@@ -29,10 +29,14 @@ export function roleCallForm(assignment, openSession = null) {
 
 function contributionForm(assignment, menu, openSession) {
   const role = h('select', {'aria-label': 'Specialist responsibility'});
+  const specialists = menu.specialists || [];
+  const choices = [...specialists, ...menu.roles];
   const groups = [...new Set(menu.roles.map(one => one.source_kind))];
-  fill(role, h('option', {value: ''}, 'Choose a responsibility'), groups.map(source =>
+  fill(role, h('option', {value: ''}, 'Choose a responsibility'),
+    specialists.length ? h('optgroup', {label: 'Specialists'}, specialists.map(one =>
+      h('option', {value: one.uri}, titleOf(one.role)))) : null, groups.map(source =>
     h('optgroup', {label: source}, menu.roles.filter(one => one.source_kind === source).map(one =>
-      h('option', {value: one.role, disabled: Boolean(uses(one))},
+      h('option', {value: one.uri, disabled: Boolean(uses(one))},
         `${titleOf(one.role)}${uses(one) ? ` — ${uses(one)}` : ''}`)))));
   const purpose = h('p', {class: 'hint'}), source = h('small', {class: 'source'});
   const installedMenu = h('details', {hidden: true}, h('summary', {}, 'Installed BMAD menu'), h('pre'));
@@ -49,7 +53,7 @@ function contributionForm(assignment, menu, openSession) {
   const ready = () => { start.disabled = busy || !valid || !task.value.trim(); };
   task.oninput = ready;
   role.onchange = async () => {
-    const selected = menu.roles.find(one => one.role === role.value);
+    const selected = choices.find(one => one.uri === role.value);
     valid = false; ready();
     fill(purpose, selected?.purpose || '');
     fill(source, selected ? [selected.source_kind, selected.installed?.source || selected.provider,
@@ -61,8 +65,8 @@ function contributionForm(assignment, menu, openSession) {
     if (!selected) return;
     try {
       const resolved = await getJson(`/api/agent-role?project=${encodeURIComponent(S.project)}`
-        + `&name=${encodeURIComponent(selected.role)}`);
-      if (role.value !== selected.role) return;
+        + `&name=${encodeURIComponent(selected.uri)}`);
+      if (role.value !== selected.uri) return;
       fill(versions.querySelector('ul'), (resolved.components || []).map(one => h('li', {},
         `${one.name}: ${one.number == null ? one.origin : `version ${one.number} · ${one.origin}`}`)));
       versions.hidden = false;

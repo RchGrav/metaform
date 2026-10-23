@@ -71,7 +71,7 @@ from metaform.data import (
     reference,
 )
 from metaform.finish_xml import xml as map_xml
-from metaform.module import Stop
+from metaform.module import Stop, agent_role_name
 from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
@@ -4099,20 +4099,28 @@ def role_choices(given: dict[str, Any]) -> dict[str, Any]:
         launch = {'gc': 'claim', 'functionality': 'assessment', 'role_creator': 'commission'}.get(one['role'], 'call')
         roles.append({**one, 'source_kind': source, 'launch': launch,
                       **({'installed': external} if external else {})})
-    return {'roles': roles, 'launch_available': available, 'bmad': installed}
+    specialists: list[dict[str, Any]] = []
+    for one in inventory.get('specialists', []):
+        external = bmad.get(one['name'])
+        source = 'BMAD' if external else 'Generated' if one['provider'] == 'agents' else 'Native'
+        specialists.append({**one, 'role': one['name'], 'source_kind': source, 'launch': 'call',
+                            **({'installed': external} if external else {})})
+    return {'roles': roles, 'specialists': specialists, 'launch_available': available, 'bmad': installed}
 
 
 def call_role(given: dict[str, Any]) -> Any:
     """Use actual managed verbs, retaining independent assessment and GC-owned commissioning boundaries."""
-    role = str(given['role']).removeprefix('metaform://role/')
-    if role in ('gc', 'role_creator'):
+    selected = str(given['role'])
+    role = agent_role_name(selected)
+    procedural = not selected.startswith('metaform://specialist/')
+    if procedural and role in ('gc', 'role_creator'):
         raise Stop('A GC claims a root ticket; a new role is commissioned from its recorded role request.',
                    'use the ticket start or GC commission operation')
-    if role == 'functionality':
+    if procedural and role == 'functionality':
         return module_verb(given, 'orchestration', 'assess', {
             'assignment': given['assignment'], 'summary': given['task']}, chosen=True)
     arguments = {key: given[key] for key in ('assignment', 'task', 'result', 'context') if given.get(key)}
-    return module_verb(given, 'orchestration', 'call', {**arguments, 'role': role}, chosen=True)
+    return module_verb(given, 'orchestration', 'call', {**arguments, 'role': selected}, chosen=True)
 
 
 def _stage(store: Store, target: Node, condition: str) -> Any:
