@@ -15,6 +15,52 @@ pytestmark = pytest.mark.kind('fixture')
 
 
 @pytest.mark.parametrize('surface', ['module', 'http'])
+def test_agents_keep_configured_default_through_unrelated_refresh(project_folder, monkeypatch, surface):
+    """An in-flight agents read keeps dispatch_agent when another module changes (fault f01b96b1)."""
+    monkeypatch.chdir(project_folder)
+    registry.set_module_state('dispatch', True)
+    chassis.surface(project_folder)
+    settings.put('dispatch_agent', 'codex', project_folder)
+    settings.put('dispatch_agents', 3, project_folder)
+    call = chassis.call
+    refreshed = False
+
+    def refreshing_call(function, *args):
+        nonlocal refreshed
+        if function.__name__ == 'harnesses' and not refreshed:
+            refreshed = True
+            registry.set_module_state('hello', True)
+            chassis.refresh_modules()
+        return call(function, *args)
+
+    monkeypatch.setattr(chassis, 'call', refreshing_call)
+    if surface == 'module':
+        body = server.module_verb({'project': 'proj'}, 'dispatch', 'agents', {})
+    else:
+        served = server.Server('127.0.0.1', 0, 'nonce')
+        worker = threading.Thread(target=served.serve_forever, daemon=True)
+        worker.start()
+        connection = http.client.HTTPConnection('127.0.0.1', served.port, timeout=10)
+        try:
+            connection.request('GET', '/api/dispatch-agents?project=proj')
+            response = connection.getresponse()
+            body = json.loads(response.read())
+            assert response.status == 200, body
+            assert body['enabled'] is True
+        finally:
+            connection.close()
+            served.shutdown()
+            worker.join(5)
+            served.server_close()
+            served.vouch.close()
+    assert refreshed
+    assert body['default'] == 'codex'
+    assert [row['agent'] for row in body['agents'] if row['default']] == ['codex']
+    assert body['slots']['limit'] == 3
+    assert settings.value('dispatch_agent', project_folder) == 'codex'
+
+
+@pytest.mark.parametrize('surface', ['module', 'http'])
 def test_dispatch_settings_survive_unrelated_module_refresh(project_folder, monkeypatch, surface):
     monkeypatch.chdir(project_folder)
     registry.set_module_state('dispatch', True)
