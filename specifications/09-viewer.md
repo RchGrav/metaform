@@ -958,3 +958,10 @@ The GUI is built after the intake and debug system is stable and the fix pass is
 - Build: Route `/mascot` through the existing chat command handler to the existing glyph picker. Keep it local even when the harness advertises the same command. Remove the conversation-turn and elapsed-time offer, its `web_embody` setting, automatic assignment and unsolicited prompt instruction. A new session or different conversation closes an open picker. Preserve chosen glyphs and the system agent's persisted `web_mascot` across contexts.
 - Acceptance: Repeated contexts, turns, elapsed time and reloads do not open the picker. `/mascot` is discoverable and opens it once without an agent message or launch. Closing it stays closed. A chosen system-agent glyph survives a new context and reload.
 - Status: confirmed by the person's corrected request on code.dispatcher.agent#166, 3f9fce5a98d442bc9dba7e690a4fbed2.
+
+### VIEW-005 system conversation embodiment amendment, 2026-10-23
+- Requirement: Explicit `web_embody` gives the live system conversation its own body whether its identity is `conversation-system` or a retained legacy conversation ticket.
+- Why: The person's agent must be able to appear beside them and lead a map tour through its eyes after conversations moved outside board work.
+- Build: Resolve the reserved identity from the current project's running dispatch sessions into a browser figure record, without adding a board ticket. Reuse the existing body, movement and sight paths. Keep agent-chosen bodies scoped to their conversation session and keep the person's persisted `web_mascot` selection separate. `/mascot` remains solely person-invoked.
+- Acceptance: Reserved and legacy conversations can embody, come, end their approach, go, look, see and show the map through their eyes. An existing peer conversation retains its own body and mesh identity. No board ticket or automatic picker appears. The person's mascot persists across sessions and pages.
+- Status: confirmed by the requested outcome on code.assistant.navigation#28, 497a84ac8bef4ddcb6a813f0d64198e8.

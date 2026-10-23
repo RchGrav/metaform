@@ -6510,10 +6510,10 @@ def simulated_dispatch_control(monkeypatch):
         process.wait()
 
 
-def live_session(work_id, agent='claude', state='running', project='proj', session=None):
+def live_session(work_id, agent='claude', state='running', project='proj', session=None, seq=None):
     """A dispatch session row for a ticket, as the runner writes it, so the page counts its agent as working: a figure
     on the map and an entry in the agents key are drawn only for a live session, VIEW-035 and VIEW-039. `session`
-    names another session on the same ticket, a new conversation."""
+    names another session on the same ticket, a new conversation. `seq` supplies ordering for non-ticket work ids."""
     import metaform.modules.dispatch  # noqa: F401  declares its tables
     from metaform.data import Store
     session = session or f's-{work_id}'
@@ -6526,7 +6526,8 @@ def live_session(work_id, agent='claude', state='running', project='proj', sessi
             tx.insert('agent_sessions', {'session_id': session, 'work_id': work_id, 'agent': agent, 'state': state,
                                          'pid': runner.pid, 'port': dispatch_control_port(), 'token': session,
                                          'started': '2026-10-03T00:00:00Z',
-                                         'seq': len(work_id) + int(work_id[:6], 16) % 1000 + (session != f's-{work_id}')})
+                                         'seq': seq if seq is not None else len(work_id) + int(work_id[:6], 16) % 1000
+                                         + (session != f's-{work_id}')})
         else:
             tx.update('agent_sessions', {'session_id': session}, {'state': state})
 
@@ -7337,8 +7338,9 @@ def test_an_agent_brings_its_own_figure_to_what_the_pointer_takes_for_as_long_as
 
 
 @pytest.mark.req('VIEW-005')
+@pytest.mark.parametrize('reserved', [False, True])
 def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_it_ended_up_and_sees_what_it_can(
-        run, web, mapped, browser):
+        run, web, mapped, browser, reserved):
     """web_embody from the system agent gives it its own figure, never the person's mascot. Its acts move that figure
     and answer once it is done: a move to an address arrives beside it, a step forward goes the distance asked, a turn
     faces what it names, each saying where it is, which way it faces, whether it is at rest and what stopped it. A look
@@ -7346,16 +7348,28 @@ def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_i
     from metaform.data import Node, Store
     store = Store('proj')
     run('enable', 'dispatch')
-    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
-                            held=True)
-    live_session(system.id)
+    work = 'conversation-system' if reserved else store.add_work(
+        Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent', held=True).id
+    live_session(work, seq=1)
+    peer = store.add_work(Node('element', 'code.alarm.audible'), None, task='Sessions from editors',
+                          held=True) if reserved else None
+    if peer:
+        live_session(peer.id, seq=2)
+    before_work = {one.id for one in store.work(limit=0).results}
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
-    own = {'METAFORM_WORK': system.id, 'METAFORM_ROLE': 'system'}
+    if peer:
+        given = page.evaluate('work => window.metaform.embody(work, "moth")', peer.id)
+        assert given['figure'] is True and given['mascot'] is False, given
+        page.evaluate('''async work => {
+            const {ROAM} = await import('/page/app/figures/agents.js');
+            window.peerBodyBefore = ROAM.figures.get(work).mesh;
+        }''', peer.id)
+    own = {'METAFORM_WORK': work, 'METAFORM_ROLE': 'system'}
     taken = json.loads(run('web', 'embody', 'owl', '--json', cwd=mapped, env=own).stdout)
     assert (taken['figure'], taken['mascot']) == (True, False), taken
-    drawn = f'window.metaform.figures().find(one => one.work_id === "{system.id}")'
+    drawn = f'window.metaform.figures().find(one => one.work_id === "{work}")'
     page.wait_for_function(f'() => ["going", "circling"].includes({drawn}?.stage)', timeout=20000)
     assert page.evaluate('window.metaform.mascot().shown') is False   # the person's mascot is not its body
     # a body sent beside a node follows it while the layout moves it, and is at rest only once the node is: the move
@@ -7380,12 +7394,51 @@ def test_the_system_agent_takes_its_own_figure_whose_acts_arrive_and_say_where_i
     assert distances == sorted(distances) and len(distances) <= 12 and 'nearest' not in seen, seen
     assert max(abs(one - two) for one, two in zip(seen['from']['gaze'], looked['from']['gaze'])) < 0.1, seen  # held
     assert all('visible' not in one and one['distance'] <= seen['range'] for one in seen['in_view']), seen
+    came = json.loads(run('web', 'come', 'to=view', 'seconds=120', 'follow=false', '--json',
+                          cwd=mapped, env=own).stdout)
+    assert (came['who'], came['follow'], came['seconds']) == ('your figure', False, 120), came
+    page.wait_for_function('''async work => {
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const f = ROAM.figures.get(work);
+        return f.come?.point && f.mesh.position.distanceTo(f.come.point) < f.mesh.scale.x * .2;
+    }''', arg=work, timeout=20000)
+    ended = json.loads(run('web', 'come', 'seconds=0', '--json', cwd=mapped, env=own).stdout)
+    assert ended['ended'] is True and ended['who'] == 'your figure', ended
+    gone = json.loads(run('web', 'go', 'code.timer.kitchen', '--json', cwd=mapped, env=own).stdout)
+    assert gone['who'] == 'your figure' and gone['stopped_by'] == 'arrived', gone
+    page.evaluate('''async work => {
+        const {ROAM} = await import('/page/app/figures/agents.js');
+        const {eyesOf} = await import('/page/app/figures/eyes.js');
+        eyesOf(ROAM.figures.get(work).mesh, true);
+    }''', work)
+    viewing = json.loads(run('web', 'viewing', '--json', cwd=mapped, env=own).stdout)
+    assert viewing['agent_eyes'] is True and viewing['mascot_eyes'] is False, viewing
+    assert page.evaluate('''async () => {
+        const {EMBODY} = await import('/page/app/dock/embody.js');
+        return EMBODY.open;
+    }''') is None
+    assert {one.id for one in store.work(limit=0).results} == before_work
+    if peer:
+        from metaform import settings
+        assert page.evaluate('''async work => {
+            const {ROAM} = await import('/page/app/figures/agents.js');
+            return ROAM.figures.get(work).mesh === window.peerBodyBefore;
+        }''', peer.id)
+        ownership = page.evaluate('''async work => {
+            const {D, ticketOf} = await import('/page/app/agents/dispatch.js');
+            return {bodies: window.metaform.bodies(), ticket: ticketOf(work),
+                sessions: D.sessions.filter(one => one.work_id === work)};
+        }''', peer.id)
+        assert {(one['work'], one['character']) for one in ownership['bodies']} == {
+            (work, 'owl'), (peer.id, 'moth')}, ownership
+        assert settings.value('web_mascot', mapped) == 'none'
     assert problems == []
 
 
 @pytest.mark.req('VIEW-005')
+@pytest.mark.parametrize('reserved', [False, True])
 def test_the_body_the_person_gives_the_system_agent_is_their_mascot_in_every_conversation_and_on_every_page(
-        run, web, mapped, browser):
+        run, web, mapped, browser, reserved):
     """The body the person gives the system agent in the chat is their mascot, web_mascot, one record the server
     holds: a new conversation is drawn in it without an offer, another browser draws it too, and the system agent's
     prompt names it. Before, the body was kept in one browser for one conversation, and the prompt named web_mascot."""
@@ -7396,23 +7449,23 @@ def test_the_body_the_person_gives_the_system_agent_is_their_mascot_in_every_con
     from metaform.modules.dispatch.tests.test_dispatch import eventually
     store = Store('proj')
     run('enable', 'dispatch')
-    system = store.add_work(Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent',
-                            held=True)
-    live_session(system.id)
+    work = 'conversation-system' if reserved else store.add_work(
+        Node('element', 'code.alarm.audible'), None, task='Conversation with the system agent', held=True).id
+    live_session(work, seq=1)
     started(run)
     page, problems, _ = opened(browser, web)
     page.wait_for_function('() => window.metaform.loaded()', timeout=15000)
     assert page.evaluate('window.metaform.mascot().glyph') is None and mascot_line(mapped) == ''
-    given = page.evaluate(f'window.metaform.embody("{system.id}", "seahorse")')
+    given = page.evaluate(f'window.metaform.embody("{work}", "seahorse")')
     assert given['mascot'] is True, given
     eventually(lambda: settings.value('web_mascot', mapped) == 'seahorse')
     assert 'seahorse' in mascot_line(mapped)
     kept = page.evaluate('[localStorage.getItem("metaform.bodies") || "", localStorage.getItem("metaform.embodied")]')
     assert 'seahorse' not in kept[0] and kept[1] is None, kept
     # the conversation ends and a new one begins: the system agent is the seahorse again, its body chosen, no offer
-    live_session(system.id, state='ended')
-    live_session(system.id, session='s-again')
-    mine = f'window.metaform.bodies().find(one => one.work === "{system.id}")'
+    live_session(work, state='ended')
+    live_session(work, session='s-again', seq=2)
+    mine = f'window.metaform.bodies().find(one => one.work === "{work}")'
     page.wait_for_function(f'() => {mine}?.character === "seahorse" && {mine}.by === "person"', timeout=15000)
     assert page.evaluate('window.metaform.mascot().glyph') == 'seahorse'
     other, troubles, _ = opened(browser, web)  # another browser profile: its own storage, the same mascot

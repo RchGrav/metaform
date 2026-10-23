@@ -5,7 +5,8 @@ import '/page/app/figures/cut.js';  // the part before runs first, so the parts 
 import * as THREE from 'three';
 import {$, reduced} from '/page/app/core/dom.js';
 import {S} from '/page/app/core/reads.js';
-import {ROAM, nodeById, ticketNode, isSystemTalk, embody, ballOf, sizeOf} from '/page/app/figures/agents.js';
+import {ROAM, nodeById, ticketNode, isSystemTalk, conversationOf, embody, ballOf, sizeOf}
+  from '/page/app/figures/agents.js';
 import {RESTLESS, drivePace, facingOf, driveGoal, driveFace} from '/page/app/figures/walk.js';
 import {MASCOT, mascotGlyph, mascotDriven, driveMascot, releaseMascot, dropHeld} from '/page/app/figures/mascot.js';
 import {say, readFor} from '/page/app/figures/cut.js';
@@ -87,7 +88,7 @@ export function mascotEvent(payload) {
   const act = payload.act, node = nodeOfAddress(payload.address);
   const answer = result => payload.id && wrote('/api/mascot-result', {id: payload.id, result});
   if (act === 'see' || act === 'look') {  // the system agent looking through the mascot's eyes leads it too
-    if (mascotGlyph() && (!payload.work || isSystemTalk(ticketOf(payload.work)))) driveMascot();
+    if (mascotGlyph() && (!payload.work || isSystemTalk(conversationOf(payload.work)))) driveMascot();
     return sight(payload, node, answer);
   }
   if (act === 'viewing') return answer(viewing());
