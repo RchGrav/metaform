@@ -437,7 +437,8 @@ def test_word_bubbles_point_at_their_speakers_stay_apart_in_view_and_the_watched
         camera.updateMatrixWorld();
         window.metaform.pause3d(false);
     }""")
-    lines = {tickets[0].id: 'Done.', tickets[1].id: 'Now reading the tests as well, then the page that draws them all.'}
+    lines = {tickets[0].id: 'Done.', tickets[1].id: 'Now reading the tests as well, then the page that draws them all. '
+             'I will also check the timing while both agents keep working.'}
     times = page.evaluate("""async lines => {
         const {D} = await import('/page/app/agents/dispatch.js');
         const {takeBubbleSeconds} = await import('/page/app/workspace/workspace.js');

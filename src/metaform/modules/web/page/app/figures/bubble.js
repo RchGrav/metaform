@@ -7,22 +7,23 @@
 export const BUBBLE = {el: null, text: '', until: 0, click: null, seconds: 'auto', who: null, name: '', since: 0,
   found: false, seen: false, asking: false, x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0};
 
-/* The waits in a line: each vowel, y, digit 1 to 9 and stop or pause mark is a wait; each vowel pair said as one
- * sound takes one back (the list as given, "ai" in it twice); never fewer than one when they come to none. A word
- * bubble on auto stays up 3 s and half a second for each, `bubbleSeconds`. */
+/* The person's wait count: vowels, y, digits 1 to 9 and pause marks, minus each listed sequence ("ai" twice)
+ * and a terminal silent e. Zero becomes one. Auto visibility is 2 s plus 50 ms per wait. */
 const WAITS = 'aeiouy123456789.,;:!?';
-const PAIRS = ['ai', 'ee', 'ea', 'ai', 'oa', 'oi', 'oo', 'ou'];
+const PAIRS = ['ai', 'ee', 'ea', 'ai', 'oa', 'oi', 'oo', 'ou', 'eau', 'ueue', 'cie', 'eo'];
 const count = (text, part) => text.split(part).length - 1;
 export function waits(text) {
   const lower = String(text || '').toLowerCase();
   let found = 0;
   for (const one of WAITS) found += count(lower, one);
   for (const pair of PAIRS) found -= count(lower, pair);
+  if (lower.length >= 3 && lower.at(-1) === 'e' && !'aeiouy'.includes(lower.at(-2))
+    && 'aeiouy'.includes(lower.at(-3))) found--;
   return found === 0 ? 1 : found;
 }
 /* How long a word bubble stays up for `text`, in seconds, by web_bubble_seconds: auto, the default, by its waits;
  * else the seconds chosen. */
 export function bubbleSeconds(text, setting) {
   const seconds = Number(setting);
-  return setting === 'auto' || !(seconds > 0) ? 3 + 0.5 * waits(text) : seconds;
+  return setting === 'auto' || !(seconds > 0) ? (2000 + 50 * waits(text)) / 1000 : seconds;
 }

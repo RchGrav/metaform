@@ -7,7 +7,8 @@
  * default seats (roundtables_seats) or picks their own, each an agent and one of its models, and starts. The 3D map
  * sinks back, dimmed, pushed away and softly blurred, and goes on moving behind the stage. On the stage each seat is a figure, its agent's character, in a
  * shallow arc across the screen, facing the person, its name under it. The seat with the floor steps forward and says
- * its turn in a word bubble whose tail points at it; a turn Jev vetoes fades from its bubble; the seat that speaks next
+ * its turn in a word bubble whose tail points at it; each bubble expires by its words, independently of the floor;
+ * the seat that speaks next
  * raises its hand; a seat lost dims and says why. Above the arc the table's state grows as it goes: the ideas the
  * synthesizer names, each seat's ranking of them, and the host's summary, the answer to the question. Along the bottom
  * are the question, the table's state and the whole transcript. After discussion ends, follow-through shows each
@@ -34,6 +35,7 @@ import {agentName, pickerOptions} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
 import {G, wake3d} from '/page/app/map3d/graph3d.js';
 import {SEATS, Seated, LOOK, bubbleText} from '/page/app/figures/bubble3d.js';
+import {bubbleSeconds} from '/page/app/figures/bubble.js';
 import {glyphOfType} from '/page/app/figures/walk.js';
 import {swap} from '/page/app/camera/flight.js';
 import {calledOf} from '/page/app/board/messages.js';
@@ -47,17 +49,17 @@ import {WS} from '/page/app/workspace/workspace.js';
 export const TABLE = {on: false, id: null, kind: '', address: '', topic: '', seq: 0, state: '', stage: '',
   names: [], seats: [], floor: -1, next: -1, ended: false, busy: false, again: false, swapped: false};
 const ARC = {fov: 38, far: 10, depth: 0.35, spread: 0.8, low: 0.36, step: 1.25, grow: 0.12, sink: 0.25, dim: 0.35,
-  veto: 2200, dwell: 1500, behind: 3, ease: 0.16};  // ms: how long a vetoed turn fades and a turn holds the floor at
-// least; turns waiting past which the older ones are only written down; s: the time constant of a seat's moves
+  veto: 2200, dwell: 1500, behind: 3, ease: 0.16};  // ms: presentation spacing after a vetoed or accepted turn;
+// turns waiting past which the older ones are only written down; s: the time constant of a seat's moves
 /* The events read and not yet told, told in order, `tell`: a read can bring several turns at once, after a hold or on
- * a busy page, and each turn holds the floor at least `dwell`, a vetoed one for its fade, so none is skipped; one that
+ * a busy page, and each turn holds the floor at least `dwell`, a vetoed one `veto`, so none is skipped; one that
  * has `behind` turns after it is only written in the transcript. Pacing, not a look for a change: each wait fires once
  * for the turn it shows. */
 const TOLD = {list: [], at: 0, timer: 0};
 /* The seats, one typed array per field, by seat: where it stands, how far it has stepped forward and raised its hand,
- * its size, whether it is lost, and when its vetoed turn began to fade; grown only as a table opens. */
+ * its size, whether it is lost, and when its bubble expires; grown only as a table opens. */
 const SEAT = {n: 0, x: new Float32Array(8), y: new Float32Array(8), z: new Float32Array(8), step: new Float32Array(8),
-  hand: new Float32Array(8), lost: new Uint8Array(8), vetoAt: new Float64Array(8), size: 1,
+  hand: new Float32Array(8), lost: new Uint8Array(8), until: new Float64Array(8), size: 1,
   meshes: [], glyphs: [], why: [], labels: [], lx: new Float32Array(8), ly: new Float32Array(8),
   shown: new Uint8Array(8)};
 const MADE = new Map();  // each character's figure, made the first time a seat is one and kept for every table after
@@ -423,7 +425,7 @@ function turn(event) {
   const seat = SEATS.list[n];
   seat.text = bubbleText(event.text || '');
   seat.lineAt = performance.now();
-  SEAT.vetoAt[n] = vetoed ? seat.lineAt : 0;
+  SEAT.until[n] = seat.lineAt + 1000 * bubbleSeconds(seat.text, WS.view()?.bubble_seconds ?? 'auto');
   nextUp();
 }
 /* Who speaks next while the table discusses: the seat after the floor in speaking order, any lost one skipped. */
@@ -653,7 +655,7 @@ function seatAll() {
     if (!MADE.has(glyph)) MADE.set(glyph, createAgent(glyph, {harness: agent}));
     SEAT.meshes[n] = MADE.get(glyph);
     SEAT.glyphs[n] = glyph;
-    SEAT.lost[n] = 0; SEAT.step[n] = 0; SEAT.hand[n] = 0; SEAT.vetoAt[n] = 0; SEAT.why[n] = '';
+    SEAT.lost[n] = 0; SEAT.step[n] = 0; SEAT.hand[n] = 0; SEAT.until[n] = 0; SEAT.why[n] = '';
     shade(SEAT.meshes[n], 1);
     VIEW.scene.add(SEAT.meshes[n]);
     const one = SEATS.list[n];
@@ -674,7 +676,7 @@ function grow(count) {
   if (SEAT.x.length < count) {
     const size = Math.max(count, SEAT.x.length * 2);
     for (const field of ['x', 'y', 'z', 'step', 'hand', 'lx', 'ly']) SEAT[field] = new Float32Array(size);
-    SEAT.lost = new Uint8Array(size); SEAT.shown = new Uint8Array(size); SEAT.vetoAt = new Float64Array(size);
+    SEAT.lost = new Uint8Array(size); SEAT.shown = new Uint8Array(size); SEAT.until = new Float64Array(size);
   }
   while (SEATS.list.length < count) SEATS.list.push(new Seated(SEATS.list.length));
   while (SEAT.labels.length < count) {
@@ -761,11 +763,10 @@ function stageFrame(now) {
   for (let n = 0; n < count; n++) label(n);
   wake3d(100);  // the map behind and the stage go on drawing every frame while the stage is shown
 }
-/* A seat's words this frame and where its head is on the page: the floor's turn shown, a vetoed one fading out. */
+/* Each seat's words stay until their own expiry, even after the floor moves to another seat. */
 function spoken(n, mesh, now) {
   const seat = SEATS.list[n], camera = VIEW.camera;
-  const vetoAt = SEAT.vetoAt[n];
-  seat.want = n !== TABLE.floor || !seat.text ? 0 : vetoAt ? Math.max(0, 1 - (now - vetoAt) / ARC.veto) : 1;
+  seat.want = seat.text && now < SEAT.until[n] ? 1 : 0;
   eyeOf(mesh, HEAD, GAZE);
   HEAD.y += LOOK.lift * mesh.scale.x;
   seat.far = HEAD.distanceTo(camera.position);
