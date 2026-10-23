@@ -106,7 +106,7 @@ UI.board = h('div', {class: 'rt-board', 'aria-live': 'polite'}, UI.ideasBox, UI.
 UI.canvas = h('canvas', {class: 'rt-canvas', 'aria-hidden': 'true'});
 UI.seats = h('div', {class: 'rt-seats'});
 UI.band = h('div', {class: 'rt-band'}, UI.canvas, UI.seats);
-UI.topic = h('b', {class: 'rt-question'});
+UI.topic = h('b', {class: 'rt-question', tabindex: '0', 'aria-label': 'Roundtable question'});
 UI.state = h('span', {class: 'rt-state', role: 'status'});
 UI.leave = h('button', {class: 'btn sm quiet rt-leave', type: 'button', onclick: () => leaveStage(),
   title: 'Back to the map; the table runs on (Escape)'}, 'Leave');

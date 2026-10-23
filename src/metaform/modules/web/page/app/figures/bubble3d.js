@@ -45,9 +45,13 @@ export const LOOK = {
  * through these, the first the smallest allowed; the choice is kept in this browser. */
 export const BUBBLE_SIZES = [0.75, 0.9, 1.05, 1.25, 1.5];
 const SIZE_KEY = 'metaform.bubbleSize';
+const DEFAULT_SIZE = 3;
 const SIZE = {at: (() => {
-  try { return Math.min(BUBBLE_SIZES.length - 1, Math.max(0, Number(localStorage.getItem(SIZE_KEY)) || 0)); }
-  catch { return 0; }
+  try {
+    const saved = localStorage.getItem(SIZE_KEY), at = Number(saved);
+    return saved !== null && saved.trim() !== '' && Number.isInteger(at)
+      ? Math.min(BUBBLE_SIZES.length - 1, Math.max(0, at)) : DEFAULT_SIZE;
+  } catch { return DEFAULT_SIZE; }
 })()};
 export function stepBubbleSize() {
   SIZE.at = (SIZE.at + 1) % BUBBLE_SIZES.length;
@@ -468,15 +472,20 @@ function place() {
   for (let n = 0; n < SHOWN.length; n++) if (!SHOWN[n].fixed && !SHOWN[n].mascot) { nearest = SHOWN[n].far; break; }
   const ease = FRAME.still ? 1 : 1 - Math.exp(-(FRAME.now - FRAME.last) / LOOK.settle), margin = LOOK.margin;
   for (let n = 0; n < SHOWN.length; n++) {
-    const bubble = SHOWN[n], k = FRAME.scale;
+    const bubble = SHOWN[n];
+    const ex = bubble.w / 2 * Math.abs(COS) + bubble.h / 2 * Math.abs(SIN) + LOOK.outline;
+    const ey = bubble.w / 2 * Math.abs(SIN) + bubble.h / 2 * Math.abs(COS) + LOOK.outline;
+    const k = Math.max(0, Math.min(FRAME.scale,
+      (bubble.right - bubble.left - 2 * margin) / (2 * ex),
+      (bubble.bottom - bubble.top - 2 * margin) / (2 * ey)));
     const pop = FRAME.still ? 1 : Math.min(1, (FRAME.now - bubble.lineAt) / LOOK.pop);
     bubble.grow = 0.55 + 0.45 * easeOut(pop);
     if (pop < 1) wake3d(50);
     // the body's half extents on the screen, turned, with its outline; placed at its full size, so the pop never
     // moves the others
     bubble.k = k;
-    bubble.ex = k * (bubble.w / 2 * Math.abs(COS) + bubble.h / 2 * Math.abs(SIN) + LOOK.outline);
-    bubble.ey = k * (bubble.w / 2 * Math.abs(SIN) + bubble.h / 2 * Math.abs(COS) + LOOK.outline);
+    bubble.ex = k * ex;
+    bubble.ey = k * ey;
     // the agent view's own at the bottom, its tail a short point down out of the view
     if (bubble.fixed) { bubble.nx = bubble.hx; bubble.ny = bubble.bottom - margin - bubble.ey - LOOK.rise * k / 2; }
     else { bubble.nx = bubble.hx + LOOK.aside * bubble.ex; bubble.ny = bubble.hy - bubble.ey - LOOK.rise * k; }

@@ -1763,6 +1763,8 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
 .rt-foot{display:grid;gap:var(--s2);padding:var(--s2) var(--s4) var(--s3);
   background:color-mix(in srgb,var(--panel) 88%,transparent);border-top:1px solid var(--line-2)}
 .rt-head{display:flex;gap:var(--s3);align-items:baseline;flex-wrap:wrap}
+.rt-question{flex:1 1 100%;min-width:0;max-height:4.2em;overflow:auto;overflow-wrap:anywhere;
+  white-space:pre-wrap;line-height:1.4}
 .rt-state{color:var(--muted)}
 .rt-leave{margin-left:auto}
 .rt-transcript{margin:0;padding-left:1.6em;max-height:22vh;overflow:auto;display:grid;gap:3px;line-height:1.4}
@@ -1778,7 +1780,7 @@ header.fold :is(.menu,#layerlist,.clearbox){left:var(--s2)!important;right:var(-
   border:1px solid var(--line-2);box-shadow:var(--lift-2)}
 .rt-setup[hidden]{display:none}
 .rt-setup,.rt-seatsetup,.rt-seatlist{grid-template-columns:minmax(0,1fr)}
-.rt-setup>textarea{min-width:0}
+.rt-setup>textarea{min-width:0;height:25vh;min-height:3em;resize:vertical;overflow:auto}
 .rt-setup h2{margin:0;font:700 var(--t-lg) var(--sans)}
 .rt-setup label{display:grid;gap:4px;color:var(--muted)}
 .rt-setupacts{display:flex;gap:var(--s2);justify-content:flex-end}
