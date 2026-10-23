@@ -1354,6 +1354,22 @@ Each record below is amended by the records of this section, as each record's Re
 - Relates to: CTX-001, CTX-004, CTX-011, CTX-092, CTX-093, MCP-044, MAP-046, LAYER-025.
 - Status: confirmed by the owner, 2026-10-23. Native inference savings from this particular context representation remain a hypothesis requiring measurement.
 
+### CTX-095 Role, skill and specialty reorganization continues the inference-cost assignment
+
+- Requirement: Reorganize procedural responsibilities into selectively discoverable skills where they can use the current agent's useful context, retain genuine specialist expertise behind the existing Facilitator entry point, and justify separate execution by the work rather than by a prompt label.
+- What this means:
+  - The owner wants roles converted, combined or retired where appropriate. A final taxonomy is not yet settled. Execution modes, authored responsibilities, expertise, skills, assignments and native contexts must be distinguished before changing them.
+  - Facilitation is a candidate skill exposing the existing Facilitator's specialist discovery, reuse and creation responsibilities. It does not establish another mandatory coordinator or require publishing every specialty into the native skill catalog.
+  - Serving a procedure in an existing context and commissioning another agent are different mechanisms. Renaming a role as a skill does not itself remove assignment predicates, process startup, context reconstruction or repeated shared libraries.
+  - Preserve exact user intent, C(T), adaptive specifications, functional orientation, named-layer knowledge, source/version provenance, direct agent communication and user interaction. Preserve explicit controls and dynamic blacklist semantics without inventing new role restrictions or mandatory model stages.
+  - Requested independent assessment, useful parallelism and actual isolation remain meaningful. Ordinary work does not acquire a fresh builder, planner or evaluator merely because a procedure is named that way. Verification is appropriate to requested acceptance, material risk and explicit requirements; it is not mandatory after every edit.
+  - Tool-owned usage remains at the operation under MCP-044. Role and skill prompts carry applicable purpose, responsibility and method rather than repeating every tool's instructions.
+- Why: The primary objective is lower inference cost per useful outcome. An already informed agent can apply a procedure without paying for unnecessary separate-context orientation. Skill bodies and libraries still consume context, so actual composition and native execution require measurement.
+- Build: The owner requested a thorough handoff to the existing Pro web context with GitHub access. This preparation investigates current paths and fixes demonstrably stale prompting; the broad role/skill reorganization remains for Pro. Reuse the existing canonical skills registry, native deployment, specialist directory, assignments, episodes and accepted-delivery ledger. Do not replace the architecture from scratch.
+- Acceptance: The handoff includes the complete observed 6/23/39 inventory with scope, source-backed execution distinctions, proposed classifications, current prompt corrections and tests, remaining ownership/deployment/receipt gaps, a compatibility-aware sequence and a matched native-efficiency evaluation plan. Source bytes and fixtures are not billed savings. Historical native results remain attributed to their original implementations.
+- Relates to: CTX-091, CTX-092, CTX-093, CTX-094, BASE-054, BASE-055, BASE-056, BASE-059, MCP-044, D116, D117, D118, D124.
+- Status: owner direction confirmed, 2026-10-23. Prior assignments are completed in their implemented scopes, but the last task ignored systematic prompt migration and the role/skill execution-cost problem. Prompt reconciliation and Pro handoff continue that same context-management objective. Final taxonomy and runtime migration are open, not implemented by this record.
+
 ## Open questions
 
 1. Where does a property's link go when the two addresses it was recorded at share no segment (for example `code.x` and `data.y`)? Recommended for what counts as the same property: an item with the same value in the same layer; a property layer that is the same node. (CTX-009)

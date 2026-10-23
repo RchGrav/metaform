@@ -1,0 +1,175 @@
+{
+  "observed_at": "2026-10-23",
+  "scope": "Selected-source observations and two verified-pristine native-base-skill refreshes after shipped corrections. No selected user edit or running assignment was overwritten; no broader native deployment or harness registration was changed. These observations do not establish model delivery.",
+  "selected_skill_procedures": [
+    {
+      "name": "scan",
+      "component": "prompt.skill.scan",
+      "selected_version_id": "dff239ff599e4c2b834e38d199fca630",
+      "actual_version_id": "dff239ff599e4c2b834e38d199fca630",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "3aa6efb2c2ecded4f61e2bf4ab39bbdd79bd16a73d28a15dd8db421018f4db48"
+      },
+      "rendered_fingerprint": "3aa6efb2c2ecded4f61e2bf4ab39bbdd79bd16a73d28a15dd8db421018f4db48",
+      "bytes": 3073
+    },
+    {
+      "name": "workflow-builder",
+      "component": "prompt.skill.workflow-builder",
+      "selected_version_id": "ea9e7ee7a1a24a818273d4a8b641f804",
+      "actual_version_id": "ea9e7ee7a1a24a818273d4a8b641f804",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "64933b38e6aa382dc66daae088c98cf74b12b1d47b7181b985ae826b288daec3"
+      },
+      "rendered_fingerprint": "64933b38e6aa382dc66daae088c98cf74b12b1d47b7181b985ae826b288daec3",
+      "bytes": 5258
+    },
+    {
+      "name": "workflow-evaluator",
+      "component": "prompt.skill.workflow-evaluator",
+      "selected_version_id": "2d2c35b209c2433ca7cf5fa414fb1f44",
+      "actual_version_id": "2d2c35b209c2433ca7cf5fa414fb1f44",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "88f6ca30c7e7fa4648344898b03cf0d9de69fca4ade1a0084f2314df7451930f"
+      },
+      "rendered_fingerprint": "88f6ca30c7e7fa4648344898b03cf0d9de69fca4ade1a0084f2314df7451930f",
+      "bytes": 4027
+    },
+    {
+      "name": "write-workflow",
+      "component": "prompt.skill.write-workflow",
+      "selected_version_id": "093ad15d87cc4f86bcf66cd802fe5647",
+      "actual_version_id": "093ad15d87cc4f86bcf66cd802fe5647",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "16ea2d98189bdf6d45a11c4f57815bf5a3cac5b0aa8621fff63d3ef615ed354a"
+      },
+      "rendered_fingerprint": "16ea2d98189bdf6d45a11c4f57815bf5a3cac5b0aa8621fff63d3ef615ed354a",
+      "bytes": 17678
+    },
+    {
+      "name": "import-workflow",
+      "component": "prompt.skill.import-workflow",
+      "selected_version_id": "d164dc13041d430986c4a5e511d85054",
+      "actual_version_id": "d164dc13041d430986c4a5e511d85054",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "63d18167ebeef4beceea07fcc7990549bfbd3cf5ee7224b34297f36f7819522d"
+      },
+      "rendered_fingerprint": "63d18167ebeef4beceea07fcc7990549bfbd3cf5ee7224b34297f36f7819522d",
+      "bytes": 10559
+    },
+    {
+      "name": "workflow-efficiency",
+      "component": "prompt.skill.workflow-efficiency",
+      "selected_version_id": "373c7d7bf05d4d349ad8ddc44d85c610",
+      "actual_version_id": "373c7d7bf05d4d349ad8ddc44d85c610",
+      "source": {
+        "kind": "shipped",
+        "path": null,
+        "shipped_identity": "e83db0dde6b00b5b62b53e8c3feab039549806d5ceeabc8c3bacfea3b5170ea4"
+      },
+      "rendered_fingerprint": "e83db0dde6b00b5b62b53e8c3feab039549806d5ceeabc8c3bacfea3b5170ea4",
+      "bytes": 6125
+    }
+  ],
+  "generated_role_after_correction": {
+    "name": "context_delivery_engineer",
+    "provider": "agents",
+    "purpose": "Bound agent startup context through selective knowledge delivery while preserving complete applicable instructions and content receipts.",
+    "components": [
+      {
+        "name": "prompt.orchestration:common",
+        "actual_version_id": "2fb101f114e84e18b8d86847465249ac",
+        "selected_version_id": "2fb101f114e84e18b8d86847465249ac",
+        "number": 15,
+        "origin": "shipped",
+        "rendered_fingerprint": "3bc3a0a0464acb6f79825895795cd966f7b33fd8901e4c9229f43df7de8382c0",
+        "bindings": {},
+        "problems": [],
+        "source": {
+          "kind": "shipped",
+          "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+          "shipped_identity": "2f6640eeb33b51e0b16d466f8e2941d2c857251d0632313aaf1007ee10afd726",
+          "source_problem": null
+        },
+        "notices": [],
+        "characters": 6088
+      },
+      {
+        "name": "prompt.orchestration:specialist",
+        "actual_version_id": "da980e4bb38546eb8c0ced4ce56e7f6b",
+        "selected_version_id": "da980e4bb38546eb8c0ced4ce56e7f6b",
+        "number": 2,
+        "origin": "shipped",
+        "rendered_fingerprint": "99d8d237f29a73de407cfda9f68d14a5a2635ccb2d9c588347f91e958305665d",
+        "bindings": {},
+        "problems": [],
+        "source": {
+          "kind": "shipped",
+          "path": "/home/rich/metaform/src/metaform/modules/orchestration/resources/prompts.xml",
+          "shipped_identity": "99d8d237f29a73de407cfda9f68d14a5a2635ccb2d9c588347f91e958305665d",
+          "source_problem": null
+        },
+        "notices": [],
+        "characters": 943
+      },
+      {
+        "name": "prompt.agents:generated_metaform_context_delivery_engineer",
+        "actual_version_id": "2d33b1bd02d9469f80289c256b1a2fed",
+        "selected_version_id": "2d33b1bd02d9469f80289c256b1a2fed",
+        "number": 1,
+        "origin": "edited",
+        "rendered_fingerprint": "909ba7cc6b72a1396b506c73f77a5ff12f2641d94c6886c5a21daa4cd4d02b87",
+        "bindings": {},
+        "problems": [],
+        "source": {
+          "kind": "selected_edit",
+          "path": "/home/rich/metaform/src/metaform/modules/agents/resources/generated_metaform_context_delivery_engineer",
+          "shipped_identity": null,
+          "definition_version_id": "2d33b1bd02d9469f80289c256b1a2fed"
+        },
+        "notices": [],
+        "characters": 3020
+      }
+    ]
+  },
+  "native_base_skill_refreshes": [
+    {
+      "path": "/home/rich/.codex/skills/metaform/SKILL.md",
+      "prior_exact_shipped_revision": "c7ca35b5c7a71b91528d99978db36f110b599f96",
+      "backup": "/home/rich/.metaform/backups/context-prompt-correction/20261023T164527626228Z/.codex/skills/metaform/SKILL.md",
+      "sha256": "c3f3494e8cfefb8b44eade73b8476d137396012614b186db8a1bbbaefab69e34",
+      "matches_corrected_repository_base_skill": true
+    },
+    {
+      "path": "/home/rich/.agents/skills/metaform/SKILL.md",
+      "prior_exact_shipped_revision": "c7ca35b5c7a71b91528d99978db36f110b599f96",
+      "backup": "/home/rich/.metaform/backups/context-prompt-correction/20261023T164527626228Z/.agents/skills/metaform/SKILL.md",
+      "sha256": "c3f3494e8cfefb8b44eade73b8476d137396012614b186db8a1bbbaefab69e34",
+      "matches_corrected_repository_base_skill": true
+    }
+  ],
+  "native_base_skill_files_before_refresh": [
+    {
+      "path": "/home/rich/.codex/skills/metaform/SKILL.md",
+      "sha256": "350bf6c648d07b0595d5b6ab88148ff473e482fea4a146c81dd08caf854b4f79",
+      "matches_prior_shipped_base": false,
+      "matches_current_shipped_base": false
+    },
+    {
+      "path": "/home/rich/.agents/skills/metaform/SKILL.md",
+      "sha256": "350bf6c648d07b0595d5b6ab88148ff473e482fea4a146c81dd08caf854b4f79",
+      "matches_prior_shipped_base": false,
+      "matches_current_shipped_base": false
+    }
+  ]
+}

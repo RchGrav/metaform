@@ -887,6 +887,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 
 ### BASE-054 Work is shared among six roles, and each holds one job: the person, the orchestrator, the workflow builder, the evaluator, the loop controller and the workers
 
+Context-management continuation, 2026-10-23: CTX-095 governs the current reorganization. A named responsibility or procedure does not itself require another agent context. The historical partition below must be reconciled with selectively activated skills, meaningful specialist expertise and necessary execution ownership in the Pro handoff. Do not introduce compulsory agent stages from this historical role list.
+
 - Requirement: Work in Metaform is divided among six roles, each with one job. The person owns the intent and the big decisions. The orchestrator turns intent into goals, sets priorities, approves, watches the board, takes escalations, reports to the person and notices trouble. The workflow builder turns each piece of incoming work into a short Axiom workflow, seeds the rules for it at the nodes, registers its loops and asks when something is unclear, BASE-055. The evaluator judges results against the work's acceptance where code cannot count them, in a fresh context separate from the builder and the worker. The loop controller is code that counts attempts, opens each pass, ends the run and notices an agent that stopped, BASE-056. The workers each do one pass, with a fresh context and only their own instructions.
 - What this means:
   - The orchestrator no longer stands between the work and the workers. It does not word a worker's task or relay its results. Metaform writes every word a worker reads, through the workflow agent's workflow, the rules layer at the nodes, BASE-055, and dispatch's prompt, BASE-052.
@@ -904,6 +906,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Status: proposed 2026-10-04 by the workflow agent from the session of 2026-10-04; not yet confirmed. Agreed in direction in that session and recorded as the design. D119 authority confirmed, 2026-10-05: autonomous execution recovery after spinning or crashes, with changes to the intended outcome referred to the person, BASE-057. Amended 2026-10-04, the loop controller role reconsidered with BASE-056: proposed by the workflow agent from the session of 2026-10-04; not yet confirmed.
 
 ### BASE-055 All incoming work goes first to the workflow agent, which writes a short Axiom workflow for it, seeds its rules at the nodes and registers its loops
+
+The universal builder-routing requirement in this historical record is superseded by CTX-095 and the amendment to D117, 2026-10-23. Relevant methods may run in an existing informed context. Do not require a separate builder or fresh worker for every job. Remaining runtime and compatibility changes are part of the Pro continuation, not represented as already implemented here.
 
 - Requirement: Every piece of work that enters Metaform through MCP or through dispatch goes first to the workflow agent. The workflow agent works out what the work needs and writes a concise, complete Axiom workflow for it; seeds a knowledge layer at the nodes where the work happens with the rules and imperatives for that job; registers the workflow's loops with the loop controller, BASE-056; and, when something is unclear, asks the person directly with `map ask`.
 - What this means:
@@ -925,6 +929,8 @@ Specified in MCP-007 and MCP-008: each module declares concise instructions that
 - Status: proposed 2026-10-04 by the workflow agent from the session of 2026-10-04; not yet confirmed as a whole. Confirmed 2026-10-05, D116: separate builder and evaluator roles, from the owner's answer supplied with work `24070d65a0fa488bb2ebdb1c8394f91a`. Their served skills are reversible builder drafts. Confirmed 2026-10-06, D117: all incoming work, including small fixes, goes through the builder, from the answer supplied with work `f49b8dee92a54a02913e050ba0d99026` to question `8834aad9a4b14c33a7f81a69097ba73b`, answered on the map 2026-10-05. Recommended, not confirmed: the person's words passed verbatim with the orchestrator's context labelled as its own. Open: the automatic routing mechanism. Amended 2026-10-04, loop registration reconsidered with BASE-056: proposed by the workflow agent from the session of 2026-10-04; not yet confirmed.
 
 ### BASE-056 The loop controller in the workflow module owns every loop: code counts the attempts, opens each pass as a ticket and ends the run
+
+Context-management continuation, 2026-10-23: read this record with CTX-095 and the D118 amendment. It does not authorize an unrequested verification loop, evaluator or per-edit test stage. Appropriate repeated workflows and requested independence retain their meanings; controller, skill and context-lifetime mechanisms remain part of the Pro design work.
 
 - Requirement: The workflow module holds a loop controller that runs every loop of a workflow run. It keeps the attempt counts and the `MaxAttempts` limits, opens each pass as a ticket at the right nodes, decides from the pass's result whether to go again, ends the run and delivers the result to the caller. No worker decides whether a loop goes again.
 - What this means:

@@ -12,17 +12,15 @@
      server generates, to each instruction block that applies to the agent now, in this order: metaform://rules,
      metaform://metaform, metaform://memory while the memory module is on, metaform://firstrun while the project has
      no intake, metaform://role/<role>, and metaform://<project> in a registered project. Each block is a resource read
-     whole. The same line and links open the agent's first turn after every compaction: a dispatched agent's runner
-     puts them at the head of that turn, and metaform_catalog compacted=true and metaform://runtime/compaction-state
-     answer with them first. Write no link here. Empty sends the links alone. -->
+     whole. metaform_catalog compacted=true and metaform://runtime/compaction-state return the current opening links.
+     Dispatched sessions receive startup components through their runner; reported compaction makes relevant
+     content eligible when needed rather than replaying every body. Write no link here. Empty sends the links alone. -->
 <connect_directive>
 Before you do anything else, read every resource linked below, whole: they hold the rules you work by, the terms you share with the person and other agents, how to keep memory, and what your role is for. Components already delivered unchanged in this context are omitted by the delivery service.
 </connect_directive>
-<!-- The rules every agent works by, served whole and exactly as written at metaform://rules, the first link of every
-     agent's connect message and of its first turn after each compaction. A dispatched agent's runner also puts this
-     text at the head of the agent's first turn in each context epoch; the receipt ledger leaves it out while the
-     epoch holds it unchanged, so it comes again only after a compaction or an edit. Empty serves an empty resource
-     and sends nothing. -->
+<!-- The shared rules, served at metaform://rules and linked by the external connect message. A dispatched runner
+     supplies the selected component with fresh startup guidance. Current delivery receipts omit unchanged bodies;
+     a source change or context replacement can make them due again. Empty serves an empty resource. -->
 <connect_rules>
 Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; decide engineering questions yourself from your brief, the specification and C(T), and record the choice and its why on your ticket. A decision only the user can make goes on your ticket as a question for the user. Never message the system agent with progress, completions or scope questions. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
 
@@ -78,18 +76,15 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
   {MCP} := "metaform mcp server: The external toolset used to orchestrate work, navigate the project, and save project memories, notes, and state (e.g., context for next session) generated during execution."
   {Comm_Style} := "Peer register applies to ALL outputs (chat, docs, specs). Plain language, authentic candor. NO robotic filler, NO faked humanity, NO meta-commentary."
 </glossary>
-<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
-<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
-<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
+<!-- Applicable module rules are delivered through explicit instruction reads before command execution. -->
 <rules_heading>Rules the enabled modules ask you to keep, each with its reason.</rules_heading>
-<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
-<module_guide>The <module/> module's rules, given once in this session, each with its reason:</module_guide>
-<!-- The heading of what a tool's result carries the first time in an agent's session that it calls that tool, and
-     again only once it changes: what the tool list cut to keep it small, the rest of the tool's description and the
-     whole help of each argument the list shortened, then the verb's details and examples, from the verb's own
-     declaration. <tool/> is the tool's name. Empty leaves it out, and the cut text is then read only through
-     metaform_instructions. DRAFT wording, artifacts/specs-draft/2026-10-15-agent-context-cost.md. -->
-<tool_guide>How to use <tool/>, given once in this session:</tool_guide>
+<!-- A module-rule heading where used; each rule declares its reason. -->
+<module_guide>The <module/> module's rules, each with its reason:</module_guide>
+<!-- The heading of explicit tool instruction reads. The body comes from the verb's declaration and applicable
+     operation details, alongside module-owned contributions and the canonical argument schema. A receipt of the
+     current complete body is required before execution; unchanged components are reused in the same context.
+     <tool/> is the tool's name. Empty leaves the heading out. -->
+<tool_guide>How to use <tool/>:</tool_guide>
 <!-- The form an AI tool shows the person when an agent calls a tool that carries a caution, such as
      metaform_clear_project or map_remove-base, and the tool can ask the person directly (MCP elicitation, where the
      host supports it and mcp_consent is ask). <tool/> is the tool's name and <caution/> what the call would do, from the
@@ -239,13 +234,14 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <catalog_search>Command names or words describing the desired capability; matching tolerates misspellings.</catalog_search>
 <catalog_run>A tool to run, by name, with arguments.</catalog_run>
 <catalog_arguments>The arguments of the tool named in tool.</catalog_arguments>
-<catalog_compacted>true once your context was compacted, so the guides you lost come again at their next use.</catalog_compacted>
+<catalog_compacted>true when this logical context was compacted, so relevant instructions and node context become eligible again when needed.</catalog_compacted>
 <!-- The help of session_handle, the argument every tool takes where the listing names no session. -->
-<handle_argument>The session handle metaform_catalog gave you, so each tool's guide is given you once.</handle_argument>
+<handle_argument>The returned session handle, so instruction receipts belong to this logical context.</handle_argument>
 
-<!-- Operational context for dispatched sessions. Reusable specialist expertise is read separately by URL. -->
-<role_worker>Your operational session works assignment <assignment/>. Read your reusable expertise at <authored_role/>. Use the current assignment, specification, mode and return route. Discover the needed commands through their owning modules.</role_worker>
-<role_prep>Your operational session prepares an assigned candidate for integration. Read your role's responsibilities at <authored_role/>. Discover the needed commands through their owning modules.</role_prep>
+<!-- Operational context. Assigned exact duty components may already be delivered by dispatch; their URLs remain
+     available for source reads where the components are absent or additional detail is needed. -->
+<role_worker>Your operational session works assignment <assignment/>. Use the exact assigned expertise components supplied for it. Read your reusable expertise at <authored_role/> when those components are absent or their source detail is needed. Use the current assignment, specification, mode and return route. Discover commands when their names or arguments are needed.</role_worker>
+<role_prep>Your operational session prepares an assigned candidate for integration. Use the exact assigned responsibility components supplied for it. Read your role's responsibilities at <authored_role/> when those components are absent or their source detail is needed. Discover commands when their names or arguments are needed.</role_prep>
 <role_intake>You map this project's AUE from its source. Read metaform://intake/tools for intake commands and discover other capabilities at metaform://modules.</role_intake>
 <role_sentinel>You take up an issue the person raised on a node. Read metaform://map/tools to inspect that node.</role_sentinel>
 <role_talk>You talk with the person about a selected node. Read metaform://map/tools to inspect that node.</role_talk>
@@ -253,20 +249,21 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <!-- Purpose of the project connection, before the module discovery instructions. -->
 <connect_use>Use Metaform to work with this project's functional map, tickets and shared knowledge.</connect_use>
 
-<connect_catalog>Use the host-advertised handle for Metaform's metaform_catalog gateway; its name may include a host prefix. Invoke a known Metaform command through that handle with tool=&lt;name&gt; arguments={...}. Put the target command, such as map_work, in tool, not the gateway's own handle. When command names or arguments need discovery, metaform_catalog module=&lt;name&gt; loads one module and search=&lt;words&gt; finds commands. metaform://modules and metaform://&lt;module&gt;/tools also provide discovery. Read those indexes when needed; known commands and arguments can be used directly.</connect_catalog>
+<connect_catalog>Use the host-advertised handle for Metaform's metaform_catalog gateway; its name may include a host prefix. Invoke a known Metaform command through that handle with tool=&lt;name&gt; arguments={...}. Put the target command, such as map_work, in tool, not the gateway's own handle. When command names or arguments need discovery, metaform_catalog module=&lt;name&gt; loads one module and search=&lt;words&gt; finds commands. metaform://modules and metaform://&lt;module&gt;/tools also provide discovery. Read those indexes when needed; known commands and arguments can be used directly.
+Read applicable usage instructions at metaform://tools/&lt;name&gt;/instructions[/&lt;op&gt;], or invoke metaform_instructions with tool=&lt;name&gt; and optional op. If a call returns instructions_required, the target did not run; read its supplied URI or read_tool route and retry. Current receipts reuse unchanged instructions; discovery alone does not acknowledge their bodies.</connect_catalog>
 <!-- The line of metaform://role/<role> on compaction, only for an agent no runner follows, such as the
      person's own AI tool in the project folder: such a session sends Metaform no signal when it compacts the agent's
      context, so the agent says so itself. A dispatched agent's runner hears ACP's compaction signal and needs no line.
-     Also given with a session handle, catalog_handle. Empty sends nothing; guides are then given once a session
-     whatever happens to the agent's context. -->
-<connect_compaction>Metaform gives each tool's guide and node summary once a session, so if your context is compacted, call metaform_catalog with compacted=true to have them again.</connect_compaction>
+     Also given with a session handle, catalog_handle. Empty omits this reminder; instruction prerequisites still
+     check the current delivery context. -->
+<connect_compaction>When this context is compacted and no runner reports it, call metaform_catalog with compacted=true. Relevant instructions and node context become eligible again when needed. Catalog discovery can remain available; Metaform cannot establish what you retained.</connect_compaction>
 <!-- The line of metaform://role/<role>, in place of connect_compaction, for a connection whose calls name no session, the
-     July 2026 wire over HTTP, which has no session header: how to name one, so each guide is given once rather than
-     never. <handle/> is the argument that carries it. Empty sends nothing; each call then says how to read its guide. -->
-<connect_unkeyed>This connection names no session, so call metaform_catalog first: it gives you a session handle, and with it passed as <handle/> on each call each tool's guide is given you once.</connect_unkeyed>
+     July 2026 wire over HTTP, which has no session header: how to retain a logical context for receipts.
+     <handle/> is the argument that carries it. Empty sends nothing. -->
+<connect_unkeyed>This connection names no session. Keep the session handle returned by discovery or an instruction prerequisite and pass it as <handle/> on subsequent calls so instruction receipts stay in the same logical context.</connect_unkeyed>
 <!-- What metaform_catalog says first when it is called with no session named, on that wire: the handle it made.
      <handle/> is the handle, <argument/> the argument that carries it. connect_compaction follows it. -->
-<catalog_handle>Your session handle is <handle/>: pass <argument/>=<handle/> with every Metaform call, so each tool's guide is given you once.</catalog_handle>
+<catalog_handle>Your session handle is <handle/>: pass <argument/>=<handle/> with subsequent Metaform calls so instruction receipts stay in this logical context.</catalog_handle>
 <!-- The line of metaform://role/person for the person's own AI tool in a registered project's folder:
      which project the folder is, so the agent knows where it is before it reads anything. <project/> is its id. Empty
      sends nothing. -->
@@ -281,19 +278,17 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <triage_note>Results are trimmed to the fields most next steps need, so you read only those: view=full supplies full default detail while honoring explicit fields and filters, fields=[...] keeps the paths you name, view=count counts records by the named fields, and must_contain or status_equals filter lists before delivery. Meaningful false, zero and empty values remain evidence; missing and unknown remain distinct.</triage_note>
 <!-- Closes a list given trimmed at its first 25 records, when the call named no filter. <n/> is how many more. -->
 <list_cut><n/> more not shown, so you read only the records your decision needs: narrow the list with must_contain or status_equals.</list_cut>
-<!-- What metaform_catalog compacted=true answers, and metaform://runtime/compaction-state gives: the agent's context
-     was compacted, so what Metaform gave it once comes again. <n/> is how many pieces were forgotten; <open/> takes
-     compaction_open while a module is open in a listing that follows it. -->
-<compaction_state>Metaform forgot what it gave you once in this session, <n/> pieces, so each tool's guide and each node's summary come again at their next use.<open/></compaction_state>
+<!-- What metaform_catalog compacted=true and metaform://runtime/compaction-state answer. <n/> is the count of
+     cleared shown markers, not an inventory of retained model context. <open/> takes compaction_open while a
+     module is open in a listing that follows it. -->
+<compaction_state>Context compaction recorded, <n/> prior delivery markers cleared. Relevant instructions and node context become eligible again when needed. Current applicable tool instructions are required before execution. Metaform cannot establish what you retained.<open/></compaction_state>
 <compaction_open> The <module/> module is still open, so its tools stay listed to you.</compaction_open>
-<!-- In place of a tool's guide for a call that names no session, such as an HTTP client on the July 2026 wire that
-     passed no session handle: nothing can record that it was given, so the guide is not repeated on every call.
-     <tool/> is the tool. Empty sends nothing. -->
-<guide_unkeyed>This call names no session, so <tool/>'s guide is not given with it: call metaform_catalog for a session handle and pass it as session_handle on each call, so each guide is given you once; metaform_instructions tool=<tool/> reads this one now.</guide_unkeyed>
-<!-- What a second read of a glossary in one session answers, metaform://metaform, metaform://<project> or
-     map_glossary, unchanged since the first: it is in the agent's context already. <uri/> is what was read, <again/>
-     the call that reads it whole anyway. -->
-<already_read><uri/> is unchanged since you read it in this session, so it is not given again; <again/> reads it whole.</already_read>
+<!-- Legacy unkeyed-result reminder. Instruction prerequisites supply their own read route and logical-context
+     handle before execution. <tool/> is the tool. Empty omits this reminder. -->
+<guide_unkeyed>This call names no logical context. Read <tool/>'s applicable instructions through its instruction URI or metaform_instructions tool=<tool/>. Retain the returned session handle on subsequent calls so the receipt can be reused.</guide_unkeyed>
+<!-- A deduplicated resource/guide read with a current delivery receipt. <uri/> identifies the resource; <again/>
+     is the caller's available continuation, which may reuse current context or name an explicit source read. -->
+<already_read><uri/> is unchanged from its delivery receipt in this context, so its body is omitted. Available continuation: <again/>. A receipt does not establish retained understanding.</already_read>
 <module_index>Metaform is extended by named modules. Each module publishes its own capability description and commands. Read only the module tools resource needed for your work. Search commands with metaform_catalog search=&lt;words&gt;.</module_index>
 <chassis_description>Manage Metaform configuration, projects, prompts, skills and reports.</chassis_description>
 <module_tools>Commands owned by <module/>. Arguments marked ? are optional. Use metaform_catalog module=<module/> to expose these tools, or call metaform_catalog tool=&lt;exact command name&gt; arguments={...}. For argument shapes or details, call metaform_catalog tool=metaform_instructions arguments={"tool":"&lt;exact command name&gt;"} for one guide.</module_tools>

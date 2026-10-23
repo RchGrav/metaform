@@ -1,0 +1,69 @@
+{
+  "scope": "Final corrected shipped-source rendering in a temporary home without overrides. UTF-8 text bytes, not model tokens, delivery or cost.",
+  "payload_sha256": "9a87b6beec1803a3c3384a5936e2ce353cf9bdd6302df28589095d599f8199d8",
+  "skills": [
+    {
+      "name": "import-workflow",
+      "skill_md_bytes": 711,
+      "procedure_bytes": 10559,
+      "libraries_bytes": 24080,
+      "served_bytes": 34645
+    },
+    {
+      "name": "prompt-efficiency",
+      "skill_md_bytes": 576,
+      "procedure_bytes": 5088,
+      "libraries_bytes": 19841,
+      "served_bytes": 24933
+    },
+    {
+      "name": "scan",
+      "skill_md_bytes": 395,
+      "procedure_bytes": 3073,
+      "libraries_bytes": 0,
+      "served_bytes": 3073
+    },
+    {
+      "name": "sentinel",
+      "skill_md_bytes": 641,
+      "procedure_bytes": 9976,
+      "libraries_bytes": 9854,
+      "served_bytes": 19832
+    },
+    {
+      "name": "work-evidence",
+      "skill_md_bytes": 1775,
+      "procedure_bytes": 490,
+      "libraries_bytes": 0,
+      "served_bytes": 490
+    },
+    {
+      "name": "workflow-builder",
+      "skill_md_bytes": 619,
+      "procedure_bytes": 5258,
+      "libraries_bytes": 24080,
+      "served_bytes": 29344
+    },
+    {
+      "name": "workflow-efficiency",
+      "skill_md_bytes": 699,
+      "procedure_bytes": 6125,
+      "libraries_bytes": 34979,
+      "served_bytes": 41112
+    },
+    {
+      "name": "workflow-evaluator",
+      "skill_md_bytes": 623,
+      "procedure_bytes": 4027,
+      "libraries_bytes": 24080,
+      "served_bytes": 28113
+    },
+    {
+      "name": "write-workflow",
+      "skill_md_bytes": 697,
+      "procedure_bytes": 17678,
+      "libraries_bytes": 24080,
+      "served_bytes": 41764
+    }
+  ]
+}

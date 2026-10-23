@@ -106,11 +106,11 @@ If a published adaptation changes this run's operative prompt, use the supplied 
 <!-- The line workflow answer adds to the note of the ticket whose agent paused the run, after the paused_note line, so no one reads a stale "waits for you". <time/> is when, in UTC; <answer/> is the person's answer.
      Read on the ticket by the person and by the agent working it. Must not be removed: the code requires it. -->
 <answered_note>Answered <time/>: <answer/></answered_note>
-<!-- One line telling the agent to give run <run/> of project <project/> to a fresh agent, which resumes it to carry out the step.
+<!-- A child run's resume instruction and the caller's responsibility to arrange its recipient and return route.
      Returned with each run id by workflow handoff and workflow parallel.
      Must not be removed: the code requires it. -->
 <handoff>
-Run <run/> is handed to the assigned role through the recorded continuation in project <project/>. Its recipient resumes with workflow_resume to receive the subroutine and bound values, alongside its own role, functional grounding and current assignment. Completion returns through the recorded caller route.
+Child run <run/> is ready in project <project/>. Arrange its recipient through the existing assignment route, preserving requested independent or fresh execution, source inputs, functional grounding and the caller/return destination. Creating this run record alone does not start a native agent or establish its assignment binding. The recipient reads `metaform workflow resume run=<run/> --project <project/>` to receive the subroutine and bound values, alongside its own assignment context. Complete the child run through workflow_complete so its RETURN reaches the caller's run.
 </handoff>
 
 <!-- The frame that follows the scan skill in workflow scan: <workflow/> is the procedure given, marked as data, and <task/> the task given.
@@ -141,7 +141,7 @@ Their answer: <answer/>
      Shown in the person's AI tool as /metaform:<skill>, and run when the person picks one.
      Removing a child drops that slash command; the skill stays available. Off when the module is disabled or left out of the folder's modules setting. -->
 <commands>
-  <scan verb="skill" name="scan" summary="which libs a task needs. Called by every other skill first; callable alone.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
+  <scan verb="skill" name="scan" summary="identify which libraries a task needs; callable alone or from a procedure that requests it.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></scan>
   <write_workflow verb="skill" name="write_workflow" summary="author a workflow from a goal: a workflow element, its subroutines, the prompt that attaches it to elements, and the call that starts a run.">Follow this skill now. Its `# requires:` line names the libs it needs; call `workflow lib &lt;name&gt;` (the `workflow_lib` tool, or `metaform workflow lib &lt;name&gt;`) only for a lib whose marker is not already in your context.
 <result/></write_workflow>

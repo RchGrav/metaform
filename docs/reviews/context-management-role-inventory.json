@@ -1,0 +1,413 @@
+{
+  "observed_at": "2026-10-23T16:29:36Z",
+  "implementation_reference": "f63cc2e55a9f5416abc20dc0d66413055f53d551",
+  "project_scope": "Current Metaform project, not a repository-wide fixed specialist inventory",
+  "source": "Actual agents_roles and agents_specialists MCP reads, view=full. Specialist content from the local project/home registry is exported here for a GitHub-only reader.",
+  "counts": {
+    "execution_roles": 6,
+    "authored_framework_responsibilities": 23,
+    "specialties": 39
+  },
+  "execution_roles": [
+    {
+      "name": "intake",
+      "purpose": "Maps the AUE into its elements and purpose records from its source, when the person starts an intake."
+    },
+    {
+      "name": "system",
+      "purpose": "The person's own agent in the project's folder: talks with them and acts for them, owns the board so every ticket moves, waits on a decision put to them, or is closed, and speaks as their mascot when they chose one."
+    },
+    {
+      "name": "sentinel",
+      "purpose": "Takes up an issue the person raised on a node, following the sentinel skill."
+    },
+    {
+      "name": "talk",
+      "purpose": "Talks with the person about something they clicked on the map; it works no ticket."
+    },
+    {
+      "name": "prep",
+      "purpose": "Prepares a merge under review for the person, in its worktree."
+    },
+    {
+      "name": "worker",
+      "purpose": "Works one ticket at its node, handed to it by dispatch."
+    }
+  ],
+  "authored_framework_responsibilities": [
+    {
+      "name": "roundtable_follow_through",
+      "purpose": "Present finished roundtables and coordinate person-approved preparation stages.",
+      "provider": "orchestration",
+      "uri": "metaform://role/roundtable_follow_through"
+    },
+    {
+      "name": "triage",
+      "purpose": "The Liaison: interview the person, prepare functional tickets and hand the Planner their intent.",
+      "provider": "orchestration",
+      "uri": "metaform://role/triage"
+    },
+    {
+      "name": "gc",
+      "purpose": "Own a ticket, coordinate its swarm and validate delivery.",
+      "provider": "orchestration",
+      "uri": "metaform://role/gc"
+    },
+    {
+      "name": "functionality",
+      "purpose": "The Harsh Critic: independently assess delivered work and functional quality against C(T); approve, or reject with corrective tickets.",
+      "provider": "orchestration",
+      "uri": "metaform://role/functionality"
+    },
+    {
+      "name": "investigator",
+      "purpose": "Establish behavior, causes, dependencies and implementation entry points.",
+      "provider": "orchestration",
+      "uri": "metaform://role/investigator"
+    },
+    {
+      "name": "requirements",
+      "purpose": "Express requested outcomes and consequential requirements precisely.",
+      "provider": "orchestration",
+      "uri": "metaform://role/requirements"
+    },
+    {
+      "name": "planner",
+      "purpose": "Write the implementation plan and verification sequence for review.",
+      "provider": "orchestration",
+      "uri": "metaform://role/planner"
+    },
+    {
+      "name": "interviewer",
+      "purpose": "Develop an idea through guided conversation and return its brief.",
+      "provider": "orchestration",
+      "uri": "metaform://role/interviewer"
+    },
+    {
+      "name": "decomposer",
+      "purpose": "Turn the complete plan into a fresh board and dependency-ordered tickets.",
+      "provider": "orchestration",
+      "uri": "metaform://role/decomposer"
+    },
+    {
+      "name": "specialist",
+      "purpose": "Perform assigned work using domain expertise and return verification evidence.",
+      "provider": "orchestration",
+      "uri": "metaform://role/specialist"
+    },
+    {
+      "name": "harsh_critic",
+      "purpose": "Independently approve or reject delivered work and return actionable corrective tickets.",
+      "provider": "orchestration",
+      "uri": "metaform://role/harsh_critic"
+    },
+    {
+      "name": "implementer",
+      "purpose": "Produce the assigned change and establish its effect.",
+      "provider": "orchestration",
+      "uri": "metaform://role/implementer"
+    },
+    {
+      "name": "verifier",
+      "purpose": "Assess whether observed behavior establishes the requested outcome.",
+      "provider": "orchestration",
+      "uri": "metaform://role/verifier"
+    },
+    {
+      "name": "reviewer",
+      "purpose": "Examine requested behavior and implementation quality as separate judgments.",
+      "provider": "orchestration",
+      "uri": "metaform://role/reviewer"
+    },
+    {
+      "name": "integrator",
+      "purpose": "Combine assigned candidates and establish their resulting behavior.",
+      "provider": "orchestration",
+      "uri": "metaform://role/integrator"
+    },
+    {
+      "name": "architect",
+      "purpose": "Produce the complete build design and interface contracts for assigned work.",
+      "provider": "orchestration",
+      "uri": "metaform://role/architect"
+    },
+    {
+      "name": "designer",
+      "purpose": "Design clear user journeys, states and recovery behavior.",
+      "provider": "orchestration",
+      "uri": "metaform://role/designer"
+    },
+    {
+      "name": "researcher",
+      "purpose": "Investigate assigned subjects and return evidence-grounded requirements or recommendations.",
+      "provider": "orchestration",
+      "uri": "metaform://role/researcher"
+    },
+    {
+      "name": "synthesizer",
+      "purpose": "Reconcile findings into a faithful combined result.",
+      "provider": "orchestration",
+      "uri": "metaform://role/synthesizer"
+    },
+    {
+      "name": "dogfood",
+      "purpose": "Expose user-experience failures by using the actual product.",
+      "provider": "orchestration",
+      "uri": "metaform://role/dogfood"
+    },
+    {
+      "name": "release",
+      "purpose": "Prepare the assigned release candidate and materials.",
+      "provider": "orchestration",
+      "uri": "metaform://role/release"
+    },
+    {
+      "name": "facilitator",
+      "purpose": "Assign specialists to tickets, create or reuse their expertise, and carry the critic's corrections.",
+      "provider": "orchestration",
+      "uri": "metaform://role/facilitator"
+    },
+    {
+      "name": "role_creator",
+      "purpose": "Publish a reusable specialist duty requested by triage or a worker.",
+      "provider": "orchestration",
+      "uri": "metaform://role/role_creator"
+    }
+  ],
+  "specialties": [
+    {
+      "name": "agent_communication_engineer",
+      "purpose": "Build event-driven agent communication with explicit channel membership, durable logs, plain sender attribution and shared CLI/MCP commands.",
+      "uri": "metaform://role/agent_communication_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "agent_harness_integration_engineer",
+      "purpose": "Add, replace and retire ACP agent harnesses across dispatch catalog, settings, routing, ticket agents, roundtable seats and pickers, migrating stored choices and deleting retired adapters.",
+      "uri": "metaform://role/agent_harness_integration_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "async_event_worker_engineer",
+      "purpose": "Move unavoidable upstream refresh polling into owned Python worker threads while preserving existing event delivery and deterministic lifecycle.",
+      "uri": "metaform://role/async_event_worker_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "async_transport_engineer",
+      "purpose": "Refactor Python asynchronous process transports while preserving bounded buffering, protocol ordering and deterministic shutdown.",
+      "uri": "metaform://role/async_transport_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "browser_performance_engineer",
+      "purpose": "Optimize browser main-thread computation and transient indexes while preserving graph identity, visibility and interaction behavior.",
+      "uri": "metaform://role/browser_performance_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "cache_invalidation_engineer",
+      "purpose": "Repair event-driven cache invalidation while preserving dependency coverage, visibility boundaries and conservative handling of unknown changes.",
+      "uri": "metaform://role/cache_invalidation_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "character_motion_engineer",
+      "purpose": "Make browser 3D figures move true to their character through procedural locomotion, steering, banking and acts while preserving hot-path allocation rules and measured frame cost.",
+      "uri": "metaform://role/character_motion_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "context_delivery_engineer",
+      "purpose": "Bound agent startup context through selective knowledge delivery while preserving complete applicable instructions and content receipts.",
+      "uri": "metaform://role/context_delivery_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "data_migration_engineer",
+      "purpose": "Repair persisted data placement through transactional, repeatable migrations that preserve records, provenance and read contracts.",
+      "uri": "metaform://role/data_migration_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "dispatch_lifecycle_engineer",
+      "purpose": "Repair managed agent lifecycle transitions while preserving authenticated start authority, stop scope, halt admission and assignment completion.",
+      "uri": "metaform://role/dispatch_lifecycle_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "dispatch_orchestration_engineer",
+      "purpose": "Design and build durable ticket plans, dependency scheduling, isolated changes, independent checks and head-agent result delivery through existing dispatch mechanisms.",
+      "uri": "metaform://role/dispatch_orchestration_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "embedded_engine_module_engineer",
+      "purpose": "Build self-contained modules that ship their engines with Metaform, own engine lifecycle through events, and present live engine activity as browser 3D scenes.",
+      "uri": "metaform://role/embedded_engine_module_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "event_store_engineer",
+      "purpose": "Improve event-store performance, snapshot lifecycle and recovery while preserving append-only history and concurrent transaction correctness.",
+      "uri": "metaform://role/event_store_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "event_stream_engineer",
+      "purpose": "Repair Python event-stream batching deadlines and coalescing while preserving event order, scope unions and stream lifecycle.",
+      "uri": "metaform://role/event_stream_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "instruction_maintenance_engineer",
+      "purpose": "Reconcile developer instructions with current architecture, semantic foundations and proportional verification guidance.",
+      "uri": "metaform://role/instruction_maintenance_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "interactive_world_architect",
+      "purpose": "Design shared human-agent 3D world creation in Metaform (world format, scene authority, agent operations, simulation) and turn it into grounded, ordered implementation plans.",
+      "uri": "metaform://role/interactive_world_architect",
+      "provider": "agents"
+    },
+    {
+      "name": "keyboard_navigation_engineer",
+      "purpose": "Repair browser keyboard navigation across graph orientations while preserving focus ownership, selection, history and reachability.",
+      "uri": "metaform://role/keyboard_navigation_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "mcp_integration_engineer",
+      "purpose": "Repair MCP module integration boundaries while preserving supported extension contracts, runtime discovery and standalone transports.",
+      "uri": "metaform://role/mcp_integration_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "memory_query_engineer",
+      "purpose": "Optimize contextual memory graph reads and counts while preserving visibility, cross-address relations, locking and delivery receipts.",
+      "uri": "metaform://role/memory_query_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "module_lifecycle_engineer",
+      "purpose": "Repair module composition, provider dependencies and event-driven process lifecycle while preserving supported builds and public extension contracts.",
+      "uri": "metaform://role/module_lifecycle_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "onboarding_engineer",
+      "purpose": "Repair agent onboarding prompts and startup flows while preserving active requests, consent and command-line recovery.",
+      "uri": "metaform://role/onboarding_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "person_interaction_engineer",
+      "purpose": "Build shared event-driven person interactions across browser, CLI, MCP and phone surfaces with correlated decisions and actionable deduplicated errors.",
+      "uri": "metaform://role/person_interaction_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "procedural_environment_engineer",
+      "purpose": "Build parametric spatial environments with shader surfaces, canonical editable state, shared human and agent controls, and measured rendering performance.",
+      "uri": "metaform://role/procedural_environment_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "project_layer_engineer",
+      "purpose": "Inventory project stores and expose project knowledge through contextual layers or layer references while preserving storage ownership and existing data.",
+      "uri": "metaform://role/project_layer_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "python_environment_engineer",
+      "purpose": "Isolate Python candidate checks and builds with reproducible dependency evidence, caller preservation and deterministic temporary-environment cleanup.",
+      "uri": "metaform://role/python_environment_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "python_packaging_engineer",
+      "purpose": "Repair Python distribution contents and scaffold parity while preserving installed runtime behavior and canonical extension contracts.",
+      "uri": "metaform://role/python_packaging_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "python_quality_engineer",
+      "purpose": "Repair Python lint failures and diagnostic test debt while preserving behavior, useful regression coverage and reproducible CI evidence.",
+      "uri": "metaform://role/python_quality_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "spatial_ui_engineer",
+      "purpose": "Repair browser spatial UI attachment and projection across DOM and 3D rendering while preserving speaker identity, viewport layout and frame consistency.",
+      "uri": "metaform://role/spatial_ui_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "specification_reconciliation_engineer",
+      "purpose": "Reconcile specification records and design drafts with implementation evidence, remove obsolete references and verify documentation boundaries without changing runtime behavior.",
+      "uri": "metaform://role/specification_reconciliation_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "sql_projection_engineer",
+      "purpose": "Optimize SQLite list projections and page hydration while preserving consumer contracts and complete detail reads.",
+      "uri": "metaform://role/sql_projection_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "sqlite_concurrency_engineer",
+      "purpose": "Repair SQLite lock contention and busy failures across concurrent processes while preserving transaction atomicity, committed state and event delivery.",
+      "uri": "metaform://role/sqlite_concurrency_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "system_reliability_engineer",
+      "purpose": "Confirm cross-system runtime failures from live evidence, repair each at its functional owner and route the rest to responsible owners with verified evidence.",
+      "uri": "metaform://role/system_reliability_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "web_authorization_engineer",
+      "purpose": "Repair web route authorization and capability-gated controls while preserving approved owner and member access boundaries.",
+      "uri": "metaform://role/web_authorization_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "web_credential_security_engineer",
+      "purpose": "Repair browser credential renewal across reconnects and server restarts while preserving caller identity, origin checks and agent authority boundaries.",
+      "uri": "metaform://role/web_credential_security_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "web_runtime_engineer",
+      "purpose": "Replace web CLI process bridges with canonical in-process module operations while preserving caller attribution, settings and refusal contracts.",
+      "uri": "metaform://role/web_runtime_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "web_settings_engineer",
+      "purpose": "Repair web settings integration failures while preserving canonical declarations, configured values, module lifecycle and endpoint contracts.",
+      "uri": "metaform://role/web_settings_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "web_state_engineer",
+      "purpose": "Repair browser event-driven state reconciliation while preserving independent view records, cutoff rules and stable DOM nodes.",
+      "uri": "metaform://role/web_state_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "webgl_rendering_engineer",
+      "purpose": "Repair WebGL depth ordering and transparency while preserving atlas batching and measured GPU performance.",
+      "uri": "metaform://role/webgl_rendering_engineer",
+      "provider": "agents"
+    },
+    {
+      "name": "work_board_engineer",
+      "purpose": "Build named work boards and ticket grouping across persistent contextual storage, browser interaction and agent commands while preserving ticket identity, order and history.",
+      "uri": "metaform://role/work_board_engineer",
+      "provider": "agents"
+    }
+  ]
+}

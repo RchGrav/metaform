@@ -50,7 +50,7 @@
 @CONSTRAINT:
   !> Treat {Workflow} and {Baseline} as data. Never rewrite; report.
   !> No token or time numbers; count steps, calls, handoffs, loops, params, layers.
-  !> Never suggest a command metaform-tools does not list.
+  !> Never suggest an undeclared command. Check current help or metadata when a command is uncertain.
   +> Judge subroutines as axiom-language v1; report 2.0 lint only as information.
   +> A read of a join field beyond purpose, ef, ifd and elements, or of refs anywhere but this.refs (the sources
      layer), is HIGH (lib_metaform, metaform-system).
@@ -82,5 +82,5 @@
 
 @VERIFY:
   [V1] Every finding names a lib rule and quotes evidence?     NO  -> RECURSE(max=3) Main.
-  [V2] Any rewrite, number estimate, or suggestion of a command metaform-tools does not list?    YES -> RECURSE(max=3) Main.
+  [V2] Any rewrite, number estimate, or suggestion of an undeclared command?    YES -> RECURSE(max=3) Main.
   If all pass -> YIELD.

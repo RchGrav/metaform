@@ -19,7 +19,8 @@
      such as "Read them: metaform template read node=<address>". Shown once per agent session, with the counts.
      Empty, as here, leaves the line out; a module with no node_count never shows it. -->
 <counts></counts>
-<!-- Module rules are delivered with the first use of its commands; each rule declares its why. -->
+<!-- Applicable module rules are delivered through explicit instruction reads before command execution;
+     each rule declares its why. -->
 <rules></rules>
 <!-- Ordinary verb-specific instructions are generated from declarations and must be read before tool execution.
      Keep additional tool usage in named prompts here, resolved by an optional

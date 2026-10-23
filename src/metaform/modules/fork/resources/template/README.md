@@ -91,7 +91,7 @@ A receipt records delivery, without claiming that the model understood or retain
 
 The prompts in `resources/prompts.xml`, each an element named for the prompt, and where each is served, MCP-031. `instructions` is listed in the instructions agents read under "modules available."; a copy writes its own module name in place of `template`. `prompt_files.module_commands(id)` reads a loaded module's declared slash commands through the public base, returning an empty list when the module is not found.
 
-`rules` holds the module's rules, MCP-031: `<rule why="the reason">One sentence.</rule>` each, a rule an agent keeps while it works with the module and the reason it holds. The MCP server lists the rules of every enabled module at the end of `metaform://glossary`, one line each, `[<module>] <rule> Why: <why>`, so an agent reads each once. A rule without a why stops the module loading. The template's is empty; memory's shows one.
+`rules` holds the module's rules, MCP-031: `<rule why="the reason">One sentence.</rule>` each, a rule an agent keeps while it works with the module and the reason it holds. MCP includes applicable rules in the tool's instruction URI before execution, alongside its usage guide. Exact unchanged received components are reused across the module's tools, MCP-044. A rule without a why stops the module loading. The template's is empty; memory's shows one.
 
 ## Verbs
 

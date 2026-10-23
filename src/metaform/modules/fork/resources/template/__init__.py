@@ -75,8 +75,8 @@ for the prompt, never in Python, MCP-031. A module reads one with
 when a missing prompt is a defect. `instructions` is listed in the
 instructions agents read; a copy writes its own name in place of `template`.
 Its `rules` hold the module's rules, `<rule why="the reason">One sentence.</rule>`
-each; the MCP server delivers the module's rules with the first use of its
-commands, and a rule without a why stops the module loading.
+each; the MCP server requires receipt of applicable rules through instruction
+reads before executing a command, and a rule without a why stops the module loading.
 
 Module.id and Module.summary publish the capability at metaform://modules.
 Its MCP verbs appear automatically at metaform://<id>/tools, named

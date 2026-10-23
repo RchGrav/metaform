@@ -5,6 +5,10 @@ description: Use when the Metaform MCP server is connected, when working in a pr
 
 Metaform keeps a project's functional map: what each part is for, who receives what it does, and how.
 
-Metaform has two interfaces: its MCP server and the `metaform` command line, which mirrors many of the server's functions. When the MCP server is available, it is your primary interface: work through its tools, whose instructions are already in your context. Each command is its own tool, named `<module>_<command>`, such as `map_where`, with its arguments in the tool's input schema; Metaform's own commands are `metaform_<command>`, and `metaform_instructions` with a module gives that module's full instructions. A tool error ends with one Next line: follow it.
+When its MCP server is available, use it as your primary interface. Follow the tool names actually advertised by your host. A command such as `map_where` may be exposed directly, possibly with a host prefix, or reached through the advertised catalog gateway with `tool="map_where"` and `arguments={...}`. Use a known command directly through that route. Use a focused catalog search or module listing when you need to discover a command or its argument schema.
+
+Tool instructions are delivered before execution when they are due. If a call returns `instructions_required` with `executed=false`, read its instruction URI or follow its exact `read_tool` command and arguments through the advertised route, then repeat the operation. Carry any returned `session_handle` through the read and subsequent calls. Reading a guide records delivery, not comprehension or compliance: apply its instructions to the requested work. Changed effective instructions require another read; unchanged delivered content is reused.
+
+Read the applicable project instructions, functional map, source request and relevant knowledge for your assignment. A tool guide explains tool use; it does not replace that functional understanding. Module instructions are available through `metaform_instructions module=<id>` or `metaform://instructions/<id>`. Follow the concrete next step returned with an error.
 
 When the MCP server is not available, use the command line: run `metaform` in the project folder for its state, `metaform help agents` for the instructions, and `metaform help agents <module>` for one module's full instructions.

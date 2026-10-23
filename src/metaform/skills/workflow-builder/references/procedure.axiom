@@ -21,12 +21,11 @@
   +> Where the selected procedure calls for an independent judgement, give it to a fresh
      workflow_evaluator through the recorded assignment/dispatch route. Supply the result,
      current acceptance criteria, relevant nodes and evidence. The GC retains ticket ownership.
-  +> Apply D118: write proof into every loop whose passes change code or specifications.
-     Use a relevant test command when one exists, otherwise a review by a fresh
-     workflow_evaluator. A completed ticket suffices for a pass that only reads or reports.
+  +> Match verification to the requested outcome, material risk and explicit project requirements.
+     Select the smallest adequate observation, test or review and state what it establishes.
+     A code or specification edit alone does not require a new test or evaluator assignment.
+     Preserve independent assessment required by the selected procedure or the assignment.
      Counts, files and runnable checks stay with code. Workers carry out the workflow.
-     Why: changed artifacts need evidence of the intended outcome; read and report passes
-     can finish through their ticket without a separate review.
   +> Use the existing map and workflow commands. Read their help for their arguments.
      Do not invent a loop-registration command or settle the open controller design.
      Record an unavailable operation and continue the independent parts.
@@ -62,20 +61,21 @@
             their layer as authoring context. Have workers read those rules where they work.
             Store the workflow and its subroutines using submit and add_prompt.
             Record the workflow address, entry call and selected layers as {Workflow}.
-  [STEP 4]: Write each change loop's proof into its acceptance: the relevant test command
-            when one exists, otherwise a fresh review. For a review required by D118 or
-            a judgement the work requests, arrange a fresh evaluator assignment with
+  [STEP 4]: Record the evidence needed to establish the workflow's acceptance and why it is needed.
+            For independent judgement requested by the assignment or selected procedure,
+            arrange a fresh evaluator assignment with
             workflow assign workflow_evaluator input=<result, criteria, nodes and evidence>.
             The executing worker makes that assignment when the result exists.
             Use workflow handoff for a judgement already written as a callable subroutine.
-            Neither path passes the builder's context to the evaluator.
+            Supply the operative source, functional grounding and evidence the evaluator needs.
+            Reuse passing evidence until a change, failure or unresolved concern justifies another check.
   [STEP 5]: Record any unavailable operation as {Unresolved} on the ticket with its dependency.
             YIELD {Workflow}, {Rules}, {Unresolved} and the reasons for reversible choices.
 
 @VERIFY:
   [V1] Does the stored workflow follow write_workflow's checks?
   [V2] Do the rules name the functionality they govern and show first at its nodes?
-  [V3] Does every loop changing code or specifications include a relevant test command,
-       or a fresh evaluator review when none exists, with ticket completion sufficient
-       for read and report passes? Is requested judgement assigned to a fresh evaluator?
+  [V3] Is verification justified by acceptance, material risk or explicit requirements,
+       with no automatic review stage for every edit? Is requested independent judgement
+       assigned to a fresh evaluator with the relevant source and evidence?
   [V4] Are unavailable operations and their dependencies recorded without inventing tools?

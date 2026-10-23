@@ -4,14 +4,15 @@ import json
 import re
 
 import pytest
+import yaml
 
 from metaform import prompt_files
 from metaform import skills as skill_registry
 from metaform.data import Store, prompts
-from metaform.modules.mcp.server import run_tool
 from metaform.modules.workflow import MODULE, PACKAGE, SKILLS, _about, executor, runs
 from metaform.modules.workflow.binding import Prompt
 from metaform.modules.workflow.element import ElementValue
+from metaform.modules.workflow.tests.test_workflow import instructed_tool
 
 pytestmark = [pytest.mark.req('MCP-034'), pytest.mark.kind('fixture')]
 
@@ -47,13 +48,16 @@ def test_skills_list_the_libs_their_requires_line_names(run, project_folder):
         'workflow_efficiency': ['lib_axiom', 'lib_metaform', 'lib_workflow', 'lib_quality'],
         'prompt_efficiency': ['lib_axiom', 'lib_quality'],
         'workflow_builder': ['lib_axiom', 'lib_metaform', 'lib_workflow'],
+        'work_evidence': [],
     }
 
 
 def test_skills_list_what_each_skill_header_says(run, project_folder):
     for one in read(run, project_folder, 'workflow', 'skills'):
-        flat = ' '.join(skill_registry.procedure(one['name']).replace('#', ' ').split())
-        assert one['about'] and f"skill: {one['name']} · {one['about']} requires:" in flat
+        frontmatter = yaml.safe_load(skill_registry.read(one['name'], 'SKILL.md').split('---', 2)[1])
+        assert one['about'] == frontmatter['description']
+        assert one['requires'] == frontmatter['metadata']['ing.metaform.requires'].split()
+        assert frontmatter['metadata']['ing.metaform.discover'] == 'true'
 
 
 def test_assignment_serves_each_lib_once_then_skill_then_input_and_closes(run, project_folder):
@@ -69,7 +73,7 @@ def test_assignment_serves_each_lib_once_then_skill_then_input_and_closes(run, p
     assert markers['lib_quality'] not in head
     assert served.index(given) > served.index(skill)
 
-    failed, blocks = asyncio.run(run_tool(project_folder, 'workflow_resume', {'run': word}))
+    failed, blocks = asyncio.run(instructed_tool(project_folder, 'workflow_resume', {'run': word}))
     assert not failed and skill in blocks[-1] and given in blocks[-1]
     assert f'metaform workflow complete run={word} --project proj' in served
 

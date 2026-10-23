@@ -314,6 +314,136 @@ task, compaction and stateless-HTTP scenarios pass across focused runs. The
 [baseline record](acp-baseline-checks.json) retains the exact migration results,
 including the obsolete assertions corrected and the separate final-case rerun.
 
+## Continuation: missed prompting and Pro handoff, 2026-10-23
+
+The prior assignment was completed and committed: native efficiency work at
+`29cd88bd`, followed by purpose context and MCP instruction prerequisites at
+`f63cc2e5`. Substantial context-management work was nevertheless ignored by that
+last task. It did not systematically migrate existing prompting or reorganize
+roles, specialties and skills around useful context reuse. This preparation
+continues the same assignment, repairs demonstrated prompt defects and hands
+the broader reorganization to the user's existing Pro web context.
+
+The [Pro handoff](context-management-pro-handoff.md) retains exact current user
+direction, the prior scope, decisions still open, source locations, migration
+constraints and an actual native-efficiency evaluation plan. Its
+[execution appendix](context-management-pro-execution.md) distinguishes prompt
+resolution, skill loading, assignments, workflow run records, process starts,
+ACP/native sessions and actual model requests. It proposes classifications
+without implementing or silently approving the future taxonomy. The live
+[6/23/39 inventory](context-management-role-inventory.json) and selective
+[role source snapshots](context-management-role-samples.json) make local
+project/home data available to a GitHub-only reviewer. The preparation also
+exports [all 62 current duty resolutions](context-management-current-duty-sources.json),
+storing shared bodies once with a line index for selective inspection.
+
+### Corrections made now
+
+| Missed problem | Correction |
+| --- | --- |
+| Base skill and chassis guidance said instructions were already in context and assumed a particular tool exposure shape. | Use the actual advertised direct tool or gateway, compact catalog discovery, returned `read_tool` route and the existing logical-context handle. Receipt establishes delivery. |
+| Module/tool headings, compaction and handle prompts promised once-per-session or after-use guidance. | Describe explicit pre-use reads and current content/context receipts. Reuse unchanged components rather than claiming all guidance is already available. |
+| Assigned agents were told to reread exact duties already delivered. | Use supplied pinned components, with source retrieval when absent or relevant. Do not replay every role. |
+| System guidance required every no-task record to acquire work or close. | Preserve visible non-executable planning stages. |
+| Routine peer messages were promised on a later model turn. | Describe their actual record/UI availability and distinguish actionable delivery routes. No transport behavior changes here. |
+| Builder/evaluator procedures required tests or fresh evaluation for every modifying pass, and routine checks required advance narration. | Select evidence for requested acceptance, material risk and explicit requirements. Retain requested independence/configured checks without blanket per-edit stages or narration. |
+| Skills treated a copied command reference as an exhaustive list. | Current module/command declarations are authoritative. Preserve the prohibition on invented or unavailable commands without blocking valid extensions. |
+| Workflow handoff text promised native continuation without a demonstrated binding. | Restore the usable resume command and state that a run/handoff record alone does not launch or bind a recipient. Actual caller/host execution remains a separate integration question. |
+| Scan descriptions claimed every skill invoked it first. | Describe optional scanning according to the actual procedure and keep canonical metadata and slash summary consistent. |
+| System prompting prohibited native children using a false total-invisibility claim. | State adapter-dependent observation and parent-mediated messaging; follow user delegation preferences and retain accountable work/results/return routes. Full stop, accounting and assignment parity is not claimed. |
+
+The original immutable glossary and both Canonical Intake sources remain
+unchanged. Functional purpose, exact user source, C(T), adaptive specifications,
+communication and existing explicit controls are retained. Broad duplication
+of procedure libraries, duty categories and workflow grammar remains for Pro,
+rather than being removed without an execution/source migration design.
+
+### A source-delivery defect behind the missed migration
+
+Older generated specialties stored legacy prompt names such as
+`orchestration:common`. The prompt database could resolve their selected
+history, but legacy-name source discovery did not independently refresh changed
+shipped common text. A canonical lookup elsewhere could hide the defect. It
+also obscured definition-source provenance and could duplicate a legacy
+specialist component.
+
+Two isolated cases first reproduced the defect in 1.97 seconds. A read-time
+normalization in `agents/roles.py` now resolves generated module references by
+canonical address. Existing same-context/epoch legacy receipts and accepted
+change notices remain usable only with the exact content fingerprint. Selected
+common/duty edits, generated definition/history, historical receipts and pinned
+assignment bytes are preserved. No schema migration or bulk user-body rewrite
+was introduced. Changed bodies and new context epochs remain due.
+
+Independent review then reproduced a coexistence edge: an older canonical
+receipt could mask a later accepted legacy-name body in the same epoch. Five
+focused cases failed before the correction. New writes now normalize supported
+prompt receipt identities while retaining original component metadata. Parsed
+UTC acceptance order and conservative conflict handling govern historical
+aliases. Untimed reference-dedup state is normalized only after an actual
+accepted notice. Dynamic non-prompt component names retain their exact
+identities. No historical body receipt is deleted or rewritten.
+
+The [source-state record](context-management-source-state.json) includes actual
+fresh generated-role resolution after this correction and six current selected
+skill procedures. It establishes source selection, not delivery to a running
+assigned agent. Custom selected edits, trials, fallbacks and pinned snapshots
+are not indiscriminately replaced.
+
+Two known local native base-skill files still contained an older per-module-tool
+bootstrap. Both were verified byte-for-byte against shipped `c7ca35b5`, backed
+up through the install backup helper and refreshed to the corrected repository
+base skill. The record preserves before/after hashes and backup locations.
+Broader native skill deployments, customized files and harness registrations
+were not changed. Already loaded native instructions are not surgically
+replaced by this file refresh.
+
+### Evidence and limits of this continuation
+
+- Thirty-one focused runtime prompt/source/receipt checks passed. Six additional
+  existing native-child/system-prompt checks passed in 13.24 seconds, using fake
+  adapters rather than new native inference.
+- Forty-five prompt-migration and MCP-skill access checks passed in 25.91
+  seconds. A broader related selection initially had 28 passes and three
+  failures. One scan-summary mismatch was introduced by this correction and
+  fixed. Two stale metadata fixtures predated this continuation: they omitted
+  already-discoverable `work-evidence` or assumed comment-header metadata
+  instead of authoritative SKILL frontmatter. The final five affected checks
+  passed in 11.21 seconds with exact registry/discovery/content assertions.
+- The earlier workflow diagnostic had one pass and two failures in 5.47 seconds.
+  The missing usable resume text and old unguided MCP test client were repaired
+  in the related prompt/fixture migration, preserving frozen text, private
+  return scope and once-per-assignment library order/content assertions.
+- The agents suite initially passed 38 cases after the source-reference fix.
+  Following the independent mixed-alias finding, the final suite passed all
+  44 cases in 34.62 seconds, including precise chronology, equal-time conflicts,
+  current epochs, source/metadata preservation and dynamic-name identity.
+  These runs overlap and are not summed.
+- Whole-project Pyright reports zero errors and warnings. Changed Python files
+  pass Ruff. Prompt XML, metadata/JSON and local evidence links are checked.
+  The earlier seven unrelated CI-scope Ruff diagnostics remain outside this
+  task; no whole-repository green claim is made.
+- [Nine-skill text measurements](context-management-skill-bytes.json) use a
+  temporary home without overrides. They are UTF-8 source/rendered bytes, not
+  model tokens, accepted native delivery, cached input or billed cost. Some
+  procedures include 24–35 kB of libraries. Simply converting a role into a
+  skill does not make that content free or eliminate repeated library loads.
+- No new paid/native inference experiment was run. The earlier native results
+  remain attributed to their original source and workloads. Current tool
+  prerequisites, Fac commissioning and the proposed skill conversion have not
+  been isolated in a new matched inference-cost comparison.
+- GitHub repository access works, but an authenticated read of exact local
+  `f63cc2e5` returned “No commit found for the ref”. The handoff therefore
+  includes a portable source/evidence snapshot. A default-branch read must not
+  silently substitute older code for this implementation.
+
+CTX-095 and amendments to BASE-054/055/056 and D116/117/118 record the current
+owner direction so historical blanket-builder and blanket-verification text
+does not regain authority. D124 retains the mechanisms still open for Pro.
+Current planning remains ordinary knowledge in its named layer, exported in
+[the planning snapshot](context-management-planning-intent.json). The broad
+role/skill reorganization is explicitly unbuilt.
+
 ## Initial implementation verification (`8df925ee`)
 
 Checks ran on Linux with Python 3.13. Passing counts below describe separate runs with overlapping coverage and must not be added together.

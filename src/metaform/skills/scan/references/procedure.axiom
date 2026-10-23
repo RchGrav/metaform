@@ -1,5 +1,5 @@
 #! AXIOM/2.0 name=scan strict=2
-# skill: scan · which libs a task needs. Called by every other skill first; callable alone.
+# skill: scan · identify which libraries a task needs; callable alone or from a procedure that requests it.
 # requires: none
 
 @STATE_INIT:
@@ -19,8 +19,10 @@
                          workflow_efficiency -> lib_axiom, lib_metaform, lib_workflow, lib_quality
                          prompt_efficiency -> lib_axiom, lib_quality
                          other -> what the signals say, else lib_axiom
-  +> The skill itself (write_workflow, import_workflow, ...) is fetched with `workflow skill <name>`; it carries
-     its own examples and procedure, so no engine or example lib is loaded.
+  +> metaform_skills op=load name=<name> over MCP returns the selected procedure and its required libraries.
+     With workflow enabled, metaform workflow skill <name> on the command line returns only the raw procedure;
+     read needed named libraries with metaform workflow lib <name>. Reuse libraries already available.
+     No separate engine or example library is needed.
   +> Signals that add a lib: Axiom modules or operators -> lib_axiom; AUE/CQU/DE/SE/NE, join, layer,
      namespace address, this., ask -> lib_metaform; workflow.*, subroutine, PARAM, RETURN, handoff, run id,
      `{Element_A}`, delexical -> lib_workflow; lint, optimize, register, [KNOWN]/[INFERRED], "plain" -> lib_quality.
@@ -44,7 +46,9 @@
 @EXECUTE_PIPELINE (Scan):
   [STEP 1]: ∇({Workflow}, {Task}) => {Needed} := baseline for {Task} ∪ libs the signals name.
   [STEP 2]: Δ => {Load} := {Needed} minus {Context}, in the fixed order, each with its reason.
-  [STEP 3]: YIELD:  SCAN task=<task>  already loaded: <...>  load now: <lib (reason)>, ...  call: workflow lib <name>
+  [STEP 3]: YIELD: SCAN task=<task> already loaded: <...> load now: <lib (reason)>, ...
+            Read each needed library from the selected skill's references/<lib>.md;
+            with workflow enabled, metaform workflow lib <name> is also available.
 
 @VERIFY:
   [V1] Nothing in {Load} is in {Context}?        NO -> RECURSE(max=1) Scan.

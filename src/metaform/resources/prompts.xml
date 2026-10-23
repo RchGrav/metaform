@@ -32,7 +32,7 @@ modules available.
 <active><module/>: when you need it, call metaform_instructions with module <module/>.</active>
 <!-- Tells the agent where a module's instructions and a command's arguments are. Printed after the module list, in the
      compact form of the guide only. Must be present: the code requires it. -->
-<more>A module's instructions: call metaform_instructions with module and its id. A command's arguments: the input schema of its tool, &lt;module&gt;_&lt;command&gt;.</more>
+<more>A module's instructions: metaform_instructions module=&lt;id&gt; over MCP, or metaform help agents &lt;module&gt; on the command line. Use the host's advertised direct tools or catalog gateway for MCP commands. Discover only the commands and argument schemas you need. If a call returns instructions_required, read its instruction URI or follow read_tool, retain any session_handle, then repeat the operation.</more>
 <!-- The list of registered projects; <projects/> takes their ids. Printed in the guide when the folder is in no
      registered project and at least one project is registered. Must be present: the code requires it. -->
 <registered>Registered projects: <projects/>.</registered>

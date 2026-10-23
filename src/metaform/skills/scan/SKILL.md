@@ -1,6 +1,6 @@
 ---
 name: scan
-description: "which libs a task needs. Called by every other skill first; callable alone."
+description: "identify which libraries a task needs; callable alone or from a procedure that requests it."
 metadata:
   ing.metaform.address: "prompt.skill.scan"
   ing.metaform.discover: "true"

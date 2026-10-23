@@ -1,0 +1,291 @@
+{
+  "observed_at": "2026-10-23",
+  "layer": "planned_capabilities",
+  "scope": "Current ordinary planning knowledge. Records are not executable work or independently staged base elements. The role/skill/Facilitator proposal is 31fe07691c9749949eaa5923d13829cd; exact continuation source is separately retained on code.graph.knowledge#45.",
+  "count": 8,
+  "records": [
+    {
+      "id": "1d770800c0e7418295c40f2b18cab6c8",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "321068e70f7d4bb3a38e491b4af7a762"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "A provider module describes its supported operations and connects those operations to the provider's API or an available harness.",
+        "implementation_state": "unbuilt",
+        "name": "Provider integrations",
+        "open_questions": [
+          "Exact shared operation contract and first providers remain to be finalized."
+        ],
+        "purpose": "Let project agents use an enabled service through a consistent module contract.",
+        "source": "User proposed an OpenRouter module, an ElevenLabs module, an OpenAI module and a provider template."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "b9e4dc3a67424ba4bd7caff5174ea6ca",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "f558a72b84f749609114f62e186fbae5"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "Structured media indexes collect enabled providers' descriptions, capabilities, account readiness, price units and links to the applicable tool instructions.",
+        "implementation_state": "unbuilt",
+        "name": "Service discovery",
+        "open_questions": [
+          "Final discovery URI layout and task-specific Auto/Prompt preferences remain open."
+        ],
+        "purpose": "Let an agent find a suitable available media service without reconstructing its API or loading every schema at startup.",
+        "source": "User proposed metaform://tools/media/image,video,audio and provider-specific generate/integrate discovery."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "b2102e303a2143668315630440b3f0da",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "23e184b89bf7437b9f8d4cf5f5566ceb"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "A provider panel presents credentials setup, readiness, descriptions and filtered operation/model choices using shared declarations.",
+        "implementation_state": "unbuilt",
+        "name": "Provider configuration",
+        "open_questions": [
+          "Credential storage implementation and detailed field rendering remain open."
+        ],
+        "purpose": "Let the person discover, connect and configure services through the web interface.",
+        "source": "User requested a standard settings panel per provider and API-key management through the web GUI."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "ab702048e8424efeb7dbf847957b33fa",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "3c8032409f9549bfad35c68c83f387a3"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "An adapted module template supplies the construction instructions and declarations for discovery, configuration, operation instructions and MCP exposure.",
+        "implementation_state": "unbuilt",
+        "name": "Provider module template",
+        "open_questions": [
+          "Provider-specific API handlers must be implemented and checked; the template does not establish all advertised services as available."
+        ],
+        "purpose": "Let a user-facing agent add a requested provider using the existing extension system.",
+        "source": "User requested a bundled provider template with an exact agent-facing construction process."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "53f874b99194487eb2fee8cb9f33b619",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "23e184b89bf7437b9f8d4cf5f5566ceb"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "A live project view links selected page components to a 2D layout and functional context; a modifier-click directs agent work and visible activity follows real updates.",
+        "implementation_state": "unbuilt",
+        "name": "Interactive project preview",
+        "open_questions": [
+          "Preview integration, selection/source association and activity presentation remain open."
+        ],
+        "purpose": "Let the person inspect and direct website changes in their working preview.",
+        "source": "User proposed the large-pane website preview, visible agents, modifier-click interaction and a 2D graph of site layout."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "e3d0cb21b9eb4b90889582a26537d9e7",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "b59ad6dcd0c741ada5df5d3c974ee59e"
+      },
+      "value": {
+        "design_status": "High-level planning intent; detailed design remains open.",
+        "encounter_function": "The frontend reports installation, authentication and capability status, offers supported installation paths, and presents login URLs from the harness's own authentication flow, including WSL2 use.",
+        "implementation_state": "unbuilt",
+        "name": "Harness setup",
+        "open_questions": [
+          "Supported installation and terminal/device-login flows require provider-specific implementation."
+        ],
+        "purpose": "Reduce the setup knowledge needed to install a supported harness and complete sign-in.",
+        "source": "User requested harness detection, installation from a menu and assistance opening authentication URLs."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "9b46a0299942442aa85895496ed66723",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "f558a72b84f749609114f62e186fbae5"
+      },
+      "value": {
+        "design_status": "High-level planning intent; provider operations and precise interfaces remain open.",
+        "encounter_function": "Provider-contributed tools perform supported operations, while separately addressable instructions explain direct use and API integration for image, video and audio tasks.",
+        "implementation_state": "unbuilt",
+        "name": "Media generation, editing and integration guidance",
+        "open_questions": [
+          "Exact operations and supported providers are not finalized.",
+          "Real-time streaming and generated media jobs must be described according to implemented capabilities."
+        ],
+        "purpose": "Let an agent produce or edit a requested media asset, or incorporate the provider's media capability into a project.",
+        "source": "User distinguished provider-specific generate and integrate entries: one leads to documentation or an API cheatsheet and the other generates audio."
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "Current user conversation; purpose-context work code.graph.knowledge#44"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    },
+    {
+      "id": "31fe07691c9749949eaa5923d13829cd",
+      "layer_id": "56f61ae9117c47a1b2a99095ac72cfed",
+      "layer": "planned_capabilities",
+      "target": {
+        "kind": "element",
+        "id": "254c5a79c8a447ddb0f430f85c7b4328"
+      },
+      "value": {
+        "design_status": "User proposal under discussion, clarified to identify the existing Facilitator. Exact skill packaging and migration remain to be finalized. Existing role identity, assignment, source/version tracking and tool instruction prerequisites remain relevant.",
+        "encounter_function": "Proposed packaging: expose existing roles as native skills. Expose the existing Facilitator as the single specialist entry skill, using its existing specialist discovery and role-creation responsibilities and the existing specialist registry.",
+        "implementation_state": "unbuilt",
+        "name": "Native role skills with the Facilitator as the specialist entry point",
+        "open_questions": [
+          "Which existing roles should appear as native discovery entries, and how should their descriptions trigger appropriate activation?",
+          "How should skill packages be generated from the same authoritative role sources without duplicate delivery?",
+          "How should the Facilitator skill expose its existing discovery and creation functions while retaining existing specialist assignment behavior?"
+        ],
+        "purpose": "Let a compatible harness discover Metaform role instructions while avoiding one native skill-catalog entry per specialist.",
+        "source": "Well I was thinking to convert the roles into skills so they are autodiscovered, but then stack the specialists behind a single skill\n\nthis is called the facilitator"
+      },
+      "link": null,
+      "refs": [
+        {
+          "key": "source",
+          "value": "User conversation, 2026-10-23: native role skills and a single specialist skill proposal"
+        }
+      ],
+      "extra": {
+        "instruction": false
+      },
+      "state": null,
+      "orphaned": false,
+      "read_first": false,
+      "always_show": false,
+      "notices": []
+    }
+  ]
+}

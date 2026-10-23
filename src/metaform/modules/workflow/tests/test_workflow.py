@@ -5,7 +5,7 @@ import re
 import pytest
 
 from metaform.data import Store
-from metaform.modules.mcp.server import run_tool
+from metaform.modules.mcp.server import read_resource_text, run_tool
 from metaform.modules.workflow import catalog, runs
 from tests.storekit import small_map
 
@@ -34,6 +34,23 @@ SCRIPT = '''@STATE_INIT:
 
 def read(run, folder, *words):
     return json.loads(run(*words, '--json', cwd=folder).stdout)
+
+
+async def instructed_tool(folder, name, arguments):
+    """A workflow client reads a due guide before retrying the original operation in the same context."""
+    session = 'workflow-functional-test'
+    failed, blocks = await run_tool(folder, name, arguments, session=session)
+    if failed:
+        try:
+            refusal = json.loads(blocks[-1])
+        except ValueError:
+            refusal = None
+        if isinstance(refusal, dict) and refusal.get('error') == 'instructions_required':
+            assert refusal['executed'] is False
+            guide = await read_resource_text(folder, refusal['read'], session=session)
+            assert guide and guide[0].strip()
+            failed, blocks = await run_tool(folder, name, arguments, session=session)
+    return failed, blocks
 
 
 def test_cli_stored_call_fresh_handoff_frozen_text_and_return(run, store, project_folder):
@@ -72,7 +89,7 @@ def test_mcp_run_id_resumes_and_returns_the_same_call(store, project_folder):
     catalog.submit_prompt(store, ADDRESS, 'procedures', 'review', SCRIPT)
     def invoke(name, args):
         import asyncio
-        failed, blocks = asyncio.run(run_tool(project_folder, f'workflow_{name}', args))
+        failed, blocks = asyncio.run(instructed_tool(project_folder, f'workflow_{name}', args))
         assert not failed, blocks
         return json.loads(blocks[-1])
 
@@ -120,7 +137,6 @@ def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, pro
     import asyncio
 
     from metaform.data import Node, prompts
-    from metaform.modules.mcp.server import run_tool
     from tests.storekit import PROVENANCE
 
     small_map(store)
@@ -134,7 +150,8 @@ def test_preprocess_cli_mcp_and_setting_prepare_the_same_context(run, store, pro
     assert prepared['prompt'].startswith(text)
     assert 'Timer practice.' in prepared['prompt'] and 'Alarm practice.' not in prepared['prompt']
     assert prepared['scope'] == 'context'
-    failed, blocks = asyncio.run(run_tool(project_folder, 'workflow_preprocess', {'text': text, 'addresses': addresses}))
+    failed, blocks = asyncio.run(instructed_tool(project_folder, 'workflow_preprocess',
+                                               {'text': text, 'addresses': addresses}))
     assert not failed, blocks
     assert json.loads(blocks[-1]) == prepared
     saved = json.loads(run('prompt', 'save', 'prepared-review', prepared['prompt'], '--json',
@@ -259,5 +276,5 @@ def test_a_call_or_export_that_does_not_bind_is_the_callers_error_with_its_next_
         failed = run(*arguments, cwd=project_folder, ok=False)
         assert failed.returncode == 2, failed.stderr
         assert failed.stderr.count('\nNext: ') == 1 and 'StopIteration' not in failed.stderr
-    failed, blocks = asyncio.run(run_tool(project_folder, 'workflow_run', {'call': f'{ADDRESS}.review()'}))
+    failed, blocks = asyncio.run(instructed_tool(project_folder, 'workflow_run', {'call': f'{ADDRESS}.review()'}))
     assert failed and 'Missing required parameter: target' in blocks[-1] and 'feedback' not in blocks[-1]

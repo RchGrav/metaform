@@ -25,7 +25,8 @@
   +> Every step, condition, loop, route and error comes from the text.
   +> Every project-specific name and address in the output is a placeholder.
   +> During ingest a handoff is marked; its run is started at run time.
-  !> Never invent a command metaform-tools does not list; the delexicalization script is not built (BASE-051), you do it by hand.
+  !> Never invent an undeclared command. Verify needed forms through current help or metadata.
+     The delexicalization script is not built (BASE-051), so do that conversion by hand.
   +> Every mention of an element becomes a lettered placeholder, the same element always the same letter.
   +> Each placeholder a step uses is a PARAM of that step's subroutine.
   +> What the text leaves unstated becomes a PARAM the caller passes: acceptance=PARAM, max_attempts=PARAM.
@@ -139,7 +140,7 @@
             Δ => {Subroutines}; {Entry_Subroutine} := the first step; {Handoffs}.
   [STEP 4]: Submit. SUBMIT the workflow element into {Target_Layer} with {Layers}; SUBMIT each PROMPT; EXPORT
             `<workflow name>.metaform` (metaform-tools: submit workflow, submit prompt, export workflow).
-            A step that needs a command metaform-tools does not list: {Stopped_At}, and go on.
+            A step needing an operation current command metadata does not declare: {Stopped_At}, and go on.
   [STEP 5]: YIELD:
             PLACEHOLDERS (delexicalized by hand; script not built, BASE-051): one line per letter
             WORKFLOW {Workflow_Addr} "<reading>"  layer {Target_Layer}  brings {Layers}

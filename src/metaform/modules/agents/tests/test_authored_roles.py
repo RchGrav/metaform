@@ -323,6 +323,81 @@ def test_generated_role_resolves_selected_override_without_rewriting_definition_
     assert duty['text'] == 'The original authored duty.'
 
 
+@pytest.mark.parametrize('selected_common', [False, True])
+def test_legacy_generated_references_refresh_shipped_sources_and_keep_selected_edits(
+        project_folder, tmp_path, monkeypatch, selected_common):
+    import copy
+    import hashlib
+    from pathlib import Path
+
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    source = Path(str(prompt_files._folder('orchestration'))) / 'resources' / 'prompts.xml'
+    package = tmp_path / 'orchestration'
+    (package / 'resources').mkdir(parents=True)
+    copied = package / 'resources' / 'prompts.xml'
+    written = source.read_text(encoding='utf-8')
+    copied.write_text(written, encoding='utf-8')
+    folder = prompt_files._folder
+    monkeypatch.setattr(prompt_files, '_folder', lambda owner: package if owner == 'orchestration' else folder(owner))
+    original = authored.publish(ctx, 'legacy_auditor', 'Inspect current sources.', 'Original definition duty.')
+    pinned = copy.deepcopy(original)
+    duty_name = original['components'][-1]['name']
+    selected_duty, _ = prompt_files.save_edit(duty_name.removeprefix('prompt.'), 'Selected generated duty.')
+    if selected_common:
+        prompt_files.save_edit('orchestration:common', 'The person selected this shared duty.')
+    before = authored.resolve(ctx, 'legacy_auditor')
+    legacy_common = {**before['components'][0], 'name': 'orchestration:common'}
+    record_agent_context(project_folder, 'legacy-consumer', [legacy_common])
+    with ctx.require_store().tables() as tx:
+        tx.update('receipts', {'session_id': 'legacy-consumer', 'epoch': 0, 'name': 'prompt.orchestration:common'},
+                  {'name': 'orchestration:common'})  # Preserve an actual pre-canonicalization receipt fixture.
+    # Match persisted definitions from before prompt addresses were canonical. No stored definition or pinned
+    # assignment should be rewritten to repair the current source lookup.
+    with ctx.require_store().tables() as tx:
+        tx.update('definitions', {'name': 'legacy_auditor'}, {'prompts': [
+            'orchestration:common', 'orchestration:specialist', duty_name.removeprefix('prompt.')]})
+        saved_definition = tx.get('definitions', {'name': 'legacy_auditor'})
+        saved_history = tx.rows('definition_history', {'name': 'legacy_auditor'}, limit=0).results
+    copied.write_text(written.replace('<common>', '<common>New shared source instruction. ', 1), encoding='utf-8')
+    # This must be the first source resolution after the edit. Warming the canonical common lookup would hide
+    # the legacy path's failure to register the changed shipped source.
+    resolved = authored.resolve(ctx, 'legacy_auditor')
+    common = resolved['components'][0]
+    assert common['text'].startswith('The person selected this shared duty.' if selected_common
+                                     else 'New shared source instruction.')
+    assert common['source']['path'] == str(copied)
+    common, specialist, duty = resolved['components']
+    assert not resolved['problems']
+    assert [one['name'] for one in resolved['components']] == [
+        'prompt.orchestration:common', 'prompt.orchestration:specialist', duty_name]
+    current_source = prompt_files.body(prompt_files._element(package, 'common'))
+    assert common['source']['shipped_identity'] == hashlib.sha256(current_source.encode()).hexdigest()
+    assert common['origin'] == ('edited' if selected_common else 'shipped')
+    assert duty['text'] == 'Selected generated duty.'
+    assert duty['actual_version_id'] == selected_duty.version_id
+    assert duty['source']['definition_version_id'] == original['version_id']
+    assert specialist['name'] == 'prompt.orchestration:specialist'
+    notices = authored.changes(ctx, 'legacy-consumer', 'legacy_auditor')
+    assert [notice['name'] for notice in notices] == ([] if selected_common else ['prompt.orchestration:common'])
+    # Equal already-delivered bodies stay consumed even when their historical component name was an alias.
+    assert bool(prepare_agent_context(project_folder, 'legacy-consumer', [common])['components']) is not selected_common
+    if notices:
+        authored.delivered_changes(ctx, 'legacy-consumer', [{**notices[0], 'name': 'orchestration:common'}])
+        assert authored.changes(ctx, 'legacy-consumer', 'legacy_auditor') == []
+        # A consumed change reference does not acknowledge the revised instruction body.
+        assert prepare_agent_context(project_folder, 'legacy-consumer', [common])['components']
+    with ctx.require_store().tables(write=False) as tx:
+        assert tx.get('definitions', {'name': 'legacy_auditor'}) == saved_definition
+        assert tx.rows('definition_history', {'name': 'legacy_auditor'}, limit=0).results == saved_history
+        receipt = tx.get('receipts', {'session_id': 'legacy-consumer', 'epoch': 0, 'name': 'orchestration:common'})
+    assert receipt['component'] == legacy_common
+    assert original == pinned
+    advance_agent_context(project_folder, 'legacy-consumer', reason='actual_compaction')
+    assert prepare_agent_context(project_folder, 'legacy-consumer', [common])['components']
+    assert authored.changes(ctx, 'legacy-consumer', 'legacy_auditor') == []
+
+
 def test_changed_role_references_require_consumed_body_and_accepted_notice(project_folder):
     ctx = context('agents', project_folder)
     authored = service(project_folder)
@@ -349,6 +424,102 @@ def test_changed_role_references_require_consumed_body_and_accepted_notice(proje
     assert authored.changes(ctx, 'consumer', 'changing_auditor') == []
     prompt_files.save_edit(name, 'Original instruction.')
     assert len(authored.changes(ctx, 'consumer', 'changing_auditor')) == 1
+
+
+@pytest.mark.parametrize('historical', [None, 'later_alias', 'equal_time', 'fractional_canonical'])
+def test_mixed_prompt_aliases_follow_the_last_accepted_body_without_rewriting_its_source(project_folder, historical):
+    import copy
+
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    name, alias = 'prompt.orchestration:common', 'orchestration:common'
+    prompt_files.save_edit(name, 'Pinned shared duty A.')
+    first = authored.resolve(ctx, 'gc')['components'][0]
+    prompt_files.save_edit(name, 'Current shared duty B.')
+    current = authored.resolve(ctx, 'gc')['components'][0]
+    pinned = {**first, 'name': alias}
+    retained_snapshot = copy.deepcopy(pinned)
+    record_agent_context(project_folder, 'mixed-alias', [current])
+    record_agent_context(project_folder, 'mixed-alias', [pinned], channel='pinned_assignment')
+    if historical:
+        # Old releases persisted both spellings, with timestamps only to the second. Fractional timestamps must
+        # compare as UTC instants, and equal-time conflicts cannot establish which accepted body was active last.
+        with ctx.require_store().tables() as tx:
+            canonical_key = {'session_id': 'mixed-alias', 'epoch': 0, 'name': name}
+            row = tx.get('receipts', canonical_key)
+            tx.update('receipts', canonical_key, {**row, 'fingerprint': current['rendered_fingerprint'],
+                'component': current, 'at': '2000-01-01T00:00:00.123Z' if historical == 'fractional_canonical'
+                                             else '2000-01-01T00:00:00Z'})
+            alias_key = {**canonical_key, 'name': alias}
+            old = {**row, **alias_key, 'fingerprint': first['rendered_fingerprint'], 'component': pinned,
+                   'at': '2000-01-01T00:00:01Z' if historical == 'later_alias' else '2000-01-01T00:00:00Z'}
+            if tx.get('receipts', alias_key):
+                tx.update('receipts', alias_key, old)
+            else:
+                tx.insert('receipts', old)
+    due = prepare_agent_context(project_folder, 'mixed-alias', [current])
+    notices = authored.changes(ctx, 'mixed-alias', 'gc')
+    if historical == 'fractional_canonical':
+        assert due['components'] == [] and notices == []
+    else:
+        assert len(due['components']) == len(notices) == 1
+        assert due['components'][0]['active_fingerprint'] == current['rendered_fingerprint']
+        assert 'Current shared duty B.' not in due['text'], 'Already delivered bodies need only activation references.'
+    # Accepting the pinned alias again must become active even if its old per-name fingerprint was unchanged.
+    record_agent_context(project_folder, 'mixed-alias', [pinned], channel='pinned_assignment')
+    assert prepare_agent_context(project_folder, 'mixed-alias', [current])['components']
+    assert authored.changes(ctx, 'mixed-alias', 'gc')
+    with ctx.require_store().tables(write=False) as tx:
+        observed = tx.get('receipts', {'session_id': 'mixed-alias', 'epoch': 0, 'name': name})
+    assert observed['component'] == pinned
+    assert pinned == retained_snapshot
+    restored = prepare_agent_context(project_folder, 'mixed-alias', [current])
+    record_agent_context(project_folder, 'mixed-alias', restored['components'])
+    assert prepare_agent_context(project_folder, 'mixed-alias', [current])['components'] == []
+    assert authored.changes(ctx, 'mixed-alias', 'gc') == []
+    advance_agent_context(project_folder, 'mixed-alias', reason='actual_compaction')
+    fresh = prepare_agent_context(project_folder, 'mixed-alias', [current])
+    assert fresh['text'] == current['text'] and 'reference' not in fresh['components'][0]
+
+
+def test_mixed_prompt_alias_change_notices_follow_the_last_accepted_reference(project_folder):
+    ctx = context('agents', project_folder)
+    authored = service(project_folder)
+    name, alias = 'prompt.orchestration:common', 'orchestration:common'
+    prompt_files.save_edit(name, 'Consumed shared duty C.')
+    record_agent_context(project_folder, 'notice-alias', authored.resolve(ctx, 'gc')['components'])
+    prompt_files.save_edit(name, 'Current shared duty B.')
+    notice_b = authored.changes(ctx, 'notice-alias', 'gc')[0]
+    authored.delivered_changes(ctx, 'notice-alias', [notice_b])
+    prompt_files.save_edit(name, 'Current shared duty A.')
+    notice_a = authored.changes(ctx, 'notice-alias', 'gc')[0]
+    authored.delivered_changes(ctx, 'notice-alias', [{**notice_a, 'name': alias}])
+    prompt_files.save_edit(name, 'Current shared duty B.')
+    assert authored.changes(ctx, 'notice-alias', 'gc')
+    # Historical mixed notice rows carry no time. Conflicting dedup state cannot truthfully prove the latest
+    # reference; the next actual accepted reference normalizes that current state without acknowledging a body.
+    with ctx.require_store().tables() as tx:
+        key = {'session_id': 'notice-alias', 'epoch': 0, 'name': alias}
+        row = {**key, 'fingerprint': notice_a['fingerprint']}
+        if tx.get('change_notices', key):
+            tx.update('change_notices', key, row)
+        else:
+            tx.insert('change_notices', row)
+    assert authored.changes(ctx, 'notice-alias', 'gc')
+    authored.delivered_changes(ctx, 'notice-alias', [{**notice_b, 'name': alias}])
+    assert authored.changes(ctx, 'notice-alias', 'gc') == []
+    assert prepare_agent_context(project_folder, 'notice-alias', authored.resolve(ctx, 'gc')['components'])['components']
+
+
+def test_nonprompt_component_receipts_keep_their_exact_dynamic_names(project_folder):
+    components = [prompt_files.component('map:functional_context', 'Functional region context.'),
+                  prompt_files.component('mcp:tool_usage:map_work:add', 'Operation-specific usage.')]
+    record_agent_context(project_folder, 'dynamic-components', components)
+    ctx = context('agents', project_folder)
+    with ctx.require_store().tables(write=False) as tx:
+        receipts = tx.rows('receipts', {'session_id': 'dynamic-components', 'epoch': 0}, limit=0).results
+    assert {one['name'] for one in receipts} == {one['name'] for one in components}
+    assert prepare_agent_context(project_folder, 'dynamic-components', components)['components'] == []
 
 
 def test_equal_rendered_role_revision_does_not_create_a_change_reference(project_folder):

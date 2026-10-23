@@ -173,7 +173,7 @@ All agent inference, communication, and authored work must use the project's can
      command-line guide while connect_instructions is full. The tasks prompt follows it while the setting tasks is on.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>
-Before constructing or extending the base or a knowledge layer, read metaform://map/construction. It supplies operation-specific guidance derived from the Canonical Intake, with exact naming rules and valid/invalid examples.
+Before constructing or extending the base or a knowledge layer, use the current construction guidance supplied for the operation; read metaform://map/construction if it has not been delivered. It derives from the Canonical Intake, with exact naming rules and valid/invalid examples. Tool-specific instructions remain at the operation's instruction URI.
 When assigned work, understand its functionality through the map, relationships, applicable knowledge, references, unread memories and current specification.
 Use C(T) and the active adaptive or strict mode as supplied by the assignment. A specification describes the current detailed approach; in adaptive mode it can evolve when a better approach serves C(T) and fits the full design. Record specification adaptations and surface them as user messages. New user instructions revise the operative requirements in either mode.
 Resolve ordinary work choices with project evidence and judgment, recording material decisions and reasons on the ticket. Work through your assigned role, parent/GC and recorded return destination. Apply current change orders.

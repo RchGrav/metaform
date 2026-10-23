@@ -88,10 +88,9 @@ def test_workflow_skills_read_the_same_skill_by_tool_and_prompt(run, home, mappe
         assert skill == run('workflow', 'skill', name, cwd=mapped).stdout.strip()
 
 
-# A tool's guidance, given once per session with the first result, MCP-039, and the provisioning notice the first
-# result carries while the AI tool these tests run under is unrecorded, MCP-028: tested on their own, so the other
-# tests read the result without them.
-GUIDED = re.compile(r"^(How to use \S+|The \S+ module's rules), given once in this session|^Results are trimmed to the "
+# Explicit pre-use guidance is checked in its own tests. Ignore any guidance headings and the provisioning notice
+# when reading an operation's substantive result, MCP-028.
+GUIDED = re.compile(r"^(How to use \S+:|The \S+ module's rules[, :])|^Results are trimmed to the "
                     r"fields most next steps need|^Notice: Read metaform help provision")
 
 
@@ -1843,7 +1842,7 @@ def test_what_the_list_cuts_comes_once_with_the_first_use_of_a_tool_and_its_modu
     assert 'op=plan' not in work.description and 'metaform://tools/map_work/instructions' in work.description
     assert all(len(one.get('description', '').encode()) <= 80 for one in work.input_schema['properties'].values())
     guide = '\n'.join(block for name, read in reads if name == 'map_work' for block in read)
-    header = 'How to use map_work, given once in this session:'
+    header = 'How to use map_work:'
     assert header in guide
     guide = guide[guide.index(header):]
     assert 'op=plan' in guide and text(first)[-1] == text(second)[-1]
@@ -4190,9 +4189,9 @@ def test_each_guide_comes_once_per_session_even_when_context_was_compacted(run, 
     assert len(usage_reads) == 2 and all('How to use map_where' in body for body in usage_reads)
     assert 'How to use map_where' not in second
     assert glossary[0].lstrip().startswith('@STATE_INIT') and glossary[1].startswith('metaform://metaform is unchanged')
-    assert forgot[0].startswith(opening + '\n\nMetaform forgot what it gave you once in this session')
+    assert forgot[0].startswith(opening + '\n\nContext compaction recorded, ')
     assert 'How to use map_where' not in '\n'.join(again)
-    assert state.startswith(opening + '\n\nMetaform forgot what it gave you once in this session, ')
+    assert state.startswith(opening + '\n\nContext compaction recorded, ')
     assert all('inputSchema' in body for body in usage_reads)
 
 

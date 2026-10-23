@@ -7,10 +7,11 @@ import re
 import secrets
 import time
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from metaform import home, prompt_files
-from metaform.data import Column, Index, StoreError, Table
+from metaform.data import Column, Index, StoreError, Table, TableTx
 from metaform.module import AgentRoleDefinition, Context, Stop, context, provided
 
 TABLES = (
@@ -64,6 +65,9 @@ def generated(ctx: Context) -> tuple[AgentRoleDefinition, ...]:
 
 
 def _specialist_prompts(prompts: Sequence[str]) -> tuple[str, ...]:
+    # The prompt store aliases old module names, but source discovery needs canonical addresses. Normalize
+    # persisted generated references on read so shipped changes refresh without rewriting definition history.
+    prompts = tuple(_prompt_name(name) for name in prompts)
     duty = 'prompt.orchestration:specialist'
     return tuple(prompts) if duty in prompts else (prompts[0], duty, *prompts[1:])
 
@@ -80,6 +84,40 @@ def definitions(ctx: Context) -> list[tuple[str, AgentRoleDefinition]]:
 def _fingerprint(one: dict[str, Any]) -> str:
     # Recompute from the actual body rather than trusting a caller's label for another body.
     return hashlib.sha256(str(one.get('text') or '').encode('utf-8')).hexdigest()
+
+
+def _prompt_name(name: str) -> str:
+    return prompt_files.address(*name.split(':', 1)) \
+        if not name.startswith('prompt.') and re.fullmatch(r'[A-Za-z_][\w.-]*:.+', name) else name
+
+
+def _prompt_names(name: str) -> tuple[str, ...]:
+    # Bare component names are not necessarily prompt-store references (for example map:functional_context).
+    # Only the demonstrated persisted generated-role aliases acquire a new key without a canonical input name.
+    canonical = _prompt_name(name) if (name in ('orchestration:common', 'orchestration:specialist') or
+                                      name.startswith('agents:generated_')) else name
+    if canonical.startswith('prompt.skill.'):
+        return canonical, 'skill:' + canonical.removeprefix('prompt.skill.')
+    return (canonical, canonical.removeprefix('prompt.')) \
+        if canonical.startswith('prompt.') and ':' in canonical else (canonical,)
+
+
+def _active(receipt: dict[str, Any]) -> str:
+    component = cast(dict[str, Any], receipt.get('component') or {})
+    return str(component.get('active_fingerprint') or receipt['fingerprint'])
+
+
+def _receipt(tx: TableTx, key: dict[str, Any]) -> tuple[dict[str, Any] | None, bool]:
+    """Read legacy coexistence without assuming one spelling means a more recent accepted delivery."""
+    receipts = [one for name in _prompt_names(str(key['name']))
+                if (one := tx.get('receipts', {**key, 'name': name})) is not None]
+    if not receipts:
+        return None, False
+    latest = max(datetime.fromisoformat(str(one['at'])) for one in receipts)
+    tied = [one for one in receipts if datetime.fromisoformat(str(one['at'])) == latest]
+    # Old timestamps have only seconds. Conflicting equal-time receipts cannot establish which body was active;
+    # a truthful subsequent acceptance supplies that ordering rather than silently skipping the requested source.
+    return tied[0], len({_active(one) for one in tied}) > 1
 
 
 class RoleService:
@@ -206,6 +244,7 @@ class RoleService:
                 components: Sequence[dict[str, Any]]) -> dict[str, Any]:
         ctx = _own(ctx)
         previous: dict[str, Any] = {}
+        uncertain: set[str] = set()
         known: set[str] = set()
         epoch = 0
         if session is not None and ctx.store is not None:
@@ -213,7 +252,9 @@ class RoleService:
                 row = tx.get('contexts', {'session_id': session})
                 epoch = int(row['epoch']) if row else 0
                 for one in components:
-                    receipt = tx.get('receipts', {'session_id': session, 'epoch': epoch, 'name': one['name']})
+                    receipt, ambiguous = _receipt(tx, {'session_id': session, 'epoch': epoch, 'name': one['name']})
+                    if ambiguous:
+                        uncertain.add(str(one['name']))
                     if receipt:
                         previous[str(one['name'])] = receipt
                     fingerprint = _fingerprint(one)
@@ -235,7 +276,7 @@ class RoleService:
                     continue
                 previous_component = cast(dict[str, Any], before.get('component') or {})
                 active = str(previous_component.get('active_fingerprint') or before['fingerprint'])
-                if active == key:
+                if active == key and str(one['name']) not in uncertain:
                     continue
                 # A -> B -> A changes which retained instruction is active. Send a reference to A, not A's body,
                 # and remember that activation only when the reference actually reaches the recipient.
@@ -270,15 +311,16 @@ class RoleService:
             for one in resolved['components']:
                 name, fingerprint = str(one['name']), _fingerprint(one)
                 key = {'session_id': session, 'epoch': epoch, 'name': name}
-                before = tx.get('receipts', key)
+                before, ambiguous = _receipt(tx, key)
                 if before is None:
                     continue
                 component = cast(dict[str, Any], before.get('component') or {})
-                active = component.get('active_fingerprint') or before['fingerprint']
+                active = None if ambiguous else component.get('active_fingerprint') or before['fingerprint']
                 if active == fingerprint:
                     continue
-                delivered = tx.get('change_notices', key)
-                if delivered and delivered['fingerprint'] == fingerprint:
+                delivered = [notice['fingerprint'] for spelling in _prompt_names(name)
+                             if (notice := tx.get('change_notices', {**key, 'name': spelling})) is not None]
+                if delivered and set(delivered) == {fingerprint}:
                     continue
                 notices.append({'name': name, 'epoch': epoch, 'fingerprint': fingerprint,
                                 'previous': active, 'actual_version_id': one.get('actual_version_id'),
@@ -297,12 +339,16 @@ class RoleService:
             return
         with ctx.store.tables() as tx:
             for one in notices:
-                key = {'session_id': session, 'epoch': int(one['epoch']), 'name': str(one['name'])}
+                key = {'session_id': session, 'epoch': int(one['epoch']), 'name': _prompt_names(str(one['name']))[0]}
                 row = {**key, 'fingerprint': str(one['fingerprint'])}
                 if tx.get('change_notices', key) is None:
                     tx.insert('change_notices', row)
                 else:
                     tx.update('change_notices', key, row)
+                # This table is current reference-dedup state, not body delivery history. An accepted reference
+                # replaces stale alias state; it cannot acknowledge the referenced instruction body.
+                for alias in _prompt_names(str(one['name']))[1:]:
+                    tx.delete('change_notices', {**key, 'name': alias})
 
     def record(self, ctx: Context, session: str | None, components: Sequence[dict[str, Any]], *,
                epoch: int | None = None, channel: str = 'turn') -> dict[str, Any]:
@@ -323,11 +369,15 @@ class RoleService:
                 content_key = {'session_id': session, 'epoch': epoch, 'fingerprint': one['rendered_fingerprint']}
                 if tx.get('delivered_text', content_key) is None:
                     tx.insert('delivered_text', {**content_key, 'at': home.now()})
-                key = {'session_id': session, 'epoch': epoch, 'name': str(one['name'])}
+                key = {'session_id': session, 'epoch': epoch, 'name': _prompt_names(str(one['name']))[0]}
+                latest, ambiguous = _receipt(tx, key)
+                at = datetime.now(UTC)
+                if latest:
+                    at = max(at, datetime.fromisoformat(str(latest['at'])) + timedelta(microseconds=1))
                 row = {**key, 'fingerprint': one['rendered_fingerprint'],
                        'actual_version_id': one.get('actual_version_id'),
                        'selected_version_id': one.get('selected_version_id'), 'component': one,
-                       'channel': channel, 'at': home.now()}
+                       'channel': channel, 'at': at.isoformat(timespec='microseconds').replace('+00:00', 'Z')}
                 before = tx.get('receipts', key)
                 # Preserve the legacy receipt before replacing it: A -> B -> A must not resend A after upgrade.
                 if before is not None:
@@ -336,7 +386,8 @@ class RoleService:
                         tx.insert('delivered_text', {**old_key, 'at': before['at']})
                 if before is None:
                     tx.insert('receipts', row)
-                elif before['fingerprint'] != row['fingerprint']:
+                elif (before['fingerprint'] != row['fingerprint'] or ambiguous or
+                      latest is not None and latest['name'] != key['name'] or _active(before) != _active(row)):
                     tx.update('receipts', key, row)
                 else:
                     continue

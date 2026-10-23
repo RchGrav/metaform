@@ -339,10 +339,11 @@ Element prompts
 +&gt; Each subroutine holds the conditions for the function it works on: its acceptance, its Retry, its Catch.
 
 # --- Handoffs ---
-+&gt; A call that needs another agent runs as a handoff by run id, bound to the assignment's
-   parent/team and return destination. The native continuation starts its recipient through
-   dispatch and returns results to its caller/GC.
-+&gt; A handed-off subroutine carries complete instructions. The fresh agent has no prior context.
++&gt; A call that needs another agent creates a child run with workflow handoff. Arrange the recipient
+   through the existing assignment route, carrying that run id, source inputs and caller/return destination.
+   Creating a run record alone does not start a native agent or establish its assignment binding.
++&gt; A handed-off subroutine carries complete instructions and bound inputs. When independent execution
+   is requested, use a fresh recipient that does not depend on the caller's unrecorded context.
 +&gt; A handed-off subroutine states the data it accepts and the data it returns, and ends in RETURN.
    Its RETURN comes back with the run id.
 +&gt; The executor starts each handoff's run at run time.
@@ -360,7 +361,14 @@ Element prompts
 <!-- The commands a procedure may use, and the rule never to invent a command that is not listed.
      Seeded into the prompt store; agents receive the store copy, inside lib_metaform. An edit saved in the prompt editor replaces this text for good.
      Until then, a change saved here reaches the store the next time workflow serves a lib, a step or the lexicalize script. Must not be removed: the code requires it. -->
-<metaform-tools>Tools marked &lt;&lt;TO FILL&gt;&gt; are not built yet. NEVER invent a command for one. If a step needs one,
+<metaform-tools>These are common command references. Current module metadata, help and the MCP catalog declare
+the available commands and their arguments, including extensions. Use a host-advertised direct tool when exposed,
+or its advertised catalog gateway with tool=&lt;exact command&gt; arguments={...}. Discover only the command you need.
+If execution returns instructions_required with executed=false, read its URI or follow its exact read_tool,
+retain any session_handle, then repeat the operation. Delivery of a guide does not establish understanding;
+apply its instructions while preserving the assignment's functional context and source intent.
+
+Tools marked &lt;&lt;TO FILL&gt;&gt; are not built yet. NEVER invent a command for one. If a step needs one,
 stop that step, record it in the ticket's note, carry on with what does not depend on it, and report what is ready.
 
   read a prompt          metaform prompt &lt;name&gt; &lt;version&gt;
@@ -378,8 +386,9 @@ stop that step, record it in the ticket's note, carry on with what does not depe
   run                    metaform workflow run "&lt;entry call&gt;" element=&lt;caller element address&gt; variables='{"name":"value"}'
   call                   metaform workflow call "&lt;call&gt;" run=&lt;caller run id&gt; variables='{"name":"value"}'
   handoff                metaform workflow handoff "&lt;call&gt;" run=&lt;caller run id&gt; variables='{"name":"value"}'
-                         Bind the returned run id to the selected recipient and recorded continuation;
-                         dispatch starts the agent and routes its return to the caller/GC.
+                         Arrange the recipient through the existing assignment route with this child run id
+                         and caller/return destination; the returned record alone does not start an agent.
+                         The recipient reads it with metaform workflow resume run=&lt;run id&gt;.
                          Return with metaform workflow complete "RETURN {value}" run=&lt;run id&gt; variables='{"value":"result"}'.
   parallel               metaform workflow parallel '&lt;JSON list of independent calls&gt;' run=&lt;caller run id&gt; variables='{"name":"value"}'
   complete               metaform workflow complete "RETURN {value}" run=&lt;run id&gt; variables='{"value":"result"}'
