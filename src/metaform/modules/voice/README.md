@@ -52,7 +52,7 @@ whisper.cpp and mlx-whisper are not used: faster-whisper already covers CPUs on 
 
 ### Speech out
 
-`voice_tts` is **browser**, the default, the system's own voices through speechSynthesis on the device; an engine a module brings, such as **elevenlabs**, streamed through the server (raw PCM plays as it arrives) and **receiving the text spoken**, with its own settings in its own module; or **off**. Each mascot character has its own voice: a pitch and pace on the system's voices, which `voice_voices` can name; an engine a module brings gives each its own voice too. `voice_speak` says when replies are spoken: while the chat is put away (`minimized`, the default), `always`, or `never`.
+`voice_tts` is **browser**, the default, the system's own voices through speechSynthesis on the device; an engine a module brings, such as **elevenlabs**, streamed through the server (raw PCM plays as it arrives) and **receiving the text spoken**, with its own settings in its own module; or **off**. Each mascot character has its own voice: a pitch and pace on the system's voices, which `voice_voices` can name; an engine a module brings controls its own voice choices. ElevenLabs offers one general default through `elevenlabs_voice`, with optional `elevenlabs_voices` character overrides; without a general default its built-in character voices remain. `voice_speak` says when replies are spoken: while the chat is put away (`minimized`, the default), `always`, or `never`.
 
 ### The wake phrase
 

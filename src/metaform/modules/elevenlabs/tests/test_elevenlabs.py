@@ -77,6 +77,46 @@ def test_a_voice_the_caller_names_speaks_in_place_of_the_characters(run, eleven,
                                                                                          'onwK4e9ZLuTAKqWW03F9']
 
 
+def test_general_voice_serves_every_unoverridden_character_and_caller_still_wins(run, eleven, monkeypatch, tmp_path):
+    from metaform.module import provided
+    monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
+    calls = caught(monkeypatch, b'audio')
+    run('set', '--elevenlabs-voice', 'GeneralVoiceId000000', '--elevenlabs-voices', 'owl=OverrideVoiceId0000')
+    # Choosing a voice alone never selects a paid engine or synthesizes anything.
+    from metaform import settings
+    assert settings.value('voice_tts', tmp_path) == 'browser'
+    assert calls == []
+    [(_, voice)] = provided(tmp_path, 'voice')
+    provider = importlib.import_module(eleven('api').__package__)
+    characters = [*provider.DEFAULT_VOICES, 'unknown', None]
+    for character in characters:
+        list(voice.speak(tmp_path, 'Hello.', engine='elevenlabs', character=character))
+    list(voice.speak(tmp_path, 'Hello.', engine='elevenlabs', character='owl', voice='CallerVoiceId0000000'))
+    assert [sent.full_url.split('/stream?')[0].rsplit('/', 1)[1] for sent in calls] == [
+        *['OverrideVoiceId0000' if character == 'owl' else 'GeneralVoiceId000000' for character in characters],
+        'CallerVoiceId0000000']
+    run('unset', '--elevenlabs-voice')
+    list(voice.speak(tmp_path, 'Hello.', engine='elevenlabs', character='beetle'))
+    list(voice.speak(tmp_path, 'Hello.', engine='elevenlabs', character='owl'))
+    assert [sent.full_url.split('/stream?')[0].rsplit('/', 1)[1] for sent in calls[-2:]] == [
+        provider.DEFAULT_VOICES['beetle'], 'OverrideVoiceId0000']
+
+
+def test_general_voice_name_resolves_through_account_and_listing_shows_effective_voices(
+        run, eleven, monkeypatch, tmp_path):
+    from metaform.module import context
+    monkeypatch.setenv('ELEVENLABS_API_KEY', FAKE_KEY)
+    calls = caught(monkeypatch, b'{"voices": [{"voice_id": "abcdefghijklmnopqrst", "name": "Daniel"}]}', b'audio')
+    run('set', '--elevenlabs-voice', 'Daniel', '--elevenlabs-voices', 'owl=OverrideVoiceId0000')
+    listed = json.loads(run('elevenlabs', 'voices', '--json').stdout)
+    assert listed['default'] == 'Daniel'
+    assert listed['characters']['owl'] == 'OverrideVoiceId0000'
+    assert listed['characters']['beetle'] == 'Daniel'
+    provider = importlib.import_module(eleven('api').__package__)
+    assert provider.voice_of(context('elevenlabs', tmp_path), 'beetle') == 'abcdefghijklmnopqrst'
+    assert len(calls) == 1  # only the account listing, never synthesis
+
+
 def test_without_its_key_it_refuses_and_a_refusal_never_carries_the_key(run, eleven, monkeypatch):
     refused = run('elevenlabs', 'speak', '--', 'hello', ok=False)
     assert 'ELEVENLABS_API_KEY' in refused.stderr

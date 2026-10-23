@@ -35,9 +35,11 @@ None. Its settings show in `metaform config`, the TUI, and the web GUI's setting
 | `metaform elevenlabs voices` | `elevenlabs_voices` | Each mascot character's voice, and the voices on the account. | read, open world |
 | `metaform elevenlabs speak -- <text>` | command line only | Text spoken into a file; never an agent's tool, since it spends the person's account. | write, open world |
 
-The page and a phone bridge reach the engine through the voice module: `voice speak` and `voice transcribe`, and voice's `provides` `voice` for a server-side caller. The engine's `speak` takes the keyword `voice`, a voice id or a name on the account, passed when the caller names one, such as the twilio module's `twilio_voice`; it speaks in place of the character's voice from `elevenlabs_voices`.
+The page and a phone bridge reach the engine through the voice module: `voice speak` and `voice transcribe`, and voice's `provides` `voice` for a server-side caller. The engine's `speak` takes the keyword `voice`, a voice id or a name on the account, passed when the caller names one, such as the twilio module's `twilio_voice`; it takes priority over an explicit character override in `elevenlabs_voices`, then the general `elevenlabs_voice`, then the built-in character voice.
 
 ## Settings
+
+In the web settings, choose **ElevenLabs default voice** on Essentials when ElevenLabs speaks, or under Voice. Press **List voices** to fetch the account's voices, then choose one. This saves globally across page reloads and projects. **ElevenLabs character overrides (optional)** remains available under Voice for exceptions. Choosing a default does not select a speech engine or synthesize audio.
 
 Every one is the module's own, `elevenlabs_*`, so they group together in the TUI.
 
@@ -50,7 +52,8 @@ Every one is the module's own, `elevenlabs_*`, so they group together in the TUI
 | `elevenlabs_speaker_boost` | on | More like the source speaker, at a little more time. |
 | `elevenlabs_speed` | 100 | 70 to 120, percent of the voice's normal pace. |
 | `elevenlabs_latency` | 1 | 0 to 4, optimize_streaming_latency: higher starts sooner and can mispronounce numbers and names. |
-| `elevenlabs_voices` | none | `character=voice id or name` for any mascot character; each has its own default voice. |
+| `elevenlabs_voice` | empty | One default voice id or account voice name for every character without an override. Empty preserves the built-in character voices. |
+| `elevenlabs_voices` | none | Optional `character=voice id or name` overrides, taking priority over the general default. |
 
 Fixed, not settings (settings cleanup, 2026-10-15): the page's audio is `pcm_22050`, which plays as it arrives; a phone call's is `ulaw_8000`, the telephone's own encoding, which the phone bridge asks for itself; Scribe's model is `scribe_v1`, the released one. Scribe hears in the language voice passes it, the voice module's `voice_language`, or tells it itself when that is `auto`; `speak format=<format>` still writes any ElevenLabs format to a file.
 
@@ -94,6 +97,7 @@ Both carry it; it needs nothing installed.
 export ELEVENLABS_API_KEY=...        # in the shell that starts the web GUI
 metaform elevenlabs status
 metaform elevenlabs voices
-metaform set --voice-tts elevenlabs --elevenlabs-voices owl=Daniel
+metaform set --elevenlabs-voice Daniel  # one voice for every character without an override
+metaform set --voice-tts elevenlabs    # choose the paid engine separately
 metaform elevenlabs speak character=owl -- "Hello there."
 ```

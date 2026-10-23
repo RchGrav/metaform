@@ -411,12 +411,14 @@ function themeRow() {
   return pageRow('page:theme', 'Colour theme', 'The colours of this page and its maps, as the View menu sets them.',
     pick);
 }
-/* The voice the person's agent speaks with, for their mascot's character: one of this browser's voices, or, when
- * ElevenLabs speaks, one of its voices, listed from the account only when asked, since that asks ElevenLabs. */
+/* ElevenLabs offers one default for every character. Browser voices remain specific to the mascot. */
 function voiceRow(data) {
   const row = key => data.settings.find(one => one.key === key);
   const tts = row('voice_tts'), mascot = row('web_mascot');
   if (!tts) return null;
+  if (tts.value === 'elevenlabs' && row('elevenlabs_voice')) {
+    return settingRow(row('elevenlabs_voice'), {link: true});
+  }
   const character = mascot && mascot.value && mascot.value !== 'none' ? String(mascot.value) : null;
   const help = character ? `The voice of your ${character}.` : 'Choose your mascot under Map and display to give it '
     + 'a voice of its own.';
@@ -424,26 +426,23 @@ function voiceRow(data) {
     return pageRow('page:voice', 'Voice', tts.value === 'off' ? 'Nothing is spoken: Speaks with is off.' : help, null,
       {link: toCategory('voice', 'page:voice')});
   }
-  const eleven = tts.value === 'elevenlabs', list = row(eleven ? 'elevenlabs_voices' : 'voice_voices');
-  if (!list || (!eleven && tts.value !== 'browser')) {  // an engine another module brings has its own voices
+  const list = row('voice_voices');
+  if (!list || tts.value !== 'browser') {  // an engine another module brings has its own voices
     return pageRow('page:voice', 'Voice', `${tts.value} speaks with its own voices.`, null,
       {link: toCategory('voice', 'page:voice')});
   }
   const chosen = (list.value || []).find(one => one.startsWith(`${character}=`))?.split('=').slice(1).join('=') || '';
-  const names = eleven ? (CONFIG.voices || []).map(one => one.name).filter(Boolean)
-    : 'speechSynthesis' in window ? speechSynthesis.getVoices().map(one => one.name) : [];
-  if (!eleven && !names.length && 'speechSynthesis' in window) {  // the browser lists its voices once it has them
+  const names = 'speechSynthesis' in window ? speechSynthesis.getVoices().map(one => one.name) : [];
+  if (!names.length && 'speechSynthesis' in window) {  // the browser lists its voices once it has them
     speechSynthesis.addEventListener('voiceschanged', renderSettings, {once: true});
   }
   const listed = [...new Set([...(chosen ? [chosen] : []), ...names])];
   const pick = h('select', {'aria-label': 'Voice', 'data-focus': 'page:voice', onchange: () => {
     const kept = (list.value || []).filter(one => !one.startsWith(`${character}=`));
     saveSetting(list, pick.value ? [...kept, `${character}=${pick.value}`] : kept);
-  }}, h('option', {value: '', selected: !chosen}, eleven ? 'Its own voice' : 'Chosen for it'),
+  }}, h('option', {value: '', selected: !chosen}, 'Chosen for it'),
   listed.map(name => h('option', {value: name, selected: name === chosen}, name)));
-  const more = eleven && !CONFIG.voices ? h('button', {type: 'button', class: 'btn sm quiet', 'data-focus':
-    'page:voices', title: 'Ask ElevenLabs for the voices on your account', onclick: listVoices}, 'List voices') : null;
-  return pageRow('page:voice', 'Voice', help, h('span', {class: 'pair'}, pick, more),
+  return pageRow('page:voice', 'Voice', help, pick,
     {link: toCategory('voice', 'page:voice'), title: list.switch});
 }
 async function listVoices() {
@@ -707,6 +706,17 @@ function choiceWords(choice, worded) {
 /* The control a setting's kind takes; `wide` goes under the row, as a checklist does. */
 function settingControl(row, id, label) {
   const save = value => saveSetting(row, value);
+  if (row.key === 'elevenlabs_voice') {
+    const voices = CONFIG.voices || [], chosen = row.value || '';
+    const listed = voices.some(one => one.voice_id === chosen) || !chosen ? voices
+      : [{voice_id: chosen, name: chosen}, ...voices];
+    const pick = h('select', {'aria-label': label, 'data-focus': id, onchange: () => save(pick.value)},
+      h('option', {value: '', selected: !chosen}, 'Each character’s built-in voice'),
+      listed.map(one => h('option', {value: one.voice_id, selected: one.voice_id === chosen}, one.name || one.voice_id)));
+    const more = !CONFIG.voices ? h('button', {type: 'button', class: 'btn sm quiet', 'data-focus': 'page:voices',
+      title: 'Ask ElevenLabs for the voices on your account', onclick: listVoices}, 'List voices') : null;
+    return {main: h('span', {class: 'pair'}, pick, more)};
+  }
   if (row.kind === 'bool') {
     const input = h('input', {type: 'checkbox', role: 'switch', checked: Boolean(row.value), 'aria-label': label,
       'data-focus': id, onchange: () => save(input.checked), onkeydown: event => arrowSwitch(event, input)});

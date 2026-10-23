@@ -11626,6 +11626,45 @@ def test_essentials_names_a_ready_unused_speaker_fits_the_screen_and_keeps_modul
     assert not problems and not remote
 
 
+@pytest.mark.req('CLI-010')
+def test_elevenlabs_default_voice_picker_persists_without_requiring_character_choices(
+        run, web, mapped, browser):
+    from metaform import settings
+    run('set', '--voice-tts', 'elevenlabs', '--web-mascot', 'none',
+        '--elevenlabs-voices', 'owl=OverrideVoiceId0000')
+    started(run)
+    page, problems, remote = opened(browser, web)
+    listings = []
+
+    def voices(route):
+        listings.append(route.request.url)
+        route.fulfill(json={'account': [{'voice_id': 'GeneralVoiceId000000', 'name': 'General voice'}]})
+
+    page.route('**/api/speech-voices*', voices)
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#settingsGearBtn')
+    default = '#settings .setrow[data-key="elevenlabs_voice"]'
+    page.wait_for_selector(f'{default} select')
+    assert listings == []  # account listing is requested only by the person
+    page.click(f'{default} button:has-text("List voices")')
+    page.select_option(f'{default} select', 'GeneralVoiceId000000')
+    page.wait_for_selector(f'{default} .state.ok')
+    page.reload()
+    page.wait_for_function('() => window.metaform.loaded()')
+    page.click('#settingsGearBtn')
+    page.wait_for_selector(f'{default} select')
+    assert page.input_value(f'{default} select') == 'GeneralVoiceId000000'
+    assert settings.value('elevenlabs_voice', mapped) == 'GeneralVoiceId000000'
+    assert settings.value('elevenlabs_voices', mapped) == ['owl=OverrideVoiceId0000']
+    assert settings.value('voice_voices', mapped) == []
+    page.click('#settings .setside button[data-page="voice"]')
+    page.click('#settings details[data-group="ElevenLabs"] > summary')
+    page.wait_for_selector('#settings .setrow[data-key="elevenlabs_voices"]')
+    assert 'optional' in page.inner_text('#settings .setrow[data-key="elevenlabs_voices"] .label').lower()
+    assert len(listings) == 1
+    assert not problems and not remote
+
+
 def setting_write(port, path, **given):
     return api(port, path, method='POST', headers=own_write(port), body=json.dumps({'project': 'proj', **given}))
 

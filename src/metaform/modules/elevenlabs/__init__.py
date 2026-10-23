@@ -30,7 +30,7 @@ SHIPS_DISABLED = False  # offered, never used until the person chooses it in voi
 REMOTE_AGENT = False  # a person's voice on the page, not an agent's tool
 
 # Each mascot character's default voice: one of ElevenLabs's default voices, so the mascot sounds like itself before
-# the person chooses; elevenlabs_voices gives any character another.
+# the person chooses; elevenlabs_voice sets a general default and elevenlabs_voices overrides any character.
 DEFAULT_VOICES = {
     'beetle': 'JBFqnCBsd6RMkjVDRZzb', 'comet': 'cgSgspJ2msm6clMCkdW9', 'crystal': 'Xb7hH8MSUJpSbSDYk0k2',
     'cubebot': 'cjVigY5qzO86Huf0OWal', 'drone': 'N2lVS1w4EtoT3dr4eOWO', 'gearling': 'IKne3meq5aSn9XLyUdCD',
@@ -109,11 +109,17 @@ settings.number('elevenlabs_latency', 1, min=0, max=4, scope='global',
                 details='ElevenLabs\'s optimize_streaming_latency. 0 is its best quality; 1 to 3 trade more of it for '
                         'a sooner first sound; 4 also skips the reading of numbers and dates as words.',
                 label='Latency optimization', category='advanced')
+settings.text('elevenlabs_voice', '', scope='global',
+              help='The default voice for every character without an override.',
+              details='A voice id or name on your ElevenLabs account. List voices to choose one. Empty keeps each '
+                      'character\'s built-in voice. Choosing a voice does not turn on ElevenLabs.',
+              label='ElevenLabs default voice', heading='ElevenLabs')
 settings.items('elevenlabs_voices', [], scope='global', exclusive='=', check=_check_voices,
                help='A voice for a mascot character, as character=voice id or name, such as owl=Daniel.',
                details='The voice is an id or a name of a voice on your ElevenLabs account; metaform elevenlabs '
-                       'voices lists them. A character not named speaks with its own default voice.',
-               label='ElevenLabs voice for each character', heading='ElevenLabs')
+                       'voices lists them. Optional: a character not named uses elevenlabs_voice, or its built-in '
+                       'voice when no general default is set.',
+               label='ElevenLabs character overrides (optional)', heading='ElevenLabs')
 
 
 def ready(ctx: Context) -> str | None:
@@ -130,9 +136,9 @@ def _need(ctx: Context) -> None:
 
 def voice_of(ctx: Context, character: str | None, voice: str | None = None) -> str:
     """The voice id a character speaks with: `voice` when a caller names one, such as twilio_voice, else the person's
-    elevenlabs_voices choice; an id or a name on the account, else the character's default."""
+    elevenlabs_voices override, else elevenlabs_voice; an id or a name on the account, else the built-in default."""
     chosen = dict(entry.split('=', 1) for entry in cast(list[str], ctx.setting('elevenlabs_voices') or []) if '=' in entry)
-    given = voice or chosen.get(character or '')
+    given = voice or chosen.get(character or '') or ctx.setting('elevenlabs_voice')
     if given:
         if re.fullmatch(r'[A-Za-z0-9]{16,40}', given):
             return given
@@ -208,14 +214,15 @@ def list_models(ctx: Context) -> dict[str, Any]:
 
 def list_voices(ctx: Context) -> dict[str, Any]:
     chosen = dict(entry.split('=', 1) for entry in cast(list[str], ctx.setting('elevenlabs_voices') or []) if '=' in entry)
-    characters = {name: chosen.get(name) or default for name, default in DEFAULT_VOICES.items()}
+    general = ctx.setting('elevenlabs_voice')
+    characters = {name: chosen.get(name) or general or default for name, default in DEFAULT_VOICES.items()}
     account: list[dict[str, Any]] | None = None
     if api.available():
         try:
             account = api.voices()
         except OSError as error:
             raise Stop(str(error), 'metaform elevenlabs status') from None
-    return {'characters': characters, 'account': account,
+    return {'default': general, 'characters': characters, 'account': account,
             'next': None if account is not None else f'{api.KEY} in the environment lists your account\'s voices'}
 
 
