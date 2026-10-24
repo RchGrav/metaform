@@ -15,16 +15,23 @@ Verification
 18 assigned-task tests passed in 10.41s. Coverage includes canonical source/rendered fingerprints and assignment of the architect's exact instructions with the original input.
 Ruff passed on the changed Python files. No live model or service was started.
 
-Specification-delivery requirements supplied by the user
-"Where should the architect save the specs, I assume whether it gets passed to the decomposer will depend on whether full auto is enabled but if it isnt it should pop up a window that says the specification is complete, please click here to download it so it dcan be reviewed, and also print the path on this window.. there should be a button that says create tickets, and a check box that says "start building", remember that tickets go onto a new board with the name of what is being built...  but if start building is not checked it never makes the board primary.. what is important here is that it doesnt uncheck or touch the full autoswitch at all, and it simply doesnt make this new board the active board..  on the flip side if the "start building" check box is checked it sets the board as primary as soon as its done writing tickets AND it turns full auto on."
-"Also it says you can close this window and ask in the chat to trigger the ticket creation whenever you are ready"
-"and it should say how to refer to the specification"
+Specification-delivery requirements (pending implementation)
+- Persist the completed specification and give it a stable reference. Later chat requests must retrieve it after the completion window closes.
+- When Full Auto is disabled, show a specification-completion window with the build name, download link, absolute saved path, specification reference and an example chat request using that reference. This supports document review and deferred ticket creation.
+- Provide Create tickets and Start building controls. Create the tickets on a new board named for what is being built.
+- With Start building unchecked, preserve both the primary board and the Full Auto value. Ticket preparation must not redirect current execution or change its automation setting.
+- With Start building checked, finish writing all tickets, then make the new board primary and enable Full Auto. Start building against the completed ticket set.
+- Leave the saved specification available when the window closes. Support requesting ticket creation later through chat using the displayed reference.
+- With Full Auto enabled at specification completion, forward the specification to the decomposer automatically. Automatic activation of the resulting board still requires a design decision.
 
-Proposed storage, separately from the user's wording
-The canonical Markdown specification belongs in <project>/specifications/<build-name>.md. The existing reference reader scans specifications/*.md. The window should show the build name, an unambiguous saved-specification reference, its absolute path, download link and an example chat command using that reference. Closing the window leaves the saved specification available.
+Storage proposal
+Use <project>/specifications/<build-name>.md for the canonical Markdown file. The existing reference reader scans specifications/*.md. Finalize the reference format and collision/revision handling before implementation.
 
-Pending decisions requested from the user
-1. When Full Auto is already enabled at specification completion, does automatic decomposition also activate the new board and start building, or preserve the current primary board?
-2. Is the decomposer a separate task whose prompt the user will provide, or the existing ticket_creation task?
+Unresolved design decisions
+1. Decide whether the already-enabled Full Auto path also activates the new board and starts building, or preserves the current primary board.
+2. Receive the forthcoming ticket-making prompt and establish its task name and relationship to the provisional ticket_creation draft.
 
-The completion window, specification reference registry, decomposer handoff and restored Full Auto control are not implemented by this prompt-registration change. Their implementation must preserve the user's unchecked/checked behavior above. Unrelated pre-existing edits remain untouched.
+Current status
+The completion window, specification registry, decomposer handoff and restored Full Auto control are not implemented. The registered architect prompt is unchanged. Preserve unrelated pre-existing edits.
+
+Continuation: docs/reviews/2026-10-24-task-skill-iceblock-handoff.txt.

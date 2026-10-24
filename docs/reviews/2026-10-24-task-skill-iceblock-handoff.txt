@@ -1,0 +1,215 @@
+Metaform tasks, skills and ICEBLOCK handoff
+2026-10-24
+
+1. Working location and source state
+
+Work in /home/rich/metaform. The environment's default /home/rich/mgm-main is a different repository.
+Branch: remove/unapproved-procedural-roles.
+Verified implementation HEAD before this documentation update: 6dd6af90c191106e7eb67a8e58b848ccacf4d62a.
+Read AGENTS.md and CLAUDE.md in the Metaform repository. Preserve their immutable functional definitions and formulas exactly.
+
+Two implementation commits establish the current foundation:
+- 85fccc18d0e970432ec3af68d5602b9e39bd3960: persistent worker tasks, peer board, expertise storage, MCP Skills delivery and removal of conflicting organizational execution mechanisms.
+- 6dd6af90c191106e7eb67a8e58b848ccacf4d62a: exact Architect task registration and assignment coverage.
+
+Detailed implementation reports:
+- reports/changes/2026-10-24-persistent-worker.txt
+- reports/changes/2026-10-24-architect-task.txt
+
+The source archive /home/rich/metaform-source-2026-10-24-85fccc18d0e9.tar.gz contains commit 85fccc18, not the later Architect registration. It is a verified archive of committed files with Git data, virtual environments, dependency caches and Python caches excluded. Its size is 68,157,239 bytes.
+Recovery branch recovery/pre-persistent-worker-20261024 points to de79c449f0404446ebd8f08d8f8c52279dd0c74c. /tmp/metaform-worker-baseline preserves the starting working files, including pre-existing edits.
+
+2. Instruction and specification writing
+
+Write specifications as direct engineering requirements. State the required behavior, conditions, exceptions and engineering reason. Preserve meaning without adding requirements. Omit speaker attribution and quoted conversation history.
+Keep authored prompt files as exact source. Apply only explicitly requested edits and declared variable substitutions. Treat precise terms, qualifiers, relationships and deliberate omissions as significant. Do not improve wording by replacing terms with near-synonyms.
+Use discussion to understand the design. Do not convert explanations, analogies, observations or exploratory wording into prompt instructions. Preserve the project's defined terminology.
+Keep explanation separate from authored prompt content. A true description of an emergent behavior is not automatically suitable prompt wording. Do not add frequency directives, additional collaboration duties or extra review stages based on an explanation of expected behavior.
+Identify a material ambiguity at the exact point where interpretations diverge. Resolve it before changing the affected behavior. Continue independent work where the ambiguity does not apply.
+Give substantive reasoning when requested. Do not reduce replies to agreement followed by an echo of the preceding statement.
+
+3. Tasks and skills
+
+Tasks define assigned work. Skills provide instructions loaded dynamically as the functional context changes. Retire the old organization of fixed roles and specialists; define the replacement tasks and skills incrementally from supplied instructions.
+The current named tasks are user_agent, worker, ticket_creation, facilitator and architect. No named decomposer task has been registered.
+The ticket_creation prompt is a short assistant-authored draft. A replacement ticket-making prompt is expected. Do not treat the draft as the final supplied decomposer specification or invent the forthcoming prompt.
+
+Canonical task files under src/metaform/modules/tasks/resources/:
+- user_agent.txt: supplied User Agent prompt.
+- worker.txt: supplied persistent paired-worker prompt.
+- worker_lifetime.txt: separate supplied instruction ending a finished run.
+- facilitator.txt: supplied skill-authoring prompt.
+- architect.txt: supplied architecture prompt.
+- ticket_creation.txt: provisional ticket-authoring draft.
+
+Verified SHA-256 fingerprints:
+user_agent.txt 52af5044e666182d2cb3a2f4aea6ee0e202cf851d56e40a5bd662fccf67a927e
+worker.txt a5ba149a43837f71fdbe369229cda5ae25f0cfd7421aecb60cb801a9a8860f7d
+facilitator.txt 292502a388d048f0511acc80d46ec25a8025c6296622317887b9c68e75a66781
+architect.txt 7ff67eb19829ce5f3bf92ecc9347a4fe6bcca7bc6afbb9098e1836d6973391cc
+
+Read those files for exact operating instructions. This handoff does not replace their text. Preserve the worker source pending an explicit revision. It contains an older message-frequency instruction; the later prohibition on adding such directions makes the intended source revision a point to resolve when editing that prompt. Do not silently append a contrary instruction or remove source wording.
+
+4. User Agent, architecture and ticket flow
+
+The User Agent follows the selected workflow, discovers and loads the required task and skills, and performs work directly or assigns a dedicated agent with explicit objectives and skills. Preserve the requested intent when refining an assignment. Clarify material ambiguity before execution or delegation. Support switching projects and directories. Ticket creation remains optional when requested.
+For project or feature planning, use planning mode and its associated tools. Hand a mature plan to the architect for formal expansion.
+The Architect task loads relevant skills and project rules, inspects the actual project, and specifies contracts, data models, files, control flow, resilience and verification boundaries. Its complete authored prompt is authoritative.
+The supplied Facilitator task authors reusable or element-bound expertise skills using the required SKILL.md structure. Do not equate its name with the retired orchestration role or automatically add ticket-management authority.
+The ticket-making/decomposer prompt remains forthcoming. Clarify its registered task name and relationship to the provisional ticket_creation task when it is supplied.
+
+5. Specification completion and Full Auto
+
+Persist the completed specification and provide a stable reference so it remains available after the completion window closes and after a later chat request.
+When Full Auto is disabled at specification completion, show a completion window containing the build name, download link, absolute saved path, usable specification reference, and an example chat request using that reference. Explain that the window can be closed and ticket creation requested in chat later. Closing the window must leave the saved specification available.
+Provide a Create tickets button and a Start building checkbox. Create the tickets on a new board named for what is being built.
+With Start building unchecked, leave the current primary board and the Full Auto switch unchanged. This allows preparation of future work without redirecting current execution or changing its automation setting. Preserve this behavior even if Full Auto has become enabled since the window opened.
+With Start building checked, finish writing all tickets, then make the new board primary and turn Full Auto on. Start against the completed ticket set. Do not change the primary board partway through ticket creation.
+When Full Auto is already enabled as a specification finishes, forward it automatically to the decomposer. Whether that automatic path also makes the new board primary and starts building remains unanswered. Do not infer an answer from a preselected option or silence.
+
+Storage proposal: use Markdown under <project>/specifications/<build-name>.md. The existing reference reader scans specifications/*.md. This location was recommended, not explicitly finalized. Define collision/revision handling before risking an existing specification.
+The reference format is not finalized. SPEC-001 was an illustration; no reference scheme has been implemented or finalized. The window must provide an actual usable reference and matching chat example.
+The previous implementation removed the Full Auto control along with the legacy scheduler. Restore the control for the new task flow without restoring retired organizational roles, automatic repair/review chains or creator privileges.
+The window, specification registry, decomposer handoff and restored Full Auto behavior are not implemented yet.
+
+6. ICEBLOCK and intake
+
+Current term: ICEBLOCK.
+Expansion: Indivisibly Coupled Element Block.
+Use simple identifiers such as BLOCK_001 and BLOCK_002. The identifiers read naturally as block 1 and block 2 and work in filenames. Existing element names already describe functionality; do not invent an additional set of functional names for the blocks.
+Enhance intake to identify named worktree zones based on tight coupling of functionality. ICEBLOCK captures the grouping required for that design.
+Keep the decomposer's job as ordinary decomposition. Do not add a procedure requiring the decomposer to discover or construct the zones. Ticket references to mapped elements provide the connection to the grouping established by intake.
+Keep ICEBLOCK terminology limited to the defined concept. Do not rename ordinary elements, joins, maps or boards in response to the new term.
+The map-region illustration is available at /mnt/c/Users/rich/Desktop/Screenshot 2026-10-24 123145.png. It illustrates grouping, not a formal membership algorithm.
+
+Proposed storage: record zone membership in a separate layer over the functional map so grouping can evolve while functional definitions stay intact. The layer name, membership schema, ID allocation, cardinality and treatment of shared functionality have not been defined. Do not present these as implemented or settled.
+No ICEBLOCK intake prompt, storage implementation, runtime resolver or prompt-variable binding has been added.
+
+7. Tickets, worktrees and pairing
+
+Write ordinary tickets with clear outcomes and existing canonical element references. Related tickets can use a common ICEBLOCK worktree. An agent can retain context across related tickets rather than restart for each one.
+Execute every ticket with two agents, including a single-ticket job. Individual tickets and worktree grouping do not imply solo execution. Solo-work proposals were rejected; no solo-mode change was implemented.
+Both agents have work to perform and organize their coordination themselves. Communication and shared context support correction during the work. Do not add a separate verification agent or final verification pass. Do not turn this explanation into additional prompt wording.
+Observe actual agent coordination through word bubbles using the existing UI approach. This visibility requirement does not authorize adding message-frequency instructions.
+
+Several related tickets can share a worktree. Keep the functional group, ticket granularity and pair assignment as distinct concerns. Do not require a decomposer to manufacture two artificially separate tickets or halves merely to produce paired work.
+Identify shared changes when coordinating work across regions. Worktrees separate working directories; they do not by themselves settle conflicts when changes are combined.
+Current dispatch.merge.branch_of derives a default branch from work_id. Shared-worktree support across ticket records still needs implementation. Preserve a shared worktree while its other work is active; coordinate Git operations and cleanup without creator-only authority.
+
+8. Partner selection, preparation and worker lifetime
+
+Preserve the exact supplied worker protocol. The ticket holder prepares the end-to-end plan, registers the worksheet, allocates elements and updates planned node assignments.
+Inspect peer tasks, histories and ratings, and select a suitable peer with no Next assignment. A candidate may still be working on a current ticket. Send the invitation and proposed allocation, await acceptance, then register the partner and checklist count.
+Use waiting time to prepare the upcoming work. When preparation is complete and the accepted partner is still occupied, wait dormant and wake when the partner finishes. This overlaps preparation with ongoing execution and preserves the existing contexts.
+Resolve competing offers through agent messages. Do not add automatic reservations, first-claim rules, coordinator privileges or forced assignment arbitration.
+The former 60-percent spawning threshold and soft-limit proposal were withdrawn. Do not reintroduce them.
+Progress derives from checked worksheet items. Completion interpretation and allocation follow the ticket and worksheet; do not invent a finalizing stage. Once N/N is complete, append the completed worksheet to the ticket. Both counterparts submit their ratings through MCP, then the ticket closes.
+After a round, the former non-holder chooses the next ticket first and tells the former holder when finished. Keep this as prompted turn-taking rather than a coded privilege.
+An individual worker with no available work waits in standby. Once the run is finished, all agents have finished, and no new tickets remain, the agents leave the map and end their contexts. Preserve the separately stored worker_lifetime instruction.
+Do not add a separate knowledge-growth assignment; context persists as work proceeds.
+
+9. Agent board and ratings
+
+Preserve the compact board layout:
+
+agent-name  rating %  context %  complete %
+Next
+task_phrase (canonical element names)
+Current
+task_phrase (canonical element names)
+Past
+task_phrase (canonical element names) rating %
+
+Use canonical element names exactly as stored. Do not expand them. Give each ticket a concise summary phrase.
+The headline rating averages completed rounds. Past entries show the received round rating. Category points total a maximum of 100. Category names and point allocations remain to be supplied; do not invent them.
+Use reported native context occupancy for context percentage and checklist counts for completion percentage. Leave unknown values unknown.
+Agents may inspect peers' board information, not their own ratings. Preserve the supplied prohibition on discussing ratings and the instruction to report violations to the User Agent. Keep explanations of the rating instructions' purpose out of agent material. Supply delegated agents with required functional context and task instructions rather than forwarding private discussion of behavioral rationale.
+The implemented board uses <temporary directory>/.metadata/<project-id>/sessions.sqlite, honoring TMPDIR. It is ordinary SQLite storage that reopens across server restarts and page refreshes. Run history clears when the last worker leaves. Completed worksheets remain in project tickets.
+The native MCP board read excludes the calling worker's row. The SQLite file has ordinary filesystem visibility; filesystem isolation is not implemented. Do not assume browser storage or claim the file is inaccessible to agents.
+
+10. Skills and context delivery
+
+Store project agent expertise in the expertise layer, directly within the receiving element's joins key or attached to the functional join as supported by the existing graph implementation. Preserve receiver-owned functional semantics.
+Store reusable, cross-cutting skills in the MCP server. Both locations use the same SKILL.md/frontmatter/manifest representation. Canonical skill URIs support shared references.
+Implemented MCP Skills methods: skills/list, skills/get and individual resources/read under io.modelcontextprotocol/skills. Preserve YAML fields, complete manifests, SHA-256 digests, raw byte sizes and exact source bytes. The shared representation checks 512 files and 16 MiB. Directory-read support is not advertised.
+Authored reusable files live under the Metaform home's skills/<name> directory. Authored URIs use skill://<name>/SKILL.md; packaged native skills use skill://metaform/<name>/SKILL.md. Known expertise URIs can be read without enumerating all project expertise.
+Discover module tools and schemas on demand. Load selected skills and supporting files when needed. Do not inject every tool/schema, role prompt, skill body or library into every agent's context.
+MCP Tasks represents durable asynchronous execution. Metaform task definitions supply assigned instructions. Keep these two uses of task distinct; MCP does not define Metaform's prompt placeholders.
+Referenced fallback skills base map extension and spec_enhancement still need authored definitions. Do not synthesize them or an architecture skill from retired roles without the required instructions.
+Protocol references used for implementation:
+https://modelcontextprotocol.io/extensions/tasks/overview
+https://github.com/modelcontextprotocol/ext-tasks
+https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx
+Verify the running MCP server's project and source version before assuming it serves this branch. Source graph queries use the codebase-memory index home-rich-metaform; that index name does not establish the Metaform project's registered ID.
+
+11. Actual input fields and placeholders
+
+Implemented automatic task placeholders:
+- {project}: explicit project_name when supplied, otherwise the selected project identifier or folder name.
+- {name variable}: the executing agent name, bound when available.
+
+There is no automatic {name}, specification reference/path/content, board-name, Start building or ICEBLOCK placeholder. Additional assignment context currently travels in text and is appended after the task instructions. Add explicit bindings when their input contract is defined; do not list proposed names as already working.
+
+Element data fields are separate:
+- name: the canonical name used by the project for that element.
+- address: the full functional map address used to attach a ticket through node.
+- short_name: the generated short name, distinct from name. Preserve the authoritative naming definitions in the project instructions.
+
+The tasks ticket tool currently accepts summary, text and node. It does not yet accept a board or ICEBLOCK field.
+Worksheet registration accepts ticket, items, holder, partner and nodes. Item objects can contain id, text, agent, nodes and done. Use existing canonical values rather than expanding names.
+Assignment accepts the task definition name or explicit text, selected skills, agent, folder, project_name, node, agent_name and native options. These API inputs are not all text-template substitutions.
+
+12. Equal agents and retained boundaries
+
+Give all agents the same project capabilities and restrictions. A facilitator label, ticket-holder status, creator identity or recorded coordinator must not grant exclusive authority. Permit legitimate project operations and delegated decisions within the existing context.
+Keep factual authorship. Record the actual caller or decision-maker; never turn an agent's decision into a claim of personal approval.
+Retain shared structural checks for valid records, correct targets, current revisions, consistent state and conflicting writes. Preserve the explicit shared prohibitions against shutting down the computer, shutting down Metaform and using credit cards.
+Keep native permission forwarding and actual adapter option validation. Do not infer new organizational permission gates from labels or from these shared boundaries.
+Do not add worker ticket-creation prohibitions or a policy requiring special permission for exceptional project decisions. Follow supplied tasks and skills.
+
+13. Implemented behavior and remaining integration work
+
+The current code supports exact task loading, dedicated ACP assignment, native configuration, durable task handles, peer messages, idle wake-up, cancellation, persistent workers, registered worksheets, checklist progress, counterpart ratings, ticket closure and an event-driven worker board.
+The retired paths include creator-only stopping, coordinator routing/runtime preparation, assignment-based peer redirection, automatic ticket queues/retries/waves/hold reviews, Full Auto controls and automatic candidate integration. A2A and Paperclip retain explicit ticket transport. Issue reports create User Agent assignments instead of held Sentinel work.
+This is not a claim that every historical schema, prompt or obsolete reference across the entire repository has been erased. Historical hold-review table declarations retain existing data without executing reviews.
+ICEBLOCK, shared-ticket worktree grouping, the specification completion window and the new Full Auto flow are not implemented.
+Automatic work selection must respect the primary board so preparing an inactive board does not start it. Resolve run completion in that model: tasks.protocol.drain currently checks all open project work, including work on inactive boards.
+Define how Full Auto starts or reuses the persistent worker pool. No new spawning policy, pool size or role hierarchy has been agreed.
+The worker source and provisional ticket_creation draft place some planning/allocation wording at different stages. Use the forthcoming ticket-making prompt and explicit source revisions to settle that, rather than silently rewriting either task.
+
+14. Verification and execution precautions
+
+The worker/skill foundation passed 216 focused tests in 86.88 seconds. Exact output is in /tmp/metaform-worker-release-tests/pytest.log. The Architect registration passed 18 assigned-task tests in 10.41 seconds. Ruff and targeted strict Pyright checks passed.
+Native tests used deterministic fake ACP adapters. The actual worker-board component was exercised in headless Chromium. Event tests delivered 6,500 irrelevant payloads with zero assignment, board or transport reads. Isolated source handlers used effectively zero CPU during a 60-second blocked idle measurement. These are not real-model or full production measurements.
+The full repository suite and hosted-client compatibility were not demonstrated. No production instance or agent session was restarted for these changes. Do not describe the design as proven in real-model operation.
+Use a meaningful, user-selected real job when live behavior is to be observed. Do not add automatic model-based validation or a separate verification stage. Ordinary software checks remain available when appropriate to the assigned implementation.
+Avoid broad scans, default parallel pytest and sweeping process cleanup. Prior investigation disrupted WSL. For focused Python tests use .venv/bin/pytest -o addopts= -n 0 with a unique /tmp parent and basetemp beneath it. Stop testing when the relevant checks pass unless a new failure, change or unresolved concern justifies more work.
+Use the existing event bus and map.changed relay. Filter by project, table/kind and affected IDs before reading state. Coalesce bursts, ignore irrelevant changes and avoid reacting to own writes. Do not introduce polling.
+
+15. Preserve unrelated working changes
+
+These tracked files already had unrelated edits before the task work and remain outside the commits described above:
+docs/README.md
+specifications/00-index.md
+specifications/01-map.md
+specifications/11-context.md
+specifications/CAPTURE.md
+specifications/DRAFT-2026-10-20-coherent-spec.md
+specifications/OPEN-QUESTIONS.md
+src/metaform/modules/dispatch/resources/prompts.xml
+src/metaform/modules/map/resources/prompts.xml
+src/metaform/modules/mcp/resources/prompts.xml
+src/metaform/modules/orchestration/resources/prompts.xml
+
+Existing untracked files: docs/README.md~ and docs/reviews/.acp-context-implementation.md.swp.
+Do not overwrite, stage, reset, clean, stash or otherwise absorb that work. Do not rewrite instruction files. Stage only the files owned by the current change. No public push or release has been performed.
+
+16. Next input and next implementation decisions
+
+Receive the forthcoming ticket-making prompt and preserve its authored wording. Establish its task name and exact data bindings before replacing the provisional draft.
+Define intake's ICEBLOCK instructions, membership representation and relationship to worktree resolution. Preserve ordinary decomposition and paired execution.
+Finish the specification artifact/reference and completion-window contract. Resolve automatic board activation when Full Auto is already enabled. Implement the explicitly specified unchecked/checked behavior without changing unrelated settings.
+Connect ICEBLOCK-aware shared worktrees, primary-board selection and finished-run lifetime coherently. Keep agent coordination self-organizing through the supplied tasks and skills.
+Observe live operation only through the selected, bounded job. Keep all prompt edits explicit and separate from explanatory discussion.
+
+No compaction-control tool is exposed in the current toolset. This file is the durable handoff for the next context; /compact is the available user-interface action to request compaction.
