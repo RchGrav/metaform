@@ -217,6 +217,14 @@ def listed(ctx: Context) -> dict[str, Any]:
 
 # ------------------------------------------------------------------------------------------------ hooks
 
+def captured(payload: dict[str, Any], ctx: Context) -> None:
+    """Apply the existing repair policy to committed captures, separately from the log reader."""
+    store = ctx.store
+    if store is None or payload.get('project') != store.project_id:
+        return
+    faults.tell(ctx, store, payload['groups'], {})
+
+
 def status(ctx: Context) -> Status:
     """A line with what is watched, and while no log is configured the notice that says to configure one: to an
     intake agent its intake step, to the person's own agent the connect notice. Both texts are read from prompts.xml,
@@ -322,7 +330,8 @@ MODULE = Module(
         Verb('list', listed, 'The error groups, most counted first, each with its ticket once filed.',
              nouns=(Noun('limit', 'How many groups; all when left out.', 'int', required=False),), effect='read'),
     ),
-    subscriptions=(Subscription(faults.TOPIC, faults.raised), Subscription('map.changed', faults.freed)),
+    subscriptions=(Subscription(faults.TOPIC, faults.raised), Subscription('map.changed', faults.freed),
+                   Subscription('autoticket.captured', captured)),
     provides=(Provides('project.background', background.start),),
     status=status,
     default='list',

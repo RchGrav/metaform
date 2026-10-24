@@ -1,6 +1,6 @@
 """The watch: reads the project's watched logs, joins their lines into entries, groups the entries it captures, and
-keeps each group's counter; a group never seen before is filed as a ticket at once, and a recurring one counted on its
-open ticket, as every fault is, `faults.py`.
+keeps each group's counter. Committed captures are announced as `autoticket.captured`; the separately registered
+fault policy decides whether to file tickets. Capturing a log does not import or call the repair policy.
 
 Each log is read by one process at a time, the holder of its lease: a lock on a file of its own in the home, which the
 system lets go when the holder ends, by a crash too. A process that wants the log waits on that lock and takes the log
@@ -11,7 +11,7 @@ position past it, and by no other.
 
 Nothing here wakes on a timer to look for a change, QUAL-015. The watch sleeps on its events queue until a reader hands
 it a line, a lease is handed over, a `map.changed` from another process names its tables (a log added or removed, a
-rule), or a real deadline comes: an open entry's quiet time, the one-second write batch, or the end of a `seconds` run.
+rule), or a real deadline comes: an open entry's quiet time, a write batch, a failed reader's retry, or a run's end.
 """
 from __future__ import annotations
 
@@ -253,6 +253,9 @@ class Held:
     drops: int = 0
     reconnects: int = 0
     last_drop: str = ''
+    retry_at: float | None = None
+    retry_delay: float = sources.BACKOFF_FIRST
+    recovering: bool = False
 
     @property
     def position(self) -> int:
@@ -394,10 +397,20 @@ class Watch:
                 for entry in held.assembler.feed(event[1], event[2], now):
                     self.take(held, entry)
                 held.offset = event[3]
+                held.retry_delay = sources.BACKOFF_FIRST
             elif kind == 'file':  # a new file, or the same one from its start: what was open is closed
                 for entry in held.assembler.flush():
                     self.take(held, entry)
                 held.identity, held.offset = event[1], event[2]
+                if held.recovering:
+                    held.reconnects += 1
+                    held.recovering = False
+            elif kind == 'failed':
+                held.drops += 1
+                held.last_drop = f'{now_text(self.clock())} {event[1]}'
+                self.totals.drops += 1
+                held.retry_at = now + held.retry_delay
+                held.retry_delay = min(held.retry_delay * 2, sources.BACKOFF_MOST)
             elif kind == 'drop':
                 for entry in held.assembler.flush():
                     self.take(held, entry)
@@ -407,6 +420,8 @@ class Watch:
             elif kind == 'reconnect':
                 held.reconnects += 1
         for held in self.held.values():
+            if held.retry_at is not None:
+                continue  # recover the unfinished entry from its persisted start, rather than splitting it
             for entry in held.assembler.idle(now):  # closed by its quiet time: a count to write
                 self.dirty = True
                 self.take(held, entry)
@@ -433,6 +448,34 @@ class Watch:
         group.last = at
         if not group.first:
             group.first = at
+
+    def retry_readers(self) -> None:
+        """Replace failed readers from committed checkpoints while retaining their log leases."""
+        if self.stopping:
+            return
+        due = [name for name, held in self.held.items()
+               if held.retry_at is not None and held.retry_at <= self.monotonic()]
+        if not due:
+            return
+        # Persist completed groups and the start of any unfinished entry together before replacing a reader.
+        # A failed commit propagates to service recovery; no replacement can skip uncommitted evidence.
+        self.settle(self.write())
+        for name in due:
+            held = self.held.get(name)
+            if held is None:
+                continue
+            with self.store.tables(write=False) as tx:
+                row = tx.get('logs', {'source': name})
+            if row is None or row['holder'] != self.me:
+                self.drop(name)
+                continue
+            held.reader.join(timeout=5)
+            held.identity, held.offset = str(row['identity'] or ''), int(row['offset'])
+            held.assembler = entries.Assembler()
+            held.reader = sources.reader(held.source, held.identity, held.offset, self.events)
+            held.retry_at = None
+            held.recovering = True
+            held.reader.start()
 
     # -------------------------------------------------------------- writing
 
@@ -490,9 +533,7 @@ class Watch:
         return [row]
 
     def settle(self, made: list[dict[str, Any]]) -> None:
-        """Place each group made on the map, then file each new group as a ticket and count each recurring one on its
-        open ticket, as every fault is."""
-        from . import faults
+        """Place committed groups on the map and announce capture separately from repair-ticket policy."""
         touched, self.touched = self.touched, set()
         if not touched:
             return
@@ -505,10 +546,11 @@ class Watch:
             with self.store.tables() as tx:
                 for group_id, (address, number) in placed.items():
                     tx.update('groups', {'group_id': group_id}, {'address': address, 'number': number})
-        faults.tell(self.ctx, self.store, touched, {})
         project = self.store.project_id
         bound = self.store.bound_base()
-        self.ctx.publish('map.changed', {'project': project, 'base_id': bound.id if bound else None})
+        self.ctx.publish('map.changed', {'project': project, 'base_id': bound.id if bound else None,
+                                        'tables': ['autoticket.groups'], 'kinds': ['log_capture']})
+        self.ctx.publish('autoticket.captured', {'project': project, 'groups': sorted(touched)})
 
     # -------------------------------------------------------------- one turn
 
@@ -520,6 +562,7 @@ class Watch:
             self.claim()
         if self.dirty and self.clock() - self.written_at >= BEAT_SECONDS:
             self.settle(self.write())
+        self.retry_readers()
 
     def wait(self) -> float | None:
         """Seconds until the next deadline, an open entry's quiet time or the write batch; None while there is none.
@@ -527,7 +570,9 @@ class Watch:
         if self.claim_due:
             return 0.0
         now, at = self.monotonic(), self.clock()
-        due = [held.assembler.closes_at - now for held in self.held.values() if held.assembler.closes_at is not None]
+        due = [held.assembler.closes_at - now for held in self.held.values()
+               if held.retry_at is None and held.assembler.closes_at is not None]
+        due.extend(held.retry_at - now for held in self.held.values() if held.retry_at is not None)
         if self.dirty:
             due.append(self.written_at + BEAT_SECONDS - at)
         return max(0.0, min(due)) if due else None
