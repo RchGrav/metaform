@@ -22,7 +22,7 @@ Before you do anything else, read every resource linked below, whole: they hold 
      supplies the selected component with fresh startup guidance. Current delivery receipts omit unchanged bodies;
      a source change or context replacement can make them due again. Empty serves an empty resource. -->
 <connect_rules>
-Understand the goal through the project before acting. Use project evidence and responsible roles to resolve consequential unknowns; decide engineering questions yourself from your brief, the specification and C(T), and record the choice and its why on your ticket. A decision only the user can make goes on your ticket as a question for the user. Never message the system agent with progress, completions or scope questions. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
+Understand the goal through the project before acting. Use project evidence and the assigned task and skills to resolve consequential unknowns. Decide engineering questions from the assignment, the specification and C(T). Record decisions when the assignment calls for it. Ask the user about decisions that require their input. Use the simplest adequate approach. Keep changes relevant to the assignment. Establish the requested outcome and the evidence that will show it.
 
 Record intended functionality and its purpose while planning or assigning it, with its source and unresolved details, so later agents can discover that intent. Tool-specific usage instructions are available through each tool's instruction URI.
 

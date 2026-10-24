@@ -1,30 +1,22 @@
-"""Authored roles and one durable receipt ledger for each recipient context epoch."""
+"""Context delivery evidence, independent of assigned tasks and dynamically loaded skills."""
 from __future__ import annotations
 
 import hashlib
 import hmac
-import re
 import secrets
-import time
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from metaform import home, prompt_files
-from metaform.data import Column, Index, StoreError, Table, TableTx
-from metaform.module import AgentRoleDefinition, Context, Stop, agent_role_name, context, provided
+from metaform.data import Column, Index, Table, TableTx
+from metaform.module import Context, Stop, context
 
 TABLES = (
-    Table('definitions', place='project', key=('name',), columns=(
-        Column('name', required=True), Column('purpose', required=True), Column('prompts', 'json', required=True),
-        Column('source', 'json', required=True), Column('version_id', required=True), Column('at', required=True))),
     Table('definition_history', place='project', key=('name', 'seq'), columns=(
         Column('name', required=True), Column('seq', 'int', required=True), Column('purpose', required=True),
         Column('prompts', 'json', required=True), Column('source', 'json', required=True),
         Column('version_id', required=True), Column('at', required=True))),
-    Table('role_sources', place='project', key=('name', 'provider'), columns=(
-        Column('name', required=True), Column('provider', required=True), Column('purpose', required=True),
-        Column('prompts', 'json', required=True))),
     Table('contexts', place='project', key=('session_id',), columns=(
         Column('session_id', required=True), Column('epoch', 'int', required=True), Column('reason'),
         Column('at', required=True))),
@@ -51,45 +43,18 @@ def _own(ctx: Context) -> Context:
                                                      session=ctx.session, identity=ctx.identity)
 
 
-def generated(ctx: Context) -> tuple[AgentRoleDefinition, ...]:
-    """Generated definitions are normal provider contributions; their duties remain versioned prompt-store text."""
-    ctx = _own(ctx)
-    if ctx.store is None:
-        return ()
-    with ctx.store.tables(write=False) as tx:
-        rows = tx.rows('definitions', limit=0).results
-    return tuple(AgentRoleDefinition(str(row['name']), str(row['purpose']),
-                                    tuple(_prompt_name(name) for name in row['prompts'])) for row in rows)
-
-
-def definitions(ctx: Context) -> list[tuple[str, AgentRoleDefinition]]:
-    found: list[tuple[str, AgentRoleDefinition]] = []
-    for owner, values in provided(ctx.folder, 'agent.roles'):
-        contributed = values(context(owner, ctx.folder, project=ctx.project)) if callable(values) else values
-        found.extend((owner, one) for one in cast(Sequence[Any], contributed)
-                     if isinstance(one, AgentRoleDefinition))
-    return found
-
-
 def _fingerprint(one: dict[str, Any]) -> str:
     # Recompute from the actual body rather than trusting a caller's label for another body.
     return hashlib.sha256(str(one.get('text') or '').encode('utf-8')).hexdigest()
 
 
-def _prompt_name(name: str) -> str:
-    return prompt_files.address(*name.split(':', 1)) \
-        if not name.startswith('prompt.') and re.fullmatch(r'[A-Za-z_][\w.-]*:.+', name) else name
-
-
 def _prompt_names(name: str) -> tuple[str, ...]:
-    # Bare component names are not necessarily prompt-store references (for example map:functional_context).
-    # Only the demonstrated persisted generated-role aliases acquire a new key without a canonical input name.
-    canonical = _prompt_name(name) if (name == 'orchestration:common' or
-                                      name.startswith('agents:generated_')) else name
-    if canonical.startswith('prompt.skill.'):
-        return canonical, 'skill:' + canonical.removeprefix('prompt.skill.')
-    return (canonical, canonical.removeprefix('prompt.')) \
-        if canonical.startswith('prompt.') and ':' in canonical else (canonical,)
+    """Read historical prompt reference spellings in retained delivery evidence."""
+    if name == 'orchestration:common' or name.startswith('agents:generated_'):
+        name = 'prompt.' + name
+    if name.startswith('prompt.skill.'):
+        return name, 'skill:' + name.removeprefix('prompt.skill.')
+    return (name, name.removeprefix('prompt.')) if name.startswith('prompt.') and ':' in name else (name,)
 
 
 def _active(receipt: dict[str, Any]) -> str:
@@ -110,122 +75,8 @@ def _receipt(tx: TableTx, key: dict[str, Any]) -> tuple[dict[str, Any] | None, b
     return tied[0], len({_active(one) for one in tied}) > 1
 
 
-class RoleService:
-    """Public `agent.role` service. Resolution, binding by orchestration, and delivery are distinct operations."""
-
-    def specialists(self, ctx: Context) -> list[dict[str, Any]]:
-        """Only reusable expertise, with no duty bodies or operational roles in the selection context."""
-        declared = definitions(_own(ctx))
-        counts: dict[str, int] = {}
-        for _, one in declared:
-            counts[one.name] = counts.get(one.name, 0) + 1
-        return [{'name': one.name, 'purpose': one.purpose, 'uri': one.uri, 'provider': owner}
-                for owner, one in declared if one.specialist and counts[one.name] == 1]
-
-    def resolve(self, ctx: Context, name: str, *, bindings: dict[str, str] | None = None) -> dict[str, Any]:
-        ctx = _own(ctx)
-        requested = name
-        name = agent_role_name(name)
-        matched = [(owner, one) for owner, one in definitions(ctx) if one.name == name]
-        result: dict[str, Any] = {'uri': requested if requested.startswith('metaform://') else f'metaform://role/{name}',
-                                  'name': name, 'provider': None,
-                                  'purpose': '', 'components': [], 'problems': [], 'missing': False}
-        if not matched:
-            known: Sequence[dict[str, Any]] = ()
-            if ctx.store:
-                with ctx.store.tables(write=False) as tx:
-                    known = tx.rows('role_sources', {'name': name}, limit=0).results
-            result['missing'] = not bool(known)
-            result['problems'] = [f'Role {name} source is unavailable: ' + ', '.join(str(one['provider']) for one in known)
-                                   if known else f'No authored role {name} on this surface.']
-            return result
-        if len(matched) > 1:
-            result['problems'] = [f'Role {name} is claimed by providers: {", ".join(owner for owner, _ in matched)}.']
-            return result
-        owner, definition = matched[0]
-        result.update(uri=definition.uri, provider=owner, purpose=definition.purpose, specialist=definition.specialist)
-        if requested.startswith('metaform://') and requested != definition.uri:
-            result.update(problems=[f'{name} is available at {definition.uri}.'])
-            return result
-        if ctx.store is not None:
-            with ctx.store.tables() as tx:
-                key = {'name': name, 'provider': owner}
-                row = {**key, 'purpose': definition.purpose, 'prompts': list(definition.prompts)}
-                previous = tx.get('role_sources', key)
-                if previous is None:
-                    tx.insert('role_sources', row)
-                elif previous != row:
-                    tx.update('role_sources', key, row)
-        generated_row = None
-        if owner == 'agents' and ctx.store is not None:
-            with ctx.store.tables(write=False) as tx:
-                generated_row = tx.get('definitions', {'name': name})
-            if generated_row:
-                result['version_id'] = generated_row['version_id']
-        renderers = provided(ctx.folder, 'prompt.render')
-        components: list[dict[str, Any]] = []
-        problems: list[str] = []
-        for reference in definition.prompts:
-            fills = dict(bindings or {})
-            component_owner = prompt_files.split_address(reference)[0]
-            for renderer_owner, renderer in renderers:
-                if renderer_owner == component_owner:
-                    supplied = renderer(context(renderer_owner, ctx.folder, project=ctx.project), reference, fills)
-                    if supplied is not None:
-                        fills.update(cast(dict[str, str], supplied))
-            try:
-                try:
-                    one = prompt_files.resolve(reference, **fills)
-                except StoreError as error:
-                    if not (generated_row and reference.startswith('prompt.agents:generated_') and
-                            'duty' in generated_row['source']):
-                        raise
-                    # Portable project definitions survive independently of the home's prompt store. Use their
-                    # exact duty only when resolution is unavailable, preserving the missing-selection evidence.
-                    one = prompt_files.component(reference, generated_row['source']['duty'],
-                                                 version_id=generated_row['version_id'])
-                    one.update(selected_version_id=None,
-                               problems=[f'{reference}: {error}; the project definition snapshot is served.'],
-                               source={'kind': 'definition_fallback', 'path': None, 'shipped_identity': None})
-                if generated_row and reference.startswith('prompt.agents:generated_'):
-                    # The definition is provenance, not a second prompt store. Its historical duty stays available
-                    # in definition history and assignment snapshots while current resolution honors selected edits.
-                    one['source'] = {**one.get('source', {}), 'definition_version_id': generated_row['version_id']}
-            except (OSError, LookupError, StoreError, ValueError) as error:
-                problems.append(f'{reference}: {error}')
-                continue
-            components.append(one)
-        result.update(components=components, problems=problems,
-                      notices=[notice for one in components for notice in
-                               [*one.get('notices', []), *one.get('problems', [])]],
-                      text='\n\n'.join(str(one['text']) for one in components))
-        return result
-
-    def publish(self, ctx: Context, name: str, purpose: str, duty: str,
-                source: dict[str, Any] | None = None) -> dict[str, Any]:
-        ctx = _own(ctx)
-        name = agent_role_name(name)
-        if not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', name):
-            raise Stop('A role name must fit one resource path segment.', 'use a registered role identity')
-        conflicts = [owner for owner, one in definitions(ctx) if one.name == name and owner != 'agents']
-        if conflicts:
-            raise Stop(f'Role {name} is already provided by {", ".join(conflicts)}.', 'inspect that role')
-        # Source identity survives project reuse while generated prompt names never overwrite a shipped component.
-        prompt_name = f'prompt.agents:generated_{ctx.require_store().project_id}_{name}'
-        version, _ = prompt_files.save_edit(prompt_name, duty, format='text')
-        references = ['prompt.orchestration:common', prompt_name]
-        row = {'name': name, 'purpose': purpose, 'prompts': references, 'source': {**(source or {}), 'duty': duty},
-               'version_id': version.version_id, 'at': home.now()}
-        with ctx.require_store().tables() as tx:
-            previous = tx.get('definitions', {'name': name})
-            if previous is None:
-                tx.insert('definitions', row)
-            else:
-                tx.update('definitions', {'name': name}, row)
-            if previous is None or previous['version_id'] != version.version_id or previous['source'] != row['source']:
-                tx.insert('definition_history', {**row, 'seq': time.time_ns()})
-        ctx.publish('agent.role.changed', {'role': name, 'version_id': version.version_id, 'project': ctx.project})
-        return {**self.resolve(ctx, name), 'version_id': version.version_id, 'source': row['source']}
+class ContextService:
+    """Public `agent.context` service for preparing and acknowledging instruction delivery."""
 
     def epoch(self, ctx: Context, session: str | None) -> int:
         ctx = _own(ctx)
@@ -288,22 +139,21 @@ class RoleService:
         return {'epoch': epoch, 'components': due, 'previous': previous,
                 'text': '\n\n'.join(str(one.get('text') or '') for one in due)}
 
-    def changes(self, ctx: Context, session: str | None, role: str, *,
-                bindings: dict[str, str] | None = None) -> list[dict[str, Any]]:
-        """References to changed instructions already consumed by this context, never a role-body bootstrap.
+    def changes(self, ctx: Context, session: str | None,
+                components: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        """References to changed instructions already consumed by this context.
 
         Preparing references acknowledges nothing. Equal rendered text is unchanged even when its source version
-        or selection metadata differs. Resolution uses the current selected source, separately from any assignment
-        snapshot. Delivery history cannot establish whether the model retained the earlier instruction.
+        or selection metadata differs. The caller supplies current components. Delivery history cannot establish
+        whether the model retained the earlier instruction.
         """
         ctx = _own(ctx)
         if not session or ctx.store is None:
             return []
-        resolved = self.resolve(ctx, role, bindings=bindings)
         epoch = self.epoch(ctx, session)
         notices: list[dict[str, Any]] = []
         with ctx.store.tables(write=False) as tx:
-            for one in resolved['components']:
+            for one in components:
                 name, fingerprint = str(one['name']), _fingerprint(one)
                 key = {'session_id': session, 'epoch': epoch, 'name': name}
                 before, ambiguous = _receipt(tx, key)
@@ -321,9 +171,6 @@ class RoleService:
                                 'previous': active, 'actual_version_id': one.get('actual_version_id'),
                                 'selected_version_id': one.get('selected_version_id'),
                                 'source': one.get('source'),
-                                # The authored URI intentionally reads a pinned assignment snapshot. A changed
-                                # selected source needs the existing current-source inspection tool instead.
-                                'read': {'tool': 'agents_resolve', 'arguments': {'name': resolved['name']}},
                                 'problems': one.get('problems') or []})
         return notices
 
@@ -450,22 +297,13 @@ class RoleService:
         return epoch
 
 
-SERVICE = RoleService()
+SERVICE = ContextService()
 
 
 def compacted(payload: dict[str, Any], ctx: Context) -> None:
     session = payload.get('session') or payload.get('runner') or payload.get('session_id')
     if session:
         SERVICE.advance(ctx, str(session), reason='compaction')
-
-
-def resolve(ctx: Context) -> dict[str, Any]:
-    return SERVICE.resolve(ctx, str(ctx.nouns['name']))
-
-
-def publish(ctx: Context) -> dict[str, Any]:
-    return SERVICE.publish(ctx, str(ctx.nouns['name']), str(ctx.nouns['purpose']), str(ctx.nouns['duty']),
-                           cast(dict[str, Any], ctx.nouns.get('source') or {}))
 
 
 def inspect_receipts(ctx: Context) -> dict[str, Any]:

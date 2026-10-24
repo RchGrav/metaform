@@ -71,7 +71,7 @@ from metaform.data import (
     reference,
 )
 from metaform.finish_xml import xml as map_xml
-from metaform.module import Stop, agent_role_name
+from metaform.module import Stop
 from metaform.outline import markdown as map_markdown
 from metaform.outline import mermaid as map_mermaid
 from metaform.outline import mermaid_limits
@@ -218,7 +218,7 @@ WRITE_ROUTES = frozenset({
     '/api/voice/note', '/api/page-faults'})
 DISPATCH_ROUTES = frozenset({
     '/api/raise', '/api/talk', '/api/system-chat', '/api/merge-review', '/api/merge-assist', '/api/ticket-merge', '/api/dispatch-start',
-    '/api/orchestration-call',
+    '/api/task-assign',
     '/api/dispatch-message', '/api/dispatch-broadcast', '/api/dispatch-fork', '/api/dispatch-stop',
     '/api/dispatch-stop-all', '/api/dispatch-new', '/api/dispatch-interrupt',
     '/api/dispatch-cancel', '/api/dispatch-intake', '/api/dispatch-resume', '/api/dispatch-permit',
@@ -1080,9 +1080,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/dispatch-agents':
             return self.dispatch_agents({'project': query.get('project', [''])[-1]})
-        if url.path in ('/api/agent-roles', '/api/agent-role'):
-            return self.authored_roles({key: values[-1] for key, values in query.items() if key != 't'},
-                                       one=url.path == '/api/agent-role')
+        if url.path in ('/api/tasks', '/api/task-definition'):
+            return self.task_definitions({key: values[-1] for key, values in query.items() if key != 't'},
+                                         one=url.path == '/api/task-definition')
         if url.path == '/api/lookup':
             return self.lookup(query.get('project', [''])[-1], list(dict.fromkeys(query.get('refs', [''])[-1].split())))
         if url.path == '/api/merges':
@@ -1409,7 +1409,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/memory': self.write_memory,
                   '/api/mascot': self.mascot_request, '/api/mascot-result': self.mascot_result,
                   '/api/dispatch-start': self.dispatch_start, '/api/dispatch-message': self.dispatch_message,
-                  '/api/orchestration-call': self.orchestration_call,
+                  '/api/task-assign': self.assign_task,
                   '/api/dispatch-fork': self.dispatch_fork, '/api/dispatch-broadcast': self.dispatch_broadcast,
                   '/api/dispatch-stop': self.dispatch_stop, '/api/dispatch-stop-all': self.dispatch_stop_all,
                   '/api/dispatch-interrupt': self.dispatch_interrupt,
@@ -2304,22 +2304,23 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, chassis.result_json({**cast(dict[str, Any], found), 'enabled': True}).encode('utf-8'),
                    'application/json', {'Cache-Control': 'no-store'})
 
-    def authored_roles(self, given: dict[str, Any], *, one: bool = False) -> None:
-        """Responsibilities from the enabled public providers, with installed BMAD provenance beside native roles."""
+    def task_definitions(self, given: dict[str, Any], *, one: bool = False) -> None:
+        """Discover task definitions and selected skills, or read an exact task instruction body."""
+        arguments = {key: given[key] for key in ('name', 'project_name') if key in given} if one else {}
         try:
-            found = module_verb(given, 'agents', 'resolve', {'name': given.get('name')}) if one else role_choices(given)
+            found = module_verb(given, 'tasks', 'read' if one else 'list', arguments)
         except StoreError as error:
             return self.refuse(error, 404)
         except Stop as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
 
-    def orchestration_call(self, given: dict[str, Any]) -> None:
-        """The person requests a contribution from the selected assignment; the normal continuation owns launch."""
-        if not all(isinstance(given.get(key), str) and given[key].strip() for key in ('assignment', 'role', 'task')):
-            return self.send(400, {'error': 'A specialist call names its assignment, role and requested contribution.'})
+    def assign_task(self, given: dict[str, Any]) -> None:
+        """Assign the exact named or explicit task with its selected skills through the tasks module."""
+        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'folder', 'project_name')
+                     if key in given}
         try:
-            result = call_role(given)
+            result = module_verb(given, 'tasks', 'assign', arguments)
         except (Stop, ValueError) as error:
             return self.refuse(error, 400)
         self.reply(200, chassis.result_json(result).encode('utf-8'), 'application/json', {})
@@ -3890,7 +3891,7 @@ PERSONS_WRITES = frozenset({
     '/api/board-wipe', '/api/board-restore',
     '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
     '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
-    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/orchestration-call',
+    '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/task-assign',
     # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
     # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
     '/api/move', '/api/ticket', '/api/distribute', '/api/unhold-all'})
@@ -4079,48 +4080,6 @@ def merges_waiting(given: dict[str, Any]) -> dict[str, Any]:
     except (Stop, StoreError):
         return {'merges': []}
     return cast(dict[str, Any], found) if isinstance(found, dict) else {'merges': []}
-
-
-def role_choices(given: dict[str, Any]) -> dict[str, Any]:
-    """Source-aware menu from public role and installed-adapter declarations; opening it starts no agent."""
-    inventory = cast(dict[str, Any], module_verb(given, 'agents', 'roles', {}))
-    installed: dict[str, Any]
-    try:
-        installed = cast(dict[str, Any], module_verb(given, 'orchestration', 'bmad', {}))
-        available = True
-    except Stop:
-        installed = cast(dict[str, Any], {'installed': False, 'roles': [], 'problems': []})
-        available = False
-    bmad = {one['name']: one for one in installed.get('roles', [])}
-    roles: list[dict[str, Any]] = []
-    for one in inventory.get('authored', []):
-        external = bmad.get(one['role'])
-        source = 'BMAD' if external else 'Generated' if one['provider'] == 'agents' else 'Native'
-        launch = {'gc': 'claim', 'functionality': 'assessment', 'role_creator': 'commission'}.get(one['role'], 'call')
-        roles.append({**one, 'source_kind': source, 'launch': launch,
-                      **({'installed': external} if external else {})})
-    specialists: list[dict[str, Any]] = []
-    for one in inventory.get('specialists', []):
-        external = bmad.get(one['name'])
-        source = 'BMAD' if external else 'Generated' if one['provider'] == 'agents' else 'Native'
-        specialists.append({**one, 'role': one['name'], 'source_kind': source, 'launch': 'call',
-                            **({'installed': external} if external else {})})
-    return {'roles': roles, 'specialists': specialists, 'launch_available': available, 'bmad': installed}
-
-
-def call_role(given: dict[str, Any]) -> Any:
-    """Use actual managed verbs, retaining independent assessment and GC-owned commissioning boundaries."""
-    selected = str(given['role'])
-    role = agent_role_name(selected)
-    procedural = not selected.startswith('metaform://specialist/')
-    if procedural and role in ('gc', 'role_creator'):
-        raise Stop('A GC claims a root ticket; a new role is commissioned from its recorded role request.',
-                   'use the ticket start or GC commission operation')
-    if procedural and role == 'functionality':
-        return module_verb(given, 'orchestration', 'assess', {
-            'assignment': given['assignment'], 'summary': given['task']}, chosen=True)
-    arguments = {key: given[key] for key in ('assignment', 'task', 'result', 'context') if given.get(key)}
-    return module_verb(given, 'orchestration', 'call', {**arguments, 'role': selected}, chosen=True)
 
 
 def _stage(store: Store, target: Node, condition: str) -> Any:

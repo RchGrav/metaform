@@ -10,7 +10,6 @@ a default, CLI-023.
 from __future__ import annotations
 
 import inspect
-import os
 import re
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager, suppress
@@ -181,13 +180,7 @@ TERMINAL = 'their own terminal window (an AI tool runs commands without the cons
 
 
 def asking(folder: Path | None = None) -> tuple[str, str]:
-    """How a refused agent gets the person's decision, and how the next step it is given begins: an agent asks the
-    person in its chat with them; one whose role the person holds back (roles_without_authority)
-    asks no one and says it in its ticket's note, for the person's own agent to ask (UX review, person-consent F2)."""
-    role = os.environ.get('METAFORM_ROLE')
-    if role and role in (value('roles_without_authority', folder or Path.cwd()) or ()):
-        said = f"A {role} agent asks no one: say what you need in your ticket's note, and the person's own agent asks them."
-        return said, 'metaform map work op=edit id=<your work id> note="..."; to do it the person '
+    """How an agent requests the person's decision and explains the required next step."""
     return ('Ask the person in your chat with them: say what you propose and why, then wait for their answer.',
             'ask the person in chat; to do it they ')
 
@@ -856,33 +849,6 @@ agents_ask_first = boolean(
             'person\'s word in the chat or their answer on its card. Acts that cannot be undone, such as clearing or '
             'deleting, ask either way.',
     label='Ask me before agents act', category='automation', heading='Permissions')
-
-# The roles a dispatch runner gives the agent it starts, BASE-052: the intake, the agents the person summons, a merge
-# preparation and a worker on its ticket. A session with no role is one the person runs outside dispatch.
-AGENT_ROLES = ('intake', 'system', 'sentinel', 'talk', 'prep', 'worker')
-
-
-def _check_roles(names: Any, folder: Path) -> list[str] | None:
-    """A misspelt role would hold no agent back while seeming to, so it is refused, MAP-050. `none` alone holds back
-    no role: an empty list is not stored apart from no choice, so the default would come back."""
-    if list(names) == ['none']:
-        return None
-    for name in names:
-        if name not in AGENT_ROLES:
-            raise SettingError(f"--roles-without-authority has no role {name!r}. Roles: {', '.join(AGENT_ROLES)}.",
-                               'metaform help --roles-without-authority')
-    return None
-
-
-roles_without_authority = items(
-    'roles_without_authority', (), person_only=True, check=_check_roles,
-    choices=['none', *AGENT_ROLES], beyond_choices=True,  # _check_roles refuses another, in its own words
-    help='The roles of the agents Metaform starts that may not write tickets or start, stop or message agents.',
-    details='No role is held back by default. Configured entries retain their existing restriction on writing tickets '
-            'and steering agents. The page is the person\'s and is never held. '
-            'Set to none, no role is held back. Only the person changes this, on the command line or the page; it is a '
-            'permission the person holds, never a rule they cannot get past, MAP-050 and CLI-011.',
-                                label='Roles without authority', category='automation', heading='Permissions')
 
 # Jev via OpenRouter, the decision model, CHANGE-ORDER-2026-10-07 item 6 (P185): on by default since 2026-10-20, the
 # person's decision, because it costs pennies and chooses the agent, model and thinking level for each ticket; the code

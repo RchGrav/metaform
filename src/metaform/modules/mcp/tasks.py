@@ -1,7 +1,7 @@
 """The MCP Tasks extension, `io.modelcontextprotocol/tasks`: long tool calls and workflow runs as tasks, BASE-030.
 
 Every task speaks the one status vocabulary of work, `metaform.data.status`, whose table gives each state its task
-status. Two kinds of work are served as tasks, each only to a client that declares the extension on its request:
+status. Three kinds of work are served as tasks, each only to a client that declares the extension on its request:
 
 - A call of a verb declared `task=True`, such as hello's `wait`: the server writes the task (`task_records.py`),
   answers at once with it, and runs the verb in its own process. When the verb returns, the task holds the tool
@@ -19,6 +19,10 @@ status. Two kinds of work are served as tasks, each only to a client that declar
   the verb's result, such as workflow's `assign`, is never a task: a host gives the model a task's result only once
   the task ends, so the agent would never learn what to do.
 
+- An assigned agent session, declared `task='session'`, whose durable lifecycle is supplied by enabled modules
+  through `task.lifecycle`. The MCP bridge launches the session and reads its persisted handle before responding.
+  Its provider owns status, outstanding inputs, results and cancellation, independently of this server process.
+
 Source, read 2026-10-12: github.com/modelcontextprotocol/ext-tasks, specification/2026-07-28/tasks.md and
 schema/2026-07-28/schema.ts.
 """
@@ -34,9 +38,9 @@ from typing import Any, cast
 
 import anyio
 
-from metaform import events
+from metaform import events, home
 from metaform.data import Store, StoreError, plain, status
-from metaform.module import Stop, project_for, surface
+from metaform.module import Context, Stop, context, project_for, provided, surface
 
 from . import task_records as records
 
@@ -234,14 +238,44 @@ def seed_run(found: Store, run_id: str) -> dict[str, Any] | None:
     return None if row is None else {'resultType': 'task', **of_run(run_id, row)}
 
 
-def detailed(project: str | None, found: Store | None, task_id: str) -> dict[str, Any] | None:
-    """The task in full, for `tasks/get`: a tool call run as a task, or a workflow run by its id; None when there is
-    no such task."""
+def lifecycle(folder: Path, project: str | None = None) -> list[tuple[Context, Any]]:
+    """Enabled task lifecycle services, resolved through the owning project's public module surface.
+
+    Providers own task persistence, input keys and terminal-state immutability. Ordinary reads use the caller's
+    folder; a just-launched task uses its returned project, which may differ from the caller's project.
+    """
+    if project is not None:
+        registered = home.project(project)
+        if registered is None:
+            return []
+        folder = Path(registered.path)
+    return [(context(owner, folder, project=project, surface='mcp'), service)
+            for owner, service in provided(folder, 'task.lifecycle')]
+
+
+def seed_session(folder: Path, project: str, task_id: str) -> dict[str, Any] | None:
+    """The durable task handle of a launched agent session, read before answering the launch request."""
+    for ctx, service in lifecycle(folder, project):
+        seeded = service.seed(ctx, task_id)
+        if seeded is not None:
+            return cast(dict[str, Any], seeded)
+    return None
+
+
+def detailed(project: str | None, found: Store | None, task_id: str,
+             folder: Path | None = None) -> dict[str, Any] | None:
+    """The full tool-call, workflow or assigned-session task; None when no source knows its id."""
     made = None if project is None else records.get(project, task_id)
     if made is not None:
         return _of_call(made)
     row = None if found is None else _row(found, task_id)
-    return None if row is None or found is None else of_run(task_id, row)
+    if row is not None:
+        return of_run(task_id, row)
+    for ctx, service in lifecycle(folder) if folder is not None else []:
+        detail = service.get(ctx, task_id)
+        if detail is not None:
+            return cast(dict[str, Any], detail)
+    return None
 
 
 # A module verb run for the person's request through the task: the module, the verb and its nouns.
@@ -249,7 +283,7 @@ Verb = Callable[[str, str, dict[str, Any]], Awaitable[Any]]
 
 
 async def update(project: str | None, found: Store | None, task_id: str, responses: dict[str, Any],
-                 verb: Verb) -> bool:
+                 verb: Verb, folder: Path | None = None) -> bool:
     """The person's answer to the question a paused workflow run asks, given through the workflow module's `answer`
     verb, which only the person runs: the answer comes from the form their AI tool showed them. Only the key of the
     pause outstanding now is read; a response to another key, or one declined, is ignored, as the extension asks.
@@ -258,6 +292,10 @@ async def update(project: str | None, found: Store | None, task_id: str, respons
         return True
     row = None if found is None else await anyio.to_thread.run_sync(_row, found, task_id)
     if row is None:
+        services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
+        for ctx, service in services:
+            if await anyio.to_thread.run_sync(service.update, ctx, task_id, responses):
+                return True
         return False
     if row['state'] != 'input_required':
         return True
@@ -271,7 +309,8 @@ async def update(project: str | None, found: Store | None, task_id: str, respons
     return True
 
 
-async def cancel(running: Running, project: str | None, found: Store | None, task_id: str, verb: Verb) -> bool:
+async def cancel(running: Running, project: str | None, found: Store | None, task_id: str, verb: Verb,
+                 folder: Path | None = None) -> bool:
     """Cancel a task: for a tool call the cancel is recorded and its work stopped, here at once or by the process
     running it when it hears the change, and `run` ends the task as the work ends; a workflow run is cancelled through the
     workflow module's `cancel` verb. A task that has ended stays as it ended. False when there is none."""
@@ -283,6 +322,10 @@ async def cancel(running: Running, project: str | None, found: Store | None, tas
         return True
     row = None if found is None else await anyio.to_thread.run_sync(_row, found, task_id)
     if row is None:
+        services = [] if folder is None else await anyio.to_thread.run_sync(lifecycle, folder)
+        for ctx, service in services:
+            if await anyio.to_thread.run_sync(service.cancel, ctx, task_id):
+                return True
         return False
     if row['state'] in status.OPEN:
         await verb('workflow', 'cancel', {'run': task_id, 'reason': CANCELLED})

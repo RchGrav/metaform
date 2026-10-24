@@ -13,7 +13,7 @@ from typing import Any, cast
 from metaform import home, prompt_files, settings
 from metaform import skills as skill_registry
 from metaform.data import Store, StoreError, prompts
-from metaform.module import Context, Module, Noun, Stop, Verb, held_role, project_for
+from metaform.module import Context, Module, Noun, Stop, Verb, project_for
 
 from . import catalog, executor, runs
 from . import preprocess as preprocessing
@@ -287,7 +287,7 @@ def fail(ctx: Context) -> Any:
     return executor.fail(held, word, ctx.nouns['name'], ctx.nouns.get('message', ''))
 
 
-AGENT = ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK')  # set by a runner on the agent it starts, BASE-052
+AGENT = ('METAFORM_SESSION', 'METAFORM_WORK')  # set by a runner on the agent it starts, BASE-052
 
 
 def _identity(key: str) -> str | None:
@@ -353,19 +353,8 @@ def answer(ctx: Context) -> Any:
 
 
 def cancel(ctx: Context) -> Any:
-    """Cancel a run and the runs below it. An agent whose role the person holds back cancels none, as it stops no
-    agent, BASE-052 and MAP-050: a running run it cannot finish it fails, so its caller's Catch decides; one waiting
-    or paused it leaves to the person, with what stopped it in its ticket's note."""
-    role = held_role(ctx)
+    """Cancel a run and the runs below it."""
     held, word = _token(ctx)
-    if role is not None:
-        refused = f'A {role} agent cancels no workflow run: that is for the person and the agents that serve them.'
-        if executor.held(held, word).state == 'running':
-            raise Stop(f'{refused} Fail your own run with what stopped it.', f'metaform workflow fail <name> run={word}')
-        work = _identity('METAFORM_WORK') or '<your ticket>'
-        raise Stop(f'{refused} End your turn; write what stopped you in your ticket\'s note. The person cancels it '
-                   f'with metaform workflow cancel run={word}.',
-                   f'metaform map work op=edit id={work} note="<what and where>"')
     return executor.cancel(held, word, str(ctx.nouns.get('reason') or ''))
 
 

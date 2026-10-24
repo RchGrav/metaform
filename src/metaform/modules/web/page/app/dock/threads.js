@@ -20,7 +20,7 @@ import {narrowPage} from '/page/app/dock/place.js';
 import {D, ticketOf, glyphFor, glyphOf, renderAgents, agentAt, nameOf, agentLabel, readSessionHistory} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 import {isIntake, isHelper, countOf, isSystemState, isSystemSession} from '/page/app/session/tools.js';
-import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
+import {notificationState, taskSummary} from '/page/app/session/tasks.js';
 
 /* session: the session the thread is with, when it is known. A thread stays with its session, so a later session of
  * the same ticket opens a thread of its own and never swaps the conversation; with none known yet, the thread waits
@@ -216,7 +216,7 @@ function runningRow(session) {
   const chat = DOCK.chats.find(one => one.session === session.session_id), work = session.work_id;
   return listRow(`s:${session.session_id}`, {on: Boolean(DOCK.chat) && DOCK.chat === chat,
     source: chat?.source || sourceOf(work), glyph: ticketOf(work) && !isIntake(work) ? glyphOf(work) : null,
-    name: [nameOf(session) || agentName(session.agent), assignmentSummary(D.states?.[session.session_id])]
+    name: [nameOf(session) || agentName(session.agent), taskSummary(D.states?.[session.session_id])]
       .filter(Boolean).join(' · '),
     status: listState(session), ...taskOf(work, session), session: session.session_id,
     open: () => {  // the thread open at the click, which a row kept since it was drawn may not know of
@@ -292,7 +292,7 @@ export function drawAgentSessions() {
   }
   const row = forget => session => ({key: session.session_id,
     text: JSON.stringify([session.state, session.how, agentLabel(session), glyphOf(session.work_id),
-      sessionTask(session), assignmentSummary(D.states?.[session.session_id]), times[session.session_id],
+      sessionTask(session), taskSummary(D.states?.[session.session_id]), times[session.session_id],
       signalsOf.get(session.session_id) || null]),
     make: () => sessionRow(session, forget)});
   keyedFill(dock, stopped.map(row(true)));
@@ -330,7 +330,7 @@ function sessionRow(session, forget = false) {
   return h('div', {class: `agent-session${stopped ? ' stopped-agent' : ''}`, 'data-session': session.session_id},
     h('img', {src: glyphOf(session.work_id), alt: glyphFor(session.work_id)}),
     h('div', {class: 'details'}, h('b', {}, label), h('span', {class: 'task'}, task),
-      assignmentSummary(state) ? h('span', {class: 'meta responsibility'}, assignmentSummary(state)) : null,
+      taskSummary(state) ? h('span', {class: 'meta responsibility'}, taskSummary(state)) : null,
       notification ? h('span', {class: 'meta'}, 'Project messages') : !ended ? h('span', {class: 'meta'}, 'Running')
         : at ? h('time', {datetime: at, title: `${how} ${new Date(at).toLocaleString()}`}, `${word} ${clockOf(at, true)}`)
         : h('span', {class: 'meta', title: how}, stopped ? 'Stopped · time unavailable' : word)),

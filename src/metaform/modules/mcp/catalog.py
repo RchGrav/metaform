@@ -2,7 +2,7 @@
 
 The module directory publishes each active module's own summary. Sessions expose only the module they open.
 Stateless clients use the catalog's direct-call path rather than receiving every module's schemas at startup.
-Discovery and the user's configured authority controls remain independent.
+Discovery follows the enabled module surface without organizational role policy.
 """
 from __future__ import annotations
 
@@ -10,48 +10,18 @@ import os
 import re
 from collections.abc import Iterable
 from difflib import SequenceMatcher
-from pathlib import Path
 from typing import Any
 
-from metaform import settings
 from metaform.module import Module, Verb
 
 CATALOG = 'metaform_catalog'
 OPEN_KEY = 'catalog:module'
-
-HELD_OPS: dict[str, tuple[str, ...]] = {'map_work': ('add', 'move', 'distribute', 'glyphs')}
-HELD_ARGUMENTS: dict[str, tuple[str, ...]] = {
-    'map_work': ('column', 'position', 'held', 'reviewed', 'agent', 'hold', 'glyph', 'eligible', 'after_work', 'agents',
-                 'links', 'by', 'title', 'task'),
-    'dispatch_handoff': ('full',)}  # the full brief, no longer sent to agents, is the person's to read
-
-# These operations remain subject to roles_without_authority, independently of tool discovery.
-RESTRICTED_STEERING_TOOLS = frozenset({
-    'dispatch_start', 'dispatch_agents', 'dispatch_sessions', 'dispatch_message', 'dispatch_wait',
-    'dispatch_stop', 'dispatch_talk', 'dispatch_system', 'dispatch_intake', 'dispatch_helper', 'dispatch_signals',
-    'dispatch_resume', 'dispatch_interrupt', 'dispatch_cancel', 'dispatch_broadcast', 'dispatch_broadcasts',
-    'dispatch_autostart', 'dispatch_stop-all', 'dispatch_propose', 'dispatch_claim', 'dispatch_claims',
-    'dispatch_merges', 'dispatch_review', 'dispatch_prep', 'dispatch_fork', 'dispatch_options', 'dispatch_tune',
-    'dispatch_spend', 'dispatch_registry', 'dispatch_recover', 'dispatch_reset', 'dispatch_permit',
-    'dispatch_publication', 'agents_role', 'agents_sent', 'agents_override', 'agents_drop',
-})
-
 
 def role() -> str | None:
     """The role of the agent this server serves, from METAFORM_ROLE, which dispatch's runner sets on its agent's MCP
     server; None for the person's own sessions."""
     named = os.environ.get('METAFORM_ROLE') or ''
     return named if named and named != 'none' else None
-
-
-def held(folder: Path, named: str | None) -> bool:
-    """Whether the person holds the role back from steering agents and writing tickets, roles_without_authority."""
-    if named is None:
-        return False
-    try:
-        return named in (settings.value('roles_without_authority', folder) or ())
-    except LookupError:
-        return False
 
 
 FOR_PERSON = ('system', 'sentinel')
@@ -63,14 +33,6 @@ def for_person(named: str | None = None) -> bool:
     return named is None or named in FOR_PERSON
 
 
-def held_back(folder: Path, name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """The ops and the arguments of a tool left out for the role this server serves, HELD_OPS and HELD_ARGUMENTS: both
-    empty unless the person holds the role back."""
-    if not held(folder, role()):
-        return (), ()
-    return HELD_OPS.get(name, ()), HELD_ARGUMENTS.get(name, ())
-
-
 def grouped(names: Iterable[str], declared: dict[str, tuple[Module, Verb]]) -> dict[str, list[str]]:
     """Each tool occurs once, under its declared owner; chassis commands belong to metaform."""
     found: dict[str, list[str]] = {}
@@ -79,11 +41,6 @@ def grouped(names: Iterable[str], declared: dict[str, tuple[Module, Verb]]) -> d
         owner = declaration[0].id if declaration is not None else 'metaform'
         found.setdefault(owner, []).append(name)
     return {owner: sorted(found[owner]) for owner in sorted(found)}
-
-
-def in_scope(name: str, declared: dict[str, tuple[Module, Verb]], folder: Path, named: str | None = None) -> bool:
-    """Preserve explicit user restrictions without using discovery groupings as authority."""
-    return name not in RESTRICTED_STEERING_TOOLS or not held(folder, role() if named is None else named)
 
 
 def signature(schema: dict[str, Any]) -> str:

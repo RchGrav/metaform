@@ -218,9 +218,7 @@ every refusal on the paused run, to have the person run `answer`.
 `cancel` cancels the run and every open run below it, each keeping its row
 with the reason; a run handed from another delivers the error `cancelled` to
 its caller in the same transaction, as `fail` would, so the caller's Catch
-decides what follows. An agent whose role `roles_without_authority` holds back
-cancels no run: a running one it fails, and one waiting or paused it leaves to
-the person, with what stopped it in its ticket's note. `runs` lists the open
+decides what follows. Cancellation does not depend on an organizational role. `runs` lists the open
 runs, oldest first, or those in one state, the newest first for an ended
 state, 20 at a time with the command for the next page in `more`.
 `ticket=<work id>` filters in storage and remains in each next-page command.

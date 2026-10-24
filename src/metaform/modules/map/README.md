@@ -64,7 +64,7 @@ not predate the current completion, so reopening does not allow an older resolut
 
 Put a stopped agent's ticket back with `work op=move id=<work id> column=todo`; its ownership is cleared and its progress log is kept. Assignment already uses `work op=edit id=<work id> glyph=<name>`, or `work op=distribute agents=<n>` for several agents; the dispatch module starts the assigned tickets. A later take starts a new taken age.
 
-Ticket writes, task-bearing knowledge writes and condition/kind edits honor the explicitly configured `roles_without_authority` list, which is empty by default. The setting does not change functional meaning or schema validation. Actual user answers to permission requests still belong to the user-facing surface.
+Ticket writes, task-bearing knowledge writes and condition/kind edits have no role-based authority filter. Graph/schema invariants and explicit ticket eligibility still apply. Actual native permission responses retain their transport handling.
 
 `work op=add` accepts a no-task `unbuilt` or `under-construction` stage, using the DAO's `shown_open` contract. Such a record is visible on its node, has `is_work=false`, and is excluded from executable work and autostart. A task makes executable work; a trouble, broken or missing marker can start from its note. Empty built/ok records and notes without work or a visible stage remain invalid. New records announce kind `filed` on `map.changed`.
 

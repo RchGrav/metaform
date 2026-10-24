@@ -12,7 +12,7 @@ import {renderAgents} from '/page/app/agents/dispatch.js';
 import {agentName, summonAgent} from '/page/app/agents/pickers.js';
 import {skipsPrompts, STATUS_WORDS, countOf} from '/page/app/session/tools.js';
 import {SESSIONPOP, sessionSummary, preCallSettings} from '/page/app/session/settings.js';
-import {notificationState} from '/page/app/session/orchestration.js';
+import {notificationState} from '/page/app/session/tasks.js';
 
 /* A message: who wrote it, named above the first of a run of theirs, its words read as markdown, and on hover or
  * focus the time it arrived and, for the agent's, Copy. The sender is said to a screen reader in the bubble too. The

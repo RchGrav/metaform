@@ -141,9 +141,12 @@ def identity(given: dict[str, Any]) -> dict[str, str]:
     if row is None:
         raise Stop('That session is not one of this ticket\'s.', f'metaform dispatch sessions id={work}')
     state = cast(dict[str, Any], cast(dict[str, Any], found.get('states') or {}).get(str(row['session_id'])) or {})
+    task = cast(dict[str, Any], state.get('task') or {})
+    if task.get('task_id'):
+        return {'METAFORM_TASK': str(task['task_id']), 'METAFORM_WORK': work,
+                **({'METAFORM_SESSION': str(row['runner'])} if row.get('runner') else {})}
     about = state.get('about')
-    # the role its runner gave it: an intake, the person's system agent, a talk, or else a worker, whose authority
-    # the person may hold back (roles_without_authority), so a view of its thread is held back alike
+    # Preserve native session identity when the app opens its thread. Assigned tasks carry their durable task ID.
     role = 'intake' if work.startswith('intake-') else 'system' if about == 'system' else 'talk' if about else 'worker'
     return {'METAFORM_ROLE': role, 'METAFORM_WORK': work,
             **({'METAFORM_SESSION': str(row['runner'])} if row.get('runner') else {})}

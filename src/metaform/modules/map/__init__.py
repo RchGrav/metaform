@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 import difflib
 import json
-import os
 import re
 import shlex
 import time
@@ -51,7 +50,6 @@ from metaform.module import (
     ToolbarItem,
     Verb,
     agent_caller,
-    held_role,
     item_read,
     latest_item,
     node_reads,
@@ -1120,8 +1118,6 @@ def _knowledge(ctx: Context, op: str, notices: list[Notice]) -> Any:
     if op == 'add-property':
         (value,) = _empty(ctx, notices, 'value')
         return store.add_property(name, _element(nouns['element']), value, **_optional(ctx, 'refs', 'extra'))
-    if op == 'add-item' and ctx.nouns.get('task'):
-        _may_write_ticket(ctx)
     if op == 'add-item':
         (value,) = _empty(ctx, notices, 'value')
         link = _node(nouns['link']) if 'link' in nouns else None
@@ -1413,12 +1409,9 @@ def work(ctx: Context) -> Any:
     """The work records: the condition of an element or a join, apart from the map, MAP-046 and STORE-042.
     op=list, the default, reads them, and an id with no op reads one; add, edit, take, plan, step, move and done
     write one each, and distribute gives the open tickets the glyphs of N agents, VIEW-040. A no-task stage
-    records part state, separately from executable work. Explicit roles_without_authority settings govern ticket
-    writes and condition/kind edits; the default list is empty."""
+    records part state, separately from executable work."""
     # An id with no op reads that one ticket with what the map holds at its node and its links, MAP-048.
     op = str(ctx.nouns.get('op', 'read' if 'id' in ctx.nouns else 'list'))
-    if op == 'add':
-        _may_write_ticket(ctx)
     if op not in WORK_READS or op == 'read' and 'op' in ctx.nouns:
         raise Stop(f'{op!r} is not a work operation: op=list, glyphs, sources, add, edit, take, plan, step, move, distribute, done or remove; '
                    'unhold_all; with id= and '
@@ -1426,15 +1419,6 @@ def work(ctx: Context) -> Any:
     _need(ctx, *WORK_NEEDS[op], verb='work')
     unread = sorted(name for name in ctx.nouns if name != 'op' and name not in WORK_READS[op])
     notices = [Notice(name, f'op={op} does not read {name}; it was ignored.') for name in unread]
-    role = held_role(ctx) if op == 'edit' else None
-    if role and 'condition' in ctx.nouns:  # the part's state is not a worker's to set
-        ctx.nouns.pop('condition')
-        notices.append(Notice('condition', f'The state of a part is set by the intake and the person, not by a {role} '
-                                           'agent; it was ignored. Say what you found in the note.'))
-    if role and 'kind' in ctx.nouns:  # what sort of ticket it is was decided with it
-        ctx.nouns.pop('kind')
-        notices.append(Notice('kind', f'A ticket\'s kind is set by whoever wrote it, not by a {role} agent; it was '
-                                      'ignored. Say what you found in the note.'))
     for name in unread:
         ctx.nouns.pop(name)
     store, nouns = _store(ctx), ctx.nouns
@@ -1756,25 +1740,9 @@ def _on_word(ctx: Context, word: tuple[dict[str, Any], str, list[str]] | None, r
     return result
 
 
-def _may_write_ticket(ctx: Context) -> None:
-    """A ticket is not written by an agent whose role the person holds back, MAP-050; on the page it always is. A
-    worker may open a child of the ticket it holds, BASE-061: the branch waits for `op=add` to read `parent`, so until
-    BASE-061 is built no call reaches it."""
-    role = held_role(ctx)
-    if role is None:
-        return
-    parent = ctx.nouns.get('parent')
-    if 'parent' in WORK_READS['add'] and parent and parent == os.environ.get('METAFORM_WORK'):
-        return
-    raise Stop(f'A {role} agent writes no ticket: tickets are written by the person and the agents that serve them. '
-               'Write what you found in your own ticket\'s note.',
-               'metaform map work op=edit id=<your work id> note="..."')
-
-
 def _claim(ctx: Context, store: Store, work_id: str, by: Any) -> None:
     """A restricted claim uses the transport's client name, or the CLI owner's first word, never the environment, which
-    an agent's harness may have mixed with its runner's. Ticket authority does read the runner's role from it,
-    `held_role`, since that guards against an agent's mistakes and is no boundary, MAP-050."""
+    an agent's harness may have mixed with its runner's."""
     kept = _settings(store, [work_id]).get(work_id, {})
     if 'eligible' not in kept:
         return
@@ -1851,8 +1819,8 @@ def boards(ctx: Context) -> dict[str, Any]:
     op = str(ctx.nouns.get('op') or 'list')
     name = str(ctx.nouns.get('name') or '').strip()
     if op in ('wipe', 'restore'):
-        # Clearing a board belongs to the person, even when an agent's role permits steering other agents.
-        if ctx.surface == 'mcp' or held_role(ctx):
+        # Clearing a board belongs to the person.
+        if ctx.surface == 'mcp':
             raise Stop('Wipe and restore are person_only. Use the Boards select on the page.',
                        'open the board on the page')
         if 'name' not in ctx.nouns:
@@ -2548,8 +2516,7 @@ MODULE = Module(
                             'what its agent works from; a trouble, broken or missing marker starts from its note. '
                             'Ticket creation never adds a hold because of source, role or review status. Use an '
                             'explicit hold with its reason when work must wait. Reason-based unholding requires no '
-                            'person approval. Explicit roles_without_authority settings govern ticket writes and '
-                            'condition/kind edits; the default list is empty.',
+                            'person approval.',
              examples=((('metaform map work op=add node=element:code.alarm.audible condition=unbuilt '
                          'title="Build the alarm" task="build it"'),
                         'Record that the alarm is not built yet, with the task that builds it.'),

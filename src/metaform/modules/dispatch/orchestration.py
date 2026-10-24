@@ -112,15 +112,6 @@ def identity(ctx: Context) -> tuple[dict[str, Any], dict[str, Any]]:
     return row, side(ctx, record, row)
 
 
-def owned_gc(ctx: Context, team: str | None = None) -> tuple[Any, dict[str, Any], dict[str, Any]]:
-    owner = service(ctx)
-    row, sender = identity(ctx)
-    held = owner.assignment(ctx, session_id=str(row['session_id'])) if owner is not None else None
-    if not held or held['gc_assignment_id'] != held['assignment_id'] or (team and held['team_id'] != team):
-        raise Stop('Only the recorded delivery owner can direct its own workers.', 'metaform orchestration team')
-    return owner, held, sender
-
-
 class Transport:
     """The orchestration module uses this provider instead of importing dispatch internals."""
 
@@ -644,31 +635,6 @@ def carried_updates(ctx: Context, idents: list[str]) -> None:
             if tx.get('session_lines', {'session_id': UPDATES, 'name': f'notification:{ident}'}) is not None:
                 add_line(tx, UPDATES, UPDATES, f'carried:{ident}', 'carried',
                          json.dumps({'runner': ctx.session, 'at': home.now()}))
-
-
-def broadcast(ctx: Context, text: str, team: str | None = None) -> dict[str, Any]:
-    from . import BROADCASTS
-    from .signals import own_store
-    owner, gc, sender = owned_gc(ctx, team)
-    ident = hashlib.sha256(f'{gc["assignment_id"]}:{time.time_ns()}'.encode()).hexdigest()[:16]
-    recipients: list[dict[str, Any]] = []
-    for member in owner.members(ctx, gc['team_id']):
-        if (member['assignment_id'] == gc['assignment_id'] or member.get('stop')
-                or member['state'] in ('returned', 'delivered', 'failed', 'stopped', 'transferred')):
-            continue
-        event = owner.queue_message(ctx, member['assignment_id'],
-            {'id': ident, 'kind': 'gc_broadcast', 'from': sender, 'text': text, 'team_id': gc['team_id']},
-            key=ident)
-        recipients.append({'work_id': member['work_id'], 'assignment_id': member['assignment_id'],
-                           'session_id': member.get('owner_session_id'), 'transition_id': event['transition_id'],
-                           'state': 'queued', 'steered': False})
-    line = {'id': ident, 'text': text, 'from': sender, 'at': home.now(), 'team_id': gc['team_id'],
-            'recipients': recipients}
-    with own_store(ctx.require_store()).tables() as tx:
-        tx.insert('session_lines', {'session_id': BROADCASTS, 'work_id': BROADCASTS, 'name': f'broadcast:{ident}',
-            'kind': 'broadcast', 'text': json.dumps(line, ensure_ascii=False), 'seq': time.time_ns() // 1_000_000})
-    drain(ctx, [str(one['work_id']) for one in recipients])
-    return {'sent': ident, 'team_id': gc['team_id'], 'recipients': recipients, 'steered': False}
 
 
 def transitions_changed(payload: dict[str, Any]) -> bool:

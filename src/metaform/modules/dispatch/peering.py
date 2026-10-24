@@ -12,7 +12,7 @@ continuations wait for the turn boundary. The runner marks delivery on its copy 
 read, replied. With `wait=<seconds>` the note is a question and the call waits for the replies threaded to it,
 `reply=<id>`, and says plainly who did not answer; a reply that reaches a waiting sender is returned by the call rather
 than given to it again as a turn. A note never starts, stops, interrupts or redirects anyone, so the authority check
-`may_steer` does not apply to it. The configured controls and dynamic blacklist govern operation.
+Registered sender identity is retained. Organizational role labels do not impose a permission blacklist.
 
 One note is more than information: the person's own system agent, in a turn the person's message started, marks a
 note `decision=true` when it relays that person's decision. Its line is a `user_direction` that carries the person's

@@ -2742,14 +2742,10 @@ def test_session_identity_reaches_the_agent_and_its_mcp_server(dispatch):
 
 @pytest.mark.req('BASE-052')
 @pytest.mark.req('MAP-050')
-def test_configured_dispatch_authority_and_message_identity_require_registered_sender(dispatch, run):
-    """Configured role restrictions still apply; naming a role cannot impersonate a registered peer sender."""
-    run('set', '--roles-without-authority', 'worker', cwd=dispatch.folder)
+def test_message_identity_requires_registered_sender(dispatch, run):
+    """Naming an operational role cannot impersonate an authenticated registered peer sender."""
     dispatch.start('hold')
     eventually(lambda: dispatch.received('session/prompt'))
-    refused = run('dispatch', 'stop', dispatch.id, cwd=dispatch.folder, ok=False, env={'METAFORM_ROLE': 'worker'})
-    assert refused.returncode != 0 and 'roles_without_authority holds back worker' in \
-        refused.stdout + refused.stderr
     unregistered = run('dispatch', 'message', dispatch.id, 'Look', 'again', cwd=dispatch.folder, ok=False,
                        env={'METAFORM_ROLE': 'system'})
     assert unregistered.returncode != 0
@@ -2868,8 +2864,8 @@ def test_workers_send_each_other_peer_notes_kept_on_both_tickets_and_still_steer
                                 cwd=dispatch.folder, env=a).stdout)
         assert silent['replies'] == [] and 'No reply came from' in silent['said']
 
-        refused = run('dispatch', 'interrupt', other.id, cwd=dispatch.folder, ok=False, env=a)
-        assert refused.returncode != 0 and 'Only the recorded GC' in refused.stdout + refused.stderr
+        interrupted = run('dispatch', 'interrupt', other.id, cwd=dispatch.folder, env=a)
+        assert interrupted.returncode == 0
         sent_message = run('dispatch', 'message', other.id, 'new information', cwd=dispatch.folder, env=a)
         assert sent_message.returncode == 0
         assert other.process.poll() is None
@@ -6156,25 +6152,6 @@ def test_a_halt_refuses_every_start_asked_for_before_it_and_a_clear_every_start_
     run('dispatch', 'stop', second, '--json', cwd=dispatch.folder)
 
 
-def paused_by_stop_all(run, home, project_folder, tmp_path):
-    """Three assignments, one agent slot and Stop all pressed: the work, the assignments' reader and the dispatch
-    context."""
-    from metaform.module import context
-    from metaform.modules.dispatch.orchestration import TRANSPORT
-    from metaform.modules.orchestration.state import SERVICE
-    made = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
-    works = [made.id, *(made.store.add_work(made.node, 'unbuilt', task=f'Write part {n}.').id for n in (2, 3))]
-    owner_ctx = context('orchestration', project_folder, project='proj')
-    runtime_offers(made, 'claude')
-    for work in works:
-        TRANSPORT.keep_runtime(owner_ctx, work, {
-            'agent': 'claude', 'model': 'balanced', 'effort': 'medium', 'decider': 'facilitator',
-            'confidence': 1.0, 'reason': 'Use the fake runtime for stop lifecycle checks.'})
-        SERVICE.ensure(owner_ctx, work, role='researcher')  # Explicit fixture duty; no automatic role default.
-    run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=project_folder)
-    run('dispatch', 'stop-all', '--json', cwd=project_folder)
-    return made, works, (lambda work: SERVICE.assignment(owner_ctx, work_id=work)), \
-        context('dispatch', project_folder, project='proj')
 
 
 def launches_recorded(monkeypatch):
@@ -6194,47 +6171,8 @@ def launches_recorded(monkeypatch):
     return importlib.import_module('metaform.modules.dispatch'), launched
 
 
-@pytest.mark.req('VIEW-042')
-def test_full_auto_turned_on_after_stop_all_resumes_the_work_it_paused_in_board_order_within_the_slots(
-        run, home, project_folder, tmp_path, monkeypatch):
-    """Found 2026-10-19: after Stop all on the machine, Full Auto turned on again started none of the 16 assignments
-    it had stopped, since every stopped assignment read as the person's stop of that one work. Stop all is a pause:
-    Full Auto turned on resumes each in place, as many as the slots allow, in board order, the rest on later passes."""
-    from metaform.modules import dispatch as module
-    made, works, assignment, ctx = paused_by_stop_all(run, home, project_folder, tmp_path)
-    try:
-        assert all(assignment(work)['state'] == 'stopped' for work in works)
-        assert ctx.setting('dispatch_autostart') is False
-        assert 'resumed' not in module.autostart(ctx), 'nothing comes back while Full Auto is off'
-        run('set', '--dispatch-autostart', cwd=project_folder)
-        module, launched = launches_recorded(monkeypatch)
-        board = [record.id for record in sorted(made.store.work(open=True, limit=0).results, key=module.board_order)]
-        first = module.autostart(ctx)
-        assert first.get('resumed') == board[:1] and first.get('paused_waiting') == board[1:], first
-        assert assignment(board[0])['stop'] is None and assignment(board[0])['state'] == 'queued'
-        assert launched[-1] == board[:1], 'its launch goes through the gate, resumed in place'
-        assert [module.autostart(ctx).get('resumed') for _ in board[1:]] == [[one] for one in board[1:]]
-        assert module.autostart(ctx).get('resumed') is None, 'the pause is lifted once'
-    finally:
-        made.close()
 
 
-@pytest.mark.req('VIEW-042')
-def test_a_stop_the_person_gave_one_ticket_survives_full_auto_turned_on_after_stop_all(
-        run, home, project_folder, tmp_path, monkeypatch):
-    """A stop of one ticket lasts until that work is restarted, even given after Stop all paused it; Full Auto
-    turned on again resumes only the rest of what Stop all paused."""
-    made, works, assignment, ctx = paused_by_stop_all(run, home, project_folder, tmp_path)
-    try:
-        run('dispatch', 'stop', works[0], '--json', cwd=project_folder)
-        assert not assignment(works[0])['stop'].get('every')
-        run('set', '--dispatch-agents', '3', '--dispatch-autostart', cwd=project_folder)
-        module, _ = launches_recorded(monkeypatch)
-        assert sorted(module.autostart(ctx).get('resumed') or []) == sorted(works[1:])
-        assert assignment(works[0])['state'] == 'stopped' and not assignment(works[0])['stop'].get('every')
-        assert module.autostart(ctx).get('resumed') is None
-    finally:
-        made.close()
 
 
 @pytest.mark.req('BASE-053')

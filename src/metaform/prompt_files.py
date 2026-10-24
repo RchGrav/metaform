@@ -638,6 +638,9 @@ def _noted(sent: Sent) -> None:
 def component(name: str, text: str, *, version_id: str | None = None,
               bindings: dict[str, str] | None = None) -> dict[str, Any]:
     """One exact rendered context component; constructing it establishes no delivery."""
+    for marker, value in (bindings or {}).items():
+        if marker.startswith('{') and marker.endswith('}'):
+            text = text.replace(marker, value)
     return {'name': name, 'text': text, 'actual_version_id': version_id,
             'selected_version_id': version_id, 'number': None, 'origin': 'generated',
             'rendered_fingerprint': hashlib.sha256(text.encode('utf-8')).hexdigest(),
@@ -726,7 +729,7 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
     place. A prompt on trial is read first and never stored. A missing element is a defect, as for `required`. An edit
     that is not well formed is not sent: the shipped text is, and the reason goes to stderr, for `agents show` names
     it on the role."""
-    resolved = _resolved(folder, name, **fills)
+    resolved = resolve(address(owner(folder), name), **fills) if '.' in name else _resolved(folder, name, **fills)
     for problem in [*resolved['problems'], *resolved.get('notices', [])]:
         sys.stderr.write(str(problem) + '\n')
     _noted(Sent(resolved['name'], resolved['number'], resolved['origin'], resolved['actual_version_id'],

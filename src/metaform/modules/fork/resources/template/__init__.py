@@ -149,7 +149,7 @@ Any module-owned wording belongs in its resources/prompts.xml.
 """
 from __future__ import annotations
 
-from metaform.module import AgentRoleDefinition, Module, Pane, Provides, ToolbarItem
+from metaform.module import Module, Pane, ToolbarItem
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -158,7 +158,6 @@ REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
 
 # Domain expertise uses definition.uri under metaform://specialist/; specialist=False uses metaform://role/.
 # Tasks stay in assignments; prompt-store source names and full instruction bodies stay with their owner.
-ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(
     id='template',
@@ -187,5 +186,4 @@ MODULE = Module(
         Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
              resource='resources/pane.md', area='right'),
     ),
-    provides=(Provides('agent.roles', ROLE_DEFINITIONS),),
 )

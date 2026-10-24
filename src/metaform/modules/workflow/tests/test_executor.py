@@ -270,14 +270,13 @@ def test_login_and_refusal_are_a2a_states_with_a_reason():
                                                                                    'input_required')
 
 
-def test_only_the_person_answers_a_paused_run_and_a_held_role_cancels_none(run, store, project_folder):
-    """MAP-050 as amended 2026-10-08 and BASE-052: an agent pauses a run, and the person answers it; a worker neither
-    answers it nor cancels it, and a refusal names the person's answer command for the agent to hand on."""
+def test_session_identity_protects_paused_answers_without_role_cancel_gate(run, store, project_folder):
+    """Paused answers retain actual session identity checks. Cancellation is independent of operational role."""
     word = begin(store)
     executor.pause(store, word, 'The target code.timer.kitchen is gone from the map and the prompt names no other.')
     refused = run('workflow', 'complete', 'RETURN TRUE', f'run={word}', cwd=project_folder, ok=False)
     assert 'paused on the person' in refused.stderr and f'workflow answer run={word}' in refused.stderr
-    for key in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK'):
+    for key in ('METAFORM_SESSION', 'METAFORM_WORK'):
         refused = run('workflow', 'answer', f'run={word}', 'yes', cwd=project_folder, ok=False, env={key: 'x'})
         assert 'Only the person answers' in refused.stderr
     assert runs.read(store, word).state == 'input_required'
@@ -285,9 +284,7 @@ def test_only_the_person_answers_a_paused_run_and_a_held_role_cancels_none(run, 
     assert [one['run'] for one in json.loads(listed)['runs']] == [word]
     run('workflow', 'answer', f'run={word}', 'the', 'second', cwd=project_folder)
     assert executor.view(store, word)['answer']['answer'] == 'the second'
-    refused = run('workflow', 'cancel', f'run={word}', cwd=project_folder, ok=False, env={'METAFORM_ROLE': 'worker'})
-    assert 'cancels no workflow run' in refused.stderr and runs.read(store, word).state == 'running'
-    run('workflow', 'cancel', f'run={word}', cwd=project_folder)
+    run('workflow', 'cancel', f'run={word}', cwd=project_folder, env={'METAFORM_ROLE': 'worker'})
     assert runs.read(store, word).state == 'cancelled'
 
 

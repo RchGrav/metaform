@@ -2259,36 +2259,8 @@ def test_ticket_authority_lets_a_session_with_no_role_write_a_ticket_over_mcp(ru
     assert [record.task for record in Store('proj').work(open=True, limit=0).results] == ['Wire the alarm.']
 
 
-@pytest.mark.req('MAP-050')
-def test_ticket_authority_refuses_a_worker_over_mcp_and_on_the_command_line(run, home, mapped, monkeypatch):
-    """A person-configured restriction applies on either surface and names the actual execution role."""
-    run('set', '--roles-without-authority', 'worker', cwd=mapped)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
-
-    async def call(client, init):
-        said = await called(client, 'map_work', {'op': 'add', 'node': 'code.timer.kitchen', 'task': 'More work.'})
-        return said.is_error, text(said)[0]
-    error, said = session(home, mapped, call)
-    assert error and 'A worker agent writes no ticket' in said
-    refused = run('map', 'work', 'op=add', 'node=code.timer.kitchen', 'task=More work.', cwd=mapped, ok=False)
-    assert refused.returncode != 0 and 'A worker agent writes no ticket' in refused.stderr + refused.stdout
-    assert not Store('proj').work(open=True, limit=0).results
 
 
-@pytest.mark.req('MAP-050')
-@pytest.mark.req('CLI-011')
-def test_ticket_authority_is_lifted_when_the_person_holds_no_role_back(run, home, mapped, monkeypatch):
-    """The rule is the person's setting, not a refusal they cannot get past: set to none, a worker writes a ticket."""
-    run('set', '--roles-without-authority', 'none', cwd=mapped)
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
-
-    async def call(client, init):
-        said = await called(client, 'map_work', {'op': 'add', 'node': 'code.timer.kitchen', 'task': 'Child work.',
-                                                 'title': 'Child work'})
-        return said.is_error, text(said)[0]
-    error, said = session(home, mapped, call)
-    assert not error, said
-    assert [record.task for record in Store('proj').work(open=True, limit=0).results] == ['Child work.']
 
 
 @pytest.mark.req('MCP-007')
@@ -2698,17 +2670,17 @@ def test_a_caution_and_a_person_only_change_are_asked_of_the_person_by_form_on_t
         plain = declaring(wire, 'tools/call', {'name': 'hello_forget', 'arguments': {}}, {})
         assert plain['isError'] is True and 'with confirm true' in plain['content'][0]['text']
         setting = declaring(wire, 'tools/call', {'name': 'metaform_set',
-                                                 'arguments': {'roles_without_authority': ['worker']}}, FORMS)
-        field = setting['inputRequests']['consent']['params']['requestedSchema']['properties']['roles_without_authority']
-        assert field['type'] == 'array' and 'sentinel' in field['items']['enum']  # a setting with choices: pick many
-        assert field['default'] == ['worker'] and field['description'].startswith('The roles of the agents')
+                                                 'arguments': {'jev_endpoint': 'openrouter'}}, FORMS)
+        field = setting['inputRequests']['consent']['params']['requestedSchema']['properties']['jev_endpoint']
+        assert field['type'] == 'string' and 'typesafe' in field['enum']
+        assert field['default'] == 'openrouter'
         made = declaring(wire, 'tools/call', {
-            'name': 'metaform_set', 'arguments': {'roles_without_authority': ['worker']},
+            'name': 'metaform_set', 'arguments': {'jev_endpoint': 'openrouter'},
             'requestState': setting['requestState'],
             'inputResponses': {'consent': {'action': 'accept',
-                                           'content': {'roles_without_authority': ['worker', 'sentinel']}}}},
+                                           'content': {'jev_endpoint': 'typesafe'}}}},
             FORMS)
-        assert made['structuredContent']['updated'][0]['new'] == ['worker', 'sentinel']
+        assert made['structuredContent']['updated'][0]['new'] == 'typesafe'
     finally:
         wire.close()
     dispatched = july_wire(home, mapped, METAFORM_ROLE='worker')
@@ -3891,49 +3863,6 @@ def test_an_assigned_agent_is_listed_check_in_and_assess_and_the_system_agent_it
     assert not any(name.startswith('web_') for name in listed_names(mapped, 'system-session'))
 
 
-@pytest.mark.req('MCP-003')
-@pytest.mark.req('MCP-039')
-@pytest.mark.req('MAP-050')
-def test_a_configured_restricted_worker_keeps_its_ticket_schema_and_guides(run, home, mapped):
-    """Everything a configured restricted worker reads on its ticket: its map_work schema and guides hold none of
-    the board's ops and arguments, a read by id gives the id's help alone, a write's guide none of the intake's and
-    the person's sentences; it is pointed to the glossary whole at connect, never to a part of it; the hand-off
-    names the memory tool with the real node; who else is at work is said with the tool that reaches them."""
-    run('enable', 'memory', cwd=mapped)
-    run('enable', 'dispatch', cwd=mapped)
-    run('set', '--roles-without-authority', 'worker', cwd=mapped)
-    run('memory', 'create_entities', json.dumps([{'name': 'tone', 'entityType': 'finding', 'why': 'The cook misses it.',
-                                                   'observations': ['The tone is too quiet.']}]),
-        'node=code.timer.kitchen', cwd=mapped)
-    work = ticket(run, mapped)
-
-    async def check(client, init):
-        await called(client, 'metaform_catalog', {'module': 'map'})
-        listed_now = await first_listed(client)
-        calls = [('map_work', {'id': work}), ('map_work', {'op': 'take', 'id': work}),
-                 ('map_work', {'op': 'plan', 'id': work, 'steps': 2}),
-                 ('map_work', {'op': 'step', 'id': work, 'said': 'Raised the tone.'}),
-                 ('map_where', {'address': 'code.timer.kitchen'}), ('dispatch_handoff', {'id': work}),
-                 ('dispatch_peers', {})]
-        results = [await called(client, name, arguments) for name, arguments in calls]
-        return init.instructions, listed_now, results
-    env = {'METAFORM_ROLE': 'worker', 'METAFORM_SESSION': 'worker-transcript', 'METAFORM_WORK': work}
-    said, listed_now, results = session(home, mapped, check, env=env)
-    schemas = json.dumps({name: [tool.description, tool.input_schema] for name, tool in listed_now.items()})
-    transcript = '\n'.join([said, schemas, *(block for result in results for block in blocks(result))])
-    task_transcript = '\n'.join([said, *(block for result in results for block in blocks(result))])
-    assert not [word for word in NOT_FOR_A_RESTRICTED_WORKER if word in task_transcript]
-    work_schema = listed_now['map_work'].input_schema['properties']
-    assert work_schema['op']['enum'] == ['list', 'edit', 'take', 'plan', 'step', 'done']
-    assert not {'column', 'glyph', 'agents', 'held', 'title', 'task', 'links'} & work_schema.keys()
-    read, taken, _, _, where, handed, peers = (blocks(result) for result in results)
-    assert read[0].splitlines()[1:] == [line for line in read[0].splitlines()[1:] if line.startswith('id: ')]
-    assert not any(GUIDED.match(block) for block in taken)  # the earlier read received the tool's guide
-    assert 'metaform://metaform/terms' not in transcript and 'metaform://metaform' in said
-    assert 'memory_read_unread node=element:code.timer.kitchen' in '\n'.join(read)  # the exact functional entry
-    assert 'Maintain relevant project knowledge at code.timer.kitchen' in '\n'.join(handed)
-    assert 'dispatch_note to=' in '\n'.join(peers) and 'dispatch note' not in '\n'.join(peers)
-    assert not any(one.startswith('Results are trimmed') for one in [*read, *where])  # said with a list, not a record
 
 
 @pytest.mark.req('MCP-007')

@@ -100,7 +100,6 @@ from metaform.module import (
     provided,
     record_agent_context,
     record_shown,
-    resolve_agent_role,
     shown_before,
     surface,
 )
@@ -135,7 +134,6 @@ from . import (
     intake_store,
     launch_options,
     leave_ledger,
-    mascot_line,
     memory_read,
     memory_text,
     module_read,
@@ -353,6 +351,8 @@ def role(nouns: dict[str, Any], work_id: str) -> str:
     agents the person summons (the sentinel on an issue, a talk, the system agent), a merge preparation, or a worker
     on its ticket, or a helper the system agent started with a brief. The nouns and the work id decide and not the
     session's flags, since intake, helpers and the summoned agents run as prep too."""
+    if nouns.get('task'):
+        return ''
     if intake_id(work_id):
         return 'intake'
     if helper_id(work_id) and not nouns.get('talk'):
@@ -799,7 +799,7 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
     # The one admission gate, from the runner's side: a runner the gate started is in its ledger already; one started
     # any other way, by hand or by a process on older code, is counted here, before any agent runs, VIEW-039. Found
     # 2026-10-16: an MCP server started before the slot check went on starting tickets past it.
-    summoning = any(ctx.nouns.get(word) for word in ('system', 'prep', 'question'))
+    summoning = any(ctx.nouns.get(word) for word in ('system', 'prep', 'question', 'task'))
     try:
         await asyncio.to_thread(admit_self, ctx, store, work_id, 'summoned' if summoning else 'worker')
     except StoreError as error:
@@ -809,6 +809,10 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         await asyncio.to_thread(given_back, store, work_id, ctx.nouns.get('reservation'))
         raise
     resumed = await asyncio.to_thread(worked_in, store, work_id, resume) if resume else None
+    if ctx.nouns.get('task'):
+        return await moved_on(store, await Session(
+            ctx, store, None, agent, command, ctx.nouns.get('cwd') or resumed, prep=True,
+            work_id=work_id, resume=resume).run())
     if intake_id(work_id):  # an intake agent, VIEW-045: no ticket; its session lives in the metaform it began in
         # This runner holds `intake.agent` for as long as it lives, and so as long as its agent does, BASE-039: the
         # record every surface reads of the intake under way, and what refuses a second one. Another live intake
@@ -1189,6 +1193,7 @@ class Session:
     def __init__(self, ctx: Context, store: Store | None, record: WorkRecord | None, agent: str, command: list[str],
                  folder: Any = None, prep: bool = False, system: bool = False, *, work_id: str | None = None,
                  resume: str | None = None) -> None:
+        self.task_id = str(ctx.nouns.get('task') or '')
         self.system = system  # the person's system agent: no ticket work, a conversation that lasts until stopped
         self.prep = prep  # helping the person prepare a merge, VIEW-044: it takes no ticket and lives between turns
         # The agent a start launched on its ticket, which takes that launch's own permissions, `launch_options`
@@ -1231,7 +1236,7 @@ class Session:
         # its agent reports through the authStatus extension, and `auth_methods` the logins it offers, P031.
         self.run_id = str(ctx.nouns.get('run') or RUN)  # A fresh retry retains its run before any spending report.
         self.acp: dict[str, Any] = {'agent': agent, 'run': self.run_id, 'agent_info': None, 'capabilities': {},
-                                  'cwd': self.folder,
+                                  'cwd': self.folder, 'task': {}, 'task_outcome': None, 'task_failure': None, 'task_inputs': [], 'task_turns': 0,
                                     'commands': [], 'plan': [], 'usage': None, 'tokens': None, 'title': None,
                                     'protocol_version': acp.PROTOCOL_VERSION, 'compactions': {},
                                     'touched': [], 'resumed': None, 'before_resume': [],
@@ -2716,7 +2721,7 @@ class Session:
         else:
             capacity.unlink(missing_ok=True)
         identity = {one.name: one.value for server in self.servers for one in server.env
-                    if one.name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE')}
+                    if one.name in ('METAFORM_ROLE', 'METAFORM_SESSION', 'METAFORM_WORK', 'METAFORM_NODE', 'METAFORM_TASK')}
         return {'fork': child, 'from': self.session_id, 'identity': identity}
 
     async def fork_message(self, child: str, text: str) -> dict[str, Any]:
@@ -3701,6 +3706,15 @@ class Session:
         self.prompts_ready = False
         if self.ending:
             return
+        if self.task_id and not self.resume:
+            self.acp['task'] = json.loads(await asyncio.to_thread(self.asked_for))
+            from .task_sessions import assigned
+            task_record = await asyncio.to_thread(assigned, self.ctx, self.task_id)
+            if task_record and task_record.get('cancel_requested'):
+                self.acp['task_outcome'] = 'cancelled'
+                self.how = 'The assigned task was cancelled before startup.'
+                self.ended.set()
+                return
         if self.node is None and (self.ctx.nouns.get('intake') or self.role == 'helper') and not self.resume:
             self.request = await asyncio.to_thread(self.asked_for)
             if self.role == 'helper':  # kept in its state, so its session read shows what it was asked, afterwards too
@@ -3722,7 +3736,6 @@ class Session:
         from .orchestration import assignment, service
         self.assignment = await asyncio.to_thread(assignment, self.ctx, self.work_id)
         owner = service(self.ctx)
-        native = owner is not None
         if owner is not None and self.role == 'worker' and self.assignment is None:
             self.assignment = await asyncio.to_thread(owner.ensure, self.ctx, self.work_id)
         if owner is not None and self.role == 'worker' and self.assignment is not None:
@@ -3754,9 +3767,10 @@ class Session:
                 return
         # the intake runs the Canonical Intake and nothing else: it was handed the triage duty with the system agent,
         # and read its prompt as its own (the person, 2026-10-20: the intake said 'triage duty loaded')
-        self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else (
-            'metaform://role/triage' if self.role == 'system' and native else None)
-        identity = {'METAFORM_ROLE': self.role, 'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
+        self.authored_role = str(self.assignment['authored_role_uri']) if self.assignment else None
+        identity = {'METAFORM_SESSION': self.runner, 'METAFORM_WORK': self.work_id,
+                    **({'METAFORM_TASK': self.task_id} if self.task_id else {}),
+                    **({'METAFORM_ROLE': self.role} if self.role else {}),
                     **({'METAFORM_AUTHORED_ROLE': self.authored_role} if self.authored_role else {}),
                     **({'METAFORM_NODE': self.at} if self.at else {})}
         self.ctx = replace(self.ctx, session=self.runner, identity=identity)
@@ -3932,6 +3946,13 @@ class Session:
         elif self.system:  # the person's own, and their mascot's voice when they have one
             text = await asyncio.to_thread(self.system_prompt)
             await self.save_state()  # with the versions it carries, so a conversation resumed later knows them
+        elif self.task_id:
+            task = self.acp['task']
+            text = str(task['instructions'])
+            if task.get('input'):
+                text += '\n\n' + str(task['input'])
+            for skill in task.get('skills', []):
+                text += '\n\n' + str(skill['text'])
         elif self.prep:
             from .merge import branch_of, dev_branch
             text = prompt('prep', work_id=self.work_id, branch=branch_of(self.work_id),
@@ -3998,10 +4019,9 @@ class Session:
     def system_prompt(self) -> str:
         """The person's system agent's prompt as the prompt store serves it now, its mascot's line filled in, with the
         versions it carries kept as the conversation's `opening`."""
-        text = prompt('system', project=self.store.project_id, mascot=mascot_line(Path(self.root)))
-        self.acp['opening'] = {one.name: one.version_id for one in self.sent
-                               if one.name in REOPENED and one.version_id is not None}
-        return text
+        from importlib import resources
+        return prompt_files.served(resources.files('metaform.modules.tasks'), 'user_agent.txt',
+                                   **{'{project}': self.store.project_id})
 
     def reopened(self) -> str | None:
         """The system prompt again, as the turn after an edit of it was saved carries it ahead of what the turn says,
@@ -4540,7 +4560,13 @@ class Session:
             return self.current_guidance(text, supplied)
 
     def current_guidance(self, text: str, supplied: list[dict[str, Any]]) -> str:
-        from .orchestration import resume_context, snapshots
+        if self.task_id:
+            component = self.acp['task'].get('component')
+            if component and component.get('text') and str(component['text']) in text:
+                self.inflight_context = prepare_agent_context(
+                    Path(self.root), self.runner, [component], project=self.store.project_id)
+            return text
+        from .orchestration import snapshots
         components: list[dict[str, Any]] = []
         if self.role == 'intake' and not self.probe:
             # The first turn already carries the actual procedure. Capture only
@@ -4560,18 +4586,6 @@ class Session:
             communication = prompt_files.module('dispatch', 'communication')
             if communication:
                 components.append(prompt_files.component('prompt.dispatch:communication', communication))
-        if self.authored_role and not self.probe:
-            held = resume_context(self.ctx, self.work_id, self.session_id)
-            role = (held or {}).get('role_snapshot') or resolve_agent_role(
-                Path(self.root), self.authored_role, project=self.store.project_id,
-                bindings={'project': self.store.project_id})
-            if role.get('missing') or role.get('problems'):
-                raise Stop(f'Authored role {self.authored_role} cannot be delivered: {role.get("problems")}',
-                           'metaform agents roles')
-            components.append(prompt_files.resolve('prompt.dispatch:role_resource', role=self.authored_role))
-            components.extend(role.get('components') or [])
-            if held:
-                self.assignment = held
         if not self.probe and (self.authored_role or self.role == 'worker'):
             address = self.at.partition('|')[0]
             if address:
@@ -4930,15 +4944,6 @@ class Session:
                             await self.epoch_moved.wait()
                         self.inflight_memory_changes = []
                         self.inflight_role_changes = []
-                        if self.authored_role:
-                            for _, provider in provided(Path(self.root), 'agent.role'):
-                                if not hasattr(provider, 'changes'):
-                                    continue
-                                notices = await asyncio.to_thread(provider.changes, self.ctx, self.runner,
-                                    self.authored_role, bindings={'project': self.store.project_id})
-                                if notices:
-                                    self.inflight_role_changes.append((provider, notices))
-                                    text += '\n\n' + json.dumps({'prompt_changes': notices}, ensure_ascii=False)
                         for _, provider in provided(Path(self.root), 'agent.context.changes'):
                             notices = await asyncio.to_thread(provider.pending, self.ctx, self.runner)
                             if notices:
@@ -4978,7 +4983,11 @@ class Session:
                 async with self.lock:
                     await self.flush()
                     await self.note('turn', 'turn', f'The turn ended: {reason}.')
-                    if self.acp['tokens'] is not None:
+                    if self.task_id:
+                        self.acp['task_turns'] = int(self.acp.get('task_turns') or 0) + 1
+                        if reason.startswith('error'):
+                            self.acp['task_failure'] = reason
+                    if self.acp['tokens'] is not None or self.task_id:
                         await self.save_state()
                 if current.sent and reason != 'cancelled' and not reason.startswith('error'):
                     await self.peer_marked(marks, 'read')  # the turn that carried them ended: they were read
@@ -4988,6 +4997,11 @@ class Session:
                 self.idle.set()
         await self.changed(tables='dispatch', kinds=['session', 'worker-idle'] if self.role == 'worker'
                            and self.turns == 0 else ['session'])
+        if self.task_id and self.turns == 0 and not self.ending:
+            if not self.acp['task'].get('interactive'):
+                self.acp['task_outcome'] = 'completed'
+                await self.end('The assigned task returned its result.')
+            return
         # A helper whose turns are drained has done its brief; one the person interrupted waits for what they say.
         if self.turns == 0 and not self.ending and self.role == 'helper' and not self.interrupted:
             await self.helper_done(reason)
@@ -5476,7 +5490,7 @@ class Session:
                 await self.reply(writer, {**said, 'state': 'running' if live else 'ended', 'agent_alive': alive,
                                           # how its permission requests are answered now, and whose choice that is
                                           **({'prompts': how, 'prompts_from': source} if how else {}),
-                                          'activity': activity,
+                                          'activity': activity, 'settings': self.settings(),
                                           'waiting_on': 'question' if self.elicited else 'permission' if self.asked
                                           else None,
                                           'interrupting': bool(self.active_turn and self.active_turn.cancel_requested),
@@ -5604,6 +5618,34 @@ class Session:
                                                                       str(asked.get('option', '')))})
             elif op == 'consent':  # the agent's own MCP server asks the person through a card in this chat
                 await self.reply(writer, {**said, **await self.consent_asked(asked, reader)})
+            elif op == 'task_input' and self.task_id:
+                key = str(asked.get('key') or '')
+                if key in self.acp['task_inputs']:
+                    await self.reply(writer, {**said, 'accepted': True, 'duplicate': True})
+                    return
+                route = dict(asked.get('route') or {})
+                response = dict(asked.get('response') or {})
+                content = dict(response.get('content') or {})
+                self.acp['task_inputs'].append(key)
+                await self.save_state()
+                if route.get('kind') == 'message':
+                    if response.get('action') != 'accept':
+                        self.acp['task_outcome'] = 'completed'
+                        await self.end('The user ended the assigned conversation.')
+                    else:
+                        self.turn(str(content.get('message') or ''), first=True, typed=True)
+                else:
+                    option = content.get('option') if route.get('kind') == 'permission' else content.get('answer', content)
+                    if response.get('action') != 'accept':
+                        option = 'decline'
+                    answered = await self.permit(str(route.get('request') or ''),
+                                                 option if isinstance(option, str) else json.dumps(option))
+                    if answered.get('error'):
+                        self.acp['task_inputs'].remove(key)
+                        await self.save_state()
+                        await self.reply(writer, {**said, 'error': answered['error']})
+                        return
+                await self.reply(writer, {**said, 'accepted': True})
             elif op == 'configure':
                 await self.reply(writer, {**said, **await self.configure(str(asked.get('setting', '')),
                                                                          str(asked.get('value', '')))})
@@ -5617,6 +5659,8 @@ class Session:
             elif op == 'tune':  # the ticket's own model and effort, changed while it runs, P015
                 await self.reply(writer, {**said, 'applied': await self.apply_options()})
             elif op in ('stop', 'cancel'):  # session/cancel for a turn in flight, then the session ends, P232
+                if self.task_id:
+                    self.acp['task_outcome'] = 'cancelled'
                 await asyncio.to_thread(self.covers_dropped)  # the stop ends the person's word it kept
                 by = asked.get('by')  # an agent's stop names the agent, so the board never blames the person
                 await self.end((f'stopped by {by}' if isinstance(by, str) and by else 'stopped by the person')
@@ -5652,6 +5696,12 @@ class Session:
             if release:
                 self.ended.set()
             return
+        if self.task_id:
+            if not self.acp.get('task_outcome'):
+                self.acp['task_outcome'] = 'completed'
+                self.acp['task_failure'] = self.failure or 'The assigned agent ended without completing its task.'
+            if self.recorded:
+                await self.save_state()
         self.ending, self.how = True, how
         self.pending.clear()
         self.priority_count = 0

@@ -60,7 +60,7 @@
   [STEP 3]: Set {Verdict} from the supported findings: acceptance met, acceptance not met,
             or unresolved when the evidence cannot determine it. Describe partial findings
             without treating an unresolved criterion as a demonstrated failure.
-  [STEP 4]: YIELD {Verdict}, {Findings} and {Unresolved} through the recorded caller/GC return
+  [STEP 4]: YIELD {Verdict}, {Findings} and {Unresolved} through the explicit caller return
             route. The caller uses this judgement in the selected workflow's acceptance;
             this skill sets no loop count or limit.
 

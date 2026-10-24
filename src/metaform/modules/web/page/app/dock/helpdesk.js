@@ -20,7 +20,7 @@ import {agentName, summonAgent, drawDockTab} from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemState} from '/page/app/session/tools.js';
 import {galleryRows, threadRows} from '/page/app/session/apps.js';
 import {drawPlan, drawSession} from '/page/app/session/text.js';
-import {notificationState, drawAssignment} from '/page/app/session/orchestration.js';
+import {notificationState, drawTask} from '/page/app/session/tasks.js';
 import {SESSIONPOP} from '/page/app/session/settings.js';
 import {openIntakeChat} from '/page/app/intake/intake.js';
 import {chatDocked} from '/page/app/workspace/workspace.js';
@@ -55,7 +55,7 @@ export async function drawHelpdesk(trouble) {
   mascotHeard(target, lines);  // the system agent's answer to the mascot, said in its bubble too
   drawProposals();
   drawSession($('#helpdesk .sessionbar'), {work: target, session, state});
-  drawAssignment($('#helpdesk .assignmentbox'), state, agentAt);
+  drawTask($('#helpdesk .assignmentbox'), state, agentAt);
   drawPlan($('#helpdesk .planbox'), target ? state?.plan : null);
   const activity = chatActivity(session);
   const waiting = DOCK.target && !session;

@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from .relay import Listener
 
 __all__ = [
-    'AgentRoleDefinition',
     'Context',
     'Count',
     'Effect',
@@ -61,7 +60,6 @@ __all__ = [
     'agent_context_collecting',
     'agent_context_epoch',
     'agent_context_session',
-    'agent_role_name',
     'aliases',
     'begin_agent_context_check',
     'call',
@@ -75,7 +73,6 @@ __all__ = [
     'feedback',
     'finish_agent_context_check',
     'first_line',
-    'held_role',
     'instructions',
     'item_read',
     'item_text',
@@ -99,7 +96,6 @@ __all__ = [
     'record_agent_context',
     'refresh_modules',
     'request_scope',
-    'resolve_agent_role',
     'result_json',
     'save_report',
     'serve_session',
@@ -226,7 +222,7 @@ class Verb:
     # The verb can take long: over MCP, a client that declares the tasks extension gets a task it polls instead of
     # waiting on the call; every other surface and client waits as for any verb, BASE-030. 'run': the task is the
     # workflow run the verb returns, which the server advances by itself.
-    task: bool | Literal['run'] = False
+    task: bool | Literal['run', 'session'] = False
     needs_project: bool = True
     reads_layers: bool = False
     listed: Callable[[Path], bool] | None = None
@@ -247,8 +243,8 @@ class Verb:
             raise ValueError(f'Verb {self.name}: only the last noun may take many words.')
         if not set(self.surfaces) <= set(SURFACES):
             raise ValueError(f'Verb {self.name}: surfaces are cli and mcp.')
-        if self.task not in (False, True, 'run'):
-            raise ValueError(f"Verb {self.name}: task is True, False or 'run'.")
+        if self.task not in (False, True, 'run', 'session'):
+            raise ValueError(f"Verb {self.name}: task is True, False, 'run' or 'session'.")
 
     def usage(self, module: str) -> str:
         from . import settings
@@ -540,28 +536,6 @@ class Provides:
     `value` is what the contract says it is. `provided(folder, kind)` finds every enabled module's."""
     kind: str
     value: Any
-
-
-@dataclass(frozen=True)
-class AgentRoleDefinition:
-    """Authored responsibility contributed as `Provides('agent.roles', definitions)`.
-
-    Ordered prompt-store identities belong to their owning modules. This name is independent of the execution
-    role in METAFORM_ROLE; declaring a responsibility changes no tool permissions or functional namespace.
-    """
-    name: str
-    purpose: str
-    prompts: tuple[str, ...]
-    specialist: bool = True  # Reusable domain expertise; False for framework/operational responsibilities.
-
-    @property
-    def uri(self) -> str:
-        return f'metaform://{"specialist" if self.specialist else "role"}/{self.name}'
-
-
-def agent_role_name(name: str) -> str:
-    """The registry name carried by a role or specialist identity."""
-    return name.removeprefix('metaform://role/').removeprefix('metaform://specialist/')
 
 
 @dataclass(frozen=True)
@@ -1161,18 +1135,6 @@ def base_holds(project_id: str, base_id: str) -> dict[str, int]:
     return found
 
 
-def held_role(ctx: Context) -> str | None:
-    """The role of the agent this call runs for, when the person's `roles_without_authority` holds it back from
-    writing tickets and steering agents; None when the call may, MAP-050 and BASE-052. The page is the person's and is
-    never held. The role is read from this process's environment, which the runner sets on its agent and that agent's
-    MCP server and every spawner clears: a guard against an agent's mistakes, not a boundary, since an agent can change
-    its own environment."""
-    if ctx.surface not in ('mcp', 'cli'):
-        return None
-    role = os.environ.get('METAFORM_ROLE')
-    return role if role and role != 'none' and role in (ctx.setting('roles_without_authority') or ()) else None
-
-
 def mcp_server(folder: Path) -> list[str] | None:
     """The command of the MCP server the folder's `install_server` setting selects among the enabled providers, as AI
     tools are registered with it, MCP-010; None when no module provides one. It stops when several do and none is
@@ -1311,22 +1273,11 @@ def provided(folder: Path, kind: str) -> list[tuple[str, Any]]:
 
 
 def _agent_context_service(folder: Path, project: str | None = None) -> tuple[Context, Any] | None:
-    found = provided(folder, 'agent.role')
+    found = provided(folder, 'agent.context')
     if len(found) > 1:
-        raise Stop(f'Multiple agent.role services: {", ".join(owner for owner, _ in found)}.',
+        raise Stop(f'Multiple agent.context services: {", ".join(owner for owner, _ in found)}.',
                    'select the intended module provider')
     return (context(found[0][0], folder, project=project), found[0][1]) if found else None
-
-
-def resolve_agent_role(folder: Path, name: str, *, project: str | None = None,
-                       bindings: dict[str, str] | None = None) -> dict[str, Any]:
-    """Resolve an authored role through the enabled provider, without binding an agent or recording delivery."""
-    service = _agent_context_service(folder, project)
-    if service is None:
-        return {'name': name, 'provider': None, 'components': [], 'missing': False,
-                'problems': ['No enabled agent.role resolution service.']}
-    ctx, given = service
-    return cast(dict[str, Any], given.resolve(ctx, name, bindings=bindings))
 
 
 def prepare_agent_context(folder: Path, session: str | None, components: Sequence[dict[str, Any]], *,

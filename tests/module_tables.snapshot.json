@@ -1,7 +1,7 @@
 {
  "agents": {
-  "version": 5,
-  "compatible_from": 1,
+  "version": 6,
+  "compatible_from": 6,
   "tables": {
    "change_notices": {
     "place": "project",
@@ -188,56 +188,6 @@
     "on_conflict": [],
     "generated": []
    },
-   "definitions": {
-    "place": "project",
-    "key": [
-     "name"
-    ],
-    "columns": {
-     "at": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "name": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "prompts": [
-      "json",
-      "TEXT",
-      true,
-      null
-     ],
-     "purpose": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "source": [
-      "json",
-      "TEXT",
-      true,
-      null
-     ],
-     "version_id": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ]
-    },
-    "indexes": [],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
    "delivered_text": {
     "place": "project",
     "key": [
@@ -390,45 +340,6 @@
       null
      ]
     ],
-    "checks": [],
-    "foreign_keys": [],
-    "collations": {},
-    "on_conflict": [],
-    "generated": []
-   },
-   "role_sources": {
-    "place": "project",
-    "key": [
-     "name",
-     "provider"
-    ],
-    "columns": {
-     "name": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "prompts": [
-      "json",
-      "TEXT",
-      true,
-      null
-     ],
-     "provider": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ],
-     "purpose": [
-      "text",
-      "TEXT",
-      true,
-      null
-     ]
-    },
-    "indexes": [],
     "checks": [],
     "foreign_keys": [],
     "collations": {},
@@ -6405,6 +6316,149 @@
        ],
        [
         "table_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ]
+    ],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   }
+  }
+ },
+ "tasks": {
+  "version": 2,
+  "compatible_from": 1,
+  "tables": {
+   "assignments": {
+    "place": "project",
+    "key": [
+     "task_id"
+    ],
+    "columns": {
+     "agent": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "cancel_requested": [
+      "bool",
+      "INTEGER",
+      true,
+      null
+     ],
+     "created": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "cwd": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "error": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "flow": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "locator": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "message": [
+      "text",
+      "TEXT",
+      false,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "payload": [
+      "json",
+      "TEXT",
+      true,
+      null
+     ],
+     "result": [
+      "json",
+      "TEXT",
+      false,
+      null
+     ],
+     "state": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "task_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "updated": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "work_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [
+     [
+      false,
+      [
+       [
+        "name",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
+        0,
+        "BINARY"
+       ]
+      ],
+      null
+     ],
+     [
+      false,
+      [
+       [
+        "work_id",
+        0,
+        "BINARY"
+       ],
+       [
+        "task_id",
         0,
         "BINARY"
        ]

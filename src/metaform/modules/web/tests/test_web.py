@@ -7918,77 +7918,6 @@ def logged_by(log, check, limit=60):
         time.sleep(0.1)
 
 
-@pytest.mark.req('VIEW-039')
-@pytest.mark.req('VIEW-011')
-def test_the_dispatch_writes_are_taken_only_from_the_page_and_say_what_to_do_next(run, threaded, mapped, monkeypatch):
-    import re
-
-    from metaform.data import Node, Store
-    from metaform.modules.web import server
-    monkeypatch.setattr(server.chassis, 'page_caller', lambda *_: None)
-    web = threaded
-    work = Store('proj').add_work(Node('element', 'code.alarm.audible'), 'unbuilt', task='Write notes.txt').id
-    own, as_json = f'http://127.0.0.1:{web}', own_write(web)
-    given = {'/api/dispatch-start': {'work_id': work, 'agent': 'claude'},
-             '/api/dispatch-message': {'work_id': work, 'text': 'also run the tests'},
-             '/api/dispatch-broadcast': {'text': 'stop and commit'},
-             '/api/dispatch-fork': {'work_id': work, 'text': 'what else did you consider?'},
-             '/api/dispatch-stop': {'work_id': work},
-             '/api/dispatch-interrupt': {'work_id': work},
-             '/api/dispatch-permit': {'work_id': work, 'request': 'r1', 'option': 'allow'},
-             '/api/dispatch-configure': {'work_id': work, 'setting': 'model', 'value': 'large'},
-             '/api/dispatch-resume': {'work_id': work},
-             '/api/dispatch-intake': {'agent': 'claude'},
-             '/api/dispatch-agents': {'default': 'claude'},
-             '/api/dispatch-cancel': {'work_id': work, 'reason': 'no longer needed'}}
-    for path, body in given.items():
-        sent = json.dumps({'project': 'proj', **body})
-        assert request(web, path, method='POST', body=sent,
-                       headers={**as_json, 'Origin': 'http://rebound.example'})[0] == 403, path
-    for path, body in given.items():                                   # dispatch ships disabled
-        status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
-                           body=json.dumps({'project': 'proj', **body}))
-        assert status == 400 and said['next'] == 'metaform enable dispatch', (path, said)
-    run('enable', 'dispatch')
-    status, said = api(web, '/api/dispatch-start', method='POST', headers={**as_json, 'Origin': own},
-                       body=json.dumps({'project': 'proj', 'work_id': work, 'agent': 'someone'}))
-    assert status == 400 and 'claude, codex, antigravity' in said['error'], said
-    for path in ('/api/dispatch-message', '/api/dispatch-fork', '/api/dispatch-interrupt', '/api/dispatch-permit',
-                 '/api/dispatch-configure'):
-        status, said = api(web, path, method='POST', headers={**as_json, 'Origin': own},
-                           body=json.dumps({'project': 'proj', **given[path]}))
-        assert status == 400 and said['next'] == f'metaform dispatch start {work} <agent>', (path, said)
-    # A recorded owner can keep a message before its session starts. An unassigned ticket above cannot.
-    from metaform.module import context
-    from metaform.modules.orchestration.state import SERVICE
-    run('enable', 'orchestration')
-    SERVICE.claim(context('orchestration', mapped, project='proj',
-                          nouns={'work': work, 'role': 'gc', 'mode': 'adaptive'}))
-    status, said = api(web, '/api/dispatch-message', method='POST', headers={**as_json, 'Origin': own},
-                       body=json.dumps({'project': 'proj', **given['/api/dispatch-message']}))
-    assert status == 200 and said['held'] is True, said
-    # the person's Stop on a ticket no agent runs still names its delivery: its recorded assignment and descendants
-    # are cancelled and nothing starts in their place (orchestration, kept 2026-10-20)
-    status, said = api(web, '/api/dispatch-stop', method='POST', headers={**as_json, 'Origin': own},
-                       body=json.dumps({'project': 'proj', **given['/api/dispatch-stop']}))
-    assert status == 200 and said['stopped'] is True and said['work_id'] == work, said
-    status, said = api(web, '/api/dispatch-broadcast', method='POST', headers={**as_json, 'Origin': own},
-                       body=json.dumps({'project': 'proj', **given['/api/dispatch-broadcast']}))
-    assert status == 400 and said['error'] == 'No agent is working on this project.', said
-    assert Store('proj').ticket(work).work.taken is None
-    # the board's Cancel is dispatch cancel: closed with the outcome cancelled and the reason, never completed, P232
-    status, said = api(web, '/api/dispatch-cancel', method='POST', headers={**as_json, 'Origin': own},
-                       body=json.dumps({'project': 'proj', **given['/api/dispatch-cancel']}))
-    assert status == 200 and said['state'] == 'cancelled', said
-    closed = Store('proj').ticket(work).work
-    assert (closed.outcome, closed.resolution) == ('cancelled', 'Cancelled: no longer needed')
-    # every figure's flat icon is served with the page, VIEW-003
-    names = re.search(r'export const GLYPHS = \[(.*?)\]', (Path(__file__).parents[1] / 'page' / 'agents3d.js')
-                      .read_text(encoding='utf-8'), re.DOTALL).group(1)
-    assert tuple(re.findall(r"'(\w+)'", names)) == AGENT_GLYPHS
-    for name in AGENT_GLYPHS:
-        status, body, headers = request(web, f'/page/agent-glyphs/{name}.svg')
-        assert status == 200 and headers['Content-Type'] == 'image/svg+xml' and body.startswith('<svg'), name
 
 
 @pytest.mark.req('VIEW-039')
@@ -10841,46 +10770,6 @@ def test_a_start_the_server_is_asked_for_is_refused_as_the_command_refuses_it(ru
     assert store.ticket(free).work.taken is None
 
 
-@pytest.mark.req('VIEW-039')
-def test_a_message_to_a_ticket_whose_agent_has_not_started_is_kept_and_read_when_it_starts(
-        run, home, project_folder, threaded, tmp_path, monkeypatch):
-    """A click on an agent's figure whose ticket had no session yet, a specialist owner's or one reserved and not
-    started, opened a chat whose message went nowhere (2026-10-21). The message route keeps it on the ticket's
-    assignment, and the session reads it as the person's own message once it starts."""
-    from metaform.data import Store
-    from metaform.module import context
-    from metaform.modules.dispatch import own_store
-    from metaform.modules.dispatch.tests.test_dispatch import Dispatch, eventually
-    from metaform.modules.orchestration.state import SERVICE
-    agent = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
-    gates = tmp_path / 'turns'
-    gates.mkdir()
-    for name, value in agent.env('replace', FAKE_ACP_TURN_GATES=str(gates)).items():
-        if name.startswith('FAKE_'):
-            monkeypatch.setenv(name, value)  # the runner the assignment launches is the fake agent, logging
-    # the ticket's agent, model and thinking level as the person chose them, so its own session launches without
-    # waiting for Jev or the Facilitator to choose them
-    with Store('proj', module='map').tables() as tx:
-        tx.insert('ticket_settings', {'work_id': agent.id, 'agent': 'claude'})
-    with own_store(agent.store).tables() as tx:
-        tx.insert('ticket_options', {'work_id': agent.id, 'model': 'default', 'effort': 'medium', 'seq': 1})
-    owner = context('orchestration', project_folder, project='proj', nouns={'work': agent.id, 'role': 'gc'})
-    SERVICE.claim(owner)
-    try:
-        status, said = api(threaded, '/api/dispatch-message', method='POST', headers=own_write(threaded),
-                           body=json.dumps({'project': 'proj', 'work_id': agent.id, 'text': 'start with the tests'}))
-        assert status == 200 and said['held'] is True, said
-        SERVICE.drain(owner)  # its launch: the session starts
-        eventually(lambda: agent.received('session/prompt'))
-        for turn in ('1', '2'):
-            (gates / turn).touch()  # its opening turns end, whichever of them carries the person's words
-        # read as the person wrote them, once, in the session's first turns, where notes kept for it are read
-        said = eventually(lambda: [block['text'] for one in agent.received('session/prompt')
-                                   for block in one['params']['prompt'] if 'start with the tests' in block.get('text', '')])
-        assert len(said) == 1 and '\n\nstart with the tests' in f'\n\n{said[0]}', said
-    finally:
-        run('dispatch', 'stop-all', cwd=project_folder, ok=False)
-        agent.close()
 
 
 @pytest.mark.req('BASE-052')
@@ -11978,11 +11867,6 @@ def test_the_settings_screen_opens_from_the_agents_menu_and_saves_each_change_as
     page.wait_for_selector(f'{row("modules")} .state.ok')
     assert 'hello' not in settings.value('modules', mapped) and 'chassis' in settings.value('modules', mapped)
     to('agents')
-    # the roles are a list of choices, checked and never typed, ticket e3a3a2e4
-    assert not page.query_selector(f'{row("roles_without_authority")} textarea')
-    page.check(f'{row("roles_without_authority")} input[value="system"]')
-    page.wait_for_selector(f'{row("roles_without_authority")} .state.ok')
-    assert sorted(settings.value('roles_without_authority', mapped)) == ['prep', 'system', 'worker']
     to('advanced')                                                      # the module opened stays open
     page.click(f'{row("debug")} button.reset')
     page.wait_for_selector(f'{row("debug")} .state.off')

@@ -29,7 +29,7 @@ import {named} from '/page/app/task/task.js';
 import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab, optionWords}
   from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
-import {notificationState, assignmentSummary} from '/page/app/session/orchestration.js';
+import {notificationState, taskSummary} from '/page/app/session/tasks.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 import {nodeIn} from '/page/app/graph/data.js';
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
@@ -371,7 +371,7 @@ export async function renderAgents(only = null, bySession = false) {
   // an entry drawn the same stays in place, so the one under the pointer is not swapped while it is clicked
   keyedFill($('#agents .list'), working.map(one => ({key: one.session_id,
     text: [one.work_id, one.agent, glyphOf(one.work_id), workPart(one.work_id), agentLabel(one),
-      onOtherBase(one), assignmentSummary(D.states?.[one.session_id])].join('\n'),
+      onOtherBase(one), taskSummary(D.states?.[one.session_id])].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
   agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
@@ -471,7 +471,7 @@ export function onOtherBase(one) {
 }
 function agentRow(one) {
   const name = nameOf(one) || agentName(one.agent), elsewhere = onOtherBase(one);
-  const responsibility = assignmentSummary(D.states?.[one.session_id]);
+  const responsibility = taskSummary(D.states?.[one.session_id]);
   const showUse = event => { INUSE.off[event.target.checked ? 'delete' : 'add'](one.work_id); paintInUse(); };
   return h('div', {class: 'agent-row'},
     h('input', {type: 'checkbox', class: 'inuse', checked: !INUSE.off.has(one.work_id),

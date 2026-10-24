@@ -131,17 +131,15 @@ and the existing event bus, filters before reading, and releases every listener,
 """
 from __future__ import annotations
 
-from metaform.module import AgentRoleDefinition, Module, Pane, Provides, ToolbarItem
+from metaform.module import Module, Pane, ToolbarItem
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
 SHIPS_DISABLED = True
 REMOTE_AGENT = False  # the empty start of a module; a copy declares its own
 
-# Add reusable expertise as AgentRoleDefinition(name, purpose, prompts). Set specialist=False for framework duties.
 # Definitions publish metaform://role/<name>; specialists alone enter automatic matching. Tasks stay in assignments.
 # These names do not replace the execution identity METAFORM_ROLE.
-ROLE_DEFINITIONS: tuple[AgentRoleDefinition, ...] = ()
 
 MODULE = Module(
     id='template',
@@ -171,5 +169,4 @@ MODULE = Module(
         Pane('about', 'About template', 'Read what this module is for before turning it on.', icon='file',
              resource='resources/pane.md', area='right'),
     ),
-    provides=(Provides('agent.roles', ROLE_DEFINITIONS),),
 )

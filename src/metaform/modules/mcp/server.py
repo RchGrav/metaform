@@ -92,7 +92,6 @@ from metaform.module import (
     record_shown,
     refresh_modules,
     request_scope,
-    resolve_agent_role,
     result_json,
     serve_session,
     served_session,
@@ -162,23 +161,15 @@ def _setting_type(setting: settings.Setting, folder: Path) -> dict[str, Any]:
     return {'type': 'string'}
 
 
-def verb_schema(verb: Verb, folder: Path, name: str = '') -> dict[str, Any]:
+def verb_schema(verb: Verb, folder: Path) -> dict[str, Any]:
     """A verb's input schema: its nouns and the switches it reads, `confirm` for a caution verb, `project` when it
-    needs a project, and `layers` when it reads the map's layers. For a role the person holds back, the tool `name`'s
-    ops and arguments it never writes with are left out, catalog.held_back, with the op's help for each."""
+    needs a project, and `layers` when it reads the map's layers."""
     properties: dict[str, Any] = {}
     required: list[str] = []
-    ops, arguments = catalog.held_back(folder, name) if name else ((), ())
     for noun in verb.nouns:
-        if noun.name in arguments:
-            continue
         kind = dict(noun.schema) if noun.schema is not None else ({} if noun.kind == 'json' else
                                                                   dict(NOUN_TYPES[noun.kind]))
-        said = noun.help
-        if ops and noun.name == 'op':
-            kind['enum'] = [one for one in cast(list[Any], kind.get('enum') or []) if one not in ops]
-            said = without_ops(said, ops)
-        properties[noun.name] = _described({'type': 'array', 'items': kind} if noun.many else kind, said)
+        properties[noun.name] = _described({'type': 'array', 'items': kind} if noun.many else kind, noun.help)
         if noun.required:
             required.append(noun.name)
     for key in verb.switches:
@@ -187,7 +178,7 @@ def verb_schema(verb: Verb, folder: Path, name: str = '') -> dict[str, Any]:
             properties[key] = setting_schema(setting, folder)
     if verb.caution and not verb.person_says:  # the person's decision is asked of them, never confirmed by the agent
         properties['confirm'] = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
-    if verb.needs_project and catalog.role() is None:  # a dispatched agent works in its own project, never another
+    if verb.needs_project:
         properties['project'] = PROJECT
     if verb.reads_layers:
         properties.setdefault('layers', LAYERS)
@@ -195,16 +186,6 @@ def verb_schema(verb: Verb, folder: Path, name: str = '') -> dict[str, Any]:
         for key, schema in shaping.SCHEMAS.items():
             properties.setdefault(key, schema)
     return {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}
-
-
-def without_ops(help: str, ops: tuple[str, ...]) -> str:
-    """An `op` argument's help less the clauses of `ops`: each op is said in a clause of its own, `name, which ...;`,
-    and the last opens with `or`, which the clause now last is given."""
-    clauses = [one.strip() for one in help.rstrip('.').split(';')]
-    kept = [one for one in clauses if re.split(r'[ ,]', one.removeprefix('or ').strip(), maxsplit=1)[0] not in ops]
-    if len(kept) > 1 and not kept[-1].startswith('or '):
-        kept[-1] = 'or ' + kept[-1]
-    return '; '.join(kept) + '.'
 
 
 def looks_up(verb: Verb) -> bool:
@@ -667,11 +648,8 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
     named = catalog.role()
     listed = named is None or named == 'system'
     project = project_for(folder)
-    assignment = assignment_context(folder, session)
-    authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or
-                        'unbound; this session has no recorded authored responsibility')
-    assignment_id = str(assignment.get('assignment_id') or assignment.get('work_id') or
-                        'unbound; this session has no managed assignment')
+    authored_role = 'not used; assigned tasks and selected skills supply instructions'
+    assignment_id = os.environ.get('METAFORM_WORK') or 'not assigned'
     lines: list[str] = []
     if named is None or named == 'system':
         head = prompt_files.module('mcp', 'connect_use' if named is None else 'role_system') or ''
@@ -913,7 +891,8 @@ class Listed:
     schema: Callable[[], dict[str, Any]]
     effect: Effect
     open_world: bool = False
-    task: bool | Literal['run'] = False  # the verb can take long, so a client declaring tasks gets a task; 'run': its run
+    # Long calls run here, workflow runs and assigned agent sessions keep their own task records.
+    task: bool | Literal['run', 'session'] = False
     # what comes with its first use in a session, MCP-039: what the list cut; given the call's op, that op's part alone
     guide: Callable[[str | None], str] = lambda op: ''
     module: str = 'metaform'  # the module that serves it, whose rules come with the first use of any of its tools
@@ -1022,9 +1001,9 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
         if not can(verb):
             continue
         said, more = headed(verb.summary + (f' Caution: {verb.caution}' if verb.caution else ''))
-        built = functools.partial(verb_schema, verb, folder, name)
+        built = functools.partial(verb_schema, verb, folder)
         found[name] = Listed(name, tool_named(said, folder), functools.partial(briefed, built), verb.effect,
-                             verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder, name=name),
+                             verb.open_world, verb.task, functools.partial(verb_guide, verb, more, built, folder),
                              module.id, verb.person_says, verb)
     own: dict[str, tuple[str, Callable[[], dict[str, Any]]]] = {
         'set': (('Save settings for this folder, each given as name=value. Called with none, it lists the settings '
@@ -1117,8 +1096,8 @@ def for_op(help: str, op: str | None, ops: tuple[str, ...]) -> bool:
     return not named or op in named
 
 
-def verb_guide(verb: Verb, more: str, build: Callable[[], dict[str, Any]], folder: Path, op: str | None = None,
-               name: str = '') -> str:
+def verb_guide(verb: Verb, more: str, build: Callable[[], dict[str, Any]], folder: Path,
+               op: str | None = None) -> str:
     """What a module verb's tool gives with its first use, MCP-039: the rest of its description, each argument whose
     help the list cut with its whole help, the verb's details and its examples, each a call; all from its declaration.
     For a verb with an `op`, only the part for the call's op, its default the first when none is given: the arguments
@@ -1126,14 +1105,12 @@ def verb_guide(verb: Verb, more: str, build: Callable[[], dict[str, Any]], folde
     handed how to distribute glyphs. A record read by id with no op, `read`, is given the id's help alone, since the
     agent has only to read. The verb's details, which say what its records are, come with the first op that writes
     one, never with a read or a list; its `person_details` with them only to an agent that acts for the person,
-    catalog.for_person, since they are said to the person. A line given once is not given again, `Given`. The ops and arguments
-    the role is not given are not in `build`'s schema, so none of their help is given."""
+    catalog.for_person, since they are said to the person. A line given once is not given again, `Given`."""
     ops = ops_of(verb)
     said = _arguments_said(build())
     if ops and op == 'read':
         return '\n'.join(line for line in said if line.startswith('id: '))
     examples = [(command, said) for command, said in verb.examples]
-    held, unread = catalog.held_back(folder, name)
     told = ' '.join(part for part in (verb.details, verb.person_details) if part) if catalog.for_person() else \
         verb.details
     details = mcp_next(told, folder)
@@ -1144,9 +1121,7 @@ def verb_guide(verb: Verb, more: str, build: Callable[[], dict[str, Any]], folde
         said = [line for line in said if line.startswith('op: ') or for_op(line.split(': ', 1)[-1], chosen, ops)]
         examples = [(command, text) for command, text in examples
                     if ((chosen is not None and f'op={chosen}' in command)
-                        or (chosen in (None, ops[0]) and 'op=' not in command))
-                    and not any(f'op={one}' in command for one in held)]
-    examples = [(command, text) for command, text in examples if not any(f' {one}=' in command for one in unread)]
+                        or (chosen in (None, ops[0]) and 'op=' not in command))]
     shown = [f'{mcp_next(command, folder)}: {text}' for command, text in examples]
     parts = [more, '\n'.join(said), details, '\n'.join(shown)]
     return '\n\n'.join(part.strip() for part in parts if part.strip())
@@ -1290,7 +1265,7 @@ def usage_components(folder: Path, listed: Listed, op: str | None, session: str 
 def prepare_usage(folder: Path, session: str | None, components: list[dict[str, Any]]) -> dict[str, Any]:
     # Before registration there is no project ledger. Keep exact session-scoped fingerprints in the existing
     # home receipt store, whose compaction path already drops non-catalog entries, rather than a process unlock.
-    if project_for(folder) is not None and provided(folder, 'agent.role'):
+    if project_for(folder) is not None and provided(folder, 'agent.context'):
         return prepare_agent_context(folder, session, components)
     due = [{**one, 'usage_home_receipt': True} for one in components if session is None or
            shown_before(session, f'usage:0:{one["name"]}') != one['rendered_fingerprint']]
@@ -1378,18 +1353,14 @@ def openable(folder: Path) -> tuple[str, ...]:
 
 
 def given_tools(folder: Path) -> dict[str, Listed]:
-    """The tools the role of the agent this server serves is given, by name, in listing order, MCP-003: every tool on
-    the folder's surface whose module the role may open, catalog.in_scope."""
-    declared = tools(folder)
-    return {name: one for name, one in listing(folder).items() if catalog.in_scope(name, declared, folder)}
+    """Every tool on the folder's enabled module surface, in listing order, MCP-003."""
+    return listing(folder)
 
 
 def action_bindings(ctx: Context, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
     """Bindings generated from implemented, surfaced tool declarations and the caller's actual adapter evidence."""
-    declared = tools(ctx.folder)
     named = str((capabilities or {}).get('execution_role') or ctx.identity.get('execution_role') or catalog.role() or '')
-    active = {name: one for name, one in listing(ctx.folder, ctx.client).items()
-              if catalog.in_scope(name, declared, ctx.folder, named or None)}
+    active = listing(ctx.folder, ctx.client)
     return {'execution_role': named or None, 'adapter': dict(capabilities or {}),
             'tools': {name: {'description': usage_description(one), 'arguments': one.schema(),
                              'effect': one.effect, 'person_decides': one.persons}
@@ -1474,20 +1445,6 @@ def discovery_delivery(folder: Path, session: str | None, uri: str, text: str) -
         return prompt_files.module('mcp', 'already_read', uri=uri, again='use the current context') or ''
     record_agent_context(folder, session, due, epoch=int(prepared['epoch']), channel='mcp_discovery')
     return str(prepared['text'])
-
-
-def role_refusal(folder: Path, name: str) -> str | None:
-    """The refusal of a call to a tool the agent's role is not given, MCP-003, as a tool's error; None for a tool it is
-    given, and for a name no tool here has, which the call itself answers."""
-    declared = tools(folder)
-    if name not in declared and not (name.startswith(OWN + '_') and name[len(OWN) + 1:] in {*CHASSIS, *SURFACED,
-                                                                                               'set'}):
-        return None
-    if catalog.in_scope(name, declared, folder):
-        return None
-    said = prompt_files.module('mcp', 'catalog_refused', tool=name, role=catalog.role() or 'this')
-    step = prompt_files.module('mcp', 'catalog_refused_next') or f'call {catalog.CATALOG}'
-    return f'Error: {said}\nNext: {step}'
 
 
 def catalog_line(one: Listed) -> str:
@@ -1695,7 +1652,7 @@ def _commit_response(receipts: list[dict[str, Any]], blocks: list[str], data: An
             continue
         record_agent_context(receipt['folder'], receipt['session'], [one], project=receipt['project'],
                              epoch=int(receipt['epoch']), channel=channel)
-        fallback = not (receipt['project'] and provided(receipt['folder'], 'agent.role'))
+        fallback = not (receipt['project'] and provided(receipt['folder'], 'agent.context'))
         if (one.get('usage_home_receipt') or fallback) and receipt['session'] is not None:
             record_shown(receipt['session'], f'usage:{receipt["epoch"]}:{one["name"]}',
                          one['rendered_fingerprint'])
@@ -2085,37 +2042,7 @@ def memory_text(folder: Path) -> str | None:
 def _role_read(reading: Reading, uri: str) -> str | None:
     if uri == ROLE_URI + (catalog.role() or PERSON):
         return role_text(reading.folder, reading.client, reading.session, reading.keyed)
-    if uri.startswith((ROLE_URI, SPECIALIST_URI)):
-        found = assigned_role(reading.folder, uri, reading.session)
-        if 'specialist' in found and bool(found['specialist']) != uri.startswith(SPECIALIST_URI):
-            target = SPECIALIST_URI if found['specialist'] else ROLE_URI
-            raise Missing(f'{found["name"]} is available at {target}{found["name"]}.',
-                          'read the resource at its registered URI')
-        if found.get('missing'):
-            return None
-        return '\n\n'.join(part for part in (str(found.get('text') or ''),
-                                              '\n'.join(found.get('problems') or [])) if part)
     return None
-
-
-def assignment_context(folder: Path, session: str | None = None) -> dict[str, Any]:
-    """Current recorded authored responsibility; inspection never changes its execution role or assignment."""
-    for owner, service in provided(folder, 'orchestration'):
-        ctx = context(owner, folder, session=session)
-        if ctx.store is None:
-            return {}
-        held = service.assignment(ctx, session_id=session or ctx.session)
-        return cast(dict[str, Any], held or {})
-    return {}
-
-
-
-def assigned_role(folder: Path, uri: str, session: str | None = None) -> dict[str, Any]:
-    """Read the exact assigned role version, including after a prompt edit or runner restart."""
-    held = assignment_context(folder, session)
-    if held.get('authored_role_uri') == uri and held.get('role_snapshot'):
-        return cast(dict[str, Any], held['role_snapshot'])
-    return resolve_agent_role(folder, uri)
 
 
 def _project_read(reading: Reading, uri: str) -> str | None:
@@ -2134,7 +2061,8 @@ BLOCKS: tuple[Block, ...] = (
           lambda reading, uri: modules_text(reading.folder) if uri == MODULES_URI else None),
     Block('firstrun', lambda agent: FIRSTRUN_URI if agent.role is None and first_run_text(agent.folder) else None,
           lambda reading, uri: first_run_text(reading.folder) if uri == FIRSTRUN_URI else None),
-    Block('role', lambda agent: ROLE_URI + (agent.role or PERSON), _role_read),
+    Block('role', lambda agent: None if os.environ.get('METAFORM_TASK') else ROLE_URI + (agent.role or PERSON),
+          _role_read),
     Block('project', lambda agent: project_uri(agent.folder), _project_read),
 )
 
@@ -2146,12 +2074,6 @@ def links(folder: Path, role: str | None = None, withheld: str = '') -> list[str
     named = role if role and role != 'none' else None
     agent = Agent(folder, named, tuple(module.id for module in withhold(surface(folder), withheld)))
     found = [uri for block in BLOCKS if (uri := block.link(agent))]
-    assignment = assignment_context(folder, served_session())
-    authored_role = str(assignment.get('authored_role_uri') or os.environ.get('METAFORM_AUTHORED_ROLE') or '')
-    if authored_role:
-        uri = authored_role if authored_role.startswith((ROLE_URI, SPECIALIST_URI)) else ROLE_URI + authored_role
-        if uri not in found:
-            found.append(uri)
     return found
 
 
@@ -2243,12 +2165,7 @@ async def read_resource_text(folder: Path, uri: str, *, client: str | None = Non
     if uri == MODULES_URI or MODULE_TOOLS.fullmatch(uri):
         text = await anyio.to_thread.run_sync(discovery_delivery, folder, session, uri, text)
     components: list[dict[str, Any]] = []
-    if uri.startswith((ROLE_URI, SPECIALIST_URI)) and uri != ROLE_URI + (catalog.role() or PERSON):
-        resolved = await anyio.to_thread.run_sync(assigned_role, folder, uri, session)
-        components = list(resolved.get('components') or [])
-        if resolved.get('missing'):
-            raise Missing('\n'.join(resolved.get('problems') or []), 'read metaform agents roles')
-    elif uri == MEMORY_URI:
+    if uri == MEMORY_URI:
         one = await anyio.to_thread.run_sync(prompt_files.resolve, 'prompt.memory:instructions')
         one.update(text=text, bindings={'project': str(project_for(folder) or '{project}')})
         components = [one]
@@ -2955,10 +2872,10 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             name, arguments = run, dict(cast(dict[str, Any], inner))
             if HANDLE in arguments:
                 session = session_of(ctx, arguments.pop(HANDLE))
-        refused = await anyio.to_thread.run_sync(role_refusal, folder, name)
-        if refused is not None:
-            return outcome(True, [refused], None)
         listed = (await anyio.to_thread.run_sync(listing, folder)).get(name)
+        if listed is not None and listed.task == 'session' and not tasked.declared(capabilities(ctx)):
+            raise MCPError(-32021, 'Missing required client capability',
+                           {'requiredCapabilities': {'extensions': {tasked.EXTENSION: {}}}})
         shape: shaping.Shape | None = None
         if listed is not None and listed.verb is not None:  # a module tool's result, as the agent asks for it
             shape, wrong = shaping.taken(arguments, {noun.name for noun in listed.verb.nouns})
@@ -3015,6 +2932,15 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
             blocks = [*blocks, f'On the person\'s word, "{word.get("text")}": {said}.']
         if not error:
             discussed(ctx, name, given)
+        if tasked_as == 'session' and not error:
+            launched = structured or {}
+            task_id, project = launched.get('task_id'), launched.get('project_id')
+            if not isinstance(task_id, str) or not isinstance(project, str):
+                raise MCPError(-32603, 'Task launch did not return task_id and project_id')
+            seeded = await anyio.to_thread.run_sync(tasked.seed_session, folder, project, task_id)
+            if seeded is None:
+                raise MCPError(-32603, 'Failed to retrieve the launched task')
+            return seeded
         if tasked_as == 'run' and not error and isinstance((structured or {}).get('run'), str):
             seeded = await anyio.to_thread.run_sync(run_task, str(cast(dict[str, Any], structured)['run']))
             if seeded is not None:
@@ -3617,8 +3543,8 @@ def serving(config: Any) -> Any:
 
 def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: Any) -> None:
     """`tasks/get`, `tasks/update` and `tasks/cancel` of the tasks extension, BASE-030, on the tool calls kept as
-    tasks and the workflow run records; each refused to a client that does not declare the extension, -32021, and for
-    an unknown task, -32602."""
+    tasks, workflow run records and assigned agent sessions; each refused to a client that does not declare the
+    extension, -32021, and for an unknown task, -32602."""
     from pydantic import Field
 
     from . import tasks as tasked
@@ -3648,21 +3574,21 @@ def add_tasks(server: Any, folder: Path, running: Any, types: Any, error_type: A
 
     async def get(ctx: Any, params: Any) -> Any:
         project, found = await anyio.to_thread.run_sync(required, ctx)
-        detail = await anyio.to_thread.run_sync(tasked.detailed, project, found, params.task_id)
+        detail = await anyio.to_thread.run_sync(tasked.detailed, project, found, params.task_id, folder)
         if detail is None:
             raise missing()
         return {**detail, 'resultType': 'complete'}
 
     async def update(ctx: Any, params: Any) -> Any:
         project, found = await anyio.to_thread.run_sync(required, ctx)
-        if not await tasked.update(project, found, params.task_id, dict(params.input_responses), verb):
+        if not await tasked.update(project, found, params.task_id, dict(params.input_responses), verb, folder):
             raise missing()
         return {'resultType': 'complete'}
 
     async def cancel(ctx: Any, params: Any) -> Any:
         project, found = await anyio.to_thread.run_sync(required, ctx)
         try:
-            if not await tasked.cancel(running, project, found, params.task_id, verb):
+            if not await tasked.cancel(running, project, found, params.task_id, verb, folder):
                 raise missing()
         finally:  # the cancel's change, so the process running the task hears it, BASE-053
             await anyio.to_thread.run_sync(events.announce, folder, 'mcp')

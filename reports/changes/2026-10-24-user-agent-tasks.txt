@@ -1,0 +1,50 @@
+Assigned User Agent task and retirement of the role organization
+
+Branch: remove/unapproved-procedural-roles
+Starting commit: 9cc399bd4595d98e1e98d2f4524fd9b2acabfe21
+Recovery branch: recovery/pre-user-agent-role-retirement-20261024
+Recovery commit: 9ad8090a77bdc420fd4865df10efb5a0e1b9dc53
+The recovery commit preserves pre-existing source edits superseded by the requested removal. Other concurrent documentation/specification edits remain outside this change.
+
+Current behavior
+- The only named assigned-task definition is user_agent. Its user-supplied instruction text is unchanged, with only {project} bound when delivered.
+- Canonical source: src/metaform/modules/tasks/resources/user_agent.txt
+- SHA256: 52af5044e666182d2cb3a2f4aea6ee0e202cf851d56e40a5bd662fccf67a927e
+- Default dispatch.system opens this task. Direct execution can load tasks.read, discover skill metadata, and load selected skills. Dedicated assignments use tasks.assign with explicit objectives, selected skills and a working folder.
+- Assignment to an existing registered target folder uses that project's context. A task ID remains durably readable after caller disconnection or server reconstruction.
+- Native planning/configuration uses options actually advertised by ACP. No named architect task was invented. Future definitions remain user-directed, one at a time.
+
+Removed organization
+- Removed the operational role factory, live definitions/source tables and authoring/roster APIs.
+- Removed orchestration's role registrations, specialist routing, runtime classification, commissions, assignment execution, BMAD managed-role adapter and GC/FQC specification-change workflow implementation.
+- GC and triage have no active registration, recovery or commissioning path. Obsolete role-resolution APIs and residual GC dependencies in workflow skill procedures were removed. Other former organizational duties were not automatically converted into tasks or skills.
+- Removed GC ownership checks on interrupt/broadcast, the roles_without_authority setting and chassis/MCP/map/workflow/dispatch enforcement, role-based schema/guide suppression, helper-launch identity gate, native configuration identity gate, role creation in module templates, and the role-management UI/API.
+- The orchestration module now exposes only historical assignment reads. Its prior table schema is unchanged so existing maps and lineage/results remain readable. Historical prompt source text remains available without registration as executable duties.
+- Context receipts, delivery fingerprints, epochs, compaction evidence and immutable definition history remain, provided independently through agent.context.
+- Existing map/memory/CLI/viewer, native ACP transport, ticket/worktree tools, explicit integrations and roundtables were not comprehensively stripped down. This is the assigned-task foundation and role-organization retirement, not a claim that the earlier entire core-strip-down proposal is complete. Native dispatch transport and historical session projections remain. Assigned tasks use no role-based commissioning or authority. Explicit user configuration, storage invariants, transport authentication and native permission handling remain distinct from organizational policy.
+
+MCP protocol
+- Uses the Tasks extension's stable 2026-07-28 specification, not the earlier experimental per-tool task model.
+- Durable assignment precedes launch and CreateTaskResult. Clients declare io.modelcontextprotocol/tasks, otherwise async launch returns the specified -32021 capability error before execution.
+- Flat task handles, tasks/get, tasks/update and tasks/cancel use the official result envelopes. Native input requests persist distinct keys; duplicate/unknown responses are ignored. Accepted input is durably queued for delivery.
+- Cancellation is cooperative. Terminal records are immutable. Native/tool execution errors complete with isError, distinct from failed JSON-RPC operations.
+- Native session events update status. Client polling does not introduce a background server polling loop.
+- Source references: https://modelcontextprotocol.io/llms.txt and https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
+
+Storage
+- agents schema 6 retains history and delivery rows, removes live factory tables, and uses the standard pre-upgrade recoverable backup. Preservation verified against a seeded genuine v5 database.
+- tasks schema 2 includes indexes for work_id and name. The name index supports default User Agent reuse.
+- Existing production/home project databases were not migrated or wiped during testing. Tests used isolated homes. No real model session or account was used.
+
+Evidence
+50 combined tests passed in 36.15 seconds:
+.venv/bin/pytest -o addopts= -n 0 --basetemp=/tmp/metaform-user-agent-final/run src/metaform/modules/tasks/tests/test_assigned_tasks.py src/metaform/modules/mcp/tests/test_assigned_task_bridge.py src/metaform/modules/agents/tests/test_context_service.py src/metaform/modules/agents/tests/test_agents.py src/metaform/modules/orchestration/tests/test_retired_organization.py src/metaform/modules/dispatch/tests/test_assigned_task_transport.py src/metaform/modules/workflow/tests/test_executor.py::test_session_identity_protects_paused_answers_without_role_cancel_gate src/metaform/modules/mcp/tests/test_mcp.py::test_a_caution_and_a_person_only_change_are_asked_of_the_person_by_form_on_the_july_wire -q --tb=short
+
+7 additional task API tests passed separately in 1.10 seconds, serially with --noconftest -o addopts= -p no:cacheprovider and an isolated temporary Metaform home.
+
+Two tests run actual local fake-ACP subprocesses: finite assignment through terminal result, and default interactive user_agent through two conversational turns, duplicate input suppression, cancellation and repeated terminal reads. They verify exact prompt body, cwd and task identity, without tickets, roles or model calls. The interactive check exposed and fixed a missing task-name index and a transcript cursor that did not advance across turns.
+
+Ruff and JavaScript syntax checks passed. Pyright reports zero errors and warnings across the changed production modules. No browser interaction, real hosted client or real-model validation was performed. Running harness processes were not restarted.
+
+Full-suite status
+The full suite was not run. The shared schema snapshot already differs from existing dispatch, map, memory, orchestration and roundtables declarations. Only agents and tasks entries were updated for this change. Obsolete role-factory/commission/GC workflow tests were removed alongside the retired behavior; mixed suites retain their unrelated cases.
