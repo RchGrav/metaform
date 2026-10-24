@@ -83,7 +83,7 @@ Keep ICEBLOCK terminology limited to the defined concept. Do not rename ordinary
 The map-region illustration is available at /mnt/c/Users/rich/Desktop/Screenshot 2026-10-24 123145.png. It illustrates grouping, not a formal membership algorithm.
 
 Proposed storage: record zone membership in a separate layer over the functional map so grouping can evolve while functional definitions stay intact. The layer name, membership schema, ID allocation, cardinality and treatment of shared functionality have not been defined. Do not present these as implemented or settled.
-No ICEBLOCK intake prompt, storage implementation, runtime resolver or prompt-variable binding has been added.
+The commits described here add no ICEBLOCK intake prompt, storage implementation, runtime resolver or prompt-variable binding. Independent edits to intake's prompt appeared during this handoff. Inspect the current working diff before making claims about that prompt's contents or implementation state.
 
 7. Tickets, worktrees and pairing
 
@@ -202,6 +202,7 @@ src/metaform/modules/mcp/resources/prompts.xml
 src/metaform/modules/orchestration/resources/prompts.xml
 
 Existing untracked files: docs/README.md~ and docs/reviews/.acp-context-implementation.md.swp.
+Additional independent edits appeared while this handoff was written: src/metaform/modules/intake/resources/intake.xml and src/metaform/modules/intake/resources/intake.xml~. The editor file src/metaform/modules/intake/resources/.intake.xml.kate-swp is also untracked. Preserve all three; this handoff does not describe their in-progress contents.
 Do not overwrite, stage, reset, clean, stash or otherwise absorb that work. Do not rewrite instruction files. Stage only the files owned by the current change. No public push or release has been performed.
 
 16. Next input and next implementation decisions
