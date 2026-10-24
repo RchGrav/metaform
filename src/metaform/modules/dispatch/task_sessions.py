@@ -57,8 +57,6 @@ class TaskSessions:
                 return {'state': 'completed', 'message': 'The assigned agent did not start.',
                         'result': {'content': [{'type': 'text', 'text': 'The assigned agent did not start.'}], 'isError': True}}
             return {'state': 'working', 'message': 'Starting the assigned agent.'}
-        if task.get('cancel_requested') and row['state'] == 'running':
-            self.cancel(ctx, task)
         called = context('dispatch', ctx.folder, project=ctx.project, nouns={'id': task['work_id'], 'thread': True})
         thread = read_sessions(called)
         states = cast(dict[str, Any], thread.get('states') or {})
@@ -67,7 +65,8 @@ class TaskSessions:
         lines = [l for l in thread.get('lines', []) if l.get('session_id') == row['session_id']]
         messages = [str(l.get('text') or '') for l in lines if l.get('kind') == 'agent_message_chunk']
         turns = [int(l.get('seq') or 0) for l in lines if l.get('kind') == 'turn']
-        observed = {'turn_seq': int(state.get('task_turns', max(turns, default=0))), 'last_message': messages[-1] if messages else ''}
+        observed = {'name': state.get('name'), 'context': state.get('usage'), 'session_id': row['session_id'],
+                    'turn_seq': int(state.get('task_turns', max(turns, default=0))), 'last_message': messages[-1] if messages else ''}
         if row['state'] != 'running':
             outcome = state.get('task_outcome')
             if outcome == 'cancelled':
@@ -125,6 +124,23 @@ class TaskSessions:
         if answer.get('error') or not answer.get('accepted'):
             raise Stop(str(answer.get('error') or 'The assigned agent did not accept the response.'),
                        'metaform tasks get <id>')
+
+    def wake(self, ctx: Context, task: dict[str, Any], key: str, text: str) -> None:
+        from . import tell
+        row = self._session(ctx, task)
+        if row is None or row['state'] != 'running':
+            raise Stop('The assigned agent is not ready for the message yet.', 'metaform tasks get <id>')
+        answer = tell(row, 'task_wake', key=key, text=text)
+        if not answer.get('accepted'):
+            raise Stop(str(answer.get('error') or 'The message was not accepted.'), 'metaform tasks get <id>')
+
+    def finish(self, ctx: Context, task: dict[str, Any], reason: str) -> None:
+        from . import tell
+        row = self._session(ctx, task)
+        if row is not None and row['state'] == 'running':
+            answer = tell(row, 'task_end', reason=reason)
+            if not answer.get('accepted'):
+                raise Stop(str(answer.get('error') or 'The agent did not accept completion.'), 'metaform tasks get <id>')
 
     def cancel(self, ctx: Context, task: dict[str, Any]) -> None:
         from . import tell

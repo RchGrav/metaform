@@ -417,66 +417,8 @@ def test_a_runner_killed_alone_leaves_nothing_of_its_agent_running_once_settled_
     assert gone([grandchild]), 'the group its runner recorded is ended'
 
 
-@pytest.mark.req('MAP-049')
-@pytest.mark.skipif(os.name == 'nt', reason='the stand-in runners are POSIX sleeps')
-def test_after_a_crash_the_supervisor_resumes_no_more_sessions_than_the_slots_and_the_rest_wait(dispatch, run,
-                                                                                               monkeypatch):
-    """UX review round 1, 2026-10-17 (interrupt-failure-recovery F1, settings-govern-behavior F1, runaway-and-load F1,
-    orchestrator-system-agent F3): after a crash every dead session was resumed in one pass whatever dispatch_agents
-    said, so 46 crashed agents would come back at once. A retry goes through the gate: one slot resumes one, the
-    oldest, and the other two wait with their count and their time as they were."""
-    import subprocess
-    import time
-
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import recovery
-    run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=dispatch.folder)
-    monkeypatch.setattr(module, 'RETRY_SECONDS', 0)
-    real, runners = subprocess.Popen, []
-
-    def runner(command, **given):  # a live process for each runner the gate starts, so the gate counts it
-        runners.append(real(['sleep', '60'], start_new_session=True))
-        runners[-1].args = command
-        return runners[-1]
-    monkeypatch.setattr(module.subprocess, 'Popen', runner)
-    tickets = [dispatch.store.add_work(dispatch.node, 'unbuilt', task=f'Change {n}').id for n in range(3)]
-    with Store('proj', module='dispatch').tables() as tx:
-        for n, work_id in enumerate(tickets):
-            tx.insert('agent_sessions', {'session_id': f's{n}', 'work_id': work_id, 'agent': 'claude', 'state': 'ended',
-                                         'how': recovery.DEAD, 'started': '2026-10-17T00:00:00Z', 'seq': n + 1,
-                                         'origin': module.origin()})
-            tx.insert('session_lines', {'session_id': f's{n}', 'name': 'state', 'work_id': work_id, 'kind': 'state',
-                                        'seq': 1, 'text': json.dumps({'capabilities': {'load': True},
-                                                                      'cwd': str(dispatch.folder)})})
-            tx.insert('session_attempts', {'work_id': work_id, 'session_id': f's{n}', 'retries': 0,
-                                           'next_at': time.time() - 1, 'how': recovery.DEAD, 'seq': n + 1})
-    for n, work_id in enumerate(tickets):
-        dispatch.store.take_work(work_id, by=f'claude s{n}')
-    try:
-        found = module.retry(context('dispatch', dispatch.folder, project='proj'), Store('proj'))
-        assert [one['work_id'] for one in found['retried']] == tickets[:1], 'the oldest end, alone'
-        assert found['retry_waiting'] == tickets[1:]
-        with Store('proj', module='dispatch').tables(write=False) as tx:
-            assert [tx.get('session_attempts', {'work_id': one})['retries'] for one in tickets] == [1, 0, 0]
-        assert len(runners) == 1 and 'resume=s0' in runners[0].args
-    finally:
-        for one in runners:
-            one.kill()
-            one.wait()
 
 
-@pytest.mark.req('MAP-049')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='safe live group cleanup requires Linux pidfds')
-def test_automatic_recovery_runs_before_autostart_selection_even_with_autostart_off(dispatch, run):
-    run('set', '--dispatch-recovery=automatic', cwd=dispatch.folder)
-    dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
-    eventually(lambda: dispatch.logged('grandchild'))
-    dispatch.process.kill()
-    dispatch.process.wait()
-    result = json.loads(run('dispatch', 'autostart', '--json', cwd=dispatch.folder).stdout)
-    assert result['started'] == []
-    assert dispatch.ticket().taken is None
 
 
 @pytest.mark.kind('fixture')
@@ -617,39 +559,6 @@ def test_recovery_preserves_new_ownership_assigned_during_orphan_cleanup(dispatc
     assert dispatch.ticket().taken_by == 'new owner'
 
 
-@pytest.mark.req('MAP-049')
-@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='safe live group cleanup requires Linux pidfds')
-def test_autostart_can_select_recovered_ticket_only_after_old_workers_are_stopped(dispatch, run, monkeypatch):
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-
-    run('set', '--dispatch-recovery=automatic', '--dispatch-autostart', cwd=dispatch.folder)
-    dispatch.start('hold', FAKE_ACP_ORPHAN_HOLD='1')
-    eventually(lambda: dispatch.logged('grandchild'))
-    dispatch.process.kill()
-    dispatch.process.wait()
-    selected = []
-
-    def start(ctx, reservation, *_, **__):
-        assert not any(alive(pid) for pid in dispatch.logged('pid') + dispatch.logged('grandchild'))
-        assert dispatch.ticket().taken_by == reservation
-        selected.append(ctx.nouns['id'])
-        return {'work_id': ctx.nouns['id']}
-
-    monkeypatch.setattr(module, 'run_reserved', start)
-    result = module.autostart(context('dispatch', dispatch.folder, project='proj'))
-    assert selected == [dispatch.id] and result['started'] == [{'work_id': dispatch.id}]
-    # the system agent, which owns the board, is told once: its runner died and the ticket is back in To do
-    from metaform.modules.dispatch.board import BOARD
-    from metaform.modules.dispatch.signals import rows
-    told = [one for one in rows(dispatch.store) if one['signal'] == BOARD]
-    assert len(told) == 1 and 'runner died; it is back in To do' in told[0]['said'], told
-    connected = result.get('connected') or {}  # none ran, so one is started for it, as stay_connected starts one
-    try:
-        assert connected.get('state') != 'failed' and connected.get('work_id'), result
-    finally:
-        if connected.get('work_id'):
-            run('dispatch', 'stop', connected['work_id'], cwd=dispatch.folder, ok=False)
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows ends a process without a signal it can handle')
@@ -1053,113 +962,12 @@ def test_a_runner_that_fails_before_its_session_gives_its_reservation_back_with_
     assert 'Traceback' in capsys.readouterr().err
 
 
-@pytest.mark.req('BASE-052')
-@pytest.mark.parametrize(('due_in', 'waits'), [(1000.0, False), (0.05, True)])
-def test_a_runner_waits_for_a_retry_only_as_long_as_the_supervisors_backoff(dispatch, monkeypatch, due_in, waits):
-    """UX review round 1, runaway F8: a runner whose session stopped could sleep up to an hour for a retry due; it
-    waits only within the longest backoff dispatch_retries allows, and leaves a later one to the server's timer."""
-    import time
-
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import runner
-    passes = []
-    monkeypatch.setattr(module, 'autostart', lambda ctx: passes.append(1) or {'retry_due': time.time() + due_in})
-    begun = time.monotonic()
-    asyncio.run(runner.moved_on(Store('proj'), {'ended': 'the agent ended with exit code 1'}))
-    assert time.monotonic() - begun < 30
-    assert len(passes) == (2 if waits else 1)
 
 
-@pytest.mark.req('BASE-052')
-@pytest.mark.req('VIEW-042')
-def test_a_start_that_keeps_failing_waits_out_its_backoff_then_waits_for_the_person_and_its_agent_is_named(
-        dispatch, run, monkeypatch):
-    """UX review round 2, 2026-10-17 (held-sweeps F1, ux-verify-combined F2): a runner failing before its session
-    gave its reservation back with no count, so the agent starter took the ticket again at once, about one runner a
-    second for as long as it ran, and the person was never told. Each failed start is counted on its ticket: the
-    starter leaves it for RETRY_SECONDS doubled, hands it to the person past dispatch_retries with the reason; the
-    agent failing the same way on a second ticket is not started by itself again, and the person is told."""
-    import secrets
-    import time
-
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import runner
-    from metaform.modules.dispatch.signals import rows
-
-    def broken(folder):
-        raise RuntimeError('SQLite objects created in a thread can only be used in that same thread')
-    monkeypatch.setattr(runner, 'mcp_server', broken)
-    run('set', '--dispatch-autostart', cwd=dispatch.folder)
-    ctx = context('dispatch', dispatch.folder, project='proj')
-    limit = int(ctx.setting('dispatch_retries'))
-
-    def attempt(work_id):
-        reservation = 'dispatch starting ' + secrets.token_hex(16)
-        dispatch.store.take_work(work_id, by=reservation)
-        with pytest.raises(RuntimeError):
-            asyncio.run(runner.dispatch(context('dispatch', dispatch.folder, project='proj',
-                                                nouns={'id': work_id, 'agent': 'claude', 'reservation': reservation})))
-    attempt(dispatch.id)
-    assert dispatch.ticket().taken is None and dispatch.ticket().column == 'todo', 'its ticket is back at once'
-    counted = module.start_backoff(dispatch.store)[dispatch.id]
-    assert counted['retries'] == 1 and not counted['handed'] and counted['next_at'] > time.time() + 20
-    monkeypatch.setattr(module, 'run_reserved', lambda *_, **__: pytest.fail('started again during its backoff'))
-    passed = module.start_work(ctx, dispatch.store, {})
-    assert passed['started'] == [] and passed['retry_due'] == pytest.approx(counted['next_at'])
-    for _ in range(limit):
-        attempt(dispatch.id)
-    counted = module.start_backoff(dispatch.store)[dispatch.id]
-    assert counted['retries'] == limit + 1 and counted['handed'], 'past dispatch_retries it waits for the person'
-    assert 'retry_due' not in module.start_work(ctx, dispatch.store, {}), 'and no timer waits for it'
-    raised = rows(dispatch.store, dispatch.id)
-    assert any(one['signal'] == 'handed-over' and 'did not start on it' in one['reason']
-               and 'SQLite objects' in one['reason'] for one in raised), raised
-    assert any(one['signal'] == 'not-smooth' and one['reason'].startswith('it did not start: RuntimeError')
-               for one in raised)
-    assert module.failing_agent(ctx, 'proj', 'claude') is None, 'one ticket failing names no agent'
-    other = dispatch.store.add_work(dispatch.node, 'unbuilt', task='Write more notes.').id
-    attempt(other)
-    assert module.failing_agent(ctx, 'proj', 'claude') is not None
-    assert not any(one['signal'] == 'setup-not-working' and one.get('signal_key') == 'dispatch:claude'
-                   for one in rows(dispatch.store)), 'canonical startup faults own the repair notification'
-    with pytest.raises(module.Refused, match='did not start on 2 tickets in a row'):
-        module.admit(ctx, dispatch.store, other, 'worker', agent='claude', auto=True)
-    module.admit(ctx, dispatch.store, other, 'worker', agent='claude')  # the person's own start is their retry
-    run('set', '--dispatch-claude', f'"{sys.executable}" -X dev "{runner.__file__}"', cwd=dispatch.folder)
-    assert module.failing_agent(ctx, 'proj', 'claude') is None, 'a changed start command is tried again'
 
 
-def test_only_the_active_board_starts_by_itself(dispatch, run):
-    """2026-10-21: boards set work aside. With Full Auto on, a start the system makes by itself for a ticket on a
-    board that is not the active one is refused; the person's own start of it runs; activating its board lets it
-    start."""
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    run('set', '--dispatch-autostart', cwd=dispatch.folder)
-    run('map', 'boards', 'op=add', 'name=aside', cwd=dispatch.folder)
-    run('map', 'work', 'op=edit', f'id={dispatch.id}', 'board=aside', cwd=dispatch.folder)
-    ctx = context('dispatch', dispatch.folder, project='proj')
-    with pytest.raises(module.Refused, match='set aside'):
-        module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude', auto=True)
-    module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude')  # the person's own start
-    run('set', '--board', 'aside', cwd=dispatch.folder)
-    module.admit(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id, 'worker',
-                 agent='claude', auto=True)
 
 
-def test_with_full_auto_off_no_ticket_agent_starts_by_itself(dispatch, run):
-    """2026-10-18: with Full Auto off, every agent the person stopped was replaced at once by a GC launch or a retry."""
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    ctx = context('dispatch', dispatch.folder, project='proj')
-    with pytest.raises(module.Refused, match='Full Auto is off'):
-        module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude', auto=True)
-    module.admit(ctx, dispatch.store, dispatch.id, 'worker', agent='claude')  # the person's own start
-    module.admit(ctx, dispatch.store, dispatch.id, 'summoned', agent='claude', auto=True)  # their system agent
-    run('set', '--dispatch-autostart', cwd=dispatch.folder)
-    module.admit(context('dispatch', dispatch.folder, project='proj'), dispatch.store, dispatch.id, 'worker',
-                 agent='claude', auto=True)
 
 
 @pytest.mark.req('BASE-052')
@@ -1228,7 +1036,6 @@ def test_stopping_an_agent_still_starting_ends_its_agent_group_too(dispatch, run
     assert [one.get('starting') for one in stopped['stopped']] == [True]
     assert gone([started['pid'], wrapper], limit=10), 'the runner and its agent both end'
     assert dispatch.ticket().taken is None, 'its ticket is back in To do'
-    assert dispatch.id not in module.start_backoff(dispatch.store), 'a stop is no failed start'
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='waiting on a subprocess pipe with select')
@@ -1280,7 +1087,9 @@ asyncio.run(dispatch(ctx))
         prompts = eventually(lambda: dispatch.received('session/prompt'))
         assert len(prompts) == 1
         text = '\n'.join(block.get('text', '') for block in prompts[0]['params']['prompt'])
-        assert '# Front-facing agent' in text and text.endswith(human)
+        from metaform.modules.tasks import PACKAGE
+        canonical = (PACKAGE / 'resources' / 'user_agent.txt').read_text(encoding='utf-8').replace('{project}', 'proj')
+        assert canonical in text and text.endswith(human)
         word = tell(row, 'word', what='Starting the requested work')['word']
         assert word is not None and word['text'] == human
         assert len(dispatch.received('session/prompt')) == 1, 'No separate startup prompt may displace the person.'

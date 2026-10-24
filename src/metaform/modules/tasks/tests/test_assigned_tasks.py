@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from copy import deepcopy
 
 import pytest
@@ -68,9 +69,26 @@ def test_user_agent_preserves_canonical_source_and_binds_only_project(project_fo
     assert definition['component']['source']['shipped_identity'] == hashlib.sha256(canonical.encode()).hexdigest()
 
 
+@pytest.mark.parametrize(('name', 'fingerprint'), [
+    ('worker', 'a5ba149a43837f71fdbe369229cda5ae25f0cfd7421aecb60cb801a9a8860f7d'),
+    ('facilitator', '292502a388d048f0511acc80d46ec25a8025c6296622317887b9c68e75a66781'),
+])
+def test_authored_task_source_and_delivered_component_preserve_user_wording(project_folder, name, fingerprint):
+    canonical = (tasks.PACKAGE / 'resources' / f'{name}.txt').read_bytes()
+    assert hashlib.sha256(canonical).hexdigest() == fingerprint
+    ctx = context('tasks', project_folder,
+                  nouns={'name': name, 'project_name': 'Actual Project', 'agent_name': 'Actual Agent'})
+    result = tasks.definition(ctx)
+    expected = canonical.decode().replace('{project}', 'Actual Project').replace('{name variable}', 'Actual Agent')
+    assert result['instructions'] == expected
+    assert result['component']['text'] == expected
+    assert result['component']['source']['shipped_identity'] == fingerprint
+
+
 def test_assignment_is_durable_before_transport_start_without_role_or_ticket(assigned, monkeypatch):
     ctx, lifecycle, adapter = assigned
-    monkeypatch.setattr(runtime.skills, 'served', lambda name: pytest.fail('No skill was selected.'))
+    expertise = importlib.import_module('metaform.modules.tasks.expertise')
+    monkeypatch.setattr(expertise, 'read', lambda *args: pytest.fail('No skill was selected.'))
 
     def durable(start_ctx, row):
         persisted = runtime.Lifecycle().assignment(start_ctx, row['task_id'])
@@ -103,21 +121,54 @@ def test_named_task_retains_exact_component_and_assignment_input(assigned):
     assert adapter.started[0]['payload'] == payload
 
 
+@pytest.mark.parametrize('native', [False, True])
+def test_assignment_attaches_reusable_document_by_uri_without_reference_bodies(assigned, native):
+    from metaform import skills
+    ctx, lifecycle, adapter = assigned
+    if native:
+        source = skills.native_document(skills.get('work-evidence'))
+    else:
+        source = skills.publish('assigned-reference', 'Use [the reference](references/input.md) when needed.',
+                                'Execute the supplied assignment.', {'references/input.md': 'Reference body.'})
+    ctx.nouns['skills'] = [source['uri']]
+    created = lifecycle.assign(ctx, '', None)
+    payload = lifecycle.assignment(ctx, created['task_id'])['payload']
+    delivered, = payload['skills']
+    assert delivered['uri'] == source['uri']
+    assert delivered['text'].encode() == source['files']['SKILL.md']
+    assert delivered['resources'] == source['resources']
+    assert delivered['component']['rendered_fingerprint'] == hashlib.sha256(source['files']['SKILL.md']).hexdigest()
+    assert 'files' not in delivered
+    assert adapter.started[0]['payload'] == payload
+
+
 def test_only_explicitly_selected_skills_are_loaded(assigned, monkeypatch):
     ctx, lifecycle, adapter = assigned
     loaded = []
 
-    def served(name):
+    def read(skill_ctx, name, node):
+        from metaform import prompt_files
+        assert skill_ctx is ctx and node == 'code.Example'
         loaded.append(name)
-        return f'Exact instructions for {name}.'
+        text = f'Exact instructions for {name}.'
+        attachment = {'layer': 'expertise', 'node': node, 'item_id': f'item-{name}'}
+        component = prompt_files.component(f'map:expertise/item-{name}', text)
+        component.update(origin='graph', source={'kind': 'graph', **attachment})
+        return {'id': f'item-{name}', 'name': name, 'node': node, 'text': text,
+                'component': component, 'attachment': attachment}
 
-    monkeypatch.setattr(runtime.skills, 'served', served)
+    expertise = importlib.import_module('metaform.modules.tasks.expertise')
+    monkeypatch.setattr(expertise, 'read', read)
     ctx.nouns['skills'] = ['review', 'research']
+    ctx.nouns['node'] = 'code.Example'
     created = lifecycle.assign(ctx, '', None)
     assert loaded == ['review', 'research']
-    expected = [{'name': name, 'text': f'Exact instructions for {name}.'} for name in loaded]
-    assert lifecycle.assignment(ctx, created['task_id'])['payload']['skills'] == expected
-    assert adapter.started[0]['payload']['skills'] == expected
+    selected = lifecycle.assignment(ctx, created['task_id'])['payload']['skills']
+    assert [(skill['name'], skill['text']) for skill in selected] == [
+        (name, f'Exact instructions for {name}.') for name in loaded]
+    assert all(skill['component']['origin'] == 'graph' and skill['attachment']['node'] == 'code.Example'
+               for skill in selected)
+    assert adapter.started[0]['payload']['skills'] == selected
 
 
 def test_input_requests_accept_once_and_ignore_unknown_keys(assigned):
@@ -185,7 +236,9 @@ def test_startup_tool_failure_completes_with_error_result(assigned, error):
 
 
 def test_idle_message_request_stays_stable_until_a_new_agent_turn(assigned):
-    ctx, lifecycle, task_id = create(assigned)
+    ctx, lifecycle, _ = assigned
+    ctx.nouns['name'] = 'user_agent'
+    task_id = tasks.assign(ctx)['task_id']
     adapter = assigned[2]
     adapter.observed.update(idle=True, last_message='Ready for your next instruction.')
     first = lifecycle.get(ctx, task_id)

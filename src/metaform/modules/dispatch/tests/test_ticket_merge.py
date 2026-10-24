@@ -38,7 +38,7 @@ def state(dispatch):
 
 
 @pytest.mark.parametrize('already_done', [False, True])
-def test_ticket_click_integrates_once_cleans_and_keeps_result_without_full_auto(
+def test_ticket_click_integrates_once_cleans_and_keeps_result(
         dispatch, repo, monkeypatch, already_done):
     saved = worked(dispatch, repo)[0] if already_done else saved_open(dispatch, repo)
     resolution, completed = dispatch.ticket().resolution, dispatch.ticket().done
@@ -62,7 +62,6 @@ def test_ticket_click_integrates_once_cleans_and_keeps_result_without_full_auto(
     assert integrate(dispatch, repo, saved)['done']
     assert git(repo, 'rev-parse', 'HEAD') == head
     assert git(repo, 'rev-parse', saved['branch']) == saved['head']
-    assert not context('dispatch', repo).setting('dispatch_autostart')
 
 
 def test_committed_branch_conflict_retains_open_ticket_and_candidate(dispatch, repo):
@@ -138,12 +137,12 @@ def test_active_worker_blocks_merge_and_new_worker_during_checks_blocks_landing(
 
     def worker():
         with own.tables() as tx:
-            tx.insert('sessions', {'session_id': 'active-worker', 'work_id': dispatch.id, 'agent': 'codex',
+            tx.insert('agent_sessions', {'session_id': 'active-worker', 'work_id': dispatch.id, 'agent': 'codex',
                                    'state': 'running', 'started': '2026-10-21T00:00:00Z', 'seq': 1})
     worker()
     assert 'agent still owns' in integrate(dispatch, repo, saved)['why']
     with own.tables() as tx:
-        tx.delete('sessions', {'session_id': 'active-worker'})
+        tx.delete('agent_sessions', {'session_id': 'active-worker'})
     real = merge.tests_pass
 
     def during_check(folder, command):
@@ -203,10 +202,12 @@ def test_admitted_resume_without_running_session_preserves_worktree(dispatch, re
     assert (repo / saved['worktree']).exists() and not dispatch.ticket().done
 
 
-def test_explicit_stop_is_respected_even_with_a_saved_result(dispatch, repo, monkeypatch):
-    from metaform.modules.dispatch import orchestration
+def test_explicit_stop_is_respected_even_with_a_saved_result(dispatch, repo):
     saved = saved_open(dispatch, repo)
-    monkeypatch.setattr(orchestration, 'assignment', lambda *args, **kwargs: {'stop': {'reason': 'User stop'}})
+    with Store('proj', module='dispatch').tables() as tx:
+        tx.insert('agent_sessions', {'session_id': 'stopped-worker', 'work_id': dispatch.id, 'agent': 'codex',
+                                    'state': 'ended', 'started': '2026-10-24T00:00:00Z', 'seq': 1,
+                                    'how': 'stopped by peer worker'})
     result = integrate(dispatch, repo, saved)
     assert not result['merged'] and 'explicitly stopped' in result['why']
     assert (repo / saved['worktree']).exists() and not dispatch.ticket().done

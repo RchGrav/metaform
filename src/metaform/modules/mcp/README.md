@@ -36,19 +36,17 @@ schemas and context epochs require current delivery. A receipt proves delivery,
 not comprehension. Discovery, guide reads and tools without specific instructions
 remain reachable. These prerequisites apply to MCP, not arbitrary CLI or file writes.
 
-`metaform_skills` is always available, including when workflow is disabled or
-omitted from the build. `op=list` lists discoverable skills, `op=load name=`
-accepts a name or `logic.skill.<name>` Address and returns its procedure with
-current libraries, and `op=read name= path=` reads a skill file. `all=true` on
-list includes internal skills for administrative inspection. Sentinel and
-workflow-evaluator are internal, so ordinary discovery never lists them.
+Reusable skills use the official `io.modelcontextprotocol/skills` extension (SEP-2640).
+`skills/list` and `skills/get` return frontmatter, canonical URIs and complete
+SHA-256/size manifests. `resources/read` returns one requested file, preserving
+UTF-8 text or base64 binary bytes. Discovery does not include instruction bodies
+or append a skill index to the connect message. Known internal and graph skills
+remain directly addressable without appearing in listings.
 
-The connect message appends a compact skill index when the connecting harness
-has no current, completed native deployment record. `skill_index=auto` is the
-default. `on` forces the index and `off` omits it. The installer deploys
-discoverable folders and their current libraries to native discovery harnesses
-and records their contents. Unknown clients and stale deployment records keep
-the index, so missing native discovery does not hide available procedures.
+Authored reusable skills are stored in the Metaform home's `skills/` directory.
+Project expertise stays in the map's expertise layer, inline in the receiving
+element's `joins` or attached directly to a functional join. Both use the same
+SKILL.md document format. See the [Skills specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx).
 
 `serve`: runs the server over stdio until the host closes it, or with `--http` over Streamable HTTP at `http://127.0.0.1:<mcp_port>/mcp` until it is stopped. It is never itself a tool. Beside the module tools it always serves the chassis tools `metaform_set`, `metaform_feedback`, `metaform_list_reports`, `metaform_read_report`, `metaform_instructions` and `metaform_register`, which narrowing never hides, and while the chassis is on the folder's command surface, `metaform_add_origin`, `metaform_list_origins`, `metaform_add_variant`, `metaform_list_variants`, `metaform_extract`, `metaform_prompts`, `metaform_prompt`, `metaform_save_prompt` and `metaform_clear_project`, the history, prompt and clear commands as tools. `metaform_clear_project` removes the project's bases and reports, as `metaform clear project` does; a backup is made first, and `metaform restore project` brings it back. It is `destructiveHint` true, and it is the person's decision: it takes no `confirm` and runs only on the person's yes in a form their AI tool shows; without it, and always for a dispatched agent, it says what it would remove, each base with what it holds and the backup made first, and the command the person runs (UX review round 1, CLI-011).
 

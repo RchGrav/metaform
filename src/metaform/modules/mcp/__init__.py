@@ -100,11 +100,6 @@ settings.choice('mcp_recovery', ['relay', 'manual'], 'relay', label='Schema upgr
                         'tool call made after the package code on disk changed from that code. Manual returns the '
                         'schema error and serves the code it started with. Unchanged package code never starts a '
                         'replacement.')
-settings.choice('skill_index', ['auto', 'on', 'off'], 'auto', label='Skill index at MCP connect',
-                help='auto lists discoverable skills unless this harness has a recorded native deployment; '
-                     'on always lists them and off omits the index.',
-                details='The index tells an agent when to choose each skill and how to load it over MCP. '
-                        'Internal skills remain loadable by address and never appear in this index.')
 # A2A, P004 and P005: other agents send work to Metaform as tickets. Who may reach it and where it may call out to are
 # the person's to decide, CLI-011, so both are person_only; how long a send waits only paces the caller, so it is not.
 settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve A2A',
@@ -112,7 +107,7 @@ settings.boolean('mcp_a2a', True, scope='global', person_only=True, label='Serve
                  details='The public Agent Card is at http://127.0.0.1:<mcp_port>/.well-known/agent-card.json and names '
                          'no project. Every other A2A request needs the bearer token in <home>/run/a2a-token, made on '
                          'the first start and separate from every other token. A message becomes a ticket at the '
-                         'Address its contextId names, in To do; it starts only when dispatch_autostart is on. Off, '
+                         'Address its contextId names, in To do for an agent to select. Off, '
                          'the HTTP server serves MCP alone.',
                  category='integrations', heading='A2A')
 settings.items('mcp_a2a_webhooks', (), scope='global', person_only=True, label='A2A push webhooks',
@@ -130,8 +125,7 @@ settings.number('mcp_a2a_wait', 30, min=0, max=3600, scope='global', label='A2A 
                 details='A2A asks a send without returnImmediately to wait until the task ends or needs input. A '
                         'ticket can take hours, so the wait ends here and the caller follows the task with GetTask, '
                         'SubscribeToTask or a push notification; the Agent Card says so. 0 answers at once. A ticket '
-                        'nothing will start, with dispatch_autostart off, is answered at once, as is a message that '
-                        'named no Address, which is asked for one.',
+                        'named no Address is answered at once and asked for one.',
                 category='integrations', heading='A2A')
 
 

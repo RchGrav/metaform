@@ -2,7 +2,7 @@
 
 Every command is its own tool, MCP-003 and CLI-037: each surfaced module verb is
 `<module>_<verb>`, and the chassis's own commands are `metaform_<command>`, `set`,
-`feedback`, `list_reports`, `read_report`, `instructions`, `register` and `skills` always,
+`feedback`, `list_reports`, `read_report`, `instructions` and `register` always,
 CLI-022 and BASE-045, and the history, prompt and clear commands while the chassis
 is on the folder's surface, MCP-004. A tool is described once, where it is listed:
 its description is the verb's summary, its input schema is built from the verb's
@@ -18,6 +18,7 @@ an object result also given as structured content.
 """
 from __future__ import annotations
 
+import base64
 import dataclasses
 import functools
 import hashlib
@@ -109,7 +110,7 @@ from metaform.module import (
 )
 from metaform.settings import refuse_held_control
 
-from . import catalog, consent, shaping
+from . import catalog, consent, shaping, skill_extension
 
 # On each tool that uses them, MCP-025 and CLI-033: `project` on a verb that needs a project, `layers` on a verb that
 # reads the map's layers; said in as few words as hold the meaning, since each is paid once per tool listed.
@@ -265,15 +266,6 @@ CHASSIS: dict[str, tuple[str, dict[str, Any]]] = {
                  {'type': 'object', 'additionalProperties': False,
                   'properties': {'id': _text('The project id: lowercase letters, digits, - and _. Without it, the '
                                              "folder's name.")}}),
-    'skills': (('List discoverable skills, load a skill with fresh libs, or read one of its files. '
-                'A name or prompt.skill.<name> address loads internal skills too. Always available.'),
-               {'type': 'object', 'additionalProperties': False, 'properties': {
-                   'op': {'type': 'string', 'enum': ['list', 'load', 'read'],
-                          'description': 'list by default, load the procedure and libs, or read one file.'},
-                   'name': _text('The skill name or prompt.skill.<name> address, required for load and read.'),
-                   'path': _text('The relative skill file path, required for read.'),
-                   'all': {'type': 'boolean', 'description': 'Include internal skills in an administrative list.'},
-                   'project': PROJECT}}),
 }
 ORIGIN = _text('The origin, by its short id; without it, the project\'s selected origin, the one established last.')
 CONFIRM = {'type': 'boolean', 'description': 'Run it. Without it the tool only explains.'}
@@ -510,8 +502,6 @@ def run_chassis(folder: Path, name: str, arguments: dict[str, Any], session: str
             result = instructions(folder, project, surface='mcp')
         elif name == 'register':
             result = result_json(register(folder, given.get('id')))
-        elif name == 'skills':
-            result = result_json(run_skills(given))
         else:
             result = read_report(folder, given['name'], project=project)
     except Stop as stop:
@@ -541,25 +531,6 @@ def _fault(folder: Path, project: Any, payload: dict[str, Any]) -> list[str] | N
         if taken else None
 
 
-def run_skills(given: dict[str, Any]) -> dict[str, Any]:
-    """The universal BASE-059 skill surface, independent of the workflow module's enabled state."""
-    from metaform import skills
-    op = given.get('op', 'list')
-    if op == 'list':
-        return {'skills': skills.listing(discoverable=not given.get('all', False))}
-    if op not in ('load', 'read'):
-        raise Stop(f'No skills operation {op}.', f'call {OWN}_skills with op=list, load or read')
-    name = given.get('name')
-    if not name:
-        raise Stop(f'skills {op} needs name.', schema_step(f'{OWN}_skills'))
-    if op == 'load':
-        return skills.load(name)
-    path = given.get('path')
-    if not path:
-        raise Stop('skills read needs path.', schema_step(f'{OWN}_skills'))
-    return {'name': name, 'path': path, 'text': skills.read(name, path)}
-
-
 def client_name(ctx: Any) -> str | None:
     """Use the connecting request's identity, including modern per-request metadata, before session identity."""
     params = getattr(ctx, 'params', None)
@@ -579,41 +550,6 @@ def client_name(ctx: Any) -> str | None:
 # Metaform's own budget for the connect message, MCP-029: Claude Code keeps 4,096 characters of a server's
 # instructions since v2.1.296 (2,048 before), and Metaform keeps to half that, since every agent reads all of it.
 HOST_KEEPS = 2048
-
-
-def fallback_skills(folder: Path, client: str | None = None) -> list[dict[str, Any]]:
-    """The discoverable skills a connecting harness is told of, BASE-059: none with skill_index off, or auto where a
-    completed native deployment already provides them."""
-    from metaform import skills
-    from metaform.module import skills_deployed
-    mode = settings.value('skill_index', folder)
-    if mode == 'off' or (mode == 'auto' and client and skills_deployed(client)):
-        return []
-    return skills.listing(discoverable=True)
-
-
-def skills_said(folder: Path, client: str | None = None) -> str:
-    """metaform_skills' description, closed by the names of `fallback_skills`: tool descriptions are listed by every
-    host and no host cuts them, so the names reach the agent when the connect message has no room for the index."""
-    said = CHASSIS['skills'][0]
-    names = ', '.join(one['name'] for one in fallback_skills(folder, client))
-    named = prompt_files.module('mcp', 'skills_discoverable', skills=names) if names else None
-    return f'{said} {named}' if named else said
-
-
-def skill_index(folder: Path, client: str | None = None, room: int | None = None) -> str:
-    """Fallback discovery only where a completed native deployment does not provide it, BASE-059. Within `room`
-    characters: each skill with its description, else the names alone, for metaform_skills op=list to describe, else
-    nothing here, since what passes the host's cut never arrives; metaform_skills' description names them still."""
-    entries = fallback_skills(folder, client)
-    if not entries:
-        return ''
-    lines = '\n'.join(f'{one["name"]}: {one["description"]}' for one in entries)
-    for listed in (lines, ', '.join(one['name'] for one in entries)):
-        index = prompt_files.module('mcp', 'skill_index', skills=listed) or ''
-        if room is None or len(index) <= room:
-            return index
-    return ''
 
 
 TOLD: set[str] = set()  # the agent sessions this server has given the provisioning notice, or found no need to
@@ -646,7 +582,6 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
     never repeated inside the role prompt, and selecting expertise does not select an MCP tool module.
     """
     named = catalog.role()
-    listed = named is None or named == 'system'
     project = project_for(folder)
     authored_role = 'not used; assigned tasks and selected skills supply instructions'
     assignment_id = os.environ.get('METAFORM_WORK') or 'not assigned'
@@ -671,8 +606,6 @@ def role_text(folder: Path, client: str | None = None, session: str | None = Non
         lines.append(said)
     first_run = first_run_text(folder) if named is None else None
     lines += [one for one in startup_notices(folder, project) if one != first_run]
-    if listed and (index := skill_index(folder, client)):  # the skills are the person's workflows, BASE-059
-        lines.append(index)
     return '\n\n'.join(lines)
 
 
@@ -977,8 +910,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
     `<module>_<verb>`, described by its summary and its caution, and the chassis's own commands as
     `metaform_<command>`, the history, prompt and clear commands only while the chassis is on the folder's surface,
     MCP-004. Each command is described once, here, with its arguments' schema built from its declaration, so an agent
-    plans a call from the list alone and the list is the same on every connection to the folder, but for the skill
-    names metaform_skills' description gives the `client` harness, BASE-059. Until the folder has a project, only
+    plans a call from the list alone and the list is the same on every connection to the folder. Until the folder has a project, only
     what runs without one is listed: the verbs that declare `needs_project` false and the chassis's own tools but
     those of SURFACED that act on a project's records; registering lists the rest, announced as a change, MCP-004."""
     registered = project_for(folder) is not None
@@ -1010,8 +942,7 @@ def listing(folder: Path, client: str | None = None) -> dict[str, Listed]:
                  'an agent may change, each with its help, choices and current value.'),
                 functools.partial(set_schema, folder)),
         **{name: (said, _fixed(schema)) for name, (said, schema) in CHASSIS.items()
-           if name != 'register' or not registered},  # registering is the first step, listed until it is taken
-        'skills': (skills_said(folder, client), _fixed(CHASSIS['skills'][1]))}
+           if name != 'register' or not registered}}  # registering is listed until it is taken
     if on_surface('chassis', folder):
         own.update({name: (said, _fixed(schema)) for name, (said, schema) in SURFACED.items()
                     if registered or name not in ON_PROJECT})
@@ -2130,7 +2061,7 @@ def resource_list(folder: Path) -> list[dict[str, Any]]:
     for module in surface(folder):
         listed += [{'uri': held.uri, 'name': held.name, 'description': held.description, 'mime_type': held.mime_type}
                    for held in module.resources if not held.fields]
-    return listed
+    return [*listed, *skill_extension.resources(folder)]
 
 
 def glossary_repeat(folder: Path, session: str | None, uri: str) -> str | None:
@@ -3101,6 +3032,21 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
 
     async def read_resource(ctx: Any, params: Any) -> Any:
         uri = str(params.uri)
+        if uri.startswith('skill://'):
+            supplied = await anyio.to_thread.run_sync(skill_extension.read, folder, uri)
+            if supplied is not None:
+                raw, mime = supplied
+                document: Any
+                if mime.startswith('text/') or mime in ('application/json', 'application/xml'):
+                    try:
+                        document = types.TextResourceContents(uri=uri, text=raw.decode('utf-8'), mime_type=mime)
+                    except UnicodeDecodeError:
+                        document = types.BlobResourceContents(uri=uri, blob=base64.b64encode(raw).decode('ascii'),
+                                                              mime_type=mime)
+                else:
+                    document = types.BlobResourceContents(uri=uri, blob=base64.b64encode(raw).decode('ascii'),
+                                                          mime_type=mime)
+                return types.ReadResourceResult(contents=[document], ttl_ms=0, cache_scope='private')
         if apps_on and uri in views.NAMES:  # a view, read by a client that renders MCP Apps
             config = await anyio.to_thread.run_sync(view_config, uri)
             text = await anyio.to_thread.run_sync(views.html, uri, config)
@@ -3204,6 +3150,7 @@ def build(folder: Path, *, http: bool = False) -> tuple[Any, Any, Any]:
     # before, so turning them off only took them from those that do. Settings cleanup 2026-10-15 removed mcp_tasks.
     server.extensions[tasked.EXTENSION] = {}
     add_tasks(server, folder, running, types, MCPError)
+    skill_extension.register(server, folder)
 
     def prepare(ctx: Any) -> None:
         """Prove schema compatibility before dispatch: construction alone does not open a Store.

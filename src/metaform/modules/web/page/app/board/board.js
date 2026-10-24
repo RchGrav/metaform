@@ -14,7 +14,7 @@ import {B, KINDS, BOARD, conditionLabel, partAt, chipShown, nodeChip, linked, ta
 import {COLUMN_NAMES, columnOf, ageOf, wrote, takenWords} from '/page/app/board/history.js';
 import {requestHoldReason, holdReason} from '/page/app/board/holds.js';
 import {ticketIntegration} from '/page/app/board/integration.js';
-import {D, AUTO, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
+import {D, waiting, ticketPart, ownGlyph, startWindow, renderAgents} from '/page/app/agents/dispatch.js';
 import {giveWork, named} from '/page/app/task/task.js';
 import {HARNESS, agentName, agentSelect, pickerOptions} from '/page/app/agents/pickers.js';
 import {posted} from '/page/app/intake/intake.js';
@@ -190,10 +190,7 @@ function recallButton(ticket) {
       ...(session ? {session: session.session_id} : {})});
     if (stopped) {
       if (session) rememberStop(session.session_id, new Date().toISOString());
-      if (stopped.autostart === false) {  // dispatch's `paused`: the person's stop turned Full Auto off
-        $('#autostartAgents').checked = false;
-        toast(stopped.notice);
-      } else toast(`${agentName(session?.agent)} recalled. Its ticket stays on the board; Back to To do on its card gives it to another agent.`);
+      toast(`${agentName(session?.agent)} recalled. Its ticket stays on the board.`);
       await renderAgents();
       await renderBoard();
     } else event.target.disabled = false;
@@ -280,7 +277,7 @@ const handleOf = id => {
   const other = B.tickets.find(one => one.id === id);
   return other?.map?.item || other?.map?.title || id.slice(0, 8);
 };
-/* Whether Start all and autostart start a ticket by themselves: waiting in To do, not held in Backlog, not held from
+/* Whether an explicit Start all selection includes a ticket: waiting in To do, not held in Backlog, not held from
  * agents, and waiting on no open ticket. A held ticket is the person's to release or start on its own card, UX review
  * round 1 (orchestrator F5). */
 export const startsByItself = ticket => waiting(ticket) && !ticket.held && !ticket.map?.hold && !waitsOn(ticket).length;
@@ -625,7 +622,6 @@ export async function renderBoard() {
   if ($('#board').hidden || !S.project) return;
   // Distribute's count starts at Agents at once, dispatch_agents, until the person changes it here
   const count = $('#board .distribute input');
-  if (!count.dataset.chosen && AUTO.agents) count.value = String(AUTO.agents);
   const project = S.project, metaform = S.base;  // the agents are read on dispatch events only, VIEW-018
   await drawBoards();
   if (S.project !== project) return;

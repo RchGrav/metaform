@@ -12,7 +12,6 @@ import {wake3d} from '/page/app/map3d/graph3d.js';
 import {select, MERGE} from '/page/app/selection/select.js';
 import {DOCK, SOURCES, STANDBY, sourceOf, sourceChip, dockState, clockOf} from '/page/app/dock/embody.js';
 import {drawHelpdesk} from '/page/app/dock/helpdesk.js';
-import {stayedOff} from '/page/app/dock/send.js';
 import {talkAbout} from '/page/app/dock/commands.js';
 import {renderBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
@@ -414,7 +413,7 @@ async function stopThread(event) {
     const stopped = await wrote('/api/dispatch-stop', {work_id: work, session: sessionId});
     if (!stopped) return;
     rememberStop(sessionId, new Date().toISOString());
-    toast(`${name} stopped. Resume its session below or in the Agents menu.${stayedOff(stopped)}`);
+    toast(`${name} stopped. Resume its session below or in the Agents menu.`);
     await renderAgents();
     await drawHelpdesk();
   } catch (error) { toast(error.message); }

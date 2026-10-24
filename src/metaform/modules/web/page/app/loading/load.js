@@ -32,7 +32,7 @@ import {renderMessages} from '/page/app/board/messages.js';
 import {B} from '/page/app/board/refs.js';
 import {drawBoard} from '/page/app/board/board.js';
 import {wrote} from '/page/app/board/history.js';
-import {D, readAutostart, renderAgents} from '/page/app/agents/dispatch.js';
+import {D, renderAgents} from '/page/app/agents/dispatch.js';
 import {leaveAsking} from '/page/app/agents/asking.js';
 import {renderProv} from '/page/app/panel/agentview.js';
 import {readHarnesses, forgetHarnesses, PICKERS, drawDockTab} from '/page/app/agents/pickers.js';
@@ -196,7 +196,6 @@ async function readProject(wanted) {
   const project = S.project;
   readHarnesses();
   loadWorkspace();
-  await readAutostart();
   const metaforms = (await read('bases', {limit: 0})).results;
   if (S.project !== project) return;  // the metaforms of a project the person has left
 
@@ -308,8 +307,6 @@ export function toProject(id) {
   shown(id);
   Object.assign(LIVE, {layer: null, base: null, seen: ''});
   Object.assign(D, {sessions: []});
-  $('#autostartAgents').checked = false;
-  $('#autostartAgents').disabled = true;
   leaveAgents();
   Object.assign(INTAKE, {work: null, session: null, agent: null, waiting: 0, started: null});
   D.asking = [];

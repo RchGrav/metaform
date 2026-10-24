@@ -152,17 +152,14 @@ export function nodeTalk(id) {
 }
 $('#helpdesk .interrupt').onclick = () => interruptChat(DOCK.target, DOCK.session, $('#helpdesk .interrupt'));
 $('#helpdesk .call').onclick = () => callSystem();
-/* Resume and Stay connected beside Call: the dispatch_resume_chats and dispatch_stay_connected settings of this
- * project, read when the dock opens and saved on a change. */
+/* Resume preserves the selected project conversation when Call is used. */
 export async function syncResume() {
-  const project = S.project, box = $('#helpdesk .resume input'), stay = $('#helpdesk .stay input');
+  const project = S.project, box = $('#helpdesk .resume input');
   if (!project) return;  // read with the project's own settings, once one is shown
   try {
-    const rows = (await read('settings', {keys: 'dispatch_resume_chats,dispatch_stay_connected'})).settings || [];
+    const rows = (await read('settings', {keys: 'dispatch_resume_chats'})).settings || [];
     const row = rows.find(one => one.key === 'dispatch_resume_chats');
-    const kept = rows.find(one => one.key === 'dispatch_stay_connected');
     if (S.project === project && row) box.checked = row.value !== false;
-    if (S.project === project && kept) stay.checked = kept.value === true;
   } catch { /* the box keeps what it shows */ }
 }
 /* A switch beside Call saved as its setting; a refused save turns it back and says why. */
@@ -175,25 +172,6 @@ async function saveSwitch(event, key, what) {
   return done.ok;
 }
 $('#helpdesk .resume input').onchange = event => saveSwitch(event, 'dispatch_resume_chats', 'Resume');
-$('#helpdesk .stay input').onchange = async event => {
-  if (await saveSwitch(event, 'dispatch_stay_connected', 'Stay connected') && event.target.checked) {
-    dockNote('Your system agent stays connected to this project; closing the chat never stops it, and Stop agent turns '
-      + 'this off.');
-  }
-};
-/* The person's stop of their system agent turns Stay connected off for the project, dispatch's `disconnect`: the box
- * follows, and the dock says so. `stopped` is the stop's answer. */
-export function stayedOff(stopped) {
-  return (stopped?.stay_connected === false ? (($('#helpdesk .stay input').checked = false),
-    ' Stay connected is off for this project until you check it again.') : '') + queuePaused(stopped);
-}
-/* The person's stop of an agent while Full Auto is on turns Full Auto off, dispatch's `paused`, so no waiting ticket
- * starts in its place: the switch follows, and the toast says so. UX review round 1, 2026-10-17. */
-export function queuePaused(stopped) {
-  if (stopped?.autostart !== false) return '';
-  $('#autostartAgents').checked = false;
-  return ` ${stopped.notice || 'Full Auto is now off for this project.'}`;
-}
 const toSystem = () => !DOCK.target || DOCK.target === DOCK.mine || DOCK.chat?.source === 'system';
 /* What the person writes goes to the agent on view, with the files attached; a /command is the chat's or the
  * agent's; with no agent there yet it waits in the thread, and one is reached. */

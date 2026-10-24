@@ -22,6 +22,6 @@ Use these informational references when they contribute to the assigned work. Th
 | [Review](references/review.md) | Reporting or reconciling a concrete finding |
 | [Documentation](references/documentation.md) | Maintaining an authoritative current description |
 
-Through Metaform, load the directory with `metaform_skills op=load name=work-evidence` and read one file with `metaform_skills op=read name=work-evidence path=references/assignment.md`, substituting the selected path. Native deployments use the relative links above.
+Through MCP, discover the manifest with `skills/get` at `skill://metaform/work-evidence/SKILL.md`. Use `resources/read` for that URI or a selected reference such as `skill://metaform/work-evidence/references/assignment.md`. Native deployments use the relative links above.
 
 These references adapt the selective ideas recorded in `COOKBOOK_ASSESSMENT.md` and `PROMPT_REVISIONS.md` in the supplied Metaform_Context_and_Agent_Flow_Audit package. The underlying cookbook and omitted prompt-writing materials were not supplied with that package. These are Metaform adaptations of that assessment, not imported cookbook policy or a measured efficiency claim.

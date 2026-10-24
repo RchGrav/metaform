@@ -571,7 +571,6 @@ def test_a_page_opening_and_closing_its_stream_is_said_to_the_homes_other_proces
     said = queue.Queue()
     monkeypatch.setattr(web_server.events, 'publish', lambda topic, payload, source: said.put((topic, payload)))
     served = web_server.Server('127.0.0.1', web, 'n')
-    monkeypatch.setattr(served, 'schedule_dispatch', lambda *args, **kwargs: None)
     serving = threading.Thread(target=served.run, daemon=True)
     serving.start()
     try:
@@ -702,7 +701,7 @@ def test_a_page_open_through_a_restart_reconnects_to_the_new_server_and_is_told_
 
 @pytest.mark.req('VIEW-002')
 @pytest.mark.req('CLI-011')
-def test_a_page_open_through_a_restart_starts_a_ticket_without_a_reload(run, web, mapped, browser):
+def test_a_reconnected_page_can_explicitly_start_a_ticket_without_a_reload(run, web, mapped, browser):
     """An agent restarted the web GUI, 2026-10-21: the new process held none of the keys the old one gave its pages,
     so every write of the person's from an open page was refused until a reload. The stream the page reopens on the
     new process gives it a key of its own, and Start on a card is taken."""

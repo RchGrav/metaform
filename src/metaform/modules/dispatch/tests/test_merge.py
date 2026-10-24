@@ -96,11 +96,9 @@ def test_saved_feature_branch_survives_automatic_abandoned_cleanup(dispatch, rep
     assert (repo / saved['worktree']).is_dir()
 
 
-@pytest.mark.parametrize('full_auto', [False, True])
-def test_full_auto_controls_local_integration_without_publication(dispatch, repo, run, monkeypatch, full_auto):
+def test_saved_candidate_does_not_integrate_or_publish_without_explicit_request(dispatch, repo, monkeypatch):
     from metaform.modules.dispatch import activation
     merge = importlib.import_module('metaform.modules.dispatch.merge')
-    run('set', '--dispatch-autostart' if full_auto else '--no-dispatch-autostart', cwd=repo)
     before = git(repo, 'rev-parse', 'HEAD')
 
     def publish_forbidden(*args, **kwargs):
@@ -109,11 +107,11 @@ def test_full_auto_controls_local_integration_without_publication(dispatch, repo
     monkeypatch.setattr(merge, 'push_ticket', publish_forbidden)
     monkeypatch.setattr(activation, 'delivered', publish_forbidden)
     [saved] = worked(dispatch, repo)
-    assert saved['state'] == ('merged' if full_auto else 'committed')
+    assert saved['state'] == 'committed'
     assert dispatch.ticket().done
     assert git(repo, 'rev-parse', 'origin/dev') == before
-    assert (git(repo, 'rev-parse', 'HEAD') != before) is full_auto
-    assert (repo / 'feature.txt').exists() is full_auto
+    assert git(repo, 'rev-parse', 'HEAD') == before
+    assert not (repo / 'feature.txt').exists()
     assert git(repo, 'show', f"{merge.branch_of(dispatch.id)}:feature.txt") == 'ticket feature'
     assert not dispatch.store.work(open=True, limit=0).results
 
@@ -191,17 +189,6 @@ def test_a_merge_killed_part_way_leaves_the_agents_branch_as_it_was_and_the_next
     assert not dispatch.store.work(open=True, limit=0).results
 
 
-def test_autostart_has_no_successor_to_start_after_ticket_delivery(dispatch, repo, run, monkeypatch):
-    """A delivered ticket creates no follow-up that could start an endless completion chain."""
-    from metaform.module import context
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch import recovery
-    worked(dispatch, repo)
-    assert dispatch.ticket().done
-    run('set', '--dispatch-autostart', '--dispatch-agents=5', cwd=repo)
-    monkeypatch.setattr(recovery, 'recover', lambda ctx: {'released': []})
-    monkeypatch.setattr(module, 'run_reserved', lambda ctx, reservation, *_, **__: dict(ctx.nouns))
-    assert module.autostart(context('dispatch', repo, project='proj'))['started'] == []
 
 
 def test_review_takes_the_merge_over_for_good(dispatch, repo, run):

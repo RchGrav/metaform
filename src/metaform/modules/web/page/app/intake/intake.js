@@ -138,9 +138,8 @@ export async function stopIntake() {
   const stopped = await wrote('/api/dispatch-stop', {work_id: work, ...(session ? {session} : {})});
   if (stopped) {
     if (session) rememberStop(session, new Date().toISOString());
-    if (stopped.autostart === false) $('#autostartAgents').checked = false;  // dispatch's `paused`
     toast(stopped.gone ? 'The intake agent had ended already; what it recorded is kept.'
-      : `The intake agent was stopped.${stopped.autostart === false ? ` ${stopped.notice}` : ''}`);
+      : `The intake agent was stopped.`);
   }
   // redrawn from the server's record after any answer, a refusal too, so the bar never stays on an agent that is gone
   await renderAgents();

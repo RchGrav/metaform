@@ -36,7 +36,7 @@ pytestmark = pytest.mark.kind('fixture')
 
 OS = "SUPPORTED_OS = ('linux', 'macos', 'windows')"
 CHASSIS_TOOLS = {'metaform_set', 'metaform_feedback', 'metaform_list_reports', 'metaform_read_report',
-                 'metaform_instructions', 'metaform_register', 'metaform_skills'}
+                 'metaform_instructions', 'metaform_register'}
 REGISTERED_TOOLS = CHASSIS_TOOLS - {'metaform_register'}  # registering is listed until the folder has a project
 
 
@@ -1810,7 +1810,7 @@ def test_a_folder_with_no_project_lists_only_what_runs_and_registering_announces
         return before, said, after, refused
     before, said, after, refused = session(home, folder, check, heard)
     assert not any(name.startswith(('map_', 'memory_')) for name in before)
-    assert {'metaform_register', 'metaform_skills', 'web_start', 'fork_init', 'intake_schema'} <= before.keys()
+    assert {'metaform_register', 'web_start', 'fork_init', 'intake_schema'} <= before.keys()
     assert not {'intake_start', 'metaform_add_origin', 'mcp_a2a_send'} & before.keys()
     assert said == 1                                                    # registering, once
     assert {'map_where', 'memory_read_graph', 'intake_start', 'metaform_add_origin'} <= after.keys()
@@ -3283,7 +3283,7 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
             tx.insert('agent_sessions', {'session_id': 's-died', 'work_id': died, 'agent': 'claude', 'state': 'ended',
                                    'how': 'the runner is no longer running', 'started': '2026-10-11T00:00:00Z',
                                    'seq': 1})
-        run('map', 'work', 'op=edit', f'id={held}', 'held=true', cwd=mapped)
+        run('map', 'work', 'op=edit', f'id={held}', 'held=true', 'hold_reason=Wait for the fixture decision.', cwd=mapped)
         run('map', 'work', 'op=take', f'id={taken}', cwd=mapped)
         read = {one: (await client.post('/a2a', json=rpc('GetTask', {'id': one}), headers=headers)).json()['result']
                 for one in (died, held, taken)}
@@ -3314,15 +3314,15 @@ def test_a2a_reaches_only_its_own_tickets_reads_a_cancel_as_canceled_and_a_wait_
     from metaform.modules.mcp.a2a import ticket_state
     work = Store('proj').ticket(taken['id']).work
     idle = ticket_work_status(work, [{'session_id': 's-idle', 'state': 'running', 'activity': 'idle'}], [])
-    assert ticket_state(work, {'dispatch': idle}, False) == ('running', None, 'a2a_working')  # idle between turns
+    assert ticket_state(work, {'dispatch': idle}) == ('running', None, 'a2a_working')  # idle between turns
     # dispatch's own status for a ticket it keeps nothing on yet: taken and starting, or held, wait on no one
     starting = ticket_work_status(work, [], [])
     assert starting == {'status': 'running', 'reason': 'starting'}
-    assert ticket_state(work, {'dispatch': starting}, False) == ('running', None, 'a2a_working')
+    assert ticket_state(work, {'dispatch': starting}) == ('running', None, 'a2a_working')
     kept = Store('proj').ticket(held['id']).work
     holding = ticket_work_status(kept, [], [])
     assert holding == {'status': 'submitted', 'reason': 'held'}
-    assert ticket_state(kept, {'dispatch': holding}, False) == ('submitted', None, 'a2a_held')
+    assert ticket_state(kept, {'dispatch': holding}) == ('submitted', None, 'a2a_held')
 
 
 @pytest.mark.browser

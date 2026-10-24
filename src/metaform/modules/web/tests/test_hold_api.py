@@ -38,21 +38,6 @@ def test_hold_writes_reject_blank_reasons_without_partial_changes(run, web, mapp
     assert not store.work_hold_history(ticket.id)
 
 
-def test_resolved_review_cancels_existing_project_deadline():
-    import threading
-    from types import SimpleNamespace
-
-    from metaform.modules.web.server import Server
-
-    cancelled = []
-    server = object.__new__(Server)
-    server.dispatch_lock = threading.Lock()
-    server.retry_timers = {'proj': (1900.0, SimpleNamespace(cancel=lambda: cancelled.append('proj')))}
-    server.schedule_retry('proj', None)
-    assert cancelled == ['proj']
-    assert server.retry_timers == {}
-
-
 def test_concurrent_reason_change_after_preview_check_is_not_released(run, web, mapped, monkeypatch):  # noqa: F811
     from metaform.modules.web import server
 

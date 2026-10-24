@@ -1,3 +1,4 @@
+import {renderWorkerPanel} from '/page/app/agents/dispatch.js';
 /* Live: what modules publish pushed to the page, VIEW-018, the intake followed as it is recorded, and changes
  * applied as they come. */
 import '/page/app/build/build.js';  // the part before runs first, so the parts run in the page's order
@@ -265,6 +266,10 @@ export async function changed(event) {
   // a roundtable's events change no map: the stage reads its own table's, and nothing else is read for them
   if (tableChange(event.payload)) return;
   const named = event.payload.tables;
+  if (Array.isArray(named) && named.includes('tasks.board')) {
+    await renderWorkerPanel();
+    return;
+  }
   // the workspace's panes that read the map read again, but for an agent's thread lines alone, which no pane shows;
   // its messages and its workflow runs only when the change names their tables, or names none
   if (WS.on && !threadOnly(event.payload)) {

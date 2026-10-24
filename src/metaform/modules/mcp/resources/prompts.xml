@@ -32,16 +32,6 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
      command-line guide, with each module's <connect> line after it. Not sent at connect: the connect message is
      <connect_directive> and its links. Empty gives the module lines without it. -->
 <instructions>You must use Metaform for this project; it is not optional. Use it to:</instructions>
-<!-- BASE-059: fallback discovery closing metaform://role/<role> for the person's own sessions and the system agent where the connecting harness has no completed
-     native skill deployment. skill_index auto/on/off controls this index. <skills/> holds discoverable skills only,
-     one name and usage description per line. Internal skills remain available through explicit address loading. -->
-<skill_index>Skills: load one with metaform_skills op=load name=&lt;name&gt; or name=prompt.skill.&lt;name&gt;.
-<skills/></skill_index>
-<!-- BASE-059: closes the metaform_skills tool description with the discoverable skill names, under the same
-     skill_index auto/on/off rule as the index above. Hosts list every tool description, so the names arrive here
-     too for an agent that has not read metaform://role/<role>. <skills/> is the names,
-     comma-separated. Empty adds nothing. -->
-<skills_discoverable>Discoverable: <skills/>.</skills_discoverable>
 <!-- metaform://<project> while the map module, which generates the project's glossary, is off for the folder or
      cannot read it: sent after the register standard the map module ships, so the agent knows why no terms follow. -->
 <project_glossary_absent>// No project terms here: the map module, which generates them from the project's map, is off for this folder or the folder has no map yet.</project_glossary_absent>
@@ -150,12 +140,11 @@ Communicate clearly and concisely in grammatical language. Give the outcome, evi
 <a2a_caller>an A2A client</a2a_caller>
 <!-- The task's status message, sent with every task and every status update, so the sending agent knows where its
      work is. <item/> takes the ticket's reference, Address#n, or its work id while it has none; <title/> its title. -->
-<!-- A ticket in To do while nothing starts tickets by itself, dispatch_autostart off. -->
-<a2a_waiting><item/> <title/> waits in To do until the person starts it.</a2a_waiting>
-<!-- A ticket in To do while dispatch_autostart is on. -->
-<a2a_queued><item/> <title/> waits in To do; an agent starts on it when one is free.</a2a_queued>
-<!-- A ticket the person holds in the backlog. -->
-<a2a_held><item/> <title/> is held in the backlog by the person.</a2a_held>
+
+<!-- A submitted ticket available for agent selection. -->
+<a2a_queued><item/> <title/> waits in To do for an agent to select it.</a2a_queued>
+<!-- A ticket held in the backlog. -->
+<a2a_held><item/> <title/> is held in the backlog.</a2a_held>
 <!-- A ticket an agent has taken. <steps/> takes "<done> of <planned> steps done" once it planned them; <said/> what
      the agent said of its last finished step. -->
 <a2a_working>An agent is working <item/> <title/>. <steps/> <said/></a2a_working>

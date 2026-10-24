@@ -145,22 +145,6 @@ _VENDOR: list[str] = []  # the vendor version, worked out again on each load of 
 # The page's modulepreload links, with what they were worked out from: the import map and module scripts, and the
 # stamp of every module file read.
 _PRELOADS: list[tuple[tuple[str, tuple[str, ...]], tuple[tuple[str, tuple[int, int]], ...], bytes]] = []
-DISPATCH_CHANGES = frozenset({'work', 'messages', 'orchestration.routing', 'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after',
-                              'map.question_work', 'dispatch.sessions', 'dispatch.agent_sessions',
-                              'dispatch.questions', 'dispatch.settings', 'dispatch.claims', 'dispatch.claim_work',
-                              'dispatch.raised'})
-
-
-# What a change concerns, map.changed's `kinds`, when every write said it, changes.concerns: the kinds that can start
-# work, a ticket made ready, released or freed, a message or question answered; and the inputs no kind names, read from
-# the tables. A session that ended says no kinds (dispatch's release), so the tables decide; `session` alone is a
-# runner's own state, working or idle, which starts nothing. A ticket's words, `note`, and its plan and steps, `step`,
-# start nothing either, so an agent editing its note or reporting a step costs the starter no pass (UX review round 1,
-# runaway F3): only `ticket` does, a ticket written, released, freed, done or given a task.
-STARTS = frozenset({'ticket', 'filed', 'orchestration.routing', 'message', 'question', 'worker-idle'})
-UNKINDED = frozenset({'map.glyphs', 'map.ticket_settings', 'map.eligible', 'map.after', 'dispatch.settings',
-                      'dispatch.claims',
-                      'dispatch.claim_work', 'dispatch.raised'})
 
 
 def named_tables(payload: dict[str, Any]) -> list[str] | None:
@@ -187,16 +171,6 @@ def runner_change(payload: dict[str, Any]) -> bool:
     none, so a burst of them lists nothing."""
     kinds = given_kinds(payload)
     return kinds is None or 'session' in kinds or 'ticket' in kinds
-
-
-def dispatch_change(payload: dict[str, Any]) -> bool:
-    """Only selection inputs trigger autostart: a change whose `kinds` say it concerns none that can start work
-    does not, and else the tables it names decide. Older events without table detail may have changed any input."""
-    kinds = given_kinds(payload)
-    if kinds is not None and not STARTS.intersection(kinds):
-        return bool(UNKINDED.intersection(named_tables(payload) or ()))
-    tables = named_tables(payload)
-    return tables is None or bool(DISPATCH_CHANGES.intersection(tables))
 
 
 # Behind a Metaform Node's gate, the page server trusts who is calling only from requests carrying the per-deploy
@@ -227,7 +201,7 @@ DISPATCH_ROUTES = frozenset({
 ADMIN_ROUTES = frozenset({
     '/api/save-prompt', '/api/clear-project', '/api/remove-project', '/api/restore', '/api/add-project',
     '/api/activate-base',
-    '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-autostart', '/api/dispatch-agents',
+    '/api/remove-base', '/api/intake-finish', '/api/intake-discard','/api/dispatch-prompts', '/api/dispatch-agents',
     '/api/dispatch-reset', '/api/settings', '/api/settings/reset', '/api/settings/choices', '/api/modules',
     '/api/mcp-call', '/api/board-line', '/api/board-add', '/api/board-remove', '/api/board-wipe', '/api/board-restore',
     '/api/voice/download', '/api/build', '/api/workspace/arrangement', '/api/workspace/reset', '/api/report',
@@ -396,15 +370,10 @@ class Server(ThreadingHTTPServer):
         self.origin, self.gate = origin.rstrip('/').lower(), gate or None
         self.token = None if loopback(bind) else token()
         self.listeners: set[queue.SimpleQueue[dict[str, Any]]] = set()
-        # The project each open page shows, so the page that opens a project runs its agent starter at once.
+        # The project each open page shows, for page counts and mascot messages.
         self.watching: dict[queue.SimpleQueue[dict[str, Any]], str] = {}
         self.listening = threading.Lock()
-        self.dispatch_lock = threading.Lock()
-        self.dispatch_pending: set[tuple[str, str | None]] = set()  # each project, with the page's base or None
-        self.capacity_waiters: set[tuple[str, str | None]] = set()
-        self.dispatch_last = ''
-        self.dispatch_busy = False
-        self.dispatch_errors: dict[str, str] = {}  # each project's last automatic-dispatch error, logged once
+        self.runner_lock = threading.Lock()
         self.said: dict[str, None] = {}  # the refusals and faults already logged, oldest first, `first_time`
         self.said_lock = threading.Lock()
         self.busy: set[Busy] = set()  # each request and page read's work running now, `tracked`
@@ -415,7 +384,6 @@ class Server(ThreadingHTTPServer):
         self.supervisor = os.environ.pop(SUPERVISOR, '') or None
         self.restarted = restart_said(os.environ.pop(RESTARTED, ''))
         self.told: int | None = None  # the pipe to the watchdog, kept past the ready line, `ready`
-        self.retry_timers: dict[str, tuple[float, threading.Timer]] = {}  # P012: each project's next retry, when due
         # The watch on every runner of the home, dispatch's `dispatch.deaths`: a runner's death, however it comes, is a
         # change announced at once, never one a page finds on its next read (UX review round 2, intake-single-flight F1)
         self.deaths: Any = None
@@ -546,11 +514,12 @@ class Server(ThreadingHTTPServer):
 
     def changed(self, payload: dict[str, Any], own: bool = False) -> int:
         """Push one `map.changed` to every open page, VIEW-018 and BASE-053; a change to a project no longer registered,
-        such as the removal of one, is not pushed, since a page has nothing of it to read. `own`, the agent starter's
-        own writes, schedules no dispatch check: a process never reacts to its own writes."""
+        such as the removal of one, is not pushed, since a page has nothing of it to read. Module-owned background
+        services hear the change, and new runner leases are observed without selecting or starting work."""
         if home.project(str(payload.get('project', ''))) is None:
             self.watch_backgrounds(str(payload.get('project', '')), refresh=True)
             return 0
+        self.watch_backgrounds(str(payload['project']))
         self.background_heard(payload)
         deaths = getattr(self, 'deaths', None)  # a server made without __init__, as a test's, has none
         if deaths is not None and runner_change(payload):  # the leases listed, read only when one is new
@@ -560,11 +529,6 @@ class Server(ThreadingHTTPServer):
             self.push({'topic': 'map.flow', 'payload': {'project': payload['project'], 'flows': payload.pop('flow')}})
         if not own and {'autoticket.settings', 'chassis.settings'} & set(named_tables(payload) or []):
             self.watch_backgrounds(str(payload['project']), refresh=True)
-        if not own and dispatch_change(payload):
-            if runner_change(payload) and getattr(self, 'capacity_waiters', None):
-                with self.dispatch_lock:
-                    self.dispatch_pending.update(getattr(self, 'capacity_waiters', ()))
-            self.schedule_dispatch(str(payload['project']))
         return self.push({'topic': 'map.changed', 'payload': payload})
 
     def pages_changed(self, project_id: str) -> None:
@@ -596,8 +560,16 @@ class Server(ThreadingHTTPServer):
                 return
             folder = Path(found.path)
             self.backgrounds[project] = []
+            self.watch_runners(folder)
             for owner, start in chassis.provided(folder, 'project.background'):
-                service = start(chassis.context(owner, folder, project=project, surface='web'))
+                try:
+                    source = chassis.context(owner, folder, project=project, surface='web')
+                except StoreError:
+                    if home.project(project) is None:
+                        self.backgrounds.pop(project, None)
+                        return
+                    raise
+                service = start(source)
                 if service is not None:
                     self.backgrounds[project].append(service)
 
@@ -629,15 +601,14 @@ class Server(ThreadingHTTPServer):
         if getattr(self, 'deaths', None) is not None:
             return
         for _, watch in chassis.provided(folder, 'dispatch.deaths'):
-            with self.dispatch_lock:
+            with self.runner_lock:
                 if getattr(self, 'deaths', None) is None:
                     self.deaths = watch(self.runner_died)
             return
 
     def runner_died(self, about: dict[str, Any]) -> None:
         """A runner of the home ended without saying so, killed or crashed: dispatch has ended what it left; the change
-        goes to every open page and every other process of the home, and the agent starter looks again, since a slot
-        is free and a ticket may be back in To do. In the watch's own thread."""
+        goes to every open page and every other process of the home. In the watch's own thread."""
         project = home.project(str(about.get('project', '')))
         if project is None:
             return
@@ -650,89 +621,6 @@ class Server(ThreadingHTTPServer):
         self.changed(payload)
         source = chassis.context('web', Path(project.path), project=project.project_id, surface='web')
         events.publish('map.changed', payload, source)
-
-    def open_projects(self) -> set[str]:
-        with self.listening:
-            return set(self.watching.values())
-
-    def schedule_dispatch(self, project: str, base: str | None = None) -> None:
-        """Queue a dispatch check on a change, without blocking page reads or starting concurrent batches; on the active
-        base, or on `base`, a base the page shows that is not the active one."""
-        with self.dispatch_lock:
-            self.dispatch_pending.add((project, base))
-            if self.dispatch_busy:
-                return
-            self.dispatch_busy = True
-        threading.Thread(target=self.dispatch_waiting, daemon=True).start()
-
-    def schedule_retry(self, project: str, due: Any) -> None:
-        """The supervisor's next retry, P012, when one waits: one timer per project, at the earliest time due, runs the
-        agent starter again, so a session whose runner is gone, as after a restart, is still resumed; nothing polls,
-        QUAL-015. A runner that saw its own session stop comes back for it as well; a second pass finds it done."""
-        if not isinstance(due, (int, float)):
-            with self.dispatch_lock:
-                held = self.retry_timers.pop(project, None)
-                if held is not None:
-                    held[1].cancel()
-            return
-        with self.dispatch_lock:
-            held = self.retry_timers.get(project)
-            if held is not None and held[1].is_alive() and held[0] <= due:
-                return
-            if held is not None:
-                held[1].cancel()
-            timer = threading.Timer(max(0.0, float(due) - time.time()) + 0.5, self.schedule_dispatch, (project,))
-            timer.daemon = True
-            self.retry_timers[project] = (float(due), timer)
-            timer.start()
-
-    def dispatch_waiting(self) -> None:
-        """Start eligible work for changed projects in one worker; coalesce changes while a batch starts."""
-        while True:
-            with self.dispatch_lock:
-                if self.dispatch_pending:
-                    def order(one: tuple[str, str | None]) -> tuple[str, str]:
-                        return one[0], one[1] or ''
-                    ordered = sorted(self.dispatch_pending, key=order)
-                    last = getattr(self, 'dispatch_last', '')
-                    project_id, base = next((one for one in ordered if one[0] > last), ordered[0])
-                    self.dispatch_pending.discard((project_id, base))
-                    self.dispatch_last = project_id
-                else:
-                    self.dispatch_busy = False
-                    return
-            with chassis.request_scope(fresh=True):
-                chassis.refresh_modules()
-                project = home.project(project_id)
-                if project is None:
-                    continue
-                try:
-                    self.watch_backgrounds(project_id)
-                    self.watch_runners(Path(project.path))
-                    started = module_verb({'project': project_id, 'base': base or ''}, 'dispatch', 'autostart', {'batch': 1},
-                                          chosen=bool(base))
-                    if isinstance(started, dict):
-                        result = cast(dict[str, Any], started)
-                        with self.dispatch_lock:
-                            if hasattr(self, 'capacity_waiters'):
-                                if result.get('capacity_waiting'):
-                                    self.capacity_waiters.add((project_id, base))
-                                else:
-                                    self.capacity_waiters.discard((project_id, base))
-                            if result.get('more'):
-                                self.dispatch_pending.add((project_id, base))
-                    self.schedule_retry(project_id, cast(dict[str, Any], started).get('retry_due')
-                                        if isinstance(started, dict) else None)
-                except StoreError as error:
-                    if self.dispatch_errors.get(project_id) != str(error):  # once until it changes, not on every change
-                        self.dispatch_errors[project_id] = str(error)
-                        log(f'Automatic dispatch for {project_id}: {error}')
-                    continue
-                except Stop:  # dispatch is disabled for this project
-                    continue
-                self.dispatch_errors.pop(project_id, None)
-                for payload in events.announce(Path(project.path), 'web'):
-                    self.changed(dict(payload), own=True)
 
     def push(self, event: dict[str, Any]) -> int:
         """Hand one event to every open page's stream, VIEW-018."""
@@ -1076,10 +964,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.module_notices(query.get('project', [''])[-1])
         if url.path in ('/api/phone-check', '/api/speech-voices'):  # asked for by a button, never on a page's read
             return self.settings_check(url.path, query.get('project', [''])[-1])
-        if url.path == '/api/dispatch-autostart':
-            return self.dispatch_autostart({'project': query.get('project', [''])[-1]})
         if url.path == '/api/dispatch-agents':
             return self.dispatch_agents({'project': query.get('project', [''])[-1]})
+        if url.path == '/api/worker-board':
+            return self.worker_board({'project': query.get('project', [''])[-1]})
         if url.path in ('/api/tasks', '/api/task-definition'):
             return self.task_definitions({key: values[-1] for key, values in query.items() if key != 't'},
                                          one=url.path == '/api/task-definition')
@@ -1292,7 +1180,6 @@ class Handler(BaseHTTPRequestHandler):
             if project:
                 self.gui.watching[waiting] = project
         if project:
-            self.gui.schedule_dispatch(project)  # the page opened the project: its agent starter runs now
             self.gui.pages_changed(project)
         self.close_connection = True
         # A page whose key this process never gave, an open page reconnecting after a restart, gets a key of its own
@@ -1416,7 +1303,7 @@ class Handler(BaseHTTPRequestHandler):
                   '/api/dispatch-new': self.dispatch_new,
                   '/api/dispatch-cancel': self.dispatch_cancel,
                   '/api/dispatch-prompts': self.set_dispatch_prompts,
-                  '/api/dispatch-autostart': self.set_dispatch_autostart, '/api/board-line': self.board_line,
+                  '/api/board-line': self.board_line,
                   '/api/board-add': self.add_board, '/api/board-remove': self.remove_board,
                   '/api/board-wipe': self.wipe_board, '/api/board-restore': self.restore_board,
                   '/api/dispatch-agents': self.set_dispatch_agent, '/api/dispatch-intake': self.dispatch_intake,
@@ -1788,8 +1675,7 @@ class Handler(BaseHTTPRequestHandler):
             rows: list[dict[str, Any]] = cast(list[dict[str, Any]], data.get('sessions') or []) if running else []
             live = [row for row in rows if row.get('state') == 'running']
             if live and live[-1].get('agent') != agent:
-                # The stopped runner releases the ticket and announces it; the agent starter, run on every change,
-                # then starts the agent the ticket now prefers. Nothing here waits for it, QUAL-015.
+                # End the prior agent's session after changing the ticket's preferred adapter.
                 self.dispatch_call(given, 'stop', [work_id])
         self.send(200, {'results': [edited]})
 
@@ -1943,7 +1829,7 @@ class Handler(BaseHTTPRequestHandler):
                                   for ref, one in found.items()}})
 
     def raise_issue(self, given: dict[str, Any]) -> None:
-        """The person raises an issue on a node: the dispatch module's raise starts the sentinel."""
+        """Send the supplied observation to a dedicated User Agent task at its functional node."""
         node, text = given.get('node'), given.get('text')
         if not isinstance(node, str) or not node:
             return self.send(400, {'error': 'An issue is raised on one node.'})
@@ -2230,49 +2116,6 @@ class Handler(BaseHTTPRequestHandler):
                if isinstance(given.get(key), str) and given[key]]
         self.dispatched(given, 'start', [work_id, agent, *own])
 
-    def dispatch_autostart(self, given: dict[str, Any]) -> None:
-        """Read automatic dispatch settings in the registered project's folder, VIEW-042."""
-        project = home.project(str(given.get('project', '')))
-        if project is None:
-            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
-                                   'next': 'metaform list projects'})
-        folder = Path(project.path)
-        chassis.refresh_modules()
-        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
-            return self.send(200, {'value': False, 'available': False})
-        # with the most Agents at once may be, the setting's own maximum, so the page checks what the server checks
-        self.send(200, {**{name: settings.value(key, folder) for name, key in
-                           (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'),
-                            ('machine', 'dispatch_machine_agents'))},
-                        'most': settings.SCHEMA['dispatch_agents'].max})
-
-    def set_dispatch_autostart(self, given: dict[str, Any]) -> None:
-        """Save automatic dispatch settings and start waiting work when enabled, VIEW-042."""
-        project = home.project(str(given.get('project', '')))
-        if project is None:
-            return self.send(404, {'error': f'No project {given.get("project", "")} is registered.',
-                                   'next': 'metaform list projects'})
-        folder = Path(project.path)
-        chassis.refresh_modules()
-        if not any(module.id == 'dispatch' for module in chassis.surface(folder)):
-            return self.send(400, {'error': 'The dispatch module is not enabled.', 'next': 'metaform enable dispatch'})
-        values = {key: given[name] for name, key in
-                  (('value', 'dispatch_autostart'), ('agent', 'dispatch_agent'), ('agents', 'dispatch_agents'))
-                  if name in given}
-        if 'value' in given and not isinstance(given['value'], bool):
-            return self.send(400, {'error': 'Autostart is checked or unchecked.'})
-        if 'agents' in given and (not isinstance(given['agents'], int) or isinstance(given['agents'], bool)):
-            return self.send(400, {'error': 'The number of agents is a whole number.'})
-        try:
-            for key, value in values.items():
-                settings.checked(key, value, folder, typed=True)
-            for key, value in values.items():
-                settings.put(key, value, folder)
-        except (settings.SettingError, Stop) as error:
-            return self.refuse(error, 400)
-        self.gui.schedule_dispatch(project.project_id, chosen_base(given))
-        self.dispatch_autostart(given)
-
     def board_line(self, given: dict[str, Any]) -> None:
         """Archive through the map's shared operation, including Git proof and kept faults."""
         project = home.project(str(given.get('project', '')))
@@ -2304,9 +2147,19 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, chassis.result_json({**cast(dict[str, Any], found), 'enabled': True}).encode('utf-8'),
                    'application/json', {'Cache-Control': 'no-store'})
 
+    def worker_board(self, given: dict[str, Any]) -> None:
+        """The project's worker board, read through the tasks module in the browser's normal web context."""
+        try:
+            found = module_verb(given, 'tasks', 'board', {})
+        except StoreError as error:
+            return self.refuse(error, 404)
+        except Stop as error:
+            return self.refuse(error, 400)
+        self.reply(200, chassis.result_json(found).encode('utf-8'), 'application/json', {'Cache-Control': 'no-store'})
+
     def task_definitions(self, given: dict[str, Any], *, one: bool = False) -> None:
         """Discover task definitions and selected skills, or read an exact task instruction body."""
-        arguments = {key: given[key] for key in ('name', 'project_name') if key in given} if one else {}
+        arguments = {key: given[key] for key in ('name', 'project_name', 'node') if key in given} if one else {}
         try:
             found = module_verb(given, 'tasks', 'read' if one else 'list', arguments)
         except StoreError as error:
@@ -2317,7 +2170,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def assign_task(self, given: dict[str, Any]) -> None:
         """Assign the exact named or explicit task with its selected skills through the tasks module."""
-        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'folder', 'project_name')
+        arguments = {key: given[key] for key in ('name', 'text', 'skills', 'agent', 'agent_name', 'folder', 'project_name',
+                                              'node', 'options')
                      if key in given}
         try:
             result = module_verb(given, 'tasks', 'assign', arguments)
@@ -2907,8 +2761,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {**refusal(done), 'key': key})
         said = f'Notice: {key}: '  # what set kept and says of this setting, apart from notices of the run itself
         notices = [line[len(said):] for line in done.stdout.splitlines() if line.startswith(said)]
-        if key == 'dispatch_stay_connected':  # turned on, the system agent connects now, not at the next change
-            self.gui.schedule_dispatch(project.project_id)
         try:
             self.send(200, {**configured(folder), 'key': key, 'notices': notices})
         except Stop as error:
@@ -3618,8 +3470,7 @@ def with_glyphs(given: dict[str, str], found: Any) -> Any:
                     **{field: row[field] for field in ('model', 'effort', 'fast', 'decision', 'hold_reason') if row.get(field) is not None})
             for row in rows('eligible', 'work_id', {}):
                 held.setdefault(str(row['work_id']), {})['eligible'] = row['agents']
-            # the tickets it waits on, `after_work`, so the card says Waiting on and Start all leaves it out, as every
-            # agent starter does (UX review round 2, held-and-signals F2: the page never received it)
+            # The tickets it waits on, `after_work`, for the card's Waiting on display.
             try:
                 for row in rows('after', 'work_id', {}):
                     held.setdefault(str(row['work_id']), {})['after_work'] = row['works']
@@ -3890,7 +3741,7 @@ PERSONS_WRITES = frozenset({
     '/api/clear-project', '/api/remove-project', '/api/activate-base', '/api/remove-base', '/api/restore',
     '/api/board-wipe', '/api/board-restore',
     '/api/add-project', '/api/intake-discard', '/api/memory', '/api/settings', '/api/settings/reset', '/api/dispatch-prompts',
-    '/api/dispatch-autostart', '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
+    '/api/dispatch-agents', '/api/modules', '/api/dispatch-session-prompts',
     '/api/dispatch-start', '/api/dispatch-configure', '/api/dispatch-cancel', '/api/task-assign',
     # the board's own moves, a ticket's hold and glyph, and Distribute: a move out of Backlog or a hold let go
     # releases a ticket held for the person, which an agent posting as the page did (round 2, held-and-signals F4)
@@ -4204,10 +4055,9 @@ def serve(given: argparse.Namespace) -> int:
 
 
 def projects_started(server: Server) -> None:
-    """Each registered project's background services and its agent starter's first look."""
+    """Initialize registered projects' module-owned background services and runner observation."""
     for project in home.projects():
         server.watch_backgrounds(project.project_id)
-        server.schedule_dispatch(project.project_id)
 
 
 def stopped(number: int, frame: Any) -> None:

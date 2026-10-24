@@ -31,7 +31,6 @@ def test_done_saves_one_ticket_commit_without_publishing_beside_peer_staging(dis
     remote_before = git(remote, 'rev-parse', development_branch)
     if not remote_configured:
         git(repo, 'remote', 'remove', 'origin')
-    monkeypatch.setenv('METAFORM_ROLE', 'worker')
     from metaform.modules.dispatch import activation
 
     def publish_forbidden(*args, **kwargs):
@@ -73,7 +72,7 @@ def test_done_saves_one_ticket_commit_without_publishing_beside_peer_staging(dis
     assert not dispatch.store.work(open=True, limit=0).results
 
 
-def test_recovery_excludes_snapshot_and_never_commits_later_worktree_edits(dispatch, repo, tmp_path):
+def test_explicit_legacy_delivery_excludes_snapshot_and_later_worktree_edits(dispatch, repo):
     tree = merge.worktree_for(repo, dispatch.id)
     assert tree is not None
     (tree / 'snapshot.txt').write_text('peer snapshot\n')
@@ -128,14 +127,10 @@ def test_advance_lands_beside_local_edits_and_keeps_staged_peer_work(repo):
     assert git(repo, 'diff', '--cached', '--name-only') == 'README.md' and git(repo, 'show', ':README.md') == 'staged peer'
 
 
-def test_advance_keeps_a_file_whose_local_edit_clashes_with_the_landed_hunks_and_names_it(dispatch, repo, run,
-                                                                                            monkeypatch):
+def test_advance_keeps_a_file_whose_local_edit_clashes_with_the_landed_hunks_and_names_it(dispatch, repo):
     """A clash never stops the landing or reopens the ticket: main moves, the file keeps its local edit, index entry
-    included, and one board-needs line names it for the system agent."""
-    from metaform.modules import dispatch as module
-    from metaform.modules.dispatch.signals import rows
-    run('set', '--dispatch-autostart', cwd=repo)
-    monkeypatch.setattr(module, 'stay_connected', lambda ctx, store: None)
+    included, and a factual notification names the conflicting file."""
+    from metaform.modules.dispatch.orchestration import UPDATES
     before = git(repo, 'rev-parse', 'HEAD')
     tree = Path(merge.worktree_for(repo, 'advance-test'))
     (tree / 'README.md').write_text('ticket\n')
@@ -147,6 +142,6 @@ def test_advance_keeps_a_file_whose_local_edit_clashes_with_the_landed_hunks_and
     assert passed and 'README.md' in report, report
     assert git(repo, 'rev-parse', 'HEAD') == landed
     assert (repo / 'README.md').read_text() == 'peer\n' and git(repo, 'show', ':README.md') == 'base'
-    [line] = [one for one in rows(dispatch.store) if one.get('signal') == 'board-needs'
-              and 'README.md' in str(one.get('said'))]
-    assert line.get('signal_key') == f'landing:{dispatch.id}' and 'kept as they were' in str(line['said']), line
+    with Store('proj', module='dispatch').tables(write=False) as tx:
+        line = tx.get('session_lines', {'session_id': UPDATES, 'name': f'notification:landing:{dispatch.id}'})
+    assert line is not None and 'README.md' in line['text'] and 'kept as they were' in line['text']

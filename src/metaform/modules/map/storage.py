@@ -569,6 +569,17 @@ def plan_work(tx: Tx, work_id: str, steps: Any) -> WorkRecord:
     return work_record(tx, _work_row(tx, work_id), tuple(notices))
 
 
+def worksheet_progress(tx: Tx, work_id: str, total: int, checked: int) -> WorkRecord:
+    """Project a worksheet's current checklist counts without altering its provenance or completed-step log."""
+    if type(total) is not int or type(checked) is not int or not 0 <= checked <= total:
+        raise StoreError("Worksheet progress needs integer counts with 0 <= checked <= total.",
+                         "give the checklist total and number checked")
+    _work_row(tx, work_id)
+    _ticket_changed(tx, work_id, kind="step")
+    tx.execute("UPDATE work SET steps=?, steps_done=? WHERE work_id=?", (total, checked, work_id))
+    return work_record(tx, _work_row(tx, work_id))
+
+
 def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
     """The agent finished a step, and says what it did, MAP-053. Nothing is refused: a step beyond the count raises
     the count, and a step on a record never taken or already done is stored, each named in a notice."""
@@ -600,19 +611,13 @@ def step_work(tx: Tx, work_id: str, said: Any = None) -> WorkRecord:
 
 def take_work(tx: Tx, work_id: str, steps: Any = None, by: Any = None) -> WorkRecord:
     """An agent takes the record's task, MAP-049: it is in progress, keeps its kind, VIEW-035, records who took it, and
-    waits no longer. A record taken or done cannot be taken again, so two agents never hold one task. A record with no
-    condition, as the intake writes a drift finding, is taken as a ticket is."""
+    waits no longer. Peers may participate in already taken work while its first taker remains recorded. Finished
+    work cannot be taken. A record with no condition is taken as a ticket is."""
     row = _work_row(tx, work_id)
     if row["done"] is not None:
         raise StoreError(f"This work record was done at {row['done']}.", "metaform map work open=true")
     if row["taken"] is not None:
-        # The agent that took it and stopped resumes it with op=plan; any other finds open work with the list.
-        raise StoreError(
-            f"This task is already taken, by {row['taken_by'] or 'an agent'} at {row['taken']}. The agent "
-            "that took it resumes with op=plan and op=step; any other agent finds open work with "
-            "metaform map work open=true.",
-            f"metaform map work op=plan id={work_id} steps=<n>",
-        )
+        return work_record(tx, row, (Notice("taken", "Peer participation keeps the recorded first taker and progress."),))
     notices: list[Notice] = []
     _ticket_changed(tx, work_id)
     tx.execute(
@@ -1843,6 +1848,7 @@ DATA = Data(
                 move_work,
                 take_work,
                 plan_work,
+                worksheet_progress,
                 step_work,
                 finish_work,
                 complete_delivery,

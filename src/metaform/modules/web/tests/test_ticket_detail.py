@@ -16,8 +16,6 @@ pytestmark = pytest.mark.kind('simulation')
 def web(threaded, monkeypatch):
     # Model an authenticated person's browser; caller-authentication behavior has its own integration tests.
     monkeypatch.setattr('metaform.module.page_caller', lambda *args: None)
-    # Ticket reads and edits need no background runner. Keep dispatch workers inside their own test homes.
-    monkeypatch.setattr('metaform.modules.web.server.Server.schedule_dispatch', lambda *args, **kwargs: None)
     return threaded
 
 
@@ -55,7 +53,7 @@ def test_card_runtime_choices_save_on_ticket_without_changing_project_defaults(r
     saved_map = detail['results'][0]['map']
     assert saved_map['model'] == 'gpt-6'
     assert saved_map['effort'] == 'medium'
-    assert saved_map['decision']['decider'] == 'person'
+    assert saved_map['decision']['decider'] == 'web'
     assert settings.value('dispatch_codex_effort', mapped) == before
     assert post(web, work_id=work.id, model='unknown-model')[0] == 400
     assert post(web, work_id=work.id, effort='none')[0] == 200
@@ -123,7 +121,7 @@ def test_card_edits_runtime_choice_before_start_and_refreshes_summary(run, web, 
         assert changed.value.status == 200, changed.value.text()
         page.wait_for_function("id => document.querySelector(`.card[data-id=\"${id}\"] .runtime-choice`)"
                                "?.textContent === 'codex gpt-6 high'", arg=work.id)
-        assert 'Chosen by person' in card.locator('.runtime-choice').get_attribute('title')
+        assert 'Chosen by web' in card.locator('.runtime-choice').get_attribute('title')
         assert card.locator('.ticket-settings').get_attribute('open') is not None
         assert not Store('proj').ticket(work.id).work.taken
         card.locator('.acts .start').click()

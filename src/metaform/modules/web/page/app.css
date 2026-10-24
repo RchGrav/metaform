@@ -2757,3 +2757,9 @@ body > *{transition:opacity .28s var(--ease-arrive, ease-out)}
 @media (prefers-reduced-transparency: reduce){
   :root[data-theme$="glass"]{--glass-blur:none}
 }
+
+/* Live worker coordination stays compact and retains canonical node labels. */
+.worker-board{display:grid;gap:var(--s2)}
+.worker-entry{border-bottom:1px solid var(--line);padding:var(--s2);font:var(--t-sm)/1.4 var(--font)}
+.worker-heading{display:grid;grid-template-columns:1fr repeat(3,auto);gap:var(--s2);font-weight:600}
+.worker-history{color:var(--muted)}

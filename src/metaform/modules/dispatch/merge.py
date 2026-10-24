@@ -545,7 +545,7 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
             and not previous['reason'] and git(folder, 'rev-parse', 'HEAD').stdout.strip() == previous['head'] \
             and not git(folder, 'status', '--porcelain').stdout.strip():
         store.complete_delivery(record.id)
-        return _full_auto_merge(ctx, store, record.id, dict(previous))
+        return dict(previous)
     checked = verification(ctx, folder, record)
     try:
         committed = checkpoint(folder, record.id, ticket_message(store, record), completed=True)
@@ -556,21 +556,7 @@ def finished(ctx: Any, store: Store, record: WorkRecord, folder: Path) -> dict[s
         commit_fault(store, record, 'Git could not commit the completed worktree ticket.')
         return None
     since = snapshot_of(project, branch) or ''
-    return _full_auto_merge(ctx, store, record.id, _saved(store, record, folder, branch, committed, checked, since))
-
-
-def _full_auto_merge(ctx: Any, store: Store, work_id: str, saved: dict[str, Any]) -> dict[str, Any]:
-    """Full Auto integrates saved work locally. Publication remains an explicit request."""
-    if saved['state'] == COMMITTED and ctx.setting('dispatch_autostart'):
-        if Path(saved['worktree']).resolve() == Path(store.project().path).resolve():
-            with Store(store.project_id, module='dispatch').tables() as tx:
-                tx.update('merges', {'work_id': work_id}, {'state': MERGED})
-            return {**saved, 'state': MERGED}
-        merge_due(ctx, store, work_id, publish=False)
-        with Store(store.project_id, module='dispatch').tables(write=False) as tx:
-            current = tx.get('merges', {'work_id': work_id})
-        return dict(current) if current is not None else saved
-    return saved
+    return _saved(store, record, folder, branch, committed, checked, since)
 
 
 def in_force(store: Store, work_id: str) -> bool:
@@ -856,16 +842,15 @@ def _three_way(base: bytes, ours: bytes, theirs: bytes) -> bytes | None:
 
 
 def _reported(ctx: Any, work_id: str, commit: str, kept: list[str]) -> None:
-    """One board-needs line for the system agent naming the files a landing left as they were, so the person merges
-    the landed hunks by hand; the ticket stays closed whatever the line meets."""
-    from .board import raised
+    """Record a factual landing notification without starting or directing another agent."""
+    from .orchestration import TRANSPORT
     try:
         store = ctx.require_store()
         record = store.ticket(work_id).work if work_id else None
         name = ticket_title(store, record) if record is not None else f'landing {commit[:12]}'
-        raised(ctx, f'landing:{work_id or commit[:12]}', f'{name} landed in the project branch, but local edits in '
+        TRANSPORT.notify_user(ctx, {'work_id': work_id, 'text': f'{name} landed in the project branch, but local edits in '
                f'{", ".join(kept)} clash with its hunks; the files were kept as they were, so merge the landed hunks '
-               'by hand (git diff HEAD -- <file> shows both sides).', work_id=work_id)
+               'by hand (git diff HEAD -- <file> shows both sides).'}, f'landing:{work_id or commit[:12]}')
     except Exception as error:  # noqa: BLE001  the landing stands whatever its report meets
         print(f'Landing report failed: {error}', file=sys.stderr)
 
@@ -1080,8 +1065,8 @@ def deliver_shared(ctx: Any, store: Store, work_id: str, commit: str = '') -> di
                            f'{TRAILER}: {work_id}').stdout.strip()
     if not commit or f'{TRAILER}: {work_id}' not in git(project, 'log', '-1', '--format=%B', commit).stdout:
         return {'work_id': work_id, 'why': "Save this ticket's feature commit before completion."}
-    return _full_auto_merge(ctx, store, work_id, _saved(store, record, project, dev_branch(project) or '', commit,
-                                                      verify_commit(ctx, project, record, commit)))
+    return _saved(store, record, project, dev_branch(project) or '', commit,
+                  verify_commit(ctx, project, record, commit))
 
 
 def deliver_nonrepository(ctx: Any, store: Store, work_id: str) -> dict[str, Any]:

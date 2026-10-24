@@ -69,6 +69,32 @@ def wire(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def selected_skill(ctx: Context, selected: str) -> dict[str, Any]:
+    """Load the selected document only. Supporting files remain addressable through their resource URIs."""
+    from . import expertise
+    if not selected.startswith('skill://'):
+        return {key: value for key, value in expertise.read(ctx, selected, ctx.nouns.get('node')).items()
+                if key != 'files'}
+    bundle: dict[str, Any] | None = None
+    try:
+        bundle = skills.reusable(selected)
+    except ValueError:
+        pass
+    if bundle is None and selected.startswith('skill://metaform/'):
+        bundle = next((skills.native_document(one) for one in skills.catalog()
+                       if selected == f'skill://metaform/{one.name}/SKILL.md'), None)
+    if bundle is None and selected.startswith('skill://expertise/'):
+        return {key: value for key, value in expertise.read(ctx, selected, ctx.nouns.get('node')).items()
+                if key != 'files'}
+    if bundle is None:
+        raise Stop(f'No reusable skill {selected}.', 'discover skills with skills/list or give an expertise node')
+    text = cast(dict[str, bytes], bundle['files'])['SKILL.md'].decode('utf-8')
+    component = prompt_files.component(selected, text)
+    component.update(origin='resource', source={'kind': 'resource', 'uri': selected})
+    return {key: bundle[key] for key in ('uri', 'frontmatter', 'resources')} | {
+        'name': bundle['frontmatter']['name'], 'text': text, 'component': component}
+
+
 class Lifecycle:
     def assign(self, ctx: Context, name: str, component: dict[str, Any] | None) -> dict[str, Any]:
         given = str(ctx.nouns.get('text') or '')
@@ -80,7 +106,7 @@ class Lifecycle:
         selected: Any = ctx.nouns.get('skills') or []
         if not isinstance(selected, list) or any(not isinstance(s, str) for s in cast(list[Any], selected)):
             raise Stop('skills is a list of skill names.', 'metaform tasks list')
-        loaded = [{'name': s, 'text': skills.served(s)} for s in cast(list[str], selected)]
+        loaded = [selected_skill(ctx, s) for s in cast(list[str], selected)]
         ident = uuid.uuid4().hex
         project = ctx.require_store().project_id
         task_id = ident + '.' + base64.urlsafe_b64encode(project.encode()).decode().rstrip('=')
@@ -90,19 +116,27 @@ class Lifecycle:
                'agent': ctx.nouns.get('agent'),
                'payload': {'instructions': component['text'] if component else given,
                            'component': component, 'input': given if component else '',
-                           'skills': loaded, 'interactive': name == 'user_agent'},
+                           'skills': loaded, 'interactive': name == 'user_agent', 'persistent': name == 'worker',
+                           'node': ctx.nouns.get('node'), 'agent_name': ctx.nouns.get('agent_name'),
+                           'options': ctx.nouns.get('options') or {}},
                'locator': None, 'flow': {'epoch': 0, 'requests': {}, 'routes': {}, 'answered': [],
                                         'pending': {}, 'wait_after': None, 'last_turn': 0},
                'result': None, 'error': None, 'message': 'Starting the assigned agent.', 'cancel_requested': False}
         with own(ctx).tables() as tx:
             tx.insert('assignments', row)
             tx.concern(work_id=row['work_id'], kind='task')
+        if name == 'worker':
+            from .board import Board
+            Board(project).register(task_id, str(ctx.nouns.get('agent_name') or 'worker-' + ident[:8]), row['work_id'])
         locator: dict[str, Any] = {}
         launch_state = 'starting'
         try:
             locator = transport(ctx).start(ctx, row)
         except Exception as error:  # noqa: BLE001  a tool failure is a completed task with an error result
             launch_state = 'completed'
+            if name == 'worker':
+                from .board import Board
+                Board(project).remove(task_id)
             with own(ctx).tables() as tx:
                 tx.update('assignments', {'task_id': task_id}, {'state': 'completed', 'updated': now(),
                           'result': tool_result(str(error), error=True), 'message': str(error)})
@@ -175,7 +209,7 @@ class Lifecycle:
                 if key not in flow['answered']:
                     requests[key], routes[key] = item['request'], item['route']
             state = str(observed['state'])
-            if state not in TERMINAL and observed.get('idle') and not requests:
+            if state not in TERMINAL and row['payload'].get('interactive') and observed.get('idle') and not requests:
                 waiting = flow.get('wait_after')
                 if waiting is None or flow['last_turn'] > waiting:
                     key = f'message:{task_id}:{flow["epoch"]}'
@@ -197,7 +231,13 @@ class Lifecycle:
                 tx.update('assignments', {'task_id': task_id}, {**changes, 'updated': now()})
                 tx.concern(work_id=current['work_id'], kind='task')
             updated = tx.get('assignments', {'task_id': task_id})
-            return wire(dict(updated)) if updated is not None else None
+            if updated is None:
+                return None
+            answer = wire(dict(updated))
+        if row['name'] == 'worker':
+            from . import protocol
+            protocol.reconcile(ctx, row, observed)
+        return answer
 
     def seed(self, ctx: Context, task_id: str) -> dict[str, Any] | None:
         task = self.get(ctx, task_id)
@@ -258,8 +298,14 @@ class Lifecycle:
 
     def changed(self, ctx: Context, payload: dict[str, Any]) -> None:
         # Native session events drive progress. Task writes never trigger another session scan.
-        if payload.get('project') != ctx.project or not any(
-                str(t).startswith('dispatch.') for t in payload.get('tables', [])):
+        tables = payload.get('tables')
+        if payload.get('project') != ctx.project:
+            return
+        if tables != 'dispatch' and not (isinstance(tables, list) and any(
+                str(t).startswith('dispatch.') for t in cast(list[Any], tables))):
+            return
+        kinds = payload.get('kinds')
+        if isinstance(kinds, list) and not {'session', 'worker-idle'} & set(cast(list[str], kinds)):
             return
         work_ids = cast(list[str], payload.get('work_ids') or [])
         if not work_ids:

@@ -1,0 +1,36 @@
+Persistent worker tasks and MCP skills
+
+Repository: /home/rich/metaform
+Branch: remove/unapproved-procedural-roles
+Starting commit: de79c449f0404446ebd8f08d8f8c52279dd0c74c
+Recovery: git history and /tmp/metaform-worker-baseline preserve the starting source and pre-existing edits.
+
+Current behavior
+- user_agent, worker, ticket_creation and facilitator are tasks. The three user-authored prompts retain their exact source text. Project and worker-name placeholders bind at delivery. The later finished-run instruction is a separate worker_lifetime component.
+- Workers retain their native ACP sessions between tickets. Messages and partner-completion events wake the same session. Registered checklists drive completion. Full checklists plus both counterpart ratings close tickets and retain completed worksheets on them. A finished idle run ends its workers.
+- Partner invitations, competing offers, planning and turn-taking remain prompted behavior. No exclusive coordinator, creator or ticket-holder privileges control peer operations.
+- The board displays canonical node names without expansion. Ratings average completed rounds. Categories are supplied with the rating, without invented category definitions. Context percentage uses actual native usage when reported.
+- Board records, ratings and outbox messages reopen from <temporary directory>/.metadata/<project-id>/sessions.sqlite across server/page restarts. Run history clears when its last worker leaves. This is ordinary temporary filesystem storage, not filesystem isolation.
+- Reusable skills are stored under the Metaform home's skills directory. io.modelcontextprotocol/skills exposes skills/list, skills/get and individual resources/read. Manifests preserve frontmatter and contain SHA-256 digests and byte sizes. Supporting files load by URI when needed.
+- Expertise skills stay in the expertise layer, inline in the receiving element item's joins key or directly attached to a functional join. They use the same SKILL.md/document representation. Known graph URIs support direct reads without global enumeration.
+- Assignments accept selected expertise and reusable skill URIs. Delivery records the actual task, selected skill and lifetime components. Skill bodies are not added to connection instructions.
+- Removed the custom metaform_skills tool and fallback skill index. Removed creator-only stopping, coordinator runtime/routing hooks, assignment-based peer routing, automatic ticket queue/retry/wave/hold-review execution and Full Auto controls. Candidate integration remains explicit. A2A and Paperclip retain ticket transport without starting an automatic queue.
+- Issue reports explicitly assign the User Agent with the supplied text and node, without a held Sentinel ticket or node-ownership wait.
+- Native options, actual caller provenance, valid targets, concurrent state and shared resource checks remain. Historical hold-review table declarations retain existing data without executing reviews.
+
+Prompt SHA-256
+user_agent: 52af5044e666182d2cb3a2f4aea6ee0e202cf851d56e40a5bd662fccf67a927e
+worker: a5ba149a43837f71fdbe369229cda5ae25f0cfd7421aecb60cb801a9a8860f7d
+facilitator: 292502a388d048f0511acc80d46ec25a8025c6296622317887b9c68e75a66781
+
+Verification
+- Final core run: 216 passed in 86.88s. Exact command and output: /tmp/metaform-worker-release-tests/pytest.log. Serial pytest, no automatic worker pool. Coverage includes shared skill documents, actual MCP server handlers, exact text/binary resources, graph placement, assigned-task protocol, peer controls, worksheet closure, native fake ACP persistence/wake/cancel/drain, issue routing, board events and A2A status.
+- Additional focused retained event, manual control, Git delivery and merge checks passed. Retired scheduler tests were removed or replaced with explicit-control and no-automatic-start checks.
+- Ruff passed on changed production paths. Strict Pyright reported zero errors on the affected production modules. Changed JavaScript files passed node --check.
+- Headless Chromium exercised the actual worker-board component: exact compact layout, canonical names, empty-state removal and zero page errors. Script/screenshot: /tmp/metaform-worker-ui/.
+- Event tests delivered 6,500 irrelevant payloads with zero assignment, board or transport reads. Isolated baseline/current handlers idled for 60 seconds at effectively zero CPU. These measurements used actual handler functions, stubbed storage and one blocked deadline, not live models or a production browser.
+
+Boundaries
+The full repository suite and hosted MCP-client compatibility were not exercised. Native integration used deterministic fake ACP adapters. Existing production instances and agent sessions were not restarted. Referenced fallback skills remain separately authored project content. Unrelated pre-existing map/specification/prompt edits remain outside this change.
+
+Official specification: https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx

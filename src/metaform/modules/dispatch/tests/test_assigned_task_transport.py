@@ -166,7 +166,7 @@ def test_runner_drained_turn_keeps_interactive_task_alive_without_helper_or_tick
                           setting=Mock(side_effect=KeyError))
     session = Session(ctx, None, None, 'codex', [], folder=tmp_path / 'target', prep=True,
                       work_id='task:assigned-task')
-    assert session.node is None and session.assignment is None and session.authored_role is None
+    assert session.node is None
     assert session.role == '' and not session.system and not session.launched and not session.took
     assert session.acp['cwd'] == str(tmp_path / 'target')
     session.acp['task'] = {'interactive': interactive}

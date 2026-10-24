@@ -1,23 +1,8 @@
-"""Peer notes, code.dispatcher.agent#32, BASE-052: normal-turn messages between registered agents.
+"""Authenticated peer messages between registered agent sessions.
 
-An agent reaches the others by their work, not by their sessions: one ticket, by work id or `<address>#<n>`; whoever
-works at a part of the map or inside it, `at=<Address>`, a trunk Address reaching a whole area; whoever touched a file
-or a folder, `file=<path>`, from the paths its tool calls named; or the tickets whose titles hold some words,
-`topic=<words>`. `peers` shows who is where, with the files each touched and what each said last, and with `at=` or
-`file=` answers who else is in that part or file before an edit, with a note ready to send them.
-
-A note is a `peer` line, `peer:<id>`, in the sender's thread and in each receiver's, the same JSON on every copy, so
-both tickets keep every exchange and no table changes. Each receiver keeps informational notes for explicit reads without a model turn. Current questions and owned
-continuations wait for the turn boundary. The runner marks delivery on its copy and on the sender's, `signals.mark_peer`: queued, delivered,
-read, replied. With `wait=<seconds>` the note is a question and the call waits for the replies threaded to it,
-`reply=<id>`, and says plainly who did not answer; a reply that reaches a waiting sender is returned by the call rather
-than given to it again as a turn. A note never starts, stops, interrupts or redirects anyone, so the authority check
-Registered sender identity is retained. Organizational role labels do not impose a permission blacklist.
-
-One note is more than information: the person's own system agent, in a turn the person's message started, marks a
-note `decision=true` when it relays that person's decision. Its line is a `user_direction` that carries the person's
-message (`decision`), each recipient's assignment keeps it as the person's direction, and each runner puts it ahead
-of what waits, as it does the person's own message.
+Targets may name a session, work item, map region, file, topic or reply. Each exchange is retained in sender and
+recipient threads with factual sender identity and delivery receipts. Ordinary messages request a recipient turn.
+A relayed user decision carries the actual originating user message separately from the peer's own words.
 """
 from __future__ import annotations
 
@@ -32,7 +17,7 @@ from typing import Any, cast
 
 from metaform import events, home
 from metaform.data import Store, StoreError, WorkRecord, parse_reference
-from metaform.module import Context, Stop, context, provided, work_reads
+from metaform.module import Context, Stop, context, work_reads
 
 from . import base_store, held_ticket, persons_word, prompt, session_status, sessions, system_sessions, tell
 from .signals import add_line, mark_peer, own_store
@@ -86,18 +71,13 @@ def addresses(record: WorkRecord) -> list[str]:
 
 
 def side(ctx: Context, record: WorkRecord | None, row: dict[str, Any]) -> dict[str, Any]:
-    """One end of a message, with sender identity and assignment relationship supplied by runtime records."""
+    """One end of a message, with factual identity from its registered session."""
     ctx = replace(ctx, store=base_store(ctx.require_store(), row))
     item, title = numbered(ctx, record) if record is not None else (str(row['work_id']), '')
-    assignment: dict[str, Any] = {}
-    for _, service in provided(ctx.folder, 'orchestration'):
-        assignment = service.assignment(ctx, session_id=str(row['session_id'])) or {}
     base = ctx.require_store().bound_base() or ctx.require_store().active_base()
     return {'project': ctx.require_store().project_id, 'base': base.id if base else None,
             'work_id': str(row['work_id']), 'item': item, 'title': title, 'agent': str(row['agent']),
             'session_id': str(row['session_id']), 'runner': row.get('runner'),
-            'assignment_id': assignment.get('assignment_id'), 'team_id': assignment.get('team_id'),
-            'authored_role_uri': assignment.get('authored_role_uri'),
             'address': (addresses(record) or [''])[0] if record is not None else '',
             'node': {'kind': record.node_kind, 'id': record.node_id} if record is not None else None}
 
@@ -187,20 +167,6 @@ def working(ctx: Context, store: Store) -> list[dict[str, Any]]:
                               '_record': record, '_row': row})
     except StoreError:
         pass
-    for _, owner in provided(ctx.folder, 'orchestration'):
-        for assigned in owner.assignments(ctx):
-            if assigned['state'] in ('returned', 'delivered', 'failed', 'stopped', 'superseded'):
-                continue
-            ident = assigned.get('owner_session_id') or assigned['assignment_id']
-            if ident in running:
-                continue
-            row = next((one for one in reversed(registered) if one['session_id'] == ident), None)
-            record = held_ticket(store, str(assigned['work_id']))
-            raw = row or {'work_id': assigned['work_id'], 'session_id': ident, 'agent': 'pending', 'runner': None}
-            found.append({**side(ctx, record, raw), 'assignment_id': assigned['assignment_id'],
-                          'team_id': assigned['team_id'], 'authored_role_uri': assigned['authored_role_uri'],
-                          'activity': assigned['state'], 'files': [], 'said': '',
-                          '_record': record, '_row': row, '_assignment': assigned})
     return found
 
 
@@ -312,10 +278,6 @@ def chosen(ctx: Context, store: Store, work_id: str, sender_session: str) -> tup
         everyone = working(target_ctx, target_ctx.require_store())
         target = str(sender.get('session_id') or sender.get('work_id'))
         found = [entry for entry in everyone if target in (entry['work_id'], entry['session_id'])]
-        if not found and sender.get('assignment_id'):
-            # An adapter without load/resume may give the same recorded owner a new ACP id. Follow that
-            # assignment, never another agent that later happens to take the old ticket.
-            found = [entry for entry in everyone if entry.get('assignment_id') == sender['assignment_id']]
         if not found and target in {str(row['session_id']) for row in system_sessions(target_ctx.require_store())}:
             # the person's system agent answers in its next session: its own, or the one after it
             found = system_agent(target_ctx, everyone)
@@ -399,12 +361,11 @@ def wait_seconds(ctx: Context) -> float:
 
 
 def relayed(store: Store, mine: dict[str, Any]) -> dict[str, Any]:
-    """The person's message a note marked decision=true relays: only their own system agent sends one, in a turn that
-    message started or was steered into, `persons_word`; any other note is a peer's information."""
+    """Authenticate the original user message carried by a relayed decision."""
     word = persons_word(store, 'relay the person\'s decision', work=str(mine['work_id']), runner=mine.get('runner'))
     if not word or word.get('covered') or not word.get('id'):
-        raise Stop('Only the person\'s own system agent relays their decision, in the turn their message started. '
-                   'Send this as a plain note, or ask the person to send it with dispatch message.',
+        raise Stop('A relayed decision needs the original user message from this turn. '
+                   'Send your own words as a plain note, or ask the person to send their decision directly.',
                    'metaform dispatch note to=<work id or address#n> -- "<note>"')
     return {key: word.get(key) for key in ('id', 'text', 'at')}
 
@@ -452,19 +413,7 @@ def send(ctx: Context, store: Store, text: str, wait: float) -> dict[str, Any]:
     taken: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for entry in found:
-        if decision:  # the person's decision, kept on the recipient's assignment as theirs, as `dispatch message` does
-            target_ctx = destination(ctx, entry.get('project'), entry.get('base'))
-            for _, owner in provided(target_ctx.folder, 'orchestration'):
-                if owner.assignment(target_ctx, session_id=str(entry['session_id'])) is not None:
-                    owner.directed(target_ctx, str(entry['session_id']), {
-                        'kind': 'user_direction', 'id': note_id, 'text': text, 'at': home.now(),
-                        'from': {'kind': 'user', 'relayed_by': line['from']}, 'message': decision})
-        if entry.get('_assignment'):
-            target_ctx = destination(ctx, entry.get('project'), entry.get('base'))
-            for _, owner in provided(target_ctx.folder, 'orchestration'):
-                owner.queue_message(target_ctx, entry['_assignment']['assignment_id'], line, key=note_id)
-            answer: dict[str, Any] = {'noted': True, 'busy': True, 'pending': True}
-        elif entry.get('_waiting'):
+        if entry.get('_waiting'):
             answer = kept_waiting(ctx, entry, line)
         else:
             answer = told(entry['_row'], 'note', line=line, deliver=True)

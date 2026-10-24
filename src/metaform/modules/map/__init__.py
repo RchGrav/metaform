@@ -53,7 +53,6 @@ from metaform.module import (
     item_read,
     latest_item,
     node_reads,
-    on_persons_word,
     persons_word,
     persons_word_acted,
     project_for,
@@ -1503,7 +1502,6 @@ def work(ctx: Context) -> Any:
         return _with_notices(removed, notices)
     if op == 'take':
         with store.atomic():
-            _claim(ctx, store, work_id, nouns.get('by'))
             taken = store.take_work(work_id, nouns.get('steps'), nouns.get('by'))
         return _written(ctx, store, taken, 'take', notices)
     if op == 'move':
@@ -1529,10 +1527,6 @@ def work(ctx: Context) -> Any:
         provenance = _work_provenance(ctx) if 'task' in changes or 'source' in nouns else None
         with store.atomic():
             edited = store.edit_work(work_id, changes, provenance=provenance)
-            if provenance is not None:
-                for _, owner in provided(ctx.folder, 'orchestration'):
-                    owner.ticket_edited(ctx, work_id, str(time.time_ns()),
-                                        source=provenance['author'])
             if 'glyph' in nouns:
                 _assign(store, {work_id: _glyph(nouns['glyph'], notices)})
             _keep(store, work_id, nouns, notices, ctx)
@@ -1643,14 +1637,11 @@ def _work_provenance(ctx: Context) -> dict[str, Any]:
 
 def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
                    nouns: dict[str, Any]) -> tuple[dict[str, Any], str, list[str]] | None:
-    """The person's word for a ticket write that is the person's orchestration, with what it does, or None when the
-    write is none or needs no word: releasing a held ticket (held=false or hold=false on a ticket held so, or a move of
-    a Backlog ticket to To do), or setting an order between tickets (after_work, or a move to a place in To do or
-    Backlog). Releasing records the person's word when available without requiring it. Ordering still uses
-    `on_persons_word`: a dispatched agent orders only in a turn the person's own message started, or for tickets
-    covered by that word. The page, the person's terminal and an AI tool outside dispatch act as before. The word's work
-    grows by the ticket written alone, with what waits on it and the open tickets it waits on (dispatch's `plan_of`),
-    never by the other tickets that wait on what it waits on."""
+    """Retain available user-message provenance for releases and ordering without authorizing those operations.
+
+    A missing message does not block a peer's delegated decisions. Existing coverage links remain factual
+    provenance, and each change records only the ticket it actually updates.
+    """
     if ctx.surface not in ('mcp', 'cli'):
         return None
     if not (op == 'edit' and (nouns.get('held') is False or nouns.get('hold') is False or 'after_work' in nouns)
@@ -1669,7 +1660,7 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
             waits = nouns['after_work']
             did.append(f'set it to wait on {", ".join(str(one) for one in cast(list[Any], waits))}'
                        if isinstance(waits, list) and waits else 'set it to wait on no other ticket')
-            if isinstance(waits, list):  # a later turn orders a ticket of the work only after one in it
+            if isinstance(waits, list):  # Include cited prerequisites in the provenance lookup.
                 tickets += [str(one) for one in cast(list[Any], waits) if str(one) not in tickets]
     else:
         if record.held and nouns.get('column') == 'todo':
@@ -1681,11 +1672,9 @@ def _orchestrating(ctx: Context, store: Store, op: str, work_id: str,
     said = f'{" and ".join(did)} on ticket {work_id}'
     joined = _joining(ctx, store, f'Setting ticket {work_id} to wait on the work', nouns.get('after_work')) \
         if op == 'edit' else None
-    if joined is not None:  # set to wait only on tickets of the work the person's word covers: it joins that work
+    if joined is not None:  # Retain an existing user-message link when it covers these prerequisites.
         return joined, said, [work_id]
-    ordering = op == 'edit' and 'after_work' in nouns or op == 'move' and nouns.get('position') is not None
-    word = (on_persons_word(ctx, f'Ordering tickets ({said})', tickets) if ordering
-            else persons_word(ctx.folder, f'Releasing tickets ({said})', ctx.project, tickets))
+    word = persons_word(ctx.folder, f'Updating tickets ({said})', ctx.project, tickets)
     return None if word is None else (word, said, [work_id])
 
 
@@ -1738,28 +1727,6 @@ def _on_word(ctx: Context, word: tuple[dict[str, Any], str, list[str]] | None, r
         return {**cast(dict[str, Any], result), 'on_word': {'text': given.get('text'), 'at': given.get('at'),
                                                              'did': said}}
     return result
-
-
-def _claim(ctx: Context, store: Store, work_id: str, by: Any) -> None:
-    """A restricted claim uses the transport's client name, or the CLI owner's first word, never the environment, which
-    an agent's harness may have mixed with its runner's."""
-    kept = _settings(store, [work_id]).get(work_id, {})
-    if 'eligible' not in kept:
-        return
-    eligible = kept['eligible']
-    if eligible == []:
-        return
-    agent = None
-    if ctx.client is not None:
-        agent = next((name for name in AGENT_TYPES if ctx.client.lower().startswith(name)), None)
-    elif ctx.surface != 'mcp' and isinstance(by, str):
-        words = by.split()
-        agent = words[0] if words and words[0] in AGENT_TYPES else None
-    if isinstance(eligible, list) and agent is not None and agent in eligible:
-        return
-    names = ', '.join(str(name) for name in cast(list[Any], eligible)) if isinstance(eligible, list) else str(eligible)
-    raise Stop(f'Work {work_id} is restricted to eligible agents: {names}; '
-               f'{agent or "an unidentified agent"} cannot claim it.', f'metaform map work id={work_id}')
 
 
 def _board(store: Store, name: Any) -> str | None:
@@ -1954,18 +1921,16 @@ def _keep(store: Store, work_id: str, nouns: dict[str, Any], notices: list[Notic
     changes: dict[str, Any] = {}
     runtime_fields = ('agent', 'model', 'effort', 'fast')
     if ctx is not None and any(field in nouns for field in runtime_fields):
-        runtime = provided(ctx.folder, 'orchestration.transport')
-        transport = runtime[0][1] if runtime else None
-        if transport is not None and hasattr(transport, 'edit_runtime'):
-            # Model and effort retain dispatch tune's person-only authority and advertised-value checks.
-            edited = cast(dict[str, Any], transport.edit_runtime(ctx, work_id, nouns))
+        runtime = provided(ctx.folder, 'ticket.runtime.edit')
+        if runtime:
+            edited = cast(dict[str, Any], runtime[0][1](ctx, work_id, nouns))
             notices.extend(Notice(str(one['where']), str(one['message']))
                            for one in cast(list[dict[str, str]], edited.get('notices') or []))
-        elif any(field in nouns for field in ('model', 'effort', 'fast')):
-            raise Stop('Dispatch must be enabled to set model, effort or Fast.', 'metaform enable dispatch')
         else:
-            changes['decision'] = {'decider': 'person', 'confidence': 1.0, 'task_type': None,
-                                   'reason': 'Agent selected on the ticket.'}
+            changes.update({field: nouns[field] for field in runtime_fields if field in nouns})
+            changes['decision'] = {'decider': ctx.identity.get('METAFORM_TASK') or
+                                   ctx.identity.get('METAFORM_SESSION') or ctx.surface,
+                                   'reason': 'Runtime selected on the ticket.'}
     if 'agent' in nouns:
         agent = nouns['agent'] or None
         if agent is not None and agent not in TICKET_AGENTS:

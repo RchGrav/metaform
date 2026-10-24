@@ -30,6 +30,7 @@ import {HARNESS, readHarnesses, agentName, agentPicker, PICKERS, drawDockTab, op
   from '/page/app/agents/pickers.js';
 import {isIntake, workPart, isSystemSession} from '/page/app/session/tools.js';
 import {notificationState, taskSummary} from '/page/app/session/tasks.js';
+import {renderWorkerBoard} from '/page/app/agents/workers.js';
 import {readIntake, openIntakeChat} from '/page/app/intake/intake.js';
 import {nodeIn} from '/page/app/graph/data.js';
 /* ---------- agents dispatched on tickets, VIEW-039 ----------
@@ -40,33 +41,6 @@ export const D = {sessions: [], starting: false, signals: [], states: {}, subage
 export const SESSIONS_DRAWN = [];  // what a later part draws again with the sessions, such as the broadcast window
 /* The signals of an agent waiting on the person: a permission request, or a question of its own, ACP's elicitation. */
 export const WAITS_ON_PERSON = ['permission-waiting', 'question-waiting'];
-export const AUTO = {value: false, agents: null};
-export async function readAutostart() {
-  if (FRAMED) return;
-  const project = S.project, control = $('#autostartAgents');
-  control.disabled = true;
-  try {
-    const found = await read('dispatch-autostart');
-    if (S.project !== project) return;
-    Object.assign(AUTO, found);
-    control.checked = found.value;
-    control.disabled = found.available === false;
-  } catch (error) { if (S.project === project) readFailed(error); }
-}
-async function saveAutostart() {
-  const project = S.project, control = $('#autostartAgents');
-  control.disabled = true;
-  try {
-    // the switch alone: Full Auto starts each ticket with the agent its card prefers, and the default agent is the
-    // person's own choice, made in a picker, never taken from whatever a window last showed
-    const saved = await wrote('/api/dispatch-autostart', {value: control.checked});
-    if (S.project !== project) return;
-    if (saved) Object.assign(AUTO, saved);
-    control.checked = AUTO.value;
-  } catch (error) { if (S.project === project) { control.checked = AUTO.value; toast(error.message); } }
-  finally { if (S.project === project) control.disabled = false; }
-}
-$('#autostartAgents').onchange = saveAutostart;
 export const waiting = ticket => !ticket.done && !ticket.taken && (ticket.task || '').trim()
   && !D.sessions.some(one => one.state === 'running'
     && (one.work_id === ticket.id || (ownGlyph(ticket) && ownGlyph(ticketOf(one.work_id)) === ownGlyph(ticket))));
@@ -140,8 +114,7 @@ export function startWindow(title, tickets, all = false) {
     startAll.textContent = counted ? said.label : 'Start all';
     $('#dispatch .slots').textContent = counted ? said.said : 'Reading the agent slots…';
     startAll.disabled = !shown.length || !agent || !counted || !said.count;
-    // a ticket's own Start is off, with why, only while the machine is full: dispatch_agents bounds what Full Auto
-    // starts, never the person's start (code.dispatcher.agent#79); UX review round 1 (web-gui-controls F10)
+    // A ticket's own Start is off, with why, only while the machine is full.
     const full = counted && HARNESS.slots ? HARNESS.slots.machine_free <= 0 : false;
     fill($('#dispatch .tickets'), shown.map(ticket => h('div', {class: 'ticket', 'data-id': ticket.id},
       conditionLabel(ticket), h('span', {class: 'agent'}, agentName(startAgentFor(ticket, agent))),
@@ -228,16 +201,16 @@ export function startAllLabel(offered) {
   const count = Math.min(free, offered);
   const machine = slots && slots.machine_free < Math.max(0, slots.limit - slots.used)
     ? `; this machine runs ${slots.machine_used} of the ${slots.machine_limit} it allows` : '';
-  // a ticket's own Start runs past Full Auto's slots, so with none free the person is sent to it, not told to wait
+  // A ticket's own Start is available whenever the machine has room.
   const own = slots && slots.machine_free > 0 ? ' Start a ticket on its own to run it now.'
     : ' A ticket can start once an agent finishes or is stopped.';
-  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} Full Auto `
+  return {count, label: `Start ${count} of ${offered}`, said: `${free} of ${slots ? slots.limit : '?'} agent `
     + `slots free${machine}.${free ? '' : own} `
-    + `${offered - count ? `${offered - count} wait in To do.` : ''}`.trim()};
+    + `${offered - count ? `${offered - count} wait in To do for an explicit start or worker choice.` : ''}`.trim()};
 }
 /* Start all: each ticket's assigned agent, or the person's override, starts one after another, up to the
- * agent slots free now, as its label says before the click; the rest wait in To do, and autostart starts them as
- * slots free. Stop starting ends the run between two starts. A start that fails can be retried on its own ticket. */
+ * agent slots free now, as its label says before the click; the rest wait in To do for an explicit start or worker
+ * choice. Stop starting ends the run between two starts. A failed start can be retried on its own ticket. */
 async function startAllTickets(tickets, pick, startAll) {
   if (D.starting) { START.cancel = true; return; }  // the button reads Stop starting while it runs
   D.starting = true;
@@ -282,9 +255,7 @@ async function startAllTickets(tickets, pick, startAll) {
   toast(`${started} agent${started === 1 ? '' : 's'} starting.`
     + (left ? ` You stopped the run; ${left} were not started.` : '')
     + (failed ? ` ${failed} could not start; retry their tickets.` : '')
-    + (waiting ? ` ${waiting} wait in To do for a free Full Auto slot, or start each on its own; ` + (AUTO.value
-      ? 'with Full Auto checked they start as agents finish.'
-      : 'they wait until you start them or check Full Auto.') : ''));
+    + (waiting ? ` ${waiting} wait in To do for an explicit start or worker choice.` : ''));
   await renderBoard();
 }
 /* One ticket's Start uses its assignment or the person's current override, within its eligible agents. */
@@ -322,9 +293,29 @@ overlay($('#dispatch'), {kind: 'dialog', focus: () => $('#dispatch .choice > .bt
  * Sessions are the dispatch module's own tables, never the map. */
 let WHOLE_READS = 0;  // the reads of every agent begun, so one that lands after a later one's is let go
 const PENDING = {project: null, base: null, whole: null};
+const WORKERS = {reading: null, again: false};
+export function renderWorkerPanel() {
+  if (WORKERS.reading) { WORKERS.again = true; return WORKERS.reading; }
+  WORKERS.reading = updateWorkerPanel().finally(() => {
+    WORKERS.reading = null;
+    if (WORKERS.again) { WORKERS.again = false; return renderWorkerPanel(); }
+  });
+  return WORKERS.reading;
+}
+async function updateWorkerPanel() {
+  let container = $('#workerBoard');
+  if (!container) {
+    container = h('div', {id: 'workerBoard'});
+    $('#agents').insertBefore(container, $('#agents .list'));
+  }
+  await renderWorkerBoard(container);
+  agentsWindow(container.querySelectorAll('.worker-entry').length + D.sessions.filter(one => one.activity === 'working').length);
+}
+
 export async function renderAgents(only = null, bySession = false) {
   if (FRAMED || Array.isArray(only) && !only.length) return;
   const project = S.project, metaform = S.base;
+  if (only === null) await renderWorkerPanel();
   const some = Array.isArray(only);
   // A live-list snapshot must land before a later event's records, so it cannot overwrite them afterwards.
   while (some && PENDING.whole && PENDING.project === project && PENDING.base === metaform) await PENDING.whole;
@@ -374,7 +365,7 @@ export async function renderAgents(only = null, bySession = false) {
       onOtherBase(one), taskSummary(D.states?.[one.session_id])].join('\n'),
     make: () => agentRow(one)})));
   markFollowed();
-  agentsWindow(working.length);  // slides out while any is at work, away a few seconds after
+  agentsWindow(working.length + ($('#workerBoard')?.querySelectorAll('.worker-entry').length || 0));  // slides out while any is at work, away a few seconds after
   paintInUse();
   figures(S.tickets || []);  // the map's figures follow the same sessions
 }

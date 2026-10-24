@@ -39,16 +39,24 @@ Add Task can start the new ticket immediately: check Start an agent now and choo
 
 To run a stored workflow, open Add Task at its target node, choose a Workflow subroutine, and edit its Entry call arguments. For example, `workflow.quality.code.review(target=this)` passes the first linked node as the target. Task text is optional and can supply additional context. Check Start an agent now to run it through ACP, or leave it queued. The agent starts the call with `workflow run`, follows the stored procedure, and records its returned result on the ticket. The picker lists callable workflows selected in the active project's folder settings, matching the context dispatched agents use. No workflow run is recorded until the agent starts the call, so a failed ACP launch leaves a retryable ticket without a stranded run.
 
-Autostart agents at the top of the menu bar controls automatic ticket dispatch, VIEW-042. It is separate from `--web-autostart`, which starts the GUI before an intake. Checked, it starts waiting work on free board glyphs, one agent per glyph, including tickets with unanswered questions; with undistributed tickets, `--dispatch-agents` sets the limit, 5 by default. Administration's Agents control changes that limit. Unchecked, Start all and each ticket's Start remain available. Answers reach the current ticket holder and remain on the ticket without changing its board placement. Chat beside a question opens its agent's session or starts a new agent with a new glyph to read the question and continue the ticket.
+Agents are started explicitly from the page's session controls or the assigned-task API. `GET /api/tasks`
+discovers task metadata, `GET /api/task-definition?name=...` reads one canonical definition, and
+`POST /api/task-assign` starts the selected task with its supplied context and skills. Default chat opens the
+`user_agent` task. The named task definitions and their exact prompts are documented in [tasks](../tasks/README.md).
+
+`GET /api/worker-board` supplies the live paired-worker panel: agent name, average rating, reported context
+percentage and checklist completion, followed by Next, Current and Past task phrases and canonical node names.
+The board reopens temporary SQLite records across server restarts and page refreshes. Workers keep their native
+session while idle; messages and partner-completion events wake them through the native event path.
 
 In the large area, the 2D map opens fitted to the whole diagram and eases to each new fit as nodes arrive or go. Clicking a node switches to a readable fit: the whole diagram while it fits above the minimum text size, otherwise centered on the selected node at that minimum. Keys 1 to 9 set the minimum from 8 to 24 px, 2 px apart; 5, 16 px, is the default. Fit, F and Home return to the whole diagram. Wheel zoom leaves both modes and holds the person's zoom until another click or Fit. In the small area, selection keeps the person's zoom and Fit cycles the views described by VIEW-008. Camera moves and wheel zoom ease in and out; dragging interrupts a move and follows the hand.
 
 Implemented tickets with a verified saved candidate expose `Merge` on their board card and inspector, including
 Done tickets. The action pins project, base and candidate to `POST /api/ticket-merge`. Dispatch integrates locally,
-cleans a safe ticket worktree, then finishes an open ticket. Full Auto can remain off. Requests never push. Dirty
+cleans a safe ticket worktree, then finishes an open ticket. Requests never push. Dirty
 or ambiguous worktrees retain their files and show `Clean worktree` with the outstanding reason. Request state
 disables repeat clicks across card redraws and the inspector. Unsaved inspector text remains intact. Scoped
-ticket events refresh the board. Ordinary direct closure and Full Auto behavior remain unchanged.
+ticket events refresh the board. Ordinary direct closure remains available.
 
 ## Template version
 
@@ -182,7 +190,9 @@ A code map pane is to come from the module that builds it; the tools and the lay
 
 ## Events
 
-Automatic dispatch is checked when the server starts, when its page saves the dispatch settings, and on selection-relevant `map.changed` events. One worker coalesces changes and starts batches sequentially, so page reads remain responsive and simultaneous changes do not launch competing batches. Questions do not block selection or park unfinished tickets, which return to To do. Answers change no board placement because a question records a dependency within the task, not evidence that the whole task is unavailable. `/api/dispatch-autostart` reads and saves these project settings through GET and POST; `/api/dispatch-chat` starts or reopens a question's chat through POST.
+Project startup initializes module-owned background services and native runner-death observation.
+Map and worker-board events are forwarded to open pages. Opening an event stream or changing settings reads and
+updates the selected state; agent work starts through explicit session or assigned-task commands.
 
 Hears `map.changed`, which the chassis fires after any command that changes a project's map, VIEW-018, through the base's listener, BASE-053: the server opens it with `events.listen('web', ...)` once it listens, and each `map.changed` published in another process, a command, the MCP server or a dispatch runner, reaches it and is pushed to every open page, which redraws without a reload. The changes of the page's own writes are pushed from what `events.announce` returns. A change to a project no longer registered is not pushed, since a page has nothing of it to read. With no server running nothing listens, and nothing is sent.
 

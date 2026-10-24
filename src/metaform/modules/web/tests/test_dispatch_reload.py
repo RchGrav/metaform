@@ -2,7 +2,6 @@
 import http.client
 import json
 import threading
-from types import SimpleNamespace
 
 import pytest
 
@@ -58,49 +57,6 @@ def test_agents_keep_configured_default_through_unrelated_refresh(project_folder
     assert [row['agent'] for row in body['agents'] if row['default']] == ['codex']
     assert body['slots']['limit'] == 3
     assert settings.value('dispatch_agent', project_folder) == 'codex'
-
-
-@pytest.mark.parametrize('surface', ['module', 'http'])
-def test_dispatch_settings_survive_unrelated_module_refresh(project_folder, monkeypatch, surface):
-    monkeypatch.chdir(project_folder)
-    registry.set_module_state('dispatch', True)
-    chassis.surface(project_folder)
-    settings.put('dispatch_agents', 3, project_folder)
-    value = settings.value
-    refreshed = False
-
-    def refreshing_value(key, folder):
-        nonlocal refreshed
-        if key == 'dispatch_agents' and not refreshed:
-            refreshed = True
-            registry.set_module_state('hello', True)
-            chassis.refresh_modules()
-        return value(key, folder)
-
-    monkeypatch.setattr(settings, 'value', refreshing_value)
-    replies = []
-    request = SimpleNamespace(send=lambda status, body: replies.append((status, body)))
-    if surface == 'module':
-        server.Handler.dispatch_autostart(request, {'project': 'proj'})
-    else:
-        served = server.Server('127.0.0.1', 0, 'nonce')
-        worker = threading.Thread(target=served.serve_forever, daemon=True)
-        worker.start()
-        connection = http.client.HTTPConnection('127.0.0.1', served.port, timeout=10)
-        try:
-            connection.request('GET', '/api/dispatch-autostart?project=proj')
-            response = connection.getresponse()
-            replies.append((response.status, json.loads(response.read())))
-        finally:
-            connection.close()
-            served.shutdown()
-            worker.join(5)
-            served.server_close()
-            served.vouch.close()
-    assert refreshed
-    assert replies[0][0] == 200
-    assert replies[0][1]['agents'] == 3
-    assert value('dispatch_registry_agents', project_folder) == []
 
 
 def test_agent_choices_survive_unrelated_module_refresh(project_folder, monkeypatch):

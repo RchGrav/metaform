@@ -380,11 +380,16 @@ Metaform's own commands: settings, feedback and reports, and the project's histo
 | `metaform_register` | Register this folder as a Metaform project, so its map can be recorded and read. As metaform add project does; a folder already in a project is left as it is. Returns the project and the instructions for it now. Always available. | write |
 | `metaform_save_prompt` | Save a named prompt as a new version, creating it or adding an edit; earlier versions stay unchanged. | write |
 | `metaform_set` | Save Metaform settings for the server's folder, as metaform set does. | write |
-| `metaform_skills` | List discoverable skills, load a skill by name or Address with current prompt-store libraries, or read one of its files. Internal skills remain explicitly loadable. `all=true` lists them for administrative inspection. Always available. | read |
 
-`metaform_skills` takes `op=list|load|read`, `name` for load and read, and
-`path` for read. The skill Address is `prompt.skill.<kebab-name>` with its
-version in frontmatter metadata. At connect, `skill_index=auto` adds a compact
-index unless a current completed native deployment is recorded for the actual
-client. `on` forces this index and `off` omits it. Internal skills appear in no
-ordinary discovery list.
+Reusable skills use `io.modelcontextprotocol/skills` (SEP-2640): `skills/list`
+and `skills/get` return canonical URIs, preserved frontmatter and complete
+resource manifests. `resources/read` loads one requested file. Entries contain
+SHA-256 digests and raw byte sizes. Text remains UTF-8 and binary uses base64.
+The connect message does not embed a skill list. Known graph expertise URIs are
+readable without adding all project expertise to discovery.
+
+Authored reusable skills live in the Metaform home's `skills/` directory and
+use `skill://<name>/SKILL.md`. Packaged skills use
+`skill://metaform/<name>/SKILL.md`. Expertise remains in the receiving element's
+`joins` in the expertise layer, or directly attached to its functional joins,
+using the same SKILL.md and manifest format.
