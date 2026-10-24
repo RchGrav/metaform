@@ -173,9 +173,9 @@ def test_ticket_check_in_keeps_outcome_without_system_inbox_changes(run, home, p
         return context('orchestration', project_folder, project='proj', session='worker', nouns=nouns)
 
     if start == 'claim':
-        owner.claim(ctx(work=work.id, role='implementer', session='worker'))
+        owner.claim(ctx(work=work.id, role='researcher', session='worker'))
     else:
-        owner.ensure(ctx(), work.id, role='implementer', session_id='worker')
+        owner.ensure(ctx(), work.id, role='researcher', session_id='worker')
     before = peer_lines(live.store, live.id)
     with dispatch_store.tables(write=False) as tx:
         lines = tx.rows('session_lines', limit=0).results

@@ -49,8 +49,8 @@ def snapshot(project):
 
 @pytest.mark.req('QUAL-018')
 @pytest.mark.parametrize('module,duty', [
-    ('orchestration', 'gc'), ('orchestration', 'implementer'),
-    ('orchestration', 'specialist'), ('orchestration', 'role_creator'),
+    ('orchestration', 'gc'), ('orchestration', 'researcher'),
+    ('orchestration', 'role_creator'),
     ('dispatch', 'work'), ('dispatch', 'handoff'),
 ])
 def test_routine_fix_guidance_permits_direct_delivery(store, module, duty):
@@ -107,7 +107,7 @@ def test_gc_missing_specialist_request_can_reach_its_own_commission(project):
 def test_role_commission_obeys_current_blacklist_without_mutating_work(project, monkeypatch):
     gc = claim(project)
     worker = verb(called(project, 'gc'), 'orchestration', 'delegate',
-                  role='implementer', task='Implement the countdown.')
+                  role='researcher', task='Implement the countdown.')
     SERVICE.bind(called(project), worker['assignment_id'], 'worker')
     request = verb(called(project, 'worker'), 'orchestration', 'call',
                    role='alarm_domain', task='Establish alarm constraints.', key='worker-alarm-specialist')
@@ -120,7 +120,7 @@ def test_role_commission_obeys_current_blacklist_without_mutating_work(project, 
     for surface in ('cli', 'mcp'):
         with pytest.raises(Stop, match='roles_without_authority.*worker'):
             verb(called(project, 'gc', surface), 'orchestration', 'delegate',
-                 role='investigator', task='Trace the countdown.')
+                 role='architect', task='Trace the countdown.')
         with pytest.raises(Stop, match='roles_without_authority.*worker'):
             verb(called(project, 'gc', surface), 'orchestration', 'commission',
                  request=request['request_id'], wait=True)

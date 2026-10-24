@@ -37,7 +37,7 @@ def test_specialist_inventory_excludes_framework_duties_and_keeps_reusable_urls(
     assert [one['name'] for one in inventory] == ['alarm_engineering']
     assert inventory[0]['uri'] == 'metaform://specialist/alarm_engineering'
     assert 'Diagnose timing' not in json.dumps(inventory)
-    assert ROLES.resolve(ctx, 'implementer')['specialist'] is False
+    assert ROLES.resolve(ctx, 'researcher')['specialist'] is False
 
 
 def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(case, monkeypatch):
@@ -54,7 +54,7 @@ def test_jev_selects_expertise_from_local_functional_graph_without_duty_dump(cas
     found = SERVICE.route_pending(ctx)
     assert found[0]['role'] == 'metaform://specialist/alarm_engineering'
     assert not store.ticket(work.id).work.taken
-    assert 'metaform://role/implementer' not in sent[0][0]
+    assert 'metaform://role/researcher' not in sent[0][0]
     assert sent[0][1]['function']['requirements'][0]['purpose'] == 'Get attention when a countdown ends.'
     assert 'Diagnose timing' not in json.dumps(sent)
     assert SERVICE.route_pending(ctx) == []
@@ -408,7 +408,7 @@ def test_specialist_registry_resource_has_names_and_urls_without_role_bodies(cas
     registered = expert(ctx)
     text = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
     assert registered['uri'] in text and 'Reliable countdown alarms' in text
-    assert 'Diagnose timing' not in text and 'metaform://role/implementer' not in text
+    assert 'Diagnose timing' not in text and 'metaform://role/researcher' not in text
     again = asyncio.run(server.read_resource_text(ctx.folder, 'metaform://specialists', session='facilitator'))[0]
     assert registered['uri'] not in again
     newer = ROLES.publish(ctx, 'timer_diagnostics', 'Diagnose countdown timing.', 'Measure timer behavior.')

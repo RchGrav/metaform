@@ -183,7 +183,7 @@ def original_gc(assignment, stage):
     if stage == 0:
         progress(stage=1)
         check('running', 'GC_OWNERSHIP: functional delivery claimed.', work_so_far='GC retained delivery plan.')
-        cli('orchestration', 'call', role='implementer', task='Produce candidate.txt using a specialist contribution.',
+        cli('orchestration', 'call', role='researcher', task='Produce candidate.txt using a specialist contribution.',
             result='A candidate validated by its worker.', key='worker')
         suspend()
         return
@@ -199,7 +199,7 @@ def original_gc(assignment, stage):
             suspend()
             return
     worker = next(one for one in members if one['parent_assignment_id'] == assignment['assignment_id']
-                  and one['authored_role_uri'] == 'metaform://role/implementer')
+                  and one['authored_role_uri'] == 'metaform://role/researcher')
     if worker['state'] not in ('returned', 'delivered'):
         check('waiting', 'GC follows the pending requested worker contribution.')
         suspend()
@@ -246,14 +246,14 @@ def worker(stage):
             gate('finish-stopped-worker')
             return
         mcp_call('orchestration_call', {
-            'role': 'route_specialist' if SCENARIO == 'generated' else 'investigator',
+            'role': 'route_specialist' if SCENARIO == 'generated' else 'architect',
             'task': 'Establish the route behavior needed by this worker.', 'key': 'specialist-first',
             'contribution': 'Verify functional return behavior.', 'context': {'worker_draft': 'RETAINED_WORKER_DRAFT'}})
         suspend()
         return
     members = cli('orchestration', 'team')['members']
     returned = [one for one in members if one['work_id'] != WORK and
-                one['authored_role_uri'] in ('metaform://role/investigator', 'metaform://specialist/route_specialist')
+                one['authored_role_uri'] in ('metaform://role/architect', 'metaform://specialist/route_specialist')
                 and one['state'] in ('returned', 'delivered')]
     assert returned and all(SPECIALIST_RESULT in str(one['result']) for one in returned)
     log(worker_received={'stage': stage, 'results': returned})
@@ -296,8 +296,8 @@ def creator(assignment):
         # full-model reply, not a production classifier or a default for unknown work.
         task_type, agent, effort = {
             'gc': ('planning', 'claude', 'ultra'),
-            'implementer': ('coding', 'codex', 'medium'),
-            'investigator': ('lookup', 'codex', 'low'),
+            'researcher': ('coding', 'codex', 'medium'),
+            'architect': ('lookup', 'codex', 'low'),
             'route_specialist': ('lookup', 'codex', 'low'),
             'functionality': ('analysis', 'claude', 'high'),
             'bmad.bmm.dev': ('lookup', 'codex', 'low'),
@@ -476,7 +476,7 @@ def communications(assignment, stage, text):
             log(gc_peer_turn=text)
             return
         progress(stage=1)
-        cli('orchestration', 'delegate', role='implementer', task='Coordinate the worker-called specialist.',
+        cli('orchestration', 'delegate', role='researcher', task='Coordinate the worker-called specialist.',
             key='communicating-worker')
         log(gc_ready=True)
         gate('broadcast')
@@ -489,24 +489,24 @@ def communications(assignment, stage, text):
         if CANCELLED.is_set():
             return
         member = next(one for one in cli('orchestration', 'team')['members']
-                      if one['authored_role_uri'] == 'metaform://role/investigator')
+                      if one['authored_role_uri'] == 'metaform://role/architect')
         sent = cli('dispatch', 'interrupt', id=member['work_id'], session=member['owner_session_id'],
                    direction='NEW_GC_DIRECTION: keep the retained specialist state and validate the restored result.')
         log(gc_owned_interruption=sent)
         gate('finish-gc')
-    elif ROLE == 'implementer':
+    elif ROLE == 'researcher':
         if stage:
             log(worker_peer_turn=text)
             return
         progress(stage=1)
-        cli('orchestration', 'delegate', role='investigator', task='Retain the specialist result while peers coordinate.',
+        cli('orchestration', 'delegate', role='architect', task='Retain the specialist result while peers coordinate.',
             key='communicating-specialist')
         log(worker_ready=True)
         gate('peer-note')
         if CANCELLED.is_set():
             return
         member = next(one for one in cli('orchestration', 'team')['members']
-                      if one['authored_role_uri'] == 'metaform://role/investigator')
+                      if one['authored_role_uri'] == 'metaform://role/architect')
         discovery = cli('dispatch', 'peers')
         refused = cli('dispatch', 'interrupt', id=member['work_id'], direction='An ordinary peer must not interrupt.',
                       expect_error=True)
@@ -518,7 +518,7 @@ def communications(assignment, stage, text):
         log(peer_note_sent=note, peer_interrupt_refused=refused, worker_broadcast_refused=broadcast,
             all_agent_discovery=discovery)
         gate('worker-release')
-    elif ROLE == 'investigator':
+    elif ROLE == 'architect':
         if stage == 0:
             progress(stage=1)
             log(specialist_grounding=cli('memory', 'open_nodes', names=['route-grounding'],
@@ -604,9 +604,9 @@ def turn(ident, text):
                 corrective_gc(assignment)
             else:
                 original_gc(assignment, held['stage'])
-        elif ROLE == 'implementer':
+        elif ROLE == 'researcher':
             worker(held['stage'])
-        elif ROLE in ('investigator', 'route_specialist'):
+        elif ROLE in ('architect', 'route_specialist'):
             specialist()
         elif ROLE == 'functionality':
             assessment(assignment)

@@ -53,7 +53,7 @@ def board_work(store, ctx, board=BOARD):
 
 def claim_work(ctx, work, **nouns):
     return SERVICE.claim(replace(ctx, nouns={
-        'work': work.id, 'role': 'verifier', 'pm_session': SESSION, **nouns}))
+        'work': work.id, 'role': 'planner', 'pm_session': SESSION, **nouns}))
 
 
 def test_active_facilitator_claims_approved_existing_ticket_through_native_facade(approved):
@@ -61,7 +61,7 @@ def test_active_facilitator_claims_approved_existing_ticket_through_native_facad
 
     store, ctx, facilitator = approved
     work = board_work(store, ctx)
-    result = claim(replace(ctx, nouns={'work': work.id, 'role': 'verifier', 'pm_session': SESSION}))
+    result = claim(replace(ctx, nouns={'work': work.id, 'role': 'planner', 'pm_session': SESSION}))
     assigned = SERVICE.assignment(ctx, work_id=work.id)
     assert result == {'assignment_id': assigned['assignment_id'], 'state': assigned['state']}
     assert assigned['persons_start'] is True
@@ -112,7 +112,7 @@ def test_automatic_claim_does_not_inherit_board_approval(approved):
 def test_board_claim_requires_person_started_facilitator_with_recorded_approval(approved, missing):
     store, ctx, facilitator = approved
     fields = {'approval': {'specification': None}, 'persons_start': {'persons_start': False},
-              'facilitator_role': {'authored_role_uri': 'metaform://role/verifier'}}[missing]
+              'facilitator_role': {'authored_role_uri': 'metaform://role/planner'}}[missing]
     with own(ctx).tables() as tx:
         tx.update('assignments', {'assignment_id': facilitator['assignment_id']}, fields)
     assert claim_work(ctx, board_work(store, ctx))['persons_start'] is False

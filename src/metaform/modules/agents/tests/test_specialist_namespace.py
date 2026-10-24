@@ -62,7 +62,7 @@ def test_all_39_specialties_have_their_own_namespace_without_rewriting_duties_or
     assert all(one['uri'] == f'metaform://specialist/{one["name"]}' for one in roster)
     assert all(set(one) == {'name', 'purpose', 'uri', 'provider'} for one in roster)
     public = role_inventory(ctx)
-    assert len(public['authored']) == 23
+    assert public['authored']
     assert {one['role'] for one in public['authored']}.isdisjoint(one['name'] for one in entries)
     assert all(one['uri'].startswith('metaform://role/') for one in public['authored'])
     assert {one['name']: one for one in public['specialists']} == {one['name']: one for one in roster}

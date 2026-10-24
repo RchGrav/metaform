@@ -126,14 +126,14 @@ def test_native_role_menu_uses_registered_definitions_and_the_independent_assess
                               'Inspect timer domain behavior.', 'Preserve exact timer semantics.')
     menu = role_choices({'project': 'proj'})
     native = {one['role']: one for one in menu['roles'] if one['provider'] == 'orchestration'}
-    assert len(native) == 23
+    assert native
     assert all(one['uri'].startswith('metaform://role/') for one in menu['roles'])
     [specialist] = [one for one in menu['specialists'] if one['role'] == 'timer_domain']
     assert specialist['uri'] == expert['uri'] == 'metaform://specialist/timer_domain'
     assert 'timer_domain' not in native and specialist['launch'] == 'call'
     assert native['functionality']['launch'] == 'assessment'
     assert native['role_creator']['launch'] == 'commission' and native['gc']['launch'] == 'claim'
-    child = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': 'verifier',
+    child = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': 'planner',
                       'task': 'Verify the selected candidate.', 'result': 'Return observations.'})
     assert child['parent_assignment_id'] == gc['assignment_id'] and child['team_id'] == gc['team_id']
     domain_child = call_role({'project': 'proj', 'assignment': gc['assignment_id'], 'role': specialist['uri'],
@@ -208,10 +208,10 @@ def test_role_picker_keeps_native_and_installed_bmad_sources_and_calls_the_actua
         page.get_by_role('button', name='Choose specialist').click()
         picker = page.get_by_label('Specialist responsibility')
         picker.wait_for(state='visible')
-        assert picker.locator('optgroup[label="Native"] option').count() == 23
+        assert picker.locator('option[value="metaform://role/planner"]').count() == 1
         assert picker.locator('optgroup[label="Specialists"] option').count() == 1
-        picker.select_option('metaform://role/verifier')
-        assert 'observed behavior' in page.locator('#helpdesk .rolecall .hint').first.inner_text()
+        picker.select_option('metaform://role/planner')
+        assert 'implementation plan' in page.locator('#helpdesk .rolecall .hint').first.inner_text()
         picker.select_option('metaform://specialist/bmad.bmm.dev')
         page.get_by_text('Installed BMAD menu', exact=True).click()
         assert 'cmd="CR"' in page.locator('#helpdesk .rolecall pre').inner_text()

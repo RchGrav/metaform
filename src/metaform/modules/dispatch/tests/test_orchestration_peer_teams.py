@@ -72,7 +72,7 @@ def test_two_gc_teams_exchange_threaded_notes_but_keep_broadcast_and_interrupt_o
               'METAFORM_SESSION': sa['runner'], 'METAFORM_ROLE': 'worker'}
         eb = {**b.env('replace', FAKE_ACP_TURN_GATES=str(gates_b)), 'METAFORM_WORK': b.id,
               'METAFORM_SESSION': sb['runner'], 'METAFORM_ROLE': 'worker'}
-        child = json.loads(command('orchestration', 'delegate', 'role=implementer',
+        child = json.loads(command('orchestration', 'delegate', 'role=researcher',
             'task=Retain the engine contribution while its GC coordinates.', 'wait=false',
             'key=cross-team-child', env=ea).stdout)
         sc = session(child['work_id'])

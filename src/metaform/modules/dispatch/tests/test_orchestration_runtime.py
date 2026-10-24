@@ -97,7 +97,7 @@ def runtime_evidence(assignments, logged):
         assert turns, 'The selected runtime reaches a real ACP recipient.'
         assert all(one['runtime_config'] == {key: chosen[key] for key in ('model', 'effort')} for one in turns)
         assert all(sessions[one['session']]['agent'] == chosen['agent'] for one in turns)
-        if assignment['authored_role_uri'] == 'metaform://role/implementer':
+        if assignment['authored_role_uri'] == 'metaform://role/researcher':
             assert chosen['agent'] == 'codex' and chosen['effort'] == 'medium'
         if assignment['parent_assignment_id'] or assignment['reviewed_assignment_id']:
             assert chosen['decision']['decider'] == 'facilitator' and chosen['decision']['confidence'] == 1.0
@@ -203,9 +203,9 @@ def delivery_evidence(swarm, scenario):
     assignments = completed(swarm)
     wait_for(swarm, lambda: any('fqc_observation' in one for one in swarm.entries()))
     root = next(one for one in assignments if one['work_id'] == swarm.id)
-    worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
+    worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/researcher')
     specialists = [one for one in assignments if one['authored_role_uri'] in (
-        'metaform://role/investigator', 'metaform://specialist/route_specialist')]
+        'metaform://role/architect', 'metaform://specialist/route_specialist')]
     critic = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/functionality')
     assert swarm.ticket().done and root['state'] == 'delivered'
     assert root['authored_role_uri'] == 'metaform://role/gc'
@@ -225,11 +225,11 @@ def delivery_evidence(swarm, scenario):
     assert capacities and all(one['limit'] == one['machine_limit'] == 1 and one['used'] == one['machine_used'] <= 1
                               for one in capacities)
     contexts = [one for one in logged if 'recipient_context' in one]
-    assert {one['role'] for one in contexts} >= {'gc', 'implementer', 'functionality'}
+    assert {one['role'] for one in contexts} >= {'gc', 'researcher', 'functionality'}
     assert not any('"tools": {' in one['recipient_context'] for one in contexts)
     common = next(one['text'] for one in resolve_agent_role(swarm.folder, 'gc', project='proj')['components']
                   if one['name'] == 'prompt.orchestration:common')  # the canonical prompt identity, CTX-082
-    for role in ('gc', 'implementer'):
+    for role in ('gc', 'researcher'):
         own = [one for one in contexts if one['role'] == role]
         assert sum(common in one['recipient_context'] for one in own) == 1
         resources = [one['role_resource'] for one in logged if one['role'] == role and 'role_resource' in one]
@@ -238,15 +238,15 @@ def delivery_evidence(swarm, scenario):
     assert any(one['name'] == 'prompt.orchestration:common' and one['actual_version_id'] and
                one['component']['text'] == common for one in receipts)
     resumed = [one for one in logged if 'session_loaded' in one]
-    assert {'gc', 'implementer'} <= {one['role'] for one in resumed}
+    assert {'gc', 'researcher'} <= {one['role'] for one in resumed}
     # the return reaches the worker as an inbox line naming the specialist's ticket, read whole with a call, never
     # the result's text in its prompt (every message works like an inbox, 2026-10-20)
-    worker_returns = [one for one in contexts if one['role'] == 'implementer' and
+    worker_returns = [one for one in contexts if one['role'] == 'researcher' and
                       ' complete' in one['recipient_context']]
     assert worker_returns, 'The immediate worker actually received its specialist return in an ACP prompt.'
     assert not any('RETAINED_WORKER_DRAFT' in one['recipient_context'] for one in worker_returns)
     assert any('RETAINED_WORKER_DRAFT' in json.dumps(one.get('assignment_context', {})) for one in logged
-               if one['role'] == 'implementer')
+               if one['role'] == 'researcher')
     gc_returns = [one for one in contexts if one['role'] == 'gc' and ' complete' in one['recipient_context']]
     assert gc_returns, 'The GC actually received the worker\'s return as an inbox line in an ACP prompt.'
     assert any(one.get('specialist_grounding', {}).get('entities') for one in logged)
@@ -255,7 +255,7 @@ def delivery_evidence(swarm, scenario):
     assert not any(' complete' in one.get('text', '') for one in records('dispatch', 'session_lines')
                    if one['session_id'] == 'conversation-orchestration-updates')
     worker_calls = [one for one in logged if one.get('mcp_tool', {}).get('name') == 'orchestration_call']
-    assert len(worker_calls) == 1 and worker_calls[0]['role'] == 'implementer'
+    assert len(worker_calls) == 1 and worker_calls[0]['role'] == 'researcher'
     assert worker_calls[0]['mcp_tool']['runner_identity'] == worker_calls[0]['runner_identity']
     assert worker_calls[0]['mcp_tool']['is_error'] is False
     runtime_evidence(assignments, logged)
@@ -271,9 +271,9 @@ def test_capacity_one_gc_worker_specialist_return_and_independent_fqc(swarm):
     # the swarm's four sessions; the person's system agent, woken for its digest, and a Facilitator making a
     # specialist may run beside them (2026-10-20)
     created = [one for one in logged if 'session_created' in one]
-    assert {one['role'] for one in created} >= {'gc', 'implementer', 'investigator', 'functionality'}
+    assert {one['role'] for one in created} >= {'gc', 'researcher', 'architect', 'functionality'}
     assert len([one for one in created if one['role'] not in ('triage', 'facilitator', 'role_creator')]) == 4
-    assert len([one for one in logged if 'session_loaded' in one and one['role'] in ('gc', 'implementer')]) == 2
+    assert len([one for one in logged if 'session_loaded' in one and one['role'] in ('gc', 'researcher')]) == 2
     transitions = records('orchestration', 'transitions')
     assert len([one for one in transitions if one['kind'] == 'suspend' and one['state'] == 'delivered'
                 and one['payload'].get('child_assignment_id')]) == 2
@@ -286,7 +286,7 @@ def test_worker_missing_role_returns_through_gc_creator_published_duty_and_regis
     assert len(requests) == 1 and requests[0]['state'] == 'published'
     requested = requests[0]
     creator = next(one for one in assignments if one['assignment_id'] == requested['creator_assignment_id'])
-    worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/implementer')
+    worker = next(one for one in assignments if one['authored_role_uri'] == 'metaform://role/researcher')
     specialists = [one for one in assignments if one['authored_role_uri'] == 'metaform://specialist/route_specialist']
     assert requested['caller_assignment_id'] == worker['assignment_id']
     assert requested['creator_assignment_id'] == creator['assignment_id'] and len(specialists) == 2
@@ -512,7 +512,7 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     peer_sent = next(one for one in early if 'peer_request_ready' in one)
     assert peer_sent['peer_interrupt_refused']['code'] != 0
     assert peer_sent['worker_broadcast_refused']['code'] != 0
-    assert not any('PEER_NOTE:' in one.get('recipient_context', '') for one in early if one['role'] == 'investigator')
+    assert not any('PEER_NOTE:' in one.get('recipient_context', '') for one in early if one['role'] == 'architect')
     (swarm.swarm_state / 'broadcast').touch()
     wait_for(swarm, lambda: any('gc_broadcast' in one for one in swarm.entries()))
     broadcast = next(one['gc_broadcast'] for one in swarm.entries() if 'gc_broadcast' in one)
@@ -520,13 +520,13 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     assert broadcast['team_id'] == next(one['team_id'] for one in records('orchestration', 'assignments')
                                         if one['work_id'] == swarm.id)
     discovery = {one['role']: one['all_agent_discovery']['peers'] for one in swarm.entries()
-                 if 'all_agent_discovery' in one and one['role'] in ('gc', 'implementer', 'investigator')}
-    assert set(discovery) == {'gc', 'implementer', 'investigator'}
+                 if 'all_agent_discovery' in one and one['role'] in ('gc', 'researcher', 'architect')}
+    assert set(discovery) == {'gc', 'researcher', 'architect'}
     for peers in discovery.values():
         # Missing-Jev runtime commissions may connect the person's PM as well.
         team_peers = [one for one in peers if one['work_id'] != 'conversation-system']
         assert {one['authored_role_uri'] for one in team_peers} == {
-            'metaform://role/gc', 'metaform://role/implementer', 'metaform://role/investigator'}
+            'metaform://role/gc', 'metaform://role/researcher', 'metaform://role/architect'}
         assert {one['session_id'] for one in team_peers} == {
             one['owner_session_id'] for one in delivery_assignments(records('orchestration', 'assignments'))}
     (swarm.swarm_state / 'specialist-release').touch()
@@ -544,20 +544,20 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
     seen = swarm.entries()
     cancelled = [one for one in seen if one.get('message', {}).get('method') == 'session/cancel'
                  and one['role'] != 'facilitator']
-    assert cancelled and {one['role'] for one in cancelled} == {'investigator'}
+    assert cancelled and {one['role'] for one in cancelled} == {'architect'}
     assert not any(one.get('message', {}).get('method') == '_session/steering' for one in seen)
     received = next(one['interrupted_recipient'] for one in seen if 'interrupted_recipient' in one)
     assert received['assignment']['pending_direction']
     assert 'NEW_GC_DIRECTION' in received['text'] and 'RETAINED_SPECIALIST_STATE' not in received['text']
     assert 'RETAINED_SPECIALIST_STATE' in json.dumps(received['assignment'])
     assert any('GC_SWARM_BROADCAST' in one.get('recipient_context', '') for one in seen
-               if one['role'] == 'implementer')
+               if one['role'] == 'researcher')
     peer_rows = [json.loads(one['text']) for one in records('dispatch', 'session_lines') if one['kind'] == 'peer']
     original = next(one for one in peer_rows if one['text'].startswith('PEER_NOTE:'))
     replies = [one for one in peer_rows if one['text'].startswith('PEER_REPLY:')]
     assert replies and all(one['reply_to'] == original['id'] for one in replies)
-    assert original['from']['authored_role_uri'] == 'metaform://role/implementer'
-    assert {one['from']['authored_role_uri'] for one in replies} == {'metaform://role/investigator'}
+    assert original['from']['authored_role_uri'] == 'metaform://role/researcher'
+    assert {one['from']['authored_role_uri'] for one in replies} == {'metaform://role/architect'}
     capacities = [one['capacity'] for one in seen if 'capacity' in one]
     assert capacities and max(one['used'] for one in capacities) == 3
     assert all(one['used'] <= one['limit'] == 3 and one['machine_used'] <= one['machine_limit'] == 3
@@ -567,7 +567,7 @@ def test_discovery_threaded_peer_delivery_and_gc_descendant_broadcast_and_interr
 
         def following():
             return next((one for one in records('orchestration', 'assignments')
-                         if one['authored_role_uri'] == 'metaform://role/investigator' and
+                         if one['authored_role_uri'] == 'metaform://role/architect' and
                          'Following NEW_GC_DIRECTION' in str(one['last_check_in'])), None)
         held = wait_for(swarm, following)
         session = held['owner_session_id']

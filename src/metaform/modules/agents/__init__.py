@@ -32,6 +32,7 @@ from metaform.module import (
 )
 
 from . import roles as authored
+from .migration import upgrade_tables
 
 SUPPORTED_OS = ('linux', 'macos', 'windows')
 DEPENDENCIES = ()
@@ -129,7 +130,8 @@ assert tuple(role.name for role in ROLES) == settings.AGENT_ROLES, 'one record f
 # context epoch with its receipts. It only adds tables, so version 1's code still reads and writes `sent`, STORE-029.
 # Version 3 adds content fingerprints and startup context checks without changing the existing tables' fields.
 # Version 4 adds accepted changed-instruction references, separate from body delivery receipts.
-TABLES = Tables(version=4, compatible_from=1, tables=(
+# Version 5 withdraws removed procedural definitions and their shared specialist duty from live registrations.
+TABLES = Tables(version=5, compatible_from=1, upgrade=upgrade_tables, tables=(
     Table('sent', place='project', key=('session_id', 'seq'),
           columns=(Column('session_id', required=True), Column('seq', 'int', required=True),
                    Column('work_id', required=True), Column('runner'), Column('role', required=True),

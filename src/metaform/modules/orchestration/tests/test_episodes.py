@@ -18,7 +18,7 @@ def project(store, project_folder):
     return store, project_folder
 
 
-def assigned(project, monkeypatch, task, previous=None, role='implementer'):
+def assigned(project, monkeypatch, task, previous=None, role='researcher'):
     monkeypatch.setattr(Orchestration, 'prepare_runtime', lambda *args, **kwargs: True)
     store, _ = project
     work = store.add_work(Node('element', NODE), None, task=task)
@@ -58,7 +58,7 @@ def test_unrelated_running_or_different_responsibility_does_not_take_context(pro
     unrelated = assigned(project, monkeypatch, 'Unrelated work.')
     with pytest.raises(Stop, match='active workstream'):
         SERVICE.bind(ctx(project), unrelated['assignment_id'], 'one')
-    review = assigned(project, monkeypatch, 'Independently inspect.', previous=first['work_id'], role='reviewer')
+    review = assigned(project, monkeypatch, 'Independently inspect.', previous=first['work_id'], role='architect')
     with pytest.raises(Stop, match='responsibilities'):
         SERVICE.bind(ctx(project), review['assignment_id'], 'one')
     SERVICE.bind(ctx(project), review['assignment_id'], 'independent-review')

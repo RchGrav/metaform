@@ -30,7 +30,7 @@ def test_capacity_event_automatically_admits_assessment_on_owner_board(
     # Runtime choice is already established. Keep actual board, stop, capacity and ownership admission checks.
     monkeypatch.setattr(SERVICE, 'prepare_runtime', lambda *args, **kwargs: True)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    owner = SERVICE.ensure(ctx, dispatch.id, role='verifier', session_id='owner-session')
+    owner = SERVICE.ensure(ctx, dispatch.id, role='planner', session_id='owner-session')
     unrelated = dispatch.store.add_work(dispatch.node, None, task='Work set aside on the first board').id
     child = SERVICE.assessment(ctx, owner, {}, 'assessment')
     held = SERVICE.assessment(ctx, owner, {}, 'held-assessment')

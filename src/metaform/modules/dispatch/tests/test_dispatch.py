@@ -6170,7 +6170,7 @@ def paused_by_stop_all(run, home, project_folder, tmp_path):
         TRANSPORT.keep_runtime(owner_ctx, work, {
             'agent': 'claude', 'model': 'balanced', 'effort': 'medium', 'decider': 'facilitator',
             'confidence': 1.0, 'reason': 'Use the fake runtime for stop lifecycle checks.'})
-        SERVICE.ensure(owner_ctx, work, role='implementer')  # Explicit fixture duty; no automatic role default.
+        SERVICE.ensure(owner_ctx, work, role='researcher')  # Explicit fixture duty; no automatic role default.
     run('set', '--dispatch-agents', '1', '--dispatch-autostart', cwd=project_folder)
     run('dispatch', 'stop-all', '--json', cwd=project_folder)
     return made, works, (lambda work: SERVICE.assignment(owner_ctx, work_id=work)), \

@@ -1,8 +1,48 @@
 {
  "agents": {
-  "version": 3,
+  "version": 5,
   "compatible_from": 1,
   "tables": {
+   "change_notices": {
+    "place": "project",
+    "key": [
+     "session_id",
+     "epoch",
+     "name"
+    ],
+    "columns": {
+     "epoch": [
+      "int",
+      "INTEGER",
+      true,
+      null
+     ],
+     "fingerprint": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "name": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ],
+     "session_id": [
+      "text",
+      "TEXT",
+      true,
+      null
+     ]
+    },
+    "indexes": [],
+    "checks": [],
+    "foreign_keys": [],
+    "collations": {},
+    "on_conflict": [],
+    "generated": []
+   },
    "context_checks": {
     "place": "project",
     "key": [

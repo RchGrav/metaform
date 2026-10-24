@@ -105,11 +105,11 @@ def test_capacity_one_nested_call_releases_parent_and_returns_to_immediate_worke
     gc = root(project)
     actual = transport(monkeypatch, project)
     actual.running.add('gc-one')
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement countdown updates.',
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement countdown updates.',
                                   key='worker'), waiting=True)
     SERVICE.drain(ctx(project))
     worker_session = SERVICE.assignment(ctx(project), assignment_id=worker['assignment_id'])['owner_session_id']
-    child = SERVICE.delegate(ctx(project, worker_session, role='investigator', task='Trace alarm behavior.',
+    child = SERVICE.delegate(ctx(project, worker_session, role='architect', task='Trace alarm behavior.',
                                  key='specialist'), waiting=True)
     SERVICE.drain(ctx(project))
     child_session = SERVICE.assignment(ctx(project), assignment_id=child['assignment_id'])['owner_session_id']
@@ -135,7 +135,7 @@ def test_capacity_one_nested_call_releases_parent_and_returns_to_immediate_worke
 
 def test_new_specialist_gc_commission_publication_reuse_and_original_return(project, monkeypatch):
     gc = root(project)
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement timing.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement timing.'))
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
     request = SERVICE.delegate(ctx(project, 'worker', role='alarm_domain', task='Review timer alarm timing.',
                                    result='Return alarm constraints.', contribution='Alarm domain diagnosis.'), waiting=True)
@@ -146,7 +146,7 @@ def test_new_specialist_gc_commission_publication_reuse_and_original_return(proj
     creator = SERVICE.commission(ctx(project, 'gc-one', request=request['request_id']))
     assert creator['authored_role_uri'] == 'metaform://role/facilitator'
     ticket = project[0].numbers_of('work', [worker['work_id']])[worker['work_id']][0]
-    assert '\n' not in creator['task'] and creator['task'].startswith(f'implementer {ticket}: ') and \
+    assert '\n' not in creator['task'] and creator['task'].startswith(f'researcher {ticket}: ') and \
         creator['task'].endswith(f'for {ticket}, role alarm_domain, request {request["request_id"]}.'), creator['task']
     SERVICE.bind(ctx(project), creator['assignment_id'], 'creator')
     published = SERVICE.publish_role(ctx(project, 'creator', request=request['request_id'],
@@ -228,7 +228,7 @@ def test_fqc_independent_candidate_findings_corrective_gc_continuation(project, 
     assert SERVICE.same_team(ctx(project), gc['work_id'], review['work_id'])  # coordinated reference claim only
     SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
     assert not SERVICE.owns(ctx(project), 'gc-one', 'fqc')
-    specialist = SERVICE.delegate(ctx(project, 'fqc', role='verifier', task='Observe the complete adjustment flow.'))
+    specialist = SERVICE.delegate(ctx(project, 'fqc', role='planner', task='Observe the complete adjustment flow.'))
     SERVICE.bind(ctx(project), specialist['assignment_id'], 'fqc-verifier')
     assert specialist['team_id'] == review['team_id']
     assert specialist['team_id'] != gc['team_id']
@@ -265,7 +265,7 @@ def test_adaptive_publication_actual_spec_user_chat_current_context_and_restart(
     path = folder / 'timer-spec.md'
     path.write_text('Rebuild the timer view on each change.', encoding='utf-8')
     gc = root(project, specification={'uri': 'file:timer-spec.md', 'revision': fingerprint(path.read_text())})
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Keep the timer visible.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Keep the timer visible.'))
     review = assess(ctx(project, 'gc-one', summary='View rebuild drops selection.', evidence=['Selection lost.'], key='r'))
     SERVICE.bind(ctx(project), review['assignment_id'], 'fqc')
     change_ctx = ctx(project, 'fqc', content='Update timer state while preserving selection.',
@@ -355,9 +355,9 @@ def test_an_amendment_changes_one_record_and_never_erases_the_others(project):
 
 def test_stopped_descendants_and_interrupt_direction_survive_recovery(project, monkeypatch):
     gc = root(project)
-    child = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement countdown.'))
+    child = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement countdown.'))
     SERVICE.bind(ctx(project), child['assignment_id'], 'child')
-    grandchild = SERVICE.delegate(ctx(project, 'child', role='investigator', task='Trace countdown.'))
+    grandchild = SERVICE.delegate(ctx(project, 'child', role='architect', task='Trace countdown.'))
     SERVICE.interrupted(ctx(project), 'child', {'kind': 'change_order', 'body': 'Preserve the current selection.'})
     restored = Orchestration().context(ctx(project), work_id=child['work_id'])
     assert restored['pending_direction'][-1]['body'] == 'Preserve the current selection.'
@@ -373,9 +373,9 @@ def test_stopped_descendants_and_interrupt_direction_survive_recovery(project, m
 
 def test_stop_all_preserves_existing_descendant_stops(project):
     gc = root(project)
-    child = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement countdown.'))
+    child = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement countdown.'))
     SERVICE.bind(ctx(project), child['assignment_id'], 'child')
-    grandchild = SERVICE.delegate(ctx(project, 'child', role='investigator', task='Trace countdown.'))
+    grandchild = SERVICE.delegate(ctx(project, 'child', role='architect', task='Trace countdown.'))
     unrelated = root(project, 'other-gc')
     SERVICE.stopped(ctx(project), work_id=child['work_id'], by='user', direction='Keep this ticket stopped.')
     before = {one['work_id']: SERVICE.assignment(ctx(project), work_id=one['work_id'])
@@ -407,7 +407,7 @@ def test_public_board_completion_with_mixed_write_routes_child_and_gc_assessment
     settings.put('orchestration_reviews', 1, project[1])
     from metaform import changes
     gc = root(project, candidate={'revision': 'board-candidate'})
-    child = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Keep the timer selection.'))
+    child = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Keep the timer selection.'))
     SERVICE.bind(ctx(project), child['assignment_id'], 'worker')
     SERVICE.check_in(ctx(project, 'worker', state='running', summary='The implemented interaction passes.',
         evidence=['Selected control remains selected after duration changes.']))
@@ -463,14 +463,14 @@ def test_reserved_role_calls_preserve_independent_assessment_and_gc_commission(p
 
 def test_repeated_result_key_from_distinct_specialist_calls_reaches_worker(project, monkeypatch):
     root(project)
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement timer controls.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement timer controls.'))
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
     actual = transport(monkeypatch, project)
     actual.running.add('worker')
     children = []
     for number in range(2):
         caller = SERVICE.assignment(ctx(project), work_id=worker['work_id'])['owner_session_id']
-        child = SERVICE.delegate(ctx(project, caller, role='investigator', task=f'Investigate case {number}.',
+        child = SERVICE.delegate(ctx(project, caller, role='architect', task=f'Investigate case {number}.',
                                      key=f'call-{number}'), waiting=True)
         SERVICE.drain(ctx(project))
         session = SERVICE.assignment(ctx(project), work_id=child['work_id'])['owner_session_id']
@@ -588,7 +588,7 @@ def test_blocker_crash_retains_report_and_full_capacity_assessment_progresses(pr
     settings.put('orchestration_reviews', 1, project[1])
     root(project)
     SERVICE.check_in(ctx(project, 'gc-one', state='waiting', summary='Waiting for the worker.'))
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Preserve view state.'))
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
     original = SERVICE.assessment
 
@@ -639,11 +639,11 @@ def test_blocked_helper_chain_never_reassesses_live_gc(project, source):
         blocked = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
     else:
         blocked = assess(ctx(project, 'gc-one', summary='Inspect countdown.', key='first-review'))
-        SERVICE.bind(ctx(project), blocked['assignment_id'], 'reviewer')
+        SERVICE.bind(ctx(project), blocked['assignment_id'], 'architect')
         if source == 'assessment_specialist':
-            blocked = SERVICE.delegate(ctx(project, 'reviewer', role='verifier', task='Inspect alarm.'))
+            blocked = SERVICE.delegate(ctx(project, 'architect', role='planner', task='Inspect alarm.'))
         elif source == 'assessment_commission':
-            request = SERVICE.delegate(ctx(project, 'reviewer', role='unpublished_alarm_expertise', task='Inspect alarm.'))
+            request = SERVICE.delegate(ctx(project, 'architect', role='unpublished_alarm_expertise', task='Inspect alarm.'))
             blocked = SERVICE.assignment(ctx(project), assignment_id=request['creator_assignment_id'])
     SERVICE.bind(ctx(project), blocked['assignment_id'], 'blocked-helper')
     before = {one.id for one in store.work(limit=0).results}
@@ -742,7 +742,7 @@ def test_closed_ticket_consumes_stale_launch_before_runtime_selection(project, m
 def test_pending_blocked_assessment_skips_gc_closed_before_recovery(project, monkeypatch):
     store, _ = project
     gc = root(project)
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Preserve view state.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Preserve view state.'))
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
     with monkeypatch.context() as patch:
         patch.setattr(SERVICE, 'assessment', lambda *args, **kwargs: None)
@@ -784,7 +784,7 @@ def test_legacy_blocked_transition_recovers_source_before_assessment(project, mo
     elif source == 'assessment':
         blocked = assess(ctx(project, 'gc-one', summary='Inspect alarm.', key='original'))
     else:
-        blocked = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Inspect alarm.'))
+        blocked = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Inspect alarm.'))
     SERVICE.bind(ctx(project), blocked['assignment_id'], 'blocked-worker')
     with monkeypatch.context() as patch:
         patch.setattr(SERVICE, 'assessment', lambda *args, **kwargs: None)
@@ -999,10 +999,10 @@ def test_workflow_successor_retains_completed_branch_and_active_child_returns(pr
 
 def test_worker_handoff_keeps_return_route_and_closes_transferred_work_once(project):
     gc = root(project, candidate={'revision': 'in-progress'})
-    worker = SERVICE.delegate(ctx(project, 'gc-one', role='implementer', task='Implement the timer.'))
+    worker = SERVICE.delegate(ctx(project, 'gc-one', role='researcher', task='Implement the timer.'))
     SERVICE.bind(ctx(project), worker['assignment_id'], 'worker')
-    investigation = SERVICE.delegate(ctx(project, 'worker', role='investigator', task='Trace the alarm.'))
-    successor = SERVICE.handoff(ctx(project, 'worker', role='integrator', task='Integrate the current timer.'))
+    investigation = SERVICE.delegate(ctx(project, 'worker', role='architect', task='Trace the alarm.'))
+    successor = SERVICE.handoff(ctx(project, 'worker', role='decomposer', task='Integrate the current timer.'))
     assert successor['candidate'] == {'revision': 'in-progress'}
     assert successor['return_to']['assignment_id'] == gc['assignment_id']
     retained = SERVICE.assignment(ctx(project), work_id=worker['work_id'])
@@ -1012,8 +1012,8 @@ def test_worker_handoff_keeps_return_route_and_closes_transferred_work_once(proj
     SERVICE.returned(ctx(project), investigation['work_id'], 'Alarm trace retained.')
     routes = SERVICE.pending(ctx(project), [successor['work_id']])
     assert any(one['kind'] == 'send' and one['payload'].get('work_id') == investigation['work_id'] for one in routes)
-    SERVICE.bind(ctx(project), successor['assignment_id'], 'integrator')
-    final = SERVICE.handoff(ctx(project, 'integrator', role='verifier', task='Verify the integrated timer.'))
+    SERVICE.bind(ctx(project), successor['assignment_id'], 'decomposer')
+    final = SERVICE.handoff(ctx(project, 'decomposer', role='planner', task='Verify the integrated timer.'))
     SERVICE.returned(ctx(project), final['work_id'], 'Timer integration verified.', evidence=['Alarm remains audible.'])
     assert project[0].ticket(worker['work_id']).work.done
     assert project[0].ticket(successor['work_id']).work.done
@@ -1027,7 +1027,7 @@ def test_worker_handoff_keeps_return_route_and_closes_transferred_work_once(proj
 
 def test_gc_handoff_preserves_gc_validation_and_user_restart_preserves_descendant_stops(project):
     gc = root(project)
-    specialist = SERVICE.handoff(ctx(project, 'gc-one', role='verifier', task='Verify delivery.'))
+    specialist = SERVICE.handoff(ctx(project, 'gc-one', role='planner', task='Verify delivery.'))
     assert SERVICE.assignment(ctx(project), work_id=gc['work_id'])['state'] == 'waiting'
     assert specialist['return_to']['assignment_id'] == gc['assignment_id']
     SERVICE.directed(ctx(project), 'gc-one', {'id': 'user-new-direction', 'body': 'Keep the alarm volume.'})
@@ -1290,13 +1290,13 @@ def test_default_delivery_keeps_report_on_ticket_without_notifications(project, 
     from metaform.modules.orchestration import claim
     assert settings.value('orchestration_reviews', project[1]) == 0
     work = project[0].add_work(Node('element', NODE), None, task='Preserve alarm behavior.', title='Alarm')
-    called = ctx(project, 'owner', work=work.id, role='implementer')
+    called = ctx(project, 'owner', work=work.id, role='researcher')
     called.nouns['session'] = 'owner'
     if start == 'claim':
         assigned = claim(called)
         assert set(assigned) == {'assignment_id', 'state'}
     else:
-        SERVICE.ensure(ctx(project), work.id, role='implementer', session_id='owner')
+        SERVICE.ensure(ctx(project), work.id, role='researcher', session_id='owner')
     assert SERVICE.assignment(ctx(project), work_id=work.id)['return_to'] is None
     SERVICE.check_in(ctx(project, 'owner', state=state, summary='Measured alarm remains audible.',
                          candidate={'revision': 'alarm-a'}, evidence=['Alarm at zero.']))
@@ -1316,7 +1316,7 @@ def test_default_delivery_keeps_report_on_ticket_without_notifications(project, 
 
 def test_child_completion_never_wakes_closed_caller(project):
     gc = root(project)
-    child = SERVICE.delegate(ctx(project, 'gc-one', role='investigator', task='Inspect the caller contribution.',
+    child = SERVICE.delegate(ctx(project, 'gc-one', role='architect', task='Inspect the caller contribution.',
                                  key='closed-caller'), waiting=True)
     project[0].finish_work(gc['work_id'], 'The request was withdrawn.', 'No continuation remains.', outcome='cancelled')
     before = SERVICE.pending(ctx(project))

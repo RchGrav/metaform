@@ -13,7 +13,7 @@ def test_triage_assigns_the_worker_without_taking_its_ticket_session(store, proj
     small_map(store)
     work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Check the alarm.')
     ctx = context('orchestration', project_folder, project='proj', session='triage-request',
-                  surface='mcp', nouns={'work': work.id, 'role': 'verifier'})
+                  surface='mcp', nouns={'work': work.id, 'role': 'planner'})
     assigned = SERVICE.claim(ctx)
     assert assigned['owner_session_id'] is None and assigned['state'] == 'queued'
     assert not store.ticket(work.id).work.taken
@@ -27,7 +27,7 @@ def test_sessionless_ensure_preserves_dispatch_ownership(store, project_folder, 
     if reserved:
         store.take_work(work.id, by='dispatch starting runner')
     ctx = context('orchestration', project_folder, project='proj')
-    assigned = SERVICE.ensure(ctx, work.id, role='verifier', queue=True)
+    assigned = SERVICE.ensure(ctx, work.id, role='planner', queue=True)
     assert assigned['owner_session_id'] is None and assigned['state'] == 'queued'
     assert store.ticket(work.id).work.taken_by == ('dispatch starting runner' if reserved else None)
 
@@ -36,7 +36,7 @@ def test_waiting_worker_keeps_its_ticket_in_doing(store, project_folder):
     small_map(store)
     work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Check the alarm.')
     ctx = context('orchestration', project_folder, project='proj', session='worker',
-                  nouns={'work': work.id, 'role': 'verifier', 'session': 'worker'})
+                  nouns={'work': work.id, 'role': 'planner', 'session': 'worker'})
     SERVICE.claim(ctx)
     ctx.nouns.update(state='waiting', summary='Waiting for timing evidence.')
     SERVICE.check_in(ctx)
@@ -132,7 +132,7 @@ def test_harsh_critic_returns_to_caller_and_routes_new_corrections(store, projec
     verb(ctx, 'map', 'boards', op='add', name='timer-build')
     work = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Keep selection while adjusting time.')
     verb(ctx, 'map', 'work', op='edit', id=work.id, board='timer-build')
-    ctx.nouns.update(work=work.id, role='implementer')
+    ctx.nouns.update(work=work.id, role='researcher')
     caller = SERVICE.claim(ctx)
     SERVICE.bind(ctx, caller['assignment_id'], 'caller')
     review_ctx = context('orchestration', project_folder, project='proj', session='caller', nouns={
@@ -196,7 +196,7 @@ def test_facilitator_critic_reviews_delivered_ticket_and_keeps_correction_return
     verb(ctx, 'map', 'boards', op='add', name='delivered-board')
     delivered = store.add_work(Node('element', 'code.timer.kitchen'), None, task='Preserve alarm selection.')
     verb(ctx, 'map', 'work', op='edit', id=delivered.id, board='delivered-board')
-    built = SERVICE.ensure(ctx, delivered.id, role='implementer', session_id='builder')
+    built = SERVICE.ensure(ctx, delivered.id, role='researcher', session_id='builder')
     SERVICE.returned(ctx, delivered.id, 'Built.', state='delivered')
     request = context('orchestration', project_folder, project='proj', session='facilitator', nouns={
         'role': 'harsh_critic', 'task': 'Review delivered selection behavior.'})

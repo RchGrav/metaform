@@ -687,7 +687,7 @@ def test_assigned_ticket_is_taken_only_for_a_runner_start(dispatch, monkeypatch,
 
     monkeypatch.setattr(SERVICE, 'prepare_runtime', lambda *args, **kwargs: True)
     ctx = context('dispatch', dispatch.folder, project='proj')
-    held = SERVICE.ensure(ctx, dispatch.id, role='verifier', queue=True)
+    held = SERVICE.ensure(ctx, dispatch.id, role='planner', queue=True)
     assert not dispatch.store.ticket(dispatch.id).work.taken
     if outcome == 'blocked':
         prerequisite = dispatch.store.add_work(Node('element', 'code.engine'), None, task='Check timing.')

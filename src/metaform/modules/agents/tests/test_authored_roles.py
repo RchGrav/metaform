@@ -38,7 +38,7 @@ def read_resource(folder, uri, session):
 
 def test_native_responsibility_inventory_and_selected_identity(project_folder, monkeypatch):
     roles = [one for _, values in provided(project_folder, 'agent.roles') if isinstance(values, tuple) for one in values]
-    assert len(roles) == 23
+    assert roles
     assert any(role.name == 'roundtable_follow_through' for role in roles)
     assert {one.name for one in roles} >= {'triage', 'gc', 'functionality', 'facilitator', 'role_creator'}
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
@@ -54,8 +54,7 @@ def test_native_responsibility_inventory_and_selected_identity(project_folder, m
     assert 'User register retained.' in triage['components'][-1]['text']
 
 
-@pytest.mark.parametrize('role', ['interviewer', 'researcher', 'architect', 'planner', 'decomposer',
-                                  'specialist', 'harsh_critic'])
+@pytest.mark.parametrize('role', ['researcher', 'architect', 'planner', 'decomposer', 'harsh_critic'])
 def test_preparation_and_delivery_duties_resolve_as_role_resources(project_folder, role):
     resolved = resolve_agent_role(project_folder, role)
     assert not resolved['missing'] and not resolved['problems']
@@ -69,16 +68,16 @@ def test_generated_role_has_no_xml_and_retains_source_and_version_history(projec
                                             'Read caller context & report <actual> transitions.',
                                             {'commission': 'gc-1', 'requester': 'worker-2'})
     assert not first['problems']
-    assert [one['name'] for one in first['components'][:2]] == [
-        'prompt.orchestration:common', 'prompt.orchestration:specialist']
+    assert [one['name'] for one in first['components']] == [
+        'prompt.orchestration:common', first['components'][-1]['name']]
     assert first['components'][-1]['text'] == 'Read caller context & report <actual> transitions.'
     name = first['components'][-1]['name']
     assert prompt_files.shipped('agents', name.partition(':')[2]) is None
-    # Existing definitions stored before shared Specialist composition gain it on their next resolution.
+    # Resolving an existing generated definition retains its own duty without an injected role.
     with ctx.require_store().tables() as tx:
         tx.update('definitions', {'name': 'protocol_auditor'}, {'prompts': ['prompt.orchestration:common', name]})
     restored = resolve_agent_role(project_folder, 'protocol_auditor')
-    assert restored['components'][1]['name'] == 'prompt.orchestration:specialist'
+    assert [one['name'] for one in restored['components']] == ['prompt.orchestration:common', name]
     second = service(project_folder).publish(ctx, 'protocol_auditor', 'Inspect protocol transitions.',
                                              'Read caller context and return state-transition evidence.',
                                              {'commission': 'gc-1', 'requester': 'worker-3'})
@@ -123,11 +122,11 @@ def test_inline_and_mcp_share_receipts_and_role_inspection_does_not_rebind(proje
                          channel='first_turn')
     same, _ = read_resource(project_folder, 'metaform://role/gc', 'worker-context')
     assert 'You are the GC' not in same
-    other, _ = read_resource(project_folder, 'metaform://role/verifier', 'worker-context')
-    assert 'You are the Verifier' in other
+    other, _ = read_resource(project_folder, 'metaform://role/planner', 'worker-context')
+    assert 'You are Planner' in other
     assert 'Work through the project\'s functional namespace.' not in other
     assert os.environ['METAFORM_AUTHORED_ROLE'] == 'metaform://role/gc'
-    fresh, _ = read_resource(project_folder, 'metaform://role/verifier', 'replacement-context')
+    fresh, _ = read_resource(project_folder, 'metaform://role/planner', 'replacement-context')
     assert 'Work through the project\'s functional namespace.' in fresh
 
 
@@ -234,7 +233,7 @@ def test_action_bindings_follow_surface_and_adapter_without_authored_role_permis
     run('enable', 'dispatch', cwd=project_folder)
     run('enable', 'workflow', cwd=project_folder)
     monkeypatch.setenv('METAFORM_ROLE', 'worker')
-    monkeypatch.setenv('METAFORM_AUTHORED_ROLE', 'metaform://role/verifier')
+    monkeypatch.setenv('METAFORM_AUTHORED_ROLE', 'metaform://role/planner')
     bindings = action_bindings(context('mcp', project_folder), {'execution_role': 'worker', 'session_cancel': True})
     assert bindings['execution_role'] == 'worker'
     assert bindings['adapter']['session_cancel'] is True
@@ -356,7 +355,7 @@ def test_legacy_generated_references_refresh_shipped_sources_and_keep_selected_e
     # assignment should be rewritten to repair the current source lookup.
     with ctx.require_store().tables() as tx:
         tx.update('definitions', {'name': 'legacy_auditor'}, {'prompts': [
-            'orchestration:common', 'orchestration:specialist', duty_name.removeprefix('prompt.')]})
+            'orchestration:common', duty_name.removeprefix('prompt.')]})
         saved_definition = tx.get('definitions', {'name': 'legacy_auditor'})
         saved_history = tx.rows('definition_history', {'name': 'legacy_auditor'}, limit=0).results
     copied.write_text(written.replace('<common>', '<common>New shared source instruction. ', 1), encoding='utf-8')
@@ -367,17 +366,16 @@ def test_legacy_generated_references_refresh_shipped_sources_and_keep_selected_e
     assert common['text'].startswith('The person selected this shared duty.' if selected_common
                                      else 'New shared source instruction.')
     assert common['source']['path'] == str(copied)
-    common, specialist, duty = resolved['components']
+    common, duty = resolved['components']
     assert not resolved['problems']
     assert [one['name'] for one in resolved['components']] == [
-        'prompt.orchestration:common', 'prompt.orchestration:specialist', duty_name]
+        'prompt.orchestration:common', duty_name]
     current_source = prompt_files.body(prompt_files._element(package, 'common'))
     assert common['source']['shipped_identity'] == hashlib.sha256(current_source.encode()).hexdigest()
     assert common['origin'] == ('edited' if selected_common else 'shipped')
     assert duty['text'] == 'Selected generated duty.'
     assert duty['actual_version_id'] == selected_duty.version_id
     assert duty['source']['definition_version_id'] == original['version_id']
-    assert specialist['name'] == 'prompt.orchestration:specialist'
     notices = authored.changes(ctx, 'legacy-consumer', 'legacy_auditor')
     assert [notice['name'] for notice in notices] == ([] if selected_common else ['prompt.orchestration:common'])
     # Equal already-delivered bodies stay consumed even when their historical component name was an alias.

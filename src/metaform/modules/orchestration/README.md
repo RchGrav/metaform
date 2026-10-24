@@ -9,10 +9,10 @@ operational execution role are recorded separately.
 The user-facing triage agent stays available for questions, overrides and board priorities. A ticket belongs directly to selected reusable specialist expertise, with its exact versioned duty at `metaform://specialist/<name>`. A missing specialty automatically commissions one bounded Facilitator; concurrent requests for the same specialty share that helper and resume their own contributions after publication.
 
 Procedural responsibilities keep `metaform://role/<name>`; reusable domain expertise uses
-`metaform://specialist/<name>`. The 23 procedural definitions and 39 registered domain definitions retain their
-names, complete duty text and prompt-store histories. Provider classification (`AgentRoleDefinition.specialist`)
-determines the URI, including generated or installed expertise. The shared procedural duty
-`metaform://role/specialist` remains a role resource. The directory `metaform://specialists` lists expertise
+`metaform://specialist/<name>`. Remaining procedural definitions and registered domain expertise retain their own
+complete duty text and prompt-store histories. Provider classification (`AgentRoleDefinition.specialist`)
+determines the URI, including generated or installed expertise. Generated expertise receives common grounding
+and its own duty. The directory `metaform://specialists` lists expertise
 without its duty bodies. Instruction bodies, selected versions, assignment identities and recorded return routes
 are preserved; newly resolved resources use the classified namespace.
 

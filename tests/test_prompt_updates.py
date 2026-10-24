@@ -92,10 +92,10 @@ def test_new_context_fill_places_remain_operational_after_selected_merge(home):
     name = 'prompt.mcp:role_worker'
     current, format = source_of(name)
     seed_selected(name, before_of(name, current), format)
-    selected = prompt_files.resolve(name, assignment='assignment actual-7', authored_role='metaform://role/verifier',
+    selected = prompt_files.resolve(name, assignment='assignment actual-7', authored_role='metaform://role/planner',
                                      categories='Actual enabled tools')
     assert 'assignment actual-7' in selected['text']
-    assert 'metaform://role/verifier' in selected['text']
+    assert 'metaform://role/planner' in selected['text']
     assert 'Actual enabled tools' in selected['text']
     assert '<assignment' not in selected['text']
 

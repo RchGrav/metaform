@@ -45,7 +45,7 @@ def test_three_related_cards_reuse_acp_context_and_current_tool_identity(
                 run('map', 'work', 'op=edit', f'id={work_id}', 'agent=claude', 'model=small', 'effort=high',
                     cwd=project_folder)
             ctx = context('orchestration', project_folder, project='proj', nouns={
-                'work': work_id, 'role': 'implementer', **({'continue_from': prior} if prior else {})})
+                'work': work_id, 'role': 'researcher', **({'continue_from': prior} if prior else {})})
             SERVICE.claim(ctx)
             result = SERVICE.drain(ctx, [work_id])
             assert result, SERVICE.pending(ctx, [work_id])
@@ -94,18 +94,18 @@ def test_changed_consumed_prompt_reaches_next_real_turn_as_reference_once(
     live = Dispatch(run, home, project_folder, tmp_path, orchestration=True)
     try:
         worker = busy(live)
-        worker.runner, worker.authored_role, worker.spoken = 'prompt-consumer', 'metaform://role/implementer', True
+        worker.runner, worker.authored_role, worker.spoken = 'prompt-consumer', 'metaform://role/researcher', True
         agent_ctx = context('agents', project_folder, project='proj')
-        before = roles.resolve(agent_ctx, 'implementer')
+        before = roles.resolve(agent_ctx, 'researcher')
         roles.record(agent_ctx, worker.runner, before['components'], channel='mcp_resource')
-        original = next(one for one in before['components'] if one['name'] == 'prompt.orchestration:implementer')
+        original = next(one for one in before['components'] if one['name'] == 'prompt.orchestration:researcher')
         replacement = str(original['text']) + '\nKeep the exact source exception.'
-        prompt_files.save_edit('prompt.orchestration:implementer', replacement, format='text')
+        prompt_files.save_edit('prompt.orchestration:researcher', replacement, format='text')
         worker.turn('Continue with the next local step.')
         [first] = sent(monkeypatch, worker)
         [notice] = json.loads(first.partition('\n\n')[2])['prompt_changes']
-        assert notice['name'] == 'prompt.orchestration:implementer'
-        assert notice['read'] == {'tool': 'agents_resolve', 'arguments': {'name': 'implementer'}}
+        assert notice['name'] == 'prompt.orchestration:researcher'
+        assert notice['read'] == {'tool': 'agents_resolve', 'arguments': {'name': 'researcher'}}
         assert 'Keep the exact source exception.' not in first, 'A revision notice is not an unsolicited body replay.'
         worker.turns = 1
         worker.turn('Continue once more.')

@@ -31,7 +31,7 @@ def shared_caller(project, monkeypatch):
         original = update(tx, original, state='waiting')
     current = assigned(project, monkeypatch, 'Make a related local improvement.', previous=original['work_id'])
     SERVICE.bind(ctx(project), current['assignment_id'], 'shared', runner='retained-runner')
-    child = assigned(project, monkeypatch, 'Collect the requested original evidence.', role='reviewer')
+    child = assigned(project, monkeypatch, 'Collect the requested original evidence.', role='architect')
     with own(ctx(project)).tables() as tx:
         child = update(tx, child, state='returned', return_to={'assignment_id': original['assignment_id']})
     envelope = {'id': 'original-child-result', 'assignment_id': original['assignment_id'],

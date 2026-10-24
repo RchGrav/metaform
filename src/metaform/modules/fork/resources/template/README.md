@@ -38,8 +38,9 @@ Shipped modules and a user's modules share these public services, BASE-004 and Q
 
 An `AgentRoleDefinition` contributed through `Provides('agent.roles', definitions)` uses its `uri` property
 for resource identity: reusable domain expertise (`specialist=True`) is `metaform://specialist/<name>`;
-procedural or framework responsibilities (`specialist=False`) are `metaform://role/<name>`. The shared
-`metaform://role/specialist` execution duty remains procedural. Keep the classification independent of tasks,
+procedural or framework responsibilities (`specialist=False`) are `metaform://role/<name>`.
+Domain expertise receives common grounding and its own duty, without an injected generic specialist role.
+Keep the classification independent of tasks,
 prompt-store source names and adapter execution roles.
 
 ## Optional context change references
