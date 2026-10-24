@@ -20,6 +20,6 @@ Removed intake's automatic critic notes, assessment writes and repair-ticket cre
 
 Tests use isolated homes and local test adapters. No production model session was started or live Metaform server restarted. Actual model execution and a complete browser run were not validated.
 
-Hermes remains at 69 elements and 69 purpose records. The accidental critic layer was removed through MCP. The supplied block-correction XML has not been applied, and no synthetic relationships were added.
+Hermes intake was subsequently completed in the existing map: 82 elements, 88 purpose records and five ICE blocks. The correction XML is applied, with nine additional source-backed receiving purposes connecting its new parts to their existing parents. The original records remain intact. Only the base and sources layers exist, and no repair tickets were created. See [Hermes intake completion](2026-10-24-hermes-intake.md).
 
 Checkpoint before these repairs: branch `recovery/pre-intake-note-removal-20261024`, commit `94e809b754c74ef8dcd1e13967af292e2cabd714`. Unrelated working-tree changes and user files under `rich/` remain untouched.
