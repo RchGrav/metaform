@@ -1,0 +1,29 @@
+Generated specialist roster reset, 2026-10-24
+
+User direction: wipe the existing specialists; they are created on demand.
+Project: metaform (/home/rich/metaform)
+Source checkpoint: 87bb1e5a558b3ff2794f9ac96235fd0c89f57760
+
+Done:
+- Removed all 39 active generated specialist definitions and their cached registrations.
+- Cleared 26 cached routing selections for those specialists.
+- Superseded 5 old creation requests whose owners had ended or no longer existed.
+- Current specialist provider inventory is empty. Each of the 39 cleared identities
+  resolves as missing in a fresh process.
+- On-demand publication still works, including reuse of a cleared specialist name.
+  Checked in a separate temporary project; no test role was added to the live project.
+
+Preserved:
+- Creation code and remaining procedural roles. No product code or schema changed.
+- Definition history, prompt versions, delivery receipts and conversation records.
+- All 26 historical specialist assignments and their closed tickets/output.
+- Other projects and concurrent repository edits. No running services restarted.
+
+The agents database had 0 active generated definitions after the reset.
+The 41 historical definition records were preserved.
+This supersedes the earlier procedural-role report's then-current statement that
+39 active specialist definitions remained. It is a one-time local state reset,
+not an automatic deletion policy for specialists subsequently created on demand.
+
+Exact affected rows, including their previous request states, are backed up at:
+/home/rich/.metaform/backups/specialist-reset-20261024T085441Z/affected-rows.json
