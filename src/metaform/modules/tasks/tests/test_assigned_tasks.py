@@ -72,6 +72,7 @@ def test_user_agent_preserves_canonical_source_and_binds_only_project(project_fo
 @pytest.mark.parametrize(('name', 'fingerprint'), [
     ('worker', 'a5ba149a43837f71fdbe369229cda5ae25f0cfd7421aecb60cb801a9a8860f7d'),
     ('facilitator', '292502a388d048f0511acc80d46ec25a8025c6296622317887b9c68e75a66781'),
+    ('architect', '7ff67eb19829ce5f3bf92ecc9347a4fe6bcca7bc6afbb9098e1836d6973391cc'),
 ])
 def test_authored_task_source_and_delivered_component_preserve_user_wording(project_folder, name, fingerprint):
     canonical = (tasks.PACKAGE / 'resources' / f'{name}.txt').read_bytes()
@@ -109,15 +110,16 @@ def test_assignment_is_durable_before_transport_start_without_role_or_ticket(ass
     assert len(adapter.started) == 1
 
 
-def test_named_task_retains_exact_component_and_assignment_input(assigned):
+@pytest.mark.parametrize('name', ['user_agent', 'architect'])
+def test_named_task_retains_exact_component_and_assignment_input(assigned, name):
     ctx, lifecycle, adapter = assigned
-    ctx.nouns.update(name='user_agent', project_name='Bound Project', text='Focus on the current question.')
+    ctx.nouns.update(name=name, project_name='Bound Project', text='Focus on the current question.')
     created = tasks.assign(ctx)
     payload = lifecycle.assignment(ctx, created['task_id'])['payload']
     assert payload['instructions'] == tasks.definition(ctx)['instructions']
     assert payload['component'] == tasks.definition(ctx)['component']
     assert payload['input'] == 'Focus on the current question.'
-    assert payload['interactive'] is True
+    assert payload['interactive'] is (name == 'user_agent')
     assert adapter.started[0]['payload'] == payload
 
 

@@ -1,7 +1,7 @@
 # Assigned tasks and project skills
 
 Tasks define assigned work. Skills supply instructions selected as the agent's functional context changes.
-The four named tasks are:
+The named tasks are:
 
 | Task | Purpose | Canonical instruction file |
 | --- | --- | --- |
@@ -9,8 +9,9 @@ The four named tasks are:
 | `worker` | Remain available for paired project work and discover node expertise. | `resources/worker.txt` |
 | `ticket_creation` | Write a ticket for two agents, with a summary and intended allocation. | `resources/ticket_creation.txt` |
 | `facilitator` | Author reusable skills or skills attached to a receiving element. | `resources/facilitator.txt` |
+| `architect` | Expand refined plans into technical specifications grounded in the project. | `resources/architect.txt` |
 
-The user-authored User Agent, Worker and Facilitator prompts are preserved in their resource files. Delivery binds
+The user-authored User Agent, Worker, Facilitator and Architect prompts are preserved in their resource files. Delivery binds
 `{project}` and the worker's `{name variable}`. The later instruction to end a finished run is kept separately in
 `resources/worker_lifetime.txt` and appended for workers, preserving the original Worker prompt.
 

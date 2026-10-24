@@ -23,6 +23,7 @@ DEFINITIONS = {
     'worker': 'Persistent paired project work with node-scoped expertise.',
     'ticket_creation': 'Write a project ticket for a pair of agents.',
     'facilitator': 'Author portable reusable or receiver-bound expertise skills.',
+    'architect': 'Expand refined plans into codebase-grounded technical specifications.',
 }
 
 
