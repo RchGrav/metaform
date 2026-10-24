@@ -24,12 +24,13 @@ from .selection import LayerRow
 from .session import Tx
 
 EDITABLE: dict[str, tuple[str, ...]] = {
-    'element': ('name_length', 'name', 'role', 'within', 'note'),  # never the address: an element cannot be moved, MAP-015
+    # Never the address: an element cannot be moved by editing it, MAP-015.
+    'element': ('name_length', 'name', 'role', 'within', 'note', 'block'),
     'join': ('receiver', 'elements', 'type', 'purpose', 'ef', 'ifd', 'element', 'note'),  # receiver moves it, MAP-003
     'item': ('value', 'link', 'extra', 'read_first', 'always_show'),  # the flags, LAYER-021
     'property': ('element', 'value', 'extra'),
 }
-TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd', 'note', 'within')
+TEXT_COLUMNS = ('purpose', 'ef', 'type', 'name', 'ifd', 'note', 'within', 'block')
 
 Row = Version
 
@@ -231,14 +232,14 @@ def reused_element(tx: Tx, address: str) -> str | None:
 
 
 def new_element(tx: Tx, found: LayerRow, address: str, *, name_length: Any = None, role: str | None = None,
-                name: str | None = None) -> str:
+                name: str | None = None, block: str | None = None, within: str | None = None) -> str:
     """Write a new element version in a layer, under the id the address held before when nothing holds it now.
 
-    The version is the element: its address, name_length, name and role, STORE-009.
+    The version is the element: its address, name_length, name and role, STORE-009, with optional block and within.
     """
     element_id = reused_element(tx, address) or new_id()
     tx.emit('add', 'element', element_id, found.id, {'mode': 'add', 'address': address, 'name_length': name_length,
-                                                    'name': name, 'role': role})
+                                                    'name': name, 'role': role, 'block': block, 'within': within})
     return element_id
 
 

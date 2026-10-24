@@ -10,10 +10,21 @@ The named tasks are:
 | `ticket_creation` | Write a ticket for two agents, with a summary and intended allocation. | `resources/ticket_creation.txt` |
 | `facilitator` | Author reusable skills or skills attached to a receiving element. | `resources/facilitator.txt` |
 | `architect` | Expand refined plans into technical specifications grounded in the project. | `resources/architect.txt` |
+| `intake` | Analyze a project and record its functional map. | `../intake/resources/intake.xml` |
 
 The user-authored User Agent, Worker, Facilitator and Architect prompts are preserved in their resource files. Delivery binds
 `{project}` and the worker's `{name variable}`. The later instruction to end a finished run is kept separately in
 `resources/worker_lifetime.txt` and appended for workers, preserving the original Worker prompt.
+
+The `intake` task uses the existing intake instruction file as its one source. Task reads, assignments and
+`intake prompt` resolve the same selected editable prompt text. Intake instructions are opaque UTF-8 text:
+their file extension, headings, tags and strings such as `{prompt}` do not define a runtime contract or a
+substitution slot. `--intake-file=<path>` selects a custom instruction file. No XML form or prescribed method
+sections are required, and changes to the authored method remain intact.
+
+Use `metaform tasks read name=intake` to read it and `metaform tasks assign name=intake text="Map this project."`
+to assign it. Assignment keeps the selected instruction body and supplied input separately. The
+`intake prompt text="..."` reader appends a literal request under `## Intake request` without rewriting the body.
 
 Use `metaform tasks` with these operations:
 

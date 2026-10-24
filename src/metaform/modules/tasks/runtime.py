@@ -122,6 +122,8 @@ class Lifecycle:
                'locator': None, 'flow': {'epoch': 0, 'requests': {}, 'routes': {}, 'answered': [],
                                         'pending': {}, 'wait_after': None, 'last_turn': 0},
                'result': None, 'error': None, 'message': 'Starting the assigned agent.', 'cancel_requested': False}
+        if name == 'intake' and isinstance(ctx.nouns.get('intake'), dict):
+            row['payload']['intake'] = dict(ctx.nouns['intake'])
         with own(ctx).tables() as tx:
             tx.insert('assignments', row)
             tx.concern(work_id=row['work_id'], kind='task')
@@ -142,7 +144,8 @@ class Lifecycle:
                           'result': tool_result(str(error), error=True), 'message': str(error)})
         else:
             with own(ctx).tables() as tx:
-                tx.update('assignments', {'task_id': task_id}, {'locator': locator, 'updated': now()})
+                tx.update('assignments', {'task_id': task_id}, {'locator': locator, 'payload': row['payload'],
+                                                             'updated': now()})
         return {'task_id': task_id, 'project_id': project, 'work_id': row['work_id'],
                 'state': launch_state, 'agent': (locator.get('agent') or row['agent']),
                 'session_id': None}
@@ -158,7 +161,10 @@ class Lifecycle:
                     continue
                 return {'task_id': row['task_id'], 'project_id': ctx.project, 'work_id': row['work_id'],
                         'agent': cast(dict[str, Any], row.get('locator') or {}).get('agent'), 'state': 'running', 'session_id': None}
-        component = prompt_files.resolve('prompt.tasks:user_agent.txt', **{'{project}': ctx.project or ctx.folder.name})
+        from . import definition
+        reading = context('tasks', ctx.folder, project=ctx.project, surface=ctx.surface,
+                          session=ctx.session, identity=ctx.identity, nouns={'name': 'user_agent'})
+        component = definition(reading)['component']
         return self.assign(ctx, 'user_agent', component)
 
     def assignment(self, ctx: Context, task_id: str) -> dict[str, Any] | None:

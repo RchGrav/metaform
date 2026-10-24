@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metaform_schema>
+  <description>
+    A functional map records elements and receiver-owned purpose records.
+    This XML illustrates their recursive structure. Record one object per intake tool call.
+    The tool schemas supply the accepted argument names and types.
+  </description>
+  <structure>
+    <metaform id="[result identifier]" description="[artifact type and artifact under examination]">
+      <elements>
+        <element namespace_address="[project element address]"
+                 name_length="[lookback segment count]"
+                 name="[canonical project name]" role="[DE, SE or NE]">
+          <purposes />
+        </element>
+        <element namespace_address="downstream.cqu.[CQU type]"
+                 name_length="[lookback segment count]"
+                 name="[industry title of the CQU role]" role="CQU">
+          <purposes>
+            <purpose type="purpose" purpose="[receiver's operative purpose]"
+                     ef="[provider's encounter function for this encounter]"
+                     ifd="[sends, receives or both]">
+              <elements>
+                <element namespace_address="[providing element address]"
+                         name_length="[lookback segment count]"
+                         name="[canonical project name]" role="[DE, SE or NE]">
+                  <purposes>
+                    <purpose type="purpose" purpose="[this element's operative purpose]"
+                             ef="[its provider's encounter function]" ifd="[sends, receives or both]">
+                      <elements>
+                        <element namespace_address="[next providing element address]"
+                                 name_length="[lookback segment count]"
+                                 name="[canonical project name]" role="[DE, SE or NE]" />
+                      </elements>
+                    </purpose>
+                  </purposes>
+                </element>
+              </elements>
+            </purpose>
+          </purposes>
+        </element>
+      </elements>
+    </metaform>
+  </structure>
+  <optional_element_fields>
+    <block>The element's established numbered ICE identifier, such as BLOCK_001.</block>
+    <within>The namespace address of the element containing this part, when explicitly identified.</within>
+  </optional_element_fields>
+  <rules>
+    <rule>The element owning a purpose record is the RE; its nested element is the PE.</rule>
+    <rule>PE is not a role. An element may receive in one purpose record and provide in another.</rule>
+    <rule>purpose is the only purpose record type.</rule>
+    <rule>An annealed part is an element held by a purpose record one level deeper, in the purposes of the PE it is part of; it is not a separate top-level element.</rule>
+    <rule>An element is written in full where it first appears; where it appears again it carries namespace_address, name_length, name and role only.</rule>
+    <rule>Project elements remain under code, document, media or data regardless of join role.</rule>
+    <rule>upstream.* links external code, document, media or data that provide into the project.</rule>
+    <rule>downstream.cqu.* links external CQUs; other downstream.* entries link external receivers.</rule>
+    <rule>upstream and downstream are project-boundary links, not join-direction namespaces.</rule>
+    <rule>Links are not decomposed and hold no project elements beneath them.</rule>
+    <rule>An element's refs are items of the sources layer, not fields of the metaform.</rule>
+    <rule>Elements and purpose records nest in the same form at every depth. Trace as deep as the artifact's functionality goes; a part stops being traced on its own only where its parent's purpose carries it, never at the depth this template happens to show.</rule>
+  </rules>
+</metaform_schema>

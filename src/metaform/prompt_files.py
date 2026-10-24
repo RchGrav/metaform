@@ -525,15 +525,6 @@ def checked(name: str, text: str, shipped_text: str) -> tuple[str, list[str]]:
     return stored, notices
 
 
-# Served as shipped and never kept in the prompt store or edited: the Canonical Intake, STORE-044 (03-storage.md),
-# and the line that tells an intake agent where its schema is, served with it as part of it, BASE-039. An edit of one
-# would never be sent, so `save_edit` refuses it.
-FIXED = {'prompt.intake:intake.axiom': 'the Canonical Intake, served as shipped and never kept in the prompt store or edited, '
-                                'STORE-044',
-         'prompt.intake:schema_pointer': 'served with the Canonical Intake as part of it, as shipped and never kept in the '
-                                  'prompt store, BASE-039 and STORE-044'}
-
-
 def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 'text',
               shipped_text: str | None = None) -> tuple[PromptVersion, list[str]]:
     """Save an edit of the prompt `name` as its next version, the one gate every surface saves through: for a prompt a
@@ -543,8 +534,6 @@ def save_edit(name: str, text: str, *, parent: int | None = None, format: str = 
     the person, as sentences.
     `shipped_text` is the element's text as a version holds it, for a prompt whose module is not loaded here."""
     from .data import prompts
-    if name in FIXED:
-        raise ValueError(f'{name} is {FIXED[name]}, so an edit of it would never be sent')
     source = shipped_text if shipped_text is not None else _source(name)
     if source is None:
         update = prompt_updates().get(name)
@@ -599,7 +588,7 @@ def readable(version: PromptVersion) -> str:
 def shipped(identifier: str, name: str) -> str | None:
     """The text the loaded module `identifier`, `chassis` or `skills` (the skill registry's) ships for its prompt
     `name` as a version holds it: an element of its prompts.xml, or a file under its resources/ for a name with a dot,
-    such as intake.axiom. None when the module is not loaded or ships no such prompt."""
+    such as intake.xml. None when the module is not loaded or ships no such prompt."""
     folder = _folder(identifier)
     if folder is None:
         return None
@@ -738,15 +727,16 @@ def served(folder: Traversable, name: str, /, **fills: str) -> str:
     return str(resolved['text'])
 
 
-def resolve_text(name: str, text: str) -> dict[str, Any]:
+def resolve_text(name: str, text: str, **fills: str) -> dict[str, Any]:
     """Resolve a whole authored file's selected version without claiming it was delivered to any agent.
 
     Such files are read literally, including historical skill edits labeled XML by an older review surface.
-    Deployment and direct serving therefore use the same text and exact selected version.
+    Deployment and direct serving therefore use the same text and exact selected version. Optional bindings replace
+    only explicit literal markers through the shared component renderer.
     """
     from .data import prompts
     version, notices = _selected_update(prompts.shipped(name, 'text', text))
-    return {**component(name, version.text, version_id=version.version_id),
+    return {**component(name, version.text, version_id=version.version_id, bindings=fills),
             'number': version.number, 'origin': version.origin, 'notices': notices,
             'source': {'kind': 'selected_edit' if version.origin == 'edited' else 'shipped', 'path': None,
                        'shipped_identity': hashlib.sha256(text.encode()).hexdigest()}}
@@ -754,7 +744,7 @@ def resolve_text(name: str, text: str) -> dict[str, Any]:
 
 def served_text(name: str, text: str) -> str:
     """A prompt kept whole in a file, read by the caller as `text`, as the prompt store serves it under `name`, the
-    name `metaform prompts review` gives it (`prompt.intake:intake.axiom`, `prompt.skill.<name>`), STORE-044: the text when it is
+    name `metaform prompts review` gives it (`prompt.intake:intake.xml`, `prompt.skill.<name>`), STORE-044: the text when it is
     the newest version, else the edit saved in its place. The caller fills it as it fills the file."""
     resolved = resolve_text(name, text)
     for notice in resolved['notices']:

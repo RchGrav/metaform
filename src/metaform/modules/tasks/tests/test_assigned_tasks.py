@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 from copy import deepcopy
 
 import pytest
@@ -12,6 +13,14 @@ from metaform.modules import tasks
 from metaform.modules.tasks import runtime
 
 pytestmark = pytest.mark.kind('fixture')
+
+
+@pytest.fixture(autouse=True)
+def task_modules_for_current_home(home):
+    """Each isolated home resets the loader, so use its current module instances."""
+    global tasks, runtime
+    tasks = importlib.import_module('metaform.modules.tasks')
+    runtime = importlib.import_module('metaform.modules.tasks.runtime')
 
 
 class Transport:
@@ -57,8 +66,6 @@ def create(assigned):
 
 def test_user_agent_preserves_canonical_source_and_binds_only_project(project_folder):
     canonical = (tasks.PACKAGE / 'resources' / 'user_agent.txt').read_text(encoding='utf-8')
-    assert hashlib.sha256(canonical.encode()).hexdigest() == \
-        '52af5044e666182d2cb3a2f4aea6ee0e202cf851d56e40a5bd662fccf67a927e'
     ctx = context('tasks', project_folder, nouns={'name': 'user_agent', 'project_name': 'Example & <Project>'})
     definition = tasks.definition(ctx)
     expected = canonical.replace('{project}', 'Example & <Project>')
@@ -69,14 +76,24 @@ def test_user_agent_preserves_canonical_source_and_binds_only_project(project_fo
     assert definition['component']['source']['shipped_identity'] == hashlib.sha256(canonical.encode()).hexdigest()
 
 
-@pytest.mark.parametrize(('name', 'fingerprint'), [
-    ('worker', 'a5ba149a43837f71fdbe369229cda5ae25f0cfd7421aecb60cb801a9a8860f7d'),
-    ('facilitator', '292502a388d048f0511acc80d46ec25a8025c6296622317887b9c68e75a66781'),
-    ('architect', '7ff67eb19829ce5f3bf92ecc9347a4fe6bcca7bc6afbb9098e1836d6973391cc'),
-])
-def test_authored_task_source_and_delivered_component_preserve_user_wording(project_folder, name, fingerprint):
+def test_default_user_agent_uses_the_same_literal_selected_task_document(assigned):
+    from metaform.data import prompts
+
+    ctx, lifecycle, adapter = assigned
+    tasks.definition(context('tasks', ctx.folder, nouns={'name': 'user_agent'}))
+    edited = 'Use {project}. <unclosed> & preserve {prompt}.\n\n'
+    selected = prompts.save_prompt('prompt.tasks:user_agent.txt', edited, format='xml')
+    created = lifecycle.user_agent(ctx)
+    payload = lifecycle.assignment(ctx, created['task_id'])['payload']
+    assert payload['instructions'] == edited.replace('{project}', ctx.project)
+    assert payload['component']['actual_version_id'] == selected.version_id
+    assert adapter.started[0]['payload'] == payload
+
+
+@pytest.mark.parametrize('name', ['worker', 'facilitator', 'architect'])
+def test_authored_task_source_and_delivered_component_preserve_user_wording(project_folder, name):
     canonical = (tasks.PACKAGE / 'resources' / f'{name}.txt').read_bytes()
-    assert hashlib.sha256(canonical).hexdigest() == fingerprint
+    fingerprint = hashlib.sha256(canonical).hexdigest()
     ctx = context('tasks', project_folder,
                   nouns={'name': name, 'project_name': 'Actual Project', 'agent_name': 'Actual Agent'})
     result = tasks.definition(ctx)
@@ -84,6 +101,69 @@ def test_authored_task_source_and_delivered_component_preserve_user_wording(proj
     assert result['instructions'] == expected
     assert result['component']['text'] == expected
     assert result['component']['source']['shipped_identity'] == fingerprint
+
+
+def test_intake_is_discoverable_and_reads_the_same_opaque_instructions_as_intake_prompt(run, project_folder):
+    from metaform.modules import intake
+
+    ctx = context('tasks', project_folder, nouns={'name': 'intake'})
+    entry = next(row for row in tasks.catalog(ctx)['tasks'] if row['name'] == 'intake')
+    assert entry['uri'] == 'metaform://tasks/definitions/intake'
+    definition = tasks.definition(ctx)
+    authored = intake.RESOURCE.read_text(encoding='utf-8')
+    expected = authored.replace('{project}', 'proj')
+    assert definition['instructions'] == expected
+    assert definition['component']['text'] == expected
+    assert intake.prompt(context('intake', project_folder)) == expected
+    read = json.loads(run('tasks', 'read', 'name=intake', '--json', cwd=project_folder).stdout)
+    assert read['instructions'] == expected
+
+
+@pytest.mark.parametrize(('filename', 'authored'), [
+    ('custom.md', '# Alternative instructions\nKeep {project}, {name variable} and {prompt}.\n\n'),
+    ('custom.xml', '<malformed attr="{prompt}"\nA & B without closing markup.\n'),
+    ('custom.txt', 'Follow the supplied method. No required headings or tags.\n'),
+])
+def test_intake_task_reads_configured_text_without_format_parsing_or_undeclared_substitutions(
+        project_folder, tmp_path, filename, authored):
+    from metaform import settings
+    from metaform.modules import intake
+
+    source = tmp_path / filename
+    source.write_text(authored, encoding='utf-8')
+    settings.put('intake_file', str(source), project_folder)
+    ctx = context('tasks', project_folder, nouns={'name': 'intake'})
+    definition = tasks.definition(ctx)
+    expected = authored.replace('{project}', 'proj')
+    assert definition['instructions'] == expected
+    assert definition['component']['text'] == expected
+    assert intake.prompt(context('intake', project_folder)) == expected
+    assert source.read_text(encoding='utf-8') == authored
+
+
+def test_selected_intake_edit_is_shared_by_task_reads_and_fake_adapter_assignment(assigned):
+    from metaform import prompt_files
+    from metaform.modules import intake
+
+    ctx, lifecycle, adapter = assigned
+    ctx.nouns.update(name='intake', text='Inspect the selected artifact.')
+    initial = tasks.definition(ctx)
+    edited = 'Use this revised method exactly. <unclosed> & {prompt}\n\n'
+    selected, notices = prompt_files.save_edit(initial['component']['name'], edited)
+    assert not notices
+    definition = tasks.definition(ctx)
+    assert definition['instructions'] == edited
+    assert definition['component']['actual_version_id'] == selected.version_id
+    assert intake.prompt(context('intake', ctx.folder)) == edited
+    created = tasks.assign(ctx)
+    row = lifecycle.assignment(ctx, created['task_id'])
+    assert row['name'] == 'intake'
+    assert row['payload']['instructions'] == edited
+    assert row['payload']['component'] == definition['component']
+    assert row['payload']['input'] == 'Inspect the selected artifact.'
+    assert row['payload']['interactive'] is False
+    assert adapter.started[0]['payload'] == row['payload']
+    assert ctx.require_store().active_base() is None
 
 
 def test_assignment_is_durable_before_transport_start_without_role_or_ticket(assigned, monkeypatch):
@@ -110,7 +190,7 @@ def test_assignment_is_durable_before_transport_start_without_role_or_ticket(ass
     assert len(adapter.started) == 1
 
 
-@pytest.mark.parametrize('name', ['user_agent', 'architect'])
+@pytest.mark.parametrize('name', ['user_agent', 'architect', 'intake'])
 def test_named_task_retains_exact_component_and_assignment_input(assigned, name):
     ctx, lifecycle, adapter = assigned
     ctx.nouns.update(name=name, project_name='Bound Project', text='Focus on the current question.')

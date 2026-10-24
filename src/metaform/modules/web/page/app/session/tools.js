@@ -10,7 +10,7 @@ import {select} from '/page/app/selection/select.js';
 import {dated, linked} from '/page/app/board/refs.js';
 import {wrote} from '/page/app/board/history.js';
 import {confirmAct} from '/page/app/core/controls.js';
-import {ticketOf, ticketPart, PROMPT_WORDS} from '/page/app/agents/dispatch.js';
+import {D, ticketOf, ticketPart, PROMPT_WORDS} from '/page/app/agents/dispatch.js';
 import {agentName} from '/page/app/agents/pickers.js';
 
 /* ---------- an agent's session as ACP gives it, VIEW-039 and BASE-052 ----------
@@ -22,7 +22,10 @@ export function clip(text, most) {
   const said = String(text ?? '');
   return said.length > most ? said.slice(0, most - 1).trimEnd() + '…' : said;
 }
-export const isIntake = workId => String(workId || '').startsWith('intake-');
+export const isIntake = (workId, session = null) => {
+  const known = session || D.sessions.findLast(one => one.work_id === workId);
+  return known?.task_name ? known.task_name === 'intake' : String(workId || '').startsWith('intake-');
+};
 /* Whether a work id is a helper's, one the system agent started with a brief, dispatch helper: it is never a ticket. */
 export const isHelper = workId => String(workId || '').startsWith('helper-');
 /* Whether a session is the person's own system agent, by what its runner says it is, `role`, and for a session from

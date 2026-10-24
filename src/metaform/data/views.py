@@ -48,7 +48,8 @@ def element(tx: Tx, element_id: str, res: Resolver | None, layers: dict[str, Lay
     length = current['name_length'] if whole_number(current['name_length']) else None
     return operations.decorate(tx, Element(element_id, address, current.layer_id, known[current.layer_id].name,
                    reading(address), short_name(address, length), current['name_length'], current['role'],
-                   name=current['name'], within=current['within'], note=current['note']))
+                   name=current['name'], within=current['within'], note=current['note'],
+                   block=current.fields.get('block')))
 
 
 def held(tx: Tx, join_row: int) -> tuple[Held, ...]:

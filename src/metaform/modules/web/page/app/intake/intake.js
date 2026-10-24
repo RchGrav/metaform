@@ -22,14 +22,14 @@ import {LIVE, following, recordingNow} from '/page/app/live/stream.js';
  * An agent the person chooses runs the project's intake and records the map as it goes; the page follows the intake
  * being recorded, so the map grows here. A project with no map offers it first; Administration offers it again, to map
  * the project anew or to check the map against it. While it runs, a bar over the map says so, with its chat and Stop.
- * Its work id, `intake-…`, is never a ticket. */
+ * Its named task has a `task-…` work id; historical intakes used `intake-…`. Neither is a ticket. */
 export const INTAKE = {work: null, session: null, agent: null, waiting: 0, closed: new Set(), resume: false,
   map: null};
 // closed: the runs whose bar the person closed with its ×
 /* An intake agent under way: starting, launched and its session not made yet, or running. The server's one record of
  * it is read with the sessions, `dispatch sessions` listing a launch as starting, so every tab and every surface agrees
  * whichever surface launched it, UX review round 1 (2026-10-17) cross-surface F1. */
-const underWay = one => isIntake(one.work_id) && (one.state === 'running' || one.state === 'starting');
+const underWay = one => isIntake(one.work_id, one) && (one.state === 'running' || one.state === 'starting');
 export const intakeRunning = () => Boolean(INTAKE.session && underWay(INTAKE.session));
 /* The intake agent of this project, as the sessions read says it: one starting or running. */
 export async function readIntake(signals = []) {
@@ -199,7 +199,7 @@ async function startIntake() {
 function showIntakeRefusal(body) {
   const box = $('#intake .failed'), next = body?.next || '';
   const acts = [];
-  const running = /dispatch stop (intake-[0-9a-f]+)/.exec(next);
+  const running = /dispatch stop ((?:intake|task)-[0-9a-f]+)/.exec(next);
   if (/resume=true/.test(next)) {
     acts.push(h('button', {class: 'btn sm', type: 'button', onclick: () => takeOver(box)}, 'Take it over'));
   }

@@ -1,4 +1,4 @@
-"""Map construction uses exact canonical grammar, with separately versioned operation guidance."""
+"""Map guidance is editable instruction text, independent of intake prompt markup."""
 from __future__ import annotations
 
 import asyncio
@@ -14,60 +14,53 @@ from metaform.modules.map import guidance
 pytestmark = pytest.mark.kind('fixture')
 
 
-def test_construction_guide_preserves_served_grammar_and_original_xml_examples(project_folder):
-    actual = guidance.construction_component(context('map', project_folder))
-    axiom = (guidance.INTAKE / 'intake.axiom').read_bytes().decode('utf-8')
-    xml = (guidance.INTAKE / 'intake.xml').read_bytes().decode('utf-8')
-    start = axiom.index('@CONSTRAINT:')
-    assert axiom[start:axiom.index('@CONDITION (INTAKE_STATUS)', start)].strip() in actual['text']
-    for marker, following in (('@CONDITION (NS_VALID)', '@CONDITION (CQU_VALID)'),
-                              ('@CONDITION (CQU_VALID)', '@CONDITION (ROLE_ASSIGN)'),
-                              ('@CONDITION (ROLE_ASSIGN)', '@CONDITION (STATE_MARK)')):
-        start = axiom.index(marker)
-        assert axiom[start:axiom.index(following, start)].strip() in actual['text']
-    start = xml.index('<namespace_rules>')
-    assert xml[start:xml.index('</namespace_rules>', start) + len('</namespace_rules>')] in actual['text']
-    for declaration in ('{Roots}', '{Roles}', '{Purpose_Types}', '{IFD}'):
-        assert next(line for line in axiom.splitlines() if line.lstrip().startswith(declaration)) in actual['text']
-    for term in ('OP', 'EF', 'RE', 'PE', 'CQU'):
-        assert f'<concept term="{term}"' in actual['text']
-    assert 'code.engine.game.platformer' in actual['text'] and 'code.engine.game.fps' in actual['text']
-    assert actual['source']['canonical']['sha256'] == hashlib.sha256(axiom.encode()).hexdigest()
-    assert actual['source']['reference']['sha256'] == hashlib.sha256(xml.encode()).hexdigest()
-    assert actual['rendered_fingerprint'] == hashlib.sha256(actual['text'].encode()).hexdigest()
-
-
-def test_selected_operation_wrapper_retains_exact_canonical_source_and_provenance(project_folder):
+def test_guide_does_not_read_or_parse_intake_instruction_files(project_folder, monkeypatch):
     first = guidance.construction_component(context('map', project_folder))
-    source = prompt_files.shipped('map', 'construction_guide')
-    assert source is not None
-    selected, notices = prompt_files.save_edit(guidance.NAME,
-        prompt_files.plain(source) + '\nCurrent operation-specific reasoning remains available.')
+    read_bytes, read_text = Path.read_bytes, Path.read_text
+
+    def guarded_bytes(path):
+        if path.name == 'intake.xml':
+            pytest.fail('Map guidance must not read or parse the intake instruction body.')
+        return read_bytes(path)
+
+    def guarded_text(path, *args, **kwargs):
+        if path.name == 'intake.xml':
+            pytest.fail('Map guidance must not read or parse the intake instruction body.')
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_bytes', guarded_bytes)
+    monkeypatch.setattr(Path, 'read_text', guarded_text)
+    actual = guidance.construction_component(context('map', project_folder))
+    assert actual['text'] == first['text']
+    assert actual['actual_version_id'] == first['actual_version_id']
+    assert actual['rendered_fingerprint'] == first['rendered_fingerprint']
+
+
+def test_selected_guide_edits_are_opaque_and_retain_their_selected_version(project_folder):
+    first = guidance.construction_component(context('map', project_folder))
+    edited = 'Use the supplied approach. <unclosed> & {prompt}\nNo required headings or method phases.'
+    selected, notices = prompt_files.save_edit(guidance.NAME, edited)
     assert not notices
     actual = guidance.construction_component(context('map', project_folder))
     assert actual['actual_version_id'] == actual['selected_version_id'] == selected.version_id
-    assert actual['source']['wrapper']['kind'] == 'selected_edit'
-    assert actual['source']['canonical'] == first['source']['canonical']
-    assert actual['source']['reference'] == first['source']['reference']
-    assert actual['text'].endswith('Current operation-specific reasoning remains available.')
+    assert actual['text'] == edited
+    assert actual['rendered_fingerprint'] == hashlib.sha256(edited.encode()).hexdigest()
     assert actual['rendered_fingerprint'] != first['rendered_fingerprint']
 
 
-def test_canonical_excerpt_changes_refresh_guide_identity_without_copying_rules(project_folder, tmp_path, monkeypatch):
-    copied = Path(tmp_path / 'canonical')
-    copied.mkdir()
-    for name in ('intake.axiom', 'intake.xml'):
-        (copied / name).write_bytes((guidance.INTAKE / name).read_bytes())
-    monkeypatch.setattr(guidance, 'INTAKE', copied)
+def test_editing_the_intake_task_does_not_rewrite_or_break_map_guidance(project_folder):
+    from metaform.modules import tasks
+
     first = guidance.construction_component(context('map', project_folder))
-    path = copied / 'intake.axiom'
-    path.write_text(path.read_text().replace('@CONDITION (NS_VALID)',
-                                           '@CONDITION (NS_VALID) // source revision', 1))
+    ctx = context('tasks', project_folder, nouns={'name': 'intake'})
+    intake = tasks.definition(ctx)
+    edited = 'Revised intake instructions with no XML sections. <malformed> & {prompt}\n'
+    prompt_files.save_edit(intake['component']['name'], edited)
+    assert tasks.definition(ctx)['instructions'] == edited
     actual = guidance.construction_component(context('map', project_folder))
-    assert '// source revision' in actual['text']
-    assert actual['source']['canonical']['sha256'] != first['source']['canonical']['sha256']
-    assert actual['actual_version_id'] == first['actual_version_id']  # the wrapper did not change
-    assert actual['rendered_fingerprint'] != first['rendered_fingerprint']
+    assert actual['text'] == first['text']
+    assert actual['actual_version_id'] == first['actual_version_id']
+    assert actual['rendered_fingerprint'] == first['rendered_fingerprint']
 
 
 def test_cli_and_explicit_resource_read_share_complete_guide_and_queue_only_delivery(run, project_folder):
@@ -79,7 +72,7 @@ def test_cli_and_explicit_resource_read_share_complete_guide_and_queue_only_deli
     assert guidance.guide(ctx) == expected['text']
     assert len(ctx.context_receipts) == 1
     assert ctx.context_receipts[0]['component'] == expected
-    assert run('map', 'guide', cwd=project_folder).stdout.strip() == expected['text']
+    assert run('map', 'guide', cwd=project_folder).stdout.rstrip('\n') == expected['text'].rstrip('\n')
     read = asyncio.run(read_resource_text(project_folder, guidance.URI, session='other-reader'))
     assert read is not None and read[0] == expected['text']
 

@@ -746,6 +746,13 @@ async def dispatch(ctx: Context) -> dict[str, Any]:
         let_lease_go(lease)
 
 
+def withdrawn_task(store: Store, work_id: str) -> None:
+    with Store(store.project_id, module='dispatch').tables() as tx:
+        tx.delete('raised', {'work_id': work_id})
+        tx.concern(work_id=work_id, kind='session')
+    store.forget_intake_launch(work_id)
+
+
 async def sessions_run(ctx: Context) -> dict[str, Any]:
     """`dispatch`, its session or sessions run."""
     store = ctx.require_store()
@@ -789,6 +796,19 @@ async def sessions_run(ctx: Context) -> dict[str, Any]:
         raise
     resumed = await asyncio.to_thread(worked_in, store, work_id, resume) if resume else None
     if ctx.nouns.get('task'):
+        from .task_sessions import assigned
+        task = await asyncio.to_thread(assigned, ctx, str(ctx.nouns['task']))
+        if task is not None and task['name'] == 'intake':
+            # The launch marker and payload are written under this same lock before the runner consumes them.
+            def hold_recording() -> dict[str, Any] | None:
+                from . import intake_folder
+                with home.file_lock(intake_folder(store) / 'intake.lock'):
+                    return store.hold_intake_agent(work_id)
+            other = await asyncio.to_thread(hold_recording)
+            if other is not None:
+                await asyncio.to_thread(withdrawn_task, store, work_id)
+                raise Stop('Another agent is already recording the intake of this project.',
+                           'metaform intake status')
         return await Session(
             ctx, store, None, agent, command, ctx.nouns.get('cwd') or resumed, prep=True,
             work_id=work_id, resume=resume).run()

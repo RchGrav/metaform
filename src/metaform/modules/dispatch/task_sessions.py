@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import time
+from importlib import resources
 from typing import Any, cast
 
+from metaform import home, prompt_files
 from metaform.data import Store
 from metaform.module import Context, Stop, context, provided
 
@@ -18,12 +20,54 @@ def assigned(ctx: Context, task_id: str) -> dict[str, Any] | None:
 
 class TaskSessions:
     def start(self, ctx: Context, task: dict[str, Any]) -> dict[str, Any]:
-        from . import agent_named, runnable, spawn
+        from . import agent_named, runnable
         called = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
                          session=ctx.session, identity=ctx.identity, nouns={
                              'id': task['work_id'], 'task': task['task_id'], 'prep': True})
         agent = agent_named(str(task.get('agent') or called.setting('dispatch_agent')))
         runnable(called, agent)
+        if task['name'] == 'intake':
+            return self._intake(ctx, called, task, agent)
+        return self._start(ctx, called, task, agent)
+
+    def _intake(self, ctx: Context, called: Context, task: dict[str, Any], agent: str) -> dict[str, Any]:
+        from . import intake_folder, intake_map_choice, refuse_second_intake
+        store = called.require_store()
+        raw: Any = task['payload'].get('intake')
+        selection = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+        choosing = context('dispatch', ctx.folder, project=ctx.project, surface=ctx.surface,
+                           nouns={key: selection[key] for key in ('map', 'name') if key in selection})
+        chosen = intake_map_choice(choosing)
+        with home.file_lock(intake_folder(store) / 'intake.lock'):
+            refuse_second_intake(store)
+            building = store.intake_building().results
+            if building and building[0].recording:
+                held = building[0]
+                raise Stop(f'An agent is recording the intake in layer {held.layer.name} of metaform {held.base} now; '
+                           'two agents would interleave their records in it.', 'metaform intake status')
+            if building and not selection.get('resume'):
+                held = building[0]
+                raise Stop(f'An intake was left unfinished in layer {held.layer.name} of metaform {held.base}, with '
+                           f'{held.parts} parts; resume that intake with resume=true.',
+                           'metaform dispatch intake resume=true')
+            mode = 'resume' if building else 'refine' if chosen.get('map') == 'extend' and store.has_intake() else 'fresh'
+            metadata = {**chosen, 'mode': mode}
+            task['payload']['intake'] = metadata
+            asked = str(task['payload'].get('input') or '')
+            task['payload']['input'] = '## Intake request\n\n' + prompt_files.required(
+                resources.files('metaform.modules.intake'), 'selected_mode', mode=mode, request=asked)
+            noted = {'work': task['work_id'], 'agent': agent, 'since': home.now(), **metadata}
+            store.note_intake_launch(noted)
+            try:
+                started = self._start(ctx, called, task, agent)
+            except Exception:
+                store.forget_intake_launch(str(task['work_id']))
+                raise
+            store.note_intake_launch({**noted, 'pid': started['pid']})
+            return started
+
+    def _start(self, ctx: Context, called: Context, task: dict[str, Any], agent: str) -> dict[str, Any]:
+        from . import spawn
         store = called.require_store()
         payload = {**task['payload'], 'task_id': task['task_id'], 'name': task['name'], 'cwd': task['cwd']}
         with Store(store.project_id, module='dispatch').tables() as tx:
@@ -32,7 +76,7 @@ class TaskSessions:
         try:
             started = spawn(store, task['work_id'], agent,
                             ['prep=true', f'task={task["task_id"]}', f'cwd={task["cwd"]}'],
-                            'task', ctx=called)
+                            'task', kept=bool(ctx.nouns.get('wait')), ctx=called)
         except Exception:
             with Store(store.project_id, module='dispatch').tables() as tx:
                 tx.delete('raised', {'work_id': task['work_id']})

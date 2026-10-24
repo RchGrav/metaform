@@ -26,7 +26,7 @@ def current_dispatch_modules(monkeypatch):
 @pytest.fixture
 def transport(monkeypatch, tmp_path):
     store = SimpleNamespace(project_id='project')
-    ctx = SimpleNamespace(folder=tmp_path, project='project', surface='mcp', session='caller', identity={},
+    ctx = SimpleNamespace(folder=tmp_path, project='project', surface='mcp', session='caller', identity={}, nouns={},
                           require_store=lambda: store, setting=lambda key: 'codex')
     monkeypatch.setattr(task_sessions, 'context', Mock(return_value=ctx))
     task = {'task_id': 'assigned-task', 'work_id': 'task:assigned-task', 'name': 'Investigate',
@@ -51,7 +51,7 @@ def test_start_persists_exact_payload_and_spawns_ticketless_session(monkeypatch,
     assert args[1:3] == (task['work_id'], 'codex')
     assert args[3] == ['prep=true', 'task=assigned-task', f'cwd={task["cwd"]}']
     assert args[4] == 'task'
-    assert kwargs == {'ctx': ctx}
+    assert kwargs == {'ctx': ctx, 'kept': False}
     table, row = transaction.insert.call_args.args
     assert table == 'raised' and row['node'] == ''
     assert json.loads(row['asked']) == {**task['payload'], 'task_id': task['task_id'],

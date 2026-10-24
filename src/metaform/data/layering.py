@@ -408,7 +408,7 @@ def notes_beside(tx: Tx, reason: str, by: str) -> dict[str, Any]:
 # Growing the base -----------------------------------------------------------------------------------------
 #
 # The base grows and is corrected after the intake under the intake's own rules, LAYER-025: what is added is an
-# element (address, name_length, name and role) or a purpose record (receiver, the elements that serve its purpose,
+# element (address, name_length, name, role, block and within) or a purpose record (receiver, its providing elements,
 # purpose, ef and ifd), written by the same writes the intake's records go through, so the same notices hold it to the
 # intake's form. The base holds RE, PE, OP and EF only, so nothing else is a field of what is added here. Every version
 # written carries its reason, evidence and who wrote it. The intake's verification pass and `map refine` both grow the
@@ -445,7 +445,8 @@ def _said(reason: Any, evidence: Any, by: str | None, notices: list[Notice]) -> 
 
 
 def grow_element(tx: Tx, address: Any, *, name_length: Any = None, name: Any = None, role: Any = None,
-                 reason: Any = None, evidence: Any = None, by: str | None = None) -> Any:
+                 block: Any = None, within: Any = None, reason: Any = None, evidence: Any = None,
+                 by: str | None = None) -> Any:
     """Add an element to the finished base, in its own layer, LAYER-025: written as the intake writes one, with the
     same notices, and with its reason, evidence and author. An address the base already holds is returned as it is,
     with the notices `writes.add_element` gives for the fields it did not apply."""
@@ -457,7 +458,8 @@ def grow_element(tx: Tx, address: Any, *, name_length: Any = None, name: Any = N
         _missing({'role': role, 'name': name}, ELEMENT_SHAPE, notices)
     tx.provenance = _said(reason, evidence, by, notices)
     try:
-        made = writes.add_element(tx, found.name, address, name_length=name_length, role=role, name=name)
+        made = writes.add_element(tx, found.name, address, name_length=name_length, role=role, name=name,
+                                  block=block, within=within)
     finally:
         tx.provenance = None
     if isinstance(made, Outcome):
@@ -555,11 +557,13 @@ def move(tx: Tx, thing: str, address: Any, *, reason: Any = None, evidence: Any 
          by: str | None = None) -> Any:
     """Rename an element of the base, or merge it into the element at `address`. An address is an element's identity,
     MAP-015, so the element at the new address takes the old one's place: it is made in the base with the old one's
-    name_length, name and role when the base holds none there. Every purpose record that receives or holds the old
-    element moves to it, as does every item and property of a knowledge layer at it, each as a new version that keeps
-    every earlier one, and the old element is removed. Refs of the sources layer never move: each stays where it was
-    linked and is named, with the call that links its file at the new place. Tickets and memories are moved by the
-    modules that keep them. Returns the element at the new address, with what moved in its notices."""
+    name_length, name, role, block and within when the base holds none there. Every purpose record that receives or
+    holds the old element moves to it, as does every item and property of a knowledge layer at it, each as a new
+    version that keeps every earlier one. Children whose explicit within names the old address name the new one
+    instead, keeping their earlier versions, and the old element is removed. Refs of the sources layer never move:
+    each stays where it was linked and is named, with the call that links its file at the new place. Tickets and
+    memories are moved by the modules that keep them. Returns the element at the new address, with what moved in its
+    notices."""
     found = finished_base(tx)
     if found is None:
         return _unfinished()
@@ -578,7 +582,8 @@ def move(tx: Tx, thing: str, address: Any, *, reason: Any = None, evidence: Any 
         tx.provenance = said
         try:
             made = writes.add_element(tx, found.name, address, name_length=old.fields.get('name_length'),
-                                      role=old.fields.get('role'), name=old.fields.get('name'))
+                                      role=old.fields.get('role'), name=old.fields.get('name'),
+                                      block=old.fields.get('block'), within=old.fields.get('within'))
         finally:
             tx.provenance = None
         assert not isinstance(made, Outcome)
@@ -587,7 +592,11 @@ def move(tx: Tx, thing: str, address: Any, *, reason: Any = None, evidence: Any 
     else:
         target_id = str(target['element_id'])
         notices.append(Notice('to_address', f'{old_address} was merged into the element at {address}, which keeps '
-                                            'its own name, name_length and role.'))
+                                            'its own name, name_length, role, block and within.'))
+    children = [ident for ident, current in tx.base.currents('element')
+                if ident not in (thing, target_id) and current.fields.get('within') == old_address]
+    for child_id in children:
+        _carry(tx, 'element', child_id, {'within': address}, said)
     joins = sorted(set(tx.base.joins_received(thing)) | set(tx.base.joins_holding(thing)))
     for join_id in joins:
         current = versions.current_version(tx.base, 'join', join_id)

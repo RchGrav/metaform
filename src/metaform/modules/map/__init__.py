@@ -866,7 +866,7 @@ def _with_notices(result: Any, notices: list[Notice]) -> Any:
 
 
 STORE_ID = re.compile(r'\b[0-9a-f]{32}\b')
-REFINE_FIELDS = ('name', 'name_length', 'role', 'purpose', 'ef', 'ifd', 'elements')
+REFINE_FIELDS = ('name', 'name_length', 'role', 'block', 'within', 'purpose', 'ef', 'ifd', 'elements')
 NAMING = ('receiver', 'provider', 'address')
 
 
@@ -932,7 +932,7 @@ def promote(ctx: Context) -> Any:
                               **_optional(ctx, 'name', 'name_length', 'role', 'reason'))
 
 
-ELEMENT_SHAPE = ('name', 'name_length', 'role')  # what an element of the base is besides its address, STORE-009
+ELEMENT_SHAPE = ('name', 'name_length', 'role', 'block', 'within')
 JOIN_SHAPE = ('purpose', 'ef', 'ifd')  # what a purpose record of the base is besides its receiver and elements
 
 
@@ -1245,6 +1245,10 @@ REFINE_NOUNS = (
     _noun('to_address', 'An element: its new address. It is renamed, or merged into the element already there, '
                         'and its joins, knowledge, tickets and memories go with it.'),
     _noun('adopt', 'Take an element or join a knowledge layer holds into the base, keeping its id.', 'bool'),
+    _noun('block', 'An element: its numbered ICE block identifier; null clears it.', 'json',
+          {'type': ['string', 'null']}),
+    _noun('within', 'An element: its containing element by namespace address; null clears it.', 'json',
+          {'type': ['string', 'null']}),
     *(_refined_noun(noun) for noun in KNOWLEDGE_NOUNS if noun.name in REFINE_FIELDS),
 )
 

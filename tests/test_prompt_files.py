@@ -213,7 +213,7 @@ def test_a_prompt_written_wrong_in_its_file_is_named_with_its_line_and_the_other
 def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_path):
     """UX review round 2, prompt-authoring F2 and F3: the gate every surface saves through encodes the person's text,
     so &, < and > are sent as written, a declared fill place stays one, and what is saved is what is sent; reads give
-    it back as written. The Canonical Intake is refused, for an edit of it would never be sent."""
+    it back as written. A whole intake file remains arbitrary editable text."""
     from metaform import prompt_files
     from metaform.data import prompts
     folder = tmp_path / 'mine'
@@ -231,13 +231,18 @@ def test_an_edit_is_written_as_plain_text_and_sent_exactly_as_written(home, tmp_
     assert prompt_files.plain(prompts.prompt_version('prompt.mine:greet').text) == \
         'Write <address>: <task> & cite <ref/>, <who />.'
     assert prompts.prompt_version('prompt.mine:greet', 1).origin == 'shipped'  # the edit's parent is the shipped text
-    with pytest.raises(ValueError, match='Canonical Intake'):
-        prompt_files.save_edit('prompt.intake:intake.axiom', 'x')
+    intake_text = '# A different intake\n\nUse these words directly.\n<unclosed & literal < >'
+    edited, notices = prompt_files.save_edit('prompt.intake:intake.xml', intake_text)
+    assert edited.text == intake_text and notices == []
+    selected = prompt_files.resolve_text('prompt.intake:intake.xml', 'The shipped file has different words.')
+    assert selected['text'] == intake_text
+    assert selected['actual_version_id'] == selected['selected_version_id'] == edited.version_id
+    assert selected['problems'] == []
 
 
 def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
     """prompt-authoring F2: `metaform prompt save` of a prompt a module ships stores what is sent and reads it back
-    as written; a save that would not be sent is never stored."""
+    as written. Whole intake files also accept arbitrary text without requiring their old tags."""
     from metaform import prompt_files
     from metaform.data import prompts
     run('prompt', 'save', 'prompt.chassis:work_reminder', 'Hand work on & name its node <here/>.')
@@ -245,5 +250,75 @@ def test_prompt_save_on_the_command_line_goes_through_the_gate(run, home):
     stored = prompts.prompt_version('prompt.chassis:work_reminder')
     assert stored.format == 'xml' and stored.text == 'Hand work on &amp; name its node &lt;here/&gt;.'
     assert run('prompt', 'prompt.chassis:work_reminder').stdout == 'Hand work on & name its node <here/>.'
-    refused = run('prompt', 'save', 'prompt.intake:intake.axiom', 'x', ok=False)
-    assert refused.returncode == 2 and 'never be sent' in refused.stderr
+    intake_text = '# Replacement\n\n[unfinished Markdown]( & <unclosed>\nNo former sections are required.'
+    run('prompt', 'save', 'prompt.intake:intake.xml', intake_text)
+    selected = prompts.prompt_version('prompt.intake:intake.xml')
+    assert selected.text == intake_text
+    assert run('prompt', 'prompt.intake:intake.xml').stdout == intake_text
+    assert prompt_files.resolve_text('prompt.intake:intake.xml', 'Original prompt.')['text'] == intake_text
+
+
+def test_intake_schema_instructions_are_editable_like_other_whole_files(home):
+    from metaform import prompt_files
+    from metaform.data import prompts
+
+    name = 'prompt.intake:metaform.xml'
+    text = 'Choose any source. A < b & <unclosed need no prescribed markup.'
+    selected, notices = prompt_files.save_edit(name, text)
+
+    assert notices == []
+    assert prompt_files.readable(selected) == text
+    assert prompts.prompt_version(name).version_id == selected.version_id
+    assert prompt_files.resolve_text(name, 'Original schema instructions.')['text'] == text
+
+
+@pytest.mark.parametrize('format', ['text', 'markdown', 'xml'])
+def test_whole_file_resolution_serves_selected_edits_literally_regardless_of_stored_format(home, format):
+    from metaform import prompt_files
+    from metaform.data import prompts
+
+    name = 'prompt.intake:intake.xml'
+    source = '<old_layout><old_tag>Original content.</old_tag></old_layout>'
+    prompts.shipped(name, format, source)
+    text = '  # Any replacement\n\n<unknown &amp; <unclosed>\nNo old tags.\n  '
+    edited, notices = prompt_files.save_edit(name, text)
+
+    resolved = prompt_files.resolve_text(name, source)
+
+    assert notices == []
+    assert edited.format == format
+    assert resolved['text'] == text
+    assert resolved['actual_version_id'] == resolved['selected_version_id'] == edited.version_id
+    assert (resolved['number'], resolved['origin']) == (edited.number, 'edited')
+    assert resolved['source']['kind'] == 'selected_edit'
+    assert resolved['source']['path'] is None
+    assert resolved['bindings'] == {}
+    assert resolved['problems'] == resolved['notices'] == []
+    assert prompts.prompt_version(name, 1).text == source
+
+
+def test_whole_file_resolution_applies_only_explicit_literal_bindings_and_preserves_source_metadata(home):
+    from metaform import prompt_files
+
+    name = 'prompt.intake:intake.xml'
+    source = '# Arbitrary words\n{project}\n<unclosed &amp; {task}\n{unknown}\n<who/>\n'
+    before = prompt_files.resolve_text(name, source)
+    text = source + '\nAn edited ending without any required section.'
+    selected, notices = prompt_files.save_edit(name, text)
+    unfilled = prompt_files.resolve_text(name, source)
+    bindings = {'{project}': 'A & <B>', '{task}': 'Keep <raw/> &amp; literal.', 'who': 'Unapplied'}
+
+    resolved = prompt_files.resolve_text(name, source, **bindings)
+
+    assert notices == []
+    assert before['text'] == source
+    assert resolved['text'] == text.replace('{project}', 'A & <B>').replace(
+        '{task}', 'Keep <raw/> &amp; literal.')
+    assert '{unknown}' in resolved['text'] and '<who/>' in resolved['text']
+    assert resolved['bindings'] == bindings
+    assert resolved['actual_version_id'] == resolved['selected_version_id'] == selected.version_id
+    assert resolved['source'] == unfilled['source']
+    assert resolved['number'] == unfilled['number'] == selected.number
+    assert resolved['origin'] == unfilled['origin'] == 'edited'
+    assert resolved['problems'] == resolved['notices'] == []
+    assert resolved['rendered_fingerprint'] != unfilled['rendered_fingerprint']

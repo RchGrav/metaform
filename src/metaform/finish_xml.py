@@ -5,8 +5,8 @@ document. It reads through `roots`, `where` and `graph`, STORE-025, so select, m
 for reviewing what was recorded: the metaform and each CQU in it, as the schema has them, each join under its receiver with its type,
 ifd, purpose and ef, and each element under the join that holds it with its namespace_address, name_length, name and
 role. An element's first occurrence holds its refs, the items the layers in context hold at it, its open work and the
-joins it receives; a later occurrence carries only its four fields. What the trace never reaches is kept under
-`unplaced`, so nothing in view is left out.
+joins it receives; a later occurrence carries only its fields. Block and within are included when recorded.
+What the trace never reaches is kept under `unplaced`, so nothing in view is left out.
 """
 from __future__ import annotations
 
@@ -34,9 +34,14 @@ class _Writer:
             self.open_work.setdefault((record.node_kind, record.node_id), []).append(record)
 
     def fields(self, parent: ET.Element, element: Element | Any) -> ET.Element:
-        return ET.SubElement(parent, 'element', {
+        attributes = {
             'namespace_address': element.address, 'name_length': '' if element.name_length is None else
-            str(element.name_length), 'name': element.name or '', 'role': element.role or ''})
+            str(element.name_length), 'name': element.name or '', 'role': element.role or ''}
+        for field in ('block', 'within'):
+            value = getattr(element, field, None)
+            if value is not None:
+                attributes[field] = value
+        return ET.SubElement(parent, 'element', attributes)
 
     def work(self, parent: ET.Element, node: Node) -> None:
         for record in self.open_work.get((node.kind, node.id), []):

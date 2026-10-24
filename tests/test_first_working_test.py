@@ -22,7 +22,7 @@ from fakes import calls, recorder
 pytestmark = [pytest.mark.kind('simulation'), pytest.mark.req('MCP-024')]
 
 ROOT = Path(__file__).parents[1]
-SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.axiom'  # the served intake
+SPEC = ROOT / 'src' / 'metaform' / 'modules' / 'intake' / 'resources' / 'intake.xml'  # the served intake
 FIXTURE = json.loads((ROOT / 'tests' / 'fixtures' / 'intake_timer.json').read_text(encoding='utf-8'))
 TOOLS = {'intake_prompt', 'intake_start', 'intake_element', 'intake_purpose', 'intake_remove',
          'intake_show', 'intake_finish', 'memory_create_entities', 'memory_open_nodes', 'map_select', 'map_mask',
@@ -133,10 +133,8 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
 
         # 5 and 6: the subagent reads its instructions by name, unaltered.
         served = texts(asked(host, 'intake_prompt', {}, limit=LIMIT))[-1]
-        spec = SPEC.read_text(encoding='utf-8').replace('{prompt}', '', 1)
-        # unaltered, followed at most by the line saying where its schema is, MCP-009 amendment 2026-10-09
-        assert served[:len(spec)] == spec and served[len(spec):].strip().count('\n') == 0
-        assert 'metaform://intake/schema' in served  # the procedure names its schema, or that line does
+        spec = SPEC.read_text(encoding='utf-8').replace('{project}', 'timer')
+        assert served == spec
 
         # 7: the intake is recorded one object per call; a join missing its purpose is stored with a notice naming
         # that field, and nothing is refused.
@@ -165,18 +163,15 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
                                             for subtype in join.get('subtypes', []))]
                 record('intake_purpose', {'receiver': element['namespace_address'], 'elements': held, **{
                     key: value for key, value in join.items() if key in ('purpose', 'ef', 'ifd')}})
-        # The condition of an object is a work record, apart from the map, written by the intake agent with the
-        # element it marks; an agent never adds a ticket through map_work over MCP, MAP-046.
-        record('intake_element', {'namespace_address': 'code.alarm.audible', 'condition': 'trouble',
-                                  'note': 'the pin is never released'})
+        # Project findings remain in the report. Recording a functional map creates no repair tickets.
         report = record('intake_finish', {'report': REPORT, 'feedback': FEEDBACK})
-        assert (report['elements'], report['purposes'], report['work']) == (4, 2, 1)
+        assert (report['elements'], report['purposes'], report['work']) == (4, 2, 0)
         # Each element of the fixture carries its name, kept on the element with no notice.
         assert noticed == ['purpose']
     finally:
         host.close()
 
-    # On a new connection the report, the feedback and the work record are there to read.
+    # On a new connection the report and feedback remain, without automatic repair tickets.
     first, _ = connect()
     second = None
     try:
@@ -186,7 +181,7 @@ def test_a_fresh_machine_reaches_shared_memory_under_layer_selection(tmp_path):
         assert texts(asked(first, 'read_report', {'name': by_kind['report']}, limit=LIMIT)) == [REPORT]
         assert texts(asked(first, 'read_report', {'name': by_kind['feedback']}, limit=LIMIT)) == [FEEDBACK]
         broken = last_json(asked(first, 'map_work', {'condition': 'trouble'}, limit=LIMIT))['results']
-        assert [(row['address'], row['note']) for row in broken] == [('code.alarm.audible', 'the pin is never released')]
+        assert broken == []
         said = last_json(asked(first, 'feedback', {'text': 'The first working test ran.'}, limit=LIMIT))
         relisted = {row['name'] for row in last_json(asked(first, 'list_reports', {}, limit=LIMIT))['results']}
         assert set(said['files']) <= relisted and len(relisted) == 3

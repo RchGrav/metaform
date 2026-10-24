@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [Reading a metaform](../guides/reading-a-metaform.md) · [Working with Metaform](../guides/working-with-metaform.md)
 
-An intake is the first analysis of a project. An agent reads the project, follows the intake procedure, and records the project's functional map, its elements and each receiver's purpose records, one object at a time through the `intake` tool on the Metaform MCP server. This page lists every call the intake uses, what each field means, and how the calls are written inside an Axiom script.
+An intake is an assigned task for analyzing a project. An agent reads its instructions, examines the project, and records the project's functional map through the intake tools on the Metaform MCP server. This page lists those calls and their fields. The task's instructions are editable text.
 
 ## Call notation
 
@@ -24,7 +24,7 @@ The protocol method, `tools/call`, is the same for every tool call and is left o
 
 ### What the notation sends
 
-Every Metaform tool takes the same three fields: `command`, `arguments` and `help`. The notation maps onto them directly.
+The dotted notation is documentation shorthand. Each intake command is an MCP tool named `intake_<command>`, with its fields passed directly as the tool's arguments.
 
 ```
 mcp.metaform.intake.element( namespace_address="downstream.cqu.engineer.context", role="CQU" )
@@ -36,19 +36,16 @@ is sent as:
 {
   "method": "tools/call",
   "params": {
-    "name": "intake",
+    "name": "intake_element",
     "arguments": {
-      "command": "element",
-      "arguments": {
-        "namespace_address": "downstream.cqu.engineer.context",
-        "role": "CQU"
-      }
+      "namespace_address": "downstream.cqu.engineer.context",
+      "role": "CQU"
     }
   }
 }
 ```
 
-In Claude Code the same tool appears as `mcp__metaform__intake`, with the input `{"command": "element", "arguments": {...}}`. Sending `help` with a command name returns that command's fields instead of running it.
+A host may prefix the tool name, for example `mcp__metaform__intake_element`. Use the tool name or catalog route advertised by that host. The tool's input schema describes its fields.
 
 Two protocol methods are not tool calls and have their own forms:
 
@@ -59,36 +56,28 @@ Two protocol methods are not tool calls and have their own forms:
 
 ### Types come from the tool's schema
 
-A script never states a field's type, its allowed values or whether it is optional. The agent reads those from the tool's schema when it makes the call. Restating them in a script makes a second copy that drifts from the tool.
+The tool's schema describes each field's type, allowed values and optionality. The agent reads those when making a call.
 
-What a script does state is meaning the procedure owns: the role terms and their definitions, conventions such as `refs` with the key `path` for a member's location, and rules such as recording one object per call.
+The task instructions describe the requested analysis, terminology and working method.
 
-### Writing calls in an Axiom script
+### Reading and assigning the task
 
-A script binds each call to a short name once, at the top, and uses the name in its steps:
+Read or assign the named intake task:
 
-```
-@RECORD:
-  START    := mcp.metaform.intake.start
-  ELEMENT  := mcp.metaform.intake.element
-  PURPOSE  := mcp.metaform.intake.purpose
-  READBACK := mcp.metaform.intake.show
-  FINISH   := mcp.metaform.intake.finish
+```bash
+metaform tasks read name=intake
+metaform tasks assign name=intake text="Map the current project."
 ```
 
-```
-  ELEMENT( namespace_address={CQU_Base}.<cqu type>, role=CQU )
-  PURPOSE( receiver={CQU address}, elements=[DE address],
-           purpose=the CQU's OP, ef=the DE's EF for this encounter, ifd=... )
-```
+Over MCP, use `tasks_read` or `tasks_assign` with `name="intake"`. Assignment keeps the selected instructions and the supplied assignment input separately. The assigned agent follows the instructions and makes the tool calls.
 
-The binding block lists every tool the script depends on in one place, and a renamed tool changes one line. The agent running the script makes each real call. Nothing in Metaform parses the script.
+The default source is `intake/resources/intake.xml`. Its extension describes the authored file. The runtime reads it as opaque UTF-8 text, with no required tags, headings or method phases. Only the declared common task bindings apply: `{project}` and, when supplied, `{name variable}`. Markdown, plain prose and unfinished markup are otherwise delivered as written. Task reads and `intake prompt` use the same selected prompt version, and edits to the instructions are retained.
 
-A field that holds several values is a list, `elements=[...]`. A field that holds structured data takes objects, `refs=[{"key": "path", "value": "src/timer.py"}]`. A variable in braces, `{Task}`, is a value of the script, and a quoted-key object, `{"key": ...}`, is data.
+A field that holds several values is a list, `elements=[...]`. A field that holds structured data takes objects, `refs=[{"key": "path", "value": "src/timer.py"}]`.
 
 ## Order of calls
 
-1. `intake.prompt` and `intake.schema`: read the procedure and the shape of the map.
+1. `tasks.read name=intake` and `intake.schema`: read the assigned instructions and the shape of the map. `intake.prompt` also returns those instructions.
 2. `intake.start`: open the intake.
 3. `intake.element` and `intake.purpose`, as each object is reasoned, one object per call. The map is never held back and recorded at the end.
 4. `intake.show`: read back what was recorded and correct it with `intake.element`, `intake.purpose` or `intake.remove`.
@@ -99,16 +88,19 @@ A field that holds several values is a list, `elements=[...]`. A field that hold
 ### intake.prompt
 
 ```
-mcp.metaform.intake.prompt( text )
+mcp.metaform.intake.prompt( text, mode )
 ```
 
-Returns the intake procedure for this project, with the procedure's prompt slot filled.
+Returns the effective intake task instructions with the declared project binding applied. A nonempty request follows the complete instruction text under `## Intake request`, with two newlines before the heading, two after it, and a final newline after the request. Existing trailing newlines are preserved. Request text is literal, and strings such as `{prompt}` in the instructions are left untouched.
 
 | Field | Meaning |
 |---|---|
-| `text` | The path to the target of the intake. Left out, the target is this project. |
+| `text` | The target or task for the intake. Left out, the target is this project. |
+| `mode` | Optional `fresh`, `refine` or `resume`. A dispatched intake retains its launch mode when it rereads the procedure. |
 
-The same text is served as the resource `metaform://intake/procedure`. Subagents and some hosts cannot read MCP resources, so the command is the form to use when handing the procedure to another agent.
+The same instructions are available through `tasks read name=intake`, `metaform://tasks/definitions/intake` and `metaform://intake/procedure`.
+
+Set `--intake-file=<path>` to use any UTF-8 instruction file. Its contents and selected prompt edits are shared by task reads, task assignments and `intake prompt`. The runtime does not interpret its filename or markup as a procedure contract. The separate schema remains available through `intake schema`.
 
 ### intake.schema
 
@@ -116,7 +108,7 @@ The same text is served as the resource `metaform://intake/procedure`. Subagents
 mcp.metaform.intake.schema()
 ```
 
-Returns the shape of the metaform: the namespace roots, the upstream and downstream links, and the element and purpose record forms the intake records. The same text is served as the resource `metaform://intake/schema`.
+Returns `resources/metaform.xml`: the namespace roots, the upstream and downstream links, and the element and purpose record forms the intake records. The same XML is served as the resource `metaform://intake/schema`.
 
 ### intake.start
 
@@ -124,7 +116,7 @@ Returns the shape of the metaform: the namespace roots, the upstream and downstr
 mcp.metaform.intake.start( model, role )
 ```
 
-Opens the intake, or resumes the one being recorded. On a project whose intake is finished it stays on that map: conditions, notes and refs recorded on its elements and purpose records are written onto it, and recording a new element or purpose record opens a separate metaform named `intake-<UTC timestamp>`, keeping the earlier one untouched. Returns the metaform's name. An open web view follows the intake live.
+Opens the intake, or resumes the one being recorded. On a project whose intake is finished it stays on that map: refs recorded on its elements and purpose records are written onto it, and recording a new element or purpose record opens a separate metaform named `intake-<UTC timestamp>`, keeping the earlier one untouched. Returns the metaform's name. An open web view follows the intake live.
 
 | Field | Meaning |
 |---|---|
@@ -134,7 +126,7 @@ Opens the intake, or resumes the one being recorded. On a project whose intake i
 ### intake.element
 
 ```
-mcp.metaform.intake.element( namespace_address, name_length, name, role, refs, condition, note )
+mcp.metaform.intake.element( namespace_address, name_length, name, role, block, within, refs )
 ```
 
 Records one element, or records it again. Fields given replace the ones the element had; fields left out are kept.
@@ -145,14 +137,23 @@ Records one element, or records it again. Fields given replace the ones the elem
 | `name_length` | How many of the address's last segments form the element's name, counted from 1. |
 | `name` | The element's name as the project calls it. |
 | `role` | CQU, DE, SE or NE, as the intake procedure defines them. The artifact under examination is not an element; its DE stands for it, MAP-042. |
+| `block` | Optional numbered ICE block identifier, such as `BLOCK_001`, stored as native element metadata. |
+| `within` | Optional namespace address of the element containing this element, stored as native element metadata. |
 | `refs` | Where the element is found: a list of references, each a key and a value, such as `path` and `src/timer.py`. Stored in the `sources` layer. |
-| `condition` | The procedure's mark: `MISS`, `BKN` or `OK`, stored as `missing`, `trouble` and `ok`. `BKN` needs a note saying what is wrong and what corrects it. Left out when the state is not in question. Recording it again replaces the last. Any other word is refused before anything is recorded. |
-| `note` | Free text kept with the element. An exclusion is a note that starts with `exclude:`. |
+
+For `block` and `within`, an omitted field preserves its recorded value, a string assigns it, and explicit JSON `null` clears it. On the CLI these fields take JSON values, so retain the double quotes around a string inside shell quotes:
+
+```bash
+metaform intake element code.alarm.audible 'block="BLOCK_001"' 'within="code.timer.kitchen"'
+metaform intake element code.alarm.audible block=null within=null
+```
+
+`map refine` accepts the same fields and null semantics. Native element reads, `map where` and XML output retain this metadata. Recording it creates no knowledge layer, critic note or repair ticket.
 
 ### intake.purpose
 
 ```
-mcp.metaform.intake.purpose( receiver, elements, purpose, ef, ifd, refs, condition, note )
+mcp.metaform.intake.purpose( receiver, elements, purpose, ef, ifd, refs )
 ```
 
 Records one purpose record: the receiver's purpose, served by the elements the purpose record holds. Recorded again with an element it already holds, the fields given replace its own and new elements are added. A part folded into its parent during annealing is an ordinary element held by a purpose record one level deeper, with the element it is part of as the receiver.
@@ -165,8 +166,6 @@ Records one purpose record: the receiver's purpose, served by the elements the p
 | `ef` | The encounter function, the EF: what the providing elements do for the receiver, in active voice. |
 | `ifd` | The information flow direction: `sends`, `receives` or `both`. |
 | `refs` | Where the purpose record is found: a list of references, each a key and a value. |
-| `condition` | As for `intake.element`. |
-| `note` | Free text kept with the purpose record. |
 
 ### intake.show
 
@@ -174,7 +173,7 @@ Records one purpose record: the receiver's purpose, served by the elements the p
 mcp.metaform.intake.show( receiver )
 ```
 
-Returns the intake being recorded, or the finished map when none is: every element with its fields, refs, open condition and note, every purpose record with the elements it holds and its refs under `purposes`, the CQUs whose root purpose records the map comes off as `roots`, the elements no root purpose record reaches as `disconnected`, and the addresses never described.
+Returns the intake being recorded, or the finished map when none is: every element with its fields and refs, every purpose record with the elements it holds and its refs under `purposes`, the CQUs whose root purpose records the map comes off as `roots`, the elements no root purpose record reaches as `disconnected`, and the addresses never described. An element includes `block` and `within` only when their values are set.
 
 | Field | Meaning |
 |---|---|
@@ -200,7 +199,7 @@ Removes one recorded object while the intake is open. The fields given decide wh
 mcp.metaform.intake.finish( report, feedback )
 ```
 
-Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. The result counts the recorded elements as `elements` and purpose records as `purposes`. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes by refinement, `metaform map refine`, or by another intake, which writes conditions, notes and refs onto it and opens a new metaform only for new shape.
+Finishes the intake and makes the recorded metaform the active one, keeping the earlier one whole. The result counts the recorded elements as `elements` and purpose records as `purposes`. `metaform map activate <previous-name>` switches back. After `finish`, the metaform changes by refinement, `metaform map refine`, or by another intake, which writes refs onto it and opens a new metaform only for new shape.
 
 | Field | Meaning |
 |---|---|

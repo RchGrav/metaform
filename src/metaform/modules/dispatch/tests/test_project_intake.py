@@ -1,4 +1,6 @@
 """Architect designs get their own project before the authored intake runs."""
+import importlib
+import json
 from pathlib import Path
 
 import pytest
@@ -10,13 +12,27 @@ from metaform.module import Context, Stop
 pytestmark = pytest.mark.kind('simulation')
 
 
+def active_dispatch(folder):
+    """Patch the module that supplies the enabled native transport, including loader-owned package aliases."""
+    from metaform.module import provided
+    transport = provided(folder, 'task.transport')[0][1]
+    return importlib.import_module(type(transport).__module__.rpartition('.')[0])
+
+
 @pytest.fixture(autouse=True)
-def enabled(run, tmp_path):
+def enabled(run, tmp_path, monkeypatch):
     run('enable', 'dispatch', cwd=tmp_path)
+    dispatch = active_dispatch(tmp_path)
+    monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
+
+    def no_live_start(*args, **kwargs):
+        pytest.fail('A launch test must replace the enabled transport spawn before assigning an intake.')
+    monkeypatch.setattr(dispatch, 'spawn', no_live_start)
 
 
 def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path, monkeypatch):
-    from metaform.modules import dispatch, intake
+    from metaform.modules import intake
+    dispatch = active_dispatch(tmp_path)
 
     user_home = tmp_path / 'user'
     user_home.mkdir()
@@ -32,13 +48,14 @@ def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path
     launched = []
 
     def launch(store, work_id, agent, flags, mode, *, kept, ctx):
-        assert mode == 'intake' and 'intake=true' in flags
+        assert mode == 'task' and any(flag.startswith('task=') for flag in flags)
+        assert 'intake=true' not in flags and 'system=true' not in flags
         assert ctx.folder == user_home / 'dish-clock-3'
         assert ctx.project == store.project_id == 'dish-clock-3'
         with Store(store.project_id, module='dispatch').tables(write=False) as tx:
-            asked = tx.get('raised', {'work_id': work_id})['asked']
-        assert design in asked
-        assert design in dispatch.intake_prompt(ctx, asked)
+            asked = json.loads(tx.get('raised', {'work_id': work_id})['asked'])
+        assert asked['name'] == 'intake' and design in asked['input']
+        assert asked['instructions'] == asked['component']['text']
         launched.append(ctx)
         return {'pid': 12345}
 
@@ -66,7 +83,7 @@ def test_design_gets_free_folder_registration_and_authored_intake(home, tmp_path
 
 @pytest.mark.parametrize('name,design', [('!!!', 'design'), ('clock', ''), ('clock', '   ')])
 def test_invalid_design_input_creates_nothing(home, tmp_path, monkeypatch, name, design):
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     before = set(tmp_path.iterdir())
@@ -76,7 +93,7 @@ def test_invalid_design_input_creates_nothing(home, tmp_path, monkeypatch, name,
 
 
 def test_failed_launch_keeps_project_for_explicit_retry(home, tmp_path, monkeypatch):
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
@@ -98,7 +115,7 @@ def test_failed_launch_keeps_project_for_explicit_retry(home, tmp_path, monkeypa
 
 @pytest.mark.parametrize('kind', ['file', 'symlink'])
 def test_existing_file_or_dangling_symlink_reserves_name(home, tmp_path, monkeypatch, kind):
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     existing = tmp_path / 'clock'
@@ -122,7 +139,7 @@ def test_existing_file_or_dangling_symlink_reserves_name(home, tmp_path, monkeyp
 
 
 def test_registration_failure_removes_only_created_empty_folder(home, tmp_path, monkeypatch):
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
 
@@ -147,7 +164,8 @@ def test_cli_accepts_design_intake_without_current_project(run, tmp_path):
 @pytest.mark.parametrize('override', [None, 'claude'])
 def test_new_project_keeps_saved_default_after_intake(home, tmp_path, monkeypatch, inherited, override):
     from metaform import settings
-    from metaform.modules import dispatch, intake
+    from metaform.modules import intake
+    dispatch = active_dispatch(tmp_path)
     from metaform.modules.web.server import module_verb
 
     source = tmp_path / 'source'
@@ -190,7 +208,7 @@ def test_new_project_keeps_saved_default_after_intake(home, tmp_path, monkeypatc
 @pytest.mark.parametrize('override', ['agent', 'switch'])
 def test_intake_override_without_saved_default_stays_temporary(home, tmp_path, monkeypatch, override):
     from metaform import settings
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(dispatch, 'runnable', lambda *args: None)
@@ -210,7 +228,7 @@ def test_intake_override_without_saved_default_stays_temporary(home, tmp_path, m
 
 def test_failed_codex_intake_keeps_default_and_error_for_retry(home, tmp_path, monkeypatch):
     from metaform import settings
-    from metaform.modules import dispatch
+    dispatch = active_dispatch(tmp_path)
 
     source = tmp_path / 'source'
     source.mkdir()

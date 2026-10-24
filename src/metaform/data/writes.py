@@ -69,9 +69,10 @@ def _element_fields(name_length: Any, role: Any, found: LayerRow,
 
 
 def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, role: Any = None,
-                name: Any = None) -> Element | Outcome:
+                name: Any = None, block: Any = None, within: Any = None) -> Element | Outcome:
     """Write an element, its address, name_length, name and role, or return the one already at the
-    address, STORE-009. Its name is the canonical name the project uses for it."""
+    address, STORE-009. Its name is the canonical name the project uses for it. Block assignment and an explicit
+    containing element's address are optional metadata."""
     if not isinstance(address, str):
         raise StoreError(f'{address!r} is not an address: an address is text.', 'metaform map where <address>')
     found = rows.layer(tx, layer)
@@ -86,14 +87,17 @@ def add_element(tx: Tx, layer: str, address: Any, *, name_length: Any = None, ro
         assert record is not None
         given = (('name_length', name_length is not None and name_length != record.name_length),
                  ('name', name is not None and name != record.name),
-                 ('role', role is not None and role != record.role))
+                 ('role', role is not None and role != record.role),
+                 ('block', block is not None and block != record.block),
+                 ('within', within is not None and within != record.within))
         notices += [Notice(field, f'{address} is already element {element_id} of layer {record.layer}, which keeps '
                                   f'its own {field}; the {field} given here was not applied.')
                     for field, unapplied in given if unapplied]
         return _with(record, notices, existing=True, differs=any(unapplied for _, unapplied in given))
     length, stored_role, aside = _element_fields(name_length, role, found, notices)
     element_id = rows.new_element(tx, found, address, name_length=length, role=stored_role,
-                                  name=rows.text(name, 'name', notices))
+                                  name=rows.text(name, 'name', notices), block=rows.text(block, 'block', notices),
+                                  within=rows.text(within, 'within', notices))
     rows.split_items(tx, found, 'element', element_id, aside)
     record = views.element(tx, element_id, None)
     assert record is not None

@@ -24,6 +24,7 @@ DEFINITIONS = {
     'ticket_creation': 'Write a project ticket for a pair of agents.',
     'facilitator': 'Author portable reusable or receiver-bound expertise skills.',
     'architect': 'Expand refined plans into codebase-grounded technical specifications.',
+    'intake': 'Map project functionality and record its elements and purpose relationships through MCP.',
 }
 
 
@@ -41,7 +42,16 @@ def definition(ctx: Context) -> dict[str, Any]:
     bindings = {'{project}': project}
     if ctx.nouns.get('agent_name'):
         bindings['{name variable}'] = str(ctx.nouns['agent_name'])
-    component = prompt_files.resolve(f'prompt.tasks:{name}.txt', **bindings)
+    if name == 'intake':
+        from metaform.modules.intake import task_component
+        own = context('intake', ctx.folder, project=ctx.project, surface=ctx.surface,
+                      session=ctx.session, identity=ctx.identity)
+        component = task_component(own, **bindings)
+    else:
+        source = PACKAGE / 'resources' / f'{name}.txt'
+        component = prompt_files.resolve_text(f'prompt.tasks:{name}.txt', source.read_bytes().decode('utf-8'),
+                                              **bindings)
+        component['source'] = {**component['source'], 'path': str(source)}
     return {'name': name, 'project': project, 'instructions': component['text'], 'component': component}
 
 

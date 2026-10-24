@@ -154,7 +154,7 @@ function applyElement(op, layer) {
   if (op.op === 'remove') { S.elements.delete(op.id); return true; }
   const kept = S.elements.get(op.id)?.element || {};
   const element = {...kept, id: op.id, layer_id: op.layer_id, layer: layer.name,
-    ...written(data, ['address', 'name', 'name_length', 'role', 'within', 'note'])};
+    ...written(data, ['address', 'name', 'name_length', 'role', 'within', 'block', 'note'])};
   if (!element.address) return false;
   element.reading = plainWords(element.address);
   element.short_name = shortName(element.address, element.name_length);

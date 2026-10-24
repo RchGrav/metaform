@@ -230,12 +230,13 @@ class Store:
     # ---------------------------------------------------------------- the map
 
     def add_element(self, layer: str | None, address: Any, *, name_length: Any = None, role: Any = None,
-                    name: Any = None) -> Element | Outcome:
+                    name: Any = None, block: Any = None, within: Any = None) -> Element | Outcome:
         """Write an element, its address, name_length, name and role, or return the one already at the
         address, STORE-009."""
         with self._write() as tx:
             named, notice = self._named(tx, layer)
-            return self._noted(writes.add_element(tx, named, address, name_length=name_length, role=role, name=name),
+            return self._noted(writes.add_element(tx, named, address, name_length=name_length, role=role, name=name,
+                                                 block=block, within=within),
                                notice)
 
     def add_join(self, layer: str | None, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None,
@@ -344,12 +345,13 @@ class Store:
             return layering.refine(tx, thing, changes, remove=remove, reason=reason, evidence=evidence, by=by)
 
     def grow_element(self, address: Any, *, name_length: Any = None, name: Any = None, role: Any = None,
-                     reason: Any = None, evidence: Any = None, by: str | None = None) -> Element | Outcome:
+                     block: Any = None, within: Any = None, reason: Any = None, evidence: Any = None,
+                     by: str | None = None) -> Element | Outcome:
         """Add an element to the finished base under the intake's rules, with its reason, evidence and author,
         LAYER-025."""
         with self._write() as tx:
             return layering.grow_element(tx, address, name_length=name_length, name=name, role=role, reason=reason,
-                                         evidence=evidence, by=by)
+                                         evidence=evidence, by=by, block=block, within=within)
 
     def grow_join(self, receiver: Any, elements: Any, *, purpose: Any = None, ef: Any = None, ifd: Any = None,
                   reason: Any = None, evidence: Any = None, by: str | None = None) -> Join | Outcome:

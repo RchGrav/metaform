@@ -15,8 +15,8 @@
      command-line guide while connect_instructions is full. no_intake or unfinished follows it when the folder's state calls for it.
      Empty sends nothing. Off when the module is disabled or hidden in the folder. -->
 <instructions>intake is active.
-When assigned an intake, follow the procedure at resource metaform://intake/procedure, or the intake tool's
-prompt command; the forms it records are at resource metaform://intake/schema.</instructions>
+When assigned an intake, read the task with tasks_read name=intake or resource metaform://tasks/definitions/intake.
+The forms it records are at resource metaform://intake/schema.</instructions>
 <!-- The first-run onboarding: ask the person once whether to analyse the project, then start the intake.
      Follows intake's line in the command-line guide and intake's instructions while the folder has no intake and
      none is being recorded, whether or not the folder is registered. Served whole as metaform://firstrun, which the
@@ -34,36 +34,27 @@ request right after.
 3. If they say yes, do all of this in order without asking again:
 <register/>   b. Start the browser view: the web_start tool. Give them the
       address. If it fails, tell them what it said and stop.
-   c. Read the procedure (the intake_prompt tool) and the schema
-      (the intake_schema tool). Start ONE fresh subagent and give it
-      both texts, exactly as written, as its task. Do not summarize or
-      reword them, do not split the work, and do not do the analysis
-      yourself unless you cannot start a subagent.
+   c. Read the task with tasks_read name=intake and the schema with
+      intake_schema. Assign it with tasks_assign name=intake, supplying
+      the person's target and requested focus as assignment input.
    d. When it finishes, tell them it's done and invite their questions.</no_intake>
 <!-- The registration step, placed in no_intake's <register/> while the folder is not registered; the code indents it.
      Must not be deleted: the code requires it. Empty leaves a blank line in its place. -->
 <register_step>a. Register this folder: the metaform_register tool.</register_step>
-<!-- Tells an agent given only the intake procedure where its schema is.
-     Added to the end of the procedure wherever it is sent (intake prompt, metaform://intake/procedure, /metaform:intake,
-     dispatch intake) unless the procedure already names metaform://intake/schema.
-     Must not be deleted: the code requires it. Empty adds nothing. -->
-<schema_pointer>The schema this procedure binds, metaform.axiom, is at resource metaform://intake/schema, or the intake_schema tool.</schema_pointer>
-<!-- The selected analysis mode, bound inside the procedure's existing Prompt parameter. Dispatch persists this
-     input with its recording destination. The fixed Canonical Intake remains unchanged. One shared section
-     selects the route, so an existing map cannot silently turn a requested fresh survey into refinement. -->
+<!-- Recording mode and request data appended separately from the editable task instructions. -->
 <selected_mode>Selected intake mode: <mode/>
 Use this mode to select the analysis and recording destination. The request below supplies focus within this mode.
 Apply only the selected mode's section. It overrides the procedure's status-based routing.
 
 fresh: Examine project artifacts from the beginning. Call intake_start to open the separate map selected at launch.
-Do not load the previous map into Recorded. Run Survey -> Root_Purpose -> Trace -> Closure -> Anneal -> Proof.
-Existing-map status cannot override fresh mode. A finished intake elsewhere does not skip Survey or Trace.
+Do not use the previous map as the starting analysis. Follow the assigned intake task from the beginning.
+Existing-map status cannot override fresh mode.
 
-refine: Call intake_start, then intake_show to load the existing map into Recorded. Examine current artifacts,
-run Task_Refine and Proof, then finish the verification pass on that map.
+refine: Call intake_start, then intake_show to read the existing map. Examine current artifacts and apply the
+assigned intake task to refine that map, then finish the recording pass.
 
-resume: Call intake_start, then intake_show to load the unfinished intake. Continue its survey and trace,
-complete Closure, Anneal and Proof, then finish that destination. Do not open another map.
+resume: Call intake_start, then intake_show to read the unfinished intake. Continue the assigned intake task
+and finish that destination. Do not open another map.
 
 Preserve previous maps, work records, knowledge and memories. Map activation remains an explicit operation.
 Memories remain project scoped and reconnect at matching addresses. Memory access isolation is not required.
@@ -88,10 +79,9 @@ Request:
     <role>CQU, DE, SE or NE, as defined in the intake procedure.</role>
     <name_length>How many of the address's last segments form the element's name, a whole number from 1, as defined in the intake procedure.</name_length>
     <name>The element's name as the project calls it.</name>
+    <block>The numbered ICE block identifier assigned to this element, such as BLOCK_001. Omit to preserve its assignment; null clears it.</block>
+    <within>The namespace address of the element that contains this part. Omit to preserve its parent; null clears it. This does not change the part's namespace identity.</within>
     <refs>Where the element is found: a list of references, each a key and a value, such as path and src/timer.py.</refs>
-    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
-    <note>Free text about the element, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
-    <same_as>With MISS or BKN, when one defect shows at two parts: the address of the other element, where this intake already recorded it. The finding is then kept once, in that element's ticket, with this part linked to it, so one ticket carries the defect.</same_as>
   </element>
   <purpose>
     <receiver>The address of the receiving element, the RE, that holds the purpose record.</receiver>
@@ -101,9 +91,6 @@ Request:
     <ef>The encounter function, the EF: what the providing elements do for the receiver, in active voice.</ef>
     <ifd>sends, receives or both: the information flow direction, as defined in the intake procedure.</ifd>
     <refs>Where the purpose record is found: a list of references, each a key and a value.</refs>
-    <condition>MISS, BKN or OK, as the intake procedure marks a part, or broken, missing, trouble or ok: MISS and missing are stored as missing, not built yet; BKN and broken as trouble, which needs a note saying what is wrong and what corrects it; OK as ok. Recording it again replaces the last.</condition>
-    <note>Free text about the purpose record, kept beside the map in the critic layer, never in the map itself; an exclusion is a note that starts with "exclude:".</note>
-    <same_as>With MISS or BKN, when one defect shows at two parts: the address of the other element, where this intake already recorded it. The finding is then kept once, in that element's ticket, with this purpose record linked to it, so one ticket carries the defect.</same_as>
   </purpose>
 </fields>
 </prompts>

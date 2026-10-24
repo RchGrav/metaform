@@ -17,6 +17,7 @@ import {select} from '/page/app/selection/select.js';
 import {renderBrief} from '/page/app/panel/brief.js';
 import {getJson} from '/page/app/panel/prompts.js';
 import {drawIntake, drawLeft, offerNext, intakeRunning} from '/page/app/intake/intake.js';
+import {isIntake} from '/page/app/session/tools.js';
 import {appliedOps, settled, briefTouched, ticketsOnly, opsOnly, ticketsChanged, boardFromTickets, sessionsConcerned,
   agentsChanged, linesOnly, mergesConcerned, ticketsHeard, ticketsRead, bulkBoardChange, commitsConcerned} from '/page/app/live/ops.js';
 import {listBases, loadGraph, loadProject, fillProjects, goToProject} from '/page/app/loading/load.js';
@@ -132,23 +133,22 @@ export async function recordingNow() {
  * once for that intake, so a person who goes back is left there; nothing else in another project ever switches the
  * page, and a change of tickets or agents elsewhere is not even looked at. */
 /* An intake agent starting in another project takes the page there too, at its launch, not at its first record, which
- * may be minutes later: its session's change names its `intake-` work id (UX review round 2, 2026-10-17,
- * new-project-intake F1 and F3). Each test is decided from the event alone, before any read, and an event that comes
+ * may be minutes later. A named task's identity is confirmed by a session read restricted to the event's work ids;
+ * historical intakes used `intake-` work ids. An event that comes
  * while one is read is kept, the latest in one slot, and read once the read in hand is done, never dropped (CLAUDE.md
  * section 2, rules 2 and 4). */
 const ELSEWHERE = {followed: new Set(), busy: false, pending: null};
-/* The intake agent's work id an event names, or null. */
-function intakeWork(payload) {
+/* Candidate work ids; task-* names an assignment whose actual task must be read before following it. */
+function intakeWorks(payload) {
   const works = payload.work_ids;
-  if (!Array.isArray(works)) return null;
-  for (let at = 0; at < works.length; at++) if (String(works[at]).startsWith('intake-')) return String(works[at]);
-  return null;
+  if (!Array.isArray(works) || threadOnly(payload)) return [];
+  return [...new Set(works.filter(work => typeof work === 'string' && /^(?:intake|task)-/.test(work)))];
 }
 /* Whether an event of another project can concern an intake there: a write that may be into the layer being recorded,
  * or the intake agent's own session. A change of that project's bases alone never is, nor a change of its tickets or
  * of any other agent. */
 function mayBeIntake(payload) {
-  if (intakeWork(payload)) return true;
+  if (intakeWorks(payload).length) return true;
   if (!payload.base_id) return false;
   const named = payload.tables;
   if (named === 'dispatch' || ticketsOnly(payload)) return false;
@@ -164,8 +164,8 @@ async function intakeElsewhere(payload) {
   if (ELSEWHERE.busy) { ELSEWHERE.pending = payload; return; }
   ELSEWHERE.busy = true;
   try {
-    const project = payload.project, work = intakeWork(payload);
-    if (work) return await intakeStarting(project, work);
+    const project = payload.project, works = intakeWorks(payload);
+    if (works.length) return await intakeStarting(project, works);
     const found = (await getJson(`/api/intake-recording?project=${encodeURIComponent(project)}`)).results?.[0];
     // only a change written into the intake being recorded: an intake happening now, never an old one left unfinished
     if (!found || payload.base_id !== found.base_id) return;
@@ -183,14 +183,16 @@ async function intakeElsewhere(payload) {
 }
 /* An intake agent of another project, launched or running: the page goes there, where its bar shows it starting and
  * its chat; one that ended without starting is said with why, and the page stays. Once per intake. */
-async function intakeStarting(project, work) {
-  const key = `${project}/${work}`;
-  if (ELSEWHERE.followed.has(key) || project === S.project) return;
-  const read = await getJson(`/api/dispatch-sessions?project=${encodeURIComponent(project)}&id=${
-    encodeURIComponent(work)}&thread=false`);
+async function intakeStarting(project, works) {
+  const candidates = works.filter(work => !ELSEWHERE.followed.has(`${project}/${work}`));
+  if (!candidates.length || project === S.project) return;
+  const read = await getJson(`/api/dispatch-sessions?project=${encodeURIComponent(project)}&ids=${
+    encodeURIComponent(JSON.stringify(candidates))}&thread=false`);
   const sessions = read.sessions || [];
-  const now = sessions.findLast(one => one.work_id === work) || null;
+  const known = sessions.filter(one => candidates.includes(one.work_id) && isIntake(one.work_id, one));
+  const now = known.findLast(one => one.state === 'running' || one.state === 'starting') || known.at(-1) || null;
   if (!now) return;
+  const key = `${project}/${now.work_id}`;
   ELSEWHERE.followed.add(key);
   if (!S.project && (now.state === 'running' || now.state === 'starting')) {
     await goToProject(project, `An intake agent is starting in ${project}; the page follows it there.`);

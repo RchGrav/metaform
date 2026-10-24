@@ -3986,9 +3986,10 @@ def test_every_prompt_an_agent_is_sent_opens_by_role_and_saves_as_plain_text_bef
     assert prompt_files.served(resources.files('metaform.modules.dispatch'), 'system', project='proj',
                                mascot='M') == 'Plans & tickets, as <address>: <task>. M'
     assert [one.origin for one in prompts.prompt_versions('dispatch:system')] == ['edited', 'shipped']
-    refused = json.dumps({'name': 'intake:intake.axiom', 'text': 'x', 'parent': 0})
-    status, said = api(web, '/api/save-prompt', method='POST', body=refused, headers=own)
-    assert status == 400 and 'never be sent' in said['error']
+    edited_intake = '# Revised intake\nUse {prompt} literally. <unclosed> & keep this text.\n'
+    edit = json.dumps({'name': 'intake:intake.xml', 'text': edited_intake, 'parent': 0})
+    status, saved_intake = api(web, '/api/save-prompt', method='POST', body=edit, headers=own)
+    assert status == 200 and saved_intake['plain'] == edited_intake
 
 
 @pytest.mark.req('VIEW-013')
